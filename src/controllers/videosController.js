@@ -1,0 +1,291 @@
+const path = require('path');
+const pexelsService = require('../services/pexelsService');
+const importService = require('../services/importService');
+const Videos = require('../models/Videos');
+const VideoClips = require('../models/VideoClips');
+const processingService = require('../services/processingService');
+const { MAX_CLIP_SECONDS, probe } = require('../services/ffmpegService');
+const { storageAbsolutePath } = require('../services/downloadService');
+
+/** Registra um vídeo enviado por upload (já está no disco via multer). */
+async function upload(req, res, next) {
+  try {
+    if (!req.file) {
+      const err = new Error('Nenhum arquivo enviado (campo "arquivo")');
+      err.status = 400;
+      throw err;
+    }
+
+    const relativePath = `videos/${req.file.filename}`;
+    let duracao = null;
+    try {
+      const info = await probe(storageAbsolutePath(relativePath));
+      duracao = info?.format?.duration ? Math.round(info.format.duration) : null;
+    } catch {
+      // duração fica nula se o probe falhar; corte ainda é possível
+    }
+
+    const [id] = await Videos.create({
+      user_id: req.session.userId,
+      origem: 'upload',
+      termo_busca: 'upload',
+      titulo: path.parse(req.file.originalname).name,
+      duracao,
+      status: 'baixado',
+      caminho_local: relativePath,
+      metadata: { nome_original: req.file.originalname, tamanho: req.file.size },
+    });
+
+    const video = await Videos.findById(id);
+    res.status(201).json({ video, created: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Importa vídeo por link (YouTube, TikTok, URL direta) via yt-dlp. */
+async function importLink(req, res, next) {
+  try {
+    const url = String(req.body.url || '').trim();
+    if (!/^https?:\/\//i.test(url)) {
+      const err = new Error('Informe uma URL válida (http/https)');
+      err.status = 400;
+      throw err;
+    }
+
+    let meta = {};
+    try {
+      meta = await importService.fetchLinkMetadata(url);
+    } catch (metaErr) {
+      const msg = String(metaErr.stderr || metaErr.message || '').slice(0, 300);
+      const err = new Error(`Não foi possível ler o link: ${msg}`);
+      err.status = 422;
+      throw err;
+    }
+
+    const [id] = await Videos.create({
+      user_id: req.session.userId,
+      origem: 'link',
+      termo_busca: meta.extractor ? meta.extractor.toLowerCase() : 'link',
+      titulo: meta.titulo,
+      url_original: url,
+      thumbnail: meta.thumbnail,
+      duracao: meta.duracao,
+      autor: meta.autor,
+      autor_url: meta.autorUrl,
+      status: 'pendente',
+      metadata: { extractor: meta.extractor },
+    });
+
+    const video = await Videos.findById(id);
+    importService.queueLinkImport(video);
+
+    res.status(202).json({ video, queued: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function list(req, res, next) {
+  try {
+    const userId = req.session.userId;
+    if (!userId) {
+      const err = new Error('Usuário não autenticado');
+      err.status = 401;
+      throw err;
+    }
+
+    const videos = await Videos.findByUser(userId, {
+      status: req.query.status || undefined,
+    });
+
+    const ids = videos.map((v) => v.id);
+    const clips = ids.length ? await VideoClips.findByVideoIds(ids) : [];
+    const clipsByVideo = {};
+    for (const clip of clips) {
+      (clipsByVideo[clip.video_id] = clipsByVideo[clip.video_id] || []).push(clip);
+    }
+
+    res.json({
+      videos: videos.map((v) => ({ ...v, clips: clipsByVideo[v.id] || [] })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Enfileira o download do arquivo HD do vídeo. */
+async function download(req, res, next) {
+  try {
+    const video = await Videos.findById(req.params.id);
+    if (!video || video.user_id !== req.session.userId) {
+      const err = new Error('Vídeo não encontrado');
+      err.status = 404;
+      throw err;
+    }
+    if (video.status === 'baixado' || video.status === 'cortado') {
+      return res.json({ video, queued: false, message: 'Vídeo já baixado' });
+    }
+    if (!video.url_original) {
+      const err = new Error('Vídeo sem URL de origem para baixar');
+      err.status = 422;
+      throw err;
+    }
+
+    if (video.origem === 'link') {
+      importService.queueLinkImport(video);
+    } else {
+      processingService.queueVideoDownload(video);
+    }
+    res.status(202).json({ queued: true, message: 'Download enfileirado' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Cria um corte (inicio/fim/formato) e enfileira a geração via ffmpeg. */
+async function clip(req, res, next) {
+  try {
+    const video = await Videos.findById(req.params.id);
+    if (!video || video.user_id !== req.session.userId) {
+      const err = new Error('Vídeo não encontrado');
+      err.status = 404;
+      throw err;
+    }
+    if (!video.caminho_local) {
+      const err = new Error('Baixe o vídeo antes de gerar cortes');
+      err.status = 422;
+      throw err;
+    }
+
+    const inicio = Number(req.body.inicio);
+    const fim = Number(req.body.fim);
+    const aspectRatio = ['9:16', '1:1', 'original'].includes(req.body.aspect_ratio)
+      ? req.body.aspect_ratio
+      : '9:16';
+
+    if (!Number.isFinite(inicio) || !Number.isFinite(fim) || fim <= inicio) {
+      const err = new Error('Informe início e fim válidos (fim > início)');
+      err.status = 400;
+      throw err;
+    }
+    if (fim - inicio > MAX_CLIP_SECONDS) {
+      const err = new Error(`Corte máximo de ${MAX_CLIP_SECONDS} segundos`);
+      err.status = 400;
+      throw err;
+    }
+    if (video.duracao && inicio >= video.duracao) {
+      const err = new Error(`Início além da duração do vídeo (${video.duracao}s)`);
+      err.status = 400;
+      throw err;
+    }
+
+    const [clipId] = await VideoClips.create({
+      video_id: video.id,
+      inicio_segundo: inicio,
+      fim_segundo: fim,
+      aspect_ratio: aspectRatio,
+      legenda_sugerida: req.body.legenda || null,
+      status: 'processando',
+    });
+
+    const created = await VideoClips.findById(clipId);
+    processingService.queueClipGeneration(created, video);
+
+    res.status(202).json({ clip: created, queued: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function search(req, res, next) {
+  try {
+    const termo = req.query.termo || req.query.q || '';
+    const page = req.query.page;
+    const perPage = req.query.per_page || req.query.perPage;
+
+    const result = await pexelsService.searchVideos(termo, { page, perPage });
+    res.json(result);
+  } catch (err) {
+    if (err.response?.status === 401 || err.response?.status === 403) {
+      err.status = 502;
+      err.message = 'Falha de autenticação na Pexels. Verifique PEXELS_API_KEY.';
+    } else if (err.response?.status === 429) {
+      err.status = 429;
+      err.message = 'Rate limit da Pexels atingido. Tente novamente em alguns minutos.';
+    } else if (err.response) {
+      err.status = 502;
+      err.message = err.response.data?.error || 'Erro ao consultar a Pexels API';
+    }
+    next(err);
+  }
+}
+
+/**
+ * Registra o vídeo no banco (status pendente) a partir do ID Pexels.
+ * Download real fica para a etapa 3.
+ */
+async function selectVideo(req, res, next) {
+  try {
+    const pexelsId = req.params.pexelsId;
+    const termo = (req.body.termo || req.query.termo || '').trim() || 'sem termo';
+    const userId = req.session.userId;
+
+    if (!userId) {
+      const err = new Error('Usuário não autenticado');
+      err.status = 401;
+      throw err;
+    }
+
+    const existing = await Videos.findByPexelsId(userId, pexelsId);
+    if (existing) {
+      return res.json({ video: existing, created: false });
+    }
+
+    const remote = await pexelsService.getVideoById(pexelsId);
+    if (!remote.urlOriginal) {
+      const err = new Error('Vídeo sem arquivo MP4 disponível');
+      err.status = 422;
+      throw err;
+    }
+
+    const [id] = await Videos.create({
+      user_id: userId,
+      termo_busca: termo,
+      pexels_id: remote.pexelsId,
+      url_original: remote.urlOriginal,
+      thumbnail: remote.thumbnail,
+      duracao: remote.duracao,
+      autor: remote.autor,
+      autor_url: remote.autorUrl,
+      status: 'pendente',
+      metadata: {
+        pexels_url: remote.url,
+        qualidade: remote.qualidade,
+        width: remote.width,
+        height: remote.height,
+        arquivoWidth: remote.arquivoWidth,
+        arquivoHeight: remote.arquivoHeight,
+      },
+    });
+
+    const video = await Videos.findById(id);
+    res.status(201).json({ video, created: true });
+  } catch (err) {
+    if (err.response) {
+      err.status = 502;
+      err.message = 'Não foi possível obter o vídeo na Pexels';
+    }
+    next(err);
+  }
+}
+
+module.exports = {
+  list,
+  search,
+  selectVideo,
+  download,
+  clip,
+  upload,
+  importLink,
+};

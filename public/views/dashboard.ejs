@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> — Clipador</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <%- include('partials/header') %>
+
+  <main class="mx-auto max-w-6xl px-4 py-10">
+    <h1 class="text-2xl font-semibold text-white">Dashboard</h1>
+    <p class="mt-2 text-slate-400">Resumo de vídeos, status e últimas publicações.</p>
+
+    <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <% const statuses = ['pendente', 'baixado', 'cortado', 'publicado', 'erro']; %>
+      <% statuses.forEach((status) => { %>
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <p class="text-xs uppercase tracking-wide text-slate-500"><%= status %></p>
+          <p class="mt-2 text-2xl font-semibold text-white">0</p>
+        </div>
+      <% }) %>
+    </div>
+
+    <div class="mt-8 rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
+      <p class="text-slate-300">Sem publicações ainda.</p>
+    </div>
+  </main>
+</body>
+</html>

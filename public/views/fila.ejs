@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> — Clipador</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <%- include('partials/header') %>
+
+  <main class="mx-auto max-w-6xl px-4 py-10">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 class="text-2xl font-semibold text-white">Fila de processamento</h1>
+        <p class="mt-2 text-slate-400">Baixe, corte e acompanhe o status. Cortes de até 90s (Reels).</p>
+      </div>
+      <button
+        id="refresh-btn"
+        type="button"
+        class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
+      >
+        Atualizar
+      </button>
+    </div>
+
+    <div id="global-msg" class="mt-4 hidden rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-200"></div>
+
+    <h2 class="mt-8 text-lg font-medium text-white">Vídeos</h2>
+    <div id="videos-status" class="mt-2 text-sm text-slate-400">Carregando…</div>
+    <div id="videos-list" class="mt-4 space-y-3"></div>
+
+    <h2 class="mt-10 text-lg font-medium text-white">Imagens</h2>
+    <div id="imagens-status" class="mt-2 text-sm text-slate-400">Carregando…</div>
+    <div id="imagens-list" class="mt-4 space-y-3"></div>
+  </main>
+
+  <script>
+    const refreshBtn = document.getElementById('refresh-btn');
+    const globalMsg = document.getElementById('global-msg');
+
+    const statusColors = {
+      pendente: 'bg-amber-500/15 text-amber-300',
+      baixado: 'bg-sky-500/15 text-sky-300',
+      cortado: 'bg-violet-500/15 text-violet-300',
+      publicado: 'bg-emerald-500/15 text-emerald-300',
+      erro: 'bg-rose-500/15 text-rose-300',
+      processando: 'bg-amber-500/15 text-amber-300',
+      pronto: 'bg-emerald-500/15 text-emerald-300',
+      sugerido: 'bg-slate-500/15 text-slate-300',
+    };
+
+    function escapeHtml(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function badge(status) {
+      return `<span class="rounded-full px-2.5 py-0.5 text-xs ${statusColors[status] || 'bg-slate-700 text-slate-300'}">${escapeHtml(status)}</span>`;
+    }
+
+    function showError(msg) {
+      globalMsg.textContent = msg;
+      globalMsg.classList.remove('hidden');
+      setTimeout(() => globalMsg.classList.add('hidden'), 6000);
+    }
+
+    let fbPages = [];
+
+    function pageSelectHtml() {
+      return `
+        <select name="facebook_page_id" class="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100">
+          ${fbPages.map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)}</option>`).join('')}
+        </select>`;
+    }
+
+    function publishFormHtml(kind, id) {
+      if (!fbPages.length) {
+        return `<a href="/paginas" class="text-xs text-sky-400 hover:text-sky-300">Conecte uma página para publicar →</a>`;
+      }
+      return `
+        <form class="publish-form flex flex-wrap items-center gap-2" data-kind="${kind}" data-id="${id}">
+          ${pageSelectHtml()}
+          <input type="text" name="legenda" placeholder="Legenda do post (opcional)"
+            class="w-48 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-600" />
+          <button type="submit" class="rounded-md bg-[#1877F2] px-3 py-1 text-xs font-medium text-white hover:bg-[#166FE5] disabled:opacity-50">Publicar</button>
+        </form>`;
+    }
+
+    function clipHtml(clip) {
+      return `
+        <div class="flex flex-wrap items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm">
+          ${badge(clip.status)}
+          <span class="text-slate-300">${Number(clip.inicio_segundo)}s → ${Number(clip.fim_segundo)}s</span>
+          <span class="text-xs text-slate-500">${escapeHtml(clip.aspect_ratio || '9:16')}</span>
+          ${clip.caminho_arquivo
+            ? `<a href="/media/${escapeHtml(clip.caminho_arquivo)}" target="_blank" class="text-emerald-400 hover:text-emerald-300">Ver clipe</a>`
+            : ''}
+          ${clip.erro_mensagem ? `<span class="text-xs text-rose-300">${escapeHtml(clip.erro_mensagem)}</span>` : ''}
+          ${clip.status === 'pronto' ? publishFormHtml('clip', clip.id) : ''}
+        </div>`;
+    }
+
+    function videoActionsHtml(v) {
+      if (v.status === 'pendente' || v.status === 'erro') {
+        return `<button type="button" class="action-btn rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50" data-action="download-video" data-id="${v.id}">Baixar</button>`;
+      }
+      if (v.status === 'baixado' || v.status === 'cortado') {
+        const max = v.duracao || 600;
+        return `
+          <form class="clip-form flex flex-wrap items-end gap-2" data-id="${v.id}">
+            <label class="text-xs text-slate-400">Início (s)
+              <input type="number" name="inicio" min="0" max="${max}" value="0" required
+                class="mt-1 block w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100" />
+            </label>
+            <label class="text-xs text-slate-400">Fim (s)
+              <input type="number" name="fim" min="1" max="${max}" value="${Math.min(max, 30)}" required
+                class="mt-1 block w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100" />
+            </label>
+            <label class="text-xs text-slate-400">Formato
+              <select name="aspect_ratio" class="mt-1 block rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100">
+                <option value="9:16">9:16 (Reels)</option>
+                <option value="1:1">1:1</option>
+                <option value="original">Original</option>
+              </select>
+            </label>
+            <button type="submit" class="rounded-lg bg-violet-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-400 disabled:opacity-50">Gerar corte</button>
+          </form>`;
+      }
+      return '';
+    }
+
+    function videoHtml(v) {
+      const clips = v.clips || [];
+      return `
+        <article class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div class="flex flex-col gap-4 sm:flex-row">
+            <div class="h-24 w-full shrink-0 overflow-hidden rounded-lg bg-slate-950 sm:w-40">
+              ${v.thumbnail ? `<img src="${escapeHtml(v.thumbnail)}" alt="" class="h-full w-full object-cover" />` : ''}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                ${badge(v.status)}
+                <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">${escapeHtml(v.origem || 'pexels')}</span>
+                ${v.pexels_id ? `<span class="text-xs text-slate-500">Pexels #${escapeHtml(v.pexels_id)}</span>` : ''}
+                ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" class="text-xs text-emerald-400 hover:text-emerald-300">Ver original</a>` : ''}
+              </div>
+              <p class="mt-2 truncate text-sm text-white">${escapeHtml(v.titulo || '“' + v.termo_busca + '”')}</p>
+              <p class="mt-1 text-xs text-slate-500">${escapeHtml(v.autor || '—')} · ${v.duracao || '—'}s</p>
+              ${v.erro_mensagem ? `<p class="mt-1 text-xs text-rose-300">${escapeHtml(v.erro_mensagem)}</p>` : ''}
+              <div class="mt-3">${videoActionsHtml(v)}</div>
+            </div>
+          </div>
+          ${clips.length ? `<div class="mt-4 space-y-2">${clips.map(clipHtml).join('')}</div>` : ''}
+        </article>`;
+    }
+
+    function imagemHtml(i) {
+      return `
+        <article class="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:flex-row sm:items-center">
+          <div class="h-24 w-full shrink-0 overflow-hidden rounded-lg bg-slate-950 sm:w-40">
+            ${i.thumbnail ? `<img src="${escapeHtml(i.thumbnail)}" alt="" class="h-full w-full object-cover" />` : ''}
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              ${badge(i.status)}
+              <span class="text-xs text-slate-500">Pexels #${escapeHtml(i.pexels_id)}</span>
+              ${i.caminho_local ? `<a href="/media/${escapeHtml(i.caminho_local)}" target="_blank" class="text-xs text-emerald-400 hover:text-emerald-300">Ver arquivo</a>` : ''}
+            </div>
+            <p class="mt-2 truncate text-sm text-white">“${escapeHtml(i.termo_busca)}”</p>
+            <p class="mt-1 text-xs text-slate-500">${escapeHtml(i.autor || '—')} · ${i.largura && i.altura ? i.largura + '×' + i.altura : 'foto'}</p>
+            ${i.erro_mensagem ? `<p class="mt-1 text-xs text-rose-300">${escapeHtml(i.erro_mensagem)}</p>` : ''}
+            ${i.status === 'pendente' || i.status === 'erro'
+              ? `<div class="mt-3"><button type="button" class="action-btn rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50" data-action="download-imagem" data-id="${i.id}">Baixar</button></div>`
+              : ''}
+            ${i.status === 'baixado' ? `<div class="mt-3">${publishFormHtml('imagem', i.id)}</div>` : ''}
+          </div>
+        </article>`;
+    }
+
+    function emptyHtml(msg) {
+      return `
+        <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-8 text-center">
+          <p class="text-slate-300">${msg}</p>
+          <a href="/busca" class="mt-3 inline-block text-sm text-emerald-400 hover:text-emerald-300">Ir para busca →</a>
+        </div>`;
+    }
+
+    async function loadFila() {
+      const vStatus = document.getElementById('videos-status');
+      const vList = document.getElementById('videos-list');
+      const iStatus = document.getElementById('imagens-status');
+      const iList = document.getElementById('imagens-list');
+
+      try {
+        const [vRes, iRes, pRes] = await Promise.all([
+          fetch('/api/videos'),
+          fetch('/api/imagens'),
+          fetch('/api/facebook/pages'),
+        ]);
+        const vData = await vRes.json();
+        const iData = await iRes.json();
+        const pData = pRes.ok ? await pRes.json() : { pages: [] };
+        fbPages = pData.pages || [];
+
+        const videos = vData.videos || [];
+        vStatus.textContent = videos.length + ' vídeo(s)';
+        vList.innerHTML = videos.length ? videos.map(videoHtml).join('') : emptyHtml('Nenhum vídeo na fila ainda.');
+
+        const imagens = iData.imagens || [];
+        iStatus.textContent = imagens.length + ' imagem(ns)';
+        iList.innerHTML = imagens.length ? imagens.map(imagemHtml).join('') : emptyHtml('Nenhuma imagem na fila ainda.');
+      } catch (err) {
+        showError(err.message || 'Erro ao carregar fila');
+      }
+    }
+
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.action-btn');
+      if (!btn) return;
+
+      const { action, id } = btn.dataset;
+      const url = action === 'download-video'
+        ? '/api/videos/' + id + '/download'
+        : '/api/imagens/' + id + '/download';
+
+      btn.disabled = true;
+      btn.textContent = 'Enfileirado…';
+
+      try {
+        const res = await fetch(url, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao enfileirar download');
+        setTimeout(loadFila, 2500);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Baixar';
+        showError(err.message);
+      }
+    });
+
+    document.addEventListener('submit', async (e) => {
+      const pubForm = e.target.closest('.publish-form');
+      if (pubForm) {
+        e.preventDefault();
+        const { kind, id } = pubForm.dataset;
+        const submitBtn = pubForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Publicando…';
+
+        const url = kind === 'clip'
+          ? '/api/clips/' + id + '/publish'
+          : '/api/imagens/' + id + '/publish';
+
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              facebook_page_id: Number(pubForm.facebook_page_id.value),
+              legenda: pubForm.legenda.value.trim(),
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha ao publicar');
+          submitBtn.textContent = 'Na fila de publicação';
+          setTimeout(loadFila, 4000);
+        } catch (err) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Publicar';
+          showError(err.message);
+        }
+        return;
+      }
+
+      const form = e.target.closest('.clip-form');
+      if (!form) return;
+      e.preventDefault();
+
+      const id = form.dataset.id;
+      const submitBtn = form.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/videos/' + id + '/clip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            inicio: Number(form.inicio.value),
+            fim: Number(form.fim.value),
+            aspect_ratio: form.aspect_ratio.value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao criar corte');
+        setTimeout(loadFila, 1500);
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    refreshBtn.addEventListener('click', loadFila);
+    loadFila();
+    setInterval(loadFila, 10000);
+  </script>
+</body>
+</html>

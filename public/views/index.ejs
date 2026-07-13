@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> — Clipador</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <%- include('partials/header') %>
+
+  <main class="mx-auto max-w-6xl px-4 py-10">
+    <h1 class="text-3xl font-semibold text-white">Clipador</h1>
+    <p class="mt-3 max-w-2xl text-slate-400">
+      Busque vídeos licenciados, corte trechos com IA e publique nas suas páginas do Facebook.
+    </p>
+
+    <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <a href="/busca" class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-emerald-500/50">
+        <h2 class="font-medium text-white">Busca</h2>
+        <p class="mt-2 text-sm text-slate-400">Pesquisar vídeos na Pexels</p>
+      </a>
+      <a href="/fila" class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-emerald-500/50">
+        <h2 class="font-medium text-white">Fila</h2>
+        <p class="mt-2 text-sm text-slate-400">Status de download e cortes</p>
+      </a>
+      <a href="/paginas" class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-emerald-500/50">
+        <h2 class="font-medium text-white">Páginas</h2>
+        <p class="mt-2 text-sm text-slate-400">Conectar Facebook Pages</p>
+      </a>
+      <a href="/dashboard" class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-emerald-500/50">
+        <h2 class="font-medium text-white">Dashboard</h2>
+        <p class="mt-2 text-sm text-slate-400">Métricas e publicações</p>
+      </a>
+    </div>
+  </main>
+</body>
+</html>

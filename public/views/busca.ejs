@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> — Clipador</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <%- include('partials/header') %>
+
+  <main class="mx-auto max-w-6xl px-4 py-10">
+    <h1 class="text-2xl font-semibold text-white">Buscar conteúdo</h1>
+    <p class="mt-2 text-slate-400">Digite um termo e encontre vídeos e imagens licenciados na Pexels.</p>
+
+    <div class="mt-6 inline-flex rounded-lg border border-slate-700 p-1" role="tablist">
+      <button type="button" data-tipo="videos" class="tipo-btn rounded-md px-4 py-1.5 text-sm bg-emerald-500 text-slate-950 font-medium">Vídeos</button>
+      <button type="button" data-tipo="imagens" class="tipo-btn rounded-md px-4 py-1.5 text-sm text-slate-300 hover:text-white">Imagens</button>
+    </div>
+
+    <form id="search-form" class="mt-4 flex flex-col gap-3 sm:flex-row">
+      <input
+        type="search"
+        name="termo"
+        id="termo"
+        placeholder="Ex: motivação, receita rápida, tecnologia"
+        class="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-2.5 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+        required
+      />
+      <button
+        type="submit"
+        id="search-btn"
+        class="rounded-lg bg-emerald-500 px-5 py-2.5 font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+      >
+        Buscar
+      </button>
+    </form>
+
+    <div id="search-status" class="mt-4 text-sm text-slate-400"></div>
+    <div id="results" class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
+
+    <div class="mt-10 grid gap-4 lg:grid-cols-2">
+      <section class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <h2 class="font-medium text-white">Enviar meu vídeo</h2>
+        <p class="mt-1 text-sm text-slate-400">Upload de arquivo próprio (mp4, mov, mkv, webm — até 1 GB).</p>
+        <form id="upload-form" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <input type="file" name="arquivo" id="upload-file" accept=".mp4,.mov,.mkv,.webm,.avi,.m4v" required
+            class="w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:text-slate-100 hover:file:bg-slate-600" />
+          <button type="submit" id="upload-btn"
+            class="shrink-0 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
+            Enviar
+          </button>
+        </form>
+        <p id="upload-status" class="mt-3 text-sm text-slate-400"></p>
+      </section>
+
+      <section class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <h2 class="font-medium text-white">Importar por link</h2>
+        <p class="mt-1 text-sm text-slate-400">Cole um link do YouTube, TikTok ou URL direta de vídeo.</p>
+        <form id="import-form" class="mt-4 flex flex-col gap-3 sm:flex-row">
+          <input type="url" name="url" id="import-url" placeholder="https://www.youtube.com/watch?v=..." required
+            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none" />
+          <button type="submit" id="import-btn"
+            class="shrink-0 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
+            Importar
+          </button>
+        </form>
+        <p id="import-status" class="mt-3 text-sm text-slate-400"></p>
+        <p class="mt-2 text-xs text-amber-300/80">
+          Atenção: vídeos de terceiros do YouTube/TikTok têm direitos autorais — use apenas conteúdo seu
+          ou com permissão, senão a página perde a monetização.
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById('search-form');
+    const termoInput = document.getElementById('termo');
+    const statusEl = document.getElementById('search-status');
+    const resultsEl = document.getElementById('results');
+    const searchBtn = document.getElementById('search-btn');
+    const tipoBtns = document.querySelectorAll('.tipo-btn');
+
+    let tipo = 'videos';
+    let lastTermo = '';
+
+    tipoBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        tipo = btn.dataset.tipo;
+        tipoBtns.forEach((b) => {
+          const active = b === btn;
+          b.classList.toggle('bg-emerald-500', active);
+          b.classList.toggle('text-slate-950', active);
+          b.classList.toggle('font-medium', active);
+          b.classList.toggle('text-slate-300', !active);
+        });
+        if (lastTermo) searchContent(lastTermo);
+      });
+    });
+
+    function formatDuration(seconds) {
+      if (!seconds && seconds !== 0) return '—';
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return m > 0 ? m + 'm ' + String(s).padStart(2, '0') + 's' : s + 's';
+    }
+
+    function escapeHtml(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function cardHtml(item, isVideo) {
+      const meta = isVideo
+        ? formatDuration(item.duracao) + ' · ' + escapeHtml(item.qualidade || 'mp4')
+        : (item.largura && item.altura ? item.largura + '×' + item.altura : 'foto');
+      return `
+        <article class="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
+          <div class="aspect-video bg-slate-950">
+            ${item.thumbnail
+              ? `<img src="${escapeHtml(item.thumbnail)}" alt="Preview" class="h-full w-full object-cover" loading="lazy" />`
+              : `<div class="flex h-full items-center justify-center text-sm text-slate-500">Sem preview</div>`
+            }
+          </div>
+          <div class="space-y-3 p-4">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="text-sm text-slate-300">${escapeHtml(item.autor || 'Autor desconhecido')}</p>
+                <p class="mt-1 text-xs text-slate-500">${meta}</p>
+              </div>
+              <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener" class="text-xs text-emerald-400 hover:text-emerald-300">Pexels</a>
+            </div>
+            <button
+              type="button"
+              class="select-btn w-full rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:border-emerald-500 hover:text-emerald-300 disabled:opacity-50"
+              data-pexels-id="${escapeHtml(item.pexelsId)}"
+              data-tipo="${isVideo ? 'videos' : 'imagens'}"
+            >
+              Adicionar à fila
+            </button>
+          </div>
+        </article>`;
+    }
+
+    async function searchContent(termo) {
+      lastTermo = termo;
+      statusEl.textContent = 'Buscando na Pexels…';
+      resultsEl.innerHTML = '';
+      searchBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/' + tipo + '/search?termo=' + encodeURIComponent(termo));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha na busca');
+
+        const items = data.videos || data.photos || [];
+        statusEl.textContent = data.totalResults + ' resultado(s) · página ' + data.page;
+        if (!items.length) {
+          statusEl.textContent = 'Nenhum resultado para este termo.';
+          return;
+        }
+        const isVideo = tipo === 'videos';
+        resultsEl.innerHTML = items.map((item) => cardHtml(item, isVideo)).join('');
+      } catch (err) {
+        statusEl.textContent = err.message || 'Erro ao buscar';
+      } finally {
+        searchBtn.disabled = false;
+      }
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const termo = termoInput.value.trim();
+      if (!termo) return;
+      searchContent(termo);
+    });
+
+    const uploadForm = document.getElementById('upload-form');
+    const uploadStatus = document.getElementById('upload-status');
+    const uploadBtn = document.getElementById('upload-btn');
+
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = document.getElementById('upload-file').files[0];
+      if (!file) return;
+
+      uploadBtn.disabled = true;
+      uploadStatus.textContent = 'Enviando ' + file.name + '…';
+
+      try {
+        const fd = new FormData();
+        fd.append('arquivo', file);
+        const res = await fetch('/api/videos/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha no upload');
+        uploadStatus.innerHTML = 'Enviado! <a href="/fila" class="text-emerald-400 hover:text-emerald-300">Ver na fila →</a>';
+        uploadForm.reset();
+      } catch (err) {
+        uploadStatus.textContent = err.message;
+      } finally {
+        uploadBtn.disabled = false;
+      }
+    });
+
+    const importForm = document.getElementById('import-form');
+    const importStatus = document.getElementById('import-status');
+    const importBtn = document.getElementById('import-btn');
+
+    importForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('import-url').value.trim();
+      if (!url) return;
+
+      importBtn.disabled = true;
+      importStatus.textContent = 'Lendo o link e enfileirando download…';
+
+      try {
+        const res = await fetch('/api/videos/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha na importação');
+        importStatus.innerHTML = 'Importando "' + (data.video.titulo || 'vídeo') + '"… <a href="/fila" class="text-emerald-400 hover:text-emerald-300">Acompanhar na fila →</a>';
+        importForm.reset();
+      } catch (err) {
+        importStatus.textContent = err.message;
+      } finally {
+        importBtn.disabled = false;
+      }
+    });
+
+    resultsEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.select-btn');
+      if (!btn) return;
+
+      const pexelsId = btn.dataset.pexelsId;
+      const btnTipo = btn.dataset.tipo;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Salvando…';
+
+      try {
+        const res = await fetch('/api/' + btnTipo + '/' + encodeURIComponent(pexelsId) + '/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ termo: lastTermo || termoInput.value.trim() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao salvar');
+
+        btn.textContent = data.created ? 'Na fila ✓' : 'Já na fila';
+        btn.classList.add('border-emerald-500', 'text-emerald-300');
+      } catch (err) {
+        btn.textContent = original;
+        btn.disabled = false;
+        statusEl.textContent = err.message || 'Erro ao adicionar';
+      }
+    });
+  </script>
+</body>
+</html>

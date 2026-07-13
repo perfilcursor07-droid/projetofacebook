@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> — Clipador</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <%- include('partials/header') %>
+
+  <main class="mx-auto max-w-6xl px-4 py-10">
+    <h1 class="text-2xl font-semibold text-white">Páginas do Facebook</h1>
+    <p class="mt-2 text-slate-400">Conecte sua conta e escolha em quais páginas publicar.</p>
+
+    <div id="alert" class="mt-4 hidden rounded-lg px-4 py-3 text-sm"></div>
+
+    <div id="content" class="mt-8">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
+        <p class="text-slate-300">Carregando…</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const alertEl = document.getElementById('alert');
+    const contentEl = document.getElementById('content');
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('conectado') === '1') {
+      alertEl.textContent = 'Conta do Facebook conectada com sucesso!';
+      alertEl.className = 'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+    } else if (params.get('erro')) {
+      alertEl.textContent = 'Erro: ' + params.get('erro');
+      alertEl.className = 'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+    }
+
+    function escapeHtml(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    const connectHtml = `
+      <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
+        <p class="text-slate-300">Nenhuma conta do Facebook conectada.</p>
+        <a href="/api/auth/facebook"
+          class="mt-5 inline-block rounded-lg bg-[#1877F2] px-5 py-2.5 font-medium text-white hover:bg-[#166FE5]">
+          Conectar com Facebook
+        </a>
+        <p class="mt-4 text-xs text-slate-500">
+          Requer app criado em developers.facebook.com com FACEBOOK_APP_ID e FACEBOOK_APP_SECRET no .env.<br/>
+          Escopos: pages_show_list, pages_manage_posts, pages_read_engagement.
+        </p>
+      </div>`;
+
+    async function load() {
+      try {
+        const res = await fetch('/api/facebook/pages');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao carregar');
+
+        if (!data.conectado) {
+          contentEl.innerHTML = connectHtml;
+          return;
+        }
+
+        const pagesHtml = (data.pages || []).map((p) => `
+          <div class="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+            <div>
+              <p class="text-white">${escapeHtml(p.page_name)}</p>
+              <p class="text-xs text-slate-500">ID: ${escapeHtml(p.page_id)}</p>
+            </div>
+            <span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs text-emerald-300">conectada</span>
+          </div>
+        `).join('');
+
+        contentEl.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-slate-400">
+              Conta conectada (FB user ${escapeHtml(data.fb_user_id)})
+              ${data.expira_em ? '· token expira em ' + new Date(data.expira_em).toLocaleDateString('pt-BR') : ''}
+            </p>
+            <div class="flex gap-2">
+              <button id="refresh-pages" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">Atualizar páginas</button>
+              <a href="/api/auth/facebook" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">Reconectar</a>
+            </div>
+          </div>
+          <div class="mt-5 space-y-3">
+            ${pagesHtml || '<p class="text-slate-400">Nenhuma página encontrada. Sua conta precisa ser admin de ao menos uma página.</p>'}
+          </div>`;
+
+        const refreshBtn = document.getElementById('refresh-pages');
+        if (refreshBtn) {
+          refreshBtn.addEventListener('click', async () => {
+            refreshBtn.disabled = true;
+            await fetch('/api/facebook/pages?refresh=1');
+            load();
+          });
+        }
+      } catch (err) {
+        contentEl.innerHTML = `<p class="text-rose-300">${escapeHtml(err.message)}</p>` + connectHtml;
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>
