@@ -13,6 +13,7 @@ exports.seed = async function seed(knex) {
     await knex('users').where({ id: existing.id }).update({
       nome: 'Admin',
       senha_hash: hash,
+      nivel_acesso: 'administrador',
     });
     return;
   }
@@ -21,5 +22,6 @@ exports.seed = async function seed(knex) {
     nome: 'Admin',
     email,
     senha_hash: hash,
+    nivel_acesso: 'administrador',
   });
 };
