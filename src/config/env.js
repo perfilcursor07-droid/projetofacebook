@@ -30,6 +30,10 @@ const env = {
   ytDlp: {
     cookiesFile: process.env.YTDLP_COOKIES_FILE || '',
     cookiesFromBrowser: process.env.YTDLP_COOKIES_FROM_BROWSER || '',
+    /** ex.: node  |  node:/usr/local/bin/node  |  deno */
+    jsRuntime: process.env.YTDLP_JS_RUNTIME || '',
+    /** caminho do binário node/deno (opcional) */
+    jsRuntimePath: process.env.YTDLP_JS_RUNTIME_PATH || '',
   },
 };
 
