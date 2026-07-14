@@ -29,3 +29,4 @@ su - viralizeai
 cd /home/viralizeai/htdocs/www.viralizeai.online
 git pull origin main
 pm2 reload viralizeai --update-env
+pm2 logs viralizeai --lines 50

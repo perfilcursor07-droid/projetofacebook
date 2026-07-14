@@ -1,8 +1,26 @@
 const path = require('path');
-const youtubedlExec = require('youtube-dl-exec');
+const youtubedlPkg = require('youtube-dl-exec');
 const { runYtDlp } = require('./ytDlpAuth');
-const youtubedl = (url, flags) => runYtDlp(youtubedlExec, url, flags);
+const { env } = require('../config/env');
 const ffmpegPath = require('ffmpeg-static');
+
+// Usa binário do sistema se disponível (mais atualizado), senão fallback para o bundled
+const ytDlpBinary = (() => {
+  const custom = String(process.env.YTDLP_PATH || '').trim();
+  if (custom) return custom;
+  try {
+    const { execSync } = require('child_process');
+    const systemPath = execSync('which yt-dlp 2>/dev/null || where yt-dlp 2>nul', { encoding: 'utf8' }).trim().split('\n')[0];
+    if (systemPath) return systemPath;
+  } catch {}
+  return null;
+})();
+
+const youtubedlExec = ytDlpBinary
+  ? youtubedlPkg.create(ytDlpBinary)
+  : youtubedlPkg;
+
+const youtubedl = (url, flags) => runYtDlp(youtubedlExec, url, flags);
 const Videos = require('../models/Videos');
 const { enqueue } = require('../workers/queue');
 const { storageAbsolutePath } = require('./downloadService');
