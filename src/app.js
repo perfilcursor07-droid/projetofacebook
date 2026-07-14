@@ -8,19 +8,25 @@ const app = express();
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '../public/views'));
+// CloudPanel/nginx — cookies e IP corretos atrás do proxy
+app.set('trust proxy', 1);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/media', express.static(path.resolve(env.storagePath)));
 
+const isProd = env.nodeEnv === 'production';
 app.use(
   session({
     secret: env.sessionSecret,
     resave: false,
     saveUninitialized: false,
+    proxy: isProd,
     cookie: {
       httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })

@@ -9,7 +9,11 @@ function facebookLogin(req, res, next) {
   try {
     const state = crypto.randomBytes(16).toString('hex');
     req.session.fbState = state;
-    res.redirect(facebookService.loginUrl(state));
+    // Garante que o state foi gravado ANTES do redirect (proxy HTTPS)
+    req.session.save((err) => {
+      if (err) return next(err);
+      res.redirect(facebookService.loginUrl(state));
+    });
   } catch (err) {
     next(err);
   }
