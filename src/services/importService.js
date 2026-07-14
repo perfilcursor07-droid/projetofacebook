@@ -285,7 +285,7 @@ function queueLinkImport(video) {
       const dest = `videos/video_${video.id}.mp4`;
       await youtubedl(video.url_original, {
         output: storageAbsolutePath(dest),
-        format: 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b',
+        format: 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/bv*+ba/b[ext=mp4]/b',
         mergeOutputFormat: 'mp4',
         ffmpegLocation: path.dirname(ffmpegPath),
         noPlaylist: true,
@@ -294,6 +294,7 @@ function queueLinkImport(video) {
           'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         ],
         retries: 3,
+        remuxVideo: 'mp4',
       });
 
       await Videos.update(video.id, {
