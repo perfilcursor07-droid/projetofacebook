@@ -11,7 +11,10 @@
     "migrate:make": "knex migrate:make",
     "seed": "knex seed:run",
     "build:css": "tailwindcss -i ./src/assets/input.css -o ./public/css/app.css --minify",
-    "watch:css": "tailwindcss -i ./src/assets/input.css -o ./public/css/app.css --watch"
+    "watch:css": "tailwindcss -i ./src/assets/input.css -o ./public/css/app.css --watch",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:reload": "pm2 reload viralizeai",
+    "pm2:logs": "pm2 logs viralizeai --lines 80"
   },
   "engines": {
     "node": ">=18"
