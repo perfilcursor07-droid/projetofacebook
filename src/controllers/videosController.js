@@ -60,33 +60,49 @@ async function importLink(req, res, next) {
     }
 
     let meta = {};
+    let metaWarning = null;
     try {
       meta = await importService.fetchLinkMetadata(url);
     } catch (metaErr) {
-      const msg = String(metaErr.stderr || metaErr.message || '').slice(0, 300);
-      const err = new Error(`Não foi possível ler o link: ${msg}`);
-      err.status = 422;
-      throw err;
+      // Em VPS o YouTube às vezes bloqueia só a leitura de metadados —
+      // ainda assim enfileira o download e deixa a Fila tentar.
+      metaWarning = importService.humanizeYtDlpError(metaErr);
+      console.warn('[import] metadata falhou, enfileirando mesmo assim:', metaWarning);
+      meta = {
+        titulo: req.body.titulo || null,
+        thumbnail: req.body.thumbnail || null,
+        extractor: null,
+        autor: null,
+        autorUrl: null,
+        duracao: null,
+      };
     }
 
     const [id] = await Videos.create({
       user_id: req.session.userId,
       origem: 'link',
       termo_busca: (req.body.termo || meta.extractor || 'link').toString().slice(0, 255),
-      titulo: meta.titulo || req.body.titulo || null,
+      titulo: meta.titulo || req.body.titulo || url.slice(0, 120),
       url_original: url,
       thumbnail: meta.thumbnail || req.body.thumbnail || null,
       duracao: meta.duracao,
       autor: meta.autor,
       autor_url: meta.autorUrl,
       status: 'pendente',
-      metadata: { extractor: meta.extractor, fonte: req.body.fonte || null },
+      metadata: { extractor: meta.extractor, fonte: req.body.fonte || null, metaWarning },
     });
 
     const video = await Videos.findById(id);
     importService.queueLinkImport(video);
 
-    res.status(202).json({ video, queued: true, created: true });
+    res.status(202).json({
+      video,
+      queued: true,
+      created: true,
+      aviso: metaWarning
+        ? `Link enfileirado, mas a prévia falhou: ${metaWarning}`
+        : null,
+    });
   } catch (err) {
     next(err);
   }

@@ -425,7 +425,8 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha na importação');
-        importStatus.innerHTML = 'Importando "' + (data.video.titulo || 'vídeo') + '"… <a href="/fila" class="text-emerald-400 hover:text-emerald-300">Acompanhar na fila →</a>';
+        const aviso = data.aviso ? ` · ${data.aviso}` : '';
+        importStatus.innerHTML = 'Importando "' + (data.video.titulo || 'vídeo') + '"… <a href="/fila" class="text-emerald-400 hover:text-emerald-300">Acompanhar na fila →</a>' + (aviso ? '<span class="block mt-1 text-amber-300/90 text-xs">' + aviso + '</span>' : '');
         importForm.reset();
       } catch (err) {
         importStatus.textContent = err.message;

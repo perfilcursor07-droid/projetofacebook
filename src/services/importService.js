@@ -14,6 +14,10 @@ async function fetchLinkMetadata(url) {
     noWarnings: true,
     noPlaylist: true,
     skipDownload: true,
+    // Ajuda em servidores/datacenter onde o YouTube é mais restritivo
+    addHeader: ['User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'],
+    socketTimeout: 30,
+    retries: 2,
   });
 
   return {
@@ -24,6 +28,27 @@ async function fetchLinkMetadata(url) {
     autorUrl: info.uploader_url || info.channel_url || null,
     extractor: info.extractor_key || null,
   };
+}
+
+function humanizeYtDlpError(err) {
+  const raw = String(err?.stderr || err?.message || err || '');
+  const lower = raw.toLowerCase();
+  if (lower.includes('sign in') || lower.includes('bot') || lower.includes('confirm you')) {
+    return 'YouTube bloqueou a leitura neste servidor (proteção anti-bot). Tente outro link, Shorts, ou suba o arquivo por upload.';
+  }
+  if (lower.includes('private video') || lower.includes('private')) {
+    return 'Vídeo privado — não é possível importar.';
+  }
+  if (lower.includes('video unavailable') || lower.includes('not available')) {
+    return 'Vídeo indisponível nesta região ou foi removido.';
+  }
+  if (lower.includes('unsupported url') || lower.includes('no video')) {
+    return 'URL não suportada. Use link do YouTube/TikTok/vídeo direto.';
+  }
+  if (lower.includes('enoent') || lower.includes('spawn') || lower.includes('yt-dlp')) {
+    return 'Ferramenta yt-dlp ausente/desatualizada no servidor. Atualize youtube-dl-exec.';
+  }
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 280) || 'falha ao ler o link';
 }
 
 function pickThumbnail(entry) {
@@ -263,6 +288,10 @@ function queueLinkImport(video) {
         ffmpegLocation: path.dirname(ffmpegPath),
         noPlaylist: true,
         noWarnings: true,
+        addHeader: [
+          'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        ],
+        retries: 3,
       });
 
       await Videos.update(video.id, {
@@ -283,6 +312,7 @@ function queueLinkImport(video) {
 
 module.exports = {
   fetchLinkMetadata,
+  humanizeYtDlpError,
   queueLinkImport,
   searchYoutube,
   searchTiktok,
