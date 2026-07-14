@@ -231,6 +231,33 @@
     }
   });
 
+  const reloadBrandButton = document.getElementById('btn-recarregar-marca');
+  reloadBrandButton?.addEventListener('click', async () => {
+    const originalLabel = reloadBrandButton.textContent;
+    reloadBrandButton.disabled = true;
+    reloadBrandButton.textContent = 'Recarregando modelo…';
+    setStatus('Aplicando o modelo atual da sua marca…');
+
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/regenerar', {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao recarregar o modelo da marca');
+
+      if (data.imagemUrl && imgEl) {
+        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        imgWrap?.classList.remove('hidden');
+      }
+      setStatus('Modelo, logo e cores atuais aplicados à arte ✓');
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      reloadBrandButton.disabled = false;
+      reloadBrandButton.textContent = originalLabel;
+    }
+  });
+
   window.addEventListener('beforeunload', releaseImagePreview);
   loadPages();
 })();

@@ -62,6 +62,46 @@ router.post('/matters/:id/arte', (req, res, next) => {
   });
 });
 
+router.post('/matters/:id/arte/regenerar', async (req, res, next) => {
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID da matéria inválido' });
+    }
+
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'A arte de uma matéria publicada não pode ser alterada' });
+    }
+    if (!matter.imagem_fonte_url) {
+      return res.status(400).json({
+        error: 'A foto original não está disponível. Escolha outra imagem para gerar a arte novamente.',
+      });
+    }
+
+    const artwork = await composeMatterArtwork({
+      userId: req.session.userId,
+      matterId,
+      title: matter.titulo,
+      force: true,
+    });
+
+    return res.json({
+      ok: true,
+      matter: artwork.matter,
+      imagemUrl: artwork.publicUrl,
+      arteModelo: artwork.modelId,
+      hasLogo: artwork.hasLogo,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+});
+
 function pageId(body = {}) {
   const raw = body.facebookPageId ?? body.facebook_page_id;
   return raw != null && raw !== '' ? Number(raw) : null;
