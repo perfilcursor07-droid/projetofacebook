@@ -12,3 +12,6 @@ Thumbs.db
 storage/tmp/
 storage/artes/
 storage/fontes/
+cookies.txt
+*.cookies.txt
+youtube-cookies*.txt

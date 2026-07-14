@@ -27,6 +27,10 @@ const env = {
   ffmpegPath: process.env.FFMPEG_PATH || '',
   pythonPath: process.env.PYTHON_PATH || '',
   storagePath: process.env.STORAGE_PATH || './storage',
+  ytDlp: {
+    cookiesFile: process.env.YTDLP_COOKIES_FILE || '',
+    cookiesFromBrowser: process.env.YTDLP_COOKIES_FROM_BROWSER || '',
+  },
 };
 
 module.exports = { env, required };

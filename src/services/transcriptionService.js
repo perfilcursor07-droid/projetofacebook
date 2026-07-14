@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
-const youtubedl = require('youtube-dl-exec');
+const youtubedlExec = require('youtube-dl-exec');
+const { runYtDlp } = require('./ytDlpAuth');
+const youtubedl = (url, flags) => runYtDlp(youtubedlExec, url, flags);
 const { env } = require('../config/env');
 const { extractAudioWav } = require('./ffmpegService');
 const { storageAbsolutePath } = require('./downloadService');

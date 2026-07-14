@@ -1,5 +1,7 @@
 const path = require('path');
-const youtubedl = require('youtube-dl-exec');
+const youtubedlExec = require('youtube-dl-exec');
+const { runYtDlp } = require('./ytDlpAuth');
+const youtubedl = (url, flags) => runYtDlp(youtubedlExec, url, flags);
 const ffmpegPath = require('ffmpeg-static');
 const Videos = require('../models/Videos');
 const { enqueue } = require('../workers/queue');
