@@ -1,12 +1,66 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/requireAuth');
+const { uploadMatterImage } = require('../middleware/uploadMatterImage');
 const AiMatters = require('../models/AiMatters');
 const materiaIaService = require('../services/materiaIaService');
-const { composeMatterArtwork } = require('../services/matterArtworkService');
+const {
+  composeMatterArtwork,
+  storeMatterSourceImage,
+  removeMatterSourceImage,
+} = require('../services/matterArtworkService');
 const { publishEditorialPhoto } = require('../services/editorialPublishService');
 
 const router = express.Router();
 router.use(requireAuth);
+
+router.post('/matters/:id/arte', (req, res, next) => {
+  uploadMatterImage(req, res, async (uploadError) => {
+    if (uploadError) {
+      return res.status(uploadError.status || 400).json({ error: uploadError.message });
+    }
+
+    let storedSource = null;
+    try {
+      const matterId = Number(req.params.id);
+      if (!Number.isInteger(matterId) || matterId < 1) {
+        return res.status(400).json({ error: 'ID da matéria inválido' });
+      }
+
+      const matter = await AiMatters.findById(matterId);
+      if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+        return res.status(404).json({ error: 'Matéria não encontrada' });
+      }
+      if (matter.status === 'publicado') {
+        return res.status(400).json({ error: 'A imagem de uma matéria publicada não pode ser alterada' });
+      }
+      if (!req.file) return res.status(400).json({ error: 'Selecione uma imagem para continuar' });
+
+      storedSource = await storeMatterSourceImage({
+        userId: req.session.userId,
+        matterId,
+        buffer: req.file.buffer,
+      });
+      const artwork = await composeMatterArtwork({
+        userId: req.session.userId,
+        matterId,
+        sourceUrl: storedSource.publicUrl,
+        title: String(req.body.titulo || matter.titulo || '').trim(),
+        force: true,
+      });
+
+      return res.json({
+        ok: true,
+        matter: artwork.matter,
+        imagemUrl: artwork.publicUrl,
+        hasLogo: artwork.hasLogo,
+      });
+    } catch (err) {
+      if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
+      if (err.status) return res.status(err.status).json({ error: err.message });
+      return next(err);
+    }
+  });
+});
 
 function pageId(body = {}) {
   const raw = body.facebookPageId ?? body.facebook_page_id;

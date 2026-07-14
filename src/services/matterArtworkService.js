@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const sharp = require('sharp');
 const AiMatters = require('../models/AiMatters');
 const Users = require('../models/Users');
 const { env } = require('../config/env');
@@ -18,6 +20,59 @@ function resolveArtworkPath(relativePath) {
   return absolute;
 }
 
+function resolveMatterSourcePath(publicUrl) {
+  const normalized = String(publicUrl || '').replace(/\\/g, '/');
+  if (!normalized.startsWith('/media/fontes/')) return null;
+  const storageRoot = path.resolve(env.storagePath);
+  const sourcesRoot = path.resolve(storageRoot, 'fontes');
+  const relativePath = normalized.slice('/media/'.length).replace(/\//g, path.sep);
+  const absolutePath = path.resolve(storageRoot, relativePath);
+  if (!absolutePath.startsWith(sourcesRoot + path.sep)) return null;
+  return absolutePath;
+}
+
+function removeMatterSourceImage(publicUrl) {
+  const absolutePath = resolveMatterSourcePath(publicUrl);
+  if (!absolutePath) return;
+  try {
+    if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
+  } catch (err) {
+    console.warn('removeMatterSourceImage:', err.message);
+  }
+}
+
+async function storeMatterSourceImage({ userId, matterId, buffer }) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) {
+    const err = new Error('Selecione uma imagem para continuar');
+    err.status = 400;
+    throw err;
+  }
+
+  const relativeDir = `fontes/user_${Number(userId)}`;
+  const fileName = `materia_${Number(matterId)}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.jpg`;
+  const relativePath = `${relativeDir}/${fileName}`;
+  const outputPath = path.resolve(env.storagePath, relativePath);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  try {
+    await sharp(buffer, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .rotate()
+      .resize(2400, 2400, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 92, chromaSubsampling: '4:4:4' })
+      .toFile(outputPath);
+  } catch (_err) {
+    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    const err = new Error('Não foi possível ler a imagem. Envie um arquivo PNG, JPG ou WebP válido.');
+    err.status = 400;
+    throw err;
+  }
+
+  return {
+    relativePath,
+    publicUrl: `/media/${relativePath.replace(/\\/g, '/')}`,
+  };
+}
+
 async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force = false }) {
   const matter = await AiMatters.findById(matterId);
   if (!matter || Number(matter.user_id) !== Number(userId)) {
@@ -31,21 +86,28 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
     (!matter.imagem_path && isRemoteUrl(matter.imagem_url) ? matter.imagem_url : null);
   if (!source) throw new Error('A matéria não possui foto de origem para criar a arte');
 
+  const user = await Users.findById(userId);
+  if (!user) throw new Error('Usuário da matéria não encontrado');
+  const { normalizeArtModel } = require('./editorialCardModels');
+  const modelId = normalizeArtModel(user.marca_modelo_arte);
   const currentFile = resolveArtworkPath(matter.imagem_path);
-  if (!force && currentFile && finalTitle === String(matter.titulo || '').trim()) {
-    const user = await Users.findById(userId);
+  if (
+    !force &&
+    currentFile &&
+    finalTitle === String(matter.titulo || '').trim() &&
+    matter.arte_modelo === modelId
+  ) {
     return {
       matter,
       relativePath: matter.imagem_path,
       publicUrl: matter.imagem_url,
       filePath: currentFile,
-      hasLogo: Boolean(user?.logo_path),
+      hasLogo: Boolean(user.logo_path),
+      modelId,
       reused: true,
     };
   }
 
-  const user = await Users.findById(userId);
-  if (!user) throw new Error('Usuário da matéria não encontrado');
   const card = await createEditorialCard({ sourceUrl: source, title: finalTitle, user });
 
   try {
@@ -54,6 +116,7 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
       imagem_path: card.relativePath,
       imagem_url: card.publicUrl,
       imagem_fonte_url: source,
+      arte_modelo: card.modelId,
       error_message: null,
     });
   } catch (err) {
@@ -64,6 +127,9 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
   if (matter.imagem_path && matter.imagem_path !== card.relativePath) {
     removeEditorialCard(matter.imagem_path);
   }
+  if (matter.imagem_fonte_url && matter.imagem_fonte_url !== source) {
+    removeMatterSourceImage(matter.imagem_fonte_url);
+  }
 
   return {
     ...card,
@@ -73,4 +139,9 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
   };
 }
 
-module.exports = { composeMatterArtwork, resolveArtworkPath };
+module.exports = {
+  composeMatterArtwork,
+  resolveArtworkPath,
+  storeMatterSourceImage,
+  removeMatterSourceImage,
+};

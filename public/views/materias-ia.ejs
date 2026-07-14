@@ -1,65 +1,15 @@
 <%- include('partials/app-start') %>
-<%
-  const mattersList = typeof matters !== 'undefined' && Array.isArray(matters) ? matters : [];
-  const statusLabels = {
-    rascunho: 'Rascunho',
-    pronto: 'Pronta',
-    agendado: 'Agendada',
-    publicado: 'Publicada',
-    erro: 'Erro',
-  };
-  const statusClass = {
-    rascunho: 'bg-slate-800 text-slate-300',
-    pronto: 'bg-sky-500/15 text-sky-300',
-    agendado: 'bg-amber-500/15 text-amber-300',
-    publicado: 'bg-emerald-500/15 text-emerald-300',
-    erro: 'bg-rose-500/15 text-rose-300',
-  };
-%>
 
   <main class="mx-auto max-w-8xl px-6 py-8">
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold text-white">Matérias IA</h1>
+        <h1 class="text-2xl font-semibold text-white">Gerar conteúdo IA</h1>
         <p class="mt-2 text-slate-400">Busque pautas, gere o texto, revise na tela da matéria e publique quando quiser.</p>
       </div>
-      <% if (mattersList.length) { %>
-        <a href="#minhas-materias" class="text-sm text-emerald-400 hover:text-emerald-300">Minhas matérias (<%= mattersList.length %>) ↓</a>
-      <% } %>
+      <a href="/minhas-materias" class="text-sm text-emerald-400 hover:text-emerald-300">Ver minhas matérias →</a>
     </div>
 
     <%- include('partials/materias-ia-panel') %>
-
-    <section id="minhas-materias" class="mt-10 scroll-mt-6">
-      <div class="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 class="text-lg font-semibold text-white">Minhas matérias</h2>
-          <p class="mt-1 text-sm text-slate-500">Rascunhos salvos para editar e publicar depois.</p>
-        </div>
-      </div>
-
-      <% if (!mattersList.length) { %>
-        <p class="mt-4 rounded-xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-400">
-          Nenhuma matéria gerada ainda. Escolha uma pauta acima e clique em “Gerar matéria do selecionado”.
-        </p>
-      <% } else { %>
-        <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <% mattersList.forEach((item) => {
-            const st = item.status || 'rascunho';
-          %>
-            <a href="/materias-ia/<%= item.id %>" class="group rounded-2xl border border-slate-800 bg-slate-900/60 p-4 transition hover:border-emerald-500/40 hover:bg-slate-900">
-              <div class="flex items-start justify-between gap-2">
-                <span class="rounded-full px-2.5 py-0.5 text-[10px] font-medium <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
-                <span class="text-[11px] text-slate-600"><%= item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '' %></span>
-              </div>
-              <h3 class="mt-3 line-clamp-2 text-sm font-semibold text-white group-hover:text-emerald-200"><%= item.titulo || 'Sem título' %></h3>
-              <p class="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-500"><%= (item.materia || '').slice(0, 140) %><%= (item.materia || '').length > 140 ? '…' : '' %></p>
-              <p class="mt-3 text-xs text-emerald-400/80">Abrir para editar →</p>
-            </a>
-          <% }) %>
-        </div>
-      <% } %>
-    </section>
   </main>
 
   <div id="mia-generating" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-6 backdrop-blur-sm" role="status" aria-live="polite">

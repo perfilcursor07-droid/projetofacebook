@@ -11,6 +11,7 @@ router.post('/gerar-lote', controller.gerarLote);
 router.get('/matters', controller.listarMaterias);
 router.put('/matters/:id', controller.atualizarMateria);
 router.patch('/matters/:id', controller.atualizarMateria);
+router.delete('/matters/:id', controller.removerMateria);
 router.post('/matters/:id/publicar', controller.publicar);
 router.post('/matters/:id/agendar', controller.agendar);
 router.post('/monitor', controller.monitorCriar);

@@ -18,6 +18,14 @@ const AiMatters = {
   update(id, data) {
     return db(this.table).where({ id }).update({ ...data, updated_at: db.fn.now() });
   },
+
+  delete(id) {
+    return db(this.table).where({ id }).del();
+  },
+
+  deleteByUser(id, userId) {
+    return db(this.table).where({ id, user_id: userId }).del();
+  },
 };
 
 module.exports = AiMatters;

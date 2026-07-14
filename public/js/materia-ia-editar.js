@@ -142,5 +142,95 @@
     }
   });
 
+  const imageInput = document.getElementById('matter-image-input');
+  const imagePreviewWrap = document.getElementById('matter-image-preview-wrap');
+  const imagePreview = document.getElementById('matter-image-preview');
+  const confirmImageButton = document.getElementById('btn-confirmar-imagem');
+  const cancelImageButton = document.getElementById('btn-cancelar-imagem');
+  let previewObjectUrl = null;
+
+  function releaseImagePreview() {
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
+
+  function clearImageSelection() {
+    releaseImagePreview();
+    if (imageInput) imageInput.value = '';
+    if (imagePreview) imagePreview.removeAttribute('src');
+    imagePreviewWrap?.classList.add('hidden');
+  }
+
+  imageInput?.addEventListener('change', () => {
+    releaseImagePreview();
+    const file = imageInput.files?.[0];
+    if (!file) {
+      clearImageSelection();
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      clearImageSelection();
+      setStatus('Escolha uma imagem PNG, JPG ou WebP', true);
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      clearImageSelection();
+      setStatus('A imagem deve ter no máximo 12 MB', true);
+      return;
+    }
+
+    previewObjectUrl = URL.createObjectURL(file);
+    imagePreview.src = previewObjectUrl;
+    imagePreviewWrap?.classList.remove('hidden');
+    setStatus('Confira a imagem e confirme para aplicar sua marca.');
+  });
+
+  cancelImageButton?.addEventListener('click', () => {
+    clearImageSelection();
+    setStatus('Troca de imagem cancelada.');
+  });
+
+  confirmImageButton?.addEventListener('click', async () => {
+    const file = imageInput?.files?.[0];
+    if (!file) {
+      setStatus('Escolha uma imagem para continuar', true);
+      return;
+    }
+
+    const originalLabel = confirmImageButton.textContent;
+    confirmImageButton.disabled = true;
+    confirmImageButton.textContent = 'Aplicando marca…';
+    setStatus('Gerando a nova arte com sua marca…');
+
+    try {
+      const formData = new FormData();
+      formData.append('imagem', file);
+      formData.append('titulo', tituloEl.value);
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao trocar a imagem');
+
+      if (data.imagemUrl && imgEl) {
+        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        imgWrap?.classList.remove('hidden');
+      }
+      clearImageSelection();
+      setStatus(
+        data.hasLogo
+          ? 'Nova imagem confirmada e marca aplicada ✓'
+          : 'Nova imagem confirmada com sua identidade visual (sem logomarca cadastrada) ✓'
+      );
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      confirmImageButton.disabled = false;
+      confirmImageButton.textContent = originalLabel;
+    }
+  });
+
+  window.addEventListener('beforeunload', releaseImagePreview);
   loadPages();
 })();

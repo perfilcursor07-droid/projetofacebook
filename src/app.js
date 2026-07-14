@@ -70,6 +70,7 @@ app.post('/login', async (req, res, next) => {
 
 app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Busca'));
 app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController').listPage);
+app.get('/minhas-materias', requireAuth, require('./controllers/materiasIaController').listMinhasMaterias);
 app.get('/materias-ia/:id', requireAuth, require('./controllers/materiasIaController').showMatter);
 app.get('/fila', requireAuth, (_req, res) => renderPage(res, 'fila', 'Fila'));
 app.get('/paginas', requireAuth, (_req, res) => renderPage(res, 'paginas', 'Páginas'));

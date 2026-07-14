@@ -52,7 +52,28 @@ async function assertPublicImageUrl(value) {
   return parsed.toString();
 }
 
+function resolveStoredSourcePath(value) {
+  const publicUrl = String(value || '').replace(/\\/g, '/');
+  if (!publicUrl.startsWith('/media/fontes/')) return null;
+
+  const storageRoot = path.resolve(env.storagePath);
+  const sourcesRoot = path.resolve(storageRoot, 'fontes');
+  const relativePath = publicUrl.slice('/media/'.length).replace(/\//g, path.sep);
+  const absolutePath = path.resolve(storageRoot, relativePath);
+  if (!absolutePath.startsWith(sourcesRoot + path.sep) || !fs.existsSync(absolutePath)) {
+    throw new Error('A imagem original escolhida não foi encontrada');
+  }
+  return absolutePath;
+}
+
 async function fetchImage(url) {
+  const storedSource = resolveStoredSourcePath(url);
+  if (storedSource) {
+    const stats = await fs.promises.stat(storedSource);
+    if (stats.size > MAX_IMAGE_BYTES) throw new Error('A imagem original excede o limite permitido');
+    return fs.promises.readFile(storedSource);
+  }
+
   const safeUrl = await assertPublicImageUrl(url);
   const response = await axios.get(safeUrl, {
     responseType: 'arraybuffer',
@@ -67,11 +88,10 @@ async function fetchImage(url) {
   return Buffer.from(response.data);
 }
 
-function wrapTitle(value) {
+function wrapTitle(value, maxChars = 27, maxLines = 5) {
   const words = String(value || '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR').split(' ');
   const lines = [];
   let current = '';
-  const maxChars = 27;
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word;
     if (candidate.length <= maxChars || !current) current = candidate;
@@ -81,19 +101,62 @@ function wrapTitle(value) {
     }
   }
   if (current) lines.push(current);
-  const limited = lines.slice(0, 5);
-  if (lines.length > 5) limited[4] = `${limited[4].replace(/[.,;:!?]?$/, '')}…`;
+  const limited = lines.slice(0, maxLines);
+  if (lines.length > maxLines) {
+    limited[maxLines - 1] = `${limited[maxLines - 1].replace(/[.,;:!?]?$/, '')}…`;
+  }
   return limited;
 }
 
-function buildOverlay({ title, category, footer, brandName, primary, secondary, hasLogo }) {
-  const lines = wrapTitle(title);
+function renderTitleLines(lines, { x, y, lineHeight, anchor = 'middle' }) {
+  return lines.map((line, index) => (
+    `<text x="${x}" y="${y + index * lineHeight}" text-anchor="${anchor}" class="title">${escapeXml(line)}</text>`
+  )).join('');
+}
+
+function buildOverlay({ title, category, footer, brandName, primary, secondary, hasLogo, model }) {
+  const { normalizeArtModel } = require('./editorialCardModels');
+  const modelId = normalizeArtModel(model);
+  const maxChars = modelId === 'faixa_classica' ? 27 : modelId === 'minimalista' ? 25 : 24;
+  const lines = wrapTitle(title, maxChars, 5);
   const fontSize = lines.length <= 3 ? 62 : lines.length === 4 ? 54 : 48;
   const lineHeight = Math.round(fontSize * 1.08);
-  const titleTop = 944;
-  const titleSvg = lines.map((line, index) => (
-    `<text x="540" y="${titleTop + index * lineHeight}" text-anchor="middle" class="title">${escapeXml(line)}</text>`
-  )).join('');
+  const safeCategory = escapeXml(category || 'ÚLTIMAS');
+  const safeFooter = escapeXml(footer || brandName || '');
+  let layout;
+
+  if (modelId === 'bloco_inferior') {
+    layout = `
+      <rect x="0" y="748" width="1080" height="602" fill="rgba(0,0,0,.74)"/>
+      <rect x="0" y="748" width="1080" height="16" fill="url(#accent)"/>
+      <text x="72" y="840" text-anchor="start" class="category">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: 72, y: 930, lineHeight, anchor: 'start' })}
+      <text x="72" y="1295" text-anchor="start" class="footer">${safeFooter}</text>`;
+  } else if (modelId === 'minimalista') {
+    layout = `
+      <rect x="58" y="805" width="380" height="74" rx="37" fill="url(#accent)"/>
+      <text x="248" y="855" text-anchor="middle" class="category category-dark">${safeCategory}</text>
+      <rect x="58" y="915" width="230" height="12" rx="6" fill="url(#accent)"/>
+      ${renderTitleLines(lines, { x: 58, y: 982, lineHeight, anchor: 'start' })}
+      <text x="58" y="1302" text-anchor="start" class="footer">${safeFooter}</text>`;
+  } else if (modelId === 'barra_lateral') {
+    layout = `
+      <rect x="58" y="785" width="18" height="454" rx="9" fill="url(#accent)"/>
+      <text x="108" y="850" text-anchor="start" class="category">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: 108, y: 934, lineHeight, anchor: 'start' })}
+      <text x="108" y="1298" text-anchor="start" class="footer">${safeFooter}</text>`;
+  } else {
+    const accentY = 882;
+    const accentHeight = 14;
+    const titleGap = 30;
+    const titleTop = accentY + accentHeight + titleGap + Math.round(fontSize * 0.78);
+    layout = `
+      <text x="540" y="844" text-anchor="middle" class="category">${safeCategory}</text>
+      <rect x="58" y="${accentY}" width="964" height="${accentHeight}" rx="7" fill="url(#accent)"/>
+      ${renderTitleLines(lines, { x: 540, y: titleTop, lineHeight })}
+      <text x="540" y="1310" text-anchor="middle" class="footer">${safeFooter}</text>`;
+  }
+
   const fallbackBrand = hasLogo ? '' : `
     <rect x="240" y="52" width="600" height="118" rx="28" fill="rgba(255,255,255,.88)"/>
     <text x="540" y="128" text-anchor="middle" class="brand">${escapeXml(brandName || 'MINHA MARCA')}</text>`;
@@ -115,16 +178,14 @@ function buildOverlay({ title, category, footer, brandName, primary, secondary, 
         <style>
           .brand { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: 50px; fill: #111827; }
           .category { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: 42px; letter-spacing: 2px; fill: #fff; filter: url(#shadow); }
+          .category-dark { fill: #111827; filter: none; }
           .title { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${fontSize}px; fill: #fff; filter: url(#shadow); }
           .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: 34px; letter-spacing: 1px; fill: ${primary}; filter: url(#shadow); }
         </style>
       </defs>
       <rect width="1080" height="1350" fill="url(#shade)"/>
       ${fallbackBrand}
-      <text x="540" y="862" text-anchor="middle" class="category">${escapeXml(category || 'ÚLTIMAS')}</text>
-      <rect x="58" y="890" width="964" height="18" rx="4" fill="url(#accent)"/>
-      ${titleSvg}
-      <text x="540" y="1310" text-anchor="middle" class="footer">${escapeXml(footer || brandName || '')}</text>
+      ${layout}
     </svg>
   `);
 }
@@ -150,6 +211,8 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   if (!title) throw new Error('Informe o título da arte');
   if (!user?.id) throw new Error('Usuário inválido para compor a arte');
 
+  const { normalizeArtModel } = require('./editorialCardModels');
+  const modelId = normalizeArtModel(user.marca_modelo_arte);
   const source = await fetchImage(sourceUrl);
   const logo = await buildLogoComposite(user.logo_path);
   const primary = normalizeColor(user.marca_cor_primaria, '#facc15');
@@ -163,6 +226,7 @@ async function createEditorialCard({ sourceUrl, title, user }) {
     primary,
     secondary,
     hasLogo: Boolean(logo),
+    model: modelId,
   });
 
   const relativeDir = `artes/user_${user.id}`;
@@ -187,6 +251,7 @@ async function createEditorialCard({ sourceUrl, title, user }) {
     width: WIDTH,
     height: HEIGHT,
     hasLogo: Boolean(logo),
+    modelId,
   };
 }
 

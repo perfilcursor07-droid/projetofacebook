@@ -215,6 +215,23 @@ async function listarMaterias(req, res, next) {
   }
 }
 
+async function removerMateria(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    await AiMatters.deleteByUser(matterId, req.session.userId);
+    res.json({ ok: true, id: matterId });
+  } catch (err) {
+    next(err);
+  }
+}
+
 function parseHashtags(value) {
   if (Array.isArray(value)) return value.map((t) => String(t).trim()).filter(Boolean);
   if (typeof value === 'string') {
@@ -335,10 +352,20 @@ async function showMatter(req, res, next) {
 
 async function listPage(req, res, next) {
   try {
-    const matters = await AiMatters.findByUser(req.session.userId, 30);
     return res.render('materias-ia', {
-      title: 'Matérias IA',
+      title: 'Gerar conteúdo IA',
       miaStandalone: true,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function listMinhasMaterias(req, res, next) {
+  try {
+    const matters = await AiMatters.findByUser(req.session.userId, 100);
+    return res.render('minhas-materias', {
+      title: 'Minhas matérias',
       matters,
     });
   } catch (err) {
@@ -441,9 +468,11 @@ module.exports = {
   gerarLote,
   publicar,
   listarMaterias,
+  removerMateria,
   atualizarMateria,
   showMatter,
   listPage,
+  listMinhasMaterias,
   agendar,
   monitorCriar,
   monitorLista,

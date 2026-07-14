@@ -1,0 +1,76 @@
+<%- include('partials/app-start') %>
+<%
+  const mattersList = typeof matters !== 'undefined' && Array.isArray(matters) ? matters : [];
+  const statusLabels = {
+    rascunho: 'Rascunho',
+    pronto: 'Pronta',
+    agendado: 'Agendada',
+    publicado: 'Publicada',
+    erro: 'Erro',
+  };
+  const statusClass = {
+    rascunho: 'bg-slate-800 text-slate-300',
+    pronto: 'bg-sky-500/15 text-sky-300',
+    agendado: 'bg-amber-500/15 text-amber-300',
+    publicado: 'bg-emerald-500/15 text-emerald-300',
+    erro: 'bg-rose-500/15 text-rose-300',
+  };
+%>
+
+  <main class="mx-auto max-w-8xl px-6 py-8">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-semibold text-white">Minhas matérias</h1>
+        <p class="mt-2 text-slate-400">Todas as matérias que você gerou — edite, publique ou remova.</p>
+      </div>
+      <a href="/materias-ia"
+        class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">
+        Gerar nova matéria
+      </a>
+    </div>
+
+    <% if (!mattersList.length) { %>
+      <p class="mt-8 rounded-xl border border-dashed border-slate-700 px-4 py-12 text-center text-sm text-slate-400">
+        Nenhuma matéria gerada ainda.
+        <a href="/materias-ia" class="mt-2 block text-emerald-400 hover:text-emerald-300">Ir para Gerar conteúdo IA →</a>
+      </p>
+    <% } else { %>
+      <p class="mt-6 text-sm text-slate-500"><%= mattersList.length %> matéria(s) salva(s)</p>
+      <ul id="mia-matters-list" class="mt-3 divide-y divide-slate-800 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/40">
+        <% mattersList.forEach((item) => {
+          const st = item.status || 'rascunho';
+          const preview = String(item.materia || '').replace(/\s+/g, ' ').trim();
+        %>
+          <li class="mia-matter-row flex flex-wrap items-start gap-3 px-4 py-3.5 transition hover:bg-slate-900/70" data-id="<%= item.id %>">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-full px-2.5 py-0.5 text-[10px] font-medium <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+                <span class="text-[11px] text-slate-600"><%= item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '' %></span>
+              </div>
+              <a href="/materias-ia/<%= item.id %>" class="mt-1.5 block text-sm font-semibold text-white hover:text-emerald-200">
+                <%= item.titulo || 'Sem título' %>
+              </a>
+              <% if (preview) { %>
+                <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500"><%= preview.slice(0, 180) %><%= preview.length > 180 ? '…' : '' %></p>
+              <% } %>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <a href="/materias-ia/<%= item.id %>"
+                class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500/50 hover:text-emerald-300">
+                Editar
+              </a>
+              <button type="button"
+                class="mia-matter-remove rounded-lg border border-rose-500/30 px-3 py-1.5 text-xs text-rose-300 transition hover:border-rose-400 hover:bg-rose-500/10"
+                data-id="<%= item.id %>"
+                data-titulo="<%= item.titulo || 'Sem título' %>">
+                Remover
+              </button>
+            </div>
+          </li>
+        <% }) %>
+      </ul>
+    <% } %>
+  </main>
+
+  <script src="/js/minhas-materias.js"></script>
+<%- include('partials/app-end') %>
