@@ -1,26 +1,47 @@
+const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const youtubedlPkg = require('youtube-dl-exec');
 const { runYtDlp } = require('./ytDlpAuth');
 const { env } = require('../config/env');
 const ffmpegPath = require('ffmpeg-static');
 
-// Usa binário do sistema se disponível (mais atualizado), senão fallback para o bundled
-const ytDlpBinary = (() => {
-  const custom = String(process.env.YTDLP_PATH || '').trim();
-  if (custom) return custom;
+/** Prefere o yt-dlp do sistema (PATH do PM2 costuma não achar /usr/local/bin). */
+function resolveYtDlpBinary() {
+  const candidates = [
+    String(process.env.YTDLP_PATH || '').trim(),
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      /* ignore */
+    }
+  }
+
   try {
-    const { execSync } = require('child_process');
-    const systemPath = execSync('which yt-dlp 2>/dev/null || where yt-dlp 2>nul', { encoding: 'utf8' }).trim().split('\n')[0];
-    if (systemPath) return systemPath;
-  } catch {}
+    const found = execSync('which yt-dlp 2>/dev/null || where yt-dlp 2>nul', {
+      encoding: 'utf8',
+    })
+      .trim()
+      .split(/\r?\n/)[0];
+    if (found) return found;
+  } catch {
+    /* ignore */
+  }
   return null;
-})();
+}
 
-const youtubedlExec = ytDlpBinary
-  ? youtubedlPkg.create(ytDlpBinary)
-  : youtubedlPkg;
-
+const ytDlpBinary = resolveYtDlpBinary();
+const youtubedlExec = ytDlpBinary ? youtubedlPkg.create(ytDlpBinary) : youtubedlPkg;
 const youtubedl = (url, flags) => runYtDlp(youtubedlExec, url, flags);
+
+if (env.nodeEnv === 'production') {
+  console.log(`[yt-dlp] binário: ${ytDlpBinary || 'bundled (youtube-dl-exec)'}`);
+}
 const Videos = require('../models/Videos');
 const { enqueue } = require('../workers/queue');
 const { storageAbsolutePath } = require('./downloadService');
@@ -53,17 +74,17 @@ async function fetchLinkMetadata(url) {
 function humanizeYtDlpError(err) {
   const raw = String(err?.stderr || err?.message || err || '');
   const lower = raw.toLowerCase();
-  if (lower.includes('sign in') || lower.includes('bot') || lower.includes('confirm you')) {
-    return 'YouTube bloqueou a leitura neste servidor (proteção anti-bot). Tente outro link, Shorts, ou suba o arquivo por upload.';
+  if (lower.includes('sign in') || lower.includes('not a bot') || lower.includes('confirm you')) {
+    return 'YouTube bloqueou a leitura neste servidor (proteção anti-bot). Atualize os cookies ou suba o arquivo por upload.';
   }
   if (lower.includes('private video') || lower.includes('private')) {
     return 'Vídeo privado — não é possível importar.';
   }
-  if (lower.includes('video unavailable') || lower.includes('not available')) {
-    return 'Vídeo indisponível nesta região ou foi removido.';
-  }
   if (lower.includes('requested format is not available') || lower.includes('no video formats')) {
-    return 'Nenhum formato de vídeo disponível — o vídeo pode estar bloqueado nesta região ou ter restrições.';
+    return 'Nenhum formato de vídeo disponível — cookies/JS runtime do yt-dlp podem estar faltando no servidor.';
+  }
+  if (lower.includes('video unavailable')) {
+    return 'Vídeo indisponível nesta região ou foi removido.';
   }
   if (lower.includes('unsupported url') || lower.includes('no video')) {
     return 'URL não suportada. Use link do YouTube/TikTok/vídeo direto.';
@@ -306,8 +327,7 @@ function queueLinkImport(video) {
       const dest = `videos/video_${video.id}.mp4`;
       await youtubedl(video.url_original, {
         output: storageAbsolutePath(dest),
-        // Formatos flexíveis; ffmpeg remuxa para mp4
-        format: 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b',
+        // Sem -f rígido: no datacenter o yt-dlp escolhe o melhor stream disponível
         mergeOutputFormat: 'mp4',
         remuxVideo: 'mp4',
         ffmpegLocation: path.dirname(ffmpegPath),

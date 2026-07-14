@@ -15,6 +15,15 @@ function configError(message) {
   return error;
 }
 
+function resolveNodeBinary() {
+  const configured = String(env.ytDlp.jsRuntimePath || '').trim();
+  if (configured && fs.existsSync(configured)) return configured;
+  for (const candidate of ['/usr/local/bin/node', '/usr/bin/node']) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return process.execPath || 'node';
+}
+
 function getYtDlpAuthFlags() {
   const configuredFile = String(env.ytDlp.cookiesFile || '').trim();
   if (configuredFile) {
@@ -56,21 +65,17 @@ function getYtDlpAuthFlags() {
 }
 
 /**
- * Flags comuns para YouTube em 2026:
- * - Deno é o runtime padrão; no servidor usamos Node (precisa habilitar).
- * - Clients android/tv costumam funcionar melhor em IPs de datacenter.
+ * Flags comuns para YouTube em 2026.
+ * Deno é o default do yt-dlp; em produção costuma faltar — habilitamos Node.
  * @see https://github.com/yt-dlp/yt-dlp/wiki/EJS
  */
 function getYtDlpBaseFlags() {
-  const nodePath = String(env.ytDlp.jsRuntimePath || process.execPath || 'node').trim();
+  const nodePath = resolveNodeBinary();
   const jsRuntime = String(env.ytDlp.jsRuntime || `node:${nodePath}`).trim();
 
   return {
-    // limpa o default (só deno) e ativa node
     noJsRuntimes: true,
     jsRuntimes: jsRuntime,
-    // clients alternativos evitam SABR / challenge mais pesado
-    extractorArgs: 'youtube:player_client=android,tv_embedded,web',
     retries: 3,
     socketTimeout: 30,
   };
@@ -81,7 +86,6 @@ function runYtDlp(executable, url, flags = {}) {
   const base = getYtDlpBaseFlags();
   const merged = { ...base, ...auth, ...flags };
 
-  // Se a chamada já passou jsRuntimes próprio, não force o noJsRuntimes conflitante
   if (flags.jsRuntimes && !Object.prototype.hasOwnProperty.call(flags, 'noJsRuntimes')) {
     delete merged.noJsRuntimes;
   }
@@ -96,7 +100,7 @@ function runYtDlp(executable, url, flags = {}) {
       error.stderr = message;
     } else if (raw.includes('n challenge') || raw.includes('javascript runtime') || raw.includes('js runtime')) {
       const message =
-        'YouTube bloqueou o download (desafio JS). Confirme yt-dlp atualizado e --js-runtimes node no servidor.';
+        'YouTube bloqueou o download (desafio JS). Confirme yt-dlp do sistema e --js-runtimes node.';
       error.message = message;
       error.stderr = message;
     }
@@ -104,4 +108,4 @@ function runYtDlp(executable, url, flags = {}) {
   });
 }
 
-module.exports = { getYtDlpAuthFlags, getYtDlpBaseFlags, runYtDlp };
+module.exports = { getYtDlpAuthFlags, getYtDlpBaseFlags, resolveNodeBinary, runYtDlp };
