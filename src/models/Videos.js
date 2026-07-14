@@ -11,6 +11,10 @@ const Videos = {
     return db(this.table).where({ user_id: userId, pexels_id: String(pexelsId) }).first();
   },
 
+  findByUrl(userId, url) {
+    return db(this.table).where({ user_id: userId, url_original: url }).first();
+  },
+
   findByUser(userId, filters = {}) {
     const query = db(this.table).where({ user_id: userId }).orderBy('created_at', 'desc');
     if (filters.status) query.andWhere({ status: filters.status });
@@ -23,6 +27,10 @@ const Videos = {
 
   update(id, data) {
     return db(this.table).where({ id }).update(data);
+  },
+
+  remove(id) {
+    return db(this.table).where({ id }).del();
   },
 
   countByStatus(userId) {

@@ -3,8 +3,13 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { env } = require('../config/env');
 
-const GRAPH = 'https://graph.facebook.com/v21.0';
-const GRAPH_VIDEO = 'https://graph-video.facebook.com/v21.0';
+const GRAPH_VERSION = 'v21.0';
+const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const GRAPH_VIDEO = `https://graph-video.facebook.com/${GRAPH_VERSION}`;
+const RUPLOAD = `https://rupload.facebook.com/video-upload/${GRAPH_VERSION}`;
+
+// Limite oficial da Reels API: 30 publicações via API por página a cada 24h.
+const REELS_DAILY_LIMIT = 30;
 
 function assertConfigured() {
   if (!env.facebook.appId || !env.facebook.appSecret) {
@@ -130,6 +135,105 @@ async function publishPhoto({ pageId, pageAccessToken, filePath, caption }) {
   });
 }
 
+/**
+ * Publica um post de texto (ou link) no feed de uma página.
+ * @returns {Promise<{ id: string }>}
+ */
+async function publishText({ pageId, pageAccessToken, message, link }) {
+  return withRetry(async () => {
+    const params = { access_token: pageAccessToken, message };
+    if (link) params.link = link;
+    const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, null, { params });
+    return data;
+  });
+}
+
+async function getVideoStatus(videoId, pageAccessToken) {
+  const { data } = await axios.get(`${GRAPH}/${videoId}`, {
+    params: { access_token: pageAccessToken, fields: 'status' },
+  });
+  return data.status || {};
+}
+
+/**
+ * Aguarda o processamento do vídeo do Reel terminar.
+ * Lança erro se alguma fase reportar problema.
+ */
+async function waitReelReady(videoId, pageAccessToken, { timeoutMs = 5 * 60 * 1000 } = {}) {
+  const startedAt = Date.now();
+  for (;;) {
+    const status = await getVideoStatus(videoId, pageAccessToken);
+    const videoStatus = status.video_status;
+
+    const phaseError =
+      status.processing_phase?.error?.message ||
+      status.publishing_phase?.error?.message ||
+      (Array.isArray(status.uploading_phase?.errors) && status.uploading_phase.errors[0]?.message);
+    if (videoStatus === 'error' || videoStatus === 'upload_failed' || phaseError) {
+      throw new Error(`Processamento do Reel falhou: ${phaseError || videoStatus}`);
+    }
+    if (videoStatus === 'ready' || status.publishing_phase?.publish_status === 'published') {
+      return status;
+    }
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Tempo esgotado aguardando o processamento do Reel');
+    }
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+}
+
+/**
+ * Publica um Reel em uma página (Reels Publishing API, 3 etapas):
+ * 1. start no /video_reels  2. upload binário no rupload  3. finish + PUBLISHED
+ * @returns {Promise<{ id: string, video_id: string }>}
+ */
+async function publishReel({ pageId, pageAccessToken, filePath, description, title }) {
+  // Etapa 1: inicializa a sessão de upload
+  const start = await withRetry(async () => {
+    const { data } = await axios.post(`${GRAPH}/${pageId}/video_reels`, {
+      upload_phase: 'start',
+      access_token: pageAccessToken,
+    });
+    return data;
+  });
+  const videoId = start.video_id;
+
+  // Etapa 2: envia o binário para rupload.facebook.com
+  const fileSize = fs.statSync(filePath).size;
+  await withRetry(async () => {
+    const { data } = await axios.post(`${RUPLOAD}/${videoId}`, fs.createReadStream(filePath), {
+      headers: {
+        Authorization: `OAuth ${pageAccessToken}`,
+        offset: '0',
+        file_size: String(fileSize),
+        'Content-Type': 'application/octet-stream',
+      },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      timeout: 10 * 60 * 1000,
+    });
+    if (!data.success) throw new Error('Upload do Reel não confirmado pela API');
+    return data;
+  });
+
+  // Etapa 3: finaliza e publica
+  await withRetry(async () => {
+    const params = {
+      access_token: pageAccessToken,
+      video_id: videoId,
+      upload_phase: 'finish',
+      video_state: 'PUBLISHED',
+      description: description || '',
+    };
+    if (title) params.title = title;
+    const { data } = await axios.post(`${GRAPH}/${pageId}/video_reels`, null, { params });
+    return data;
+  });
+
+  await waitReelReady(videoId, pageAccessToken);
+  return { id: videoId, video_id: videoId };
+}
+
 function graphErrorMessage(err) {
   return (
     err.response?.data?.error?.message ||
@@ -146,6 +250,9 @@ module.exports = {
   getPages,
   publishVideo,
   publishPhoto,
+  publishReel,
+  publishText,
   graphErrorMessage,
   assertConfigured,
+  REELS_DAILY_LIMIT,
 };

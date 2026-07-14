@@ -9,30 +9,44 @@
 <body class="min-h-screen bg-slate-950 text-slate-100">
   <%- include('partials/header') %>
 
-  <main class="mx-auto max-w-6xl px-4 py-10">
-    <div class="flex flex-wrap items-end justify-between gap-3">
+  <main class="mx-auto max-w-6xl px-4 py-6">
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <div>
-        <h1 class="text-2xl font-semibold text-white">Fila de processamento</h1>
-        <p class="mt-2 text-slate-400">Baixe, corte e acompanhe o status. Cortes de até 90s (Reels).</p>
+        <h1 class="text-xl font-semibold text-white">Fila</h1>
+        <p class="text-xs text-slate-500">Cortes até 90s · fala automática após o corte</p>
       </div>
-      <button
-        id="refresh-btn"
-        type="button"
-        class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
-      >
+      <button id="refresh-btn" type="button"
+        class="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-emerald-500 hover:text-emerald-300">
         Atualizar
       </button>
     </div>
 
-    <div id="global-msg" class="mt-4 hidden rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-200"></div>
+    <div id="global-msg" class="mt-3 hidden rounded border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-200"></div>
 
-    <h2 class="mt-8 text-lg font-medium text-white">Vídeos</h2>
-    <div id="videos-status" class="mt-2 text-sm text-slate-400">Carregando…</div>
-    <div id="videos-list" class="mt-4 space-y-3"></div>
+    <details class="mt-4 rounded-lg border border-slate-800 bg-slate-900/40">
+      <summary class="cursor-pointer px-3 py-2 text-xs text-slate-300 hover:text-white">Publicar texto · dicas Facebook</summary>
+      <div class="space-y-3 border-t border-slate-800 p-3">
+        <form id="text-post-form" class="flex flex-col gap-2">
+          <textarea name="texto" rows="2" required maxlength="63206" placeholder="Texto do post…"
+            class="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-600"></textarea>
+          <div class="flex flex-wrap items-center gap-2">
+            <span id="text-post-pages"></span>
+            <input type="url" name="link" placeholder="Link (opcional)"
+              class="w-48 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 placeholder:text-slate-600" />
+            <button type="submit" class="rounded bg-[#1877F2] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[#166FE5] disabled:opacity-50">Publicar</button>
+          </div>
+        </form>
+        <p class="text-[10px] leading-relaxed text-slate-500">Reels 9:16 · 3–90s · ≥10s para monetização · conteúdo original · máx. 30 Reels/página/24h</p>
+      </div>
+    </details>
 
-    <h2 class="mt-10 text-lg font-medium text-white">Imagens</h2>
-    <div id="imagens-status" class="mt-2 text-sm text-slate-400">Carregando…</div>
-    <div id="imagens-list" class="mt-4 space-y-3"></div>
+    <h2 class="mt-5 text-sm font-medium text-white">Vídeos</h2>
+    <div id="videos-status" class="mt-1 text-xs text-slate-500">Carregando…</div>
+    <div id="videos-list" class="mt-2 space-y-2"></div>
+
+    <h2 class="mt-6 text-sm font-medium text-white">Imagens</h2>
+    <div id="imagens-status" class="mt-1 text-xs text-slate-500">Carregando…</div>
+    <div id="imagens-list" class="mt-2 space-y-2"></div>
   </main>
 
   <script>
@@ -40,14 +54,14 @@
     const globalMsg = document.getElementById('global-msg');
 
     const statusColors = {
-      pendente: 'bg-amber-500/15 text-amber-300',
-      baixado: 'bg-sky-500/15 text-sky-300',
-      cortado: 'bg-violet-500/15 text-violet-300',
-      publicado: 'bg-emerald-500/15 text-emerald-300',
-      erro: 'bg-rose-500/15 text-rose-300',
-      processando: 'bg-amber-500/15 text-amber-300',
-      pronto: 'bg-emerald-500/15 text-emerald-300',
-      sugerido: 'bg-slate-500/15 text-slate-300',
+      pendente: 'background:rgba(245,158,11,.15);color:#fcd34d;',
+      baixado: 'background:rgba(14,165,233,.15);color:#7dd3fc;',
+      cortado: 'background:rgba(139,92,246,.15);color:#c4b5fd;',
+      publicado: 'background:rgba(16,185,129,.15);color:#6ee7b7;',
+      erro: 'background:rgba(244,63,94,.15);color:#fda4af;',
+      processando: 'background:rgba(245,158,11,.15);color:#fcd34d;',
+      pronto: 'background:rgba(16,185,129,.15);color:#6ee7b7;',
+      sugerido: 'background:rgba(100,116,139,.15);color:#cbd5e1;',
     };
 
     function escapeHtml(text) {
@@ -59,7 +73,8 @@
     }
 
     function badge(status) {
-      return `<span class="rounded-full px-2.5 py-0.5 text-xs ${statusColors[status] || 'bg-slate-700 text-slate-300'}">${escapeHtml(status)}</span>`;
+      const color = statusColors[status] || 'background:rgba(51,65,85,.5);color:#cbd5e1;';
+      return `<span style="display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;line-height:1.2;${color}">${escapeHtml(status)}</span>`;
     }
 
     function showError(msg) {
@@ -72,62 +87,132 @@
 
     function pageSelectHtml() {
       return `
-        <select name="facebook_page_id" class="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100">
+        <select name="facebook_page_id" style="border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:4px 8px;font-size:12px;">
           ${fbPages.map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)}</option>`).join('')}
         </select>`;
     }
 
-    function publishFormHtml(kind, id) {
-      if (!fbPages.length) {
-        return `<a href="/paginas" class="text-xs text-sky-400 hover:text-sky-300">Conecte uma página para publicar →</a>`;
-      }
+    function publishFormHtml(kind, id, defaultLegenda = '') {
+      const isClip = kind === 'clip';
+      const publishControls = fbPages.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            ${pageSelectHtml()}
+            ${isClip ? `
+            <select name="modo" style="border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:8px;padding:6px 10px;font-size:12px;">
+              <option value="reel">Reel</option>
+              <option value="video">Vídeo</option>
+            </select>` : ''}
+            <button type="submit" style="background:#1877F2;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">Publicar</button>
+          </div>`
+        : `<a href="/paginas" style="font-size:12px;color:#38bdf8;">Conecte uma página para publicar →</a>`;
+
       return `
-        <form class="publish-form flex flex-wrap items-center gap-2" data-kind="${kind}" data-id="${id}">
-          ${pageSelectHtml()}
-          <input type="text" name="legenda" placeholder="Legenda do post (opcional)"
-            class="w-48 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-600" />
-          <button type="submit" class="rounded-md bg-[#1877F2] px-3 py-1 text-xs font-medium text-white hover:bg-[#166FE5] disabled:opacity-50">Publicar</button>
+        <form class="publish-form" data-kind="${kind}" data-id="${id}" style="display:grid;gap:8px;">
+          <label style="display:grid;gap:4px;">
+            <span style="font-size:11px;font-weight:600;color:#a78bfa;letter-spacing:.02em;">MATÉRIA</span>
+            <textarea name="legenda" rows="${isClip ? 5 : 3}" placeholder="A matéria aparece aqui após gerar…"
+              style="width:100%;border:1px solid #334155;background:#0b1220;color:#f1f5f9;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;resize:vertical;">${escapeHtml(defaultLegenda)}</textarea>
+          </label>
+          ${publishControls}
         </form>`;
     }
 
-    function clipHtml(clip) {
+    function materiaStatusBadge(status) {
+      if (!status || status === 'pendente') return '';
+      const map = {
+        gerando: ['processando', 'gerando…'],
+        pronta: ['pronto', 'matéria ok'],
+        erro: ['erro', 'erro matéria'],
+      };
+      const [key, label] = map[status] || ['sugerido', status];
+      const color = statusColors[key] || 'background:rgba(51,65,85,.5);color:#cbd5e1;';
+      return `<span style="display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;${color}">${escapeHtml(label)}</span>`;
+    }
+
+    function cleanTranscript(text) {
+      return String(text || '')
+        .replace(/^Kind:\s*\w+\s*Language:\s*\w+\s*/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function clipHtml(clip, index) {
+      const canAi = clip.status === 'pronto' || clip.status === 'publicado';
+      const canRetry = clip.status === 'processando' || clip.status === 'erro';
+      const extracting = clip.materia_status === 'gerando';
+      const materia = String(clip.legenda_sugerida || '').trim();
+      const fala = cleanTranscript(clip.transcricao);
+      const inicio = Number(clip.inicio_segundo);
+      const fim = Number(clip.fim_segundo);
+      const dur = Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : null;
+
+      const preview = clip.caminho_arquivo
+        ? `<video src="/media/${escapeHtml(clip.caminho_arquivo)}" controls playsinline preload="metadata"
+            style="width:100%;height:210px;object-fit:contain;border-radius:12px;background:#000;display:block;"></video>`
+        : `<div style="width:100%;height:210px;border-radius:12px;background:#020617;color:#64748b;font-size:12px;display:flex;align-items:center;justify-content:center;">${clip.status === 'processando' ? 'Processando…' : 'Sem arquivo'}</div>`;
+
       return `
-        <div class="flex flex-wrap items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm">
-          ${badge(clip.status)}
-          <span class="text-slate-300">${Number(clip.inicio_segundo)}s → ${Number(clip.fim_segundo)}s</span>
-          <span class="text-xs text-slate-500">${escapeHtml(clip.aspect_ratio || '9:16')}</span>
-          ${clip.caminho_arquivo
-            ? `<a href="/media/${escapeHtml(clip.caminho_arquivo)}" target="_blank" class="text-emerald-400 hover:text-emerald-300">Ver clipe</a>`
-            : ''}
-          ${clip.erro_mensagem ? `<span class="text-xs text-rose-300">${escapeHtml(clip.erro_mensagem)}</span>` : ''}
-          ${clip.status === 'pronto' ? publishFormHtml('clip', clip.id) : ''}
+        <div style="border:1px solid #1e293b;border-radius:16px;background:#0f172a;padding:14px;display:flex;flex-direction:column;gap:12px;">
+          ${preview}
+
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+            <div>
+              <div style="font-size:15px;font-weight:600;color:#fff;">Corte #${index + 1} · ${inicio}–${fim}s${dur != null ? ` · ${dur}s` : ''}</div>
+              <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;">${badge(clip.status)}${materiaStatusBadge(clip.materia_status)}</div>
+            </div>
+            <button type="button" class="action-btn" data-action="delete-clip" data-id="${clip.id}"
+              style="border:0;background:transparent;color:#fb7185;font-size:12px;cursor:pointer;">Excluir</button>
+          </div>
+
+          ${extracting && !fala ? `<div style="font-size:12px;color:#fcd34d;">Extraindo fala…</div>` : ''}
+          ${fala ? `<details style="font-size:12px;color:#94a3b8;"><summary style="cursor:pointer;color:#64748b;">Ver fala</summary><p style="margin-top:6px;line-height:1.45;">${escapeHtml(fala)}</p></details>` : ''}
+          ${clip.erro_mensagem ? `<div style="font-size:12px;color:#fda4af;">${escapeHtml(clip.erro_mensagem)}</div>` : ''}
+          ${canRetry ? `<button type="button" class="ai-btn" data-action="retry-clip" data-id="${clip.id}" style="width:fit-content;border:1px solid #92400e;background:transparent;color:#fde68a;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;">Retentar corte</button>` : ''}
+
+          ${canAi ? `
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <input type="text" class="clip-tema" data-clip-tema="${clip.id}" placeholder="Tema da matéria (opcional)"
+              style="min-width:160px;flex:1;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:8px;padding:8px 10px;font-size:13px;" />
+            <button type="button" class="ai-btn" data-action="materia-clip" data-id="${clip.id}"
+              style="background:#8b5cf6;color:#fff;border:0;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;">${materia ? 'Refazer' : 'Gerar matéria'}</button>
+            ${!fala ? `<button type="button" class="ai-btn" data-action="transcribe-clip" data-id="${clip.id}" style="border:1px solid #334155;background:transparent;color:#94a3b8;border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;">Extrair fala</button>` : ''}
+          </div>
+          ${publishFormHtml('clip', clip.id, materia)}` : ''}
         </div>`;
     }
 
     function videoActionsHtml(v) {
       if (v.status === 'pendente' || v.status === 'erro') {
-        return `<button type="button" class="action-btn rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50" data-action="download-video" data-id="${v.id}">Baixar</button>`;
+        return `<button type="button" class="action-btn" data-action="download-video" data-id="${v.id}"
+          style="background:#10b981;color:#020617;border:0;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;">Baixar</button>`;
       }
       if (v.status === 'baixado' || v.status === 'cortado') {
-        const max = v.duracao || 600;
+        const max = Number(v.duracao) > 0 ? Number(v.duracao) : 600;
+        if (max < 3) return `<div style="font-size:12px;color:#fcd34d;">Vídeo menor que 3s</div>`;
+        const defaultFim = Math.min(max, 90);
+        const estimativa = Math.floor(max / 90) + (max % 90 >= 3 ? 1 : 0);
         return `
-          <form class="clip-form flex flex-wrap items-end gap-2" data-id="${v.id}">
-            <label class="text-xs text-slate-400">Início (s)
-              <input type="number" name="inicio" min="0" max="${max}" value="0" required
-                class="mt-1 block w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100" />
+          <form class="clip-form" data-id="${v.id}" data-max="${max}" style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;">
+            <label style="font-size:11px;color:#94a3b8;">Início
+              <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
+                style="display:block;margin-top:3px;width:72px;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:6px 8px;font-size:13px;" />
             </label>
-            <label class="text-xs text-slate-400">Fim (s)
-              <input type="number" name="fim" min="1" max="${max}" value="${Math.min(max, 30)}" required
-                class="mt-1 block w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100" />
+            <label style="font-size:11px;color:#94a3b8;">Fim
+              <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
+                style="display:block;margin-top:3px;width:72px;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:6px 8px;font-size:13px;" />
             </label>
-            <label class="text-xs text-slate-400">Formato
-              <select name="aspect_ratio" class="mt-1 block rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100">
-                <option value="9:16">9:16 (Reels)</option>
+            <label style="font-size:11px;color:#94a3b8;">Formato
+              <select name="aspect_ratio" style="display:block;margin-top:3px;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:6px 8px;font-size:13px;">
+                <option value="9:16">9:16</option>
                 <option value="1:1">1:1</option>
                 <option value="original">Original</option>
               </select>
             </label>
-            <button type="submit" class="rounded-lg bg-violet-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-400 disabled:opacity-50">Gerar corte</button>
+            <button type="submit" style="background:#8b5cf6;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;">Cortar</button>
+            <button type="button" class="action-btn" data-action="clip-auto" data-id="${v.id}" data-aspect="9:16"
+              style="border:1px solid #7c3aed;background:rgba(139,92,246,.12);color:#ddd6fe;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">
+              Auto 90s (~${estimativa})
+            </button>
           </form>`;
       }
       return '';
@@ -135,48 +220,68 @@
 
     function videoHtml(v) {
       const clips = v.clips || [];
+      const durMin = v.duracao ? Math.round(v.duracao / 60) + ' min' : '—';
       return `
-        <article class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div class="flex flex-col gap-4 sm:flex-row">
-            <div class="h-24 w-full shrink-0 overflow-hidden rounded-lg bg-slate-950 sm:w-40">
-              ${v.thumbnail ? `<img src="${escapeHtml(v.thumbnail)}" alt="" class="h-full w-full object-cover" />` : ''}
+        <article style="border:1px solid #1e293b;border-radius:14px;background:rgba(15,23,42,.7);padding:12px;">
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="width:120px;height:68px;flex-shrink:0;overflow:hidden;border-radius:8px;background:#020617;">
+              ${v.thumbnail ? `<img src="${escapeHtml(v.thumbnail)}" alt="" style="width:100%;height:100%;object-fit:cover;" />` : ''}
             </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                ${badge(v.status)}
-                <span class="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">${escapeHtml(v.origem || 'pexels')}</span>
-                ${v.pexels_id ? `<span class="text-xs text-slate-500">Pexels #${escapeHtml(v.pexels_id)}</span>` : ''}
-                ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" class="text-xs text-emerald-400 hover:text-emerald-300">Ver original</a>` : ''}
+            <div style="min-width:0;flex:1;">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+                <div style="min-width:0;">
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+                    ${badge(v.status)}
+                    <span style="font-size:11px;color:#94a3b8;">${escapeHtml(v.origem || 'pexels')} · ${durMin}</span>
+                    ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" style="font-size:11px;color:#34d399;">original</a>` : ''}
+                  </div>
+                  <div style="margin-top:6px;font-size:14px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(v.titulo || v.termo_busca)}</div>
+                  <div style="margin-top:2px;font-size:12px;color:#64748b;">${escapeHtml(v.autor || '')}</div>
+                </div>
+                <button type="button" class="action-btn" data-action="delete-video" data-id="${v.id}"
+                  style="border:0;background:transparent;color:#fb7185;font-size:12px;cursor:pointer;flex-shrink:0;">Excluir</button>
               </div>
-              <p class="mt-2 truncate text-sm text-white">${escapeHtml(v.titulo || '“' + v.termo_busca + '”')}</p>
-              <p class="mt-1 text-xs text-slate-500">${escapeHtml(v.autor || '—')} · ${v.duracao || '—'}s</p>
-              ${v.erro_mensagem ? `<p class="mt-1 text-xs text-rose-300">${escapeHtml(v.erro_mensagem)}</p>` : ''}
-              <div class="mt-3">${videoActionsHtml(v)}</div>
+              ${v.erro_mensagem ? `<div style="margin-top:6px;font-size:12px;color:#fda4af;">${escapeHtml(v.erro_mensagem)}</div>` : ''}
+              <div style="margin-top:10px;">${videoActionsHtml(v)}</div>
             </div>
           </div>
-          ${clips.length ? `<div class="mt-4 space-y-2">${clips.map(clipHtml).join('')}</div>` : ''}
+          ${clips.length ? `
+          <div style="margin-top:16px;border-top:1px solid #1e293b;padding-top:16px;">
+            <div style="margin-bottom:12px;font-size:13px;font-weight:500;color:#cbd5e1;">Cortes (${clips.length})</div>
+            <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));">
+              ${clips.map((c, i) => clipHtml(c, i)).join('')}
+            </div>
+          </div>` : ''}
         </article>`;
     }
 
     function imagemHtml(i) {
+      const canPublish = i.status === 'baixado' || i.status === 'publicado';
       return `
-        <article class="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:flex-row sm:items-center">
-          <div class="h-24 w-full shrink-0 overflow-hidden rounded-lg bg-slate-950 sm:w-40">
-            ${i.thumbnail ? `<img src="${escapeHtml(i.thumbnail)}" alt="" class="h-full w-full object-cover" />` : ''}
+        <article style="display:flex;gap:12px;border:1px solid #1e293b;border-radius:14px;background:rgba(15,23,42,.7);padding:12px;align-items:flex-start;">
+          <div style="width:72px;height:72px;flex-shrink:0;overflow:hidden;border-radius:8px;background:#020617;">
+            ${i.thumbnail ? `<img src="${escapeHtml(i.thumbnail)}" alt="" style="width:100%;height:100%;object-fit:cover;" />` : ''}
           </div>
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2">
+          <div style="min-width:0;flex:1;display:grid;gap:6px;">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
               ${badge(i.status)}
-              <span class="text-xs text-slate-500">Pexels #${escapeHtml(i.pexels_id)}</span>
-              ${i.caminho_local ? `<a href="/media/${escapeHtml(i.caminho_local)}" target="_blank" class="text-xs text-emerald-400 hover:text-emerald-300">Ver arquivo</a>` : ''}
+              ${materiaStatusBadge(i.materia_status)}
+              ${i.caminho_local ? `<a href="/media/${escapeHtml(i.caminho_local)}" target="_blank" style="font-size:11px;color:#34d399;">arquivo</a>` : ''}
             </div>
-            <p class="mt-2 truncate text-sm text-white">“${escapeHtml(i.termo_busca)}”</p>
-            <p class="mt-1 text-xs text-slate-500">${escapeHtml(i.autor || '—')} · ${i.largura && i.altura ? i.largura + '×' + i.altura : 'foto'}</p>
-            ${i.erro_mensagem ? `<p class="mt-1 text-xs text-rose-300">${escapeHtml(i.erro_mensagem)}</p>` : ''}
+            <div style="font-size:13px;font-weight:600;color:#fff;">“${escapeHtml(i.termo_busca)}”</div>
+            <div style="font-size:12px;color:#64748b;">${escapeHtml(i.autor || '—')} · ${i.largura && i.altura ? i.largura + '×' + i.altura : 'foto'}</div>
+            ${i.erro_mensagem ? `<div style="font-size:12px;color:#fda4af;">${escapeHtml(i.erro_mensagem)}</div>` : ''}
             ${i.status === 'pendente' || i.status === 'erro'
-              ? `<div class="mt-3"><button type="button" class="action-btn rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50" data-action="download-imagem" data-id="${i.id}">Baixar</button></div>`
+              ? `<button type="button" class="action-btn" data-action="download-imagem" data-id="${i.id}" style="width:fit-content;background:#10b981;color:#020617;border:0;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;">Baixar</button>`
               : ''}
-            ${i.status === 'baixado' ? `<div class="mt-3">${publishFormHtml('imagem', i.id)}</div>` : ''}
+            ${canPublish ? `
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+              <input type="text" class="img-tema" data-img-tema="${i.id}" placeholder="Tipo de matéria" value="${escapeHtml(i.prompt_materia || '')}"
+                style="min-width:160px;flex:1;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:6px 8px;font-size:12px;" />
+              <button type="button" class="ai-btn" data-action="materia-imagem" data-id="${i.id}"
+                style="background:#8b5cf6;color:#fff;border:0;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;">Matéria</button>
+            </div>
+            ${publishFormHtml('imagem', i.id, i.materia || '')}` : ''}
           </div>
         </article>`;
     }
@@ -213,31 +318,153 @@
         const imagens = iData.imagens || [];
         iStatus.textContent = imagens.length + ' imagem(ns)';
         iList.innerHTML = imagens.length ? imagens.map(imagemHtml).join('') : emptyHtml('Nenhuma imagem na fila ainda.');
+
+        const textPages = document.getElementById('text-post-pages');
+        textPages.innerHTML = fbPages.length
+          ? pageSelectHtml()
+          : '<a href="/paginas" class="text-xs text-sky-400 hover:text-sky-300">Conecte uma página para publicar →</a>';
       } catch (err) {
         showError(err.message || 'Erro ao carregar fila');
       }
     }
 
     document.addEventListener('click', async (e) => {
+      const aiBtn = e.target.closest('.ai-btn');
+      if (aiBtn) {
+        const { action, id } = aiBtn.dataset;
+        let url = '';
+        let body = {};
+
+        if (action === 'transcribe-clip') {
+          url = '/api/clips/' + id + '/transcribe';
+        } else if (action === 'retry-clip') {
+          url = '/api/clips/' + id + '/retry';
+        } else if (action === 'materia-clip') {
+          url = '/api/clips/' + id + '/materia';
+          const temaInput = document.querySelector('[data-clip-tema="' + id + '"]');
+          body.tema = temaInput ? temaInput.value.trim() : '';
+        } else if (action === 'materia-imagem') {
+          url = '/api/imagens/' + id + '/materia';
+          const temaInput = document.querySelector('[data-img-tema="' + id + '"]');
+          body.tema = temaInput ? temaInput.value.trim() : '';
+          if (!body.tema) {
+            showError('Informe o tipo/tema da matéria (ex.: curiosidade, dica)');
+            return;
+          }
+        } else {
+          return;
+        }
+
+        aiBtn.disabled = true;
+        const prev = aiBtn.textContent;
+        aiBtn.textContent = 'Fila…';
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha na operação de IA');
+          setTimeout(loadFila, 2500);
+        } catch (err) {
+          showError(err.message);
+        } finally {
+          aiBtn.disabled = false;
+          aiBtn.textContent = prev;
+        }
+        return;
+      }
+
       const btn = e.target.closest('.action-btn');
       if (!btn) return;
 
       const { action, id } = btn.dataset;
-      const url = action === 'download-video'
-        ? '/api/videos/' + id + '/download'
-        : '/api/imagens/' + id + '/download';
-
+      const prevLabel = btn.textContent;
       btn.disabled = true;
-      btn.textContent = 'Enfileirado…';
 
       try {
+        if (action === 'delete-clip') {
+          if (!confirm('Excluir este corte?')) return;
+          const res = await fetch('/api/clips/' + id, { method: 'DELETE' });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha ao excluir corte');
+          loadFila();
+          return;
+        }
+
+        if (action === 'delete-video') {
+          if (!confirm('Excluir este vídeo e todos os cortes?')) return;
+          const res = await fetch('/api/videos/' + id, { method: 'DELETE' });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha ao excluir vídeo');
+          loadFila();
+          return;
+        }
+
+        if (action === 'clip-auto') {
+          btn.textContent = 'Gerando cortes…';
+          const aspectSelect = btn.closest('article')?.querySelector('.clip-form select[name="aspect_ratio"]');
+          const res = await fetch('/api/videos/' + id + '/clip-auto', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              intervalo: 90,
+              aspect_ratio: aspectSelect?.value || btn.dataset.aspect || '9:16',
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha ao gerar cortes automáticos');
+          setTimeout(loadFila, 2000);
+          return;
+        }
+
+        const url = action === 'download-video'
+          ? '/api/videos/' + id + '/download'
+          : '/api/imagens/' + id + '/download';
+
+        btn.textContent = 'Enfileirado…';
         const res = await fetch(url, { method: 'POST' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha ao enfileirar download');
         setTimeout(loadFila, 2500);
       } catch (err) {
+        showError(err.message);
+      } finally {
         btn.disabled = false;
-        btn.textContent = 'Baixar';
+        btn.textContent = prevLabel;
+      }
+    });
+
+    document.getElementById('text-post-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const select = form.querySelector('select[name="facebook_page_id"]');
+      if (!select) return showError('Conecte uma página do Facebook antes de publicar');
+
+      const submitBtn = form.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Publicando…';
+
+      try {
+        const res = await fetch('/api/publications/text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            facebook_page_id: Number(select.value),
+            texto: form.texto.value.trim(),
+            link: form.link.value.trim(),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao publicar texto');
+        form.texto.value = '';
+        form.link.value = '';
+        submitBtn.textContent = 'Na fila de publicação';
+        setTimeout(() => { submitBtn.disabled = false; submitBtn.textContent = 'Publicar texto'; }, 4000);
+      } catch (err) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Publicar texto';
         showError(err.message);
       }
     });
@@ -248,6 +475,10 @@
         e.preventDefault();
         const { kind, id } = pubForm.dataset;
         const submitBtn = pubForm.querySelector('button[type="submit"]');
+        if (!submitBtn || !pubForm.facebook_page_id) {
+          showError('Conecte uma página do Facebook para publicar');
+          return;
+        }
         submitBtn.disabled = true;
         submitBtn.textContent = 'Publicando…';
 
@@ -256,16 +487,22 @@
           : '/api/imagens/' + id + '/publish';
 
         try {
+          const body = {
+            facebook_page_id: Number(pubForm.facebook_page_id.value),
+            legenda: pubForm.legenda.value.trim(),
+          };
+          if (kind === 'clip') {
+            body.modo = pubForm.modo?.value || 'reel';
+            body.titulo = pubForm.titulo?.value?.trim() || '';
+          }
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              facebook_page_id: Number(pubForm.facebook_page_id.value),
-              legenda: pubForm.legenda.value.trim(),
-            }),
+            body: JSON.stringify(body),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Falha ao publicar');
+          if (data.avisos && data.avisos.length) showError('Aviso: ' + data.avisos.join(' · '));
           submitBtn.textContent = 'Na fila de publicação';
           setTimeout(loadFila, 4000);
         } catch (err) {
@@ -281,6 +518,23 @@
       e.preventDefault();
 
       const id = form.dataset.id;
+      const inicio = Number(form.inicio.value);
+      const fim = Number(form.fim.value);
+      const duracaoCorte = fim - inicio;
+
+      if (!Number.isFinite(inicio) || !Number.isFinite(fim) || fim <= inicio) {
+        showError('Informe início e fim válidos (fim deve ser maior que início)');
+        return;
+      }
+      if (duracaoCorte < 3) {
+        showError('O corte precisa ter no mínimo 3 segundos (exigência do Facebook Reels). Ex.: início 0 e fim 15.');
+        return;
+      }
+      if (duracaoCorte > 90) {
+        showError('O corte máximo é de 90 segundos');
+        return;
+      }
+
       const submitBtn = form.querySelector('button[type="submit"]');
       submitBtn.disabled = true;
 
@@ -289,8 +543,8 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            inicio: Number(form.inicio.value),
-            fim: Number(form.fim.value),
+            inicio,
+            fim,
             aspect_ratio: form.aspect_ratio.value,
           }),
         });

@@ -1,6 +1,14 @@
 const pexelsService = require('../services/pexelsService');
 const Imagens = require('../models/Imagens');
 const processingService = require('../services/processingService');
+const deepseekService = require('../services/deepseekService');
+const { enqueue } = require('../workers/queue');
+
+function httpError(message, status) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
 
 /** Enfileira o download do arquivo da imagem. */
 async function download(req, res, next) {
@@ -119,9 +127,64 @@ async function selectImage(req, res, next) {
   }
 }
 
+/** Gera matéria com DeepSeek para acompanhar a imagem no mesmo post. body.tema obrigatório. */
+async function gerarMateria(req, res, next) {
+  try {
+    const imagem = await Imagens.findById(req.params.id);
+    if (!imagem || imagem.user_id !== req.session.userId) {
+      throw httpError('Imagem não encontrada', 404);
+    }
+    if (imagem.status !== 'baixado' && imagem.status !== 'publicado') {
+      throw httpError('Baixe a imagem antes de gerar a matéria', 422);
+    }
+
+    const tema = String(req.body.tema || req.body.prompt || '').trim();
+    if (!tema) throw httpError('Informe o tipo/tema da matéria (ex.: curiosidade, dica, notícia)', 400);
+
+    deepseekService.assertDeepseek();
+
+    await Imagens.update(imagem.id, {
+      prompt_materia: tema,
+      materia_status: 'gerando',
+      erro_mensagem: null,
+    });
+
+    const meta = typeof imagem.metadata === 'string'
+      ? JSON.parse(imagem.metadata || '{}')
+      : imagem.metadata || {};
+
+    enqueue(`materia imagem ${imagem.id}`, async () => {
+      try {
+        const gerado = await deepseekService.gerarMateriaImagem({
+          promptUsuario: tema,
+          descricaoImagem: meta.alt || null,
+          autor: imagem.autor,
+          termo: imagem.termo_busca,
+        });
+        await Imagens.update(imagem.id, {
+          materia: gerado.materia,
+          materia_status: 'pronta',
+          erro_mensagem: null,
+        });
+      } catch (err) {
+        await Imagens.update(imagem.id, {
+          materia_status: 'erro',
+          erro_mensagem: `Matéria falhou: ${String(err.message || err).slice(0, 400)}`,
+        });
+        throw err;
+      }
+    });
+
+    res.status(202).json({ queued: true, imagemId: imagem.id, message: 'Geração de matéria enfileirada' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   search,
   selectImage,
   download,
+  gerarMateria,
 };

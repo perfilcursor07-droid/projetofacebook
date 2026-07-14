@@ -56,6 +56,7 @@ app.use('/api/imagens', require('./routes/imagens'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/facebook', require('./routes/facebook'));
 app.use('/api/clips', require('./routes/clips'));
+app.use('/api/publications', require('./routes/publications'));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {

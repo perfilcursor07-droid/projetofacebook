@@ -7,6 +7,7 @@ router.get('/', imagensController.list);
 router.get('/search', imagensController.search);
 router.post('/:pexelsId/select', imagensController.selectImage);
 router.post('/:id/download', imagensController.download);
+router.post('/:id/materia', imagensController.gerarMateria);
 router.post('/:id/publish', require('../controllers/publicationsController').publishImage);
 
 module.exports = router;

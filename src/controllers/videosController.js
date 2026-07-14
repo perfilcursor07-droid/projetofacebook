@@ -4,7 +4,7 @@ const importService = require('../services/importService');
 const Videos = require('../models/Videos');
 const VideoClips = require('../models/VideoClips');
 const processingService = require('../services/processingService');
-const { MAX_CLIP_SECONDS, probe } = require('../services/ffmpegService');
+const { MAX_CLIP_SECONDS, MIN_CLIP_SECONDS, probe } = require('../services/ffmpegService');
 const { storageAbsolutePath } = require('../services/downloadService');
 
 /** Registra um vídeo enviado por upload (já está no disco via multer). */
@@ -53,6 +53,11 @@ async function importLink(req, res, next) {
       throw err;
     }
 
+    const existing = await Videos.findByUrl(req.session.userId, url);
+    if (existing) {
+      return res.json({ video: existing, created: false, queued: existing.status === 'pendente' });
+    }
+
     let meta = {};
     try {
       meta = await importService.fetchLinkMetadata(url);
@@ -66,21 +71,21 @@ async function importLink(req, res, next) {
     const [id] = await Videos.create({
       user_id: req.session.userId,
       origem: 'link',
-      termo_busca: meta.extractor ? meta.extractor.toLowerCase() : 'link',
-      titulo: meta.titulo,
+      termo_busca: (req.body.termo || meta.extractor || 'link').toString().slice(0, 255),
+      titulo: meta.titulo || req.body.titulo || null,
       url_original: url,
-      thumbnail: meta.thumbnail,
+      thumbnail: meta.thumbnail || req.body.thumbnail || null,
       duracao: meta.duracao,
       autor: meta.autor,
       autor_url: meta.autorUrl,
       status: 'pendente',
-      metadata: { extractor: meta.extractor },
+      metadata: { extractor: meta.extractor, fonte: req.body.fonte || null },
     });
 
     const video = await Videos.findById(id);
     importService.queueLinkImport(video);
 
-    res.status(202).json({ video, queued: true });
+    res.status(202).json({ video, queued: true, created: true });
   } catch (err) {
     next(err);
   }
@@ -174,6 +179,11 @@ async function clip(req, res, next) {
       err.status = 400;
       throw err;
     }
+    if (fim - inicio < MIN_CLIP_SECONDS) {
+      const err = new Error(`Corte mínimo de ${MIN_CLIP_SECONDS} segundos (exigência do Facebook Reels)`);
+      err.status = 400;
+      throw err;
+    }
     if (video.duracao && inicio >= video.duracao) {
       const err = new Error(`Início além da duração do vídeo (${video.duracao}s)`);
       err.status = 400;
@@ -198,15 +208,107 @@ async function clip(req, res, next) {
   }
 }
 
+/**
+ * Gera cortes automáticos de até 90s cobrindo o vídeo inteiro
+ * (0-90, 90-180, …). Trechos finais com menos de 3s são descartados.
+ */
+async function clipAuto(req, res, next) {
+  try {
+    const video = await Videos.findById(req.params.id);
+    if (!video || video.user_id !== req.session.userId) {
+      const err = new Error('Vídeo não encontrado');
+      err.status = 404;
+      throw err;
+    }
+    if (!video.caminho_local) {
+      const err = new Error('Baixe o vídeo antes de gerar cortes');
+      err.status = 422;
+      throw err;
+    }
+
+    const duracao = Number(video.duracao);
+    if (!Number.isFinite(duracao) || duracao < MIN_CLIP_SECONDS) {
+      const err = new Error('Duração do vídeo inválida ou menor que 3 segundos');
+      err.status = 422;
+      throw err;
+    }
+
+    const aspectRatio = ['9:16', '1:1', 'original'].includes(req.body.aspect_ratio)
+      ? req.body.aspect_ratio
+      : '9:16';
+    const step = Math.min(
+      MAX_CLIP_SECONDS,
+      Math.max(MIN_CLIP_SECONDS, Number(req.body.intervalo) || MAX_CLIP_SECONDS)
+    );
+
+    const ranges = [];
+    for (let start = 0; start < duracao; start += step) {
+      const end = Math.min(duracao, start + step);
+      if (end - start < MIN_CLIP_SECONDS) break;
+      ranges.push({ inicio: start, fim: end });
+    }
+
+    if (!ranges.length) {
+      const err = new Error('Não foi possível montar cortes de pelo menos 3 segundos');
+      err.status = 422;
+      throw err;
+    }
+
+    // Limite de segurança para vídeos longos (ex.: 3536s ≈ 40 cortes de 90s)
+    const MAX_AUTO_CLIPS = 60;
+    const selected = ranges.slice(0, MAX_AUTO_CLIPS);
+
+    const createdClips = [];
+    for (const range of selected) {
+      const [clipId] = await VideoClips.create({
+        video_id: video.id,
+        inicio_segundo: range.inicio,
+        fim_segundo: range.fim,
+        aspect_ratio: aspectRatio,
+        status: 'processando',
+      });
+      const created = await VideoClips.findById(clipId);
+      processingService.queueClipGeneration(created, video);
+      createdClips.push(created);
+    }
+
+    res.status(202).json({
+      queued: true,
+      total: createdClips.length,
+      truncado: ranges.length > MAX_AUTO_CLIPS,
+      intervalo: step,
+      clips: createdClips,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function search(req, res, next) {
   try {
     const termo = req.query.termo || req.query.q || '';
     const page = req.query.page;
     const perPage = req.query.per_page || req.query.perPage;
+    const fonte = String(req.query.fonte || 'pexels').toLowerCase();
+
+    if (fonte === 'youtube') {
+      const result = await importService.searchYoutube(termo, {
+        limit: perPage || 40,
+      });
+      return res.json(result);
+    }
+
+    if (fonte === 'tiktok') {
+      const result = await importService.searchTiktok(termo, {
+        limit: perPage || 24,
+      });
+      return res.json(result);
+    }
 
     const result = await pexelsService.searchVideos(termo, { page, perPage });
-    res.json(result);
+    res.json({ ...result, fonte: 'pexels' });
   } catch (err) {
+    if (err.status) return next(err);
     if (err.response?.status === 401 || err.response?.status === 403) {
       err.status = 502;
       err.message = 'Falha de autenticação na Pexels. Verifique PEXELS_API_KEY.';
@@ -216,6 +318,9 @@ async function search(req, res, next) {
     } else if (err.response) {
       err.status = 502;
       err.message = err.response.data?.error || 'Erro ao consultar a Pexels API';
+    } else if (err.stderr || /yt-dlp|youtube/i.test(err.message || '')) {
+      err.status = 502;
+      err.message = `Falha na busca: ${String(err.stderr || err.message).slice(0, 300)}`;
     }
     next(err);
   }
@@ -280,12 +385,37 @@ async function selectVideo(req, res, next) {
   }
 }
 
+/** Remove vídeo, cortes e arquivos locais. */
+async function removeVideo(req, res, next) {
+  try {
+    const video = await Videos.findById(req.params.id);
+    if (!video || video.user_id !== req.session.userId) {
+      const err = new Error('Vídeo não encontrado');
+      err.status = 404;
+      throw err;
+    }
+
+    const clips = await VideoClips.findByVideo(video.id);
+    for (const clip of clips) {
+      processingService.safeUnlink(clip.caminho_arquivo);
+    }
+    processingService.safeUnlink(video.caminho_local);
+    await Videos.remove(video.id);
+
+    res.json({ deleted: true, id: video.id, clipsRemovidos: clips.length });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   search,
   selectVideo,
   download,
   clip,
+  clipAuto,
   upload,
   importLink,
+  removeVideo,
 };

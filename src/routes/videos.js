@@ -19,5 +19,7 @@ router.post('/import', videosController.importLink);
 router.post('/:pexelsId/select', videosController.selectVideo);
 router.post('/:id/download', videosController.download);
 router.post('/:id/clip', videosController.clip);
+router.post('/:id/clip-auto', videosController.clipAuto);
+router.delete('/:id', videosController.removeVideo);
 
 module.exports = router;

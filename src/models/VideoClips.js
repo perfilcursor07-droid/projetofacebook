@@ -12,7 +12,11 @@ const VideoClips = {
   },
 
   findByVideoIds(videoIds) {
-    return db(this.table).whereIn('video_id', videoIds).orderBy('created_at', 'desc');
+    return db(this.table).whereIn('video_id', videoIds).orderBy([
+      { column: 'video_id', order: 'asc' },
+      { column: 'inicio_segundo', order: 'asc' },
+      { column: 'id', order: 'asc' },
+    ]);
   },
 
   create(data) {
@@ -25,6 +29,10 @@ const VideoClips = {
 
   update(id, data) {
     return db(this.table).where({ id }).update(data);
+  },
+
+  remove(id) {
+    return db(this.table).where({ id }).del();
   },
 };
 
