@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const youtubedl = require('youtube-dl-exec');
 const { env } = require('../config/env');
 const { extractAudioWav } = require('./ffmpegService');
@@ -8,21 +8,59 @@ const { storageAbsolutePath } = require('./downloadService');
 
 const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/transcribe.py');
 
-function stripVtt(content) {
-  return content
-    .replace(/\ufeff/g, '')
-    .replace(/^WEBVTT.*$/gim, '')
-    .replace(/NOTE[\s\S]*?(?=\n\n|\n$)/g, '')
-    .replace(/\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}.*$/gm, '')
-    .replace(/^\d+\s*$/gm, '')
+function cleanVttText(value) {
+  return String(value || '')
     .replace(/<[^>]+>/g, '')
-    .replace(/\n{2,}/g, '\n')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .filter((line, i, arr) => line !== arr[i - 1])
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseVttTimestamp(value) {
+  const parts = String(value || '').trim().replace(',', '.').split(':');
+  if (parts.length < 2 || parts.length > 3) return NaN;
+  const seconds = Number(parts.pop());
+  const minutes = Number(parts.pop());
+  const hours = parts.length ? Number(parts.pop()) : 0;
+  if (![hours, minutes, seconds].every(Number.isFinite)) return NaN;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function parseVtt(content) {
+  const normalized = String(content || '')
+    .replace(/\ufeff/g, '')
+    .replace(/\r\n?/g, '\n');
+  const segments = [];
+
+  for (const block of normalized.split(/\n{2,}/)) {
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    const timingIndex = lines.findIndex((line) => line.includes('-->'));
+    if (timingIndex < 0) continue;
+
+    const [startRaw, endPart] = lines[timingIndex].split('-->');
+    const start = parseVttTimestamp(startRaw);
+    const end = parseVttTimestamp(String(endPart || '').trim().split(/\s+/)[0]);
+    const text = cleanVttText(lines.slice(timingIndex + 1).join(' '));
+    if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+
+    const previous = segments[segments.length - 1];
+    if (previous && previous.text === text) {
+      previous.end = Math.max(previous.end, end);
+      continue;
+    }
+    segments.push({ start, end, text });
+  }
+
+  const text = segments
+    .map((segment) => segment.text)
+    .filter((line, index, all) => line !== all[index - 1])
     .join(' ')
     .trim();
+
+  return { text, segments };
 }
 
 /**
@@ -50,7 +88,6 @@ async function trySubtitlesFromUrl(url) {
     const files = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.vtt'));
     if (!files.length) return null;
 
-    // Prefere pt / pt-BR
     files.sort((a, b) => {
       const score = (name) =>
         /pt-?br/i.test(name) ? 0 : /pt/i.test(name) ? 1 : /en/i.test(name) ? 2 : 3;
@@ -58,9 +95,13 @@ async function trySubtitlesFromUrl(url) {
     });
 
     const raw = fs.readFileSync(path.join(tmpDir, files[0]), 'utf8');
-    const text = stripVtt(raw);
-    if (!text || text.length < 20) return null;
-    return { text, source: 'yt-dlp-subtitles', language: files[0].includes('.en') ? 'en' : 'pt' };
+    const parsed = parseVtt(raw);
+    if (!parsed.text || parsed.text.length < 20) return null;
+    return {
+      ...parsed,
+      source: 'yt-dlp-subtitles',
+      language: files[0].includes('.en') ? 'en' : 'pt',
+    };
   } catch {
     return null;
   } finally {
@@ -72,83 +113,120 @@ async function trySubtitlesFromUrl(url) {
   }
 }
 
-function runPythonTranscribe(wavPath) {
-  const attempts =
+function canRunPython(cmd, args = ['--version']) {
+  try {
+    const result = spawnSync(cmd, args, {
+      windowsHide: true,
+      encoding: 'utf8',
+      timeout: 8000,
+      env: process.env,
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve o interpretador Python disponível.
+ * Preferência: PYTHON_PATH > python > py -3 > python3
+ * Evita forçar py -3.10 (quebra se só houver 3.11/3.12/3.13).
+ */
+function resolvePythonCommand() {
+  const configured = (env.pythonPath || '').trim();
+  if (configured && canRunPython(configured, ['--version'])) {
+    return { cmd: configured, prefixArgs: [] };
+  }
+
+  const candidates =
     process.platform === 'win32'
       ? [
-          { cmd: 'py', args: ['-3.10', SCRIPT_PATH, wavPath, 'small'] },
-          { cmd: 'python', args: [SCRIPT_PATH, wavPath, 'small'] },
-          { cmd: 'py', args: [SCRIPT_PATH, wavPath, 'small'] },
-          { cmd: 'python3', args: [SCRIPT_PATH, wavPath, 'small'] },
+          { cmd: 'python', prefixArgs: [] },
+          { cmd: 'py', prefixArgs: ['-3'] },
+          { cmd: 'python3', prefixArgs: [] },
         ]
       : [
-          { cmd: 'python3', args: [SCRIPT_PATH, wavPath, 'small'] },
-          { cmd: 'python', args: [SCRIPT_PATH, wavPath, 'small'] },
+          { cmd: 'python3', prefixArgs: [] },
+          { cmd: 'python', prefixArgs: [] },
         ];
 
-  return new Promise((resolve, reject) => {
-    let idx = 0;
-    let lastErr;
+  for (const candidate of candidates) {
+    const probeArgs =
+      candidate.prefixArgs.length > 0
+        ? [...candidate.prefixArgs, '--version']
+        : ['--version'];
+    if (canRunPython(candidate.cmd, probeArgs)) {
+      return candidate;
+    }
+  }
 
-    function attempt() {
-      if (idx >= attempts.length) {
+  return null;
+}
+
+function runPythonTranscribe(wavPath) {
+  const python = resolvePythonCommand();
+  if (!python) {
+    return Promise.reject(
+      new Error(
+        'Python não encontrado. Instale Python 3.9+ e rode: pip install -r scripts/requirements.txt (ou defina PYTHON_PATH no .env)'
+      )
+    );
+  }
+
+  const args = [...python.prefixArgs, SCRIPT_PATH, wavPath, 'small'];
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(python.cmd, args, { windowsHide: true, env: process.env });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+
+    child.on('error', (err) => {
+      reject(
+        new Error(
+          `Falha ao iniciar Python (${python.cmd}): ${err.message}. Defina PYTHON_PATH no .env ou rode: pip install -r scripts/requirements.txt`
+        )
+      );
+    });
+
+    child.on('close', (code) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(stdout.trim() || '{}');
+      } catch {
+        const launcherHint = /No suitable Python runtime|PYLAUNCHER/i.test(stderr)
+          ? ' O launcher `py` não achou a versão pedida — use `python` no PATH ou PYTHON_PATH=C:\\\\Python313\\\\python.exe'
+          : '';
         return reject(
-          lastErr ||
-            new Error(
-              'Python não encontrado no PATH. Instale Python 3.9+ e rode: pip install -r scripts/requirements.txt'
-            )
+          new Error((stderr.slice(0, 400) || 'Saída inválida do Whisper') + launcherHint)
         );
       }
 
-      const { cmd, args } = attempts[idx];
-      idx += 1;
-      const child = spawn(cmd, args, { windowsHide: true, env: process.env });
-
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (d) => {
-        stdout += d.toString();
+      if (code !== 0 || parsed.error) {
+        return reject(
+          new Error(
+            parsed.error ||
+              stderr.slice(0, 400) ||
+              `Whisper falhou (code ${code})`
+          )
+        );
+      }
+      const text = String(parsed.text || '').trim();
+      // Áudio sem fala: não é erro fatal — deixa o chamador decidir (análise IA usa título)
+      resolve({
+        text,
+        language: parsed.language || null,
+        source: 'faster-whisper',
+        segments: parsed.segments || [],
+        empty: !text || parsed.empty === true,
       });
-      child.stderr.on('data', (d) => {
-        stderr += d.toString();
-      });
-
-      child.on('error', (err) => {
-        lastErr = err;
-        attempt();
-      });
-
-      child.on('close', (code) => {
-        let parsed;
-        try {
-          parsed = JSON.parse(stdout.trim() || '{}');
-        } catch {
-          lastErr = new Error(stderr.slice(0, 400) || 'Saída inválida do Whisper');
-          // Se o executável rodou mas a saída é inválida, não adianta mudar de python
-          return reject(lastErr);
-        }
-
-        if (parsed.error && /não instalado|not installed|No module named/i.test(parsed.error)) {
-          lastErr = new Error(parsed.error);
-          return attempt();
-        }
-
-        if (code !== 0 || parsed.error) {
-          return reject(new Error(parsed.error || stderr.slice(0, 400) || `Whisper falhou (code ${code})`));
-        }
-        if (!parsed.text) {
-          return reject(new Error('Whisper não detectou fala no áudio'));
-        }
-        resolve({
-          text: String(parsed.text).trim(),
-          language: parsed.language || null,
-          source: 'faster-whisper',
-          segments: parsed.segments || [],
-        });
-      });
-    }
-
-    attempt();
+    });
   });
 }
 
@@ -186,4 +264,4 @@ async function transcribeClip({ clipPath, sourceUrl }) {
   }
 }
 
-module.exports = { transcribeClip, trySubtitlesFromUrl };
+module.exports = { transcribeClip, trySubtitlesFromUrl, resolvePythonCommand, parseVtt };

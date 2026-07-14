@@ -10,11 +10,11 @@ pm2 logs --lines 50
 Servidor Local Baixar
 git pull origin feature/portal-globo
 npm install
-npm run db:migrate
+npm run migrate
 npm run seed
 npm run dev
 
 SUBIR GIT
 git add .
 git commit -m "feat: sua mensagem aqui"
-git push origin feature/portal-globo
+git push origin

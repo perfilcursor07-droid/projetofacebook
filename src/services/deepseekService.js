@@ -111,27 +111,84 @@ async function chatJson(userContent, temperature = 0.78) {
   return parseArtigoJson(raw);
 }
 
+function normalizeForCompare(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[#*_`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Detecta se a matéria é só (ou quase) a transcrição colada. */
+function materiaCopiaTranscricao(materia, transcricao) {
+  const a = normalizeForCompare(materia);
+  const b = normalizeForCompare(transcricao);
+  if (!a || !b || b.length < 40) return false;
+  if (a === b) return true;
+  if (a.includes(b.slice(0, Math.min(120, b.length)))) return true;
+  if (b.includes(a.slice(0, Math.min(120, a.length))) && a.length > b.length * 0.7) return true;
+
+  const wordsA = new Set(a.split(' ').filter((w) => w.length > 3));
+  const wordsB = b.split(' ').filter((w) => w.length > 3);
+  if (wordsB.length < 12) return false;
+  let hit = 0;
+  for (const w of wordsB) {
+    if (wordsA.has(w)) hit += 1;
+  }
+  return hit / wordsB.length >= 0.72;
+}
+
+function isTranscricaoInutil(transcricao) {
+  const t = String(transcricao || '').trim();
+  if (!t) return true;
+  return /^\[(sem fala|falha)/i.test(t);
+}
+
 async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
-  if (!transcricao || !String(transcricao).trim()) {
-    const err = new Error('Transcrição vazia — extraia a fala do clipe antes');
+  if (isTranscricaoInutil(transcricao)) {
+    const err = new Error(
+      'Não há fala útil neste clipe. Informe um tema e tente de novo, ou use um vídeo com narração/voz.'
+    );
     err.status = 422;
     throw err;
   }
 
-  const userContent = [
-    'Crie uma matéria/legenda ORIGINAL para um Reel no Facebook com base na fala do vídeo.',
+  const basePrompt = [
+    'Crie uma matéria/legenda ORIGINAL para um Reel no Facebook.',
+    'PROIBIDO colar ou parafrasear linha a linha a transcrição. Reescreva como redator de Página.',
+    'Estrutura: gancho (1 frase) + desenvolvimento (2–4 frases) + fechamento + hashtags.',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
     titulo ? `Título/contexto do vídeo de origem: ${titulo}` : null,
     idioma ? `Idioma detectado da fala: ${idioma}` : null,
-    'Transcrição da fala (use só como referência, NÃO copie):',
+    'Abaixo está APENAS referência de conteúdo (NÃO copie o texto):',
     '---',
-    String(transcricao).slice(0, 12000),
+    String(transcricao).slice(0, 8000),
     '---',
   ]
     .filter(Boolean)
     .join('\n');
 
-  return chatJson(userContent, sortearTemperatura(false));
+  let artigo = await chatJson(basePrompt, sortearTemperatura(false));
+
+  if (materiaCopiaTranscricao(artigo.materia, transcricao)) {
+    const retryPrompt = [
+      basePrompt,
+      '',
+      'ALERTA: sua resposta anterior copiou a transcrição. Reescreva 100% com palavras novas.',
+      'Não use as mesmas sequências de frases da fala. Mude a ordem das ideias.',
+    ].join('\n');
+    artigo = await chatJson(retryPrompt, 0.9);
+  }
+
+  if (materiaCopiaTranscricao(artigo.materia, transcricao)) {
+    const err = new Error(
+      'A IA devolveu texto muito parecido com a transcrição. Clique em Gerar matéria de novo ou informe um tema.'
+    );
+    err.status = 502;
+    throw err;
+  }
+
+  return artigo;
 }
 
 async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo }) {
@@ -164,7 +221,10 @@ ${blocoRegrasFacebook(faixa)}
 Formato Facebook (obrigatório):
 - Campo "materia" = texto puro da legenda/matéria (SEM HTML, SEM meta description, SEM keywords SEO).
 - Campo "hashtags" = 3 a 6 termos sem #.
-- Campo "termos_imagem" = 2 a 4 palavras em inglês para buscar foto de stock (ex.: ["church choir","gospel concert"]).
+- Campo "termos_imagem" = 2 a 4 consultas específicas para encontrar uma foto realmente relacionada.
+  - Se houver pessoas, use primeiro os nomes completos e exatos em português (ex.: ["Silas Malafaia Flávio Bolsonaro","Silas Malafaia","Flávio Bolsonaro"]).
+  - Não troque pessoas citadas por conceitos genéricos como "church", "politics" ou "gospel".
+  - Use termos de stock em inglês somente quando a pauta não citar pessoa, organização ou lugar específico.
 - NÃO invente fatos, nomes, cargos, números ou citações que não estejam nas fontes de apuração.
 
 ${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização.' : ''}
@@ -372,10 +432,259 @@ Retorne JSON completo atualizado.`,
   };
 }
 
+/**
+ * Analisa o vídeo (fala com timestamps + metadados) e sugere 1–3 cortes
+ * com alto potencial de retenção para Reels.
+ *
+ * @returns {Promise<Array<{ inicio: number, fim: number, legenda: string, motivo?: string }>>}
+ */
+async function sugerirCortes({
+  duracao,
+  titulo,
+  termo,
+  tags,
+  transcricao,
+  segmentos,
+  maxCortes = 3,
+  maxSegundos = 90,
+  minSegundos = 40,
+}) {
+  assertDeepseek();
+
+  const total = Math.max(0, Math.round(Number(duracao) || 0));
+  if (total < 3) return [];
+
+  const maxClip = Math.min(90, total, Math.max(10, Number(maxSegundos) || 90));
+  const minClip = Math.min(maxClip, total, Math.max(3, Number(minSegundos) || 40));
+  const preferredMin = Math.min(maxClip, total, Math.max(minClip, 45));
+  const preferredMax = Math.min(maxClip, total, 75);
+  const n = Math.min(3, Math.max(1, Number(maxCortes) || 3));
+
+  const speechSegments = (Array.isArray(segmentos) ? segmentos : [])
+    .map((segment) => ({
+      start: Math.max(0, Number(segment.start)),
+      end: Math.min(total, Number(segment.end)),
+      text: String(segment.text || '').trim(),
+    }))
+    .filter((segment) => (
+      segment.text &&
+      Number.isFinite(segment.start) &&
+      Number.isFinite(segment.end) &&
+      segment.end > segment.start
+    ))
+    .sort((a, b) => a.start - b.start);
+
+  let timeline = '';
+  if (speechSegments.length) {
+    timeline = speechSegments
+      .slice(0, 500)
+      .map((segment) => `[${segment.start.toFixed(1)}-${segment.end.toFixed(1)}] ${segment.text}`)
+      .join('\n')
+      .slice(0, 30000);
+  } else if (transcricao) {
+    timeline = String(transcricao).slice(0, 20000);
+  }
+
+  const system = `Você é um editor-chefe de vídeos curtos para Reels, Shorts e TikTok.
+Escolha somente os melhores momentos que funcionem sozinhos, sem depender do trecho anterior ou seguinte.
+Cada corte precisa começar no início natural de uma ideia, apresentar contexto suficiente e terminar depois da conclusão. Nunca comece com pronome ou resposta sem contexto, nem termine no meio de frase, raciocínio ou promessa.
+Priorize, nesta ordem: gancho claro, ideia completa, clímax/frase memorável e potencial de retenção. Qualidade vale mais que quantidade: retorne menos cortes se não houver momentos distintos e autossuficientes.
+Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos forte:
+{"cortes":[{"inicio":0,"fim":55,"legenda":"resumo curto do trecho","motivo":"gancho e por que o trecho é completo"}]}`;
+
+  const user = [
+    `Duração total do vídeo: ${total}s`,
+    `Título: ${titulo || '—'}`,
+    `Termo/nicho: ${termo || '—'}`,
+    `Tags: ${Array.isArray(tags) ? tags.join(', ') : tags || '—'}`,
+    `Retorne no máximo ${n} cortes realmente fortes; não force ${n} opções.`,
+    `Duração permitida: ${minClip}–${maxClip}s. Faixa preferida: ${preferredMin}–${preferredMax}s.`,
+    `Use cortes abaixo de ${preferredMin}s somente quando o vídeo inteiro for mais curto.`,
+    `inicio e fim em segundos, 0 <= inicio < fim <= ${total}.`,
+    `Use os timestamps para iniciar antes da contextualização e terminar após a conclusão da ideia.`,
+    `Não divida um mesmo raciocínio em vários cortes e evite sobreposição ou conteúdo repetido.`,
+    `Descarte trechos que sejam apenas introdução, transição, pergunta sem resposta ou conclusão sem contexto.`,
+    `No motivo, explique o gancho e confirme que o trecho tem começo, desenvolvimento e fechamento.`,
+    `Se não houver fala útil, selecione pelo ritmo do vídeo, ainda respeitando duração e começo/fim naturais.`,
+    '',
+    'Fala / timeline:',
+    timeline || '(sem transcrição — use título e duração)',
+  ].join('\n');
+
+  const raw = await chatCompletion(
+    [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    { temperature: 0.25, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    const err = new Error('DeepSeek retornou JSON inválido na análise de cortes');
+    err.status = 502;
+    throw err;
+  }
+
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed.cortes)
+      ? parsed.cortes
+      : [];
+
+  function speechStartAt(time) {
+    const containing = speechSegments.find((segment) => segment.start <= time && segment.end > time);
+    if (containing) return containing.start;
+    const next = speechSegments.find((segment) => segment.start >= time);
+    return next ? next.start : time;
+  }
+
+  function speechEndAt(time) {
+    const containing = speechSegments.find((segment) => segment.start < time && segment.end >= time);
+    if (containing) return containing.end;
+    const next = speechSegments.find((segment) => segment.end >= time);
+    return next ? next.end : time;
+  }
+
+  function findSpeechWindow(center, rawStart, rawEnd, targetDuration) {
+    let best = null;
+    for (const startSegment of speechSegments) {
+      const start = Math.max(0, Math.floor(startSegment.start));
+      if (start > center) break;
+
+      for (const endSegment of speechSegments) {
+        const end = Math.min(total, Math.ceil(endSegment.end));
+        if (end < center) continue;
+        const duration = end - start;
+        if (duration < minClip || duration > maxClip) continue;
+
+        const covered = Math.max(0, Math.min(end, rawEnd) - Math.max(start, rawStart));
+        const coverage = covered / Math.max(1, rawEnd - rawStart);
+        const score =
+          Math.abs(duration - targetDuration) +
+          Math.abs((start + end) / 2 - center) * 0.25 +
+          (1 - coverage) * 20;
+        if (!best || score < best.score) best = { inicio: start, fim: end, score };
+      }
+    }
+    return best;
+  }
+
+  function normalizeRange(item) {
+    const requestedStart = Number(item.inicio);
+    const requestedEnd = Number(item.fim);
+    if (!Number.isFinite(requestedStart) || !Number.isFinite(requestedEnd) || requestedEnd <= requestedStart) {
+      return null;
+    }
+
+    const rawStart = Math.max(0, Math.min(requestedStart, total));
+    const rawEnd = Math.max(rawStart, Math.min(requestedEnd, total));
+    const requestedDuration = rawEnd - rawStart;
+    const targetDuration = Math.min(maxClip, Math.max(preferredMin, requestedDuration));
+    const center = (rawStart + rawEnd) / 2;
+
+    // Dá um pouco mais de espaço depois do momento central para preservar a conclusão.
+    let start = Math.max(0, center - targetDuration * 0.45);
+    let end = Math.min(total, start + targetDuration);
+    start = Math.max(0, end - targetDuration);
+
+    if (speechSegments.length) {
+      start = Math.max(0, speechStartAt(start));
+      end = Math.min(total, speechEndAt(end));
+    }
+
+    start = Math.max(0, Math.floor(start));
+    end = Math.min(total, Math.ceil(end));
+
+    // Se expandir até os limites das frases passar de 90s, procura outra janela
+    // formada exclusivamente por começo/fim de segmentos completos.
+    if (speechSegments.length && (end - start < minClip || end - start > maxClip)) {
+      const speechWindow = findSpeechWindow(center, rawStart, rawEnd, targetDuration);
+      if (speechWindow) {
+        start = speechWindow.inicio;
+        end = speechWindow.fim;
+      }
+    }
+
+    if (end - start > maxClip) {
+      start = Math.max(0, Math.round(center - maxClip * 0.45));
+      end = Math.min(total, start + maxClip);
+      start = Math.max(0, end - maxClip);
+    }
+
+    if (end - start < minClip) {
+      const missing = minClip - (end - start);
+      const before = Math.min(start, Math.ceil(missing * 0.45));
+      start -= before;
+      end = Math.min(total, end + missing - before);
+      start = Math.max(0, end - minClip);
+    }
+
+    start = Math.round(start);
+    end = Math.round(end);
+    if (end <= start || end - start < minClip || end - start > maxClip) return null;
+    return { inicio: start, fim: end };
+  }
+
+  function overlapRatio(a, b) {
+    const overlap = Math.max(0, Math.min(a.fim, b.fim) - Math.max(a.inicio, b.inicio));
+    return overlap / Math.min(a.fim - a.inicio, b.fim - b.inicio);
+  }
+
+  function normalizeDescription(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  const cortes = [];
+  const descriptions = [];
+  for (const item of list) {
+    const range = normalizeRange(item);
+    if (!range) continue;
+    // Expansões para dar contexto não podem transformar sugestões diferentes em duplicatas.
+    if (cortes.some((existing) => overlapRatio(existing, range) > 0.65)) continue;
+
+    const legenda = String(item.legenda || item.caption || '').trim().slice(0, 500);
+    const motivo = String(item.motivo || '').trim().slice(0, 280);
+    const description = normalizeDescription(legenda || motivo);
+    if (
+      description.length >= 20 &&
+      descriptions.some((existing) => existing === description)
+    ) continue;
+
+    cortes.push({ ...range, legenda, motivo });
+    descriptions.push(description);
+    if (cortes.length >= n) break;
+  }
+
+  if (!cortes.length) {
+    const fim = Math.min(total, Math.max(preferredMin, Math.min(maxClip, 60)));
+    if (fim >= minClip) {
+      cortes.push({
+        inicio: 0,
+        fim,
+        legenda: titulo || 'Confira este trecho',
+        motivo: total <= preferredMin
+          ? 'Vídeo curto mantido completo para preservar o contexto'
+          : 'Trecho inicial ampliado para manter contexto e conclusão',
+      });
+    }
+  }
+
+  return cortes;
+}
+
 module.exports = {
   gerarMateriaVideo,
   gerarMateriaImagem,
   gerarMateriaNoticiaFacebook,
+  sugerirCortes,
   assertDeepseek,
   MAX_MATERIA_CHARS,
 };

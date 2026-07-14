@@ -1,9 +1,10 @@
 (function initMateriasIa() {
   let miaTopicos = [];
-  let miaMatterId = null;
   const statusMia = document.getElementById('mia-status');
   const listEl = document.getElementById('mia-topicos');
   const pageSelect = document.getElementById('mia-page');
+  const generatingEl = document.getElementById('mia-generating');
+  const generatingText = document.getElementById('mia-generating-text');
   if (!pageSelect) return;
 
   function escapeHtml(text) {
@@ -27,6 +28,13 @@
       .replace(/https?:\/\/\S+/gi, '')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  function setGenerating(on, message) {
+    if (!generatingEl) return;
+    if (message && generatingText) generatingText.textContent = message;
+    generatingEl.classList.toggle('hidden', !on);
+    document.body.style.overflow = on ? 'hidden' : '';
   }
 
   async function loadPages() {
@@ -109,68 +117,33 @@
       '<p class="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">Nenhum assunto encontrado. Tente outras palavras-chave.</p>';
   }
 
-  function showPreview(artigo, matterId, topico, meta) {
-    miaMatterId = matterId;
-    const wrap = document.getElementById('mia-preview-wrap');
-    wrap.classList.remove('hidden');
-    document.getElementById('mia-preview-titulo').value = artigo.titulo || '';
-    document.getElementById('mia-preview-materia').value = artigo.materia || '';
-    const origem = document.getElementById('mia-preview-origem');
-    if (origem) {
-      origem.textContent = topico?.titulo ? 'Com base em: ' + limparTextoUi(topico.titulo) : '';
-    }
-    const img = document.getElementById('mia-preview-img');
-    if (artigo.imagemUrl) {
-      img.src = artigo.imagemUrl;
-      img.classList.remove('hidden');
-    } else {
-      img.classList.add('hidden');
-    }
-
-    const avisosEl = document.getElementById('mia-preview-avisos');
-    const avisos = meta?.avisos || [];
-    if (avisos.length) {
-      avisosEl.classList.remove('hidden');
-      avisosEl.innerHTML =
-        '<strong class="font-semibold">Avisos de qualidade:</strong><ul class="mt-1 list-disc pl-4">' +
-        avisos.map((a) => `<li>${escapeHtml(a)}</li>`).join('') +
-        '</ul>';
-    } else {
-      avisosEl.classList.add('hidden');
-      avisosEl.innerHTML = '';
-    }
-
-    const metaEl = document.getElementById('mia-preview-meta');
-    if (metaEl && meta?.qualidade) {
-      const e = meta.qualidade.estilo || {};
-      metaEl.textContent = [
-        meta.qualidade.chars != null ? meta.qualidade.chars + ' caracteres' : null,
-        e.temperature != null ? 'temp ' + e.temperature : null,
-        e.faixa ? 'faixa ' + e.faixa.min + '–' + e.faixa.max : null,
-        meta.qualidade.ok === false ? 'revisar tamanho' : 'ok',
-        meta?.link ? 'publicado' : null,
-      ]
-        .filter(Boolean)
-        .join(' · ');
-    }
-
-    wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    document.getElementById('mia-preview-materia').focus();
+  function selecionados() {
+    const panel = document.querySelector('.mia-panel:not(.hidden)') || document;
+    return [...panel.querySelectorAll('.mia-check:checked')]
+      .map((c) => miaTopicos[Number(c.dataset.idx)])
+      .filter(Boolean);
   }
 
   async function gerarSelecionado(statusEl, { publicar = false } = {}) {
     const sel = selecionados();
     if (!sel.length) {
-      statusEl.textContent = 'Marque 1 assunto na lista abaixo';
+      statusEl.textContent = 'Marque 1 assunto na lista';
       return;
     }
     if (publicar && !pageSelect.value) {
       statusEl.textContent = 'Selecione a Página do Facebook';
       return;
     }
-    statusEl.textContent = publicar
-      ? 'Gerando e publicando na Página…'
-      : 'Gerando matéria com DeepSeek (estilo sorteado + quality gate)…';
+
+    const tipoEl = document.getElementById('mia-tipo');
+    setGenerating(
+      true,
+      publicar
+        ? 'Gerando e publicando na Página. Aguarde…'
+        : 'Apurando fontes, escrevendo o texto e montando a arte. Em seguida você verá a matéria salva para editar.'
+    );
+    statusEl.textContent = publicar ? 'Gerando e publicando…' : 'Gerando matéria…';
+
     try {
       const res = await fetch('/api/materias-ia/gerar', {
         method: 'POST',
@@ -178,31 +151,33 @@
         body: JSON.stringify({
           topico: sel[0],
           facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
-          tipoPublicacao: document.getElementById('mia-tipo').value,
+          tipoPublicacao: tipoEl ? tipoEl.value : 'texto',
           status: publicar ? 'publicado' : 'rascunho',
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao gerar');
-      const artigo = data.artigo || data.preview || {};
-      showPreview(artigo, data.matter?.id, sel[0], { ...data, link: data.link });
-      if (data.link) {
+
+      const matterId = data.matter?.id;
+      if (!matterId) throw new Error('Matéria gerada, mas sem ID para abrir');
+
+      if (publicar && data.link) {
         statusEl.innerHTML =
           'Publicado ✓ <a class="text-sky-400 hover:underline" href="' +
           escapeHtml(data.link) +
           '" target="_blank" rel="noopener">Ver post</a>';
       } else {
-        statusEl.textContent = 'Matéria pronta acima ↑ — revise o texto e clique em Publicar';
+        statusEl.textContent = 'Abrindo matéria gerada…';
       }
+
+      if (generatingText) {
+        generatingText.textContent = 'Matéria pronta! Abrindo a tela de edição…';
+      }
+      window.location.href = '/materias-ia/' + matterId;
     } catch (err) {
+      setGenerating(false);
       statusEl.textContent = err.message;
     }
-  }
-
-  function selecionados() {
-    return [...document.querySelectorAll('.mia-check:checked')]
-      .map((c) => miaTopicos[Number(c.dataset.idx)])
-      .filter(Boolean);
   }
 
   document.getElementById('mia-btn-buscar')?.addEventListener('click', async () => {
@@ -270,8 +245,8 @@
     .getElementById('mia-btn-preview')
     ?.addEventListener('click', () => gerarSelecionado(statusMia, { publicar: false }));
   document.getElementById('mia-btn-preview-alta')?.addEventListener('click', () => {
-    document.querySelector('[data-mia-modo="buscar"]')?.click();
-    gerarSelecionado(statusMia, { publicar: false });
+    const st = document.getElementById('mia-alta-status');
+    gerarSelecionado(st || statusMia, { publicar: false });
   });
 
   document.getElementById('mia-btn-lote')?.addEventListener('click', async () => {
@@ -284,6 +259,7 @@
       statusMia.textContent = 'Selecione a Página';
       return;
     }
+    setGenerating(true, 'Gerando e publicando o lote selecionado…');
     statusMia.textContent = 'Gerando e enfileirando publicação…';
     try {
       const res = await fetch('/api/materias-ia/gerar-lote', {
@@ -297,70 +273,17 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha no lote');
+      setGenerating(false);
       statusMia.textContent =
         `Criados: ${(data.criados || []).length} · Erros: ${(data.erros || []).length}`;
-    } catch (err) {
-      statusMia.textContent = err.message;
-    }
-  });
-
-  document.getElementById('mia-btn-publicar-preview')?.addEventListener('click', async () => {
-    if (!miaMatterId) {
-      statusMia.textContent = 'Gere um preview primeiro';
-      return;
-    }
-    if (!pageSelect.value) {
-      statusMia.textContent = 'Selecione a Página';
-      return;
-    }
-    statusMia.textContent = 'Publicando…';
-    try {
-      const res = await fetch('/api/materias-ia/matters/' + miaMatterId + '/publicar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          facebookPageId: Number(pageSelect.value),
-          tipoPublicacao: document.getElementById('mia-tipo').value,
-          titulo: document.getElementById('mia-preview-titulo').value,
-          materia: document.getElementById('mia-preview-materia').value,
-          sync: true,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao publicar');
-      if (data.link) {
-        statusMia.innerHTML =
-          'Publicado ✓ <a class="text-sky-400 hover:underline" href="' +
-          escapeHtml(data.link) +
-          '" target="_blank" rel="noopener">Ver post</a>';
+      const firstId = data.criados?.[0]?.matterId;
+      if (firstId && (data.criados || []).length === 1) {
+        window.location.href = '/materias-ia/' + firstId;
       } else {
-        statusMia.textContent = 'Na fila de publicação ✓';
+        window.location.reload();
       }
     } catch (err) {
-      statusMia.textContent = err.message;
-    }
-  });
-
-  document.getElementById('mia-btn-agendar')?.addEventListener('click', async () => {
-    if (!miaMatterId) {
-      statusMia.textContent = 'Gere um preview primeiro';
-      return;
-    }
-    const runAt = document.getElementById('mia-schedule').value;
-    if (!runAt) {
-      statusMia.textContent = 'Escolha data/hora';
-      return;
-    }
-    try {
-      const res = await fetch('/api/materias-ia/matters/' + miaMatterId + '/agendar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ run_at: new Date(runAt).toISOString() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao agendar');
-      statusMia.textContent = 'Agendado ✓';
-    } catch (err) {
+      setGenerating(false);
       statusMia.textContent = err.message;
     }
   });

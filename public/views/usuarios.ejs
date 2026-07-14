@@ -1,0 +1,396 @@
+<%- include('partials/app-start') %>
+<%
+  const currentUserId = user && user.id ? Number(user.id) : null;
+  const totalAdmins = users.filter((u) => u.nivel_acesso === 'administrador').length;
+  const totalUsers = users.filter((u) => u.nivel_acesso !== 'administrador').length;
+  const openCreateModal = Boolean(error);
+
+  function initials(name) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+%>
+
+  <main class="mx-auto max-w-7xl px-6 py-8">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-violet-400">Administração</p>
+        <h1 class="mt-1 text-2xl font-semibold text-white">Usuários</h1>
+        <p class="mt-2 max-w-2xl text-sm text-slate-400">Gerencie quem acessa o sistema e defina o nível de permissão de cada conta.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-2.5">
+          <p class="text-[11px] uppercase tracking-wide text-slate-500">Total</p>
+          <p class="mt-0.5 text-lg font-semibold text-white"><%= users.length %></p>
+        </div>
+        <div class="rounded-xl border border-violet-500/20 bg-violet-500/10 px-4 py-2.5">
+          <p class="text-[11px] uppercase tracking-wide text-violet-300/80">Admins</p>
+          <p class="mt-0.5 text-lg font-semibold text-violet-200"><%= totalAdmins %></p>
+        </div>
+        <div class="rounded-xl border border-sky-500/20 bg-sky-500/10 px-4 py-2.5">
+          <p class="text-[11px] uppercase tracking-wide text-sky-300/80">Usuários</p>
+          <p class="mt-0.5 text-lg font-semibold text-sky-200"><%= totalUsers %></p>
+        </div>
+        <button type="button" id="open-create-user" class="rounded-lg bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-400">
+          Cadastrar novo usuário
+        </button>
+      </div>
+    </div>
+
+    <% if (success) { %><div class="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"><%= success %></div><% } %>
+    <% if (error) { %><div class="mt-5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"><%= error %></div><% } %>
+
+    <section class="mt-7 rounded-2xl border border-slate-800 bg-slate-900/60">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+        <div>
+          <h2 class="font-semibold text-white">Contas cadastradas</h2>
+          <p class="mt-0.5 text-xs text-slate-500">Use o menu de ações para alterar permissão, senha ou remover</p>
+        </div>
+        <input id="users-filter" type="search" placeholder="Buscar por nome ou e-mail…"
+          class="w-full max-w-xs rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-violet-500 focus:outline-none" />
+      </div>
+
+      <% if (!users.length) { %>
+        <div class="px-5 py-16 text-center">
+          <p class="text-sm font-medium text-slate-300">Nenhum usuário cadastrado</p>
+          <p class="mt-1 text-xs text-slate-500">Clique em “Cadastrar novo usuário” para criar a primeira conta.</p>
+          <button type="button" class="js-open-create mt-4 rounded-lg bg-violet-500 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-400">Cadastrar novo usuário</button>
+        </div>
+      <% } else { %>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[720px] text-left text-sm">
+            <thead class="bg-slate-950/60 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-5 py-3">Usuário</th>
+                <th class="px-5 py-3">Acesso</th>
+                <th class="px-5 py-3">Cadastro</th>
+                <th class="px-5 py-3 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body" class="divide-y divide-slate-800">
+              <% users.forEach((item) => {
+                const isSelf = currentUserId === Number(item.id);
+                const isAdmin = item.nivel_acesso === 'administrador';
+              %>
+                <tr class="user-row text-slate-300 transition hover:bg-slate-950/40" data-search="<%= String(item.nome || '').toLowerCase() %> <%= String(item.email || '').toLowerCase() %>">
+                  <td class="px-5 py-4">
+                    <div class="flex items-center gap-3">
+                      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full <%= isAdmin ? 'bg-violet-500/20 text-violet-300' : 'bg-sky-500/20 text-sky-300' %> text-xs font-semibold"><%= initials(item.nome) %></div>
+                      <div class="min-w-0">
+                        <p class="truncate font-medium text-white">
+                          <%= item.nome %>
+                          <% if (isSelf) { %><span class="ml-1.5 rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">Você</span><% } %>
+                        </p>
+                        <p class="mt-0.5 truncate text-xs text-slate-500"><%= item.email %></p>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-5 py-4">
+                    <span class="rounded-full px-2.5 py-1 text-xs <%= isAdmin ? 'bg-violet-500/15 text-violet-300' : 'bg-sky-500/15 text-sky-300' %>">
+                      <%= isAdmin ? 'Administrador' : 'Usuário' %>
+                    </span>
+                  </td>
+                  <td class="px-5 py-4 text-slate-500"><%= item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '—' %></td>
+                  <td class="px-5 py-4 text-right">
+                    <button
+                      type="button"
+                      class="js-actions-btn inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-violet-500 hover:text-violet-300"
+                      data-id="<%= item.id %>"
+                      data-name="<%= item.nome %>"
+                      data-admin="<%= isAdmin ? '1' : '0' %>"
+                      data-self="<%= isSelf ? '1' : '0' %>"
+                      aria-haspopup="menu"
+                      aria-expanded="false"
+                    >
+                      Ações
+                      <svg class="h-3.5 w-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <p id="users-empty-filter" class="hidden px-5 py-10 text-center text-sm text-slate-500">Nenhum usuário encontrado com esse filtro.</p>
+      <% } %>
+    </section>
+  </main>
+
+  <div id="actions-menu" class="hidden fixed z-[60] w-56 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-xl shadow-black/40" role="menu"></div>
+
+  <div id="create-user-modal" class="<%= openCreateModal ? '' : 'hidden' %> fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="create-user-title">
+    <div class="js-close-create absolute inset-0 bg-black/70"></div>
+    <div class="relative z-10 w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 shadow-xl shadow-black/40">
+      <div class="flex items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
+        <div>
+          <h2 id="create-user-title" class="text-base font-semibold text-white">Cadastrar novo usuário</h2>
+          <p class="mt-0.5 text-xs text-slate-500">O acesso fica disponível imediatamente após o cadastro.</p>
+        </div>
+        <button type="button" class="js-close-create rounded-lg border border-slate-700 px-2.5 py-1 text-sm text-slate-400 hover:border-slate-500 hover:text-white" aria-label="Fechar">✕</button>
+      </div>
+      <form action="/usuarios" method="POST" class="space-y-4 p-5">
+        <label class="block">
+          <span class="text-sm text-slate-400">Nome</span>
+          <input name="nome" required maxlength="150" placeholder="Nome completo"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 focus:border-violet-500 focus:outline-none" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-400">Usuário ou e-mail</span>
+          <input name="email" required maxlength="191" autocomplete="off" placeholder="login ou e-mail"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 focus:border-violet-500 focus:outline-none" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-400">Senha inicial</span>
+          <input type="password" name="senha" required minlength="8" autocomplete="new-password" placeholder="Mínimo 8 caracteres"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 focus:border-violet-500 focus:outline-none" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-400">Nível de acesso</span>
+          <select name="nivel_acesso" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white">
+            <option value="usuario">Usuário</option>
+            <option value="administrador">Administrador</option>
+          </select>
+        </label>
+        <div class="flex justify-end gap-2 pt-1">
+          <button type="button" class="js-close-create rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-300 hover:border-slate-500 hover:text-white">Cancelar</button>
+          <button type="submit" class="rounded-lg bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-400">Cadastrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="reset-password-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="reset-password-title">
+    <div class="js-close-reset absolute inset-0 bg-black/70"></div>
+    <div class="relative z-10 w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 shadow-xl shadow-black/40">
+      <div class="flex items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
+        <div>
+          <h2 id="reset-password-title" class="text-base font-semibold text-white">Resetar senha</h2>
+          <p class="mt-0.5 text-xs text-slate-500">Defina uma nova senha para <span id="reset-password-user" class="text-slate-300">este usuário</span>.</p>
+        </div>
+        <button type="button" class="js-close-reset rounded-lg border border-slate-700 px-2.5 py-1 text-sm text-slate-400 hover:border-slate-500 hover:text-white" aria-label="Fechar">✕</button>
+      </div>
+      <form id="reset-password-form" method="POST" class="space-y-4 p-5">
+        <label class="block">
+          <span class="text-sm text-slate-400">Nova senha</span>
+          <input type="password" name="senha" required minlength="8" autocomplete="new-password" placeholder="Mínimo 8 caracteres"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 focus:border-violet-500 focus:outline-none" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-400">Confirmar senha</span>
+          <input type="password" name="senha_confirm" required minlength="8" autocomplete="new-password" placeholder="Repita a nova senha"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white placeholder:text-slate-600 focus:border-violet-500 focus:outline-none" />
+        </label>
+        <div class="flex justify-end gap-2 pt-1">
+          <button type="button" class="js-close-reset rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-300 hover:border-slate-500 hover:text-white">Cancelar</button>
+          <button type="submit" class="rounded-lg bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-400">Salvar nova senha</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const filter = document.getElementById('users-filter');
+      const rows = Array.from(document.querySelectorAll('.user-row'));
+      const empty = document.getElementById('users-empty-filter');
+      const createModal = document.getElementById('create-user-modal');
+      const resetModal = document.getElementById('reset-password-modal');
+      const resetForm = document.getElementById('reset-password-form');
+      const resetUserLabel = document.getElementById('reset-password-user');
+      const menu = document.getElementById('actions-menu');
+      const openCreateButtons = [document.getElementById('open-create-user'), ...document.querySelectorAll('.js-open-create')].filter(Boolean);
+      let activeBtn = null;
+
+      function openCreateModal() {
+        if (!createModal) return;
+        closeMenu();
+        createModal.classList.remove('hidden');
+        const first = createModal.querySelector('input[name="nome"]');
+        if (first) setTimeout(() => first.focus(), 30);
+      }
+
+      function closeCreateModal() {
+        if (createModal) createModal.classList.add('hidden');
+      }
+
+      function openResetModal(id, name) {
+        if (!resetModal || !resetForm) return;
+        closeMenu();
+        resetForm.action = '/usuarios/' + id + '/senha';
+        resetForm.reset();
+        if (resetUserLabel) resetUserLabel.textContent = name || 'este usuário';
+        resetModal.classList.remove('hidden');
+        const first = resetForm.querySelector('input[name="senha"]');
+        if (first) setTimeout(() => first.focus(), 30);
+      }
+
+      function closeResetModal() {
+        if (resetModal) resetModal.classList.add('hidden');
+      }
+
+      function closeMenu() {
+        if (!menu) return;
+        menu.classList.add('hidden');
+        menu.innerHTML = '';
+        if (activeBtn) {
+          activeBtn.setAttribute('aria-expanded', 'false');
+          activeBtn = null;
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function buildMenuHtml(data) {
+        const id = data.id;
+        const name = escapeHtml(data.name);
+        const isAdmin = data.admin === '1';
+        const isSelf = data.self === '1';
+        let html = ''
+          + '<div class="border-b border-slate-800 px-3 py-2">'
+          +   '<p class="truncate text-xs font-medium text-slate-300">' + name + '</p>'
+          +   '<p class="truncate text-[11px] text-slate-500">' + (isAdmin ? 'Administrador' : 'Usuário') + '</p>'
+          + '</div>'
+          + '<div class="p-1.5">';
+
+        if (!isAdmin) {
+          html += ''
+            + '<form action="/usuarios/' + id + '/nivel" method="POST">'
+            +   '<input type="hidden" name="nivel_acesso" value="administrador" />'
+            +   '<button type="submit" class="flex w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-violet-500/15 hover:text-violet-200">Tornar administrador</button>'
+            + '</form>';
+        } else if (!isSelf) {
+          html += ''
+            + '<form action="/usuarios/' + id + '/nivel" method="POST">'
+            +   '<input type="hidden" name="nivel_acesso" value="usuario" />'
+            +   '<button type="submit" class="flex w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-sky-500/15 hover:text-sky-200">Tornar usuário comum</button>'
+            + '</form>';
+        }
+
+        html += ''
+          + '<button type="button" class="js-open-reset flex w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-amber-500/15 hover:text-amber-200" data-id="' + id + '" data-name="' + name + '">Resetar senha</button>';
+
+        if (isSelf) {
+          html += '<p class="mt-1 border-t border-slate-800 px-3 py-2 text-[11px] leading-relaxed text-slate-500">Não é possível remover a própria conta.</p>';
+        } else {
+          html += ''
+            + '<form action="/usuarios/' + id + '/remover" method="POST" class="js-remove-user mt-1 border-t border-slate-800 pt-1.5" data-name="' + name + '">'
+            +   '<button type="submit" class="flex w-full rounded-lg px-3 py-2 text-left text-xs text-rose-300 hover:bg-rose-500/15 hover:text-rose-200">Remover usuário</button>'
+            + '</form>';
+        }
+
+        html += '</div>';
+        return html;
+      }
+
+      function positionMenu(btn) {
+        const rect = btn.getBoundingClientRect();
+        const menuWidth = 224;
+        const gap = 6;
+        let left = rect.right - menuWidth;
+        if (left < 8) left = 8;
+        if (left + menuWidth > window.innerWidth - 8) left = window.innerWidth - menuWidth - 8;
+
+        menu.classList.remove('hidden');
+        const menuHeight = menu.offsetHeight || 160;
+        let top = rect.bottom + gap;
+        if (top + menuHeight > window.innerHeight - 8) {
+          top = Math.max(8, rect.top - menuHeight - gap);
+        }
+
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+      }
+
+      function openMenu(btn) {
+        if (!menu) return;
+        if (activeBtn === btn) {
+          closeMenu();
+          return;
+        }
+        closeMenu();
+        activeBtn = btn;
+        btn.setAttribute('aria-expanded', 'true');
+        menu.innerHTML = buildMenuHtml(btn.dataset);
+        positionMenu(btn);
+
+        const resetBtn = menu.querySelector('.js-open-reset');
+        if (resetBtn) {
+          resetBtn.addEventListener('click', () => {
+            openResetModal(resetBtn.dataset.id, resetBtn.getAttribute('data-name'));
+          });
+        }
+
+        const removeForm = menu.querySelector('form.js-remove-user');
+        if (removeForm) {
+          removeForm.addEventListener('submit', (event) => {
+            const name = removeForm.getAttribute('data-name') || 'este usuário';
+            if (!confirm('Remover permanentemente o usuário "' + name + '"? Esta ação não pode ser desfeita.')) {
+              event.preventDefault();
+            }
+          });
+        }
+      }
+
+      openCreateButtons.forEach((btn) => btn.addEventListener('click', openCreateModal));
+      document.querySelectorAll('.js-close-create').forEach((el) => el.addEventListener('click', closeCreateModal));
+      document.querySelectorAll('.js-close-reset').forEach((el) => el.addEventListener('click', closeResetModal));
+
+      document.querySelectorAll('.js-actions-btn').forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          openMenu(btn);
+        });
+      });
+
+      document.addEventListener('click', (event) => {
+        if (menu && !menu.classList.contains('hidden') && !menu.contains(event.target) && !(activeBtn && activeBtn.contains(event.target))) {
+          closeMenu();
+        }
+      });
+
+      window.addEventListener('resize', closeMenu);
+      window.addEventListener('scroll', closeMenu, true);
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (menu && !menu.classList.contains('hidden')) closeMenu();
+        else if (resetModal && !resetModal.classList.contains('hidden')) closeResetModal();
+        else if (createModal && !createModal.classList.contains('hidden')) closeCreateModal();
+      });
+
+      if (resetForm) {
+        resetForm.addEventListener('submit', (event) => {
+          const senha = resetForm.querySelector('input[name="senha"]');
+          const confirm = resetForm.querySelector('input[name="senha_confirm"]');
+          if (senha && confirm && senha.value !== confirm.value) {
+            event.preventDefault();
+            alert('As senhas não coincidem.');
+            confirm.focus();
+          }
+        });
+      }
+
+      if (filter) {
+        filter.addEventListener('input', () => {
+          const q = filter.value.trim().toLowerCase();
+          let visible = 0;
+          rows.forEach((row) => {
+            const match = !q || (row.dataset.search || '').includes(q);
+            row.classList.toggle('hidden', !match);
+            if (match) visible += 1;
+          });
+          if (empty) empty.classList.toggle('hidden', visible > 0 || !rows.length);
+        });
+      }
+    })();
+  </script>
+<%- include('partials/app-end') %>

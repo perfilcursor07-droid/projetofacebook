@@ -1,0 +1,125 @@
+<%- include('partials/app-start') %>
+<%
+  const statusLabels = {
+    rascunho: 'Rascunho',
+    pronto: 'Pronta',
+    agendado: 'Agendada',
+    publicado: 'Publicada',
+    erro: 'Erro',
+  };
+  const statusClass = {
+    rascunho: 'bg-slate-800 text-slate-300',
+    pronto: 'bg-sky-500/15 text-sky-300',
+    agendado: 'bg-amber-500/15 text-amber-300',
+    publicado: 'bg-emerald-500/15 text-emerald-300',
+    erro: 'bg-rose-500/15 text-rose-300',
+  };
+  const st = matter.status || 'rascunho';
+  const canEdit = st !== 'publicado';
+  const imageUrl = matter.imagem_url || '';
+%>
+
+  <main class="mx-auto max-w-6xl px-6 py-8">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <a href="/materias-ia" class="text-xs font-medium text-slate-500 hover:text-emerald-300">← Voltar para Matérias IA</a>
+        <h1 class="mt-2 text-2xl font-semibold text-white">Matéria gerada</h1>
+        <p class="mt-1 text-sm text-slate-400">Revise o texto, salve as alterações e publique quando quiser.</p>
+      </div>
+      <span class="rounded-full px-3 py-1 text-xs font-medium <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+    </div>
+
+    <% if (success) { %><div class="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"><%= success %></div><% } %>
+    <% if (error) { %><div class="mt-5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"><%= error %></div><% } %>
+    <p id="matter-status" class="mt-4 text-sm text-slate-400"></p>
+
+    <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+        <% if (matter.fonte_titulo) { %>
+          <p class="text-xs text-slate-500">
+            Com base em: <%= matter.fonte_titulo %>
+            <% if (matter.fonte_url) { %>
+              · <a href="<%= matter.fonte_url %>" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300">Abrir fonte →</a>
+            <% } %>
+          </p>
+        <% } %>
+
+        <label class="mt-4 block text-sm">
+          <span class="text-slate-400">Título</span>
+          <input id="matter-titulo" <%= canEdit ? '' : 'readonly' %> value="<%= matter.titulo || '' %>"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base font-semibold text-white focus:border-emerald-500 focus:outline-none <%= canEdit ? '' : 'opacity-80' %>" />
+        </label>
+
+        <label class="mt-4 block text-sm">
+          <span class="text-slate-400">Matéria / legenda (Facebook)</span>
+          <textarea id="matter-materia" rows="14" <%= canEdit ? '' : 'readonly' %>
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm leading-relaxed text-slate-100 focus:border-emerald-500 focus:outline-none <%= canEdit ? '' : 'opacity-80' %>"><%= matter.materia || '' %></textarea>
+        </label>
+
+        <% if (hashtags && hashtags.length) { %>
+          <div class="mt-4">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Hashtags sugeridas</p>
+            <p class="mt-1.5 text-sm text-slate-400"><%= hashtags.map((h) => '#' + String(h).replace(/^#/, '')).join(' ') %></p>
+          </div>
+        <% } %>
+
+        <% if (canEdit) { %>
+          <div class="mt-5 flex flex-wrap gap-2">
+            <button type="button" id="btn-salvar" class="rounded-lg border border-emerald-500/50 bg-emerald-500/15 px-4 py-2.5 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/25">Salvar alterações</button>
+          </div>
+        <% } %>
+      </section>
+
+      <aside class="space-y-4">
+        <div id="matter-img-wrap" class="<%= imageUrl ? '' : 'hidden' %> rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <span class="text-xs font-semibold uppercase tracking-wide text-emerald-300">Arte</span>
+            <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">1080 × 1350</span>
+          </div>
+          <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="block h-auto w-full rounded-xl border border-slate-700 bg-slate-950 object-contain" />
+        </div>
+
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Publicação</p>
+
+          <label class="mt-3 block text-sm">
+            <span class="text-slate-400">Página do Facebook</span>
+            <select id="matter-page" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white">
+              <option value="">Carregando…</option>
+            </select>
+          </label>
+
+          <label class="mt-3 block text-sm">
+            <span class="text-slate-400">Tipo</span>
+            <select id="matter-tipo" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" <%= canEdit ? '' : 'disabled' %>>
+              <option value="texto" <%= matter.tipo_publicacao !== 'foto' ? 'selected' : '' %>>Texto</option>
+              <option value="foto" <%= matter.tipo_publicacao === 'foto' ? 'selected' : '' %>>Foto + legenda</option>
+            </select>
+          </label>
+
+          <% if (canEdit) { %>
+            <button type="button" id="btn-publicar" class="mt-4 w-full rounded-lg bg-[#1877F2] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#166FE5]">Publicar na Página</button>
+
+            <div class="mt-4 border-t border-slate-800 pt-4">
+              <label class="block text-xs text-slate-400">Agendar
+                <input id="matter-schedule" type="datetime-local" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-slate-200" />
+              </label>
+              <button type="button" id="btn-agendar" class="mt-2 w-full rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 hover:border-slate-400">Agendar publicação</button>
+            </div>
+          <% } else if (matter.published_at) { %>
+            <p class="mt-3 text-xs text-slate-500">Publicada em <%= new Date(matter.published_at).toLocaleString('pt-BR') %></p>
+          <% } %>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    window.__MATTER_EDIT__ = {
+      id: <%= matter.id %>,
+      pageId: <%= matter.facebook_page_id ? Number(matter.facebook_page_id) : 'null' %>,
+      canEdit: <%= canEdit ? 'true' : 'false' %>,
+    };
+  </script>
+  <script src="/js/materia-ia-editar.js"></script>
+<%- include('partials/app-end') %>

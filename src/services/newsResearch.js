@@ -2,7 +2,7 @@ const axios = require('axios');
 const { apurarTopico, decodificarHtml } = require('./articleSource');
 const { env } = require('../config/env');
 
-const USER_AGENT = 'Mozilla/5.0 (compatible; ClipadorAI/1.0)';
+const USER_AGENT = 'Mozilla/5.0 (compatible; ViralizeAI/1.0)';
 const MS_DIA = 24 * 60 * 60 * 1000;
 
 function limparResumo(texto, max = 400) {

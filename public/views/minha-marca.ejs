@@ -1,0 +1,95 @@
+<%- include('partials/app-start') %>
+
+  <main class="mx-auto max-w-6xl px-6 py-8">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Identidade visual</p>
+        <h1 class="mt-1 text-2xl font-semibold text-white">Minha marca</h1>
+        <p class="mt-2 max-w-2xl text-sm text-slate-400">Configure a logo e as cores aplicadas automaticamente às artes das Matérias IA.</p>
+      </div>
+      <a href="/materias-ia" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">Voltar para Matérias IA</a>
+    </div>
+
+    <% if (saved) { %>
+      <div class="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">Identidade visual salva com sucesso.</div>
+    <% } %>
+    <% if (error) { %>
+      <div class="mt-5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"><%= error %></div>
+    <% } %>
+
+    <form action="/minha-marca" method="POST" enctype="multipart/form-data" class="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+        <h2 class="text-base font-semibold text-white">Dados da marca</h2>
+        <div class="mt-5 grid gap-4 sm:grid-cols-2">
+          <label class="block sm:col-span-2">
+            <span class="text-sm text-slate-400">Logomarca</span>
+            <input id="logo-input" type="file" name="logo" accept="image/png,image/jpeg,image/webp"
+              class="mt-1.5 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-500 file:px-3 file:py-1.5 file:font-semibold file:text-slate-950" />
+            <span class="mt-1 block text-xs text-slate-500">PNG, JPG ou WebP, até 3 MB. Prefira PNG com fundo transparente.</span>
+          </label>
+          <label class="block sm:col-span-2">
+            <span class="text-sm text-slate-400">Nome exibido</span>
+            <input name="marca_nome" maxlength="120" value="<%= profile.marca_nome || profile.nome || '' %>" required
+              class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white focus:border-emerald-500 focus:outline-none" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-400">Categoria</span>
+            <input name="marca_categoria" maxlength="80" value="<%= profile.marca_categoria || 'ÚLTIMAS' %>"
+              class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white focus:border-emerald-500 focus:outline-none" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-400">Texto do rodapé</span>
+            <input name="marca_rodape" maxlength="160" value="<%= profile.marca_rodape || '' %>" placeholder="@sua_pagina"
+              class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white focus:border-emerald-500 focus:outline-none" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-400">Cor principal</span>
+            <div class="mt-1.5 flex gap-2 rounded-lg border border-slate-700 bg-slate-950 p-2">
+              <input type="color" name="marca_cor_primaria" value="<%= profile.marca_cor_primaria || '#facc15' %>" class="h-8 w-full cursor-pointer border-0 bg-transparent" />
+            </div>
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-400">Cor secundária</span>
+            <div class="mt-1.5 flex gap-2 rounded-lg border border-slate-700 bg-slate-950 p-2">
+              <input type="color" name="marca_cor_secundaria" value="<%= profile.marca_cor_secundaria || '#fb923c' %>" class="h-8 w-full cursor-pointer border-0 bg-transparent" />
+            </div>
+          </label>
+        </div>
+
+        <% if (profile.logo_path) { %>
+          <label class="mt-5 flex items-center gap-2 text-sm text-slate-400">
+            <input type="checkbox" name="remover_logo" value="1" class="rounded border-slate-600 bg-slate-950 text-rose-500" />
+            Remover a logomarca atual
+          </label>
+        <% } %>
+
+        <div class="mt-6 flex justify-end">
+          <button type="submit" class="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Salvar identidade visual</button>
+        </div>
+      </section>
+
+      <aside class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Prévia da logo</p>
+        <div class="mt-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-gradient-to-br from-slate-800 to-slate-950 p-6">
+          <img id="logo-preview" src="<%= profile.logo_path ? '/media/' + profile.logo_path.replace(/\\/g, '/') : '' %>" alt="Prévia da logomarca"
+            class="<%= profile.logo_path ? '' : 'hidden' %> max-h-full max-w-full object-contain" />
+          <p id="logo-empty" class="<%= profile.logo_path ? 'hidden' : '' %> text-center text-sm text-slate-500">Envie uma logo para visualizar aqui.</p>
+        </div>
+        <p class="mt-4 text-xs leading-relaxed text-slate-500">A arte final utiliza formato vertical 4:5, com foto, título sobreposto, categoria, cores e sua logomarca.</p>
+      </aside>
+    </form>
+  </main>
+
+  <script>
+    const logoInput = document.getElementById('logo-input');
+    const logoPreview = document.getElementById('logo-preview');
+    const logoEmpty = document.getElementById('logo-empty');
+    logoInput.addEventListener('change', () => {
+      const file = logoInput.files && logoInput.files[0];
+      if (!file) return;
+      logoPreview.src = URL.createObjectURL(file);
+      logoPreview.classList.remove('hidden');
+      logoEmpty.classList.add('hidden');
+    });
+  </script>
+<%- include('partials/app-end') %>

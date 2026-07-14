@@ -1,115 +1,142 @@
 <%- include('partials/app-start') %>
 
   <main class="mx-auto max-w-8xl px-6 py-8">
-    <h1 class="text-2xl font-semibold text-white">Buscar conteúdo</h1>
-    <p class="mt-2 text-slate-400">Vídeos e imagens para a fila — ou <a href="/materias-ia" class="text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline">Matérias IA</a> para posts de texto/foto.</p>
-
-    <div class="mt-6 inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Tipo de conteúdo">
-      <button type="button" data-tipo="videos" class="tipo-btn inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm transition-colors bg-emerald-500 text-slate-950 font-semibold">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.2l4.4 3.1c.66.47 1.6 0 1.6-.82V7.92c0-.81-.94-1.29-1.6-.82L16 10.2V7a2 2 0 0 0-2-2H4Z"/></svg>
-        Vídeos
-      </button>
-      <button type="button" data-tipo="imagens" class="tipo-btn inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm transition-colors text-slate-300 hover:text-white">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5Zm3.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM5 19l4.5-6 3.5 4.5L15.5 14 19 19H5Z"/></svg>
-        Imagens
-      </button>
-    </div>
-
-    <div id="painel-midia">
-    <div id="fonte-wrap" class="mt-4">
-      <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Onde buscar</p>
-      <div class="mt-2 grid gap-3 sm:grid-cols-3" role="tablist" aria-label="Fonte da busca">
-        <button type="button" data-fonte="pexels" aria-pressed="true"
-          class="fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500">
-          <span class="fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-slate-950">
-            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3h8.5A5.5 5.5 0 0 1 20 8.5a5.5 5.5 0 0 1-4.5 5.41V21H6V3Zm4 2v14h1.5v-7h3a3.5 3.5 0 1 0 0-7H10Zm1.5 2h3a1.5 1.5 0 1 1 0 3h-3V7Z"/></svg>
-          </span>
-          <span class="min-w-0">
-            <span class="block text-sm font-semibold text-white">Pexels</span>
-            <span class="block truncate text-xs text-slate-400">Livre de direitos autorais</span>
-          </span>
-        </button>
-
-        <button type="button" data-fonte="youtube" aria-pressed="false"
-          class="fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all border-slate-700 bg-slate-900/60 hover:border-slate-500">
-          <span class="fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-red-500">
-            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 7.2a2.51 2.51 0 0 0-1.77-1.78C18.25 5 12 5 12 5s-6.25 0-7.83.42A2.51 2.51 0 0 0 2.4 7.2 26.3 26.3 0 0 0 2 12a26.3 26.3 0 0 0 .4 4.8 2.51 2.51 0 0 0 1.77 1.78C5.75 19 12 19 12 19s6.25 0 7.83-.42a2.51 2.51 0 0 0 1.77-1.78A26.3 26.3 0 0 0 22 12a26.3 26.3 0 0 0-.4-4.8ZM10 15.5v-7l6 3.5-6 3.5Z"/></svg>
-          </span>
-          <span class="min-w-0">
-            <span class="block text-sm font-semibold text-white">YouTube</span>
-            <span class="block truncate text-xs text-slate-400">Vídeos públicos por termo</span>
-          </span>
-        </button>
-
-        <button type="button" data-fonte="tiktok" aria-pressed="false"
-          class="fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all border-slate-700 bg-slate-900/60 hover:border-slate-500">
-          <span class="fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-fuchsia-400">
-            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6 2h-3.09v13.67a2.9 2.9 0 1 1-2.9-2.9c.2 0 .4.02.59.06V9.69a6.04 6.04 0 0 0-.59-.03 6.02 6.02 0 1 0 6.02 6.02V8.42a7.6 7.6 0 0 0 4.37 1.37V6.7A4.48 4.48 0 0 1 16.6 2Z"/></svg>
-          </span>
-          <span class="min-w-0">
-            <span class="block text-sm font-semibold text-white">TikTok</span>
-            <span class="block truncate text-xs text-slate-400">Perfil por @usuário</span>
-          </span>
-        </button>
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400/80">Biblioteca</p>
+        <h1 class="mt-1 text-2xl font-semibold text-white">Buscar conteúdo</h1>
+        <p class="mt-1 text-sm text-slate-400">
+          Shorts e vídeos curtos para a fila ·
+          <a href="/materias-ia" class="text-emerald-400 hover:text-emerald-300">Matérias IA</a>
+        </p>
       </div>
+      <a href="/fila" class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-emerald-300">Ver fila →</a>
     </div>
 
-    <form id="search-form" class="mt-4 flex flex-col gap-3 sm:flex-row">
-      <input
-        type="search"
-        name="termo"
-        id="termo"
-        placeholder="Ex: motivação, receita rápida…"
-        class="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-2.5 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
-        required
-      />
-      <button
-        type="submit"
-        id="search-btn"
-        class="rounded-lg bg-emerald-500 px-5 py-2.5 font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
-      >
-        Buscar
-      </button>
-    </form>
-    <p id="fonte-hint" class="mt-2 text-xs text-slate-500">Pexels: vídeos/fotos licenciados para uso.</p>
+    <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5">
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="inline-flex rounded-xl border border-slate-700 bg-slate-950 p-1" role="tablist" aria-label="Tipo de conteúdo">
+          <button type="button" data-tipo="videos" class="tipo-btn inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.2l4.4 3.1c.66.47 1.6 0 1.6-.82V7.92c0-.81-.94-1.29-1.6-.82L16 10.2V7a2 2 0 0 0-2-2H4Z"/></svg>
+            Vídeos
+          </button>
+          <button type="button" data-tipo="imagens" class="tipo-btn inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5Zm3.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM5 19l4.5-6 3.5 4.5L15.5 14 19 19H5Z"/></svg>
+            Imagens
+          </button>
+        </div>
+      </div>
+
+      <div id="fonte-wrap" class="mt-4">
+        <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Fonte</p>
+        <div class="grid gap-2 sm:grid-cols-3" role="tablist" aria-label="Fonte da busca">
+          <button type="button" data-fonte="pexels" aria-pressed="true"
+            class="fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500">
+            <span class="fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-slate-950">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3h8.5A5.5 5.5 0 0 1 20 8.5a5.5 5.5 0 0 1-4.5 5.41V21H6V3Zm4 2v14h1.5v-7h3a3.5 3.5 0 1 0 0-7H10Zm1.5 2h3a1.5 1.5 0 1 1 0 3h-3V7Z"/></svg>
+            </span>
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold text-white">Pexels</span>
+              <span class="block truncate text-xs text-slate-400">Livre de direitos</span>
+            </span>
+          </button>
+
+          <button type="button" data-fonte="youtube" aria-pressed="false"
+            class="fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all border-slate-700 bg-slate-950/60 hover:border-slate-500">
+            <span class="fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-red-500">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 7.2a2.51 2.51 0 0 0-1.77-1.78C18.25 5 12 5 12 5s-6.25 0-7.83.42A2.51 2.51 0 0 0 2.4 7.2 26.3 26.3 0 0 0 2 12a26.3 26.3 0 0 0 .4 4.8 2.51 2.51 0 0 0 1.77 1.78C5.75 19 12 19 12 19s6.25 0 7.83-.42a2.51 2.51 0 0 0 1.77-1.78A26.3 26.3 0 0 0 22 12a26.3 26.3 0 0 0-.4-4.8ZM10 15.5v-7l6 3.5-6 3.5Z"/></svg>
+            </span>
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold text-white">YouTube</span>
+              <span class="block truncate text-xs text-slate-400">Shorts + curtos</span>
+            </span>
+          </button>
+
+          <button type="button" data-fonte="tiktok" aria-pressed="false"
+            class="fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all border-slate-700 bg-slate-950/60 hover:border-slate-500">
+            <span class="fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-fuchsia-400">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6 2h-3.09v13.67a2.9 2.9 0 1 1-2.9-2.9c.2 0 .4.02.59.06V9.69a6.04 6.04 0 0 0-.59-.03 6.02 6.02 0 1 0 6.02 6.02V8.42a7.6 7.6 0 0 0 4.37 1.37V6.7A4.48 4.48 0 0 1 16.6 2Z"/></svg>
+            </span>
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold text-white">TikTok</span>
+              <span class="block truncate text-xs text-slate-400">Perfil @usuário</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <form id="search-form" class="mt-4 flex flex-col gap-3">
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <input
+            type="search"
+            name="termo"
+            id="termo"
+            placeholder="Ex: motivação, receita rápida, pregação…"
+            class="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+            required
+          />
+          <button
+            type="submit"
+            id="search-btn"
+            class="rounded-xl bg-emerald-500 px-6 py-2.5 font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+          >
+            Buscar
+          </button>
+        </div>
+
+        <div id="youtube-filters" class="hidden flex-wrap items-center gap-1.5">
+          <span class="mr-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Duração</span>
+          <button type="button" class="dur-chip rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-slate-950" data-max="60" data-shorts="1">Shorts ≤60s</button>
+          <button type="button" class="dur-chip rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-400 hover:border-slate-500 hover:text-slate-200" data-max="180" data-shorts="0">Curtos ≤3min</button>
+          <button type="button" class="dur-chip rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-400 hover:border-slate-500 hover:text-slate-200" data-max="600" data-shorts="0">Até 10min</button>
+          <button type="button" class="dur-chip rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-400 hover:border-slate-500 hover:text-slate-200" data-max="all" data-shorts="0">Todos</button>
+        </div>
+      </form>
+
+      <p id="fonte-hint" class="mt-3 text-xs text-slate-500">Pexels: vídeos/fotos licenciados para uso comercial.</p>
+    </div>
 
     <div id="search-status" class="mt-4 text-sm text-slate-400"></div>
-    <div id="results" class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
+    <div id="results" class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"></div>
 
-    <div class="mt-10 grid gap-4 lg:grid-cols-2">
-      <section class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-        <h2 class="font-medium text-white">Enviar meu vídeo</h2>
-        <p class="mt-1 text-sm text-slate-400">Upload de arquivo próprio (mp4, mov, mkv, webm — até 1 GB).</p>
-        <form id="upload-form" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <input type="file" name="arquivo" id="upload-file" accept=".mp4,.mov,.mkv,.webm,.avi,.m4v" required
-            class="w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:text-slate-100 hover:file:bg-slate-600" />
-          <button type="submit" id="upload-btn"
-            class="shrink-0 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
-            Enviar
-          </button>
-        </form>
-        <p id="upload-status" class="mt-3 text-sm text-slate-400"></p>
-      </section>
+    <details class="mt-10 rounded-2xl border border-slate-800 bg-slate-900/40 open:border-slate-700">
+      <summary class="cursor-pointer list-none px-5 py-3.5 text-sm font-medium text-slate-300 hover:text-white">
+        Upload ou importar por link
+        <span class="ml-2 text-xs font-normal text-slate-500">arquivo próprio · YouTube · TikTok</span>
+      </summary>
+      <div class="grid gap-4 border-t border-slate-800 p-5 lg:grid-cols-2">
+        <section>
+          <h2 class="text-sm font-semibold text-white">Enviar meu vídeo</h2>
+          <p class="mt-1 text-xs text-slate-500">mp4, mov, mkv, webm — até 1 GB</p>
+          <form id="upload-form" class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <input type="file" name="arquivo" id="upload-file" accept=".mp4,.mov,.mkv,.webm,.avi,.m4v" required
+              class="w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:text-slate-100 hover:file:bg-slate-600" />
+            <button type="submit" id="upload-btn"
+              class="shrink-0 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
+              Enviar
+            </button>
+          </form>
+          <p id="upload-status" class="mt-3 text-sm text-slate-400"></p>
+        </section>
 
-      <section class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-        <h2 class="font-medium text-white">Importar por link</h2>
-        <p class="mt-1 text-sm text-slate-400">Cole um link do YouTube, TikTok ou URL direta de vídeo.</p>
-        <form id="import-form" class="mt-4 flex flex-col gap-3 sm:flex-row">
-          <input type="url" name="url" id="import-url" placeholder="https://www.youtube.com/watch?v=..." required
-            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none" />
-          <button type="submit" id="import-btn"
-            class="shrink-0 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
-            Importar
-          </button>
-        </form>
-        <p id="import-status" class="mt-3 text-sm text-slate-400"></p>
-        <p class="mt-2 text-xs text-amber-300/80">
-          Atenção: vídeos de terceiros do YouTube/TikTok têm direitos autorais — use apenas conteúdo seu
-          ou com permissão, senão a página perde a monetização.
-        </p>
-      </section>
-    </div>
-    </div>
+        <section>
+          <h2 class="text-sm font-semibold text-white">Importar por link</h2>
+          <p class="mt-1 text-xs text-slate-500">Cole URL do YouTube, TikTok ou arquivo direto</p>
+          <form id="import-form" class="mt-3 flex flex-col gap-3 sm:flex-row">
+            <input type="url" name="url" id="import-url" placeholder="https://www.youtube.com/shorts/..." required
+              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none" />
+            <button type="submit" id="import-btn"
+              class="shrink-0 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
+              Importar
+            </button>
+          </form>
+          <p id="import-status" class="mt-3 text-sm text-slate-400"></p>
+          <p class="mt-2 text-xs text-amber-300/80">
+            Conteúdo de terceiros pode gerar copyright e afetar monetização — use só o que for seu ou licenciado.
+          </p>
+        </section>
+      </div>
+    </details>
   </main>
 
   <script>
@@ -122,15 +149,19 @@
     const fonteBtns = document.querySelectorAll('.fonte-btn');
     const fonteWrap = document.getElementById('fonte-wrap');
     const fonteHint = document.getElementById('fonte-hint');
+    const youtubeFilters = document.getElementById('youtube-filters');
+    const durChips = document.querySelectorAll('.dur-chip');
 
     let tipo = 'videos';
     let fonte = 'pexels';
     let lastTermo = '';
+    let ytMaxDuration = '60';
+    let ytShortsOnly = true;
 
     const FONTE_HINTS = {
-      pexels: 'Pexels: vídeos/fotos licenciados para uso.',
-      youtube: 'YouTube: até 40 resultados, do mais curto ao mais longo (melhor para cortes de Reels). Atenção a direitos autorais.',
-      tiktok: 'TikTok: digite um @usuário (ex.: @tiktok) para listar o perfil. Hashtag/termo genérico não é suportado — use o campo de link abaixo.',
+      pexels: 'Pexels: vídeos/fotos licenciados para uso comercial.',
+      youtube: 'YouTube: prioriza Shorts e vídeos curtos para cortar em Reels. Atenção a direitos autorais.',
+      tiktok: 'TikTok: digite um @usuário (ex.: @tiktok). Termo genérico não funciona — use o link abaixo.',
     };
 
     const FONTE_STYLES = {
@@ -151,8 +182,22 @@
       },
     };
     const CARD_BASE = 'fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all';
-    const CARD_IDLE = 'border-slate-700 bg-slate-900/60 hover:border-slate-500';
+    const CARD_IDLE = 'border-slate-700 bg-slate-950/60 hover:border-slate-500';
     const ICON_BASE = 'fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg';
+
+    function syncYoutubeFiltersUi() {
+      const show = tipo === 'videos' && fonte === 'youtube';
+      youtubeFilters.classList.toggle('hidden', !show);
+      youtubeFilters.classList.toggle('flex', show);
+      durChips.forEach((chip) => {
+        const active =
+          String(chip.dataset.max) === String(ytMaxDuration) &&
+          String(chip.dataset.shorts) === (ytShortsOnly ? '1' : '0');
+        chip.className = active
+          ? 'dur-chip rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-slate-950'
+          : 'dur-chip rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-400 hover:border-slate-500 hover:text-slate-200';
+      });
+    }
 
     function setFonteActive(next) {
       fonte = next;
@@ -168,9 +213,12 @@
       fonteHint.textContent = FONTE_HINTS[fonte] || '';
       if (fonte === 'tiktok') {
         termoInput.placeholder = 'Ex.: @tiktok';
+      } else if (fonte === 'youtube') {
+        termoInput.placeholder = 'Ex: motivação shorts, receita rápida…';
       } else {
         termoInput.placeholder = 'Ex: motivação, receita rápida…';
       }
+      syncYoutubeFiltersUi();
     }
 
     tipoBtns.forEach((btn) => {
@@ -189,6 +237,7 @@
           setFonteActive('pexels');
         } else {
           fonteWrap.classList.remove('hidden');
+          syncYoutubeFiltersUi();
         }
         if (lastTermo) searchContent(lastTermo);
       });
@@ -202,11 +251,20 @@
       });
     });
 
+    durChips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        ytMaxDuration = chip.dataset.max;
+        ytShortsOnly = chip.dataset.shorts === '1';
+        syncYoutubeFiltersUi();
+        if (lastTermo && fonte === 'youtube') searchContent(lastTermo);
+      });
+    });
+
     function formatDuration(seconds) {
       if (!seconds && seconds !== 0) return '—';
       const m = Math.floor(seconds / 60);
       const s = seconds % 60;
-      return m > 0 ? m + 'm ' + String(s).padStart(2, '0') + 's' : s + 's';
+      return m > 0 ? m + ':' + String(s).padStart(2, '0') : s + 's';
     }
 
     function escapeHtml(text) {
@@ -217,40 +275,57 @@
         .replace(/"/g, '&quot;');
     }
 
+    function durationBadgeClass(item) {
+      const d = item.duracao;
+      if (item.isShort || (d != null && d <= 60)) return 'bg-rose-500 text-white';
+      if (d != null && d <= 180) return 'bg-amber-500 text-slate-950';
+      return 'bg-black/75 text-white';
+    }
+
     function cardHtml(item, isVideo) {
-      const isLink = item.source === 'youtube' || item.source === 'tiktok' || item.url && !item.pexelsId;
+      const isLink = item.source === 'youtube' || item.source === 'tiktok' || (item.url && !item.pexelsId);
       const sourceLabel = item.source === 'youtube' ? 'YouTube' : item.source === 'tiktok' ? 'TikTok' : 'Pexels';
+      const isShort = Boolean(item.isShort || (item.duracao != null && item.duracao <= 60 && item.source === 'youtube'));
+      const title = item.titulo || item.autor || 'Sem título';
       const meta = isVideo
-        ? formatDuration(item.duracao) + (item.qualidade ? ' · ' + escapeHtml(item.qualidade) : '')
+        ? (item.qualidade ? escapeHtml(item.qualidade) : '')
         : (item.largura && item.altura ? item.largura + '×' + item.altura : 'foto');
+
       return `
-        <article class="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
-          <div class="aspect-video bg-slate-950">
+        <article class="group flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/50 transition hover:border-slate-600">
+          <div class="relative aspect-[9/16] max-h-72 bg-slate-950 sm:aspect-video sm:max-h-none">
             ${item.thumbnail
-              ? `<img src="${escapeHtml(item.thumbnail)}" alt="Preview" class="h-full w-full object-cover" loading="lazy" />`
+              ? `<img src="${escapeHtml(item.thumbnail)}" alt="" class="h-full w-full object-cover transition group-hover:scale-[1.02]" loading="lazy" />`
               : `<div class="flex h-full items-center justify-center text-sm text-slate-500">Sem preview</div>`
             }
-          </div>
-          <div class="space-y-3 p-4">
-            <div class="flex items-start justify-between gap-2">
-              <div class="min-w-0">
-                <p class="truncate text-sm text-white">${escapeHtml(item.titulo || item.autor || 'Sem título')}</p>
-                <p class="mt-1 text-xs text-slate-400">${escapeHtml(item.autor || 'Autor desconhecido')}</p>
-                <p class="mt-1 text-xs text-slate-500">${meta}</p>
-              </div>
-              <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener" class="shrink-0 text-xs text-emerald-400 hover:text-emerald-300">${sourceLabel}</a>
+            <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20"></div>
+            <div class="absolute left-2 top-2 flex flex-wrap gap-1.5">
+              ${isShort ? `<span class="rounded-md bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Short</span>` : ''}
+              <span class="rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-slate-200">${sourceLabel}</span>
             </div>
-            <button
-              type="button"
-              class="select-btn w-full rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:border-emerald-500 hover:text-emerald-300 disabled:opacity-50"
-              data-mode="${isLink ? 'link' : 'pexels'}"
-              data-url="${escapeHtml(item.url || '')}"
-              data-pexels-id="${escapeHtml(item.pexelsId || '')}"
-              data-fonte="${escapeHtml(item.source || fonte)}"
-              data-tipo="${isVideo ? 'videos' : 'imagens'}"
-            >
-              Adicionar à fila
-            </button>
+            ${isVideo ? `<span class="absolute bottom-2 right-2 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${durationBadgeClass(item)}">${formatDuration(item.duracao)}</span>` : ''}
+          </div>
+          <div class="flex flex-1 flex-col gap-3 p-3.5">
+            <div class="min-w-0">
+              <p class="line-clamp-2 text-sm font-semibold leading-snug text-white" title="${escapeHtml(title)}">${escapeHtml(title)}</p>
+              <p class="mt-1 truncate text-xs text-slate-400">${escapeHtml(item.autor || 'Autor desconhecido')}${meta ? ' · ' + meta : ''}</p>
+            </div>
+            <div class="mt-auto flex items-center gap-2">
+              <button
+                type="button"
+                class="select-btn flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                data-mode="${isLink ? 'link' : 'pexels'}"
+                data-url="${escapeHtml(item.url || '')}"
+                data-pexels-id="${escapeHtml(item.pexelsId || '')}"
+                data-fonte="${escapeHtml(item.source || fonte)}"
+                data-tipo="${isVideo ? 'videos' : 'imagens'}"
+              >
+                Adicionar à fila
+              </button>
+              <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener"
+                class="shrink-0 rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
+                title="Abrir original">↗</a>
+            </div>
           </div>
         </article>`;
     }
@@ -266,7 +341,11 @@
         let url = '/api/' + tipo + '/search?termo=' + encodeURIComponent(termo);
         if (tipo === 'videos') {
           url += '&fonte=' + encodeURIComponent(fonte);
-          if (fonte === 'youtube') url += '&per_page=40';
+          if (fonte === 'youtube') {
+            url += '&per_page=40';
+            url += '&max_duration=' + encodeURIComponent(ytMaxDuration);
+            if (ytShortsOnly) url += '&shorts_only=1';
+          }
           if (fonte === 'tiktok') url += '&per_page=24';
         }
 
@@ -276,7 +355,7 @@
 
         const items = data.videos || data.photos || [];
         let statusText = (data.totalResults ?? items.length) + ' resultado(s)';
-        if (data.page) statusText += ' · página ' + data.page;
+        if (data.shortsCount != null) statusText += ' · ' + data.shortsCount + ' short(s)';
         if (data.aviso) statusText += ' · ' + data.aviso;
         statusEl.textContent = statusText;
 
@@ -284,8 +363,7 @@
           statusEl.textContent = data.aviso || 'Nenhum resultado para este termo.';
           return;
         }
-        const isVideo = tipo === 'videos';
-        resultsEl.innerHTML = items.map((item) => cardHtml(item, isVideo)).join('');
+        resultsEl.innerHTML = items.map((item) => cardHtml(item, tipo === 'videos')).join('');
       } catch (err) {
         statusEl.textContent = err.message || 'Erro ao buscar';
       } finally {
@@ -389,12 +467,14 @@
         if (!res.ok) throw new Error(data.error || 'Falha ao salvar');
 
         btn.textContent = data.created === false ? 'Já na fila' : 'Na fila ✓';
-        btn.classList.add('border-emerald-500', 'text-emerald-300');
+        btn.classList.add('bg-emerald-600');
       } catch (err) {
         btn.textContent = original;
         btn.disabled = false;
         statusEl.textContent = err.message || 'Erro ao adicionar';
       }
     });
+
+    syncYoutubeFiltersUi();
   </script>
 <%- include('partials/app-end') %>

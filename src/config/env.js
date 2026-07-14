@@ -25,6 +25,7 @@ const env = {
       'http://localhost:3000/api/auth/facebook/callback',
   },
   ffmpegPath: process.env.FFMPEG_PATH || '',
+  pythonPath: process.env.PYTHON_PATH || '',
   storagePath: process.env.STORAGE_PATH || './storage',
 };
 

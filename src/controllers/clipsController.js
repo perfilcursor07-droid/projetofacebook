@@ -131,12 +131,12 @@ async function gerarMateria(req, res, next) {
         let transcricao = fresh.transcricao;
         let idioma = null;
 
-        if (!transcricao) {
+        if (!transcricao || /^\[(sem fala|falha)/i.test(String(transcricao))) {
           const result = await transcriptionService.transcribeClip({
             clipPath: clip.caminho_arquivo,
             sourceUrl: video.url_original,
           });
-          transcricao = result.text;
+          transcricao = result.empty ? '[sem fala detectada]' : result.text;
           idioma = result.language;
           await VideoClips.update(clip.id, { transcricao });
         }
@@ -148,6 +148,7 @@ async function gerarMateria(req, res, next) {
           idioma,
         });
 
+        // Matéria = texto editorial; transcrição fica só em `transcricao`
         await VideoClips.update(clip.id, {
           legenda_sugerida: gerado.materia,
           materia_status: 'pronta',

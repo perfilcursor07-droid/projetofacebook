@@ -32,11 +32,12 @@ app.use((req, res, next) => {
 });
 
 app.use(attachUser);
+app.use(require('./routes/accountPages'));
 
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
-    app: 'ClipadorAI',
+    app: 'ViralizeAI',
     pexels: Boolean(env.pexelsApiKey),
   });
 });
@@ -68,9 +69,8 @@ app.post('/login', async (req, res, next) => {
 });
 
 app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Busca'));
-app.get('/materias-ia', requireAuth, (_req, res) =>
-  renderPage(res, 'materias-ia', 'Matérias IA', { miaStandalone: true })
-);
+app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController').listPage);
+app.get('/materias-ia/:id', requireAuth, require('./controllers/materiasIaController').showMatter);
 app.get('/fila', requireAuth, (_req, res) => renderPage(res, 'fila', 'Fila'));
 app.get('/paginas', requireAuth, (_req, res) => renderPage(res, 'paginas', 'Páginas'));
 app.get('/dashboard', requireAuth, require('./controllers/dashboardController').show);

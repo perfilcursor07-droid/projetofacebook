@@ -4,7 +4,8 @@ const importService = require('../services/importService');
 const Videos = require('../models/Videos');
 const VideoClips = require('../models/VideoClips');
 const processingService = require('../services/processingService');
-const { MAX_CLIP_SECONDS, MIN_CLIP_SECONDS, probe } = require('../services/ffmpegService');
+const deepseekService = require('../services/deepseekService');
+const { MAX_CLIP_SECONDS, MAX_MANUAL_CLIP_SECONDS, MIN_CLIP_SECONDS, probe } = require('../services/ffmpegService');
 const { storageAbsolutePath } = require('../services/downloadService');
 
 /** Registra um vídeo enviado por upload (já está no disco via multer). */
@@ -174,18 +175,24 @@ async function clip(req, res, next) {
       err.status = 400;
       throw err;
     }
-    if (fim - inicio > MAX_CLIP_SECONDS) {
-      const err = new Error(`Corte máximo de ${MAX_CLIP_SECONDS} segundos`);
+    const duracaoCorte = fim - inicio;
+    if (duracaoCorte > MAX_MANUAL_CLIP_SECONDS) {
+      const err = new Error(`Corte máximo de ${MAX_MANUAL_CLIP_SECONDS} segundos (30 min)`);
       err.status = 400;
       throw err;
     }
-    if (fim - inicio < MIN_CLIP_SECONDS) {
+    if (duracaoCorte < MIN_CLIP_SECONDS) {
       const err = new Error(`Corte mínimo de ${MIN_CLIP_SECONDS} segundos (exigência do Facebook Reels)`);
       err.status = 400;
       throw err;
     }
     if (video.duracao && inicio >= video.duracao) {
       const err = new Error(`Início além da duração do vídeo (${video.duracao}s)`);
+      err.status = 400;
+      throw err;
+    }
+    if (video.duracao && fim > video.duracao + 1) {
+      const err = new Error(`Fim além da duração do vídeo (${video.duracao}s)`);
       err.status = 400;
       throw err;
     }
@@ -202,7 +209,61 @@ async function clip(req, res, next) {
     const created = await VideoClips.findById(clipId);
     processingService.queueClipGeneration(created, video);
 
-    res.status(202).json({ clip: created, queued: true });
+    res.status(202).json({
+      clip: created,
+      queued: true,
+      aviso:
+        duracaoCorte > MAX_CLIP_SECONDS
+          ? `Corte de ${Math.round(duracaoCorte)}s — acima de ${MAX_CLIP_SECONDS}s: publique como Vídeo (não Reel)`
+          : undefined,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Analisa o vídeo com IA (Whisper + DeepSeek) e sugere/gera os melhores cortes.
+ * Body: { aspect_ratio?, max_cortes?, gerar? }
+ */
+async function analyze(req, res, next) {
+  try {
+    const video = await Videos.findById(req.params.id);
+    if (!video || video.user_id !== req.session.userId) {
+      const err = new Error('Vídeo não encontrado');
+      err.status = 404;
+      throw err;
+    }
+    if (!video.caminho_local) {
+      const err = new Error('Baixe o vídeo antes de analisar os cortes');
+      err.status = 422;
+      throw err;
+    }
+
+    deepseekService.assertDeepseek();
+
+    const meta = typeof video.metadata === 'string'
+      ? (() => { try { return JSON.parse(video.metadata); } catch { return {}; } })()
+      : (video.metadata || {});
+
+    if (meta.analise_status === 'processando') {
+      return res.status(202).json({
+        queued: true,
+        message: 'Análise IA já em andamento — aguarde e atualize a fila',
+      });
+    }
+
+    processingService.queueVideoAnalyze(video, {
+      aspectRatio: req.body.aspect_ratio,
+      maxCortes: req.body.max_cortes || req.body.maxCortes || 3,
+      gerar: req.body.gerar !== false && req.body.gerar !== 0 && req.body.gerar !== '0',
+    });
+
+    res.status(202).json({
+      queued: true,
+      message:
+        'IA analisando a fala para criar momentos completos de 40–90s. Os melhores cortes aparecerão na fila em instantes.',
+    });
   } catch (err) {
     next(err);
   }
@@ -292,8 +353,22 @@ async function search(req, res, next) {
     const fonte = String(req.query.fonte || 'pexels').toLowerCase();
 
     if (fonte === 'youtube') {
+      const maxDurationRaw = req.query.max_duration ?? req.query.maxDuration;
+      const maxDuration =
+        maxDurationRaw === 'all' || maxDurationRaw === ''
+          ? null
+          : maxDurationRaw != null
+            ? Number(maxDurationRaw)
+            : 180;
+      const shortsOnly =
+        req.query.shorts_only === '1' ||
+        req.query.shortsOnly === '1' ||
+        req.query.filtro === 'shorts';
+
       const result = await importService.searchYoutube(termo, {
         limit: perPage || 40,
+        maxDuration: shortsOnly ? 60 : maxDuration,
+        shortsOnly,
       });
       return res.json(result);
     }
@@ -415,6 +490,7 @@ module.exports = {
   download,
   clip,
   clipAuto,
+  analyze,
   upload,
   importLink,
   removeVideo,

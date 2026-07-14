@@ -5,7 +5,7 @@
       <div>
         <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400/80">Produção</p>
         <h1 class="mt-1 text-2xl font-semibold text-white">Fila</h1>
-        <p class="mt-1 text-xs text-slate-500">Cortes até 90s · fala automática após o corte · atualiza sozinho</p>
+        <p class="mt-1 text-xs text-slate-500">IA melhores cortes · manual · Auto 90s · fala automática · atualiza sozinho</p>
       </div>
       <div class="flex items-center gap-3">
         <span id="last-updated" class="text-xs text-slate-500"></span>
@@ -59,7 +59,17 @@
     <section id="tab-videos" class="tab-panel mt-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div id="videos-filter" class="flex flex-wrap gap-1.5"></div>
-        <span id="videos-status" class="text-xs text-slate-500">Carregando…</span>
+        <div class="flex items-center gap-2">
+          <button type="button" id="collapse-all-videos"
+            class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-slate-500 hover:text-slate-200">
+            Recolher todos
+          </button>
+          <button type="button" id="expand-all-videos"
+            class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-slate-500 hover:text-slate-200">
+            Expandir todos
+          </button>
+          <span id="videos-status" class="text-xs text-slate-500">Carregando…</span>
+        </div>
       </div>
       <div id="videos-list" class="mt-3 space-y-3"></div>
     </section>
@@ -148,6 +158,34 @@
     let filterImagem = 'todos';
     let filterPub = 'todos';
 
+    // Estado de recolher (sobrevive ao auto-refresh)
+    const uiCollapse = {
+      video: {},   // id -> bool (card inteiro: form + cortes)
+      form: {},    // id -> bool (painel de corte)
+      clips: {},   // id -> bool (grade de cortes)
+    };
+
+    function isCollapsed(group, id) {
+      if (uiCollapse[group] && Object.prototype.hasOwnProperty.call(uiCollapse[group], id)) {
+        return Boolean(uiCollapse[group][id]);
+      }
+      // Padrão: se já há cortes, recolhe o formulário (a grade de cortes fica aberta)
+      if (group === 'form') {
+        const v = allVideos.find((x) => String(x.id) === String(id));
+        return Boolean(v?.clips?.length);
+      }
+      return false;
+    }
+
+    function setCollapsed(group, id, value) {
+      if (!uiCollapse[group]) uiCollapse[group] = {};
+      uiCollapse[group][id] = Boolean(value);
+    }
+
+    function collapseLabel(collapsed, openText, closedText) {
+      return collapsed ? closedText : openText;
+    }
+
     const VIDEO_STATUSES = [
       { key: 'todos', label: 'Todos' },
       { key: 'pendente', label: 'Pendente' },
@@ -231,7 +269,7 @@
     function publishFormHtml(kind, id, defaultLegenda = '') {
       const isClip = kind === 'clip';
       const publishControls = fbPages.length
-        ? `<div class="flex flex-wrap items-center gap-2">
+        ? `<div class="grid grid-cols-1 gap-2 ${isClip ? 'sm:grid-cols-[1fr_auto_auto]' : 'sm:grid-cols-[1fr_auto]'}">
             ${pageSelectHtml()}
             ${isClip ? `
             <select name="modo" class="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none">
@@ -240,13 +278,13 @@
             </select>` : ''}
             <button type="submit" class="rounded-lg bg-[#1877F2] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#166FE5] disabled:opacity-50">Publicar</button>
           </div>`
-        : `<a href="/paginas" class="text-xs text-sky-400 hover:text-sky-300">Conecte uma página para publicar →</a>`;
+        : `<a href="/paginas" class="inline-flex text-xs text-sky-400 hover:text-sky-300">Conecte uma página para publicar →</a>`;
 
       return `
         <form class="publish-form space-y-2" data-kind="${kind}" data-id="${id}">
           <label class="block">
             <span class="text-[11px] font-semibold uppercase tracking-wide text-violet-300">Matéria</span>
-            <textarea name="legenda" rows="${isClip ? 5 : 3}" placeholder="A matéria aparece aqui após gerar…"
+            <textarea name="legenda" rows="${isClip ? 4 : 3}" placeholder="A matéria aparece aqui após gerar…"
               class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none">${escapeHtml(defaultLegenda)}</textarea>
           </label>
           ${publishControls}
@@ -254,52 +292,154 @@
     }
 
     // —— clipes ——
+    function clipPreviewHtml(clip) {
+      if (clip.caminho_arquivo) {
+        return `<div class="relative overflow-hidden rounded-xl bg-black ring-1 ring-white/5">
+          <video src="/media/${escapeHtml(clip.caminho_arquivo)}" controls playsinline preload="metadata"
+            class="aspect-[9/16] max-h-64 w-full object-contain sm:aspect-video sm:max-h-52"></video>
+        </div>`;
+      }
+
+      if (clip.status === 'processando') {
+        return `<div class="relative flex aspect-video max-h-52 w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950/40 ring-1 ring-amber-500/20">
+          <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(245,158,11,0.12),transparent_55%)]"></div>
+          <span class="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-amber-400/30 bg-amber-500/10">
+            <span class="h-5 w-5 animate-spin rounded-full border-2 border-amber-300/30 border-t-amber-300"></span>
+          </span>
+          <div class="relative text-center">
+            <p class="text-sm font-medium text-amber-100">Gerando corte…</p>
+            <p class="mt-1 text-[11px] text-amber-200/60">ffmpeg em andamento</p>
+          </div>
+        </div>`;
+      }
+
+      if (clip.status === 'erro') {
+        return `<div class="flex aspect-video max-h-52 w-full flex-col items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-slate-950 to-rose-950/30 ring-1 ring-rose-500/20">
+          <span class="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500/15 text-rose-300">!</span>
+          <p class="text-sm font-medium text-rose-200">Falha no corte</p>
+          <p class="text-[11px] text-rose-300/70">Use retentar ou exclua e recrie</p>
+        </div>`;
+      }
+
+      return `<div class="flex aspect-video max-h-52 w-full items-center justify-center rounded-xl bg-slate-950 text-xs text-slate-500 ring-1 ring-slate-800">Sem arquivo</div>`;
+    }
+
+    function looksLikeTranscriptInMateria(materia, fala) {
+      const a = String(materia || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const b = String(fala || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!a || !b || b.length < 40) return false;
+      if (a === b) return true;
+      if (a.includes(b.slice(0, Math.min(100, b.length)))) return true;
+      return false;
+    }
+
     function clipHtml(clip, index) {
       const canAi = clip.status === 'pronto' || clip.status === 'publicado';
       const canRetry = clip.status === 'processando' || clip.status === 'erro';
       const extracting = clip.materia_status === 'gerando';
-      const materia = String(clip.legenda_sugerida || '').trim();
       const fala = cleanTranscript(clip.transcricao);
+      // Não mostrar transcrição no campo Matéria (só texto editorial)
+      let materia = String(clip.legenda_sugerida || '').trim();
+      if (
+        !materia ||
+        /^\[(sem fala|falha)/i.test(materia) ||
+        looksLikeTranscriptInMateria(materia, fala)
+      ) {
+        materia = '';
+      }
       const inicio = Number(clip.inicio_segundo);
       const fim = Number(clip.fim_segundo);
       const dur = Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : null;
-
-      const preview = clip.caminho_arquivo
-        ? `<video src="/media/${escapeHtml(clip.caminho_arquivo)}" controls playsinline preload="metadata"
-            class="h-48 w-full rounded-lg bg-black object-contain"></video>`
-        : `<div class="flex h-48 w-full items-center justify-center rounded-lg bg-slate-950 text-xs text-slate-500">${clip.status === 'processando' ? 'Processando…' : 'Sem arquivo'}</div>`;
+      const ratio = clip.aspect_ratio || '9:16';
+      const borderTone = clip.status === 'erro'
+        ? 'border-rose-500/30 hover:border-rose-500/50'
+        : clip.status === 'processando'
+          ? 'border-amber-500/25 hover:border-amber-500/40'
+          : clip.status === 'pronto' || clip.status === 'publicado'
+            ? 'border-emerald-500/20 hover:border-emerald-500/40'
+            : 'border-slate-800 hover:border-slate-700';
 
       return `
-        <div class="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3.5">
-          ${preview}
+        <article class="group flex h-full flex-col overflow-hidden rounded-2xl border bg-slate-950/50 shadow-sm shadow-black/20 transition ${borderTone}">
+          ${clipPreviewHtml(clip)}
 
-          <div class="flex items-start justify-between gap-2">
-            <div>
-              <p class="text-sm font-semibold text-white">Corte #${index + 1} · ${inicio}–${fim}s${dur != null ? ` · ${dur}s` : ''}</p>
-              <div class="mt-1.5 flex flex-wrap gap-1.5">${badge(clip.status)}${materiaStatusBadge(clip.materia_status)}</div>
+          <div class="flex flex-1 flex-col gap-3 p-3.5">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <span class="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md bg-violet-500/15 px-1.5 text-xs font-bold text-violet-300">#${index + 1}</span>
+                <h3 class="text-sm font-semibold text-white">Corte</h3>
+                ${badge(clip.status)}
+                ${materiaStatusBadge(clip.materia_status)}
+              </div>
+              <button type="button"
+                class="action-btn shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium text-rose-400/80 transition hover:bg-rose-500/10 hover:text-rose-300"
+                data-action="delete-clip" data-id="${clip.id}" title="Excluir corte">
+                Excluir
+              </button>
             </div>
-            <button type="button" class="action-btn shrink-0 rounded-lg px-2 py-1 text-xs text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300" data-action="delete-clip" data-id="${clip.id}">Excluir</button>
-          </div>
 
-          ${extracting && !fala ? `<p class="text-xs text-amber-300">Extraindo fala…</p>` : ''}
-          ${fala ? `<details class="text-xs text-slate-400"><summary class="cursor-pointer text-slate-500 hover:text-slate-300">Ver fala</summary><p class="mt-1.5 leading-relaxed">${escapeHtml(fala)}</p></details>` : ''}
-          ${clip.erro_mensagem ? `<p class="text-xs text-rose-300">${escapeHtml(clip.erro_mensagem)}</p>` : ''}
-          ${canRetry ? `<button type="button" class="ai-btn w-fit rounded-lg border border-amber-700/60 px-3 py-1.5 text-xs text-amber-200 transition hover:bg-amber-500/10" data-action="retry-clip" data-id="${clip.id}">Retentar corte</button>` : ''}
+            <div class="grid grid-cols-3 gap-1.5">
+              <span class="rounded-md border border-slate-800 bg-slate-900/80 px-2 py-1 text-center text-[10px] text-slate-300">
+                <span class="block text-slate-500">intervalo</span>${inicio}–${fim}s
+              </span>
+              <span class="rounded-md border border-slate-800 bg-slate-900/80 px-2 py-1 text-center text-[10px] text-slate-300">
+                <span class="block text-slate-500">duração</span>${dur != null ? dur + 's' : '—'}
+              </span>
+              <span class="rounded-md border border-slate-800 bg-slate-900/80 px-2 py-1 text-center text-[10px] text-slate-300">
+                <span class="block text-slate-500">formato</span>${escapeHtml(ratio)}
+              </span>
+            </div>
 
-          ${canAi ? `
-          <div class="flex flex-wrap items-center gap-2">
-            <input type="text" class="clip-tema min-w-[140px] flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
-              data-clip-tema="${clip.id}" placeholder="Tema da matéria (opcional)" />
-            <button type="button" class="ai-btn rounded-lg bg-violet-500 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-400" data-action="materia-clip" data-id="${clip.id}">${materia ? 'Refazer' : 'Gerar matéria'}</button>
-            ${!fala ? `<button type="button" class="ai-btn rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-500" data-action="transcribe-clip" data-id="${clip.id}">Extrair fala</button>` : ''}
+            ${extracting && !fala ? `
+            <div class="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+              <span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>
+              Extraindo fala…
+            </div>` : ''}
+
+            ${fala ? `
+            <details class="rounded-lg border border-slate-800 bg-slate-900/40">
+              <summary class="cursor-pointer px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200">Ver fala / transcrição</summary>
+              <p class="border-t border-slate-800 px-3 py-2 text-xs leading-relaxed text-slate-400">${escapeHtml(fala)}</p>
+            </details>` : ''}
+
+            ${clip.erro_mensagem ? `
+            <div class="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs leading-relaxed text-rose-200">
+              ${escapeHtml(clip.erro_mensagem)}
+            </div>` : ''}
+
+            ${canRetry ? `
+            <div class="mt-auto border-t border-slate-800/80 pt-3">
+              <button type="button"
+                class="ai-btn w-full rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-500/20"
+                data-action="retry-clip" data-id="${clip.id}">
+                Retentar corte
+              </button>
+            </div>` : ''}
+
+            ${canAi ? `
+            <div class="mt-auto space-y-2.5 border-t border-slate-800/80 pt-3">
+              <div class="grid grid-cols-1 gap-2">
+                <input type="text"
+                  class="clip-tema w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
+                  data-clip-tema="${clip.id}" placeholder="Tema da matéria (opcional)" />
+                <div class="grid grid-cols-2 gap-2">
+                  <button type="button"
+                    class="ai-btn rounded-xl bg-violet-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-400"
+                    data-action="materia-clip" data-id="${clip.id}">${materia ? 'Refazer matéria' : 'Gerar matéria'}</button>
+                  ${!fala
+                    ? `<button type="button" class="ai-btn rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white" data-action="transcribe-clip" data-id="${clip.id}">Extrair fala</button>`
+                    : `<span class="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-center text-[11px] text-emerald-300">Fala ok</span>`}
+                </div>
+              </div>
+              ${publishFormHtml('clip', clip.id, materia)}
+            </div>` : ''}
           </div>
-          ${publishFormHtml('clip', clip.id, materia)}` : ''}
-        </div>`;
+        </article>`;
     }
 
     function videoActionsHtml(v) {
       if (v.status === 'pendente' || v.status === 'erro') {
-        return `<button type="button" class="action-btn rounded-lg bg-emerald-500 px-3.5 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400" data-action="download-video" data-id="${v.id}">Baixar</button>`;
+        return `<button type="button" class="action-btn inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-sm shadow-emerald-950/30 transition hover:bg-emerald-400" data-action="download-video" data-id="${v.id}">Baixar vídeo</button>`;
       }
       if (v.status === 'baixado' || v.status === 'cortado') {
         const max = Number(v.duracao) > 0 ? Number(v.duracao) : 600;
@@ -307,65 +447,185 @@
         const defaultFim = Math.min(max, 90);
         const estimativa = Math.floor(max / 90) + (max % 90 >= 3 ? 1 : 0);
         return `
-          <form class="clip-form flex flex-wrap items-end gap-2" data-id="${v.id}" data-max="${max}">
-            <label class="text-[11px] text-slate-400">Início
-              <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
-                class="mt-1 block w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
-            </label>
-            <label class="text-[11px] text-slate-400">Fim
-              <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
-                class="mt-1 block w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
-            </label>
-            <label class="text-[11px] text-slate-400">Formato
-              <select name="aspect_ratio" class="mt-1 block rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none">
-                <option value="9:16">9:16</option>
-                <option value="1:1">1:1</option>
-                <option value="original">Original</option>
-              </select>
-            </label>
-            <button type="submit" class="rounded-lg bg-violet-500 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-400">Cortar</button>
-            <button type="button" class="action-btn rounded-lg border border-violet-500/50 bg-violet-500/10 px-3.5 py-1.5 text-xs text-violet-200 transition hover:bg-violet-500/20"
-              data-action="clip-auto" data-id="${v.id}" data-aspect="9:16">
-              Auto 90s (~${estimativa})
-            </button>
+          <form class="clip-form space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4" data-id="${v.id}" data-max="${max}">
+            <div class="grid gap-2 sm:grid-cols-3">
+              <div class="rounded-xl border border-fuchsia-500/25 bg-fuchsia-500/5 px-3 py-2.5">
+                <p class="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">Recomendado</p>
+                <p class="mt-0.5 text-xs font-semibold text-white">Melhores cortes por IA</p>
+                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">Fala completa, contexto e fechamento · 40–90s.</p>
+              </div>
+              <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2.5">
+                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Manual</p>
+                <p class="mt-0.5 text-xs font-semibold text-slate-200">Intervalo personalizado</p>
+                <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Você escolhe exatamente o início e o fim.</p>
+              </div>
+              <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2.5">
+                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Automático</p>
+                <p class="mt-0.5 text-xs font-semibold text-slate-200">Blocos de 90 segundos</p>
+                <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Divide tudo, sem avaliar o conteúdo da fala.</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <label class="text-[11px] font-medium text-slate-400">Início (s)
+                <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
+                  class="mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
+              </label>
+              <label class="text-[11px] font-medium text-slate-400">Fim (s)
+                <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
+                  class="clip-fim mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
+              </label>
+              <label class="col-span-2 text-[11px] font-medium text-slate-400 sm:col-span-1">Formato
+                <select name="aspect_ratio" class="mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none">
+                  <option value="9:16">9:16 · vertical</option>
+                  <option value="1:1">1:1 · quadrado</option>
+                  <option value="original">Formato original</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Definir fim:</span>
+              <button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 30)}">30s</button>
+              <button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 60)}">60s</button>
+              <button type="button" class="fim-preset rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300" data-fim="${Math.min(max, 90)}">90s</button>
+              ${max > 90 ? `<button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-amber-500 hover:text-amber-300" data-fim="${Math.min(max, 180)}">3min</button>` : ''}
+              ${max > 90 ? `<button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-amber-500 hover:text-amber-300" data-fim="${max}">Até o fim (${max}s)</button>` : ''}
+            </div>
+
+            <div class="grid gap-2 sm:grid-cols-3">
+              <button type="button" class="action-btn order-first rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 py-2.5 text-xs font-bold text-white shadow-sm shadow-fuchsia-950/40 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60 sm:order-last"
+                data-action="analyze-video" data-id="${v.id}">
+                Gerar melhores cortes
+              </button>
+              <button type="submit" class="rounded-xl border border-violet-500/50 bg-violet-500/10 px-4 py-2.5 text-xs font-semibold text-violet-100 transition hover:bg-violet-500/20">Criar corte manual</button>
+              <button type="button" class="action-btn rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white"
+                data-action="clip-auto" data-id="${v.id}" data-aspect="9:16">
+                Dividir em 90s (~${estimativa})
+              </button>
+            </div>
           </form>`;
       }
       return '';
     }
 
+    function parseVideoMeta(v) {
+      if (!v?.metadata) return {};
+      if (typeof v.metadata === 'object') return v.metadata;
+      try { return JSON.parse(v.metadata); } catch { return {}; }
+    }
+
     function videoHtml(v) {
       const clips = v.clips || [];
       const durMin = v.duracao ? Math.round(v.duracao / 60) + ' min' : '—';
+      const cardCollapsed = isCollapsed('video', v.id);
+      const formCollapsed = isCollapsed('form', v.id);
+      const clipsCollapsed = isCollapsed('clips', v.id);
+      const canCut = v.status === 'baixado' || v.status === 'cortado';
+      const formHtml = videoActionsHtml(v);
+      const meta = parseVideoMeta(v);
+      const analise = meta.analise_status || '';
+      const sugestoes = Array.isArray(meta.sugestoes_corte) ? meta.sugestoes_corte : [];
+
       return `
-        <article class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 transition hover:border-slate-700">
-          <div class="flex gap-4">
-            <div class="h-[72px] w-32 flex-shrink-0 overflow-hidden rounded-lg bg-slate-950">
-              ${v.thumbnail ? `<img src="${escapeHtml(v.thumbnail)}" alt="" class="h-full w-full object-cover" />` : ''}
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-1.5">
-                    ${badge(v.status)}
-                    <span class="text-xs text-slate-500">${escapeHtml(v.origem || 'pexels')} · ${durMin}</span>
-                    ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" class="text-xs text-emerald-400 hover:text-emerald-300">original</a>` : ''}
-                  </div>
-                  <p class="mt-1.5 truncate text-sm font-medium text-white">${escapeHtml(v.titulo || v.termo_busca)}</p>
-                  <p class="mt-0.5 text-xs text-slate-500">${escapeHtml(v.autor || '')}</p>
-                </div>
-                <button type="button" class="action-btn shrink-0 rounded-lg px-2 py-1 text-xs text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300" data-action="delete-video" data-id="${v.id}">Excluir</button>
+        <article class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50 shadow-lg shadow-black/10 transition hover:border-slate-700" data-video-card="${v.id}">
+          <div class="p-4 sm:p-5">
+            <div class="flex flex-col gap-4 sm:flex-row">
+              <div class="h-28 w-full flex-shrink-0 overflow-hidden rounded-xl bg-slate-950 ring-1 ring-white/5 sm:h-[82px] sm:w-36">
+                ${v.thumbnail ? `<img src="${escapeHtml(v.thumbnail)}" alt="" class="h-full w-full object-cover" />` : '<div class="flex h-full items-center justify-center text-xs text-slate-600">Sem capa</div>'}
               </div>
-              ${v.erro_mensagem ? `<p class="mt-1.5 text-xs text-rose-300">${escapeHtml(v.erro_mensagem)}</p>` : ''}
-              <div class="mt-3">${videoActionsHtml(v)}</div>
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      ${badge(v.status)}
+                      ${analise === 'processando' ? badge('processando', 'IA analisando…') : ''}
+                      ${analise === 'pronta' ? badge('pronta', 'IA concluída') : ''}
+                      <span class="text-xs text-slate-500">${escapeHtml(v.origem || 'pexels')} · ${durMin}</span>
+                      ${clips.length ? `<span class="rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-300">${clips.length} corte(s)</span>` : ''}
+                      ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" class="rounded-full border border-emerald-500/20 px-2 py-0.5 text-[11px] text-emerald-400 transition hover:bg-emerald-500/10">Ver original</a>` : ''}
+                    </div>
+                    <p class="mt-2 break-words text-sm font-semibold leading-snug text-white">${escapeHtml(v.titulo || v.termo_busca)}</p>
+                    <p class="mt-1 text-xs text-slate-500">${escapeHtml(v.autor || '')}</p>
+                  </div>
+                  <div class="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                    ${canCut ? `
+                    <button type="button" class="action-btn rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-3.5 py-2 text-xs font-bold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-50"
+                      data-action="analyze-video" data-id="${v.id}" ${analise === 'processando' ? 'disabled' : ''}>
+                      ${analise === 'processando' ? 'Analisando fala…' : (analise === 'pronta' ? 'Refazer melhores cortes' : 'Melhores cortes IA')}
+                    </button>` : ''}
+                    <button type="button"
+                      class="collapse-btn rounded-xl border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-emerald-500 hover:text-emerald-300"
+                      data-collapse-group="video" data-collapse-id="${v.id}">
+                      ${collapseLabel(cardCollapsed, 'Recolher', 'Expandir')}
+                    </button>
+                    <button type="button" class="action-btn rounded-xl border border-transparent px-3 py-2 text-xs font-medium text-rose-400 transition hover:border-rose-500/20 hover:bg-rose-500/10 hover:text-rose-300" data-action="delete-video" data-id="${v.id}">Excluir</button>
+                  </div>
+                </div>
+                ${v.erro_mensagem ? `<p class="mt-2 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">${escapeHtml(v.erro_mensagem)}</p>` : ''}
+                ${analise === 'processando' ? `<div class="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200"><span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>Ouvindo a fala e montando momentos completos de 40–90s…</div>` : ''}
+              </div>
             </div>
+
+            ${analise === 'pronta' && sugestoes.length ? `
+            <div class="mt-4 rounded-xl border border-fuchsia-500/20 bg-gradient-to-r from-fuchsia-500/5 to-violet-500/5 p-3.5">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-xs font-bold text-fuchsia-200">Melhores momentos encontrados</p>
+                <span class="text-[11px] text-slate-500">${sugestoes.length} sugestão(ões) · falas completas</span>
+              </div>
+              <div class="mt-2.5 grid gap-2 md:grid-cols-3">
+                ${sugestoes.map((s, i) => {
+                  const inicio = Number(s.inicio);
+                  const fim = Number(s.fim);
+                  const duracao = Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : 0;
+                  return `<div class="min-w-0 rounded-lg border border-slate-800/80 bg-slate-950/50 px-3 py-2">
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-[11px] font-bold text-fuchsia-300">#${i + 1} · ${inicio}–${fim}s</span>
+                      <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">${duracao}s</span>
+                    </div>
+                    <p class="mt-1.5 text-[11px] leading-relaxed text-slate-400">${escapeHtml(s.motivo || 'Momento selecionado pela análise da fala.')}</p>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>` : ''}
           </div>
-          ${clips.length ? `
-          <div class="mt-4 border-t border-slate-800 pt-4">
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Cortes (${clips.length})</p>
-            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              ${clips.map((c, i) => clipHtml(c, i)).join('')}
-            </div>
-          </div>` : ''}
+
+          <div class="video-body space-y-3 border-t border-slate-800 bg-slate-950/20 p-3 sm:p-4 ${cardCollapsed ? 'hidden' : ''}">
+            ${canCut && formHtml ? `
+            <div class="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/30">
+              <button type="button"
+                class="collapse-btn flex w-full items-center justify-between px-3.5 py-3 text-left text-xs font-medium text-slate-300 transition hover:bg-slate-900/50 hover:text-white"
+                data-collapse-group="form" data-collapse-id="${v.id}">
+                <span class="inline-flex items-center gap-2">
+                  <span class="rounded-md bg-violet-500/15 px-2 py-1 font-semibold text-violet-300">Criar cortes</span>
+                  <span class="font-normal text-slate-500">IA · manual · blocos de 90s</span>
+                </span>
+                <span class="text-slate-500">${collapseLabel(formCollapsed, '▾ Recolher', '▸ Expandir')}</span>
+              </button>
+              <div class="border-t border-slate-800 p-3 ${formCollapsed ? 'hidden' : ''}">
+                ${formHtml}
+              </div>
+            </div>` : (formHtml ? `<div>${formHtml}</div>` : '')}
+
+            ${clips.length ? `
+            <div class="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/30">
+              <button type="button"
+                class="collapse-btn flex w-full items-center justify-between px-3.5 py-3 text-left text-xs font-medium text-slate-300 transition hover:bg-slate-900/50 hover:text-white"
+                data-collapse-group="clips" data-collapse-id="${v.id}">
+                <span class="inline-flex items-center gap-2">
+                  <span class="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md bg-violet-500/15 px-1.5 text-xs font-bold text-violet-300">${clips.length}</span>
+                  <span class="font-semibold uppercase tracking-wider text-slate-300">Cortes gerados</span>
+                  <span class="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] font-normal text-slate-500">3 por linha</span>
+                </span>
+                <span class="text-slate-500">${collapseLabel(clipsCollapsed, '▾ Recolher', '▸ Expandir')}</span>
+              </button>
+              <div class="border-t border-slate-800 p-3 sm:p-4 ${clipsCollapsed ? 'hidden' : ''}">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  ${clips.map((c, i) => clipHtml(c, i)).join('')}
+                </div>
+              </div>
+            </div>` : ''}
+          </div>
         </article>`;
     }
 
@@ -550,8 +810,30 @@
       });
     });
 
-    // —— filtros por status (delegado) ——
+    // —— filtros / recolher / atalhos (delegado) ——
     document.addEventListener('click', (e) => {
+      const collapseBtn = e.target.closest('.collapse-btn');
+      if (collapseBtn) {
+        const group = collapseBtn.dataset.collapseGroup;
+        const id = collapseBtn.dataset.collapseId;
+        if (group && id != null) {
+          setCollapsed(group, id, !isCollapsed(group, id));
+          renderVideos();
+        }
+        return;
+      }
+
+      const preset = e.target.closest('.fim-preset');
+      if (preset) {
+        const form = preset.closest('.clip-form');
+        if (!form) return;
+        const fimInput = form.querySelector('input[name="fim"]');
+        if (!fimInput) return;
+        fimInput.value = preset.dataset.fim;
+        fimInput.dispatchEvent(new Event('input', { bubbles: true }));
+        return;
+      }
+
       const chip = e.target.closest('.filter-chip');
       if (!chip) return;
       const group = chip.dataset.filterGroup;
@@ -559,6 +841,24 @@
       if (group === 'video') { filterVideo = value; renderVideos(); }
       else if (group === 'imagem') { filterImagem = value; renderImagens(); }
       else if (group === 'pub') { filterPub = value; renderPublicacoes(); }
+    });
+
+    document.getElementById('collapse-all-videos').addEventListener('click', () => {
+      allVideos.forEach((v) => {
+        setCollapsed('video', v.id, true);
+        setCollapsed('form', v.id, true);
+        setCollapsed('clips', v.id, true);
+      });
+      renderVideos();
+    });
+
+    document.getElementById('expand-all-videos').addEventListener('click', () => {
+      allVideos.forEach((v) => {
+        setCollapsed('video', v.id, false);
+        setCollapsed('form', v.id, false);
+        setCollapsed('clips', v.id, false);
+      });
+      renderVideos();
     });
 
     // —— ações de IA (gerar matéria, transcrever, retentar) ——
@@ -633,6 +933,27 @@
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Falha ao excluir vídeo');
           loadFila();
+          return;
+        }
+
+        if (action === 'analyze-video') {
+          btn.textContent = 'IA analisando…';
+          const aspectSelect = btn.closest('article')?.querySelector('.clip-form select[name="aspect_ratio"]');
+          const res = await fetch('/api/videos/' + id + '/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              aspect_ratio: aspectSelect?.value || '9:16',
+              max_cortes: 3,
+              gerar: true,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha ao analisar cortes com IA');
+          setCollapsed('video', id, false);
+          setCollapsed('clips', id, false);
+          setTimeout(loadFila, 2000);
+          setTimeout(loadFila, 15000);
           return;
         }
 
@@ -766,8 +1087,13 @@
         showError('O corte precisa ter no mínimo 3 segundos (exigência do Facebook Reels). Ex.: início 0 e fim 15.');
         return;
       }
-      if (duracaoCorte > 90) {
-        showError('O corte máximo é de 90 segundos');
+      const maxVideo = Number(form.dataset.max) || 1800;
+      if (duracaoCorte > 1800) {
+        showError('Corte máximo de 30 minutos');
+        return;
+      }
+      if (fim > maxVideo + 1) {
+        showError('Fim além da duração do vídeo (' + maxVideo + 's)');
         return;
       }
 
@@ -782,6 +1108,7 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha ao criar corte');
+        if (data.aviso) showError(data.aviso);
         setTimeout(loadFila, 1500);
       } catch (err) {
         showError(err.message);

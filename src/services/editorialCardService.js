@@ -1,0 +1,206 @@
+const fs = require('fs');
+const path = require('path');
+const dns = require('dns').promises;
+const net = require('net');
+const crypto = require('crypto');
+const axios = require('axios');
+const sharp = require('sharp');
+const { env } = require('../config/env');
+
+const WIDTH = 1080;
+const HEIGHT = 1350;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+function escapeXml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function normalizeColor(value, fallback) {
+  const candidate = String(value || '').trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(candidate) ? candidate : fallback;
+}
+
+function isPrivateAddress(address) {
+  if (!address) return true;
+  if (net.isIPv4(address)) {
+    const [a, b] = address.split('.').map(Number);
+    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  const normalized = address.toLowerCase();
+  return normalized === '::1' || normalized === '::' || normalized.startsWith('fc') ||
+    normalized.startsWith('fd') || normalized.startsWith('fe80:') || normalized.startsWith('::ffff:127.');
+}
+
+async function assertPublicImageUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('URL da imagem editorial inválida');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Protocolo de imagem não permitido');
+  const addresses = await dns.lookup(parsed.hostname, { all: true });
+  if (!addresses.length || addresses.some((entry) => isPrivateAddress(entry.address))) {
+    throw new Error('Endereço da imagem editorial não permitido');
+  }
+  return parsed.toString();
+}
+
+async function fetchImage(url) {
+  const safeUrl = await assertPublicImageUrl(url);
+  const response = await axios.get(safeUrl, {
+    responseType: 'arraybuffer',
+    timeout: 30000,
+    maxRedirects: 4,
+    maxContentLength: MAX_IMAGE_BYTES,
+    maxBodyLength: MAX_IMAGE_BYTES,
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ViralizeAI/1.0)' },
+  });
+  const contentType = String(response.headers['content-type'] || '').toLowerCase();
+  if (!contentType.startsWith('image/')) throw new Error('A fonte não retornou uma imagem válida');
+  return Buffer.from(response.data);
+}
+
+function wrapTitle(value) {
+  const words = String(value || '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR').split(' ');
+  const lines = [];
+  let current = '';
+  const maxChars = 27;
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxChars || !current) current = candidate;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  const limited = lines.slice(0, 5);
+  if (lines.length > 5) limited[4] = `${limited[4].replace(/[.,;:!?]?$/, '')}…`;
+  return limited;
+}
+
+function buildOverlay({ title, category, footer, brandName, primary, secondary, hasLogo }) {
+  const lines = wrapTitle(title);
+  const fontSize = lines.length <= 3 ? 62 : lines.length === 4 ? 54 : 48;
+  const lineHeight = Math.round(fontSize * 1.08);
+  const titleTop = 944;
+  const titleSvg = lines.map((line, index) => (
+    `<text x="540" y="${titleTop + index * lineHeight}" text-anchor="middle" class="title">${escapeXml(line)}</text>`
+  )).join('');
+  const fallbackBrand = hasLogo ? '' : `
+    <rect x="240" y="52" width="600" height="118" rx="28" fill="rgba(255,255,255,.88)"/>
+    <text x="540" y="128" text-anchor="middle" class="brand">${escapeXml(brandName || 'MINHA MARCA')}</text>`;
+
+  return Buffer.from(`
+    <svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#000" stop-opacity="0"/>
+          <stop offset="42%" stop-color="#000" stop-opacity=".08"/>
+          <stop offset="68%" stop-color="#000" stop-opacity=".68"/>
+          <stop offset="100%" stop-color="#000" stop-opacity=".96"/>
+        </linearGradient>
+        <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="${primary}"/>
+          <stop offset="100%" stop-color="${secondary}"/>
+        </linearGradient>
+        <filter id="shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity=".75"/></filter>
+        <style>
+          .brand { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: 50px; fill: #111827; }
+          .category { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: 42px; letter-spacing: 2px; fill: #fff; filter: url(#shadow); }
+          .title { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${fontSize}px; fill: #fff; filter: url(#shadow); }
+          .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: 34px; letter-spacing: 1px; fill: ${primary}; filter: url(#shadow); }
+        </style>
+      </defs>
+      <rect width="1080" height="1350" fill="url(#shade)"/>
+      ${fallbackBrand}
+      <text x="540" y="862" text-anchor="middle" class="category">${escapeXml(category || 'ÚLTIMAS')}</text>
+      <rect x="58" y="890" width="964" height="18" rx="4" fill="url(#accent)"/>
+      ${titleSvg}
+      <text x="540" y="1310" text-anchor="middle" class="footer">${escapeXml(footer || brandName || '')}</text>
+    </svg>
+  `);
+}
+
+async function buildLogoComposite(logoPath) {
+  if (!logoPath) return null;
+  const absolute = path.resolve(env.storagePath, logoPath);
+  const storageRoot = path.resolve(env.storagePath);
+  if (!absolute.startsWith(storageRoot + path.sep) || !fs.existsSync(absolute)) return null;
+  const input = await sharp(absolute)
+    .resize(560, 125, { fit: 'inside', withoutEnlargement: true })
+    .png()
+    .toBuffer({ resolveWithObject: true });
+  return {
+    input: input.data,
+    left: Math.max(30, Math.round((WIDTH - input.info.width) / 2)),
+    top: 48,
+  };
+}
+
+async function createEditorialCard({ sourceUrl, title, user }) {
+  if (!sourceUrl) throw new Error('A matéria não possui imagem editorial para compor a arte');
+  if (!title) throw new Error('Informe o título da arte');
+  if (!user?.id) throw new Error('Usuário inválido para compor a arte');
+
+  const source = await fetchImage(sourceUrl);
+  const logo = await buildLogoComposite(user.logo_path);
+  const primary = normalizeColor(user.marca_cor_primaria, '#facc15');
+  const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
+  const brandName = user.marca_nome || user.nome || 'Minha marca';
+  const overlay = buildOverlay({
+    title,
+    category: user.marca_categoria || 'ÚLTIMAS',
+    footer: user.marca_rodape || brandName,
+    brandName,
+    primary,
+    secondary,
+    hasLogo: Boolean(logo),
+  });
+
+  const relativeDir = `artes/user_${user.id}`;
+  const fileName = `materia_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.jpg`;
+  const relativePath = `${relativeDir}/${fileName}`;
+  const outputPath = path.resolve(env.storagePath, relativePath);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  const composites = [{ input: overlay, left: 0, top: 0 }];
+  if (logo) composites.push(logo);
+
+  await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
+    .rotate()
+    .resize(WIDTH, HEIGHT, { fit: 'cover', position: 'centre' })
+    .composite(composites)
+    .jpeg({ quality: 91, chromaSubsampling: '4:4:4' })
+    .toFile(outputPath);
+
+  return {
+    relativePath,
+    publicUrl: `/media/${relativePath.replace(/\\/g, '/')}`,
+    width: WIDTH,
+    height: HEIGHT,
+    hasLogo: Boolean(logo),
+  };
+}
+
+function removeEditorialCard(relativePath) {
+  if (!relativePath) return;
+  const storageRoot = path.resolve(env.storagePath);
+  const artworkRoot = path.resolve(storageRoot, 'artes');
+  const absolute = path.resolve(storageRoot, relativePath);
+  if (!absolute.startsWith(artworkRoot + path.sep)) return;
+  try {
+    if (fs.existsSync(absolute)) fs.unlinkSync(absolute);
+  } catch (err) {
+    console.warn('removeEditorialCard:', err.message);
+  }
+}
+
+module.exports = { createEditorialCard, removeEditorialCard, wrapTitle, assertPublicImageUrl };

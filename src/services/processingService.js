@@ -8,6 +8,8 @@ const { enqueue } = require('../workers/queue');
 const { downloadToStorage, storageAbsolutePath } = require('./downloadService');
 const { cutClip } = require('./ffmpegService');
 const transcriptionService = require('./transcriptionService');
+const deepseekService = require('./deepseekService');
+const { MAX_CLIP_SECONDS, MIN_CLIP_SECONDS } = require('./ffmpegService');
 
 function extFromUrl(url, fallback) {
   try {
@@ -84,13 +86,21 @@ function queueClipTranscription(clip, video) {
         clipPath: fresh.caminho_arquivo,
         sourceUrl: video.url_original,
       });
+
+      // Sem fala: grava marcador para não reenfileirar em loop no recover
+      const texto = result.empty || !result.text
+        ? '[sem fala detectada]'
+        : result.text;
+
       await VideoClips.update(clip.id, {
-        transcricao: result.text,
+        transcricao: texto,
         materia_status: 'pendente',
-        erro_mensagem: null,
+        erro_mensagem: result.empty ? 'Whisper não detectou fala (pode ser música/silêncio)' : null,
       });
     } catch (err) {
+      // Evita loop infinito no recover: marca transcrição para não retry automático
       await VideoClips.update(clip.id, {
+        transcricao: '[falha na transcrição]',
         materia_status: 'erro',
         erro_mensagem: `Transcrição falhou: ${String(err.message || err).slice(0, 400)}`,
       });
@@ -149,16 +159,18 @@ async function recoverStuckJobs() {
     queueClipGeneration(clip, video);
   }
 
-  // Clip pronto sem transcrição e matéria “gerando” → reextrai fala
+  // Clip pronto sem transcrição → reextrai fala (não reprocessa marcadores/erros finais)
   const needTranscript = await db('video_clips')
     .where({ status: 'pronto' })
     .where(function whereNeed() {
-      this.whereNull('transcricao').orWhere('transcricao', '').orWhere({ materia_status: 'gerando' });
-    });
+      this.whereNull('transcricao').orWhere('transcricao', '');
+    })
+    .whereNotIn('materia_status', ['erro']);
 
   for (const clip of needTranscript) {
     if (clip.status !== 'pronto' || !clip.caminho_arquivo) continue;
-    if (clip.transcricao && clip.materia_status !== 'gerando') continue;
+    if (clip.transcricao) continue;
+    if (clip.materia_status === 'gerando') continue; // já em andamento nesta sessão
     const video = await Videos.findById(clip.video_id);
     if (!video) continue;
     console.log(`[recover] reenfileirando transcrição do corte #${clip.id}`);
@@ -176,11 +188,135 @@ async function recoverStuckJobs() {
   }
 }
 
+/**
+ * Analisa o vídeo com IA (transcrição + DeepSeek) e gera os melhores cortes.
+ * @param {object} video
+ * @param {{ aspectRatio?: string, maxCortes?: number, gerar?: boolean }} opts
+ */
+function queueVideoAnalyze(video, opts = {}) {
+  const activeAnalyses = queueVideoAnalyze.activeJobs || new Set();
+  queueVideoAnalyze.activeJobs = activeAnalyses;
+  const videoKey = String(video.id);
+  if (activeAnalyses.has(videoKey)) return false;
+  activeAnalyses.add(videoKey);
+
+  const aspectRatio = ['9:16', '1:1', 'original'].includes(opts.aspectRatio)
+    ? opts.aspectRatio
+    : '9:16';
+  const maxCortes = Math.min(3, Math.max(1, Number(opts.maxCortes) || 3));
+  const gerar = opts.gerar !== false;
+
+  try {
+    enqueue(`analyze video ${video.id}`, async () => {
+      let meta = mergeMetadata(video.metadata, {});
+      try {
+        meta = mergeMetadata(meta, {
+          analise_status: 'processando',
+          analise_em: new Date().toISOString(),
+        });
+        await Videos.update(video.id, { erro_mensagem: null, metadata: meta });
+
+        // 1) Transcreve o vídeo inteiro (com timestamps) — base da IA
+        let transcricao = '';
+        let segmentos = [];
+        try {
+          const result = await transcriptionService.transcribeClip({
+            clipPath: video.caminho_local,
+            sourceUrl: video.url_original || null,
+          });
+          transcricao = result.text || '';
+          segmentos = Array.isArray(result.segments) ? result.segments : [];
+        } catch (txErr) {
+          console.warn(`[analyze] transcrição vídeo #${video.id}:`, txErr.message);
+        }
+
+        // 2) DeepSeek escolhe os melhores trechos
+        const sugestoes = await deepseekService.sugerirCortes({
+          duracao: video.duracao,
+          titulo: video.titulo,
+          termo: video.termo_busca,
+          tags: video.origem,
+          transcricao,
+          segmentos,
+          maxCortes,
+          maxSegundos: MAX_CLIP_SECONDS,
+          minSegundos: Math.max(MIN_CLIP_SECONDS, 40),
+        });
+
+        meta = mergeMetadata(meta, {
+          analise_status: 'pronta',
+          analise_em: new Date().toISOString(),
+          sugestoes_corte: sugestoes,
+          transcricao_full: String(transcricao || '').slice(0, 20000),
+        });
+        await Videos.update(video.id, { metadata: meta });
+
+        if (!gerar || !sugestoes.length) return;
+
+        // 3) Gera apenas cortes novos; refazer a análise não duplica intervalos idênticos.
+        const fresh = await Videos.findById(video.id);
+        const existingClips = await VideoClips.findByVideo(video.id);
+        for (const s of sugestoes) {
+          const duplicate = existingClips.some((clip) => (
+            Math.abs(Number(clip.inicio_segundo) - Number(s.inicio)) <= 2 &&
+            Math.abs(Number(clip.fim_segundo) - Number(s.fim)) <= 2
+          ));
+          if (duplicate) continue;
+
+          // Não grava legenda da análise em legenda_sugerida (campo da Matéria).
+          // A matéria só nasce em "Gerar matéria" — evita colar a transcrição no post.
+          const [clipId] = await VideoClips.create({
+            video_id: video.id,
+            inicio_segundo: s.inicio,
+            fim_segundo: s.fim,
+            aspect_ratio: aspectRatio,
+            legenda_sugerida: null,
+            status: 'processando',
+          });
+          const created = await VideoClips.findById(clipId);
+          existingClips.push(created);
+          queueClipGeneration(created, fresh || video);
+        }
+      } catch (err) {
+        meta = mergeMetadata(meta, {
+          analise_status: 'erro',
+          analise_erro: String(err.message || err).slice(0, 400),
+        });
+        await Videos.update(video.id, {
+          erro_mensagem: `Análise IA falhou: ${String(err.message || err).slice(0, 400)}`,
+          metadata: meta,
+        });
+        throw err;
+      } finally {
+        activeAnalyses.delete(videoKey);
+      }
+    });
+    return true;
+  } catch (err) {
+    activeAnalyses.delete(videoKey);
+    throw err;
+  }
+}
+
+function mergeMetadata(current, patch) {
+  let base = current;
+  if (typeof base === 'string') {
+    try {
+      base = JSON.parse(base);
+    } catch {
+      base = {};
+    }
+  }
+  if (!base || typeof base !== 'object') base = {};
+  return { ...base, ...patch };
+}
+
 module.exports = {
   queueVideoDownload,
   queueImageDownload,
   queueClipGeneration,
   queueClipTranscription,
+  queueVideoAnalyze,
   recoverStuckJobs,
   safeUnlink,
 };

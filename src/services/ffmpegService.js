@@ -9,7 +9,9 @@ const ffprobePath = require('ffprobe-static').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath);
 
-const MAX_CLIP_SECONDS = 90;
+const MAX_CLIP_SECONDS = 90; // Auto 90s / limite recomendado para Reels
+// Corte manual pode passar de 90s (vídeo normal no feed). Limite de segurança.
+const MAX_MANUAL_CLIP_SECONDS = 1800; // 30 min
 // Reels aceita 3s no mínimo; para monetização o recomendado é >= 10s.
 const MIN_CLIP_SECONDS = 3;
 const MONETIZATION_MIN_SECONDS = 10;
@@ -62,7 +64,11 @@ function cutClip({ inputPath, outputPath, inicio, fim, aspectRatio = '9:16' }) {
     err.status = 400;
     throw err;
   }
-  if (duration > MAX_CLIP_SECONDS) duration = MAX_CLIP_SECONDS;
+  if (duration > MAX_MANUAL_CLIP_SECONDS) {
+    const err = new Error(`Corte máximo de ${MAX_MANUAL_CLIP_SECONDS} segundos (30 min)`);
+    err.status = 400;
+    throw err;
+  }
 
   const format = FORMATS[aspectRatio] || FORMATS['9:16'];
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -177,6 +183,7 @@ module.exports = {
   probe,
   validateReelFile,
   MAX_CLIP_SECONDS,
+  MAX_MANUAL_CLIP_SECONDS,
   MIN_CLIP_SECONDS,
   MONETIZATION_MIN_SECONDS,
 };

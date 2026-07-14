@@ -1,0 +1,102 @@
+const AiMatters = require('../models/AiMatters');
+const Publications = require('../models/Publications');
+const materiaIaService = require('./materiaIaService');
+const facebookService = require('./facebookService');
+const { resolveArtworkPath } = require('./matterArtworkService');
+
+function buildMessage(title, body) {
+  const cleanTitle = String(title || '').trim();
+  const cleanBody = String(body || '').trim();
+  if (!cleanTitle) return cleanBody;
+  if (cleanBody.toLowerCase().startsWith(cleanTitle.toLowerCase())) return cleanBody;
+  return `${cleanTitle}\n\n${cleanBody}`;
+}
+
+async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, body }) {
+  const matter = await AiMatters.findById(matterId);
+  if (!matter || Number(matter.user_id) !== Number(userId)) {
+    const err = new Error('Matéria não encontrada');
+    err.status = 404;
+    throw err;
+  }
+
+  const page = await materiaIaService.resolvePage(userId, facebookPageId || matter.facebook_page_id);
+  if (!page) {
+    const err = new Error('Conecte/selecione uma página do Facebook');
+    err.status = 400;
+    throw err;
+  }
+
+  const filePath = resolveArtworkPath(matter.imagem_path);
+  if (!filePath) {
+    const err = new Error('Gere a arte com título e logomarca antes de publicar');
+    err.status = 422;
+    throw err;
+  }
+
+  const finalTitle = String(title || matter.titulo || '').trim();
+  const finalBody = String(body || matter.materia || '').trim();
+  const message = buildMessage(finalTitle, finalBody);
+  if (!message) {
+    const err = new Error('Matéria vazia');
+    err.status = 400;
+    throw err;
+  }
+
+  const [publicationId] = await Publications.create({
+    video_clip_id: null,
+    imagem_id: null,
+    facebook_page_id: page.id,
+    tipo: 'foto',
+    status: 'pendente',
+    texto: message,
+  });
+
+  await AiMatters.update(matter.id, {
+    facebook_page_id: page.id,
+    tipo_publicacao: 'foto',
+    publication_id: publicationId,
+    status: 'pronto',
+    error_message: null,
+    titulo: finalTitle,
+    materia: finalBody,
+  });
+
+  try {
+    const result = await facebookService.publishPhoto({
+      pageId: page.page_id,
+      pageAccessToken: page.page_access_token,
+      filePath,
+      caption: message,
+    });
+    const postId = result.post_id || result.id;
+    const fbPostUrl = `https://www.facebook.com/${postId}`;
+    await Publications.update(publicationId, {
+      status: 'publicado',
+      fb_post_id: postId,
+      fb_post_url: fbPostUrl,
+      published_at: new Date(),
+      erro_mensagem: null,
+    });
+    await AiMatters.update(matter.id, {
+      status: 'publicado',
+      published_at: new Date(),
+      error_message: null,
+    });
+    return { matterId: matter.id, publicationId, queued: false, postId, fbPostUrl };
+  } catch (err) {
+    const messageError = facebookService.graphErrorMessage(err);
+    await Publications.update(publicationId, {
+      status: 'erro',
+      erro_mensagem: String(messageError).slice(0, 500),
+    });
+    await Publications.increment(publicationId);
+    await AiMatters.update(matter.id, {
+      status: 'erro',
+      error_message: String(messageError).slice(0, 500),
+    });
+    throw err;
+  }
+}
+
+module.exports = { publishEditorialPhoto };

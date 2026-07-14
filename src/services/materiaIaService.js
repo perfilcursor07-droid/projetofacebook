@@ -61,11 +61,28 @@ async function checarDuplicidade({ userId, facebookPageId, titulo, materia }) {
   return avisos;
 }
 
+function pautaTemPessoaNomeada(topico, gerado) {
+  const texto = [
+    topico?.titulo,
+    gerado?.titulo,
+    ...(Array.isArray(gerado?.termos_imagem) ? gerado.termos_imagem : []),
+  ].filter(Boolean).join(' · ');
+
+  // Duas ou mais palavras iniciadas em maiúscula normalmente identificam uma pessoa
+  // (ex.: Flávio Bolsonaro, Silas Malafaia). Nesses casos, foto genérica é pior que rascunho.
+  return /\b[\p{Lu}][\p{L}'’-]{2,}(?:\s+(?:da|das|de|do|dos)?\s*[\p{Lu}][\p{L}'’-]{2,})+/u.test(texto);
+}
+
 async function escolherImagemCapa(topico, gerado) {
   if (topico?.imagemFonte && /^https?:\/\//i.test(topico.imagemFonte)) {
     return topico.imagemFonte;
   }
+
+  // A Pexels não é uma fonte editorial de pessoas públicas. Se a fonte original não
+  // forneceu foto, não substitui Malafaia/Flávio Bolsonaro por igreja ou política genérica.
+  if (pautaTemPessoaNomeada(topico, gerado)) return null;
   if (!env.pexelsApiKey) return null;
+
   try {
     const termo =
       (Array.isArray(gerado.termos_imagem) && gerado.termos_imagem[0]) ||
@@ -129,6 +146,19 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
   });
 
   const imagemUrl = await escolherImagemCapa(apurado, gerado);
+  const imagemOrigem = imagemUrl
+    ? imagemUrl === apurado.imagemFonte
+      ? {
+          tipo: 'fonte',
+          rotulo: `Foto da notícia original${apurado.veiculo ? ` · ${apurado.veiculo}` : ''}`,
+          url: apurado.link || null,
+        }
+      : {
+          tipo: 'pexels',
+          rotulo: 'Foto temática da Pexels',
+          consulta: gerado.termos_imagem?.[0] || gerado.hashtags?.[0] || apurado.nicho || null,
+        }
+    : null;
   const avisosDuplicidade = userId
     ? await checarDuplicidade({
         userId,
@@ -147,17 +177,17 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
     ...avisosDuplicidade,
   ].filter(Boolean);
 
-  // Foto sem imagem → forçar rascunho (não publicar automático)
-  const semImagemFoto = tipoPublicacao === 'foto' && !imagemUrl && !apurado?.imagemFonte;
+  const semImagemFoto = tipoPublicacao === 'foto' && !imagemUrl;
 
   return {
     ...gerado,
     imagemUrl,
+    imagemOrigem,
     topico: apurado,
     avisos,
     forcarRascunho: semImagemFoto,
     avisoFoto: semImagemFoto
-      ? 'Tipo foto sem imagem de capa — salva como rascunho. Publique como texto ou gere imagem depois.'
+      ? 'Não foi encontrada uma foto editorial relacionada. A matéria foi mantida como rascunho para evitar publicar uma imagem genérica ou incorreta.'
       : null,
   };
 }
@@ -379,6 +409,7 @@ async function gerarCompleto({
       materia: gerado.materia,
       hashtags: gerado.hashtags,
       imagemUrl: gerado.imagemUrl,
+      imagemOrigem: gerado.imagemOrigem || null,
       termos_imagem: gerado.termos_imagem || [],
     },
     avisos: [...(gerado.avisos || []), gerado.avisoFoto].filter(Boolean),

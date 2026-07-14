@@ -1,7 +1,7 @@
 {
-  "name": "clipador",
+  "name": "viralizeai",
   "version": "1.0.0",
-  "description": "Plataforma para buscar, cortar com IA e publicar vídeos no Facebook",
+  "description": "ViralizeAI — buscar, cortar com IA e publicar vídeos no Facebook",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -30,6 +30,7 @@
     "knex": "^3.1.0",
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.12.0",
+    "sharp": "0.33.5",
     "youtube-dl-exec": "^3.1.9"
   },
   "devDependencies": {

@@ -9,6 +9,8 @@ router.post('/gerar', controller.gerar);
 router.post('/gerar-preview', controller.gerarPreview);
 router.post('/gerar-lote', controller.gerarLote);
 router.get('/matters', controller.listarMaterias);
+router.put('/matters/:id', controller.atualizarMateria);
+router.patch('/matters/:id', controller.atualizarMateria);
 router.post('/matters/:id/publicar', controller.publicar);
 router.post('/matters/:id/agendar', controller.agendar);
 router.post('/monitor', controller.monitorCriar);

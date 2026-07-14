@@ -13,7 +13,7 @@ for (const dir of storageDirs) {
 }
 
 app.listen(env.port, async () => {
-  console.log(`ClipadorAI rodando em http://localhost:${env.port}`);
+  console.log(`ViralizeAI rodando em http://localhost:${env.port}`);
   try {
     await recoverStuckJobs();
   } catch (err) {

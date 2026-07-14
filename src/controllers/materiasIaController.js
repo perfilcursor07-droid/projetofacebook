@@ -1,6 +1,7 @@
 const materiaIaService = require('../services/materiaIaService');
 const AiMatters = require('../models/AiMatters');
 const AiMonitors = require('../models/AiMonitors');
+const { composeMatterArtwork } = require('../services/matterArtworkService');
 
 function pickPageId(body = {}) {
   const raw = body.facebookPageId ?? body.facebook_page_id;
@@ -144,6 +145,7 @@ async function gerarPreview(req, res, next) {
         materia: gerado.materia,
         hashtags: gerado.hashtags,
         imagemUrl: gerado.imagemUrl,
+        imagemOrigem: gerado.imagemOrigem || null,
         termos_imagem: gerado.termos_imagem || [],
       },
       avisos: [...(gerado.avisos || []), gerado.avisoFoto].filter(Boolean),
@@ -213,13 +215,157 @@ async function listarMaterias(req, res, next) {
   }
 }
 
+function parseHashtags(value) {
+  if (Array.isArray(value)) return value.map((t) => String(t).trim()).filter(Boolean);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map((t) => String(t).trim()).filter(Boolean);
+    } catch {
+      /* texto livre */
+    }
+    return trimmed
+      .split(/[\s,]+/)
+      .map((t) => t.replace(/^#/, '').trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+async function atualizarMateria(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+
+    const body = req.body || {};
+    const patch = {};
+    if (body.titulo != null) patch.titulo = String(body.titulo).trim().slice(0, 300);
+    if (body.materia != null) patch.materia = String(body.materia);
+    if (body.hashtags != null) patch.hashtags = JSON.stringify(parseHashtags(body.hashtags));
+    if (body.tipoPublicacao != null || body.tipo_publicacao != null) {
+      patch.tipo_publicacao = pickTipo(body);
+    }
+    if (body.facebookPageId != null || body.facebook_page_id != null) {
+      patch.facebook_page_id = pickPageId(body);
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'Matéria já publicada. Gere uma nova se precisar alterar.' });
+    }
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ error: 'Nada para atualizar' });
+    }
+    if (matter.status === 'agendado') {
+      /* permite editar texto ainda agendado */
+    } else if (['rascunho', 'pronto', 'erro'].includes(matter.status)) {
+      patch.status = 'rascunho';
+    }
+
+    await AiMatters.update(matterId, patch);
+    const updated = await AiMatters.findById(matterId);
+
+    const titleChanged =
+      body.titulo != null && String(body.titulo).trim() !== String(matter.titulo || '').trim();
+    const sourceUrl =
+      updated.imagem_fonte_url ||
+      (!updated.imagem_path && /^https?:\/\//i.test(String(updated.imagem_url || ''))
+        ? updated.imagem_url
+        : null);
+
+    if (titleChanged && sourceUrl) {
+      try {
+        const artwork = await composeMatterArtwork({
+          userId: req.session.userId,
+          matterId: updated.id,
+          sourceUrl,
+          title: updated.titulo,
+          force: true,
+        });
+        return res.json({ ok: true, matter: artwork.matter, imagemUrl: artwork.publicUrl });
+      } catch (err) {
+        return res.json({
+          ok: true,
+          matter: updated,
+          aviso: `Texto salvo, mas a arte não foi regenerada: ${err.message}`,
+        });
+      }
+    }
+
+    return res.json({ ok: true, matter: updated });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function showMatter(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(404).render('404', { title: 'Não encontrado', path: req.path });
+    }
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).render('404', { title: 'Não encontrado', path: req.path });
+    }
+
+    let hashtags = [];
+    try {
+      const raw = matter.hashtags;
+      if (Array.isArray(raw)) hashtags = raw;
+      else if (typeof raw === 'string' && raw.trim()) hashtags = JSON.parse(raw);
+    } catch {
+      hashtags = [];
+    }
+
+    return res.render('materia-ia-editar', {
+      title: matter.titulo || 'Matéria IA',
+      matter,
+      hashtags: Array.isArray(hashtags) ? hashtags : [],
+      success: req.query.success || null,
+      error: req.query.error || null,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function listPage(req, res, next) {
+  try {
+    const matters = await AiMatters.findByUser(req.session.userId, 30);
+    return res.render('materias-ia', {
+      title: 'Matérias IA',
+      miaStandalone: true,
+      matters,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function agendar(req, res, next) {
   try {
     const matterId = Number(req.params.id || req.body.matter_id);
+    const body = req.body || {};
+
+    if (body.titulo != null || body.materia != null) {
+      const matter = await AiMatters.findById(matterId);
+      if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+        return res.status(404).json({ error: 'Matéria não encontrada' });
+      }
+      const patch = {};
+      if (body.titulo != null) patch.titulo = String(body.titulo).trim().slice(0, 300);
+      if (body.materia != null) patch.materia = String(body.materia);
+      if (Object.keys(patch).length) await AiMatters.update(matterId, patch);
+    }
+
     const result = await materiaIaService.agendarMateria({
       userId: req.session.userId,
       matterId,
-      runAt: req.body.run_at || req.body.runAt,
+      runAt: body.run_at || body.runAt,
     });
     res.json({ ok: true, ...result });
   } catch (err) {
@@ -295,6 +441,9 @@ module.exports = {
   gerarLote,
   publicar,
   listarMaterias,
+  atualizarMateria,
+  showMatter,
+  listPage,
   agendar,
   monitorCriar,
   monitorLista,

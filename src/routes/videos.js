@@ -20,6 +20,7 @@ router.post('/:pexelsId/select', videosController.selectVideo);
 router.post('/:id/download', videosController.download);
 router.post('/:id/clip', videosController.clip);
 router.post('/:id/clip-auto', videosController.clipAuto);
+router.post('/:id/analyze', videosController.analyze);
 router.delete('/:id', videosController.removeVideo);
 
 module.exports = router;
