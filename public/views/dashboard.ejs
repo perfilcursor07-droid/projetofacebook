@@ -1,31 +1,157 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title><%= title %> — Clipador</title>
-  <link rel="stylesheet" href="/css/app.css" />
-</head>
-<body class="min-h-screen bg-slate-950 text-slate-100">
-  <%- include('partials/header') %>
+<%- include('partials/app-start') %>
 
-  <main class="mx-auto max-w-6xl px-4 py-10">
-    <h1 class="text-2xl font-semibold text-white">Dashboard</h1>
-    <p class="mt-2 text-slate-400">Resumo de vídeos, status e últimas publicações.</p>
+<%
+  const s = typeof stats !== 'undefined' ? stats : {
+    videos: 0, imagens: 0, clips: 0, publicacoes: 0, paginas: 0,
+    videosByStatus: {}, clipsByStatus: {}, pubsByStatus: {},
+  };
+  const pubs = typeof recent !== 'undefined' ? recent : [];
+  const connected = typeof hasFacebook !== 'undefined' ? hasFacebook : false;
 
-    <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-      <% const statuses = ['pendente', 'baixado', 'cortado', 'publicado', 'erro']; %>
-      <% statuses.forEach((status) => { %>
-        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <p class="text-xs uppercase tracking-wide text-slate-500"><%= status %></p>
-          <p class="mt-2 text-2xl font-semibold text-white">0</p>
+  function fmtDate(value) {
+    if (!value) return '—';
+    try {
+      return new Date(value).toLocaleString('pt-BR', {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+      });
+    } catch (_) {
+      return String(value);
+    }
+  }
+
+  function statusTone(status) {
+    const map = {
+      publicado: 'bg-emerald-500/15 text-emerald-300',
+      pendente: 'bg-amber-500/15 text-amber-300',
+      erro: 'bg-rose-500/15 text-rose-300',
+      pronto: 'bg-emerald-500/15 text-emerald-300',
+      processando: 'bg-amber-500/15 text-amber-300',
+      baixado: 'bg-sky-500/15 text-sky-300',
+      cortado: 'bg-violet-500/15 text-violet-300',
+    };
+    return map[status] || 'bg-slate-700/40 text-slate-300';
+  }
+
+  function tipoLabel(tipo) {
+    const map = { reel: 'Reel', video: 'Vídeo', foto: 'Foto', texto: 'Texto' };
+    return map[tipo] || tipo || 'Post';
+  }
+%>
+
+<main class="mx-auto max-w-8xl px-6 py-8">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400/80">Visão geral</p>
+      <h1 class="mt-1 text-3xl font-semibold text-white">Dashboard</h1>
+      <p class="mt-2 text-sm text-slate-400">Acompanhe produção, cortes e publicações.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="/busca" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Nova busca</a>
+      <a href="/fila" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-slate-500">Abrir fila</a>
+    </div>
+  </div>
+
+  <div class="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
+      <p class="text-xs uppercase tracking-wide text-slate-500">Vídeos</p>
+      <p class="mt-3 text-3xl font-semibold text-white"><%= s.videos %></p>
+      <p class="mt-2 text-xs text-slate-500"><%= s.videosByStatus.cortado || 0 %> cortados · <%= s.videosByStatus.erro || 0 %> erro</p>
+    </article>
+    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
+      <p class="text-xs uppercase tracking-wide text-slate-500">Cortes</p>
+      <p class="mt-3 text-3xl font-semibold text-white"><%= s.clips %></p>
+      <p class="mt-2 text-xs text-slate-500"><%= s.clipsByStatus.pronto || 0 %> prontos · <%= s.clipsByStatus.processando || 0 %> processando</p>
+    </article>
+    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
+      <p class="text-xs uppercase tracking-wide text-slate-500">Imagens</p>
+      <p class="mt-3 text-3xl font-semibold text-white"><%= s.imagens %></p>
+      <p class="mt-2 text-xs text-slate-500"><%= s.imagensByStatus.baixado || 0 %> baixadas</p>
+    </article>
+    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
+      <p class="text-xs uppercase tracking-wide text-slate-500">Publicações</p>
+      <p class="mt-3 text-3xl font-semibold text-white"><%= s.publicacoes %></p>
+      <p class="mt-2 text-xs text-slate-500"><%= s.pubsByStatus.publicado || 0 %> ok · <%= s.pubsByStatus.erro || 0 %> erro</p>
+    </article>
+    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
+      <p class="text-xs uppercase tracking-wide text-slate-500">Páginas FB</p>
+      <p class="mt-3 text-3xl font-semibold text-white"><%= s.paginas %></p>
+      <p class="mt-2 text-xs <%= connected ? 'text-emerald-400' : 'text-amber-300' %>">
+        <%= connected ? 'Conta conectada' : 'Sem conta conectada' %>
+      </p>
+    </article>
+  </div>
+
+  <div class="mt-8 grid gap-6 lg:grid-cols-3">
+    <section class="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 lg:col-span-1">
+      <h2 class="text-sm font-semibold text-white">Atalhos</h2>
+      <div class="mt-4 space-y-2">
+        <a href="/busca" class="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 transition hover:border-emerald-500/40 hover:text-white">
+          Buscar conteúdo
+          <span class="text-emerald-400">→</span>
+        </a>
+        <a href="/fila" class="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 transition hover:border-emerald-500/40 hover:text-white">
+          Revisar fila / cortes
+          <span class="text-emerald-400">→</span>
+        </a>
+        <a href="/paginas" class="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 transition hover:border-emerald-500/40 hover:text-white">
+          <%= connected ? 'Gerenciar páginas' : 'Conectar Facebook' %>
+          <span class="text-emerald-400">→</span>
+        </a>
+      </div>
+
+      <h2 class="mt-8 text-sm font-semibold text-white">Status dos vídeos</h2>
+      <ul class="mt-3 space-y-2 text-sm">
+        <% ['pendente','baixado','cortado','publicado','erro'].forEach((st) => { %>
+          <li class="flex items-center justify-between rounded-lg bg-slate-950/50 px-3 py-2">
+            <span class="inline-flex items-center gap-2">
+              <span class="rounded-full px-2 py-0.5 text-[11px] <%= statusTone(st) %>"><%= st %></span>
+            </span>
+            <span class="font-medium text-white"><%= s.videosByStatus[st] || 0 %></span>
+          </li>
+        <% }) %>
+      </ul>
+    </section>
+
+    <section class="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 lg:col-span-2">
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="text-sm font-semibold text-white">Últimas publicações</h2>
+        <span class="text-xs text-slate-500"><%= pubs.length %> recentes</span>
+      </div>
+
+      <% if (!pubs.length) { %>
+        <div class="mt-8 rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-6 py-12 text-center">
+          <p class="text-slate-300">Nenhuma publicação ainda.</p>
+          <p class="mt-2 text-sm text-slate-500">Gere um corte na fila e publique como Reel.</p>
+          <a href="/fila" class="mt-4 inline-block text-sm text-emerald-400 hover:text-emerald-300">Ir para a fila →</a>
         </div>
-      <% }) %>
-    </div>
+      <% } else { %>
+        <div class="mt-4 overflow-hidden rounded-xl border border-slate-800">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-950/80 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-4 py-3 font-medium">Tipo</th>
+                <th class="px-4 py-3 font-medium">Página</th>
+                <th class="px-4 py-3 font-medium">Status</th>
+                <th class="px-4 py-3 font-medium">Quando</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800">
+              <% pubs.forEach((p) => { %>
+                <tr class="bg-slate-950/30 hover:bg-slate-900/60">
+                  <td class="px-4 py-3 text-slate-200"><%= tipoLabel(p.tipo) %></td>
+                  <td class="px-4 py-3 text-slate-300"><%= p.page_name || '—' %></td>
+                  <td class="px-4 py-3">
+                    <span class="rounded-full px-2 py-0.5 text-[11px] <%= statusTone(p.status) %>"><%= p.status %></span>
+                  </td>
+                  <td class="px-4 py-3 text-slate-400"><%= fmtDate(p.published_at || p.created_at) %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </section>
+  </div>
+</main>
 
-    <div class="mt-8 rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
-      <p class="text-slate-300">Sem publicações ainda.</p>
-    </div>
-  </main>
-</body>
-</html>
+<%- include('partials/app-end') %>

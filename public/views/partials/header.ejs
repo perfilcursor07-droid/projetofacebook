@@ -1,5 +1,6 @@
 <%
   const path = typeof currentPath !== 'undefined' ? currentPath : '';
+  const loggedUser = typeof user !== 'undefined' ? user : null;
   function navClass(href) {
     const active = path === href || (href !== '/' && path.startsWith(href));
     return active
@@ -8,13 +9,19 @@
   }
 %>
 <header class="border-b border-slate-800">
-  <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-    <a href="/" class="text-xl font-semibold tracking-tight text-emerald-400">Clipador</a>
-    <nav class="flex gap-4 text-sm">
-      <a href="/busca" class="<%= navClass('/busca') %>">Busca</a>
-      <a href="/fila" class="<%= navClass('/fila') %>">Fila</a>
-      <a href="/paginas" class="<%= navClass('/paginas') %>">Páginas</a>
-      <a href="/dashboard" class="<%= navClass('/dashboard') %>">Dashboard</a>
-    </nav>
+  <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
+    <a href="<%= loggedUser ? '/busca' : '/' %>" class="text-xl tracking-tight text-emerald-400"><strong>ClipadorAI</strong></a>
+    <% if (loggedUser) { %>
+      <nav class="flex flex-wrap items-center gap-4 text-sm">
+        <a href="/busca" class="<%= navClass('/busca') %>">Busca</a>
+        <a href="/fila" class="<%= navClass('/fila') %>">Fila</a>
+        <a href="/paginas" class="<%= navClass('/paginas') %>">Páginas</a>
+        <a href="/dashboard" class="<%= navClass('/dashboard') %>">Dashboard</a>
+        <span class="hidden text-slate-500 sm:inline"><%= loggedUser.nome %></span>
+        <a href="/api/auth/logout" class="text-slate-400 hover:text-rose-300">Sair</a>
+      </nav>
+    <% } else { %>
+      <a href="/login" class="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Entrar</a>
+    <% } %>
   </div>
 </header>

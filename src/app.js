@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const session = require('express-session');
 const { env } = require('./config/env');
-const { ensureDevUser } = require('./middleware/ensureDevUser');
+const { requireAuth, attachUser } = require('./middleware/requireAuth');
 
 const app = express();
 
@@ -31,32 +31,57 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(ensureDevUser);
+app.use(attachUser);
 
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
-    app: 'Clipador',
+    app: 'ClipadorAI',
     pexels: Boolean(env.pexelsApiKey),
   });
 });
 
-function renderPage(res, view, title) {
-  res.render(view, { title });
+function renderPage(res, view, title, extra = {}) {
+  res.render(view, { title, ...extra });
 }
 
-app.get('/', (_req, res) => renderPage(res, 'index', 'Início'));
-app.get('/busca', (_req, res) => renderPage(res, 'busca', 'Busca'));
-app.get('/fila', (_req, res) => renderPage(res, 'fila', 'Fila'));
-app.get('/paginas', (_req, res) => renderPage(res, 'paginas', 'Páginas'));
-app.get('/dashboard', (_req, res) => renderPage(res, 'dashboard', 'Dashboard'));
+app.get('/', (req, res) => {
+  if (req.session.userId) return res.redirect('/dashboard');
+  renderPage(res, 'index', 'Início');
+});
 
-app.use('/api/videos', require('./routes/videos'));
-app.use('/api/imagens', require('./routes/imagens'));
+app.get('/login', (req, res) => {
+  if (req.session.userId) return res.redirect('/dashboard');
+  const next = String(req.query.next || '/dashboard');
+  const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  renderPage(res, 'login', 'Entrar', { next: safeNext, error: null });
+});
+
+app.post('/login', async (req, res, next) => {
+  try {
+    const authController = require('./controllers/authController');
+    req.body.redirect = true;
+    return authController.login(req, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Busca'));
+app.get('/materias-ia', requireAuth, (_req, res) =>
+  renderPage(res, 'materias-ia', 'Matérias IA', { miaStandalone: true })
+);
+app.get('/fila', requireAuth, (_req, res) => renderPage(res, 'fila', 'Fila'));
+app.get('/paginas', requireAuth, (_req, res) => renderPage(res, 'paginas', 'Páginas'));
+app.get('/dashboard', requireAuth, require('./controllers/dashboardController').show);
+
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/facebook', require('./routes/facebook'));
-app.use('/api/clips', require('./routes/clips'));
-app.use('/api/publications', require('./routes/publications'));
+app.use('/api/videos', requireAuth, require('./routes/videos'));
+app.use('/api/imagens', requireAuth, require('./routes/imagens'));
+app.use('/api/facebook', requireAuth, require('./routes/facebook'));
+app.use('/api/clips', requireAuth, require('./routes/clips'));
+app.use('/api/publications', requireAuth, require('./routes/publications'));
+app.use('/api/materias-ia', requireAuth, require('./routes/materiasIa'));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {

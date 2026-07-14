@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> — ClipadorAI</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+    <div class="absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 rounded-full bg-emerald-500/15 blur-3xl"></div>
+  </div>
+
+  <header class="border-b border-slate-800/80">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+      <a href="/" class="text-xl tracking-tight text-emerald-400"><strong>ClipadorAI</strong></a>
+      <a href="/" class="text-sm text-slate-400 hover:text-white">Voltar</a>
+    </div>
+  </header>
+
+  <main class="mx-auto flex min-h-[calc(100vh-73px)] max-w-md items-center px-4 py-12">
+    <div class="w-full rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl shadow-black/20 sm:p-8">
+      <h1 class="text-2xl font-semibold text-white">Entrar</h1>
+      <p class="mt-2 text-sm text-slate-400">Acesse o painel para buscar, cortar e publicar.</p>
+
+      <% if (error) { %>
+        <div class="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+          <%= error %>
+        </div>
+      <% } %>
+
+      <form method="POST" action="/login" class="mt-6 space-y-4">
+            <input type="hidden" name="next" value="<%= next || '/dashboard' %>" />
+        <input type="hidden" name="redirect" value="1" />
+
+        <label class="block">
+          <span class="mb-1.5 block text-xs font-medium text-slate-400">Usuário</span>
+          <input type="text" name="login" required autocomplete="username" autofocus
+            placeholder="admin"
+            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+        </label>
+
+        <label class="block">
+          <span class="mb-1.5 block text-xs font-medium text-slate-400">Senha</span>
+          <input type="password" name="senha" required autocomplete="current-password"
+            placeholder="••••••••"
+            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+        </label>
+
+        <button type="submit"
+          class="w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+          Entrar
+        </button>
+      </form>
+
+      <p class="mt-6 text-center text-[11px] leading-relaxed text-slate-600">
+        Desenvolvido por Erick Vinicius<br />Versão 1.0
+      </p>
+    </div>
+  </main>
+</body>
+</html>

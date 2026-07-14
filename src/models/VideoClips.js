@@ -34,6 +34,23 @@ const VideoClips = {
   remove(id) {
     return db(this.table).where({ id }).del();
   },
+
+  countByStatusForUser(userId) {
+    return db(this.table)
+      .join('videos', 'video_clips.video_id', 'videos.id')
+      .where('videos.user_id', userId)
+      .select('video_clips.status')
+      .count('* as total')
+      .groupBy('video_clips.status');
+  },
+
+  countForUser(userId) {
+    return db(this.table)
+      .join('videos', 'video_clips.video_id', 'videos.id')
+      .where('videos.user_id', userId)
+      .count({ total: '*' })
+      .first();
+  },
 };
 
 module.exports = VideoClips;

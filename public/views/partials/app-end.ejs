@@ -1,0 +1,30 @@
+  </div>
+  <script>
+    (function () {
+      const KEY = 'clipador.sidebarCollapsed';
+      const root = document.documentElement;
+      const btn = document.getElementById('sidebar-toggle');
+      const icon = document.getElementById('sidebar-toggle-icon');
+      if (!btn) return;
+
+      function apply(collapsed) {
+        root.classList.toggle('sidebar-collapsed', collapsed);
+        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        btn.title = collapsed ? 'Expandir menu' : 'Recolher menu';
+        btn.setAttribute('aria-label', collapsed ? 'Expandir menu' : 'Recolher menu');
+        if (icon) {
+          icon.innerHTML = collapsed
+            ? '<path d="M9 6l6 6-6 6"/>'
+            : '<path d="M15 6l-6 6 6 6"/>';
+        }
+        try { localStorage.setItem(KEY, collapsed ? '1' : '0'); } catch (_) {}
+      }
+
+      apply(root.classList.contains('sidebar-collapsed'));
+      btn.addEventListener('click', function () {
+        apply(!root.classList.contains('sidebar-collapsed'));
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -15,6 +15,8 @@ const env = {
   sessionSecret: process.env.SESSION_SECRET || 'dev-session-secret-change-me',
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
   pexelsApiKey: process.env.PEXELS_API_KEY || '',
+  braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
+  serperApiKey: process.env.SERPER_API_KEY || '',
   facebook: {
     appId: process.env.FACEBOOK_APP_ID || '',
     appSecret: process.env.FACEBOOK_APP_SECRET || '',

@@ -3,36 +3,107 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title><%= title %> — Clipador</title>
+  <title><%= title %> — ClipadorAI</title>
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
-  <%- include('partials/header') %>
+  <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+    <div class="absolute -left-24 top-0 h-80 w-80 rounded-full bg-emerald-500/10 blur-3xl"></div>
+    <div class="absolute -right-16 bottom-10 h-96 w-96 rounded-full bg-sky-500/10 blur-3xl"></div>
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(15,23,42,0)_0%,_rgba(2,6,23,0.9)_70%)]"></div>
+  </div>
 
-  <main class="mx-auto max-w-6xl px-4 py-10">
-    <h1 class="text-3xl font-semibold text-white">Clipador</h1>
-    <p class="mt-3 max-w-2xl text-slate-400">
-      Busque vídeos licenciados, corte trechos com IA e publique nas suas páginas do Facebook.
-    </p>
-
-    <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <a href="/busca" class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-emerald-500/50">
-        <h2 class="font-medium text-white">Busca</h2>
-        <p class="mt-2 text-sm text-slate-400">Pesquisar vídeos na Pexels</p>
-      </a>
-      <a href="/fila" class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-emerald-500/50">
-        <h2 class="font-medium text-white">Fila</h2>
-        <p class="mt-2 text-sm text-slate-400">Status de download e cortes</p>
-      </a>
-      <a href="/paginas" class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-emerald-500/50">
-        <h2 class="font-medium text-white">Páginas</h2>
-        <p class="mt-2 text-sm text-slate-400">Conectar Facebook Pages</p>
-      </a>
-      <a href="/dashboard" class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-emerald-500/50">
-        <h2 class="font-medium text-white">Dashboard</h2>
-        <p class="mt-2 text-sm text-slate-400">Métricas e publicações</p>
+  <header class="border-b border-slate-800/80">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+      <a href="/" class="text-xl tracking-tight text-emerald-400"><strong>ClipadorAI</strong></a>
+      <a href="/login"
+        class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+        Entrar
       </a>
     </div>
+  </header>
+
+  <main>
+    <section class="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:pt-24">
+      <p class="text-sm font-medium uppercase tracking-[0.2em] text-emerald-400/80">Plataforma de conteúdo</p>
+      <h1 class="mt-4 max-w-3xl text-4xl leading-tight text-white sm:text-5xl">
+        <strong>ClipadorAI</strong>
+      </h1>
+      <p class="mt-5 max-w-2xl text-lg leading-relaxed text-slate-300">
+        Busque vídeos e imagens, corte em Reels de até 90s, gere matérias com IA e publique
+        direto nas suas páginas do Facebook.
+      </p>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a href="/login"
+          class="rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+          Fazer login
+        </a>
+        <a href="#como-funciona"
+          class="rounded-lg border border-slate-700 px-6 py-3 text-sm font-medium text-slate-200 hover:border-slate-500 hover:text-white">
+          Como funciona
+        </a>
+      </div>
+    </section>
+
+    <section id="como-funciona" class="border-t border-slate-800/80 bg-slate-950/60">
+      <div class="mx-auto max-w-6xl px-4 py-16">
+        <h2 class="text-2xl font-semibold text-white">O que o <strong>ClipadorAI</strong> faz</h2>
+        <p class="mt-2 max-w-2xl text-slate-400">
+          Do conteúdo bruto ao post no Facebook, em um fluxo simples.
+        </p>
+
+        <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <article class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400">01</div>
+            <h3 class="mt-3 text-lg font-medium text-white">Buscar</h3>
+            <p class="mt-2 text-sm leading-relaxed text-slate-400">
+              Pexels, YouTube, TikTok ou link direto — encontre o material e baixe.
+            </p>
+          </article>
+          <article class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400">02</div>
+            <h3 class="mt-3 text-lg font-medium text-white">Cortar</h3>
+            <p class="mt-2 text-sm leading-relaxed text-slate-400">
+              Cortes manuais ou automáticos a cada 90s no formato 9:16 para Reels.
+            </p>
+          </article>
+          <article class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400">03</div>
+            <h3 class="mt-3 text-lg font-medium text-white">Matéria com IA</h3>
+            <p class="mt-2 text-sm leading-relaxed text-slate-400">
+              Extrai a fala do vídeo e gera legenda pronta para publicar.
+            </p>
+          </article>
+          <article class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400">04</div>
+            <h3 class="mt-3 text-lg font-medium text-white">Publicar</h3>
+            <p class="mt-2 text-sm leading-relaxed text-slate-400">
+              Envie Reels, fotos ou posts de texto nas páginas conectadas.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="border-t border-slate-800/80">
+      <div class="mx-auto flex max-w-6xl flex-col items-start justify-between gap-6 px-4 py-16 sm:flex-row sm:items-center">
+        <div>
+          <h2 class="text-2xl font-semibold text-white">Pronto para começar?</h2>
+          <p class="mt-2 text-slate-400">Entre com sua conta e abra a fila de produção.</p>
+        </div>
+        <a href="/login"
+          class="rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+          Entrar no <strong>ClipadorAI</strong>
+        </a>
+      </div>
+    </section>
   </main>
+
+  <footer class="border-t border-slate-800/80">
+    <div class="mx-auto max-w-6xl px-4 py-6 text-sm text-slate-500">
+      <p><strong class="text-emerald-400">ClipadorAI</strong> — busca, corte, matéria e publicação no Facebook.</p>
+      <p class="mt-1 text-xs text-slate-600">Desenvolvido por Erick Vinicius · Versão 1.0</p>
+    </div>
+  </footer>
 </body>
 </html>

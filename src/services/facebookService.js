@@ -136,6 +136,23 @@ async function publishPhoto({ pageId, pageAccessToken, filePath, caption }) {
 }
 
 /**
+ * Publica foto a partir de URL pública (Pexels / og:image).
+ */
+async function publishPhotoFromUrl({ pageId, pageAccessToken, imageUrl, caption }) {
+  return withRetry(async () => {
+    const { data } = await axios.post(`${GRAPH}/${pageId}/photos`, null, {
+      params: {
+        access_token: pageAccessToken,
+        url: imageUrl,
+        caption: caption || '',
+      },
+      timeout: 2 * 60 * 1000,
+    });
+    return data;
+  });
+}
+
+/**
  * Publica um post de texto (ou link) no feed de uma página.
  * @returns {Promise<{ id: string }>}
  */
@@ -250,6 +267,7 @@ module.exports = {
   getPages,
   publishVideo,
   publishPhoto,
+  publishPhotoFromUrl,
   publishReel,
   publishText,
   graphErrorMessage,

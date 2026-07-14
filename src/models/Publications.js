@@ -38,6 +38,16 @@ const Publications = {
     return Number(total);
   },
 
+  countByStatus(userId) {
+    return db(this.table)
+      .join('facebook_pages', 'publications.facebook_page_id', 'facebook_pages.id')
+      .join('facebook_accounts', 'facebook_pages.facebook_account_id', 'facebook_accounts.id')
+      .where('facebook_accounts.user_id', userId)
+      .select('publications.status')
+      .count('* as total')
+      .groupBy('publications.status');
+  },
+
   create(data) {
     return db(this.table).insert(data);
   },

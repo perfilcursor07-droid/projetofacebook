@@ -1,67 +1,102 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title><%= title %> — Clipador</title>
-  <link rel="stylesheet" href="/css/app.css" />
-</head>
-<body class="min-h-screen bg-slate-950 text-slate-100">
-  <%- include('partials/header') %>
+<%- include('partials/app-start') %>
 
-  <main class="mx-auto max-w-6xl px-4 py-6">
-    <div class="flex flex-wrap items-center justify-between gap-2">
+  <main class="mx-auto max-w-8xl px-6 py-8">
+    <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl font-semibold text-white">Fila</h1>
-        <p class="text-xs text-slate-500">Cortes até 90s · fala automática após o corte</p>
+        <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400/80">Produção</p>
+        <h1 class="mt-1 text-2xl font-semibold text-white">Fila</h1>
+        <p class="mt-1 text-xs text-slate-500">Cortes até 90s · fala automática após o corte · atualiza sozinho</p>
       </div>
-      <button id="refresh-btn" type="button"
-        class="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-emerald-500 hover:text-emerald-300">
-        Atualizar
-      </button>
+      <div class="flex items-center gap-3">
+        <span id="last-updated" class="text-xs text-slate-500"></span>
+        <button id="refresh-btn" type="button"
+          class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-emerald-300">
+          Atualizar
+        </button>
+      </div>
     </div>
 
-    <div id="global-msg" class="mt-3 hidden rounded border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-200"></div>
+    <div id="global-msg" class="mt-3 hidden rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-sm text-rose-200"></div>
 
-    <details class="mt-4 rounded-lg border border-slate-800 bg-slate-900/40">
-      <summary class="cursor-pointer px-3 py-2 text-xs text-slate-300 hover:text-white">Publicar texto · dicas Facebook</summary>
-      <div class="space-y-3 border-t border-slate-800 p-3">
-        <form id="text-post-form" class="flex flex-col gap-2">
-          <textarea name="texto" rows="2" required maxlength="63206" placeholder="Texto do post…"
-            class="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-600"></textarea>
+    <details class="group mt-5 rounded-2xl border border-slate-800 bg-slate-900/40">
+      <summary class="flex cursor-pointer list-none items-center justify-between px-5 py-3 text-sm font-medium text-slate-300 hover:text-white">
+        <span class="inline-flex items-center gap-2">
+          <svg class="h-4 w-4 text-[#1877F2]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12.5h2.54v-2.2c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.87h2.78l-.44 2.39h-2.34v6.99A10 10 0 0 0 22 12Z"/></svg>
+          Publicar texto rápido
+        </span>
+        <span class="text-xs text-slate-500 group-open:hidden">clique para expandir</span>
+      </summary>
+      <div class="space-y-3 border-t border-slate-800 p-5">
+        <form id="text-post-form" class="space-y-3">
+          <textarea name="texto" rows="3" required maxlength="63206" placeholder="Texto do post…"
+            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
           <div class="flex flex-wrap items-center gap-2">
             <span id="text-post-pages"></span>
             <input type="url" name="link" placeholder="Link (opcional)"
-              class="w-48 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 placeholder:text-slate-600" />
-            <button type="submit" class="rounded bg-[#1877F2] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[#166FE5] disabled:opacity-50">Publicar</button>
+              class="w-56 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+            <button type="submit"
+              class="rounded-lg bg-[#1877F2] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#166FE5] disabled:opacity-50">
+              Publicar no Facebook
+            </button>
           </div>
         </form>
-        <p class="text-[10px] leading-relaxed text-slate-500">Reels 9:16 · 3–90s · ≥10s para monetização · conteúdo original · máx. 30 Reels/página/24h</p>
+        <p class="text-[11px] leading-relaxed text-slate-500">Reels 9:16 · 3–90s · ≥10s para monetização · conteúdo original · máx. 30 Reels/página/24h</p>
       </div>
     </details>
 
-    <h2 class="mt-5 text-sm font-medium text-white">Vídeos</h2>
-    <div id="videos-status" class="mt-1 text-xs text-slate-500">Carregando…</div>
-    <div id="videos-list" class="mt-2 space-y-2"></div>
+    <div class="mt-6 inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Seções da fila">
+      <button type="button" data-tab="videos" class="tab-btn rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">
+        Vídeos <span id="count-videos" class="ml-1 font-normal opacity-70"></span>
+      </button>
+      <button type="button" data-tab="imagens" class="tab-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
+        Imagens <span id="count-imagens" class="ml-1 font-normal opacity-70"></span>
+      </button>
+      <button type="button" data-tab="publicacoes" class="tab-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
+        Publicações <span id="count-publicacoes" class="ml-1 font-normal opacity-70"></span>
+      </button>
+    </div>
 
-    <h2 class="mt-6 text-sm font-medium text-white">Imagens</h2>
-    <div id="imagens-status" class="mt-1 text-xs text-slate-500">Carregando…</div>
-    <div id="imagens-list" class="mt-2 space-y-2"></div>
+    <section id="tab-videos" class="tab-panel mt-4">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div id="videos-filter" class="flex flex-wrap gap-1.5"></div>
+        <span id="videos-status" class="text-xs text-slate-500">Carregando…</span>
+      </div>
+      <div id="videos-list" class="mt-3 space-y-3"></div>
+    </section>
+
+    <section id="tab-imagens" class="tab-panel mt-4 hidden">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div id="imagens-filter" class="flex flex-wrap gap-1.5"></div>
+        <span id="imagens-status" class="text-xs text-slate-500">Carregando…</span>
+      </div>
+      <div id="imagens-list" class="mt-3 grid gap-3 lg:grid-cols-2"></div>
+    </section>
+
+    <section id="tab-publicacoes" class="tab-panel mt-4 hidden">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div id="publicacoes-filter" class="flex flex-wrap gap-1.5"></div>
+        <span id="publicacoes-status" class="text-xs text-slate-500">Carregando…</span>
+      </div>
+      <div id="publicacoes-list" class="mt-3"></div>
+    </section>
   </main>
 
   <script>
     const refreshBtn = document.getElementById('refresh-btn');
     const globalMsg = document.getElementById('global-msg');
+    const lastUpdatedEl = document.getElementById('last-updated');
 
-    const statusColors = {
-      pendente: 'background:rgba(245,158,11,.15);color:#fcd34d;',
-      baixado: 'background:rgba(14,165,233,.15);color:#7dd3fc;',
-      cortado: 'background:rgba(139,92,246,.15);color:#c4b5fd;',
-      publicado: 'background:rgba(16,185,129,.15);color:#6ee7b7;',
-      erro: 'background:rgba(244,63,94,.15);color:#fda4af;',
-      processando: 'background:rgba(245,158,11,.15);color:#fcd34d;',
-      pronto: 'background:rgba(16,185,129,.15);color:#6ee7b7;',
-      sugerido: 'background:rgba(100,116,139,.15);color:#cbd5e1;',
+    const STATUS_TONE = {
+      publicado: 'bg-emerald-500/15 text-emerald-300',
+      pronto: 'bg-emerald-500/15 text-emerald-300',
+      pronta: 'bg-emerald-500/15 text-emerald-300',
+      pendente: 'bg-amber-500/15 text-amber-300',
+      processando: 'bg-amber-500/15 text-amber-300',
+      gerando: 'bg-amber-500/15 text-amber-300',
+      baixado: 'bg-sky-500/15 text-sky-300',
+      cortado: 'bg-violet-500/15 text-violet-300',
+      erro: 'bg-rose-500/15 text-rose-300',
+      sugerido: 'bg-slate-700/40 text-slate-300',
     };
 
     function escapeHtml(text) {
@@ -72,9 +107,16 @@
         .replace(/"/g, '&quot;');
     }
 
-    function badge(status) {
-      const color = statusColors[status] || 'background:rgba(51,65,85,.5);color:#cbd5e1;';
-      return `<span style="display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;line-height:1.2;${color}">${escapeHtml(status)}</span>`;
+    function badge(status, label) {
+      const tone = STATUS_TONE[status] || 'bg-slate-700/40 text-slate-300';
+      return `<span class="rounded-full px-2.5 py-0.5 text-[11px] font-medium ${tone}">${escapeHtml(label || status)}</span>`;
+    }
+
+    function materiaStatusBadge(status) {
+      if (!status || status === 'pendente') return '';
+      const map = { gerando: ['gerando', 'gerando…'], pronta: ['pronta', 'matéria ok'], erro: ['erro', 'erro matéria'] };
+      const [key, label] = map[status] || ['sugerido', status];
+      return badge(key, label);
     }
 
     function showError(msg) {
@@ -83,59 +125,135 @@
       setTimeout(() => globalMsg.classList.add('hidden'), 6000);
     }
 
-    let fbPages = [];
+    function fmtDate(value) {
+      if (!value) return '—';
+      try {
+        return new Date(value).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      } catch (_) {
+        return String(value);
+      }
+    }
 
-    function pageSelectHtml() {
+    function cleanTranscript(text) {
+      return String(text || '').replace(/^Kind:\s*\w+\s*Language:\s*\w+\s*/i, '').replace(/\s+/g, ' ').trim();
+    }
+
+    // —— estado ——
+    let fbPages = [];
+    let allVideos = [];
+    let allImagens = [];
+    let allPublicacoes = [];
+    let activeTab = 'videos';
+    let filterVideo = 'todos';
+    let filterImagem = 'todos';
+    let filterPub = 'todos';
+
+    const VIDEO_STATUSES = [
+      { key: 'todos', label: 'Todos' },
+      { key: 'pendente', label: 'Pendente' },
+      { key: 'baixado', label: 'Baixado' },
+      { key: 'cortado', label: 'Cortado' },
+      { key: 'publicado', label: 'Publicado' },
+      { key: 'erro', label: 'Erro' },
+    ];
+    const IMAGEM_STATUSES = [
+      { key: 'todos', label: 'Todos' },
+      { key: 'pendente', label: 'Pendente' },
+      { key: 'baixado', label: 'Baixado' },
+      { key: 'publicado', label: 'Publicado' },
+      { key: 'erro', label: 'Erro' },
+    ];
+    const PUB_STATUSES = [
+      { key: 'todos', label: 'Todos' },
+      { key: 'pendente', label: 'Pendente' },
+      { key: 'publicado', label: 'Publicado' },
+      { key: 'erro', label: 'Erro' },
+    ];
+
+    function renderChips(containerEl, statuses, items, active, group) {
+      containerEl.innerHTML = statuses
+        .map((st) => {
+          const count = st.key === 'todos' ? items.length : items.filter((i) => i.status === st.key).length;
+          const isActive = st.key === active;
+          const cls = isActive
+            ? 'rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-slate-950'
+            : 'rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-400 transition hover:border-slate-500 hover:text-slate-200';
+          return `<button type="button" class="filter-chip ${cls}" data-filter-group="${group}" data-filter-value="${st.key}">${st.label} (${count})</button>`;
+        })
+        .join('');
+    }
+
+    // —— preserva edições do usuário durante o auto-refresh ——
+    function captureEdits(containerEl) {
+      const edits = {};
+      containerEl.querySelectorAll('form[data-kind]').forEach((form) => {
+        edits[form.dataset.kind + ':' + form.dataset.id] = {
+          legenda: form.legenda ? form.legenda.value : undefined,
+          pageId: form.facebook_page_id ? form.facebook_page_id.value : undefined,
+          modo: form.modo ? form.modo.value : undefined,
+        };
+      });
+      containerEl.querySelectorAll('.clip-tema').forEach((inp) => {
+        if (inp.value) edits['tema:clip:' + inp.dataset.clipTema] = inp.value;
+      });
+      containerEl.querySelectorAll('.img-tema').forEach((inp) => {
+        if (inp.value) edits['tema:imagem:' + inp.dataset.imgTema] = inp.value;
+      });
+      return edits;
+    }
+
+    function restoreEdits(containerEl, edits) {
+      containerEl.querySelectorAll('form[data-kind]').forEach((form) => {
+        const e = edits[form.dataset.kind + ':' + form.dataset.id];
+        if (!e) return;
+        if (e.legenda != null && form.legenda) form.legenda.value = e.legenda;
+        if (e.pageId != null && form.facebook_page_id) form.facebook_page_id.value = e.pageId;
+        if (e.modo != null && form.modo) form.modo.value = e.modo;
+      });
+      containerEl.querySelectorAll('.clip-tema').forEach((inp) => {
+        const v = edits['tema:clip:' + inp.dataset.clipTema];
+        if (v) inp.value = v;
+      });
+      containerEl.querySelectorAll('.img-tema').forEach((inp) => {
+        const v = edits['tema:imagem:' + inp.dataset.imgTema];
+        if (v) inp.value = v;
+      });
+    }
+
+    // —— publicar (clip/imagem) ——
+    function pageSelectHtml(current) {
       return `
-        <select name="facebook_page_id" style="border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:4px 8px;font-size:12px;">
-          ${fbPages.map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)}</option>`).join('')}
+        <select name="facebook_page_id" class="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none">
+          ${fbPages.map((p) => `<option value="${p.id}" ${String(p.id) === String(current) ? 'selected' : ''}>${escapeHtml(p.page_name)}</option>`).join('')}
         </select>`;
     }
 
     function publishFormHtml(kind, id, defaultLegenda = '') {
       const isClip = kind === 'clip';
       const publishControls = fbPages.length
-        ? `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        ? `<div class="flex flex-wrap items-center gap-2">
             ${pageSelectHtml()}
             ${isClip ? `
-            <select name="modo" style="border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:8px;padding:6px 10px;font-size:12px;">
+            <select name="modo" class="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none">
               <option value="reel">Reel</option>
               <option value="video">Vídeo</option>
             </select>` : ''}
-            <button type="submit" style="background:#1877F2;color:#fff;border:0;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">Publicar</button>
+            <button type="submit" class="rounded-lg bg-[#1877F2] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#166FE5] disabled:opacity-50">Publicar</button>
           </div>`
-        : `<a href="/paginas" style="font-size:12px;color:#38bdf8;">Conecte uma página para publicar →</a>`;
+        : `<a href="/paginas" class="text-xs text-sky-400 hover:text-sky-300">Conecte uma página para publicar →</a>`;
 
       return `
-        <form class="publish-form" data-kind="${kind}" data-id="${id}" style="display:grid;gap:8px;">
-          <label style="display:grid;gap:4px;">
-            <span style="font-size:11px;font-weight:600;color:#a78bfa;letter-spacing:.02em;">MATÉRIA</span>
+        <form class="publish-form space-y-2" data-kind="${kind}" data-id="${id}">
+          <label class="block">
+            <span class="text-[11px] font-semibold uppercase tracking-wide text-violet-300">Matéria</span>
             <textarea name="legenda" rows="${isClip ? 5 : 3}" placeholder="A matéria aparece aqui após gerar…"
-              style="width:100%;border:1px solid #334155;background:#0b1220;color:#f1f5f9;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;resize:vertical;">${escapeHtml(defaultLegenda)}</textarea>
+              class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none">${escapeHtml(defaultLegenda)}</textarea>
           </label>
           ${publishControls}
         </form>`;
     }
 
-    function materiaStatusBadge(status) {
-      if (!status || status === 'pendente') return '';
-      const map = {
-        gerando: ['processando', 'gerando…'],
-        pronta: ['pronto', 'matéria ok'],
-        erro: ['erro', 'erro matéria'],
-      };
-      const [key, label] = map[status] || ['sugerido', status];
-      const color = statusColors[key] || 'background:rgba(51,65,85,.5);color:#cbd5e1;';
-      return `<span style="display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;${color}">${escapeHtml(label)}</span>`;
-    }
-
-    function cleanTranscript(text) {
-      return String(text || '')
-        .replace(/^Kind:\s*\w+\s*Language:\s*\w+\s*/i, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-
+    // —— clipes ——
     function clipHtml(clip, index) {
       const canAi = clip.status === 'pronto' || clip.status === 'publicado';
       const canRetry = clip.status === 'processando' || clip.status === 'erro';
@@ -148,34 +266,32 @@
 
       const preview = clip.caminho_arquivo
         ? `<video src="/media/${escapeHtml(clip.caminho_arquivo)}" controls playsinline preload="metadata"
-            style="width:100%;height:210px;object-fit:contain;border-radius:12px;background:#000;display:block;"></video>`
-        : `<div style="width:100%;height:210px;border-radius:12px;background:#020617;color:#64748b;font-size:12px;display:flex;align-items:center;justify-content:center;">${clip.status === 'processando' ? 'Processando…' : 'Sem arquivo'}</div>`;
+            class="h-48 w-full rounded-lg bg-black object-contain"></video>`
+        : `<div class="flex h-48 w-full items-center justify-center rounded-lg bg-slate-950 text-xs text-slate-500">${clip.status === 'processando' ? 'Processando…' : 'Sem arquivo'}</div>`;
 
       return `
-        <div style="border:1px solid #1e293b;border-radius:16px;background:#0f172a;padding:14px;display:flex;flex-direction:column;gap:12px;">
+        <div class="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3.5">
           ${preview}
 
-          <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+          <div class="flex items-start justify-between gap-2">
             <div>
-              <div style="font-size:15px;font-weight:600;color:#fff;">Corte #${index + 1} · ${inicio}–${fim}s${dur != null ? ` · ${dur}s` : ''}</div>
-              <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;">${badge(clip.status)}${materiaStatusBadge(clip.materia_status)}</div>
+              <p class="text-sm font-semibold text-white">Corte #${index + 1} · ${inicio}–${fim}s${dur != null ? ` · ${dur}s` : ''}</p>
+              <div class="mt-1.5 flex flex-wrap gap-1.5">${badge(clip.status)}${materiaStatusBadge(clip.materia_status)}</div>
             </div>
-            <button type="button" class="action-btn" data-action="delete-clip" data-id="${clip.id}"
-              style="border:0;background:transparent;color:#fb7185;font-size:12px;cursor:pointer;">Excluir</button>
+            <button type="button" class="action-btn shrink-0 rounded-lg px-2 py-1 text-xs text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300" data-action="delete-clip" data-id="${clip.id}">Excluir</button>
           </div>
 
-          ${extracting && !fala ? `<div style="font-size:12px;color:#fcd34d;">Extraindo fala…</div>` : ''}
-          ${fala ? `<details style="font-size:12px;color:#94a3b8;"><summary style="cursor:pointer;color:#64748b;">Ver fala</summary><p style="margin-top:6px;line-height:1.45;">${escapeHtml(fala)}</p></details>` : ''}
-          ${clip.erro_mensagem ? `<div style="font-size:12px;color:#fda4af;">${escapeHtml(clip.erro_mensagem)}</div>` : ''}
-          ${canRetry ? `<button type="button" class="ai-btn" data-action="retry-clip" data-id="${clip.id}" style="width:fit-content;border:1px solid #92400e;background:transparent;color:#fde68a;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;">Retentar corte</button>` : ''}
+          ${extracting && !fala ? `<p class="text-xs text-amber-300">Extraindo fala…</p>` : ''}
+          ${fala ? `<details class="text-xs text-slate-400"><summary class="cursor-pointer text-slate-500 hover:text-slate-300">Ver fala</summary><p class="mt-1.5 leading-relaxed">${escapeHtml(fala)}</p></details>` : ''}
+          ${clip.erro_mensagem ? `<p class="text-xs text-rose-300">${escapeHtml(clip.erro_mensagem)}</p>` : ''}
+          ${canRetry ? `<button type="button" class="ai-btn w-fit rounded-lg border border-amber-700/60 px-3 py-1.5 text-xs text-amber-200 transition hover:bg-amber-500/10" data-action="retry-clip" data-id="${clip.id}">Retentar corte</button>` : ''}
 
           ${canAi ? `
-          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-            <input type="text" class="clip-tema" data-clip-tema="${clip.id}" placeholder="Tema da matéria (opcional)"
-              style="min-width:160px;flex:1;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:8px;padding:8px 10px;font-size:13px;" />
-            <button type="button" class="ai-btn" data-action="materia-clip" data-id="${clip.id}"
-              style="background:#8b5cf6;color:#fff;border:0;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;">${materia ? 'Refazer' : 'Gerar matéria'}</button>
-            ${!fala ? `<button type="button" class="ai-btn" data-action="transcribe-clip" data-id="${clip.id}" style="border:1px solid #334155;background:transparent;color:#94a3b8;border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;">Extrair fala</button>` : ''}
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="text" class="clip-tema min-w-[140px] flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
+              data-clip-tema="${clip.id}" placeholder="Tema da matéria (opcional)" />
+            <button type="button" class="ai-btn rounded-lg bg-violet-500 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-400" data-action="materia-clip" data-id="${clip.id}">${materia ? 'Refazer' : 'Gerar matéria'}</button>
+            ${!fala ? `<button type="button" class="ai-btn rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-500" data-action="transcribe-clip" data-id="${clip.id}">Extrair fala</button>` : ''}
           </div>
           ${publishFormHtml('clip', clip.id, materia)}` : ''}
         </div>`;
@@ -183,34 +299,33 @@
 
     function videoActionsHtml(v) {
       if (v.status === 'pendente' || v.status === 'erro') {
-        return `<button type="button" class="action-btn" data-action="download-video" data-id="${v.id}"
-          style="background:#10b981;color:#020617;border:0;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;">Baixar</button>`;
+        return `<button type="button" class="action-btn rounded-lg bg-emerald-500 px-3.5 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400" data-action="download-video" data-id="${v.id}">Baixar</button>`;
       }
       if (v.status === 'baixado' || v.status === 'cortado') {
         const max = Number(v.duracao) > 0 ? Number(v.duracao) : 600;
-        if (max < 3) return `<div style="font-size:12px;color:#fcd34d;">Vídeo menor que 3s</div>`;
+        if (max < 3) return `<p class="text-xs text-amber-300">Vídeo menor que 3s</p>`;
         const defaultFim = Math.min(max, 90);
         const estimativa = Math.floor(max / 90) + (max % 90 >= 3 ? 1 : 0);
         return `
-          <form class="clip-form" data-id="${v.id}" data-max="${max}" style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;">
-            <label style="font-size:11px;color:#94a3b8;">Início
+          <form class="clip-form flex flex-wrap items-end gap-2" data-id="${v.id}" data-max="${max}">
+            <label class="text-[11px] text-slate-400">Início
               <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
-                style="display:block;margin-top:3px;width:72px;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:6px 8px;font-size:13px;" />
+                class="mt-1 block w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
             </label>
-            <label style="font-size:11px;color:#94a3b8;">Fim
+            <label class="text-[11px] text-slate-400">Fim
               <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
-                style="display:block;margin-top:3px;width:72px;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:6px 8px;font-size:13px;" />
+                class="mt-1 block w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
             </label>
-            <label style="font-size:11px;color:#94a3b8;">Formato
-              <select name="aspect_ratio" style="display:block;margin-top:3px;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:6px 8px;font-size:13px;">
+            <label class="text-[11px] text-slate-400">Formato
+              <select name="aspect_ratio" class="mt-1 block rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none">
                 <option value="9:16">9:16</option>
                 <option value="1:1">1:1</option>
                 <option value="original">Original</option>
               </select>
             </label>
-            <button type="submit" style="background:#8b5cf6;color:#fff;border:0;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;">Cortar</button>
-            <button type="button" class="action-btn" data-action="clip-auto" data-id="${v.id}" data-aspect="9:16"
-              style="border:1px solid #7c3aed;background:rgba(139,92,246,.12);color:#ddd6fe;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">
+            <button type="submit" class="rounded-lg bg-violet-500 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-400">Cortar</button>
+            <button type="button" class="action-btn rounded-lg border border-violet-500/50 bg-violet-500/10 px-3.5 py-1.5 text-xs text-violet-200 transition hover:bg-violet-500/20"
+              data-action="clip-auto" data-id="${v.id}" data-aspect="9:16">
               Auto 90s (~${estimativa})
             </button>
           </form>`;
@@ -222,33 +337,32 @@
       const clips = v.clips || [];
       const durMin = v.duracao ? Math.round(v.duracao / 60) + ' min' : '—';
       return `
-        <article style="border:1px solid #1e293b;border-radius:14px;background:rgba(15,23,42,.7);padding:12px;">
-          <div style="display:flex;gap:12px;align-items:flex-start;">
-            <div style="width:120px;height:68px;flex-shrink:0;overflow:hidden;border-radius:8px;background:#020617;">
-              ${v.thumbnail ? `<img src="${escapeHtml(v.thumbnail)}" alt="" style="width:100%;height:100%;object-fit:cover;" />` : ''}
+        <article class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 transition hover:border-slate-700">
+          <div class="flex gap-4">
+            <div class="h-[72px] w-32 flex-shrink-0 overflow-hidden rounded-lg bg-slate-950">
+              ${v.thumbnail ? `<img src="${escapeHtml(v.thumbnail)}" alt="" class="h-full w-full object-cover" />` : ''}
             </div>
-            <div style="min-width:0;flex:1;">
-              <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
-                <div style="min-width:0;">
-                  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-1.5">
                     ${badge(v.status)}
-                    <span style="font-size:11px;color:#94a3b8;">${escapeHtml(v.origem || 'pexels')} · ${durMin}</span>
-                    ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" style="font-size:11px;color:#34d399;">original</a>` : ''}
+                    <span class="text-xs text-slate-500">${escapeHtml(v.origem || 'pexels')} · ${durMin}</span>
+                    ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" class="text-xs text-emerald-400 hover:text-emerald-300">original</a>` : ''}
                   </div>
-                  <div style="margin-top:6px;font-size:14px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(v.titulo || v.termo_busca)}</div>
-                  <div style="margin-top:2px;font-size:12px;color:#64748b;">${escapeHtml(v.autor || '')}</div>
+                  <p class="mt-1.5 truncate text-sm font-medium text-white">${escapeHtml(v.titulo || v.termo_busca)}</p>
+                  <p class="mt-0.5 text-xs text-slate-500">${escapeHtml(v.autor || '')}</p>
                 </div>
-                <button type="button" class="action-btn" data-action="delete-video" data-id="${v.id}"
-                  style="border:0;background:transparent;color:#fb7185;font-size:12px;cursor:pointer;flex-shrink:0;">Excluir</button>
+                <button type="button" class="action-btn shrink-0 rounded-lg px-2 py-1 text-xs text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300" data-action="delete-video" data-id="${v.id}">Excluir</button>
               </div>
-              ${v.erro_mensagem ? `<div style="margin-top:6px;font-size:12px;color:#fda4af;">${escapeHtml(v.erro_mensagem)}</div>` : ''}
-              <div style="margin-top:10px;">${videoActionsHtml(v)}</div>
+              ${v.erro_mensagem ? `<p class="mt-1.5 text-xs text-rose-300">${escapeHtml(v.erro_mensagem)}</p>` : ''}
+              <div class="mt-3">${videoActionsHtml(v)}</div>
             </div>
           </div>
           ${clips.length ? `
-          <div style="margin-top:16px;border-top:1px solid #1e293b;padding-top:16px;">
-            <div style="margin-bottom:12px;font-size:13px;font-weight:500;color:#cbd5e1;">Cortes (${clips.length})</div>
-            <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));">
+          <div class="mt-4 border-t border-slate-800 pt-4">
+            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Cortes (${clips.length})</p>
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               ${clips.map((c, i) => clipHtml(c, i)).join('')}
             </div>
           </div>` : ''}
@@ -258,76 +372,196 @@
     function imagemHtml(i) {
       const canPublish = i.status === 'baixado' || i.status === 'publicado';
       return `
-        <article style="display:flex;gap:12px;border:1px solid #1e293b;border-radius:14px;background:rgba(15,23,42,.7);padding:12px;align-items:flex-start;">
-          <div style="width:72px;height:72px;flex-shrink:0;overflow:hidden;border-radius:8px;background:#020617;">
-            ${i.thumbnail ? `<img src="${escapeHtml(i.thumbnail)}" alt="" style="width:100%;height:100%;object-fit:cover;" />` : ''}
+        <article class="flex gap-4 rounded-2xl border border-slate-800 bg-slate-900/40 p-4 transition hover:border-slate-700">
+          <div class="h-[72px] w-[72px] flex-shrink-0 overflow-hidden rounded-lg bg-slate-950">
+            ${i.thumbnail ? `<img src="${escapeHtml(i.thumbnail)}" alt="" class="h-full w-full object-cover" />` : ''}
           </div>
-          <div style="min-width:0;flex:1;display:grid;gap:6px;">
-            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+          <div class="min-w-0 flex-1 space-y-1.5">
+            <div class="flex flex-wrap items-center gap-1.5">
               ${badge(i.status)}
               ${materiaStatusBadge(i.materia_status)}
-              ${i.caminho_local ? `<a href="/media/${escapeHtml(i.caminho_local)}" target="_blank" style="font-size:11px;color:#34d399;">arquivo</a>` : ''}
+              ${i.caminho_local ? `<a href="/media/${escapeHtml(i.caminho_local)}" target="_blank" class="text-xs text-emerald-400 hover:text-emerald-300">arquivo</a>` : ''}
             </div>
-            <div style="font-size:13px;font-weight:600;color:#fff;">“${escapeHtml(i.termo_busca)}”</div>
-            <div style="font-size:12px;color:#64748b;">${escapeHtml(i.autor || '—')} · ${i.largura && i.altura ? i.largura + '×' + i.altura : 'foto'}</div>
-            ${i.erro_mensagem ? `<div style="font-size:12px;color:#fda4af;">${escapeHtml(i.erro_mensagem)}</div>` : ''}
+            <p class="truncate text-sm font-semibold text-white">"${escapeHtml(i.termo_busca)}"</p>
+            <p class="text-xs text-slate-500">${escapeHtml(i.autor || '—')} · ${i.largura && i.altura ? i.largura + '×' + i.altura : 'foto'}</p>
+            ${i.erro_mensagem ? `<p class="text-xs text-rose-300">${escapeHtml(i.erro_mensagem)}</p>` : ''}
             ${i.status === 'pendente' || i.status === 'erro'
-              ? `<button type="button" class="action-btn" data-action="download-imagem" data-id="${i.id}" style="width:fit-content;background:#10b981;color:#020617;border:0;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;">Baixar</button>`
+              ? `<button type="button" class="action-btn mt-1 w-fit rounded-lg bg-emerald-500 px-3.5 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400" data-action="download-imagem" data-id="${i.id}">Baixar</button>`
               : ''}
             ${canPublish ? `
-            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
-              <input type="text" class="img-tema" data-img-tema="${i.id}" placeholder="Tipo de matéria" value="${escapeHtml(i.prompt_materia || '')}"
-                style="min-width:160px;flex:1;border:1px solid #334155;background:#020617;color:#f1f5f9;border-radius:6px;padding:6px 8px;font-size:12px;" />
-              <button type="button" class="ai-btn" data-action="materia-imagem" data-id="${i.id}"
-                style="background:#8b5cf6;color:#fff;border:0;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;">Matéria</button>
+            <div class="flex flex-wrap items-center gap-1.5 pt-1">
+              <input type="text" class="img-tema min-w-[140px] flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
+                data-img-tema="${i.id}" placeholder="Tipo de matéria" value="${escapeHtml(i.prompt_materia || '')}" />
+              <button type="button" class="ai-btn rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-400" data-action="materia-imagem" data-id="${i.id}">Matéria</button>
             </div>
             ${publishFormHtml('imagem', i.id, i.materia || '')}` : ''}
           </div>
         </article>`;
     }
 
-    function emptyHtml(msg) {
+    // —— publicações ——
+    function tipoLabel(tipo) {
+      const map = { reel: 'Reel', video: 'Vídeo', foto: 'Foto', texto: 'Texto' };
+      return map[tipo] || tipo || 'Post';
+    }
+
+    function publicacaoRow(p) {
+      const texto = String(p.texto || p.legenda_sugerida || '').replace(/\s+/g, ' ').trim();
+      const resumo = texto.length > 90 ? texto.slice(0, 90) + '…' : texto;
       return `
-        <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-8 text-center">
-          <p class="text-slate-300">${msg}</p>
-          <a href="/busca" class="mt-3 inline-block text-sm text-emerald-400 hover:text-emerald-300">Ir para busca →</a>
+        <tr class="bg-slate-950/30 hover:bg-slate-900/60">
+          <td class="px-4 py-3 text-slate-200">${tipoLabel(p.tipo)}</td>
+          <td class="px-4 py-3 text-slate-300">${escapeHtml(p.page_name || '—')}</td>
+          <td class="px-4 py-3 max-w-xs text-slate-400" title="${escapeHtml(texto)}">${escapeHtml(resumo) || '—'}</td>
+          <td class="px-4 py-3">${badge(p.status)}</td>
+          <td class="px-4 py-3 text-slate-400">${fmtDate(p.published_at || p.created_at)}</td>
+          <td class="px-4 py-3">
+            ${p.fb_post_url
+              ? `<a href="${escapeHtml(p.fb_post_url)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300">Ver post →</a>`
+              : p.erro_mensagem
+                ? `<span class="text-rose-300" title="${escapeHtml(p.erro_mensagem)}">erro</span>`
+                : '—'}
+          </td>
+        </tr>`;
+    }
+
+    function renderPublicacoes() {
+      const status = document.getElementById('publicacoes-status');
+      const list = document.getElementById('publicacoes-list');
+      const filtro = document.getElementById('publicacoes-filter');
+      renderChips(filtro, PUB_STATUSES, allPublicacoes, filterPub, 'pub');
+
+      const filtradas = filterPub === 'todos' ? allPublicacoes : allPublicacoes.filter((p) => p.status === filterPub);
+      status.textContent = filtradas.length + ' publicação(ões)';
+
+      if (!filtradas.length) {
+        list.innerHTML = emptyHtml('Nenhuma publicação por aqui ainda.', '/materias-ia', 'Ir para Matérias IA →');
+        return;
+      }
+
+      list.innerHTML = `
+        <div class="overflow-hidden rounded-2xl border border-slate-800">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-950/80 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-4 py-3 font-medium">Tipo</th>
+                <th class="px-4 py-3 font-medium">Página</th>
+                <th class="px-4 py-3 font-medium">Conteúdo</th>
+                <th class="px-4 py-3 font-medium">Status</th>
+                <th class="px-4 py-3 font-medium">Quando</th>
+                <th class="px-4 py-3 font-medium">Post</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800">
+              ${filtradas.map(publicacaoRow).join('')}
+            </tbody>
+          </table>
         </div>`;
     }
 
-    async function loadFila() {
+    function emptyHtml(msg, href = '/busca', label = 'Ir para busca →') {
+      return `
+        <div class="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 px-6 py-12 text-center">
+          <p class="text-slate-300">${msg}</p>
+          <a href="${href}" class="mt-3 inline-block text-sm text-emerald-400 hover:text-emerald-300">${label}</a>
+        </div>`;
+    }
+
+    function renderVideos() {
       const vStatus = document.getElementById('videos-status');
       const vList = document.getElementById('videos-list');
+      const vFilter = document.getElementById('videos-filter');
+      renderChips(vFilter, VIDEO_STATUSES, allVideos, filterVideo, 'video');
+
+      const filtrados = filterVideo === 'todos' ? allVideos : allVideos.filter((v) => v.status === filterVideo);
+      vStatus.textContent = filtrados.length + ' de ' + allVideos.length + ' vídeo(s)';
+
+      const edits = captureEdits(vList);
+      vList.innerHTML = filtrados.length ? filtrados.map(videoHtml).join('') : emptyHtml('Nenhum vídeo nesta visão ainda.');
+      restoreEdits(vList, edits);
+    }
+
+    function renderImagens() {
       const iStatus = document.getElementById('imagens-status');
       const iList = document.getElementById('imagens-list');
+      const iFilter = document.getElementById('imagens-filter');
+      renderChips(iFilter, IMAGEM_STATUSES, allImagens, filterImagem, 'imagem');
 
+      const filtradas = filterImagem === 'todos' ? allImagens : allImagens.filter((i) => i.status === filterImagem);
+      iStatus.textContent = filtradas.length + ' de ' + allImagens.length + ' imagem(ns)';
+
+      const edits = captureEdits(iList);
+      iList.innerHTML = filtradas.length ? filtradas.map(imagemHtml).join('') : emptyHtml('Nenhuma imagem nesta visão ainda.');
+      restoreEdits(iList, edits);
+    }
+
+    function updateCounts() {
+      document.getElementById('count-videos').textContent = allVideos.length ? '(' + allVideos.length + ')' : '';
+      document.getElementById('count-imagens').textContent = allImagens.length ? '(' + allImagens.length + ')' : '';
+      document.getElementById('count-publicacoes').textContent = allPublicacoes.length ? '(' + allPublicacoes.length + ')' : '';
+    }
+
+    async function loadFila() {
       try {
-        const [vRes, iRes, pRes] = await Promise.all([
+        const [vRes, iRes, pRes, pubRes] = await Promise.all([
           fetch('/api/videos'),
           fetch('/api/imagens'),
           fetch('/api/facebook/pages'),
+          fetch('/api/publications'),
         ]);
         const vData = await vRes.json();
         const iData = await iRes.json();
         const pData = pRes.ok ? await pRes.json() : { pages: [] };
+        const pubData = pubRes.ok ? await pubRes.json() : { publications: [] };
+
         fbPages = pData.pages || [];
+        allVideos = vData.videos || [];
+        allImagens = iData.imagens || [];
+        allPublicacoes = pubData.publications || [];
 
-        const videos = vData.videos || [];
-        vStatus.textContent = videos.length + ' vídeo(s)';
-        vList.innerHTML = videos.length ? videos.map(videoHtml).join('') : emptyHtml('Nenhum vídeo na fila ainda.');
-
-        const imagens = iData.imagens || [];
-        iStatus.textContent = imagens.length + ' imagem(ns)';
-        iList.innerHTML = imagens.length ? imagens.map(imagemHtml).join('') : emptyHtml('Nenhuma imagem na fila ainda.');
+        updateCounts();
+        renderVideos();
+        renderImagens();
+        renderPublicacoes();
 
         const textPages = document.getElementById('text-post-pages');
         textPages.innerHTML = fbPages.length
           ? pageSelectHtml()
           : '<a href="/paginas" class="text-xs text-sky-400 hover:text-sky-300">Conecte uma página para publicar →</a>';
+
+        lastUpdatedEl.textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       } catch (err) {
         showError(err.message || 'Erro ao carregar fila');
       }
     }
 
+    // —— abas ——
+    document.querySelectorAll('.tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeTab = btn.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach((b) => {
+          const on = b === btn;
+          b.classList.toggle('bg-emerald-500', on);
+          b.classList.toggle('text-slate-950', on);
+          b.classList.toggle('font-semibold', on);
+          b.classList.toggle('text-slate-300', !on);
+        });
+        document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('hidden', p.id !== 'tab-' + activeTab));
+      });
+    });
+
+    // —— filtros por status (delegado) ——
+    document.addEventListener('click', (e) => {
+      const chip = e.target.closest('.filter-chip');
+      if (!chip) return;
+      const group = chip.dataset.filterGroup;
+      const value = chip.dataset.filterValue;
+      if (group === 'video') { filterVideo = value; renderVideos(); }
+      else if (group === 'imagem') { filterImagem = value; renderImagens(); }
+      else if (group === 'pub') { filterPub = value; renderPublicacoes(); }
+    });
+
+    // —— ações de IA (gerar matéria, transcrever, retentar) ——
     document.addEventListener('click', async (e) => {
       const aiBtn = e.target.closest('.ai-btn');
       if (aiBtn) {
@@ -357,7 +591,7 @@
 
         aiBtn.disabled = true;
         const prev = aiBtn.textContent;
-        aiBtn.textContent = 'Fila…';
+        aiBtn.textContent = 'Enviando…';
         try {
           const res = await fetch(url, {
             method: 'POST',
@@ -385,7 +619,7 @@
 
       try {
         if (action === 'delete-clip') {
-          if (!confirm('Excluir este corte?')) return;
+          if (!confirm('Excluir este corte?')) { btn.disabled = false; return; }
           const res = await fetch('/api/clips/' + id, { method: 'DELETE' });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Falha ao excluir corte');
@@ -394,7 +628,7 @@
         }
 
         if (action === 'delete-video') {
-          if (!confirm('Excluir este vídeo e todos os cortes?')) return;
+          if (!confirm('Excluir este vídeo e todos os cortes?')) { btn.disabled = false; return; }
           const res = await fetch('/api/videos/' + id, { method: 'DELETE' });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Falha ao excluir vídeo');
@@ -443,6 +677,7 @@
       if (!select) return showError('Conecte uma página do Facebook antes de publicar');
 
       const submitBtn = form.querySelector('button[type="submit"]');
+      const original = submitBtn.textContent;
       submitBtn.disabled = true;
       submitBtn.textContent = 'Publicando…';
 
@@ -460,11 +695,12 @@
         if (!res.ok) throw new Error(data.error || 'Falha ao publicar texto');
         form.texto.value = '';
         form.link.value = '';
-        submitBtn.textContent = 'Na fila de publicação';
-        setTimeout(() => { submitBtn.disabled = false; submitBtn.textContent = 'Publicar texto'; }, 4000);
+        submitBtn.textContent = 'Na fila ✓';
+        setTimeout(loadFila, 2000);
+        setTimeout(() => { submitBtn.disabled = false; submitBtn.textContent = original; }, 4000);
       } catch (err) {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Publicar texto';
+        submitBtn.textContent = original;
         showError(err.message);
       }
     });
@@ -542,11 +778,7 @@
         const res = await fetch('/api/videos/' + id + '/clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            inicio,
-            fim,
-            aspect_ratio: form.aspect_ratio.value,
-          }),
+          body: JSON.stringify({ inicio, fim, aspect_ratio: form.aspect_ratio.value }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha ao criar corte');
@@ -560,7 +792,6 @@
 
     refreshBtn.addEventListener('click', loadFila);
     loadFila();
-    setInterval(loadFila, 10000);
+    setInterval(loadFila, 15000);
   </script>
-</body>
-</html>
+<%- include('partials/app-end') %>

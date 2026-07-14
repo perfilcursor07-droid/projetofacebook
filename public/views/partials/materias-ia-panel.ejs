@@ -1,0 +1,167 @@
+<section id="painel-materias-ia" class="<%= typeof miaStandalone !== 'undefined' && miaStandalone ? '' : 'mt-6 hidden' %>">
+  <% if (!(typeof miaStandalone !== 'undefined' && miaStandalone)) { %>
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-semibold text-white">Gerar matérias com IA</h2>
+      <p class="mt-1 text-sm text-slate-400">1) Busque pautas · 2) Gere a matéria · 3) Revise e publique na Página.</p>
+    </div>
+  </div>
+  <% } %>
+
+  <div class="mt-4 inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Modos matérias IA">
+    <button type="button" data-mia-modo="buscar" class="mia-modo-btn rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">Buscar e escolher</button>
+    <button type="button" data-mia-modo="alta" class="mia-modo-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">Em alta agora</button>
+    <button type="button" data-mia-modo="auto" class="mia-modo-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">Automação</button>
+  </div>
+
+  <div id="mia-buscar" class="mia-panel mt-5 space-y-5">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">Passo 1 — Busca</p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button type="button" class="mia-tag rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:border-emerald-500" data-tag="gospel">gospel</button>
+        <button type="button" class="mia-tag rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:border-emerald-500" data-tag="pastor">pastor</button>
+        <button type="button" class="mia-tag rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:border-emerald-500" data-tag="louvor">louvor</button>
+        <button type="button" class="mia-tag rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:border-emerald-500" data-tag="fé">fé</button>
+        <button type="button" class="mia-tag rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:border-emerald-500" data-tag="brasil">brasil</button>
+      </div>
+
+      <div class="mt-4 grid gap-3 lg:grid-cols-2">
+        <label class="block text-sm">
+          <span class="text-slate-400">Palavras-chave</span>
+          <input id="mia-keywords" type="text" placeholder="ex.: gospel, pastor, louvor"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none" />
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-400">Onde buscar</span>
+          <select id="mia-onde" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
+            <option value="tudo">Notícias + portais + redes</option>
+            <option value="noticias">Somente notícias</option>
+            <option value="redes">Somente redes</option>
+          </select>
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-400">Qtd. por nicho</span>
+          <input id="mia-qtd" type="number" min="1" max="10" value="5"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-400">Período</span>
+          <select id="mia-periodo" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
+            <option value="24h">Últimas 24h</option>
+            <option value="3d">3 dias</option>
+            <option value="7d">7 dias</option>
+          </select>
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-400">Página do Facebook</span>
+          <select id="mia-page" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
+            <option value="">Carregando…</option>
+          </select>
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-400">Tipo de publicação</span>
+          <select id="mia-tipo" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
+            <option value="texto">Texto</option>
+            <option value="foto">Foto + legenda</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button type="button" id="mia-btn-buscar" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Buscar assuntos</button>
+        <button type="button" id="mia-btn-preview" class="rounded-lg border border-violet-500/50 bg-violet-500/15 px-4 py-2 text-sm text-violet-200 hover:bg-violet-500/25">Gerar matéria do selecionado</button>
+        <button type="button" id="mia-btn-lote" class="rounded-lg border border-sky-500/50 bg-sky-500/10 px-4 py-2 text-sm text-sky-200 hover:bg-sky-500/20">Gerar e publicar selecionados</button>
+      </div>
+      <p id="mia-status" class="mt-3 text-sm text-slate-400"></p>
+    </div>
+
+    <!-- Matéria fica ACIMA da lista para não “sumir” -->
+    <div id="mia-preview-wrap" class="hidden scroll-mt-6 rounded-2xl border-2 border-violet-400/40 bg-slate-900 p-5 shadow-lg shadow-violet-950/30">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wide text-violet-300">Passo 3 — Matéria gerada</p>
+          <h3 class="mt-1 text-lg font-semibold text-white">Revise o texto abaixo</h3>
+          <p id="mia-preview-origem" class="mt-1 text-xs text-slate-500"></p>
+        </div>
+        <span class="rounded-full bg-violet-500/20 px-3 py-1 text-xs font-medium text-violet-200">Editável</span>
+      </div>
+
+      <label class="mt-4 block text-sm">
+        <span class="text-slate-400">Título</span>
+        <input id="mia-preview-titulo" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base font-semibold text-white" />
+      </label>
+
+      <label class="mt-3 block text-sm">
+        <span class="text-slate-400">Matéria / legenda (Facebook)</span>
+        <textarea id="mia-preview-materia" rows="12" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm leading-relaxed text-slate-100"></textarea>
+      </label>
+
+      <div class="mt-4 flex flex-wrap items-start gap-4">
+        <img id="mia-preview-img" alt="" class="hidden h-28 w-28 rounded-xl object-cover border border-slate-700" />
+        <div class="flex flex-1 flex-wrap items-center gap-2">
+          <button type="button" id="mia-btn-publicar-preview" class="rounded-lg bg-[#1877F2] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#166FE5]">Publicar na Página</button>
+          <label class="text-xs text-slate-400">Agendar
+            <input id="mia-schedule" type="datetime-local" class="ml-2 rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200" />
+          </label>
+          <button type="button" id="mia-btn-agendar" class="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 hover:border-slate-400">Agendar</button>
+        </div>
+      </div>
+      <div id="mia-preview-avisos" class="mt-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"></div>
+      <p id="mia-preview-meta" class="mt-2 text-[11px] text-slate-500"></p>
+    </div>
+
+    <div>
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Passo 2 — Assuntos encontrados</p>
+        <p id="mia-topicos-count" class="text-xs text-slate-500"></p>
+      </div>
+      <div id="mia-topicos" class="space-y-2"></div>
+    </div>
+  </div>
+
+  <div id="mia-alta" class="mia-panel mt-5 hidden space-y-4">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <label class="block text-sm">
+        <span class="text-slate-400">Termos extras (opcional)</span>
+        <input id="mia-alta-extras" type="text" placeholder="ex.: assembléia de deus, cantor gospel"
+          class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
+      </label>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button type="button" id="mia-btn-alta" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">Radar em alta</button>
+        <button type="button" id="mia-btn-preview-alta" class="rounded-lg border border-violet-500/50 bg-violet-500/15 px-4 py-2 text-sm text-violet-200">Gerar matéria do selecionado</button>
+      </div>
+      <p id="mia-alta-status" class="mt-3 text-sm text-slate-400"></p>
+    </div>
+    <div id="mia-alta-topicos" class="space-y-2"></div>
+  </div>
+
+  <div id="mia-auto" class="mia-panel mt-5 hidden space-y-4">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <p class="text-sm text-slate-400">Busca novos assuntos e publica automaticamente. Intervalo mínimo: 5 minutos.</p>
+      <div class="mt-4 grid gap-3 lg:grid-cols-2">
+        <label class="block text-sm">
+          <span class="text-slate-400">Palavras-chave</span>
+          <input id="mia-auto-kw" type="text" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-400">Intervalo (minutos)</span>
+          <input id="mia-auto-intervalo" type="number" min="5" value="30" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-400">Posts por ciclo</span>
+          <input id="mia-auto-qtd" type="number" min="1" max="3" value="1" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-400">Tipo</span>
+          <select id="mia-auto-tipo" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
+            <option value="texto">Texto</option>
+            <option value="foto">Foto + legenda</option>
+          </select>
+        </label>
+      </div>
+      <button type="button" id="mia-btn-auto" class="mt-4 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">Criar automação</button>
+      <p id="mia-auto-status" class="mt-3 text-sm text-slate-400"></p>
+    </div>
+    <div id="mia-monitores" class="space-y-2"></div>
+  </div>
+</section>

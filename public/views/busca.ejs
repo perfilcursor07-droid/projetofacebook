@@ -1,19 +1,10 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title><%= title %> — Clipador</title>
-  <link rel="stylesheet" href="/css/app.css" />
-</head>
-<body class="min-h-screen bg-slate-950 text-slate-100">
-  <%- include('partials/header') %>
+<%- include('partials/app-start') %>
 
-  <main class="mx-auto max-w-6xl px-4 py-10">
+  <main class="mx-auto max-w-8xl px-6 py-8">
     <h1 class="text-2xl font-semibold text-white">Buscar conteúdo</h1>
-    <p class="mt-2 text-slate-400">Pesquise na Pexels, YouTube ou TikTok — ou importe por link / upload.</p>
+    <p class="mt-2 text-slate-400">Vídeos e imagens para a fila — ou <a href="/materias-ia" class="text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline">Matérias IA</a> para posts de texto/foto.</p>
 
-    <div class="mt-6 inline-flex rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Tipo de conteúdo">
+    <div class="mt-6 inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Tipo de conteúdo">
       <button type="button" data-tipo="videos" class="tipo-btn inline-flex items-center gap-2 rounded-lg px-5 py-2 text-sm transition-colors bg-emerald-500 text-slate-950 font-semibold">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.2l4.4 3.1c.66.47 1.6 0 1.6-.82V7.92c0-.81-.94-1.29-1.6-.82L16 10.2V7a2 2 0 0 0-2-2H4Z"/></svg>
         Vídeos
@@ -24,6 +15,7 @@
       </button>
     </div>
 
+    <div id="painel-midia">
     <div id="fonte-wrap" class="mt-4">
       <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Onde buscar</p>
       <div class="mt-2 grid gap-3 sm:grid-cols-3" role="tablist" aria-label="Fonte da busca">
@@ -117,6 +109,7 @@
         </p>
       </section>
     </div>
+    </div>
   </main>
 
   <script>
@@ -191,7 +184,6 @@
           b.classList.toggle('text-slate-300', !active);
           b.classList.toggle('hover:text-white', !active);
         });
-        // Imagens só na Pexels
         if (tipo === 'imagens') {
           fonteWrap.classList.add('hidden');
           setFonteActive('pexels');
@@ -405,5 +397,4 @@
       }
     });
   </script>
-</body>
-</html>
+<%- include('partials/app-end') %>
