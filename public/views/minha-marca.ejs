@@ -95,9 +95,9 @@
         </div>
 
         <% if (profile.logo_path) { %>
-          <label class="mt-5 flex items-center gap-2 text-sm text-slate-400">
-            <input type="checkbox" name="remover_logo" value="1" class="rounded border-slate-600 bg-slate-950 text-rose-500" />
-            Remover a logomarca atual
+          <label data-remove-logo class="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200 sm:col-span-2">
+            <input id="remove-logo-input" type="checkbox" name="remover_logo" value="1" class="mt-0.5 rounded border-rose-400/50 bg-slate-950 text-rose-500" />
+            <span><strong class="block font-semibold">Remover logomarca</strong><span class="mt-0.5 block text-xs text-slate-400">Ao salvar, a logo atual será apagada e deixará de aparecer nas próximas artes.</span></span>
           </label>
         <% } %>
 
@@ -111,9 +111,9 @@
         <div class="mt-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-gradient-to-br from-slate-800 to-slate-950 p-6">
           <img id="logo-preview" src="<%= profile.logo_path ? '/media/' + profile.logo_path.replace(/\\/g, '/') : '' %>" alt="Prévia da logomarca"
             class="<%= profile.logo_path ? '' : 'hidden' %> max-h-full max-w-full object-contain" />
-          <p id="logo-empty" class="<%= profile.logo_path ? 'hidden' : '' %> text-center text-sm text-slate-500">Envie uma logo para visualizar aqui.</p>
+          <p id="logo-empty" class="<%= profile.logo_path ? 'hidden' : '' %> text-center text-sm text-slate-500">Nenhuma logomarca configurada.</p>
         </div>
-        <p class="mt-4 text-xs leading-relaxed text-slate-500">A arte final utiliza formato vertical 4:5, com foto, título sobreposto, categoria, cores e sua logomarca.</p>
+        <p class="mt-4 text-xs leading-relaxed text-slate-500">A arte final utiliza formato vertical 4:5. Nome e logomarca só aparecem quando forem configurados.</p>
       </aside>
     </form>
   </main>
@@ -122,12 +122,63 @@
     const logoInput = document.getElementById('logo-input');
     const logoPreview = document.getElementById('logo-preview');
     const logoEmpty = document.getElementById('logo-empty');
-    logoInput.addEventListener('change', () => {
-      const file = logoInput.files && logoInput.files[0];
-      if (!file) return;
-      logoPreview.src = URL.createObjectURL(file);
+    const removeLogoInput = document.getElementById('remove-logo-input');
+    const brandNameInput = document.querySelector('input[name="marca_nome"]');
+    const currentLogoUrl = <%- JSON.stringify(profile.logo_path ? '/media/' + profile.logo_path.replace(/\\/g, '/') : '').replace(/</g, '\\u003c') %>;
+    let previewObjectUrl = null;
+
+    // Nome da conta não é nome da marca: o campo pode permanecer vazio.
+    brandNameInput.required = false;
+    brandNameInput.value = <%- JSON.stringify(profile.marca_nome || '').replace(/</g, '\\u003c') %>;
+    brandNameInput.placeholder = 'Opcional — deixe vazio para não exibir nome';
+
+    const removeLogoCard = document.querySelector('[data-remove-logo]');
+    if (removeLogoCard) logoInput.closest('label').insertAdjacentElement('afterend', removeLogoCard);
+
+    function releaseLogoPreview() {
+      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+      previewObjectUrl = null;
+    }
+
+    function showLogo(src) {
+      logoPreview.src = src;
       logoPreview.classList.remove('hidden');
       logoEmpty.classList.add('hidden');
+    }
+
+    function showNoLogo(message) {
+      logoPreview.removeAttribute('src');
+      logoPreview.classList.add('hidden');
+      logoEmpty.textContent = message;
+      logoEmpty.classList.remove('hidden');
+    }
+
+    logoInput.addEventListener('change', () => {
+      releaseLogoPreview();
+      const file = logoInput.files && logoInput.files[0];
+      if (!file) {
+        if (removeLogoInput?.checked) showNoLogo('A logomarca será removida ao salvar.');
+        else if (currentLogoUrl) showLogo(currentLogoUrl);
+        else showNoLogo('Nenhuma logomarca configurada.');
+        return;
+      }
+      if (removeLogoInput) removeLogoInput.checked = false;
+      previewObjectUrl = URL.createObjectURL(file);
+      showLogo(previewObjectUrl);
     });
+
+    removeLogoInput?.addEventListener('change', () => {
+      releaseLogoPreview();
+      if (removeLogoInput.checked) {
+        logoInput.value = '';
+        showNoLogo('A logomarca será removida ao salvar.');
+      } else if (currentLogoUrl) {
+        showLogo(currentLogoUrl);
+      } else {
+        showNoLogo('Nenhuma logomarca configurada.');
+      }
+    });
+
+    window.addEventListener('beforeunload', releaseLogoPreview);
   </script>
 <%- include('partials/app-end') %>

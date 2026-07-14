@@ -134,7 +134,6 @@ async function addArtwork(userId, result) {
       rotulo: `Arte final 4:5 com título${artwork.hasLogo ? ' e logomarca' : ''} · ${sourceMeta?.rotulo || 'foto editorial'}`,
       hasLogo: artwork.hasLogo,
     };
-    if (!artwork.hasLogo) warnings.push('Arte criada sem logomarca. Envie o arquivo em Minha marca.');
     return { ...result, matter: artwork.matter, artigo: article, preview: article, avisos: warnings };
   } catch (err) {
     await AiMatters.update(matter.id, {

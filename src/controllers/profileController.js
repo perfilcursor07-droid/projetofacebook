@@ -75,7 +75,15 @@ async function update(req, res, next) {
       marca_modelo_arte: requestedModel,
     };
 
-    if (req.file) {
+    const removeLogo = req.body.remover_logo === '1';
+    if (removeLogo) {
+      if (temporaryPath) {
+        removeStorageFile(path.relative(path.resolve(env.storagePath), temporaryPath));
+        temporaryPath = null;
+      }
+      removeStorageFile(current.logo_path);
+      patch.logo_path = null;
+    } else if (req.file) {
       const outputDir = path.resolve(env.storagePath, 'logos');
       const outputPath = path.join(outputDir, `user_${req.session.userId}.png`);
       fs.mkdirSync(outputDir, { recursive: true });
@@ -92,11 +100,6 @@ async function update(req, res, next) {
       if (current.logo_path && current.logo_path !== patch.logo_path) {
         removeStorageFile(current.logo_path);
       }
-    }
-
-    if (req.body.remover_logo === '1') {
-      removeStorageFile(current.logo_path);
-      patch.logo_path = null;
     }
 
     await Users.update(req.session.userId, patch);

@@ -42,7 +42,6 @@ async function create(req, res, next) {
       email,
       senha_hash: await bcrypt.hash(senha, 12),
       nivel_acesso: nivelAcesso,
-      marca_nome: nome.slice(0, 120),
       marca_categoria: 'ÚLTIMAS',
     });
     return redirectWith(res, 'success', 'Usuário cadastrado com sucesso');

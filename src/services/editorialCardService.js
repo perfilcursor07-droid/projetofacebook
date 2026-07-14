@@ -157,9 +157,9 @@ function buildOverlay({ title, category, footer, brandName, primary, secondary, 
       <text x="540" y="1310" text-anchor="middle" class="footer">${safeFooter}</text>`;
   }
 
-  const fallbackBrand = hasLogo ? '' : `
+  const fallbackBrand = hasLogo || !String(brandName || '').trim() ? '' : `
     <rect x="240" y="52" width="600" height="118" rx="28" fill="rgba(255,255,255,.88)"/>
-    <text x="540" y="128" text-anchor="middle" class="brand">${escapeXml(brandName || 'MINHA MARCA')}</text>`;
+    <text x="540" y="128" text-anchor="middle" class="brand">${escapeXml(brandName)}</text>`;
 
   return Buffer.from(`
     <svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
@@ -217,7 +217,7 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const logo = await buildLogoComposite(user.logo_path);
   const primary = normalizeColor(user.marca_cor_primaria, '#facc15');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
-  const brandName = user.marca_nome || user.nome || 'Minha marca';
+  const brandName = String(user.marca_nome || '').trim();
   const overlay = buildOverlay({
     title,
     category: user.marca_categoria || 'ÚLTIMAS',

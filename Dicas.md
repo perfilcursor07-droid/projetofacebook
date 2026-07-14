@@ -22,3 +22,10 @@ SUBIR GIT
 git add .
 git commit -m "feat: sua mensagem aqui"
 git push origin main
+
+
+rapido
+su - viralizeai
+cd /home/viralizeai/htdocs/www.viralizeai.online
+git pull origin main
+pm2 reload viralizeai --update-env
