@@ -1,9 +1,10 @@
 (() => {
   'use strict';
 
-  if (window.__viralizeaiContentV2Loaded) return;
-  window.__viralizeaiContentV2Loaded = true;
-  window.__viralizeaiContentVersion = '2.0.0';
+  const CONTENT_VERSION = '2.0.1';
+  if (window.__viralizeaiContentV2Loaded === CONTENT_VERSION) return;
+  window.__viralizeaiContentV2Loaded = CONTENT_VERSION;
+  window.__viralizeaiContentVersion = CONTENT_VERSION;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -77,17 +78,27 @@
     element.scrollIntoView({ block: 'center', inline: 'nearest' });
     await sleep(120);
     element.focus?.();
-    element.click();
+    try {
+      const options = { bubbles: true, cancelable: true, composed: true, view: window };
+      element.dispatchEvent(new PointerEvent('pointerdown', options));
+      element.dispatchEvent(new MouseEvent('mousedown', options));
+      element.dispatchEvent(new PointerEvent('pointerup', options));
+      element.dispatchEvent(new MouseEvent('mouseup', options));
+      element.dispatchEvent(new MouseEvent('click', options));
+    } catch {
+      element.click();
+    }
   }
 
   function createPostPatterns() {
     return [
       /criar (?:uma )?publica[cç][aã]o/i,
+      /criar (?:um )?post/i,
       /no que voc[eê](?: est[aá])? pensando/i,
       /what'?s on your mind/i,
       /create (?:a )?post/i,
       /comece a escrever/i,
-      /escreva algo/i,
+      /escreva (?:uma publica[cç][aã]o|um post|algo)/i,
     ];
   }
 

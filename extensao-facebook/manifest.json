@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ViralizeAI — Publicar no Facebook",
-  "version": "1.3.0",
+  "version": "2.0.1",
   "description": "Publica matérias do ViralizeAI na Página do Facebook usando sua sessão no navegador (sem Graph API).",
   "permissions": ["storage", "alarms", "scripting", "tabs", "activeTab"],
   "host_permissions": [
@@ -32,7 +32,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.facebook.com/*", "https://facebook.com/*"],
-      "js": ["content.js"],
+      "js": ["content-v2.js"],
       "run_at": "document_idle"
     }
   ]

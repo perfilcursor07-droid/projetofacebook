@@ -1,6 +1,8 @@
 const ALARM_AUTO = 'viralizeai-auto-publish';
 const MIN_INTERVAL_MINUTES = 3;
 const PUBLISH_TIMEOUT_MS = 210000;
+const CONTENT_SCRIPT_VERSION = '2.0.1';
+const publishingMatterIds = new Set();
 
 async function getSettings() {
   const data = await chrome.storage.local.get([
@@ -53,6 +55,19 @@ async function scheduleAlarm(intervalMin, enabled) {
   chrome.alarms.create(ALARM_AUTO, { periodInMinutes: minutes });
 }
 
+function isPageFeedUrl(rawUrl, pageId) {
+  if (!rawUrl || !pageId) return false;
+  try {
+    const url = new URL(rawUrl);
+    const path = decodeURIComponent(url.pathname).replace(/\/+$/, '');
+    const expectedPath = `/${String(pageId)}`;
+    if (path === expectedPath) return true;
+    return path === '/profile.php' && url.searchParams.get('id') === String(pageId);
+  } catch {
+    return false;
+  }
+}
+
 async function findFacebookTab(pageId) {
   const targetUrl = pageId
     ? `https://www.facebook.com/${encodeURIComponent(pageId)}`
@@ -69,13 +84,8 @@ async function findFacebookTab(pageId) {
     return tab;
   }
 
-  // Vai para o feed da Página (topo) — evita caixa de comentário no meio do feed
-  const needsNav =
-    pageId &&
-    !(
-      String(tab.url || '').includes(`/${pageId}`) ||
-      String(tab.url || '').includes(`id=${pageId}`)
-    );
+  // Sempre sai de posts individuais, fotos, reels etc. antes de procurar o composer.
+  const needsNav = Boolean(pageId) && !isPageFeedUrl(tab.url, pageId);
 
   if (needsNav || !tab.url || tab.url === 'chrome://newtab/') {
     await chrome.tabs.update(tab.id, { url: targetUrl, active: true });
@@ -121,7 +131,7 @@ function waitTabComplete(tabId, timeoutMs = 45000) {
 async function ensureContentScript(tabId) {
   try {
     const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    if (String(response?.version || '').startsWith('2.')) return;
+    if (response?.version === CONTENT_SCRIPT_VERSION) return;
   } catch {
     /* injeta a versão atual */
   }
@@ -130,8 +140,8 @@ async function ensureContentScript(tabId) {
     files: ['content-v2.js'],
   });
   const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-  if (!String(response?.version || '').startsWith('2.')) {
-    throw new Error('Não foi possível ativar o motor de publicação 2.0 na aba do Facebook');
+  if (response?.version !== CONTENT_SCRIPT_VERSION) {
+    throw new Error(`Não foi possível ativar o motor de publicação ${CONTENT_SCRIPT_VERSION} na aba do Facebook`);
   }
 }
 
@@ -176,83 +186,100 @@ function buildCaption(matter) {
 
 async function publishMatter(matter) {
   if (!matter?.id) throw new Error('Matéria inválida');
-  const settings = await getSettings();
-  const pageId = matter.fb_page_id || settings.selectedPageId || null;
-  let targetPageName = matter.page_name || null;
-  if (pageId && !targetPageName) {
-    try {
-      const pages = await apiFetch('/api/extensao/paginas');
-      targetPageName = (pages.paginas || []).find(
-        (page) => String(page.page_id) === String(pageId)
-      )?.page_name || null;
-    } catch {
-      // A publicação ainda pode ser validada pelo ID presente na URL.
-    }
+  const matterId = Number(matter.id);
+  if (publishingMatterIds.has(matterId)) {
+    throw new Error('Esta matéria já está sendo publicada por esta extensão');
   }
+  publishingMatterIds.add(matterId);
 
-  await apiFetch(`/api/extensao/matters/${matter.id}/heartbeat`, {
-    method: 'POST',
-    body: JSON.stringify({ page_id: pageId }),
-  });
-
-  const tab = await findFacebookTab(pageId);
-  await chrome.tabs.update(tab.id, { active: true });
-  // Garante topo da página (composer de post)
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => window.scrollTo(0, 0),
+    const settings = await getSettings();
+    const pageId = matter.fb_page_id || settings.selectedPageId || null;
+    let targetPageName = matter.page_name || null;
+    if (pageId && !targetPageName) {
+      try {
+        const pages = await apiFetch('/api/extensao/paginas');
+        targetPageName = (pages.paginas || []).find(
+          (page) => String(page.page_id) === String(pageId)
+        )?.page_name || null;
+      } catch {
+        // A publicação ainda pode ser validada pelo ID presente na URL.
+      }
+    }
+
+    await apiFetch(`/api/extensao/matters/${matter.id}/heartbeat`, {
+      method: 'POST',
+      body: JSON.stringify({ page_id: pageId }),
     });
-  } catch {
-    /* ignore */
-  }
-  await ensureContentScript(tab.id);
 
-  let imagePayload = null;
-  if (matter.tipo_publicacao === 'foto') {
-    if (!matter.imagem_url) throw new Error('Matéria foto sem imagem_url');
-    imagePayload = await downloadImageAsDataUrl(matter.imagem_url);
-  }
+    let result;
+    try {
+      const tab = await findFacebookTab(pageId);
+      await chrome.tabs.update(tab.id, { active: true });
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => window.scrollTo(0, 0),
+        });
+      } catch {
+        /* a navegação e o content script ainda tentarão abrir o composer */
+      }
+      await ensureContentScript(tab.id);
 
-  const caption = buildCaption(matter);
-  const result = await sendToContent(tab.id, {
-    type: 'PUBLISH',
-    payload: {
-      caption,
-      tipo: matter.tipo_publicacao === 'foto' ? 'foto' : 'texto',
-      image: imagePayload,
-      pageId,
-      pageName: targetPageName,
-    },
-  });
+      let imagePayload = null;
+      if (matter.tipo_publicacao === 'foto') {
+        if (!matter.imagem_url) throw new Error('Matéria foto sem imagem_url');
+        imagePayload = await downloadImageAsDataUrl(matter.imagem_url);
+      }
 
-  if (!result?.ok) {
-    const errorMessage = result?.error || 'Publicação não confirmada no Facebook';
+      const caption = buildCaption(matter);
+      result = await sendToContent(tab.id, {
+        type: 'PUBLISH',
+        payload: {
+          caption,
+          tipo: matter.tipo_publicacao === 'foto' ? 'foto' : 'texto',
+          image: imagePayload,
+          pageId,
+          pageName: targetPageName,
+        },
+      });
+      if (!result?.ok) {
+        throw new Error(result?.error || 'Publicação não confirmada no Facebook');
+      }
+    } catch (error) {
+      const errorMessage = error?.message || String(error);
+      try {
+        await apiFetch(`/api/extensao/matters/${matter.id}/resultado`, {
+          method: 'POST',
+          body: JSON.stringify({ status: 'erro', error_message: errorMessage }),
+        });
+      } catch (reportError) {
+        console.error('Falha ao registrar erro da publicação:', reportError);
+      }
+      await pushLog({ title: matter.titulo, status: 'erro', error: errorMessage });
+      throw error;
+    }
+
+    // Só marca como publicado depois de o motor do Facebook confirmar a tentativa.
     await apiFetch(`/api/extensao/matters/${matter.id}/resultado`, {
       method: 'POST',
-      body: JSON.stringify({ status: 'erro', error_message: errorMessage }),
+      body: JSON.stringify({
+        status: 'publicado',
+        fb_post_id: result.fb_post_id || null,
+        fb_post_url: result.fb_post_url || null,
+      }),
     });
-    await pushLog({ title: matter.titulo, status: 'erro', error: errorMessage });
-    throw new Error(errorMessage);
-  }
 
-  await apiFetch(`/api/extensao/matters/${matter.id}/resultado`, {
-    method: 'POST',
-    body: JSON.stringify({
+    await chrome.storage.local.set({ lastPublishAt: Date.now() });
+    await pushLog({
+      title: matter.titulo,
       status: 'publicado',
-      fb_post_id: result.fb_post_id || null,
-      fb_post_url: result.fb_post_url || null,
-    }),
-  });
-
-  await chrome.storage.local.set({ lastPublishAt: Date.now() });
-  await pushLog({
-    title: matter.titulo,
-    status: 'publicado',
-    url: result.fb_post_url || null,
-  });
-
-  return result;
+      url: result.fb_post_url || null,
+    });
+    return result;
+  } finally {
+    publishingMatterIds.delete(matterId);
+  }
 }
 
 async function listPendentes(pageId) {

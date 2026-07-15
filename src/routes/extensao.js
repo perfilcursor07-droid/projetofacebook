@@ -31,19 +31,18 @@ function downloadExtensaoZip(req, res, next) {
     });
     archive.pipe(res);
 
-    // Monta um pacote de atualização sem alterar os arquivos legados já instalados.
-    // publisher.js entra no ZIP com o nome content.js esperado pelo manifesto.
+    // O pacote usa o mesmo motor 2.x que o service worker verifica e injeta.
     const manifestPath = path.join(EXTENSAO_DIR, 'manifest.json');
-    const publisherPath = path.join(EXTENSAO_DIR, 'publisher.js');
-    if (!fs.existsSync(publisherPath)) {
-      throw new Error('Publicador atualizado da extensão não encontrado');
+    const contentV2Path = path.join(EXTENSAO_DIR, 'content-v2.js');
+    if (!fs.existsSync(contentV2Path)) {
+      throw new Error('Motor de publicação 2.x da extensão não encontrado');
     }
 
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    manifest.version = '1.4.0';
+    manifest.version = '2.0.1';
     manifest.content_scripts = (manifest.content_scripts || []).map((entry) => ({
       ...entry,
-      js: ['content.js'],
+      js: ['content-v2.js'],
     }));
 
     const popupCss = fs.readFileSync(path.join(EXTENSAO_DIR, 'popup.css'), 'utf8');
@@ -63,7 +62,6 @@ function downloadExtensaoZip(req, res, next) {
       ignore: ['content.js', 'publisher.js', 'manifest.json', 'popup.css'],
     }, { prefix: root });
     archive.append(JSON.stringify(manifest, null, 2), { name: `${root}/manifest.json` });
-    archive.file(publisherPath, { name: `${root}/content.js` });
     archive.append(popupCss + popupLayoutPatch, { name: `${root}/popup.css` });
     archive.finalize();
   } catch (err) {
@@ -125,14 +123,14 @@ router.post('/tokens/:id/revogar', requireAuth, async (req, res, next) => {
 const HEARTBEAT_TTL_MS = 3 * 60 * 1000;
 const heartbeats = new Map();
 
-function heartbeatAtivo(matterId, tokenId) {
+function heartbeatAtivo(matterId) {
   const hb = heartbeats.get(Number(matterId));
   if (!hb) return false;
   if (Date.now() - hb.at > HEARTBEAT_TTL_MS) {
     heartbeats.delete(Number(matterId));
     return false;
   }
-  return hb.tokenId !== tokenId;
+  return true;
 }
 
 setInterval(() => {
