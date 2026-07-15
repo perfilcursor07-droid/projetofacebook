@@ -235,6 +235,9 @@
       containerEl.querySelectorAll('.clip-tema').forEach((inp) => {
         if (inp.value) edits['tema:clip:' + inp.dataset.clipTema] = inp.value;
       });
+      containerEl.querySelectorAll('.clip-capa').forEach((inp) => {
+        if (inp.value) edits['capa:clip:' + inp.dataset.clipCapa] = inp.value;
+      });
       containerEl.querySelectorAll('.img-tema').forEach((inp) => {
         if (inp.value) edits['tema:imagem:' + inp.dataset.imgTema] = inp.value;
       });
@@ -259,6 +262,10 @@
       });
       containerEl.querySelectorAll('.clip-tema').forEach((inp) => {
         const v = edits['tema:clip:' + inp.dataset.clipTema];
+        if (v) inp.value = v;
+      });
+      containerEl.querySelectorAll('.clip-capa').forEach((inp) => {
+        const v = edits['capa:clip:' + inp.dataset.clipCapa];
         if (v) inp.value = v;
       });
       containerEl.querySelectorAll('.img-tema').forEach((inp) => {
@@ -441,6 +448,25 @@
                     ? `<button type="button" class="ai-btn rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white" data-action="transcribe-clip" data-id="${clip.id}">Extrair fala</button>`
                     : `<span class="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-center text-[11px] text-emerald-300">Fala ok</span>`}
                 </div>
+              </div>
+              <div class="space-y-2 rounded-xl border border-slate-800 bg-slate-900/40 p-2.5">
+                <p class="flex items-center justify-between text-[11px] font-medium text-slate-400">
+                  <span>Capa com título (Minha marca)</span>
+                  ${clip.capa_titulo ? '<span class="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">capa aplicada</span>' : ''}
+                </p>
+                <input type="text"
+                  class="clip-capa w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
+                  data-clip-capa="${clip.id}" placeholder="Título que aparece na capa"
+                  value="${escapeHtml(clip.capa_titulo || '')}" maxlength="120" />
+                <div class="grid ${clip.capa_titulo ? 'grid-cols-2' : 'grid-cols-1'} gap-2">
+                  <button type="button"
+                    class="ai-btn rounded-xl bg-sky-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-400"
+                    data-action="capa-clip" data-id="${clip.id}">${clip.capa_titulo ? 'Refazer capa' : 'Gerar capa'}</button>
+                  ${clip.capa_titulo
+                    ? `<button type="button" class="ai-btn rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-rose-500/50 hover:text-rose-300" data-action="remover-capa" data-id="${clip.id}">Remover capa</button>`
+                    : ''}
+                </div>
+                <p class="text-[10px] leading-relaxed text-slate-500">A capa (2,5s) usa um frame do vídeo + seu modelo do Minha marca e entra antes do vídeo começar.</p>
               </div>
               ${publishFormHtml('clip', clip.id, materia)}
             </div>` : ''}
@@ -879,6 +905,7 @@
         const { action, id } = aiBtn.dataset;
         let url = '';
         let body = {};
+        let method = 'POST';
 
         if (action === 'transcribe-clip') {
           url = '/api/clips/' + id + '/transcribe';
@@ -888,6 +915,17 @@
           url = '/api/clips/' + id + '/materia';
           const temaInput = document.querySelector('[data-clip-tema="' + id + '"]');
           body.tema = temaInput ? temaInput.value.trim() : '';
+        } else if (action === 'capa-clip') {
+          url = '/api/clips/' + id + '/capa';
+          const capaInput = document.querySelector('[data-clip-capa="' + id + '"]');
+          body.titulo = capaInput ? capaInput.value.trim() : '';
+          if (!body.titulo) {
+            showError('Digite o título que vai aparecer na capa do vídeo');
+            return;
+          }
+        } else if (action === 'remover-capa') {
+          url = '/api/clips/' + id + '/capa';
+          method = 'DELETE';
         } else if (action === 'materia-imagem') {
           url = '/api/imagens/' + id + '/materia';
           const temaInput = document.querySelector('[data-img-tema="' + id + '"]');
@@ -905,9 +943,9 @@
         aiBtn.textContent = 'Enviando…';
         try {
           const res = await fetch(url, {
-            method: 'POST',
+            method,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+            body: method === 'DELETE' ? undefined : JSON.stringify(body),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Falha na operação de IA');

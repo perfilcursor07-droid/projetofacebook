@@ -135,7 +135,7 @@ function mapSearchEntry(entry, source) {
  * @param {string} termo
  * @param {{ limit?: number, maxDuration?: number|null, shortsOnly?: boolean }} opts
  */
-async function searchYoutube(termo, { limit = 80, maxDuration = null, shortsOnly = false } = {}) {
+async function searchYoutube(termo, { limit = 100, maxDuration = null, shortsOnly = false } = {}) {
   const q = String(termo || '').trim();
   if (!q) {
     const err = new Error('Informe um termo para buscar no YouTube');
@@ -143,20 +143,18 @@ async function searchYoutube(termo, { limit = 80, maxDuration = null, shortsOnly
     throw err;
   }
 
-  const n = Math.min(Math.max(Number(limit) || 80, 1), 100);
-  const half = Math.max(8, Math.ceil(n / 2));
+  const n = Math.min(Math.max(Number(limit) || 100, 1), 100);
   const durationCap =
     maxDuration != null && Number.isFinite(Number(maxDuration))
       ? Number(maxDuration)
       : shortsOnly
         ? 60
-        : 180;
+        : null;
 
-  // Busca em paralelo: Shorts + resultados filtrados “curtos” (< 4 min no YouTube)
+  // Busca até 100 itens em cada fonte para compensar duplicados e filtros de duração.
   const shortFilterUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgQQARgB`;
-
   const [shortsData, filteredData] = await Promise.all([
-    youtubedl(`ytsearch${half}:${q} #shorts`, {
+    youtubedl(`ytsearch${n}:${q} #shorts`, {
       dumpSingleJson: true,
       flatPlaylist: true,
       noWarnings: true,
@@ -167,19 +165,19 @@ async function searchYoutube(termo, { limit = 80, maxDuration = null, shortsOnly
       flatPlaylist: true,
       noWarnings: true,
       skipDownload: true,
-      playlistEnd: half,
+      playlistEnd: n,
     }).catch(() => ({ entries: [] })),
   ]);
 
   const byId = new Map();
-  const pushEntries = (entries, forceShort = false) => {
+  const pushEntries = (entries, fromShortSearch = false) => {
     for (const entry of entries || []) {
       const mapped = mapSearchEntry(entry, 'youtube');
       if (!mapped) continue;
       const isShort =
-        forceShort ||
         /\/shorts\//i.test(mapped.url || '') ||
-        (mapped.duracao != null && mapped.duracao > 0 && mapped.duracao <= 60);
+        (mapped.duracao != null && mapped.duracao > 0 && mapped.duracao <= 60) ||
+        (fromShortSearch && mapped.duracao == null);
       mapped.isShort = Boolean(isShort);
       if (byId.has(mapped.id)) {
         const prev = byId.get(mapped.id);
@@ -193,28 +191,26 @@ async function searchYoutube(termo, { limit = 80, maxDuration = null, shortsOnly
   pushEntries(Array.isArray(shortsData.entries) ? shortsData.entries : [], true);
   pushEntries(Array.isArray(filteredData.entries) ? filteredData.entries : [], false);
 
-  // Se veio pouco resultado, completa com busca geral
-  if (byId.size < Math.min(24, n) && !shortsOnly) {
-    try {
-      const general = await youtubedl(`ytsearch${n}:${q}`, {
-        dumpSingleJson: true,
-        flatPlaylist: true,
-        noWarnings: true,
-        skipDownload: true,
-      });
-      pushEntries(Array.isArray(general.entries) ? general.entries : [], false);
-    } catch {
-      // ignore
-    }
+  // Uma terceira busca geral completa o catálogo mesmo quando o filtro Shorts está ativo.
+  try {
+    const general = await youtubedl(`ytsearch${n}:${q}`, {
+      dumpSingleJson: true,
+      flatPlaylist: true,
+      noWarnings: true,
+      skipDownload: true,
+    });
+    pushEntries(Array.isArray(general.entries) ? general.entries : [], false);
+  } catch {
+    // As duas buscas principais ainda podem fornecer resultados.
   }
 
   let videos = [...byId.values()].filter((v) => {
-    if (v.duracao == null) return !shortsOnly;
-    if (shortsOnly) return v.duracao <= 60;
+    if (shortsOnly) return v.isShort && (v.duracao == null || v.duracao <= 60);
+    if (durationCap == null || v.duracao == null) return true;
     return v.duracao <= durationCap;
   });
 
-  // Ranking: Shorts primeiro, depois mais curtos, depois mais views
+  // Ranking: Shorts primeiro, depois mais curtos, depois mais views.
   videos.sort((a, b) => {
     if (Boolean(a.isShort) !== Boolean(b.isShort)) return a.isShort ? -1 : 1;
     const da = a.duracao == null ? Number.POSITIVE_INFINITY : a.duracao;
@@ -226,6 +222,7 @@ async function searchYoutube(termo, { limit = 80, maxDuration = null, shortsOnly
   videos = videos.slice(0, n);
 
   const shortsCount = videos.filter((v) => v.isShort).length;
+  const filterNotice = durationCap == null ? 'Sem limite de duração' : `Filtrado até ${durationCap}s`;
 
   return {
     fonte: 'youtube',
@@ -236,8 +233,8 @@ async function searchYoutube(termo, { limit = 80, maxDuration = null, shortsOnly
     shortsCount,
     aviso:
       shortsCount > 0
-        ? `${shortsCount} Short(s)/curto(s) · priorizados para Reels`
-        : `Filtrado até ${durationCap}s · experimente outro termo ou filtre “todos”`,
+        ? `${shortsCount} Short(s)/curto(s) · até ${n} resultados`
+        : `${filterNotice} · até ${n} resultados`,
     videos,
   };
 }

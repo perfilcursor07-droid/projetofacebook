@@ -1,5 +1,7 @@
 const VideoClips = require('../models/VideoClips');
 const Videos = require('../models/Videos');
+const Users = require('../models/Users');
+const clipCoverService = require('../services/clipCoverService');
 const deepseekService = require('../services/deepseekService');
 const transcriptionService = require('../services/transcriptionService');
 const processingService = require('../services/processingService');
@@ -52,6 +54,9 @@ async function removeClip(req, res, next) {
   try {
     const { clip } = await assertOwnedClip(req);
     processingService.safeUnlink(clip.caminho_arquivo);
+    if (clip.arquivo_sem_capa && clip.arquivo_sem_capa !== clip.caminho_arquivo) {
+      processingService.safeUnlink(clip.arquivo_sem_capa);
+    }
     await VideoClips.remove(clip.id);
     res.json({ deleted: true, id: clip.id });
   } catch (err) {
@@ -169,4 +174,83 @@ async function gerarMateria(req, res, next) {
   }
 }
 
-module.exports = { transcribe, gerarMateria, retryClip, removeClip };
+/**
+ * Gera capa de marca (frame do vídeo + título no modelo "Minha marca")
+ * e costura no início do corte para prender a atenção antes do vídeo.
+ * body.titulo obrigatório.
+ */
+async function gerarCapa(req, res, next) {
+  try {
+    const { clip } = await assertOwnedClip(req);
+    if (clip.status !== 'pronto' && clip.status !== 'publicado') {
+      throw httpError('O clipe precisa estar pronto antes de gerar a capa', 422);
+    }
+    if (!clip.caminho_arquivo) {
+      throw httpError('Clipe sem arquivo — gere o corte novamente', 422);
+    }
+    const titulo = String(req.body.titulo || '').trim();
+    if (!titulo) {
+      throw httpError('Informe o título que vai aparecer na capa', 400);
+    }
+
+    const user = await Users.findById(req.session.userId);
+    if (!user) throw httpError('Usuário não encontrado', 404);
+
+    enqueue(`capa clip ${clip.id}`, async () => {
+      const fresh = await VideoClips.findById(clip.id);
+      if (!fresh) return;
+      try {
+        const { relativePath } = await clipCoverService.addCoverToClip({
+          clip: fresh,
+          user,
+          titulo,
+        });
+
+        // Guarda o corte original na 1ª capa; remove capas antigas ao refazer
+        const semCapa = fresh.arquivo_sem_capa || fresh.caminho_arquivo;
+        if (fresh.arquivo_sem_capa && fresh.caminho_arquivo !== fresh.arquivo_sem_capa) {
+          processingService.safeUnlink(fresh.caminho_arquivo);
+        }
+
+        await VideoClips.update(clip.id, {
+          caminho_arquivo: relativePath,
+          arquivo_sem_capa: semCapa,
+          capa_titulo: titulo,
+          erro_mensagem: null,
+        });
+      } catch (err) {
+        await VideoClips.update(clip.id, {
+          erro_mensagem: `Capa falhou: ${String(err.message || err).slice(0, 400)}`,
+        });
+        throw err;
+      }
+    });
+
+    res.status(202).json({ queued: true, clipId: clip.id, message: 'Geração da capa enfileirada' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Remove a capa e volta ao corte original. */
+async function removerCapa(req, res, next) {
+  try {
+    const { clip } = await assertOwnedClip(req);
+    if (!clip.arquivo_sem_capa) {
+      throw httpError('Este corte não tem capa aplicada', 422);
+    }
+    if (clip.caminho_arquivo !== clip.arquivo_sem_capa) {
+      processingService.safeUnlink(clip.caminho_arquivo);
+    }
+    await VideoClips.update(clip.id, {
+      caminho_arquivo: clip.arquivo_sem_capa,
+      arquivo_sem_capa: null,
+      capa_titulo: null,
+    });
+    res.json({ ok: true, message: 'Capa removida — corte original restaurado' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { transcribe, gerarMateria, retryClip, removeClip, gerarCapa, removerCapa };

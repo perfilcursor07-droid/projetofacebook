@@ -337,7 +337,7 @@
         if (tipo === 'videos') {
           url += '&fonte=' + encodeURIComponent(fonte);
           if (fonte === 'youtube') {
-            url += '&per_page=80';
+            url += '&per_page=100';
             url += '&max_duration=' + encodeURIComponent(ytMaxDuration);
             if (ytShortsOnly) url += '&shorts_only=1';
           }

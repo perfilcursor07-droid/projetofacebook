@@ -382,7 +382,7 @@ async function search(req, res, next) {
         req.query.filtro === 'shorts';
 
       const result = await importService.searchYoutube(termo, {
-        limit: perPage || 80,
+        limit: perPage || 100,
         maxDuration: shortsOnly ? 60 : maxDuration,
         shortsOnly,
       });
