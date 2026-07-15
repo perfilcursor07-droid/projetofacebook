@@ -53,20 +53,38 @@ async function scheduleAlarm(intervalMin, enabled) {
   chrome.alarms.create(ALARM_AUTO, { periodInMinutes: minutes });
 }
 
-async function findFacebookTab() {
+async function findFacebookTab(pageId) {
+  const targetUrl = pageId
+    ? `https://www.facebook.com/${encodeURIComponent(pageId)}`
+    : 'https://www.facebook.com/';
+
   const tabs = await chrome.tabs.query({
     url: ['https://www.facebook.com/*', 'https://facebook.com/*'],
   });
-  if (tabs.length) {
-    const active = tabs.find((t) => t.active) || tabs[0];
-    return active;
+
+  let tab = tabs.find((t) => t.active) || tabs[0];
+  if (!tab) {
+    tab = await chrome.tabs.create({ url: targetUrl, active: true });
+    await waitTabComplete(tab.id);
+    return tab;
   }
-  const created = await chrome.tabs.create({
-    url: 'https://www.facebook.com/',
-    active: true,
-  });
-  await waitTabComplete(created.id);
-  return created;
+
+  // Vai para o feed da Página (topo) — evita caixa de comentário no meio do feed
+  const needsNav =
+    pageId &&
+    !(
+      String(tab.url || '').includes(`/${pageId}`) ||
+      String(tab.url || '').includes(`id=${pageId}`)
+    );
+
+  if (needsNav || !tab.url || tab.url === 'chrome://newtab/') {
+    await chrome.tabs.update(tab.id, { url: targetUrl, active: true });
+    await waitTabComplete(tab.id);
+    await new Promise((r) => setTimeout(r, 1200));
+  } else {
+    await chrome.tabs.update(tab.id, { active: true });
+  }
+  return tab;
 }
 
 function waitTabComplete(tabId, timeoutMs = 45000) {
@@ -154,11 +172,25 @@ function buildCaption(matter) {
 
 async function publishMatter(matter) {
   if (!matter?.id) throw new Error('Matéria inválida');
+  const settings = await getSettings();
+  const pageId = matter.fb_page_id || settings.selectedPageId || null;
 
-  await apiFetch(`/api/extensao/matters/${matter.id}/heartbeat`, { method: 'POST', body: '{}' });
+  await apiFetch(`/api/extensao/matters/${matter.id}/heartbeat`, {
+    method: 'POST',
+    body: JSON.stringify({ page_id: pageId }),
+  });
 
-  const tab = await findFacebookTab();
+  const tab = await findFacebookTab(pageId);
   await chrome.tabs.update(tab.id, { active: true });
+  // Garante topo da página (composer de post)
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => window.scrollTo(0, 0),
+    });
+  } catch {
+    /* ignore */
+  }
   await ensureContentScript(tab.id);
 
   let imagePayload = null;
@@ -174,7 +206,7 @@ async function publishMatter(matter) {
       caption,
       tipo: matter.tipo_publicacao === 'foto' ? 'foto' : 'texto',
       image: imagePayload,
-      pageId: matter.fb_page_id || null,
+      pageId,
       pageName: matter.page_name || null,
     },
   });

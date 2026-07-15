@@ -119,7 +119,7 @@ async function refresh() {
   fillPages(res.paginas || [], res.selectedPageId);
   renderPendentes(res.pendentes || []);
   renderLogs(res.activityLog || []);
-  setStatus(els.mainStatus, `${(res.pendentes || []).length} pendente(s)`, 'ok');
+  setStatus(els.mainStatus, `${(res.pendentes || []).length} disponível(is)`, 'ok');
 }
 
 function fillPages(paginas, selectedPageId) {
@@ -139,23 +139,25 @@ function renderPendentes(items) {
   if (els.checkAllPend) els.checkAllPend.checked = false;
   if (!items.length) {
     els.pendentes.innerHTML =
-      '<p class="muted small">Fila vazia. Em /extensao no site, marque matérias e envie para a fila.</p>';
+      '<p class="muted small">Nenhuma matéria disponível. Crie conteúdo no site e atualize aqui.</p>';
     return;
   }
   els.pendentes.innerHTML = items
     .map((m) => {
-      const preview = String(m.materia || '').slice(0, 140);
+      const preview = String(m.materia || '').replace(/\s+/g, ' ').trim().slice(0, 140);
       const thumb = m.imagem_url
         ? `<img class="thumb" src="${escapeAttr(m.imagem_url)}" alt="" />`
-        : '';
+        : `<div class="thumb-placeholder">${escapeHtml(m.tipo_publicacao || 'txt')}</div>`;
+      const st = escapeHtml(m.status || 'rascunho');
       return `<article class="card" data-id="${m.id}">
-        <div class="row" style="align-items:flex-start;gap:8px">
+        <div class="card-pend">
           <input type="checkbox" class="js-pend-check" value="${m.id}" checked />
-          <div style="flex:1;min-width:0">
+          <div class="card-body">
+            <span class="badge-st ${st}">${st}</span>
             <h3>${escapeHtml(m.titulo || 'Sem título')}</h3>
             <p>${escapeHtml(preview)}</p>
             <div class="meta">
-              <span class="small muted">${escapeHtml(m.tipo_publicacao)} · ${escapeHtml(m.page_name || '')}</span>
+              <span class="small muted">${escapeHtml(m.tipo_publicacao)} · ${escapeHtml(m.page_name || 'sem página')}</span>
               <button type="button" class="btn compact primary js-pub" data-id="${m.id}">Publicar</button>
             </div>
           </div>

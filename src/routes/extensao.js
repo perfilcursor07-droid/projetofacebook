@@ -144,18 +144,15 @@ router.get('/paginas', requireApiToken, async (req, res, next) => {
 router.get('/pendentes', requireApiToken, async (req, res, next) => {
   try {
     const fbPageId = String(req.query.page_id || '').trim();
+    // Lista automática: rascunho, pronto, agendado vencido e erro — sem precisar enfileirar no site
+    const statuses = String(req.query.status || 'publicaveis');
 
     let query = db('ai_matters')
       .where('ai_matters.user_id', req.apiUserId)
-      .where((builder) => {
-        builder
-          .where('ai_matters.status', 'pronto')
-          .orWhere((sub) => {
-            sub.where('ai_matters.status', 'agendado').where('ai_matters.scheduled_at', '<=', db.fn.now());
-          });
-      })
       .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
-      .orderBy('ai_matters.updated_at', 'asc')
+      .orderByRaw(
+        "FIELD(ai_matters.status, 'pronto', 'agendado', 'erro', 'rascunho'), ai_matters.updated_at DESC"
+      )
       .limit(50)
       .select(
         'ai_matters.id',
@@ -166,12 +163,33 @@ router.get('/pendentes', requireApiToken, async (req, res, next) => {
         'ai_matters.imagem_url',
         'ai_matters.status',
         'ai_matters.scheduled_at',
+        'ai_matters.facebook_page_id',
         'facebook_pages.page_id as fb_page_id',
         'facebook_pages.page_name'
       );
 
+    if (statuses === 'fila') {
+      query = query.where((builder) => {
+        builder
+          .where('ai_matters.status', 'pronto')
+          .orWhere((sub) => {
+            sub.where('ai_matters.status', 'agendado').where('ai_matters.scheduled_at', '<=', db.fn.now());
+          });
+      });
+    } else {
+      query = query.where((builder) => {
+        builder
+          .whereIn('ai_matters.status', ['rascunho', 'pronto', 'erro'])
+          .orWhere((sub) => {
+            sub.where('ai_matters.status', 'agendado').where('ai_matters.scheduled_at', '<=', db.fn.now());
+          });
+      });
+    }
+
     if (fbPageId) {
-      query = query.where('facebook_pages.page_id', fbPageId);
+      query = query.andWhere((builder) => {
+        builder.where('facebook_pages.page_id', fbPageId).orWhereNull('ai_matters.facebook_page_id');
+      });
     }
 
     const rows = await query;
@@ -189,6 +207,7 @@ router.get('/pendentes', requireApiToken, async (req, res, next) => {
         scheduled_at: m.scheduled_at,
         fb_page_id: m.fb_page_id || null,
         page_name: m.page_name || null,
+        na_fila: m.status === 'pronto' || m.status === 'agendado',
       }));
 
     return res.json({ ok: true, pendentes });
@@ -207,6 +226,27 @@ router.post('/matters/:id/heartbeat', requireApiToken, async (req, res, next) =>
     if (heartbeatAtivo(matterId, req.apiToken.id)) {
       return res.status(409).json({ error: 'Outra extensão já está publicando esta matéria' });
     }
+
+    const patch = {};
+    const graphPageId = String(req.body?.page_id || req.body?.fb_page_id || '').trim();
+    if (graphPageId) {
+      const page = await db('facebook_pages')
+        .join('facebook_accounts', 'facebook_pages.facebook_account_id', 'facebook_accounts.id')
+        .where('facebook_accounts.user_id', req.apiUserId)
+        .where('facebook_pages.page_id', graphPageId)
+        .select('facebook_pages.id')
+        .first();
+      if (page) patch.facebook_page_id = page.id;
+    }
+    // Enfileira automaticamente ao publicar pela extensão
+    if (['rascunho', 'erro'].includes(matter.status)) {
+      patch.status = 'pronto';
+      patch.error_message = null;
+    }
+    if (Object.keys(patch).length) {
+      await AiMatters.update(matter.id, patch);
+    }
+
     heartbeats.set(matterId, { tokenId: req.apiToken.id, at: Date.now() });
     return res.json({ ok: true });
   } catch (err) {
