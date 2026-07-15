@@ -144,7 +144,6 @@ async function publishPhoto({ pageId, pageAccessToken, filePath, caption }) {
     const form = new FormData();
     form.append('access_token', pageAccessToken);
     form.append('published', 'false');
-    form.append('temporary', 'true');
     form.append('source', fs.createReadStream(filePath));
 
     const { data: photo } = await axios.post(`${GRAPH}/${pageId}/photos`, form, {
@@ -179,7 +178,6 @@ async function publishPhotoFromUrl({ pageId, pageAccessToken, imageUrl, caption 
         access_token: pageAccessToken,
         url: imageUrl,
         published: false,
-        temporary: true,
       },
       timeout: 2 * 60 * 1000,
     });
