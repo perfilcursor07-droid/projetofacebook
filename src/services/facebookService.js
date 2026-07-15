@@ -115,40 +115,87 @@ async function publishVideo({ pageId, pageAccessToken, filePath, description }) 
 }
 
 /**
- * Publica uma foto em uma página.
- * @returns {Promise<{ id: string, post_id?: string }>}
+ * Sobe foto sem publicar no álbum e anexa num post do feed da Página.
+ * Assim a matéria aparece em Posts (e não só em Fotos).
+ * @returns {Promise<{ id: string, post_id: string, photo_id: string }>}
+ */
+async function createFeedPostWithPhoto({ pageId, pageAccessToken, message, photoId }) {
+  const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, null, {
+    params: {
+      access_token: pageAccessToken,
+      message: message || '',
+      attached_media: JSON.stringify([{ media_fbid: String(photoId) }]),
+    },
+    timeout: 2 * 60 * 1000,
+  });
+  return {
+    id: data.id,
+    post_id: data.id,
+    photo_id: String(photoId),
+  };
+}
+
+/**
+ * Publica uma foto como post no feed da página (não só no álbum Fotos).
+ * @returns {Promise<{ id: string, post_id?: string, photo_id?: string }>}
  */
 async function publishPhoto({ pageId, pageAccessToken, filePath, caption }) {
   return withRetry(async () => {
     const form = new FormData();
     form.append('access_token', pageAccessToken);
-    form.append('caption', caption || '');
+    form.append('published', 'false');
+    form.append('temporary', 'true');
     form.append('source', fs.createReadStream(filePath));
 
-    const { data } = await axios.post(`${GRAPH}/${pageId}/photos`, form, {
+    const { data: photo } = await axios.post(`${GRAPH}/${pageId}/photos`, form, {
       headers: form.getHeaders(),
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
       timeout: 5 * 60 * 1000,
     });
-    return data;
+
+    if (!photo?.id) {
+      const err = new Error('Facebook não retornou o ID da foto');
+      err.status = 502;
+      throw err;
+    }
+
+    return createFeedPostWithPhoto({
+      pageId,
+      pageAccessToken,
+      message: caption || '',
+      photoId: photo.id,
+    });
   });
 }
 
 /**
- * Publica foto a partir de URL pública (Pexels / og:image).
+ * Publica foto a partir de URL pública como post no feed da página.
  */
 async function publishPhotoFromUrl({ pageId, pageAccessToken, imageUrl, caption }) {
   return withRetry(async () => {
-    const { data } = await axios.post(`${GRAPH}/${pageId}/photos`, null, {
+    const { data: photo } = await axios.post(`${GRAPH}/${pageId}/photos`, null, {
       params: {
         access_token: pageAccessToken,
         url: imageUrl,
-        caption: caption || '',
+        published: false,
+        temporary: true,
       },
       timeout: 2 * 60 * 1000,
     });
-    return data;
+
+    if (!photo?.id) {
+      const err = new Error('Facebook não retornou o ID da foto');
+      err.status = 502;
+      throw err;
+    }
+
+    return createFeedPostWithPhoto({
+      pageId,
+      pageAccessToken,
+      message: caption || '',
+      photoId: photo.id,
+    });
   });
 }
 

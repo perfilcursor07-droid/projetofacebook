@@ -304,7 +304,9 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     }
 
     const postId = result.post_id || result.id;
-    const fbPostUrl = `https://www.facebook.com/${postId}`;
+    const fbPostUrl = String(postId).includes('_')
+      ? `https://www.facebook.com/${postId}`
+      : `https://www.facebook.com/${page.page_id}/posts/${postId}`;
     await Publications.update(pubId, {
       status: 'publicado',
       fb_post_id: postId,

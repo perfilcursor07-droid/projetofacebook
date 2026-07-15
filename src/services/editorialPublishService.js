@@ -63,6 +63,7 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
   });
 
   try {
+    // Upload unpublished + /feed com attached_media → aparece em Posts (não só em Fotos).
     const result = await facebookService.publishPhoto({
       pageId: page.page_id,
       pageAccessToken: page.page_access_token,
@@ -70,7 +71,9 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
       caption: message,
     });
     const postId = result.post_id || result.id;
-    const fbPostUrl = `https://www.facebook.com/${postId}`;
+    const fbPostUrl = postId.includes('_')
+      ? `https://www.facebook.com/${postId}`
+      : `https://www.facebook.com/${page.page_id}/posts/${postId}`;
     await Publications.update(publicationId, {
       status: 'publicado',
       fb_post_id: postId,
