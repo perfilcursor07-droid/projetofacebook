@@ -1,12 +1,11 @@
 <%- include('partials/app-start') %>
 
   <main class="mx-auto max-w-8xl px-6 py-8">
-    <div class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-semibold text-white">Gerar conteúdo IA</h1>
-        <p class="mt-2 text-slate-400">Busque pautas, gere o texto, revise na tela da matéria e publique quando quiser.</p>
-      </div>
-      <a href="/minhas-materias" class="text-sm text-emerald-400 hover:text-emerald-300">Ver minhas matérias →</a>
+    <%- include('partials/content-nav', { contentTab: 'ia' }) %>
+
+    <div>
+      <h1 class="text-2xl font-semibold text-white">Pautas com IA</h1>
+      <p class="mt-2 text-slate-400">Encontre assuntos, gere a matéria e revise antes de publicar.</p>
     </div>
 
     <%- include('partials/materias-ia-panel') %>

@@ -1,16 +1,11 @@
 <%- include('partials/app-start') %>
 
   <main class="mx-auto max-w-8xl px-6 py-8">
-    <div class="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400/80">Biblioteca</p>
-        <h1 class="mt-1 text-2xl font-semibold text-white">Buscar conteúdo</h1>
-        <p class="mt-1 text-sm text-slate-400">
-          Shorts e vídeos curtos para a fila ·
-          <a href="/materias-ia" class="text-emerald-400 hover:text-emerald-300">Matérias IA</a>
-        </p>
-      </div>
-      <a href="/fila" class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-emerald-300">Ver fila →</a>
+    <%- include('partials/content-nav', { contentTab: 'media' }) %>
+
+    <div>
+      <h1 class="text-2xl font-semibold text-white">Vídeo e imagem</h1>
+      <p class="mt-1 text-sm text-slate-400">Busque, envie ou importe mídias para continuar na produção.</p>
     </div>
 
     <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5">
@@ -342,11 +337,11 @@
         if (tipo === 'videos') {
           url += '&fonte=' + encodeURIComponent(fonte);
           if (fonte === 'youtube') {
-            url += '&per_page=40';
+            url += '&per_page=80';
             url += '&max_duration=' + encodeURIComponent(ytMaxDuration);
             if (ytShortsOnly) url += '&shorts_only=1';
           }
-          if (fonte === 'tiktok') url += '&per_page=24';
+          if (fonte === 'tiktok') url += '&per_page=60';
         }
 
         const res = await fetch(url);

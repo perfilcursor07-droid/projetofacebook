@@ -353,7 +353,7 @@ async function showMatter(req, res, next) {
 async function listPage(req, res, next) {
   try {
     return res.render('materias-ia', {
-      title: 'Gerar conteúdo IA',
+      title: 'Criar conteúdo',
       miaStandalone: true,
     });
   } catch (err) {

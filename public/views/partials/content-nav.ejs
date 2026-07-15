@@ -1,0 +1,24 @@
+<%
+  const selectedContentTab = typeof contentTab !== 'undefined' ? contentTab : 'ia';
+  const contentTabs = [
+    { key: 'ia', href: '/conteudo', label: 'Pautas com IA', hint: 'Pesquisar e gerar' },
+    { key: 'media', href: '/busca', label: 'Vídeo e imagem', hint: 'Buscar ou importar' },
+    { key: 'production', href: '/fila', label: 'Produção', hint: 'Cortar e publicar' },
+    { key: 'matters', href: '/minhas-materias', label: 'Matérias salvas', hint: 'Revisar e editar' },
+  ];
+%>
+<section class="mb-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/40" aria-label="Área de criação de conteúdo">
+  <div class="border-b border-slate-800 px-4 py-3 sm:px-5">
+    <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400/80">Criar conteúdo</p>
+    <p class="mt-1 text-xs text-slate-500">Um só fluxo para pesquisar, gerar, produzir e publicar.</p>
+  </div>
+  <nav class="grid gap-1 p-2 sm:grid-cols-2 lg:grid-cols-4" aria-label="Etapas da criação">
+    <% contentTabs.forEach((tab) => { const active = selectedContentTab === tab.key; %>
+      <a href="<%= tab.href %>" <%= active ? 'aria-current="page"' : '' %>
+        class="rounded-xl px-3 py-2.5 transition <%= active ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-slate-800 hover:text-white' %>">
+        <span class="block text-sm font-semibold"><%= tab.label %></span>
+        <span class="block text-[11px] <%= active ? 'text-slate-900/70' : 'text-slate-500' %>"><%= tab.hint %></span>
+      </a>
+    <% }) %>
+  </nav>
+</section>

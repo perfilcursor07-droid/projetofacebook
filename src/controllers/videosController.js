@@ -382,7 +382,7 @@ async function search(req, res, next) {
         req.query.filtro === 'shorts';
 
       const result = await importService.searchYoutube(termo, {
-        limit: perPage || 40,
+        limit: perPage || 80,
         maxDuration: shortsOnly ? 60 : maxDuration,
         shortsOnly,
       });
@@ -391,7 +391,7 @@ async function search(req, res, next) {
 
     if (fonte === 'tiktok') {
       const result = await importService.searchTiktok(termo, {
-        limit: perPage || 24,
+        limit: perPage || 60,
       });
       return res.json(result);
     }

@@ -18,21 +18,23 @@
 %>
 
   <main class="mx-auto max-w-8xl px-6 py-8">
+    <%- include('partials/content-nav', { contentTab: 'matters' }) %>
+
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold text-white">Minhas matérias</h1>
-        <p class="mt-2 text-slate-400">Todas as matérias que você gerou — edite, publique ou remova.</p>
+        <h1 class="text-2xl font-semibold text-white">Matérias salvas</h1>
+        <p class="mt-2 text-slate-400">Revise, edite, publique ou remova o conteúdo que você gerou.</p>
       </div>
-      <a href="/materias-ia"
+      <a href="/conteudo"
         class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">
-        Gerar nova matéria
+        Criar conteúdo
       </a>
     </div>
 
     <% if (!mattersList.length) { %>
       <p class="mt-8 rounded-xl border border-dashed border-slate-700 px-4 py-12 text-center text-sm text-slate-400">
         Nenhuma matéria gerada ainda.
-        <a href="/materias-ia" class="mt-2 block text-emerald-400 hover:text-emerald-300">Ir para Gerar conteúdo IA →</a>
+        <a href="/conteudo" class="mt-2 block text-emerald-400 hover:text-emerald-300">Criar conteúdo →</a>
       </p>
     <% } else { %>
       <p class="mt-6 text-sm text-slate-500"><%= mattersList.length %> matéria(s) salva(s)</p>

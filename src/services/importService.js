@@ -135,7 +135,7 @@ function mapSearchEntry(entry, source) {
  * @param {string} termo
  * @param {{ limit?: number, maxDuration?: number|null, shortsOnly?: boolean }} opts
  */
-async function searchYoutube(termo, { limit = 40, maxDuration = null, shortsOnly = false } = {}) {
+async function searchYoutube(termo, { limit = 80, maxDuration = null, shortsOnly = false } = {}) {
   const q = String(termo || '').trim();
   if (!q) {
     const err = new Error('Informe um termo para buscar no YouTube');
@@ -143,7 +143,7 @@ async function searchYoutube(termo, { limit = 40, maxDuration = null, shortsOnly
     throw err;
   }
 
-  const n = Math.min(Math.max(Number(limit) || 40, 1), 50);
+  const n = Math.min(Math.max(Number(limit) || 80, 1), 100);
   const half = Math.max(8, Math.ceil(n / 2));
   const durationCap =
     maxDuration != null && Number.isFinite(Number(maxDuration))
@@ -194,7 +194,7 @@ async function searchYoutube(termo, { limit = 40, maxDuration = null, shortsOnly
   pushEntries(Array.isArray(filteredData.entries) ? filteredData.entries : [], false);
 
   // Se veio pouco resultado, completa com busca geral
-  if (byId.size < Math.min(12, n) && !shortsOnly) {
+  if (byId.size < Math.min(24, n) && !shortsOnly) {
     try {
       const general = await youtubedl(`ytsearch${n}:${q}`, {
         dumpSingleJson: true,
@@ -247,7 +247,7 @@ async function searchYoutube(termo, { limit = 40, maxDuration = null, shortsOnly
  * A busca por hashtag/termo genérico não funciona de forma estável no yt-dlp —
  * use @usuario (ex.: @tiktok) ou cole o link do vídeo.
  */
-async function searchTiktok(termo, { limit = 12 } = {}) {
+async function searchTiktok(termo, { limit = 30 } = {}) {
   const raw = String(termo || '').trim();
   if (!raw) {
     const err = new Error('Informe um @usuário do TikTok (ex.: @tiktok)');
@@ -288,7 +288,7 @@ async function searchTiktok(termo, { limit = 12 } = {}) {
     throw err;
   }
 
-  const n = Math.min(Math.max(Number(limit) || 12, 1), 30);
+  const n = Math.min(Math.max(Number(limit) || 30, 1), 60);
   const profileUrl = `https://www.tiktok.com/@${username}`;
 
   try {

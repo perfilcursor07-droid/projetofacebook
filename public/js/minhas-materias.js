@@ -31,7 +31,7 @@
         list.outerHTML =
           '<p class="mt-8 rounded-xl border border-dashed border-slate-700 px-4 py-12 text-center text-sm text-slate-400">' +
           'Nenhuma matéria gerada ainda.' +
-          '<a href="/materias-ia" class="mt-2 block text-emerald-400 hover:text-emerald-300">Ir para Gerar conteúdo IA →</a>' +
+          '<a href="/conteudo" class="mt-2 block text-emerald-400 hover:text-emerald-300">Criar conteúdo →</a>' +
           '</p>';
       }
     } catch (err) {
