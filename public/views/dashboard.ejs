@@ -38,51 +38,51 @@
   }
 %>
 
-<main class="mx-auto max-w-8xl px-6 py-8">
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <div>
+<main class="mx-auto max-w-8xl px-4 py-5 sm:px-6 sm:py-8">
+  <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+    <div class="min-w-0">
       <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400/80">Visão geral</p>
-      <h1 class="mt-1 text-3xl font-semibold text-white">Dashboard</h1>
+      <h1 class="mt-1 text-2xl font-semibold text-white sm:text-3xl">Dashboard</h1>
       <p class="mt-2 text-sm text-slate-400">Acompanhe produção, cortes e publicações.</p>
     </div>
-    <div class="flex flex-wrap gap-2">
-      <a href="/conteudo" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Criar conteúdo</a>
-      <a href="/fila" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-slate-500">Acompanhar produção</a>
+    <div class="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+      <a href="/conteudo" class="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Criar conteúdo</a>
+      <a href="/fila" class="inline-flex items-center justify-center rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-200 hover:border-slate-500">Acompanhar produção</a>
     </div>
   </div>
 
-  <div class="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
-      <p class="text-xs uppercase tracking-wide text-slate-500">Vídeos</p>
-      <p class="mt-3 text-3xl font-semibold text-white"><%= s.videos %></p>
-      <p class="mt-2 text-xs text-slate-500"><%= s.videosByStatus.cortado || 0 %> cortados · <%= s.videosByStatus.erro || 0 %> erro</p>
+  <div class="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 xl:grid-cols-5">
+    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:p-5">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Vídeos</p>
+      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.videos %></p>
+      <p class="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs"><%= s.videosByStatus.cortado || 0 %> cortados · <%= s.videosByStatus.erro || 0 %> erro</p>
     </article>
-    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
-      <p class="text-xs uppercase tracking-wide text-slate-500">Cortes</p>
-      <p class="mt-3 text-3xl font-semibold text-white"><%= s.clips %></p>
-      <p class="mt-2 text-xs text-slate-500"><%= s.clipsByStatus.pronto || 0 %> prontos · <%= s.clipsByStatus.processando || 0 %> processando</p>
+    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:p-5">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Cortes</p>
+      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.clips %></p>
+      <p class="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs"><%= s.clipsByStatus.pronto || 0 %> prontos · <%= s.clipsByStatus.processando || 0 %> processando</p>
     </article>
-    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
-      <p class="text-xs uppercase tracking-wide text-slate-500">Imagens</p>
-      <p class="mt-3 text-3xl font-semibold text-white"><%= s.imagens %></p>
-      <p class="mt-2 text-xs text-slate-500"><%= s.imagensByStatus.baixado || 0 %> baixadas</p>
+    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:p-5">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Imagens</p>
+      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.imagens %></p>
+      <p class="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs"><%= s.imagensByStatus.baixado || 0 %> baixadas</p>
     </article>
-    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
-      <p class="text-xs uppercase tracking-wide text-slate-500">Publicações</p>
-      <p class="mt-3 text-3xl font-semibold text-white"><%= s.publicacoes %></p>
-      <p class="mt-2 text-xs text-slate-500"><%= s.pubsByStatus.publicado || 0 %> ok · <%= s.pubsByStatus.erro || 0 %> erro</p>
+    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:p-5">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Publicações</p>
+      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.publicacoes %></p>
+      <p class="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs"><%= s.pubsByStatus.publicado || 0 %> ok · <%= s.pubsByStatus.erro || 0 %> erro</p>
     </article>
-    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5">
-      <p class="text-xs uppercase tracking-wide text-slate-500">Páginas FB</p>
-      <p class="mt-3 text-3xl font-semibold text-white"><%= s.paginas %></p>
-      <p class="mt-2 text-xs <%= connected ? 'text-emerald-400' : 'text-amber-300' %>">
+    <article class="col-span-2 rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:col-span-1 sm:p-5 xl:col-span-1">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Páginas FB</p>
+      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.paginas %></p>
+      <p class="mt-1.5 text-[11px] leading-snug sm:mt-2 sm:text-xs <%= connected ? 'text-emerald-400' : 'text-amber-300' %>">
         <%= connected ? 'Conta conectada' : 'Sem conta conectada' %>
       </p>
     </article>
   </div>
 
-  <div class="mt-8 grid gap-6 lg:grid-cols-3">
-    <section class="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 lg:col-span-1">
+  <div class="mt-6 grid gap-5 sm:mt-8 sm:gap-6 lg:grid-cols-3">
+    <section class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5 lg:col-span-1">
       <h2 class="text-sm font-semibold text-white">Atalhos</h2>
       <div class="mt-4 space-y-2">
         <a href="/conteudo" class="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 transition hover:border-emerald-500/40 hover:text-white">
@@ -112,21 +112,36 @@
       </ul>
     </section>
 
-    <section class="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 lg:col-span-2">
+    <section class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5 lg:col-span-2">
       <div class="flex items-center justify-between gap-3">
         <h2 class="text-sm font-semibold text-white">Últimas publicações</h2>
-        <span class="text-xs text-slate-500"><%= pubs.length %> recentes</span>
+        <span class="shrink-0 text-xs text-slate-500"><%= pubs.length %> recentes</span>
       </div>
 
       <% if (!pubs.length) { %>
-        <div class="mt-8 rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-6 py-12 text-center">
+        <div class="mt-6 rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-4 py-10 text-center sm:mt-8 sm:px-6 sm:py-12">
           <p class="text-slate-300">Nenhuma publicação ainda.</p>
           <p class="mt-2 text-sm text-slate-500">Gere um corte na fila e publique como Reel.</p>
           <a href="/fila" class="mt-4 inline-block text-sm text-emerald-400 hover:text-emerald-300">Ir para a fila →</a>
         </div>
       <% } else { %>
-        <div class="mt-4 overflow-hidden rounded-xl border border-slate-800">
-          <table class="w-full text-left text-sm">
+        <!-- Mobile: lista em cards -->
+        <ul class="mt-4 space-y-2 sm:hidden">
+          <% pubs.forEach((p) => { %>
+            <li class="rounded-xl border border-slate-800 bg-slate-950/40 px-3.5 py-3">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-medium text-slate-200"><%= tipoLabel(p.tipo) %></span>
+                <span class="rounded-full px-2 py-0.5 text-[11px] <%= statusTone(p.status) %>"><%= p.status %></span>
+              </div>
+              <p class="mt-1.5 truncate text-xs text-slate-400"><%= p.page_name || '—' %></p>
+              <p class="mt-1 text-[11px] text-slate-500"><%= fmtDate(p.published_at || p.created_at) %></p>
+            </li>
+          <% }) %>
+        </ul>
+
+        <!-- Desktop: tabela -->
+        <div class="mt-4 hidden overflow-x-auto rounded-xl border border-slate-800 sm:block">
+          <table class="w-full min-w-[28rem] text-left text-sm">
             <thead class="bg-slate-950/80 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th class="px-4 py-3 font-medium">Tipo</th>

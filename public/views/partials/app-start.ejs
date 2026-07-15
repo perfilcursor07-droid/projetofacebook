@@ -8,7 +8,8 @@
   <script>
     (function () {
       try {
-        if (localStorage.getItem('ViralizeAI.sidebarCollapsed') === '1') {
+        if (window.matchMedia('(min-width: 768px)').matches &&
+            localStorage.getItem('ViralizeAI.sidebarCollapsed') === '1') {
           document.documentElement.classList.add('sidebar-collapsed');
         }
       } catch (_) {}
@@ -23,4 +24,14 @@
 
   <%- include('sidebar') %>
 
-  <div id="app-content" class="app-content min-h-screen pl-60 transition-all duration-200">
+  <div id="sidebar-backdrop" class="fixed inset-0 z-40 hidden bg-slate-950/70 backdrop-blur-sm md:hidden" aria-hidden="true"></div>
+
+  <div id="app-content" class="app-content min-h-screen transition-[padding] duration-200 md:pl-60">
+    <header class="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-800/80 bg-slate-950/90 px-4 backdrop-blur md:hidden">
+      <button type="button" id="sidebar-open" class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-700 text-slate-200 transition hover:border-slate-500 hover:bg-slate-900" aria-label="Abrir menu" aria-controls="app-sidebar" aria-expanded="false">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16"/>
+        </svg>
+      </button>
+      <a href="/dashboard" class="truncate text-base font-semibold tracking-tight text-emerald-400">ViralizeAI</a>
+    </header>

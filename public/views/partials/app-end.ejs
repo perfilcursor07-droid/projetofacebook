@@ -1,29 +1,78 @@
   </div>
   <script>
     (function () {
-      const KEY = 'ViralizeAI.sidebarCollapsed';
+      const COLLAPSE_KEY = 'ViralizeAI.sidebarCollapsed';
       const root = document.documentElement;
-      const btn = document.getElementById('sidebar-toggle');
+      const mq = window.matchMedia('(min-width: 768px)');
+      const toggleBtn = document.getElementById('sidebar-toggle');
+      const openBtn = document.getElementById('sidebar-open');
+      const closeBtn = document.getElementById('sidebar-close');
+      const backdrop = document.getElementById('sidebar-backdrop');
       const icon = document.getElementById('sidebar-toggle-icon');
-      if (!btn) return;
 
-      function apply(collapsed) {
+      function isDesktop() {
+        return mq.matches;
+      }
+
+      function setMobileOpen(open) {
+        root.classList.toggle('sidebar-open', open);
+        if (backdrop) {
+          backdrop.classList.toggle('hidden', !open);
+          backdrop.setAttribute('aria-hidden', open ? 'false' : 'true');
+        }
+        if (openBtn) openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        document.body.classList.toggle('overflow-hidden', open && !isDesktop());
+      }
+
+      function applyCollapse(collapsed) {
+        if (!isDesktop()) return;
         root.classList.toggle('sidebar-collapsed', collapsed);
-        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-        btn.title = collapsed ? 'Expandir menu' : 'Recolher menu';
-        btn.setAttribute('aria-label', collapsed ? 'Expandir menu' : 'Recolher menu');
+        if (toggleBtn) {
+          toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+          toggleBtn.title = collapsed ? 'Expandir menu' : 'Recolher menu';
+          toggleBtn.setAttribute('aria-label', collapsed ? 'Expandir menu' : 'Recolher menu');
+        }
         if (icon) {
           icon.innerHTML = collapsed
             ? '<path d="M9 6l6 6-6 6"/>'
             : '<path d="M15 6l-6 6 6 6"/>';
         }
-        try { localStorage.setItem(KEY, collapsed ? '1' : '0'); } catch (_) {}
+        try { localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'); } catch (_) {}
       }
 
-      apply(root.classList.contains('sidebar-collapsed'));
-      btn.addEventListener('click', function () {
-        apply(!root.classList.contains('sidebar-collapsed'));
+      function syncForViewport() {
+        if (isDesktop()) {
+          setMobileOpen(false);
+          let collapsed = false;
+          try { collapsed = localStorage.getItem(COLLAPSE_KEY) === '1'; } catch (_) {}
+          applyCollapse(collapsed);
+        } else {
+          root.classList.remove('sidebar-collapsed');
+          setMobileOpen(false);
+        }
+      }
+
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', function () {
+          applyCollapse(!root.classList.contains('sidebar-collapsed'));
+        });
+      }
+      if (openBtn) openBtn.addEventListener('click', function () { setMobileOpen(true); });
+      if (closeBtn) closeBtn.addEventListener('click', function () { setMobileOpen(false); });
+      if (backdrop) backdrop.addEventListener('click', function () { setMobileOpen(false); });
+
+      document.getElementById('app-sidebar-nav')?.addEventListener('click', function (e) {
+        if (!isDesktop() && e.target.closest('a')) setMobileOpen(false);
       });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') setMobileOpen(false);
+      });
+
+      if (typeof mq.addEventListener === 'function') mq.addEventListener('change', syncForViewport);
+      else if (typeof mq.addListener === 'function') mq.addListener(syncForViewport);
+
+      syncForViewport();
     })();
   </script>
 </body>

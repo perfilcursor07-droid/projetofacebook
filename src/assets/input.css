@@ -3,23 +3,63 @@
 @tailwind utilities;
 
 @layer components {
-  html.sidebar-collapsed .app-sidebar {
-    @apply w-16;
+  /* —— Desktop: sidebar recolhida —— */
+  @media (min-width: 768px) {
+    html.sidebar-collapsed .app-sidebar {
+      @apply w-16;
+    }
+
+    html.sidebar-collapsed .app-content {
+      @apply pl-16;
+    }
+
+    html.sidebar-collapsed .sidebar-brand,
+    html.sidebar-collapsed .sidebar-label,
+    html.sidebar-collapsed .sidebar-text,
+    html.sidebar-collapsed .sidebar-user,
+    html.sidebar-collapsed .sidebar-credit {
+      @apply hidden;
+    }
+
+    html.sidebar-collapsed .sidebar-link {
+      @apply justify-center gap-0 px-0;
+    }
+
+    html.sidebar-collapsed .sidebar-close-mobile {
+      @apply hidden;
+    }
   }
 
-  html.sidebar-collapsed .app-content {
-    @apply pl-16;
-  }
+  /* —— Mobile: drawer fora da tela —— */
+  @media (max-width: 767px) {
+    .app-sidebar {
+      @apply -translate-x-full shadow-2xl shadow-black/50;
+      width: min(16.5rem, 86vw) !important;
+    }
 
-  html.sidebar-collapsed .sidebar-brand,
-  html.sidebar-collapsed .sidebar-label,
-  html.sidebar-collapsed .sidebar-text,
-  html.sidebar-collapsed .sidebar-user,
-  html.sidebar-collapsed .sidebar-credit {
-    @apply hidden;
-  }
+    html.sidebar-open .app-sidebar {
+      @apply translate-x-0;
+    }
 
-  html.sidebar-collapsed .sidebar-link {
-    @apply justify-center gap-0 px-0;
+    .app-content {
+      @apply pl-0 !important;
+    }
+
+    /* Collapse do desktop não afecta o mobile */
+    html.sidebar-collapsed .app-sidebar .sidebar-brand,
+    html.sidebar-collapsed .app-sidebar .sidebar-label,
+    html.sidebar-collapsed .app-sidebar .sidebar-text,
+    html.sidebar-collapsed .app-sidebar .sidebar-user,
+    html.sidebar-collapsed .app-sidebar .sidebar-credit {
+      @apply block;
+    }
+
+    html.sidebar-collapsed .app-sidebar .sidebar-link {
+      @apply justify-start gap-3 px-3;
+    }
+
+    .sidebar-toggle-desktop {
+      @apply hidden !important;
+    }
   }
 }
