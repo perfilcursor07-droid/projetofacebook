@@ -147,16 +147,46 @@ function even(n) {
   return v % 2 === 0 ? v : v + 1;
 }
 
-/** Converte a imagem da capa em um clipe mudo de COVER_SECONDS com os mesmos parâmetros do corte. */
-function coverImageToVideo({ imagePath, outputPath, width, height }) {
+/**
+ * WAV PCM estéreo 48kHz silencioso — evita depender de lavfi/anullsrc
+ * (muitos builds de ffmpeg do servidor vêm sem lavfi).
+ */
+function writeSilentWav(outputPath, seconds) {
+  const sampleRate = 48000;
+  const channels = 2;
+  const bitsPerSample = 16;
+  const numSamples = Math.max(1, Math.ceil(Number(seconds) * sampleRate));
+  const blockAlign = channels * (bitsPerSample / 8);
+  const dataSize = numSamples * blockAlign;
+  const buffer = Buffer.alloc(44 + dataSize); // PCM zero = silêncio
+
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16); // PCM chunk size
+  buffer.writeUInt16LE(1, 20); // PCM
+  buffer.writeUInt16LE(channels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * blockAlign, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+
+  fs.writeFileSync(outputPath, buffer);
+  return outputPath;
+}
+
+/** Converte a imagem da capa em um clipe com áudio silencioso (sem lavfi). */
+function coverImageToVideo({ imagePath, silentWavPath, outputPath, width, height }) {
   const w = even(width);
   const h = even(height);
   return new Promise((resolve, reject) => {
     ffmpeg()
       .input(imagePath)
       .inputOptions(['-loop', '1'])
-      .input('anullsrc=channel_layout=stereo:sample_rate=48000')
-      .inputOptions(['-f', 'lavfi'])
+      .input(silentWavPath)
       .outputOptions([
         '-t', String(COVER_SECONDS),
         '-r', String(OUTPUT_FPS),
@@ -183,7 +213,7 @@ function coverImageToVideo({ imagePath, outputPath, width, height }) {
 }
 
 /** Concatena capa + clipe reencodando com parâmetros compatíveis com Reels. */
-function concatCoverAndClip({ coverPath, clipPath, outputPath, width, height, hasAudio }) {
+function concatCoverAndClip({ coverPath, clipPath, silentWavPath, outputPath, width, height, hasAudio }) {
   const w = even(width);
   const h = even(height);
   const v0 = `[0:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${OUTPUT_FPS}[v0]`;
@@ -198,7 +228,7 @@ function concatCoverAndClip({ coverPath, clipPath, outputPath, width, height, ha
       filters.push('[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a1]');
       filters.push('[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]');
     } else {
-      cmd.input('anullsrc=channel_layout=stereo:sample_rate=48000').inputOptions(['-f', 'lavfi']);
+      cmd.input(silentWavPath);
       filters.push('[2:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a1]');
       filters.push('[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]');
     }
@@ -267,16 +297,26 @@ async function addCoverToClip({ clip, user, titulo }) {
   const framePath = tempPath(`capa_frame_${clip.id}_${uid}.jpg`);
   const coverImagePath = tempPath(`capa_img_${clip.id}_${uid}.jpg`);
   const coverVideoPath = tempPath(`capa_video_${clip.id}_${uid}.mp4`);
+  // Áudio silencioso um pouco mais longo que a capa (fallback se o clipe não tiver áudio)
+  const silentWavPath = tempPath(`capa_silent_${clip.id}_${uid}.wav`);
   const outRelative = `clips/clip_${clip.id}_capa_${Date.now()}.mp4`;
   const outAbs = storageAbs(outRelative);
 
   try {
+    writeSilentWav(silentWavPath, Math.max(COVER_SECONDS + 0.5, Number(data.format?.duration) || 60));
     await extractFrame(clipAbs, framePath, 0.5);
     await composeCoverImage({ framePath, outputPath: coverImagePath, width, height, title, user });
-    await coverImageToVideo({ imagePath: coverImagePath, outputPath: coverVideoPath, width, height });
+    await coverImageToVideo({
+      imagePath: coverImagePath,
+      silentWavPath,
+      outputPath: coverVideoPath,
+      width,
+      height,
+    });
     await concatCoverAndClip({
       coverPath: coverVideoPath,
       clipPath: clipAbs,
+      silentWavPath,
       outputPath: outAbs,
       width,
       height,
@@ -290,6 +330,7 @@ async function addCoverToClip({ clip, user, titulo }) {
     safeUnlink(framePath);
     safeUnlink(coverImagePath);
     safeUnlink(coverVideoPath);
+    safeUnlink(silentWavPath);
   }
 }
 
