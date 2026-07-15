@@ -5,7 +5,7 @@
 
 (function () {
   // Permite recarregar a extensão sem precisar fechar a aba (nova versão sobrescreve).
-  window.__viralizeaiContentVersion = '1.1.1';
+  window.__viralizeaiContentVersion = '1.1.2';
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -298,16 +298,15 @@
     await sleep(800);
   }
 
-  function findActionButton(patterns, { enabledOnly = true } = {}) {
-    const dialog = getComposerDialog() || document;
+  function findActionButton(patterns, { enabledOnly = true, root = null } = {}) {
+    const scope = root || getComposerDialog() || document;
     const want = patterns.map((p) => (p instanceof RegExp ? p : new RegExp(p, 'i')));
-    const buttons = Array.from(dialog.querySelectorAll('[role="button"], button')).filter(visible);
+    const buttons = Array.from(scope.querySelectorAll('[role="button"], button')).filter(visible);
 
-    // Prefer exact / short labels
     const scored = [];
     for (const el of buttons) {
       const label = normalizeLabel(el);
-      if (!label || label.length > 60) continue;
+      if (!label || label.length > 80) continue;
       if (!want.some((re) => re.test(label))) continue;
       const exact = want.some((re) => {
         const m = label.match(re);
@@ -322,22 +321,113 @@
       if (enabledOnly && item.disabled) continue;
       return item.el;
     }
-    // Se pediu enabledOnly e só achou disabled, devolve null
     return null;
   }
 
+  /** Botão redondo azul com aviãozinho (composer inline do feed da Página). */
+  function findSendPlaneButton(enabledOnly = true) {
+    const editor = findComposerEditor();
+    const container =
+      editor?.closest('[role="dialog"]') ||
+      editor?.closest('form') ||
+      editor?.closest('[data-pagelet]') ||
+      editor?.parentElement?.parentElement?.parentElement ||
+      getComposerDialog() ||
+      document;
+
+    // 1) aria-label Enviar / Send / Publicar (ícone sem texto visível)
+    const byLabel = findActionButton(
+      [
+        /^enviar$/i,
+        /^send$/i,
+        /^publicar$/i,
+        /^publish$/i,
+        /^postar$/i,
+        /enviar publica/i,
+        /send post/i,
+        /postar agora/i,
+      ],
+      { enabledOnly, root: container }
+    );
+    if (byLabel) return byLabel;
+
+    // 2) Botões próximos ao editor contendo SVG (avião / seta)
+    const buttons = Array.from(container.querySelectorAll('[role="button"], button')).filter(visible);
+    const editorRect = editor ? editor.getBoundingClientRect() : null;
+
+    const candidates = [];
+    for (const el of buttons) {
+      if (enabledOnly && isDisabled(el)) continue;
+      const label = normalizeLabel(el);
+      // Ignora ícones da toolbar (emoji, foto, etc.) pelo label
+      if (/emoji|foto|v[ií]deo|gif|local|marc|felt|sticker|imagem|feeling|check.?in/i.test(label)) {
+        continue;
+      }
+
+      const rect = el.getBoundingClientRect();
+      // Preferir botão à direita / abaixo do editor, pequeno (ícone)
+      if (editorRect) {
+        const belowOrSame = rect.top >= editorRect.top - 40;
+        const toTheRight = rect.left >= editorRect.left + editorRect.width * 0.4;
+        if (!belowOrSame) continue;
+        if (!toTheRight && rect.width > 80) continue;
+      }
+
+      const svg = el.querySelector('svg');
+      if (!svg) continue;
+
+      const paths = Array.from(svg.querySelectorAll('path'))
+        .map((p) => p.getAttribute('d') || '')
+        .join(' ');
+      // Heurística de aviãozinho / send: path curto-médio e botão pequeno/circular
+      const looksIcon = rect.width <= 64 && rect.height <= 64;
+      const looksPlane =
+        /M\d|send|airplane/i.test(paths) ||
+        (looksIcon && paths.length > 20 && paths.length < 900);
+
+      // Cor azul do FB no botão (bg)
+      const style = window.getComputedStyle(el);
+      const bg = style.backgroundColor || '';
+      const isBlue =
+        /rgb\(\s*(22|24|8|26|45|56|66|15|28)\s*,\s*(11[0-9]|12[0-9]|13[0-9]|99|108|119|13[0-9])\s*,/i.test(
+          bg
+        ) ||
+        /rgb\(\s*24\s*,\s*119\s*,\s*242\s*\)/i.test(bg) ||
+        style.color.includes('rgb(255') && looksIcon;
+
+      if (looksPlane || (looksIcon && isBlue && !label)) {
+        candidates.push({
+          el,
+          score:
+            (looksIcon ? 3 : 0) +
+            (isBlue ? 4 : 0) +
+            (editorRect ? Math.max(0, 200 - Math.abs(rect.top - editorRect.bottom)) / 50 : 0),
+        });
+      }
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0]?.el || null;
+  }
+
   function findPublishButton(enabledOnly = true) {
-    return findActionButton(
+    // Composer modal antigo
+    const classic = findActionButton(
       [
         /^publicar$/i,
         /^publish$/i,
         /^postar$/i,
         /^post$/i,
+        /^enviar$/i,
+        /^send$/i,
         /publicar agora/i,
         /publish now/i,
       ],
       { enabledOnly }
     );
+    if (classic) return classic;
+    // Composer inline do feed (aviãozinho)
+    return findSendPlaneButton(enabledOnly);
   }
 
   function findNextButton(enabledOnly = true) {
@@ -350,7 +440,6 @@
     await sleep(100);
     el.focus?.();
     el.click();
-    // Reforço: mouse events (alguns handlers do FB só escutam pointer)
     try {
       const opts = { bubbles: true, cancelable: true, view: window };
       el.dispatchEvent(new PointerEvent('pointerdown', opts));
@@ -359,31 +448,46 @@
       el.dispatchEvent(new MouseEvent('mouseup', opts));
       el.dispatchEvent(new MouseEvent('click', opts));
     } catch {
-      /* PointerEvent pode falhar em alguns contexts */
       el.click();
     }
   }
 
+  /** Ctrl/Cmd+Enter — atalho nativo do composer do Facebook. */
+  async function submitViaKeyboard(editor) {
+    if (!editor) return false;
+    editor.focus();
+    await sleep(80);
+    const mod = { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', which: 13, keyCode: 13 };
+    editor.dispatchEvent(new KeyboardEvent('keydown', { ...mod, ctrlKey: true }));
+    editor.dispatchEvent(new KeyboardEvent('keydown', { ...mod, metaKey: true }));
+    editor.dispatchEvent(new KeyboardEvent('keypress', { ...mod, ctrlKey: true }));
+    editor.dispatchEvent(new KeyboardEvent('keyup', { ...mod, ctrlKey: true }));
+    await sleep(500);
+    return true;
+  }
+
   async function ensurePublishReady(editor) {
-    // Se existir Avançar habilitado (fluxo de foto), clica
     const next = findNextButton(true);
     if (next) {
       await clickElement(next);
       await sleep(900);
     }
 
-    // Re-foca o editor se o Publicar ainda estiver travado — às vezes desbloqueia
-    if (editor && !findPublishButton(true)) {
-      editor.focus();
-      editor.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: ' ' }));
-      editor.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: ' ' }));
-      // remove o espaço extra
+    // Tira seleção residual do paste (na print os hashtags ficavam selecionados)
+    if (editor) {
       try {
-        document.execCommand('delete', false, null);
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
       } catch {
         /* ignore */
       }
-      await sleep(400);
+      editor.focus();
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(250);
     }
   }
 
@@ -392,8 +496,7 @@
 
     let btn = null;
     const start = Date.now();
-    while (Date.now() - start < 35000) {
-      // Avançar intermediário
+    while (Date.now() - start < 20000) {
       const next = findNextButton(true);
       if (next && !findPublishButton(true)) {
         await clickElement(next);
@@ -403,42 +506,74 @@
       btn = findPublishButton(true);
       if (btn) break;
 
-      // Editor ainda sem “commit” visual — tenta cutucar
       if (editor) {
         editor.focus();
         editor.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      await sleep(450);
+      await sleep(400);
     }
 
-    if (!btn) {
+    if (btn) {
+      await clickElement(btn);
+      return;
+    }
+
+    // Fallback: Ctrl+Enter
+    await submitViaKeyboard(editor);
+    await sleep(800);
+
+    // Se o editor ainda está ali com o mesmo texto, o atalho não funcionou
+    const stillOpen = findComposerEditor();
+    if (stillOpen && editorHasContent(stillOpen, editorText(editor).slice(0, 30))) {
       const disabled = findPublishButton(false);
       if (disabled) {
-        throw new Error(
-          'Botão Publicar continua desabilitado. Confirme que está postando como a Página (não perfil pessoal), que o texto apareceu na caixa, e tente de novo após recarregar o Facebook.'
-        );
+        await clickElement(disabled); // tentativa forçada
+        await sleep(600);
+        return;
       }
       throw new Error(
-        'Botão Publicar não encontrado no composer. Abra o feed da Página e deixe o diálogo de criar publicação visível.'
+        'Não achei o botão Enviar (aviãozinho azul). Confirme o composer do feed da Página e atualize a extensão.'
       );
     }
-
-    await clickElement(btn);
   }
 
-  async function waitPublishDone() {
+  async function waitPublishDone(previousText) {
     const start = Date.now();
+    const sample = String(previousText || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 40);
+
     while (Date.now() - start < 50000) {
       const dialog = getComposerDialog();
+      const editor = findComposerEditor();
       const editorInDialog = dialog && dialog.querySelector('[contenteditable="true"]');
-      if (!editorInDialog) {
+
+      // Modal clássico fechou
+      if (dialog && !editorInDialog) {
         await sleep(700);
         return extractLatestPostLink();
       }
 
-      // Às vezes o FB fecha o editor mas mantém um dialog de "Publicado"
+      // Composer inline: texto sumiu / caixa vazia = enviou
+      if (editor) {
+        const now = editorText(editor);
+        const cleared =
+          !now ||
+          now.length < 3 ||
+          (sample && !now.includes(sample.slice(0, 18)) && now.length < sample.length / 2);
+        if (cleared) {
+          await sleep(700);
+          return extractLatestPostLink();
+        }
+      } else if (!dialog) {
+        // Editor sumiu por completo
+        await sleep(700);
+        return extractLatestPostLink();
+      }
+
       const publishedToast = findByAriaOrText(
-        [/publica[cç][aã]o\s+(feita|conclu|enviada)|your post|post shared|foi publicada/i],
+        [/publica[cç][aã]o\s+(feita|conclu|enviada)|your post|post shared|foi publicada|enviado/i],
         ['div', 'span']
       );
       if (publishedToast) {
@@ -455,7 +590,7 @@
       }
       await sleep(500);
     }
-    throw new Error('Publicação não confirmada (composer ainda aberto)');
+    throw new Error('Publicação não confirmada (texto ainda no composer)');
   }
 
   function extractLatestPostLink() {
@@ -489,8 +624,9 @@
       await sleep(600);
     }
 
+    const captionSnapshot = payload.caption;
     await clickPublish(editor);
-    const linkInfo = await waitPublishDone();
+    const linkInfo = await waitPublishDone(captionSnapshot);
     return {
       ok: true,
       fb_post_url: linkInfo.fb_post_url,
