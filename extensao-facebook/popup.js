@@ -15,6 +15,8 @@ const els = {
   intervalMin: document.getElementById('intervalMin'),
   btnRefresh: document.getElementById('btn-refresh'),
   btnPublishNext: document.getElementById('btn-publish-next'),
+  btnPublishSelected: document.getElementById('btn-publish-selected'),
+  checkAllPend: document.getElementById('check-all-pend'),
   mainStatus: document.getElementById('main-status'),
   pendentes: document.getElementById('pendentes'),
   logs: document.getElementById('logs'),
@@ -134,27 +136,30 @@ function fillPages(paginas, selectedPageId) {
 }
 
 function renderPendentes(items) {
+  if (els.checkAllPend) els.checkAllPend.checked = false;
   if (!items.length) {
-    els.pendentes.innerHTML = '<p class="muted small">Fila vazia. Envie matérias com “Enviar para extensão” no site.</p>';
+    els.pendentes.innerHTML =
+      '<p class="muted small">Fila vazia. Em /extensao no site, marque matérias e envie para a fila.</p>';
     return;
   }
   els.pendentes.innerHTML = items
     .map((m) => {
-      const preview = String(m.materia || '').slice(0, 160);
+      const preview = String(m.materia || '').slice(0, 140);
       const thumb = m.imagem_url
         ? `<img class="thumb" src="${escapeAttr(m.imagem_url)}" alt="" />`
         : '';
       return `<article class="card" data-id="${m.id}">
-        <div class="row between" style="align-items:flex-start;gap:8px">
-          <div>
+        <div class="row" style="align-items:flex-start;gap:8px">
+          <input type="checkbox" class="js-pend-check" value="${m.id}" checked />
+          <div style="flex:1;min-width:0">
             <h3>${escapeHtml(m.titulo || 'Sem título')}</h3>
             <p>${escapeHtml(preview)}</p>
+            <div class="meta">
+              <span class="small muted">${escapeHtml(m.tipo_publicacao)} · ${escapeHtml(m.page_name || '')}</span>
+              <button type="button" class="btn compact primary js-pub" data-id="${m.id}">Publicar</button>
+            </div>
           </div>
           ${thumb}
-        </div>
-        <div class="meta">
-          <span class="small muted">${escapeHtml(m.tipo_publicacao)} · ${escapeHtml(m.page_name || '')}</span>
-          <button type="button" class="btn compact primary js-pub" data-id="${m.id}">Publicar</button>
         </div>
       </article>`;
     })
@@ -186,6 +191,27 @@ els.btnPublishNext.addEventListener('click', async () => {
   if (!res?.ok) setStatus(els.mainStatus, res?.error || 'Nada para publicar', 'err');
   else setStatus(els.mainStatus, 'Publicado ✓', 'ok');
   await refresh();
+});
+
+els.btnPublishSelected?.addEventListener('click', async () => {
+  const ids = Array.from(document.querySelectorAll('.js-pend-check:checked')).map((el) => Number(el.value));
+  if (!ids.length) {
+    setStatus(els.mainStatus, 'Marque ao menos uma matéria.', 'err');
+    return;
+  }
+  els.btnPublishSelected.disabled = true;
+  setStatus(els.mainStatus, `Publicando ${ids.length}…`);
+  const res = await send('PUBLISH_SELECTED', { matterIds: ids });
+  els.btnPublishSelected.disabled = false;
+  if (!res?.ok) setStatus(els.mainStatus, res?.error || 'Falha', 'err');
+  else setStatus(els.mainStatus, res.message || 'Concluído ✓', 'ok');
+  await refresh();
+});
+
+els.checkAllPend?.addEventListener('change', () => {
+  document.querySelectorAll('.js-pend-check').forEach((el) => {
+    el.checked = els.checkAllPend.checked;
+  });
 });
 
 els.pageSelect.addEventListener('change', async () => {

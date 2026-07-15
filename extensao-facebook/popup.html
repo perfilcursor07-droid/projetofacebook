@@ -53,13 +53,19 @@
     </div>
 
     <div class="row gap mt">
-      <button id="btn-refresh" type="button" class="btn">Atualizar fila</button>
-      <button id="btn-publish-next" type="button" class="btn primary">Publicar próxima</button>
+      <button id="btn-refresh" type="button" class="btn">Atualizar</button>
+      <button id="btn-publish-selected" type="button" class="btn primary">Publicar marcadas</button>
     </div>
+    <button id="btn-publish-next" type="button" class="btn ghost" style="width:100%">Só a próxima da fila</button>
 
     <p id="main-status" class="status"></p>
 
-    <h2 class="section">Pendentes</h2>
+    <div class="row between section" style="margin-bottom:6px">
+      <h2 class="section" style="margin:0">Pendentes</h2>
+      <label class="check small muted">
+        <input id="check-all-pend" type="checkbox" /> todas
+      </label>
+    </div>
     <div id="pendentes" class="list"></div>
 
     <h2 class="section">Atividade</h2>

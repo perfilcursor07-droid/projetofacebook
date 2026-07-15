@@ -291,6 +291,44 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
+      if (msg.type === 'PUBLISH_SELECTED') {
+        const settings = await getSettings();
+        const wanted = (msg.matterIds || []).map(Number);
+        if (!wanted.length) throw new Error('Nenhuma matéria selecionada');
+        const pendentes = await listPendentes(settings.selectedPageId);
+        const queue = pendentes.filter((m) => wanted.includes(Number(m.id)));
+        if (!queue.length) throw new Error('Selecionadas não estão mais na fila');
+
+        let published = 0;
+        let failed = 0;
+        const errors = [];
+        for (let i = 0; i < queue.length; i += 1) {
+          try {
+            // Respeita intervalo mínimo entre posts no mesmo lote
+            if (i > 0) {
+              const waitMs = settings.intervalMin * 60 * 1000;
+              const since = Date.now() - (Number((await getSettings()).lastPublishAt) || 0);
+              if (since < waitMs) {
+                await new Promise((r) => setTimeout(r, waitMs - since));
+              }
+            }
+            await publishMatter(queue[i]);
+            published += 1;
+          } catch (err) {
+            failed += 1;
+            errors.push(err.message || String(err));
+          }
+        }
+        sendResponse({
+          ok: published > 0 || failed === 0,
+          published,
+          failed,
+          message: `${published} publicada(s)` + (failed ? ` · ${failed} erro(s)` : ''),
+          errors,
+        });
+        return;
+      }
+
       sendResponse({ ok: false, error: 'Mensagem desconhecida' });
     } catch (err) {
       sendResponse({ ok: false, error: err.message || String(err) });

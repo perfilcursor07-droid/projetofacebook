@@ -1,25 +1,130 @@
 <%- include('partials/app-start') %>
+<%
+  const mattersList = typeof matters !== 'undefined' && Array.isArray(matters) ? matters : [];
+  const pagesList = typeof pages !== 'undefined' && Array.isArray(pages) ? pages : [];
+  const filaCount = typeof naFila === 'number' ? naFila : 0;
+  const statusLabels = {
+    rascunho: 'Rascunho',
+    pronto: 'Na fila',
+    agendado: 'Agendada',
+    erro: 'Erro',
+  };
+  const statusClass = {
+    rascunho: 'bg-slate-800 text-slate-300',
+    pronto: 'bg-sky-500/15 text-sky-300',
+    agendado: 'bg-amber-500/15 text-amber-300',
+    erro: 'bg-rose-500/15 text-rose-300',
+  };
+%>
 
-  <main class="mx-auto max-w-4xl px-4 py-5 sm:px-6 sm:py-8">
+  <main class="mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8">
     <div>
       <p class="text-xs font-semibold uppercase tracking-wider text-sky-400">Publicação alternativa</p>
       <h1 class="mt-1 text-2xl font-semibold text-white">Extensão de Publicação</h1>
       <p class="mt-2 max-w-2xl text-sm text-slate-400">
-        Publique matérias pela sessão do Facebook no Chrome/Edge, sem depender da Graph API.
-        Gere um token aqui, cole na extensão e use em Páginas que você gerencia.
+        Marque as matérias (texto / foto) que quer publicar, baixe a extensão e publique pela sessão do Facebook — sem Graph API.
       </p>
     </div>
 
     <div class="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-      A extensão automatiza cliques na interface do facebook.com. Isso pode conflitar com os Termos da Meta.
-      Use apenas na sua própria conta/Página, por sua conta e risco.
+      A extensão publica <strong>texto e foto</strong> no composer do Facebook. Vídeos/Reels continuam em
+      <a href="/fila" class="underline hover:text-white">/fila</a> (Graph API).
     </div>
 
     <% if (success) { %><div class="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"><%= success %></div><% } %>
     <% if (error) { %><div class="mt-5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"><%= error %></div><% } %>
 
     <section class="mt-7 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-      <h2 class="text-base font-semibold text-white">1. Gerar token</h2>
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 class="text-base font-semibold text-white">1. Marcar postagens para a extensão</h2>
+          <p class="mt-1 text-xs text-slate-500">
+            Selecione as matérias · <%= mattersList.length %> disponíveis ·
+            <span class="text-sky-300"><%= filaCount %> já na fila</span>
+          </p>
+        </div>
+        <a href="/minhas-materias" class="text-xs text-sky-400 hover:underline">Ver todas as matérias →</a>
+      </div>
+
+      <% if (!pagesList.length) { %>
+        <p class="mt-4 rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-sm text-slate-400">
+          Conecte uma Página em <a href="/paginas" class="text-sky-400 hover:underline">/paginas</a> antes de enfileirar.
+        </p>
+      <% } else if (!mattersList.length) { %>
+        <p class="mt-4 rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-sm text-slate-400">
+          Nenhuma matéria para publicar.
+          <a href="/conteudo" class="mt-2 block text-sky-400 hover:underline">Criar conteúdo →</a>
+        </p>
+      <% } else { %>
+        <div class="mt-4 flex flex-wrap items-end gap-3">
+          <label class="block min-w-[200px] flex-1 text-sm">
+            <span class="text-slate-400">Página do Facebook</span>
+            <select id="queue-page"
+              class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white focus:border-sky-500 focus:outline-none">
+              <% pagesList.forEach((p) => { %>
+                <option value="<%= p.id %>"><%= p.page_name %></option>
+              <% }) %>
+            </select>
+          </label>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="btn-queue-selected"
+              class="rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400">
+              Enviar selecionadas para fila
+            </button>
+            <button type="button" id="btn-dequeue-selected"
+              class="rounded-lg border border-slate-600 px-4 py-2.5 text-sm text-slate-300 hover:border-slate-400">
+              Tirar da fila
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="check-all" class="rounded border-slate-600 bg-slate-950" />
+            Selecionar todas
+          </label>
+          <span id="queue-status"></span>
+        </div>
+
+        <ul id="queue-list" class="mt-3 divide-y divide-slate-800 overflow-hidden rounded-xl border border-slate-800 bg-slate-950/40">
+          <% mattersList.forEach((item) => {
+            const st = item.status || 'rascunho';
+            const preview = String(item.materia || '').replace(/\s+/g, ' ').trim();
+            const tipo = item.tipo_publicacao === 'foto' ? 'Foto' : 'Texto';
+          %>
+            <li class="flex flex-wrap items-start gap-3 px-3 py-3 hover:bg-slate-900/60" data-id="<%= item.id %>">
+              <label class="mt-1 flex shrink-0 cursor-pointer">
+                <input type="checkbox" class="js-matter-check rounded border-slate-600 bg-slate-950"
+                  value="<%= item.id %>"
+                  data-status="<%= st %>" />
+              </label>
+              <% if (item.imagem_url) { %>
+                <img src="<%= item.imagem_url %>" alt=""
+                  class="h-14 w-14 shrink-0 rounded-lg object-cover border border-slate-800" />
+              <% } else { %>
+                <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-slate-800 bg-slate-900 text-[10px] uppercase text-slate-600"><%= tipo %></div>
+              <% } %>
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full px-2 py-0.5 text-[10px] font-medium <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+                  <span class="text-[10px] uppercase tracking-wide text-slate-600"><%= tipo %></span>
+                  <% if (item.page_name) { %><span class="text-[11px] text-slate-600"><%= item.page_name %></span><% } %>
+                </div>
+                <a href="/materias-ia/<%= item.id %>" class="mt-1 block text-sm font-semibold text-white hover:text-sky-200">
+                  <%= item.titulo || 'Sem título' %>
+                </a>
+                <% if (preview) { %>
+                  <p class="mt-0.5 line-clamp-2 text-xs text-slate-500"><%= preview.slice(0, 160) %><%= preview.length > 160 ? '…' : '' %></p>
+                <% } %>
+              </div>
+            </li>
+          <% }) %>
+        </ul>
+      <% } %>
+    </section>
+
+    <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <h2 class="text-base font-semibold text-white">2. Gerar token</h2>
       <p class="mt-1 text-xs text-slate-500">O token completo só aparece uma vez. Guarde com segurança.</p>
       <form id="form-token" class="mt-4 flex flex-wrap items-end gap-3">
         <label class="block min-w-[220px] flex-1 text-sm">
@@ -38,7 +143,7 @@
     </section>
 
     <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-      <h2 class="text-base font-semibold text-white">2. Dispositivos conectados</h2>
+      <h2 class="text-base font-semibold text-white">3. Dispositivos conectados</h2>
       <div id="tokens-list" class="mt-4 space-y-2">
         <% if (!tokens.length) { %>
           <p class="text-sm text-slate-500">Nenhum token gerado ainda.</p>
@@ -65,7 +170,7 @@
     </section>
 
     <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-      <h2 class="text-base font-semibold text-white">3. Baixar e instalar a extensão</h2>
+      <h2 class="text-base font-semibold text-white">4. Baixar e instalar a extensão</h2>
       <p class="mt-1 text-sm text-slate-400">
         Baixe o ZIP no PC que vai publicar, descompacte e carregue a pasta no Chrome ou Edge.
       </p>
@@ -75,77 +180,13 @@
         Baixar extensão (.zip)
       </a>
       <ol class="mt-5 list-decimal space-y-2 pl-5 text-sm text-slate-300">
-        <li>Baixe e <strong>descompacte</strong> o ZIP (fica a pasta <code class="text-sky-300">viralizeai-extensao-facebook</code>).</li>
-        <li>Abra <code class="text-sky-300">chrome://extensions</code> (ou <code class="text-sky-300">edge://extensions</code>).</li>
-        <li>Ative <strong>Modo do desenvolvedor</strong>.</li>
-        <li>Clique em <strong>Carregar sem compactação</strong> e selecione a pasta descompactada.</li>
-        <li>Na extensão, cole o token e a URL da API: <code class="text-sky-300"><%= apiBase %></code></li>
-        <li>Abra a Página correta no facebook.com e use “Publicar” ou o modo automático.</li>
+        <li>Baixe e <strong>descompacte</strong> o ZIP (pasta <code class="text-sky-300">viralizeai-extensao-facebook</code>).</li>
+        <li>Abra <code class="text-sky-300">chrome://extensions</code> → modo desenvolvedor → carregar a pasta.</li>
+        <li>Cole o token e a URL: <code class="text-sky-300"><%= apiBase %></code></li>
+        <li>Na extensão, marque as pendentes e publique (ou use automático).</li>
       </ol>
-    </section>
-
-    <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-      <h2 class="text-base font-semibold text-white">4. Enfileirar matéria</h2>
-      <p class="mt-1 text-sm text-slate-400">
-        Na tela de edição da matéria, clique em <strong class="text-slate-200">Enviar para extensão</strong>
-        (status <code class="text-sky-300">pronto</code>). A extensão lista esses itens como pendentes.
-      </p>
-      <a href="/minhas-materias" class="mt-4 inline-flex rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-sky-500 hover:text-sky-300">Ir para matérias salvas →</a>
     </section>
   </main>
 
-  <script>
-    (function () {
-      const form = document.getElementById('form-token');
-      const statusEl = document.getElementById('token-status');
-      const once = document.getElementById('token-once');
-      const valueEl = document.getElementById('token-value');
-
-      form?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        statusEl.textContent = 'Gerando…';
-        once.classList.add('hidden');
-        try {
-          const nome = form.nome_dispositivo.value;
-          const res = await fetch('/api/extensao/tokens', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nome_dispositivo: nome }),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Falha ao gerar token');
-          valueEl.textContent = data.token;
-          once.classList.remove('hidden');
-          statusEl.textContent = 'Token gerado. Copie e cole na extensão.';
-          setTimeout(() => window.location.reload(), 2500);
-        } catch (err) {
-          statusEl.textContent = err.message;
-          statusEl.className = 'mt-3 text-sm text-rose-300';
-        }
-      });
-
-      document.getElementById('btn-copy-token')?.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(valueEl.textContent);
-          statusEl.textContent = 'Token copiado ✓';
-        } catch {
-          statusEl.textContent = 'Selecione e copie o token manualmente.';
-        }
-      });
-
-      document.querySelectorAll('.js-revoke').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          if (!confirm('Revogar este token? A extensão deixará de funcionar até gerar outro.')) return;
-          const id = btn.dataset.id;
-          const res = await fetch('/api/extensao/tokens/' + id + '/revogar', { method: 'POST' });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            alert(data.error || 'Falha ao revogar');
-            return;
-          }
-          window.location.reload();
-        });
-      });
-    })();
-  </script>
+  <script src="/js/extensao.js"></script>
 <%- include('partials/app-end') %>

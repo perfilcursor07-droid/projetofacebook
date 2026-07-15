@@ -9,6 +9,8 @@ router.post('/gerar', controller.gerar);
 router.post('/gerar-preview', controller.gerarPreview);
 router.post('/gerar-lote', controller.gerarLote);
 router.get('/matters', controller.listarMaterias);
+router.post('/matters/enfileirar-extensao', controller.enfileirarExtensaoLote);
+router.post('/matters/desenfileirar-extensao', controller.desenfileirarExtensaoLote);
 router.put('/matters/:id', controller.atualizarMateria);
 router.patch('/matters/:id', controller.atualizarMateria);
 router.delete('/matters/:id', controller.removerMateria);

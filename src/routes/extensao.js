@@ -156,7 +156,7 @@ router.get('/pendentes', requireApiToken, async (req, res, next) => {
       })
       .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
       .orderBy('ai_matters.updated_at', 'asc')
-      .limit(20)
+      .limit(50)
       .select(
         'ai_matters.id',
         'ai_matters.titulo',
