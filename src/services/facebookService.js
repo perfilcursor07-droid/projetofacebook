@@ -115,102 +115,171 @@ async function publishVideo({ pageId, pageAccessToken, filePath, description }) 
 }
 
 /**
- * Sobe foto sem publicar no álbum e anexa num post do feed da Página.
- * Assim a matéria aparece em Posts (e não só em Fotos).
- * Formato oficial: attached_media[0]={"media_fbid":"..."} no body (não na query).
- * @returns {Promise<{ id: string, post_id: string, photo_id: string }>}
+ * Cria um post no feed da Página com a foto já enviada (unpublished).
+ * Usa JSON body — formato que o Graph Explorer aceita para attached_media.
  */
 async function createFeedPostWithPhoto({ pageId, pageAccessToken, message, photoId }) {
-  const body = new URLSearchParams();
-  body.set('access_token', pageAccessToken);
-  body.set('message', message || '');
-  body.set('published', 'true');
-  // Meta exige indexed form: attached_media[0]={"media_fbid":"ID"}
-  body.set('attached_media[0]', JSON.stringify({ media_fbid: String(photoId) }));
-
-  const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, body.toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    timeout: 2 * 60 * 1000,
-  });
-
-  if (!data?.id) {
-    const err = new Error('Facebook não retornou o ID do post no feed');
-    err.status = 502;
-    throw err;
-  }
-
-  console.log('[facebook] feed post criado', { pageId, photoId, postId: data.id });
-  return {
-    id: data.id,
-    post_id: data.id,
-    photo_id: String(photoId),
+  const payload = {
+    message: message || '',
+    published: true,
+    attached_media: [{ media_fbid: String(photoId) }],
   };
-}
 
-/**
- * Publica uma foto como post no feed da página (não só no álbum Fotos).
- * @returns {Promise<{ id: string, post_id?: string, photo_id?: string }>}
- */
-async function publishPhoto({ pageId, pageAccessToken, filePath, caption }) {
-  return withRetry(async () => {
-    const form = new FormData();
-    form.append('access_token', pageAccessToken);
-    // false = só sobe o arquivo; o post real é criado depois em /feed
-    form.append('published', 'false');
-    form.append('source', fs.createReadStream(filePath));
-
-    const { data: photo } = await axios.post(`${GRAPH}/${pageId}/photos`, form, {
-      headers: form.getHeaders(),
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-      timeout: 5 * 60 * 1000,
+  try {
+    const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, payload, {
+      params: { access_token: pageAccessToken },
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 2 * 60 * 1000,
     });
 
-    if (!photo?.id) {
-      const err = new Error('Facebook não retornou o ID da foto');
+    if (!data?.id) {
+      const err = new Error('Facebook não retornou o ID do post no feed');
       err.status = 502;
       throw err;
     }
 
+    console.log('[facebook] feed post criado', { pageId, photoId, postId: data.id });
+    return {
+      id: data.id,
+      post_id: data.id,
+      photo_id: String(photoId),
+    };
+  } catch (err) {
+    // Fallback: formato form-urlencoded indexed (docs curl)
+    const fbMsg = graphErrorMessage(err);
+    console.warn('[facebook] feed JSON falhou, tentando form indexed:', fbMsg);
+
+    const body = new URLSearchParams();
+    body.set('access_token', pageAccessToken);
+    body.set('message', message || '');
+    body.set('published', 'true');
+    body.set('attached_media[0]', JSON.stringify({ media_fbid: String(photoId) }));
+
+    const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, body.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 2 * 60 * 1000,
+    });
+
+    if (!data?.id) {
+      const err2 = new Error(`Falha ao criar post no feed: ${fbMsg}`);
+      err2.status = 502;
+      throw err2;
+    }
+
+    console.log('[facebook] feed post criado (form)', { pageId, photoId, postId: data.id });
+    return {
+      id: data.id,
+      post_id: data.id,
+      photo_id: String(photoId),
+    };
+  }
+}
+
+/**
+ * Envia a foto SEM publicar (não cria story no álbum/Fotos).
+ * `published=false` vai na query string — FormData sozinho é ignorado em alguns casos.
+ */
+async function uploadUnpublishedPhoto({ pageId, pageAccessToken, filePath }) {
+  const form = new FormData();
+  form.append('source', fs.createReadStream(filePath));
+
+  const { data: photo } = await axios.post(`${GRAPH}/${pageId}/photos`, form, {
+    params: {
+      access_token: pageAccessToken,
+      published: 'false',
+    },
+    headers: form.getHeaders(),
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    timeout: 5 * 60 * 1000,
+  });
+
+  if (!photo?.id) {
+    const err = new Error('Facebook não retornou o ID da foto');
+    err.status = 502;
+    throw err;
+  }
+
+  // Se a API devolveu post_id, ela publicou sozinha no álbum (não deveria).
+  if (photo.post_id) {
+    console.warn('[facebook] upload retornou post_id — foto publicada direto no álbum', {
+      photoId: photo.id,
+      postId: photo.post_id,
+    });
+  } else {
     console.log('[facebook] foto upload unpublished', { pageId, photoId: photo.id });
-    return createFeedPostWithPhoto({
+  }
+
+  return photo;
+}
+
+async function uploadUnpublishedPhotoFromUrl({ pageId, pageAccessToken, imageUrl }) {
+  const { data: photo } = await axios.post(`${GRAPH}/${pageId}/photos`, null, {
+    params: {
+      access_token: pageAccessToken,
+      url: imageUrl,
+      published: 'false',
+    },
+    timeout: 2 * 60 * 1000,
+  });
+
+  if (!photo?.id) {
+    const err = new Error('Facebook não retornou o ID da foto');
+    err.status = 502;
+    throw err;
+  }
+
+  if (photo.post_id) {
+    console.warn('[facebook] upload url retornou post_id — foto publicada direto no álbum', {
+      photoId: photo.id,
+      postId: photo.post_id,
+    });
+  } else {
+    console.log('[facebook] foto url unpublished', {
+      pageId,
+      photoId: photo.id,
+      imageUrl: String(imageUrl).slice(0, 80),
+    });
+  }
+
+  return photo;
+}
+
+/**
+ * Publica uma foto como post no feed da página (não só no álbum Fotos).
+ * Upload 1x; retry só no passo do feed (evita triplicar fotos no álbum).
+ */
+async function publishPhoto({ pageId, pageAccessToken, filePath, caption }) {
+  const photo = await withRetry(() =>
+    uploadUnpublishedPhoto({ pageId, pageAccessToken, filePath })
+  );
+
+  return withRetry(() =>
+    createFeedPostWithPhoto({
       pageId,
       pageAccessToken,
       message: caption || '',
       photoId: photo.id,
-    });
-  });
+    })
+  );
 }
 
 /**
  * Publica foto a partir de URL pública como post no feed da página.
  */
 async function publishPhotoFromUrl({ pageId, pageAccessToken, imageUrl, caption }) {
-  return withRetry(async () => {
-    const uploadBody = new URLSearchParams();
-    uploadBody.set('access_token', pageAccessToken);
-    uploadBody.set('url', imageUrl);
-    uploadBody.set('published', 'false');
+  const photo = await withRetry(() =>
+    uploadUnpublishedPhotoFromUrl({ pageId, pageAccessToken, imageUrl })
+  );
 
-    const { data: photo } = await axios.post(`${GRAPH}/${pageId}/photos`, uploadBody.toString(), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      timeout: 2 * 60 * 1000,
-    });
-
-    if (!photo?.id) {
-      const err = new Error('Facebook não retornou o ID da foto');
-      err.status = 502;
-      throw err;
-    }
-
-    console.log('[facebook] foto url unpublished', { pageId, photoId: photo.id, imageUrl: String(imageUrl).slice(0, 80) });
-    return createFeedPostWithPhoto({
+  return withRetry(() =>
+    createFeedPostWithPhoto({
       pageId,
       pageAccessToken,
       message: caption || '',
       photoId: photo.id,
-    });
-  });
+    })
+  );
 }
 
 /**
@@ -219,12 +288,11 @@ async function publishPhotoFromUrl({ pageId, pageAccessToken, imageUrl, caption 
  */
 async function publishText({ pageId, pageAccessToken, message, link }) {
   return withRetry(async () => {
-    const body = new URLSearchParams();
-    body.set('access_token', pageAccessToken);
-    body.set('message', message || '');
-    if (link) body.set('link', link);
-    const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, body.toString(), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    const payload = { message: message || '' };
+    if (link) payload.link = link;
+    const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, payload, {
+      params: { access_token: pageAccessToken },
+      headers: { 'Content-Type': 'application/json' },
       timeout: 2 * 60 * 1000,
     });
     return data;
