@@ -57,6 +57,10 @@ app.get('/', (req, res) => {
   renderPage(res, 'index', 'Início');
 });
 
+app.get('/privacidade', (_req, res) => renderPage(res, 'privacidade', 'Política de Privacidade'));
+app.get('/termos', (_req, res) => renderPage(res, 'termos', 'Termos de Serviço'));
+app.get('/exclusao-dados', (_req, res) => renderPage(res, 'exclusao-dados', 'Exclusão de dados'));
+
 app.get('/login', (req, res) => {
   if (req.session.userId) return res.redirect('/dashboard');
   const next = String(req.query.next || '/dashboard');
@@ -84,6 +88,12 @@ app.get('/fila', requireAuth, (_req, res) => renderPage(res, 'fila', 'Fila'));
 app.get('/paginas', requireAuth, (_req, res) => renderPage(res, 'paginas', 'Páginas'));
 app.get('/dashboard', requireAuth, require('./controllers/dashboardController').show);
 app.get('/cookies', requireAuth, (_req, res) => renderPage(res, 'cookies', 'Cookies do YouTube'));
+app.get('/extensao', requireAuth, require('./controllers/extensaoController').show);
+app.get(
+  '/extensao/baixar',
+  requireAuth,
+  require('./routes/extensao').downloadExtensaoZip
+);
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/videos', requireAuth, require('./routes/videos'));
@@ -94,6 +104,7 @@ app.use('/api/publications', requireAuth, require('./routes/publications'));
 app.use('/api/materias-ia', requireAuth, require('./routes/materiasIa'));
 app.use('/api/biblioteca', requireAuth, require('./routes/biblioteca'));
 app.use('/api/youtube-cookies', requireAuth, require('./routes/ytCookies'));
+app.use('/api/extensao', require('./routes/extensao'));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {

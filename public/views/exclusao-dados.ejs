@@ -1,0 +1,16 @@
+<%
+  const body = `
+    <h1 class="text-3xl font-semibold text-white">Exclusão de dados do usuário</h1>
+    <p class="mt-2 text-sm text-slate-500">Instruções para solicitar remoção dos seus dados na ViralizeAI</p>
+    <div class="mt-8 space-y-5 text-sm leading-relaxed text-slate-300">
+      <p>Se você deseja que removamos seus dados da plataforma ViralizeAI (incluindo tokens do Facebook associados à sua conta), siga um destes caminhos:</p>
+      <ol class="list-decimal space-y-2 pl-5">
+        <li>Envie um e-mail para <a class="text-emerald-400 hover:underline" href="mailto:kauanyneress@gmail.com">kauanyneress@gmail.com</a> com o assunto <strong class="text-white">Exclusão de dados ViralizeAI</strong>, informando o e-mail/login da conta.</li>
+        <li>Se estiver logado, solicite pelo suporte interno / administrador da conta.</li>
+      </ol>
+      <p>Também recomendamos revogar o acesso do aplicativo em: Facebook → Configurações → Aplicativos e sites.</p>
+      <p>Prazo estimado: até 30 dias após confirmação da identidade do solicitante.</p>
+    </div>
+  `;
+%>
+<%- include('legal-layout', { title: 'Exclusão de dados', body }) %>

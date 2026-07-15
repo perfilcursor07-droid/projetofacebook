@@ -1,0 +1,27 @@
+<%
+  const body = `
+    <h1 class="text-3xl font-semibold text-white">Política de Privacidade</h1>
+    <p class="mt-2 text-sm text-slate-500">Última atualização: 15/07/2026</p>
+    <div class="mt-8 space-y-5 text-sm leading-relaxed text-slate-300">
+      <p>A <strong class="text-white">ViralizeAI</strong> (site <a class="text-emerald-400 hover:underline" href="https://www.viralizeai.online">www.viralizeai.online</a>) oferece ferramentas para busca, edição e publicação de conteúdo em Páginas do Facebook.</p>
+      <h2 class="text-lg font-semibold text-white">1. Dados que coletamos</h2>
+      <ul class="list-disc space-y-1 pl-5">
+        <li>Conta de acesso à plataforma (nome, e-mail/usuário e senha com hash).</li>
+        <li>Tokens e IDs de Páginas do Facebook necessários para publicar em seu nome.</li>
+        <li>Conteúdo que você cria ou importa (vídeos, imagens, textos, matérias).</li>
+        <li>Dados técnicos de uso (logs de erro, IP e navegador, quando aplicável).</li>
+      </ul>
+      <h2 class="text-lg font-semibold text-white">2. Como usamos os dados</h2>
+      <p>Usamos os dados para autenticar você, conectar Páginas, gerar conteúdo com IA, publicar posts/fotos/vídeos sob sua autorização e melhorar o serviço.</p>
+      <h2 class="text-lg font-semibold text-white">3. Facebook / Meta</h2>
+      <p>Ao conectar o Facebook, solicitamos permissões de Página (<code>pages_show_list</code>, <code>pages_manage_posts</code>, <code>pages_read_engagement</code>). Não vendemos esses dados. Você pode revogar o acesso a qualquer momento em Configurações do Facebook e em nosso painel.</p>
+      <h2 class="text-lg font-semibold text-white">4. Compartilhamento</h2>
+      <p>Não vendemos dados pessoais. Podemos usar provedores de infraestrutura (hospedagem, banco, APIs de IA/busca) apenas para operar o serviço.</p>
+      <h2 class="text-lg font-semibold text-white">5. Retenção e exclusão</h2>
+      <p>Mantemos os dados enquanto sua conta existir. Para solicitar exclusão, veja <a class="text-emerald-400 hover:underline" href="/exclusao-dados">Instruções de exclusão de dados</a> ou escreva para <a class="text-emerald-400 hover:underline" href="mailto:kauanyneress@gmail.com">kauanyneress@gmail.com</a>.</p>
+      <h2 class="text-lg font-semibold text-white">6. Contato</h2>
+      <p>Dúvidas sobre privacidade: <a class="text-emerald-400 hover:underline" href="mailto:kauanyneress@gmail.com">kauanyneress@gmail.com</a>.</p>
+    </div>
+  `;
+%>
+<%- include('legal-layout', { title: 'Política de Privacidade', body }) %>

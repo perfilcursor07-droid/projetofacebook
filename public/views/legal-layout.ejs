@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> — ViralizeAI</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <header class="border-b border-slate-800">
+    <div class="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
+      <a href="/" class="text-lg text-emerald-400"><strong>ViralizeAI</strong></a>
+      <a href="/login" class="text-sm text-slate-400 hover:text-white">Entrar</a>
+    </div>
+  </header>
+  <main class="mx-auto max-w-3xl px-4 py-10 prose-invert">
+    <%- body %>
+  </main>
+  <footer class="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
+    © <%= new Date().getFullYear() %> ViralizeAI ·
+    <a class="hover:text-slate-300" href="/privacidade">Privacidade</a> ·
+    <a class="hover:text-slate-300" href="/termos">Termos</a> ·
+    <a class="hover:text-slate-300" href="/exclusao-dados">Exclusão de dados</a>
+  </footer>
+</body>
+</html>

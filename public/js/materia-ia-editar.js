@@ -189,6 +189,35 @@
     }
   });
 
+  document.getElementById('btn-extensao')?.addEventListener('click', async () => {
+    if (!pageSelect.value) {
+      setStatus('Selecione a Página do Facebook', true);
+      return;
+    }
+    const btn = document.getElementById('btn-extensao');
+    if (btn) btn.disabled = true;
+    setStatus('Enfileirando para a extensão…');
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/enfileirar-extensao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          facebookPageId: Number(pageSelect.value),
+          tipoPublicacao: tipoEl.value,
+          titulo: tituloEl.value,
+          materia: materiaEl.value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao enfileirar');
+      setStatus('Na fila da extensão ✓ Abra a extensão e publique.');
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      setStatus(err.message, true);
+      if (btn) btn.disabled = false;
+    }
+  });
+
   const imageInput = document.getElementById('matter-image-input');
   const imagePreviewWrap = document.getElementById('matter-image-preview-wrap');
   const imagePreview = document.getElementById('matter-image-preview');

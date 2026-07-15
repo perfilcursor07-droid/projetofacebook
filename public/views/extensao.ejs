@@ -1,0 +1,151 @@
+<%- include('partials/app-start') %>
+
+  <main class="mx-auto max-w-4xl px-4 py-5 sm:px-6 sm:py-8">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-wider text-sky-400">Publicação alternativa</p>
+      <h1 class="mt-1 text-2xl font-semibold text-white">Extensão de Publicação</h1>
+      <p class="mt-2 max-w-2xl text-sm text-slate-400">
+        Publique matérias pela sessão do Facebook no Chrome/Edge, sem depender da Graph API.
+        Gere um token aqui, cole na extensão e use em Páginas que você gerencia.
+      </p>
+    </div>
+
+    <div class="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+      A extensão automatiza cliques na interface do facebook.com. Isso pode conflitar com os Termos da Meta.
+      Use apenas na sua própria conta/Página, por sua conta e risco.
+    </div>
+
+    <% if (success) { %><div class="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"><%= success %></div><% } %>
+    <% if (error) { %><div class="mt-5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"><%= error %></div><% } %>
+
+    <section class="mt-7 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <h2 class="text-base font-semibold text-white">1. Gerar token</h2>
+      <p class="mt-1 text-xs text-slate-500">O token completo só aparece uma vez. Guarde com segurança.</p>
+      <form id="form-token" class="mt-4 flex flex-wrap items-end gap-3">
+        <label class="block min-w-[220px] flex-1 text-sm">
+          <span class="text-slate-400">Nome do dispositivo</span>
+          <input name="nome_dispositivo" maxlength="150" value="Chrome — Extensão"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white focus:border-sky-500 focus:outline-none" />
+        </label>
+        <button type="submit" class="rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400">Gerar token</button>
+      </form>
+      <div id="token-once" class="mt-4 hidden rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+        <p class="text-xs font-semibold uppercase tracking-wide text-emerald-300">Copie agora — não será mostrado de novo</p>
+        <code id="token-value" class="mt-2 block break-all rounded-lg bg-slate-950 px-3 py-3 text-sm text-emerald-200"></code>
+        <button type="button" id="btn-copy-token" class="mt-3 rounded-lg border border-emerald-500/40 px-3 py-1.5 text-xs text-emerald-200 hover:bg-emerald-500/15">Copiar token</button>
+      </div>
+      <p id="token-status" class="mt-3 text-sm text-slate-400"></p>
+    </section>
+
+    <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <h2 class="text-base font-semibold text-white">2. Dispositivos conectados</h2>
+      <div id="tokens-list" class="mt-4 space-y-2">
+        <% if (!tokens.length) { %>
+          <p class="text-sm text-slate-500">Nenhum token gerado ainda.</p>
+        <% } else { %>
+          <% tokens.forEach((t) => { %>
+            <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-sm" data-token-id="<%= t.id %>">
+              <div>
+                <p class="font-medium text-white"><%= t.nome_dispositivo %></p>
+                <p class="mt-0.5 text-xs text-slate-500">
+                  Criado <%= t.criado_em ? new Date(t.criado_em).toLocaleString('pt-BR') : '—' %>
+                  <% if (t.ultimo_uso_em) { %> · último uso <%= new Date(t.ultimo_uso_em).toLocaleString('pt-BR') %><% } %>
+                  · <%= t.revogado_em ? 'revogado' : 'ativo' %>
+                </p>
+              </div>
+              <% if (!t.revogado_em) { %>
+                <button type="button" class="js-revoke rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-500/15" data-id="<%= t.id %>">Revogar</button>
+              <% } else { %>
+                <span class="rounded-full bg-slate-800 px-2.5 py-1 text-[10px] uppercase text-slate-500">Revogado</span>
+              <% } %>
+            </div>
+          <% }) %>
+        <% } %>
+      </div>
+    </section>
+
+    <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <h2 class="text-base font-semibold text-white">3. Baixar e instalar a extensão</h2>
+      <p class="mt-1 text-sm text-slate-400">
+        Baixe o ZIP no PC que vai publicar, descompacte e carregue a pasta no Chrome ou Edge.
+      </p>
+      <a href="/extensao/baixar"
+        class="mt-4 inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        Baixar extensão (.zip)
+      </a>
+      <ol class="mt-5 list-decimal space-y-2 pl-5 text-sm text-slate-300">
+        <li>Baixe e <strong>descompacte</strong> o ZIP (fica a pasta <code class="text-sky-300">viralizeai-extensao-facebook</code>).</li>
+        <li>Abra <code class="text-sky-300">chrome://extensions</code> (ou <code class="text-sky-300">edge://extensions</code>).</li>
+        <li>Ative <strong>Modo do desenvolvedor</strong>.</li>
+        <li>Clique em <strong>Carregar sem compactação</strong> e selecione a pasta descompactada.</li>
+        <li>Na extensão, cole o token e a URL da API: <code class="text-sky-300"><%= apiBase %></code></li>
+        <li>Abra a Página correta no facebook.com e use “Publicar” ou o modo automático.</li>
+      </ol>
+    </section>
+
+    <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <h2 class="text-base font-semibold text-white">4. Enfileirar matéria</h2>
+      <p class="mt-1 text-sm text-slate-400">
+        Na tela de edição da matéria, clique em <strong class="text-slate-200">Enviar para extensão</strong>
+        (status <code class="text-sky-300">pronto</code>). A extensão lista esses itens como pendentes.
+      </p>
+      <a href="/minhas-materias" class="mt-4 inline-flex rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-sky-500 hover:text-sky-300">Ir para matérias salvas →</a>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const form = document.getElementById('form-token');
+      const statusEl = document.getElementById('token-status');
+      const once = document.getElementById('token-once');
+      const valueEl = document.getElementById('token-value');
+
+      form?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        statusEl.textContent = 'Gerando…';
+        once.classList.add('hidden');
+        try {
+          const nome = form.nome_dispositivo.value;
+          const res = await fetch('/api/extensao/tokens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nome_dispositivo: nome }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha ao gerar token');
+          valueEl.textContent = data.token;
+          once.classList.remove('hidden');
+          statusEl.textContent = 'Token gerado. Copie e cole na extensão.';
+          setTimeout(() => window.location.reload(), 2500);
+        } catch (err) {
+          statusEl.textContent = err.message;
+          statusEl.className = 'mt-3 text-sm text-rose-300';
+        }
+      });
+
+      document.getElementById('btn-copy-token')?.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(valueEl.textContent);
+          statusEl.textContent = 'Token copiado ✓';
+        } catch {
+          statusEl.textContent = 'Selecione e copie o token manualmente.';
+        }
+      });
+
+      document.querySelectorAll('.js-revoke').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Revogar este token? A extensão deixará de funcionar até gerar outro.')) return;
+          const id = btn.dataset.id;
+          const res = await fetch('/api/extensao/tokens/' + id + '/revogar', { method: 'POST' });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            alert(data.error || 'Falha ao revogar');
+            return;
+          }
+          window.location.reload();
+        });
+      });
+    })();
+  </script>
+<%- include('partials/app-end') %>

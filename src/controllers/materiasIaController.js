@@ -251,6 +251,50 @@ function parseHashtags(value) {
   return [];
 }
 
+/** Marca matéria como `pronto` para a extensão publicar (sem Graph API). */
+async function enfileirarExtensao(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'Matéria já publicada' });
+    }
+
+    const body = req.body || {};
+    const patch = {};
+    if (body.titulo != null) patch.titulo = String(body.titulo).trim().slice(0, 300);
+    if (body.materia != null) patch.materia = String(body.materia);
+    if (body.tipoPublicacao != null || body.tipo_publicacao != null) {
+      patch.tipo_publicacao = pickTipo(body);
+    }
+    if (body.facebookPageId != null || body.facebook_page_id != null) {
+      patch.facebook_page_id = pickPageId(body);
+    }
+
+    const pageId = patch.facebook_page_id != null ? patch.facebook_page_id : matter.facebook_page_id;
+    if (!pageId) {
+      return res.status(400).json({ error: 'Selecione a Página do Facebook' });
+    }
+
+    const tipo = patch.tipo_publicacao || matter.tipo_publicacao || 'texto';
+    const imagemUrl = matter.imagem_url || matter.imagem_path;
+    if (tipo === 'foto' && !imagemUrl) {
+      return res.status(400).json({ error: 'Matéria do tipo foto precisa de imagem antes de enfileirar' });
+    }
+
+    patch.status = 'pronto';
+    patch.error_message = null;
+    await AiMatters.update(matterId, patch);
+    const updated = await AiMatters.findById(matterId);
+    return res.json({ ok: true, matter: updated, message: 'Na fila da extensão (status pronto)' });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function atualizarMateria(req, res, next) {
   try {
     const matterId = Number(req.params.id);
@@ -470,6 +514,7 @@ module.exports = {
   listarMaterias,
   removerMateria,
   atualizarMateria,
+  enfileirarExtensao,
   showMatter,
   listPage,
   listMinhasMaterias,
