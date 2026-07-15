@@ -23,10 +23,12 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3010,
-        // Garante yt-dlp/node do sistema mesmo com PATH reduzido do PM2
-        PATH: '/usr/local/bin:/usr/bin:/bin:/home/viralizeai/.nvm/versions/node/v22.23.1/bin',
+        // Garante yt-dlp/node do sistema mesmo com PATH reduzido do PM2.
+        // NVM do viralizeai vem PRIMEIRO: /usr/local/bin/node é symlink para o
+        // NVM de outro usuário (sem permissão) e quebra o desafio JS do YouTube.
+        PATH: '/home/viralizeai/.nvm/versions/node/v22.23.1/bin:/usr/local/bin:/usr/bin:/bin',
         YTDLP_PATH: '/usr/local/bin/yt-dlp',
-        YTDLP_JS_RUNTIME: 'node:/usr/local/bin/node',
+        YTDLP_JS_RUNTIME: 'node',
         YTDLP_COOKIES_FILE: '/home/viralizeai/secrets/youtube-cookies.txt',
       },
       error_file: '/home/viralizeai/logs/viralizeai-error.log',

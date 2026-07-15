@@ -18,9 +18,9 @@ function configError(message) {
 function resolveNodeBinary() {
   const configured = String(env.ytDlp.jsRuntimePath || '').trim();
   if (configured && fs.existsSync(configured)) return configured;
-  for (const candidate of ['/usr/local/bin/node', '/usr/bin/node']) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
+  // process.execPath = node que está rodando o app (NVM do usuário do site).
+  // Evita /usr/local/bin/node, que pode ser symlink para home de outro usuário
+  // sem permissão de leitura — isso quebra o desafio JS do YouTube.
   return process.execPath || 'node';
 }
 
