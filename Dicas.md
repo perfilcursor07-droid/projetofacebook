@@ -30,6 +30,8 @@ su - viralizeai
 # ou: sudo -iu viralizeai
 cd /home/viralizeai/htdocs/www.viralizeai.online
 git pull origin main
+npm install --omit=dev
+NODE_ENV=production npm run migrate
 pm2 reload viralizeai --update-env
 # após mudar ecosystem.config.cjs:
 # pm2 delete viralizeai && pm2 start ecosystem.config.cjs && pm2 save
@@ -37,3 +39,5 @@ pm2 logs viralizeai --lines 50
 
 # YouTube cookies (se expirar): exportar em aba anônima + robots.txt
 # YTDLP_COOKIES_FILE=/home/viralizeai/secrets/youtube-cookies.txt
+
+# Biblioteca de fontes: /biblioteca — monitor YouTube/TikTok (yt-dlp) + IG/FB (Serper)

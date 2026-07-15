@@ -22,12 +22,18 @@ app.listen(env.port, async () => {
 
   try {
     const materiaIaService = require('./services/materiaIaService');
+    const bibliotecaService = require('./services/bibliotecaService');
     const tick = async () => {
       try {
         await materiaIaService.tickMonitores();
         await materiaIaService.tickFilaJobs();
       } catch (err) {
         console.error('[materias-ia tick]', err.message);
+      }
+      try {
+        await bibliotecaService.tickFontes();
+      } catch (err) {
+        console.error('[biblioteca tick]', err.message);
       }
     };
     setInterval(tick, 60_000);

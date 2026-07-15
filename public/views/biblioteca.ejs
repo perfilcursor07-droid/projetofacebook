@@ -1,0 +1,157 @@
+<%- include('partials/app-start') %>
+
+  <main class="mx-auto max-w-6xl px-6 py-8" id="biblioteca-app"
+    data-alertas-nao-lidos="<%= Number(alertasNaoLidos || 0) %>">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-semibold text-white">Biblioteca de fontes</h1>
+        <p class="mt-2 max-w-2xl text-slate-400">
+          Salve perfis do YouTube, Facebook e Instagram. A IA monitora novidades, notifica com resumo e gera post em texto ou vídeo.
+        </p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button type="button" id="bib-btn-alertas"
+          class="relative rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">
+          Alertas
+          <span id="bib-badge" class="<%= Number(alertasNaoLidos || 0) ? '' : 'hidden' %> ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-slate-950"><%= Number(alertasNaoLidos || 0) %></span>
+        </button>
+        <a href="/minhas-materias" class="text-sm text-emerald-400 hover:text-emerald-300">Minhas matérias →</a>
+      </div>
+    </div>
+
+    <section class="mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Adicionar fonte</h2>
+      <form id="bib-form" class="mt-4 grid gap-3 md:grid-cols-2">
+        <label class="block md:col-span-2">
+          <span class="text-xs text-slate-500">URL do perfil / canal</span>
+          <input id="bib-url" name="url" required placeholder="https://www.youtube.com/@canal ou instagram.com/perfil"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">Nome (opcional)</span>
+          <input id="bib-nome" name="nome" maxlength="200" placeholder="Ex.: Canal Apocalipse"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">Página FB para gerar (opcional)</span>
+          <select id="bib-page" name="facebook_page_id"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+            <option value="">— selecionar depois —</option>
+            <% (pages || []).forEach(function (p) { %>
+              <option value="<%= p.id %>"><%= p.page_name %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="flex items-center gap-2 md:col-span-2">
+          <input id="bib-monitorar" type="checkbox" class="rounded border-slate-600 bg-slate-950 text-emerald-500" />
+          <span class="text-sm text-slate-300">Monitorar e notificar quando sair conteúdo novo</span>
+        </label>
+        <div class="md:col-span-2">
+          <button type="submit" class="rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+            Salvar na biblioteca
+          </button>
+          <p id="bib-form-msg" class="mt-2 hidden text-sm"></p>
+        </div>
+      </form>
+    </section>
+
+    <div class="mt-8 grid gap-6 lg:grid-cols-[1fr_360px]">
+      <section>
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Suas fontes</h2>
+          <span class="text-xs text-slate-600"><%= (fontes || []).length %> salva(s)</span>
+        </div>
+        <div id="bib-fontes" class="space-y-3">
+          <% if (!(fontes || []).length) { %>
+            <p class="rounded-xl border border-dashed border-slate-800 px-4 py-8 text-center text-sm text-slate-500">
+              Nenhuma fonte ainda. Cole o link de um canal ou perfil acima.
+            </p>
+          <% } %>
+          <% (fontes || []).forEach(function (f) { %>
+            <article class="bib-fonte rounded-xl border border-slate-800 bg-slate-900/40 p-4" data-id="<%= f.id %>" data-plataforma="<%= f.plataforma %>">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300"><%= f.plataforma %></span>
+                    <% if (f.monitorar) { %>
+                      <span class="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-300">monitorando</span>
+                    <% } %>
+                  </div>
+                  <h3 class="mt-1 truncate text-base font-medium text-white"><%= f.nome %></h3>
+                  <a href="<%= f.url %>" target="_blank" rel="noopener" class="mt-0.5 block truncate text-xs text-slate-500 hover:text-emerald-400"><%= f.url %></a>
+                  <% if (f.ultimo_erro) { %>
+                    <p class="mt-2 text-xs text-rose-300"><%= f.ultimo_erro %></p>
+                  <% } else if (f.ultimo_scan) { %>
+                    <p class="mt-2 text-xs text-slate-600">Último scan: <%= new Date(f.ultimo_scan).toLocaleString('pt-BR') %></p>
+                  <% } %>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" class="bib-scan rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:border-emerald-500 hover:text-emerald-300" data-id="<%= f.id %>">Escanear</button>
+                  <button type="button" class="bib-toggle-mon rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:border-sky-500 hover:text-sky-300" data-id="<%= f.id %>" data-on="<%= f.monitorar ? '1' : '0' %>">
+                    <%= f.monitorar ? 'Pausar' : 'Monitorar' %>
+                  </button>
+                  <button type="button" class="bib-posts-btn rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:border-violet-500 hover:text-violet-300" data-id="<%= f.id %>">Ver posts</button>
+                  <button type="button" class="bib-del rounded-lg border border-rose-900/50 px-2.5 py-1.5 text-xs text-rose-300 hover:bg-rose-500/10" data-id="<%= f.id %>">Excluir</button>
+                </div>
+              </div>
+              <div class="bib-posts-box mt-3 hidden space-y-2 border-t border-slate-800 pt-3" data-fonte="<%= f.id %>"></div>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+
+      <aside class="space-y-4">
+        <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-white">Alertas recentes</h2>
+            <button type="button" id="bib-mark-all" class="text-xs text-slate-500 hover:text-emerald-400">Marcar lidos</button>
+          </div>
+          <div id="bib-alertas" class="mt-3 max-h-[28rem] space-y-2 overflow-y-auto">
+            <% if (!(alertas || []).length) { %>
+              <p class="text-sm text-slate-500">Nenhum alerta ainda.</p>
+            <% } %>
+            <% (alertas || []).forEach(function (a) { %>
+              <div class="rounded-lg border <%= a.lido ? 'border-slate-800/80 opacity-60' : 'border-emerald-500/20 bg-emerald-500/5' %> p-3" data-alerta="<%= a.id %>">
+                <p class="text-sm font-medium text-white"><%= a.titulo %></p>
+                <% if (a.resumo) { %><p class="mt-1 text-xs leading-relaxed text-slate-400"><%= a.resumo %></p><% } %>
+                <p class="mt-1 text-[10px] text-slate-600"><%= a.created_at ? new Date(a.created_at).toLocaleString('pt-BR') : '' %></p>
+              </div>
+            <% }) %>
+          </div>
+        </section>
+
+        <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+          <h2 class="text-sm font-semibold text-white">Posts detectados</h2>
+          <div id="bib-posts-lista" class="mt-3 max-h-[28rem] space-y-2 overflow-y-auto">
+            <% if (!(posts || []).length) { %>
+              <p class="text-sm text-slate-500">Nada detectado ainda. Escaneie uma fonte.</p>
+            <% } %>
+            <% (posts || []).forEach(function (p) { %>
+              <div class="rounded-lg border border-slate-800 p-3" data-post="<%= p.id %>">
+                <p class="text-sm text-white line-clamp-2"><%= p.titulo || 'Sem título' %></p>
+                <p class="mt-1 text-[10px] uppercase text-slate-600"><%= p.status %></p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <button type="button" class="bib-gen-texto rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300" data-id="<%= p.id %>">Gerar texto</button>
+                  <button type="button" class="bib-gen-video rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-violet-500 hover:text-violet-300" data-id="<%= p.id %>">Gerar vídeo</button>
+                  <a href="<%= p.url %>" target="_blank" rel="noopener" class="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:text-white">Abrir</a>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <div id="bib-busy" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
+    <div class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 text-center">
+      <div class="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-emerald-400/30 border-t-emerald-300"></div>
+      <p id="bib-busy-text" class="mt-4 text-sm text-slate-300">Processando…</p>
+    </div>
+  </div>
+
+  <script>
+    window.__BIB_PAGES__ = <%- JSON.stringify((pages || []).map(function (p) { return { id: p.id, name: p.page_name }; })) %>;
+  </script>
+  <script src="/js/biblioteca.js"></script>
+<%- include('partials/app-end') %>

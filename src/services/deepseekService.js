@@ -680,11 +680,52 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
   return cortes;
 }
 
+/**
+ * Resumo curto para alerta da Biblioteca de fontes.
+ */
+async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, snippet }) {
+  assertDeepseek();
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content:
+          'Você resume conteúdos novos de perfis/canais monitorados. Responda APENAS JSON: {"titulo":"...","resumo":"..."}. Título ≤ 90 chars. Resumo em 1–2 frases em português, factual, sem inventar.',
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          plataforma,
+          fonte: nomeFonte,
+          titulo: titulo || null,
+          url: url || null,
+          snippet: snippet || null,
+        }),
+      },
+    ],
+    { temperature: 0.4, json: true }
+  );
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {
+      titulo: String(titulo || 'Novo conteúdo').slice(0, 90),
+      resumo: String(snippet || titulo || 'Novo conteúdo detectado.').slice(0, 280),
+    };
+  }
+  return {
+    titulo: String(parsed.titulo || titulo || 'Novo conteúdo').trim().slice(0, 120),
+    resumo: String(parsed.resumo || snippet || '').trim().slice(0, 400),
+  };
+}
+
 module.exports = {
   gerarMateriaVideo,
   gerarMateriaImagem,
   gerarMateriaNoticiaFacebook,
   sugerirCortes,
+  resumirAlertaBiblioteca,
   assertDeepseek,
   MAX_MATERIA_CHARS,
 };

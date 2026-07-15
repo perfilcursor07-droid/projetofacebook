@@ -55,8 +55,8 @@ async function fetchLinkMetadata(url) {
     noWarnings: true,
     noPlaylist: true,
     skipDownload: true,
-    // Ajuda em servidores/datacenter onde o YouTube é mais restritivo
-    addHeader: ['User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'],
+    // NÃO forçar User-Agent no YouTube: o yt-dlp escolhe o cliente e os
+    // headers corretos sozinho; UA de navegador causa "no formats available".
     socketTimeout: 30,
     retries: 2,
   });
@@ -333,9 +333,6 @@ function queueLinkImport(video) {
         ffmpegLocation: path.dirname(ffmpegPath),
         noPlaylist: true,
         noWarnings: true,
-        addHeader: [
-          'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        ],
       });
 
       await Videos.update(video.id, {
