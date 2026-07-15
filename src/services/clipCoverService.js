@@ -142,14 +142,21 @@ async function composeCoverImage({ framePath, outputPath, width, height, title, 
   return outputPath;
 }
 
+function even(n) {
+  const v = Math.max(2, Math.round(Number(n) || 2));
+  return v % 2 === 0 ? v : v + 1;
+}
+
 /** Converte a imagem da capa em um clipe mudo de COVER_SECONDS com os mesmos parâmetros do corte. */
 function coverImageToVideo({ imagePath, outputPath, width, height }) {
+  const w = even(width);
+  const h = even(height);
   return new Promise((resolve, reject) => {
     ffmpeg()
       .input(imagePath)
       .inputOptions(['-loop', '1'])
       .input('anullsrc=channel_layout=stereo:sample_rate=48000')
-      .inputFormat('lavfi')
+      .inputOptions(['-f', 'lavfi'])
       .outputOptions([
         '-t', String(COVER_SECONDS),
         '-r', String(OUTPUT_FPS),
@@ -165,7 +172,7 @@ function coverImageToVideo({ imagePath, outputPath, width, height }) {
         '-b:a', '128k',
         '-ar', '48000',
         '-ac', '2',
-        '-vf', `scale=${width}:${height}`,
+        '-vf', `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`,
         '-shortest',
         '-movflags', '+faststart',
       ])
@@ -176,18 +183,28 @@ function coverImageToVideo({ imagePath, outputPath, width, height }) {
 }
 
 /** Concatena capa + clipe reencodando com parâmetros compatíveis com Reels. */
-function concatCoverAndClip({ coverPath, clipPath, outputPath, width, height }) {
+function concatCoverAndClip({ coverPath, clipPath, outputPath, width, height, hasAudio }) {
+  const w = even(width);
+  const h = even(height);
+  const v0 = `[0:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${OUTPUT_FPS}[v0]`;
+  const v1 = `[1:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${OUTPUT_FPS}[v1]`;
+  const a0 = '[0:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a0]';
+
   return new Promise((resolve, reject) => {
-    ffmpeg()
-      .input(coverPath)
-      .input(clipPath)
-      .complexFilter([
-        `[0:v]scale=${width}:${height},setsar=1,fps=${OUTPUT_FPS}[v0]`,
-        `[1:v]scale=${width}:${height},setsar=1,fps=${OUTPUT_FPS}[v1]`,
-        '[0:a]aresample=48000[a0]',
-        '[1:a]aresample=48000[a1]',
-        '[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]',
-      ])
+    const cmd = ffmpeg().input(coverPath).input(clipPath);
+    const filters = [v0, v1, a0];
+
+    if (hasAudio) {
+      filters.push('[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a1]');
+      filters.push('[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]');
+    } else {
+      cmd.input('anullsrc=channel_layout=stereo:sample_rate=48000').inputOptions(['-f', 'lavfi']);
+      filters.push('[2:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a1]');
+      filters.push('[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]');
+    }
+
+    cmd
+      .complexFilter(filters)
       .outputOptions([
         '-map', '[v]',
         '-map', '[a]',
@@ -244,6 +261,7 @@ async function addCoverToClip({ clip, user, titulo }) {
   const stream = (data.streams || []).find((s) => s.codec_type === 'video') || {};
   const width = Number(stream.width) || 1080;
   const height = Number(stream.height) || 1920;
+  const hasAudio = (data.streams || []).some((s) => s.codec_type === 'audio');
 
   const uid = crypto.randomBytes(4).toString('hex');
   const framePath = tempPath(`capa_frame_${clip.id}_${uid}.jpg`);
@@ -256,7 +274,14 @@ async function addCoverToClip({ clip, user, titulo }) {
     await extractFrame(clipAbs, framePath, 0.5);
     await composeCoverImage({ framePath, outputPath: coverImagePath, width, height, title, user });
     await coverImageToVideo({ imagePath: coverImagePath, outputPath: coverVideoPath, width, height });
-    await concatCoverAndClip({ coverPath: coverVideoPath, clipPath: clipAbs, outputPath: outAbs, width, height });
+    await concatCoverAndClip({
+      coverPath: coverVideoPath,
+      clipPath: clipAbs,
+      outputPath: outAbs,
+      width,
+      height,
+      hasAudio,
+    });
     return { relativePath: outRelative, coverSeconds: COVER_SECONDS };
   } catch (err) {
     safeUnlink(outAbs);

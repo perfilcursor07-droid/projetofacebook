@@ -130,6 +130,13 @@
       return badge(key, label);
     }
 
+    function capaStatusBadge(status) {
+      if (!status || status === 'pendente') return '';
+      const map = { gerando: ['gerando', 'capa…'], pronta: ['pronta', 'capa ok'], erro: ['erro', 'erro capa'] };
+      const [key, label] = map[status] || ['sugerido', status];
+      return badge(key, label);
+    }
+
     function showError(msg) {
       globalMsg.textContent = msg;
       globalMsg.classList.remove('hidden');
@@ -388,6 +395,7 @@
                 <h3 class="text-sm font-semibold text-white">Corte</h3>
                 ${badge(clip.status)}
                 ${materiaStatusBadge(clip.materia_status)}
+                ${capaStatusBadge(clip.capa_status)}
               </div>
               <button type="button"
                 class="action-btn shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium text-rose-400/80 transition hover:bg-rose-500/10 hover:text-rose-300"
@@ -450,23 +458,36 @@
                 </div>
               </div>
               <div class="space-y-2 rounded-xl border border-slate-800 bg-slate-900/40 p-2.5">
-                <p class="flex items-center justify-between text-[11px] font-medium text-slate-400">
+                <p class="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-400">
                   <span>Capa com título (Minha marca)</span>
-                  ${clip.capa_titulo ? '<span class="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">capa aplicada</span>' : ''}
+                  ${clip.capa_status === 'pronta'
+                    ? '<span class="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">no início do vídeo</span>'
+                    : clip.capa_status === 'gerando'
+                      ? '<span class="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">gerando…</span>'
+                      : ''}
                 </p>
+                ${clip.capa_status === 'gerando' ? `
+                <div class="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+                  <span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>
+                  Montando capa e costurando no vídeo…
+                </div>` : ''}
                 <input type="text"
                   class="clip-capa w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
-                  data-clip-capa="${clip.id}" placeholder="Título que aparece na capa"
-                  value="${escapeHtml(clip.capa_titulo || '')}" maxlength="120" />
-                <div class="grid ${clip.capa_titulo ? 'grid-cols-2' : 'grid-cols-1'} gap-2">
+                  data-clip-capa="${clip.id}" placeholder="Título automático (pode editar)"
+                  value="${escapeHtml(clip.capa_titulo || '')}" maxlength="120"
+                  ${clip.capa_status === 'gerando' ? 'disabled' : ''} />
+                <div class="grid ${clip.capa_status === 'pronta' ? 'grid-cols-2' : 'grid-cols-1'} gap-2">
                   <button type="button"
-                    class="ai-btn rounded-xl bg-sky-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-400"
-                    data-action="capa-clip" data-id="${clip.id}">${clip.capa_titulo ? 'Refazer capa' : 'Gerar capa'}</button>
-                  ${clip.capa_titulo
+                    class="ai-btn rounded-xl bg-sky-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-400 disabled:opacity-50"
+                    data-action="capa-clip" data-id="${clip.id}"
+                    ${clip.capa_status === 'gerando' ? 'disabled' : ''}>
+                    ${clip.capa_status === 'pronta' ? 'Refazer capa' : clip.capa_status === 'gerando' ? 'Gerando…' : 'Gerar capa agora'}
+                  </button>
+                  ${clip.capa_status === 'pronta'
                     ? `<button type="button" class="ai-btn rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-rose-500/50 hover:text-rose-300" data-action="remover-capa" data-id="${clip.id}">Remover capa</button>`
                     : ''}
                 </div>
-                <p class="text-[10px] leading-relaxed text-slate-500">A capa (2,5s) usa um frame do vídeo + seu modelo do Minha marca e entra antes do vídeo começar.</p>
+                <p class="text-[10px] leading-relaxed text-slate-500">Ao gerar a matéria, a capa já é criada sozinha (2,5s no início). Ou clique aqui — o título sai da matéria se você deixar em branco.</p>
               </div>
               ${publishFormHtml('clip', clip.id, materia)}
             </div>` : ''}
@@ -919,10 +940,6 @@
           url = '/api/clips/' + id + '/capa';
           const capaInput = document.querySelector('[data-clip-capa="' + id + '"]');
           body.titulo = capaInput ? capaInput.value.trim() : '';
-          if (!body.titulo) {
-            showError('Digite o título que vai aparecer na capa do vídeo');
-            return;
-          }
         } else if (action === 'remover-capa') {
           url = '/api/clips/' + id + '/capa';
           method = 'DELETE';
@@ -949,7 +966,13 @@
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Falha na operação de IA');
-          setTimeout(loadFila, 2500);
+          if (action === 'capa-clip' && data.titulo) {
+            const capaInput = document.querySelector('[data-clip-capa="' + id + '"]');
+            if (capaInput && !capaInput.value.trim()) capaInput.value = data.titulo;
+          }
+          setTimeout(loadFila, 1500);
+          setTimeout(loadFila, 8000);
+          setTimeout(loadFila, 20000);
         } catch (err) {
           showError(err.message);
         } finally {

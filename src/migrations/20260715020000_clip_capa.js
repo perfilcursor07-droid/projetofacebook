@@ -1,13 +1,21 @@
 /**
  * Capa de marca no início do corte (imagem + título antes do vídeo).
- * - capa_titulo: título usado na arte
- * - arquivo_sem_capa: backup do corte original para refazer/remover a capa
  * @param {import('knex').Knex} knex
  */
 exports.up = async function up(knex) {
+  const hasTitulo = await knex.schema.hasColumn('video_clips', 'capa_titulo');
+  const hasArquivo = await knex.schema.hasColumn('video_clips', 'arquivo_sem_capa');
+  const hasStatus = await knex.schema.hasColumn('video_clips', 'capa_status');
+
   await knex.schema.alterTable('video_clips', (table) => {
-    table.string('capa_titulo', 300).nullable();
-    table.string('arquivo_sem_capa', 500).nullable();
+    if (!hasTitulo) table.string('capa_titulo', 300).nullable();
+    if (!hasArquivo) table.string('arquivo_sem_capa', 500).nullable();
+    if (!hasStatus) {
+      table
+        .enum('capa_status', ['pendente', 'gerando', 'pronta', 'erro'])
+        .notNullable()
+        .defaultTo('pendente');
+    }
   });
 };
 
@@ -15,8 +23,13 @@ exports.up = async function up(knex) {
  * @param {import('knex').Knex} knex
  */
 exports.down = async function down(knex) {
+  const hasTitulo = await knex.schema.hasColumn('video_clips', 'capa_titulo');
+  const hasArquivo = await knex.schema.hasColumn('video_clips', 'arquivo_sem_capa');
+  const hasStatus = await knex.schema.hasColumn('video_clips', 'capa_status');
+
   await knex.schema.alterTable('video_clips', (table) => {
-    table.dropColumn('capa_titulo');
-    table.dropColumn('arquivo_sem_capa');
+    if (hasTitulo) table.dropColumn('capa_titulo');
+    if (hasArquivo) table.dropColumn('arquivo_sem_capa');
+    if (hasStatus) table.dropColumn('capa_status');
   });
 };

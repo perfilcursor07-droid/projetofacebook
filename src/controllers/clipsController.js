@@ -23,6 +23,85 @@ async function assertOwnedClip(req) {
   return { clip, video };
 }
 
+/** Título curto/chamativo a partir da matéria, do título da IA ou do vídeo. */
+function resolveCapaTitulo({ titulo, iaTitulo, materia, videoTitulo }) {
+  const candidates = [
+    String(titulo || '').trim(),
+    String(iaTitulo || '').trim(),
+    String(materia || '')
+      .replace(/#\w+/g, ' ')
+      .split(/[.!?\n]/)
+      .map((s) => s.trim())
+      .find((s) => s.length >= 12),
+    String(videoTitulo || '').trim(),
+    'Assista até o final',
+  ];
+  const picked = candidates.find(Boolean) || 'Assista até o final';
+  return picked.replace(/\s+/g, ' ').slice(0, 90);
+}
+
+/**
+ * Enfileira geração da capa (frame + título Minha marca no início do corte).
+ * @returns {Promise<{ queued: true, titulo: string }>}
+ */
+async function queueClipCover({ clipId, userId, titulo }) {
+  const clip = await VideoClips.findById(clipId);
+  if (!clip) throw httpError('Clipe não encontrado', 404);
+  if (!clip.caminho_arquivo) {
+    throw httpError('Clipe sem arquivo — gere o corte novamente', 422);
+  }
+
+  const video = await Videos.findById(clip.video_id);
+  const user = await Users.findById(userId);
+  if (!user) throw httpError('Usuário não encontrado', 404);
+
+  const finalTitulo = resolveCapaTitulo({
+    titulo,
+    materia: clip.legenda_sugerida,
+    videoTitulo: video?.titulo || video?.termo_busca,
+  });
+
+  await VideoClips.update(clipId, {
+    capa_status: 'gerando',
+    capa_titulo: finalTitulo,
+    erro_mensagem: null,
+  });
+
+  enqueue(`capa clip ${clipId}`, async () => {
+    const fresh = await VideoClips.findById(clipId);
+    if (!fresh) return;
+    try {
+      const { relativePath } = await clipCoverService.addCoverToClip({
+        clip: fresh,
+        user,
+        titulo: finalTitulo,
+      });
+
+      const semCapa = fresh.arquivo_sem_capa || fresh.caminho_arquivo;
+      if (fresh.arquivo_sem_capa && fresh.caminho_arquivo !== fresh.arquivo_sem_capa) {
+        processingService.safeUnlink(fresh.caminho_arquivo);
+      }
+
+      await VideoClips.update(clipId, {
+        caminho_arquivo: relativePath,
+        arquivo_sem_capa: semCapa,
+        capa_titulo: finalTitulo,
+        capa_status: 'pronta',
+        erro_mensagem: null,
+      });
+    } catch (err) {
+      console.error(`[capa] clip ${clipId}:`, err.message || err);
+      await VideoClips.update(clipId, {
+        capa_status: 'erro',
+        erro_mensagem: `Capa falhou: ${String(err.message || err).slice(0, 400)}`,
+      });
+      throw err;
+    }
+  });
+
+  return { queued: true, titulo: finalTitulo };
+}
+
 /** Reenfileira um corte preso em processando/erro. */
 async function retryClip(req, res, next) {
   try {
@@ -108,8 +187,7 @@ async function transcribe(req, res, next) {
 
 /**
  * Gera matéria com DeepSeek a partir da transcrição.
- * Se ainda não houver transcrição, extrai a fala na mesma fila e depois gera.
- * body.tema opcional.
+ * Ao terminar, gera automaticamente a capa de marca no início do vídeo.
  */
 async function gerarMateria(req, res, next) {
   try {
@@ -123,6 +201,7 @@ async function gerarMateria(req, res, next) {
 
     deepseekService.assertDeepseek();
     const tema = String(req.body.tema || '').trim() || null;
+    const userId = req.session.userId;
 
     await VideoClips.update(clip.id, {
       materia_status: 'gerando',
@@ -153,12 +232,33 @@ async function gerarMateria(req, res, next) {
           idioma,
         });
 
-        // Matéria = texto editorial; transcrição fica só em `transcricao`
+        const tituloCapa = resolveCapaTitulo({
+          iaTitulo: gerado.titulo,
+          materia: gerado.materia,
+          videoTitulo: video.titulo || video.termo_busca,
+        });
+
         await VideoClips.update(clip.id, {
           legenda_sugerida: gerado.materia,
           materia_status: 'pronta',
+          capa_titulo: tituloCapa,
           erro_mensagem: null,
         });
+
+        // Capa automática com título chamativo da IA
+        try {
+          await queueClipCover({
+            clipId: clip.id,
+            userId,
+            titulo: tituloCapa,
+          });
+        } catch (capaErr) {
+          console.error(`[capa] auto clip ${clip.id}:`, capaErr.message || capaErr);
+          await VideoClips.update(clip.id, {
+            capa_status: 'erro',
+            erro_mensagem: `Capa falhou: ${String(capaErr.message || capaErr).slice(0, 400)}`,
+          });
+        }
       } catch (err) {
         await VideoClips.update(clip.id, {
           materia_status: 'erro',
@@ -168,16 +268,19 @@ async function gerarMateria(req, res, next) {
       }
     });
 
-    res.status(202).json({ queued: true, clipId: clip.id, message: 'Geração de matéria enfileirada' });
+    res.status(202).json({
+      queued: true,
+      clipId: clip.id,
+      message: 'Geração de matéria enfileirada — a capa será criada em seguida',
+    });
   } catch (err) {
     next(err);
   }
 }
 
 /**
- * Gera capa de marca (frame do vídeo + título no modelo "Minha marca")
- * e costura no início do corte para prender a atenção antes do vídeo.
- * body.titulo obrigatório.
+ * Gera capa de marca (frame + título) e costura no início do corte.
+ * body.titulo opcional — se vazio, usa matéria / título do vídeo.
  */
 async function gerarCapa(req, res, next) {
   try {
@@ -185,48 +288,26 @@ async function gerarCapa(req, res, next) {
     if (clip.status !== 'pronto' && clip.status !== 'publicado') {
       throw httpError('O clipe precisa estar pronto antes de gerar a capa', 422);
     }
-    if (!clip.caminho_arquivo) {
-      throw httpError('Clipe sem arquivo — gere o corte novamente', 422);
+    if (clip.capa_status === 'gerando') {
+      return res.status(202).json({
+        queued: true,
+        clipId: clip.id,
+        message: 'Capa já está sendo gerada — aguarde alguns segundos',
+      });
     }
-    const titulo = String(req.body.titulo || '').trim();
-    if (!titulo) {
-      throw httpError('Informe o título que vai aparecer na capa', 400);
-    }
 
-    const user = await Users.findById(req.session.userId);
-    if (!user) throw httpError('Usuário não encontrado', 404);
-
-    enqueue(`capa clip ${clip.id}`, async () => {
-      const fresh = await VideoClips.findById(clip.id);
-      if (!fresh) return;
-      try {
-        const { relativePath } = await clipCoverService.addCoverToClip({
-          clip: fresh,
-          user,
-          titulo,
-        });
-
-        // Guarda o corte original na 1ª capa; remove capas antigas ao refazer
-        const semCapa = fresh.arquivo_sem_capa || fresh.caminho_arquivo;
-        if (fresh.arquivo_sem_capa && fresh.caminho_arquivo !== fresh.arquivo_sem_capa) {
-          processingService.safeUnlink(fresh.caminho_arquivo);
-        }
-
-        await VideoClips.update(clip.id, {
-          caminho_arquivo: relativePath,
-          arquivo_sem_capa: semCapa,
-          capa_titulo: titulo,
-          erro_mensagem: null,
-        });
-      } catch (err) {
-        await VideoClips.update(clip.id, {
-          erro_mensagem: `Capa falhou: ${String(err.message || err).slice(0, 400)}`,
-        });
-        throw err;
-      }
+    const result = await queueClipCover({
+      clipId: clip.id,
+      userId: req.session.userId,
+      titulo: String(req.body.titulo || '').trim() || null,
     });
 
-    res.status(202).json({ queued: true, clipId: clip.id, message: 'Geração da capa enfileirada' });
+    res.status(202).json({
+      queued: true,
+      clipId: clip.id,
+      titulo: result.titulo,
+      message: 'Geração da capa enfileirada',
+    });
   } catch (err) {
     next(err);
   }
@@ -246,6 +327,7 @@ async function removerCapa(req, res, next) {
       caminho_arquivo: clip.arquivo_sem_capa,
       arquivo_sem_capa: null,
       capa_titulo: null,
+      capa_status: 'pendente',
     });
     res.json({ ok: true, message: 'Capa removida — corte original restaurado' });
   } catch (err) {
@@ -253,4 +335,12 @@ async function removerCapa(req, res, next) {
   }
 }
 
-module.exports = { transcribe, gerarMateria, retryClip, removeClip, gerarCapa, removerCapa };
+module.exports = {
+  transcribe,
+  gerarMateria,
+  retryClip,
+  removeClip,
+  gerarCapa,
+  removerCapa,
+  queueClipCover,
+};
