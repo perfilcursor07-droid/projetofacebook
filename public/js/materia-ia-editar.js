@@ -81,7 +81,13 @@
       setStatus('Selecione a Página do Facebook', true);
       return;
     }
+
+    const publishBtn = document.getElementById('btn-publicar');
+    if (publishBtn) publishBtn.disabled = true;
+
+    showPublishModal('publishing');
     setStatus('Salvando e publicando…');
+
     try {
       await salvar();
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/publicar', {
@@ -97,24 +103,65 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao publicar');
+
       if (data.imagemUrl && imgEl) {
         imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
         imgWrap?.classList.remove('hidden');
       }
-      if (data.link) {
-        statusEl.innerHTML =
-          'Publicado ✓ <a class="text-sky-400 hover:underline" href="' +
-          escapeHtml(data.link) +
-          '" target="_blank" rel="noopener">Ver post</a>';
-        statusEl.className = 'mt-4 text-sm text-emerald-300';
-        setTimeout(() => window.location.reload(), 1200);
-      } else {
-        setStatus('Na fila de publicação ✓');
-      }
+
+      showPublishModal('success', data.link || null);
+      setStatus('Publicado com sucesso ✓');
+      setTimeout(() => {
+        window.location.href = cfg.listUrl || '/minhas-materias';
+      }, 1800);
     } catch (err) {
+      hidePublishModal();
       setStatus(err.message, true);
+      if (publishBtn) publishBtn.disabled = false;
     }
   });
+
+  function showPublishModal(state, link) {
+    const modal = document.getElementById('publish-modal');
+    const spin = document.getElementById('publish-modal-spin');
+    const ok = document.getElementById('publish-modal-ok');
+    const title = document.getElementById('publish-modal-title');
+    const text = document.getElementById('publish-modal-text');
+    const linkEl = document.getElementById('publish-modal-link');
+    if (!modal) return;
+
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+
+    if (state === 'success') {
+      spin?.classList.add('hidden');
+      ok?.classList.remove('hidden');
+      ok?.classList.add('flex');
+      if (title) title.textContent = 'Publicado com sucesso';
+      if (text) text.textContent = 'A matéria foi enviada para a Página. Voltando para a lista…';
+      if (linkEl && link) {
+        linkEl.href = link;
+        linkEl.classList.remove('hidden');
+      } else if (linkEl) {
+        linkEl.classList.add('hidden');
+      }
+      return;
+    }
+
+    spin?.classList.remove('hidden');
+    ok?.classList.add('hidden');
+    ok?.classList.remove('flex');
+    if (title) title.textContent = 'Publicando…';
+    if (text) text.textContent = 'Enviando a matéria para a Página do Facebook.';
+    if (linkEl) linkEl.classList.add('hidden');
+  }
+
+  function hidePublishModal() {
+    const modal = document.getElementById('publish-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
 
   document.getElementById('btn-agendar')?.addEventListener('click', async () => {
     const runAt = document.getElementById('matter-schedule')?.value;

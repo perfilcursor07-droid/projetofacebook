@@ -125,8 +125,8 @@
           <label class="mt-3 block text-sm">
             <span class="text-slate-400">Tipo</span>
             <select id="matter-tipo" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" <%= canEdit ? '' : 'disabled' %>>
-              <option value="texto" <%= matter.tipo_publicacao !== 'foto' ? 'selected' : '' %>>Texto</option>
-              <option value="foto" <%= matter.tipo_publicacao === 'foto' ? 'selected' : '' %>>Foto + legenda</option>
+              <option value="foto" <%= matter.tipo_publicacao !== 'texto' ? 'selected' : '' %>>Foto + legenda</option>
+              <option value="texto" <%= matter.tipo_publicacao === 'texto' ? 'selected' : '' %>>Texto</option>
             </select>
           </label>
 
@@ -147,11 +147,22 @@
     </div>
   </main>
 
+  <div id="publish-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="publish-modal-title">
+    <div class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-8 text-center shadow-xl shadow-black/40">
+      <div id="publish-modal-spin" class="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-[#1877F2]/30 border-t-[#1877F2]"></div>
+      <div id="publish-modal-ok" class="mx-auto hidden flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-2xl text-emerald-300">✓</div>
+      <h2 id="publish-modal-title" class="mt-5 text-lg font-semibold text-white">Publicando…</h2>
+      <p id="publish-modal-text" class="mt-2 text-sm leading-relaxed text-slate-400">Enviando a matéria para a Página do Facebook.</p>
+      <a id="publish-modal-link" href="#" target="_blank" rel="noopener" class="mt-4 hidden inline-block text-sm text-sky-400 hover:underline">Ver post no Facebook →</a>
+    </div>
+  </div>
+
   <script>
     window.__MATTER_EDIT__ = {
       id: <%= matter.id %>,
       pageId: <%= matter.facebook_page_id ? Number(matter.facebook_page_id) : 'null' %>,
       canEdit: <%= canEdit ? 'true' : 'false' %>,
+      listUrl: '/minhas-materias',
     };
   </script>
   <script src="/js/materia-ia-editar.js"></script>

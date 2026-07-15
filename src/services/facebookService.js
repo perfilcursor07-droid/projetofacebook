@@ -117,17 +117,29 @@ async function publishVideo({ pageId, pageAccessToken, filePath, description }) 
 /**
  * Sobe foto sem publicar no álbum e anexa num post do feed da Página.
  * Assim a matéria aparece em Posts (e não só em Fotos).
+ * Formato oficial: attached_media[0]={"media_fbid":"..."} no body (não na query).
  * @returns {Promise<{ id: string, post_id: string, photo_id: string }>}
  */
 async function createFeedPostWithPhoto({ pageId, pageAccessToken, message, photoId }) {
-  const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, null, {
-    params: {
-      access_token: pageAccessToken,
-      message: message || '',
-      attached_media: JSON.stringify([{ media_fbid: String(photoId) }]),
-    },
+  const body = new URLSearchParams();
+  body.set('access_token', pageAccessToken);
+  body.set('message', message || '');
+  body.set('published', 'true');
+  // Meta exige indexed form: attached_media[0]={"media_fbid":"ID"}
+  body.set('attached_media[0]', JSON.stringify({ media_fbid: String(photoId) }));
+
+  const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, body.toString(), {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     timeout: 2 * 60 * 1000,
   });
+
+  if (!data?.id) {
+    const err = new Error('Facebook não retornou o ID do post no feed');
+    err.status = 502;
+    throw err;
+  }
+
+  console.log('[facebook] feed post criado', { pageId, photoId, postId: data.id });
   return {
     id: data.id,
     post_id: data.id,
@@ -143,6 +155,7 @@ async function publishPhoto({ pageId, pageAccessToken, filePath, caption }) {
   return withRetry(async () => {
     const form = new FormData();
     form.append('access_token', pageAccessToken);
+    // false = só sobe o arquivo; o post real é criado depois em /feed
     form.append('published', 'false');
     form.append('source', fs.createReadStream(filePath));
 
@@ -159,6 +172,7 @@ async function publishPhoto({ pageId, pageAccessToken, filePath, caption }) {
       throw err;
     }
 
+    console.log('[facebook] foto upload unpublished', { pageId, photoId: photo.id });
     return createFeedPostWithPhoto({
       pageId,
       pageAccessToken,
@@ -173,12 +187,13 @@ async function publishPhoto({ pageId, pageAccessToken, filePath, caption }) {
  */
 async function publishPhotoFromUrl({ pageId, pageAccessToken, imageUrl, caption }) {
   return withRetry(async () => {
-    const { data: photo } = await axios.post(`${GRAPH}/${pageId}/photos`, null, {
-      params: {
-        access_token: pageAccessToken,
-        url: imageUrl,
-        published: false,
-      },
+    const uploadBody = new URLSearchParams();
+    uploadBody.set('access_token', pageAccessToken);
+    uploadBody.set('url', imageUrl);
+    uploadBody.set('published', 'false');
+
+    const { data: photo } = await axios.post(`${GRAPH}/${pageId}/photos`, uploadBody.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       timeout: 2 * 60 * 1000,
     });
 
@@ -188,6 +203,7 @@ async function publishPhotoFromUrl({ pageId, pageAccessToken, imageUrl, caption 
       throw err;
     }
 
+    console.log('[facebook] foto url unpublished', { pageId, photoId: photo.id, imageUrl: String(imageUrl).slice(0, 80) });
     return createFeedPostWithPhoto({
       pageId,
       pageAccessToken,
@@ -203,9 +219,14 @@ async function publishPhotoFromUrl({ pageId, pageAccessToken, imageUrl, caption 
  */
 async function publishText({ pageId, pageAccessToken, message, link }) {
   return withRetry(async () => {
-    const params = { access_token: pageAccessToken, message };
-    if (link) params.link = link;
-    const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, null, { params });
+    const body = new URLSearchParams();
+    body.set('access_token', pageAccessToken);
+    body.set('message', message || '');
+    if (link) body.set('link', link);
+    const { data } = await axios.post(`${GRAPH}/${pageId}/feed`, body.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 2 * 60 * 1000,
+    });
     return data;
   });
 }
