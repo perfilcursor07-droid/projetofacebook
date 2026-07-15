@@ -31,8 +31,40 @@ function downloadExtensaoZip(req, res, next) {
     });
     archive.pipe(res);
 
-    // Pasta raiz no ZIP: viralizeai-extensao-facebook/ (fácil de achar após extrair)
-    archive.directory(EXTENSAO_DIR, 'viralizeai-extensao-facebook');
+    // Monta um pacote de atualização sem alterar os arquivos legados já instalados.
+    // publisher.js entra no ZIP com o nome content.js esperado pelo manifesto.
+    const manifestPath = path.join(EXTENSAO_DIR, 'manifest.json');
+    const publisherPath = path.join(EXTENSAO_DIR, 'publisher.js');
+    if (!fs.existsSync(publisherPath)) {
+      throw new Error('Publicador atualizado da extensão não encontrado');
+    }
+
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.version = '1.4.0';
+    manifest.content_scripts = (manifest.content_scripts || []).map((entry) => ({
+      ...entry,
+      js: ['content.js'],
+    }));
+
+    const popupCss = fs.readFileSync(path.join(EXTENSAO_DIR, 'popup.css'), 'utf8');
+    const popupLayoutPatch = `
+/* Ajustes do pacote 1.4.0: não corta o botão Publicar nos cards. */
+.card-pend { grid-template-columns: 18px minmax(0, 1fr) !important; }
+.card-pend:has(.thumb) { grid-template-columns: 18px minmax(0, 1fr) 52px !important; }
+.card .meta { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.card .meta .muted { min-width: 0; overflow-wrap: anywhere; }
+.card .meta .js-pub { min-width: 72px; white-space: nowrap; }
+`;
+
+    const root = 'viralizeai-extensao-facebook';
+    archive.glob('**/*', {
+      cwd: EXTENSAO_DIR,
+      dot: true,
+      ignore: ['content.js', 'publisher.js', 'manifest.json', 'popup.css'],
+    }, { prefix: root });
+    archive.append(JSON.stringify(manifest, null, 2), { name: `${root}/manifest.json` });
+    archive.file(publisherPath, { name: `${root}/content.js` });
+    archive.append(popupCss + popupLayoutPatch, { name: `${root}/popup.css` });
     archive.finalize();
   } catch (err) {
     return next(err);

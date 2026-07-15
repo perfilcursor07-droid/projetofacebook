@@ -120,15 +120,19 @@ function waitTabComplete(tabId, timeoutMs = 45000) {
 
 async function ensureContentScript(tabId) {
   try {
-    await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    return;
+    const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+    if (String(response?.version || '').startsWith('2.')) return;
   } catch {
-    /* inject */
+    /* injeta a versão atual */
   }
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ['content.js'],
+    files: ['content-v2.js'],
   });
+  const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+  if (!String(response?.version || '').startsWith('2.')) {
+    throw new Error('Não foi possível ativar o motor de publicação 2.0 na aba do Facebook');
+  }
 }
 
 function sendToContent(tabId, message, timeoutMs = PUBLISH_TIMEOUT_MS) {
@@ -218,7 +222,7 @@ async function publishMatter(matter) {
       tipo: matter.tipo_publicacao === 'foto' ? 'foto' : 'texto',
       image: imagePayload,
       pageId,
-      pageName: matter.page_name || null,
+      pageName: targetPageName,
     },
   });
 
