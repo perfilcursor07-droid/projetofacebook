@@ -1,6 +1,6 @@
 const ALARM_AUTO = 'viralizeai-auto-publish';
 const MIN_INTERVAL_MINUTES = 3;
-const PUBLISH_TIMEOUT_MS = 120000;
+const PUBLISH_TIMEOUT_MS = 210000;
 
 async function getSettings() {
   const data = await chrome.storage.local.get([
@@ -174,6 +174,17 @@ async function publishMatter(matter) {
   if (!matter?.id) throw new Error('Matéria inválida');
   const settings = await getSettings();
   const pageId = matter.fb_page_id || settings.selectedPageId || null;
+  let targetPageName = matter.page_name || null;
+  if (pageId && !targetPageName) {
+    try {
+      const pages = await apiFetch('/api/extensao/paginas');
+      targetPageName = (pages.paginas || []).find(
+        (page) => String(page.page_id) === String(pageId)
+      )?.page_name || null;
+    } catch {
+      // A publicação ainda pode ser validada pelo ID presente na URL.
+    }
+  }
 
   await apiFetch(`/api/extensao/matters/${matter.id}/heartbeat`, {
     method: 'POST',

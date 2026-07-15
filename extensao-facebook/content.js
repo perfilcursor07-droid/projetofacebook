@@ -11,7 +11,7 @@
  */
 
 (function () {
-  window.__viralizeaiContentVersion = '1.2.0';
+  window.__viralizeaiContentVersion = '1.3.0';
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -33,6 +33,42 @@
     return `${el?.getAttribute?.('aria-label') || ''} ${el?.getAttribute?.('aria-placeholder') || ''} ${textOf(el)}`
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  /**
+   * aria-label e texto interno frequentemente repetem o mesmo nome no Facebook
+   * (ex.: "Publicar Publicar"). Compara cada fonte separadamente.
+   */
+  function labelVariants(el) {
+    const values = [
+      el?.getAttribute?.('aria-label'),
+      el?.getAttribute?.('aria-placeholder'),
+      el?.getAttribute?.('title'),
+      textOf(el),
+    ]
+      .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    return [...new Set(values)];
+  }
+
+  function labelMatches(el, patterns) {
+    return labelVariants(el).some((label) => patterns.some((pattern) => pattern.test(label)));
+  }
+
+  function closestClickable(el, boundary = document.body) {
+    let node = el;
+    while (node && node !== boundary?.parentElement) {
+      if (
+        node.matches?.('button, [role="button"], a[href], [tabindex="0"]') &&
+        visible(node) &&
+        !isDisabled(node)
+      ) {
+        return node;
+      }
+      if (node === boundary) break;
+      node = node.parentElement;
+    }
+    return null;
   }
 
   function isDisabled(el) {
