@@ -17,10 +17,14 @@
   const st = matter.status || 'rascunho';
   const canEdit = st !== 'publicado';
   const canRepublish = st === 'publicado';
+  const isReel = matter.tipo_publicacao === 'reel';
   const imageUrl = matter.imagem_url || '';
+  const videoUrl = matter.video_path ? '/media/' + String(matter.video_path).replace(/^\/+/, '') : '';
+  const reelProcessing = isReel && (!videoUrl || String(matter.materia || '').startsWith('⏳'));
   const canReloadBrand =
-    Boolean(matter.imagem_fonte_url) ||
-    (!matter.imagem_path && /^https?:\/\//i.test(String(imageUrl)));
+    !isReel &&
+    (Boolean(matter.imagem_fonte_url) ||
+      (!matter.imagem_path && /^https?:\/\//i.test(String(imageUrl))));
 %>
 
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
@@ -98,15 +102,37 @@
       </section>
 
       <aside class="space-y-4">
-        <div id="matter-img-wrap" class="<%= imageUrl ? '' : 'hidden' %> rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <span class="text-xs font-semibold uppercase tracking-wide text-emerald-300">Arte</span>
-            <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">1080 × 1350 · 4:5</span>
+        <% if (isReel) { %>
+          <div id="matter-reel-wrap" class="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wide text-violet-300">Reel</span>
+              <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">9:16 · capa no início</span>
+            </div>
+            <% if (videoUrl) { %>
+              <video id="matter-reel-video" class="block w-full rounded-xl border border-slate-700 bg-black" controls playsinline
+                src="<%= videoUrl %>?t=<%= Date.now() %>" poster="<%= imageUrl || '' %>"></video>
+            <% } else { %>
+              <div id="matter-reel-placeholder" class="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-700 bg-slate-950 px-4 py-8 text-center">
+                <span class="inline-block h-8 w-8 animate-spin rounded-full border-2 border-violet-400/30 border-t-violet-300"></span>
+                <p class="text-sm text-slate-300">Processando o Reel…</p>
+                <p class="text-[11px] text-slate-500">Baixando · transcrevendo · legenda · capa Minha marca</p>
+              </div>
+            <% } %>
+            <% if (matter.error_message) { %>
+              <p class="mt-2 text-xs text-amber-200"><%= matter.error_message %></p>
+            <% } %>
           </div>
-          <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="block h-auto w-full rounded-xl border border-slate-700 bg-slate-950 object-contain" />
-        </div>
+        <% } else { %>
+          <div id="matter-img-wrap" class="<%= imageUrl ? '' : 'hidden' %> rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wide text-emerald-300">Arte</span>
+              <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">1080 × 1350 · 4:5</span>
+            </div>
+            <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="block h-auto w-full rounded-xl border border-slate-700 bg-slate-950 object-contain" />
+          </div>
+        <% } %>
 
-        <% if (canEdit) { %>
+        <% if (canEdit && !isReel) { %>
           <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
             <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Outras sugestões</p>
             <div id="matter-img-suggest-loading" class="mt-2 hidden items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2">
@@ -125,7 +151,7 @@
           </div>
         <% } %>
 
-        <% if (canEdit) { %>
+        <% if (canEdit && !isReel) { %>
           <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Trocar imagem</p>
             <p class="mt-2 text-xs leading-relaxed text-slate-400">Escolha uma foto. Depois de confirmar, a identidade visual configurada em <a href="/minha-marca" class="text-emerald-300 hover:underline">Minha marca</a> será aplicada automaticamente.</p>
@@ -183,14 +209,20 @@
 
           <label class="mt-3 block text-sm">
             <span class="text-slate-400">Tipo</span>
-            <select id="matter-tipo" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white">
-              <option value="foto" <%= matter.tipo_publicacao !== 'texto' ? 'selected' : '' %>>Foto + legenda</option>
-              <option value="texto" <%= matter.tipo_publicacao === 'texto' ? 'selected' : '' %>>Texto</option>
+            <select id="matter-tipo" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" <%= isReel ? 'disabled' : '' %>>
+              <% if (isReel) { %>
+                <option value="reel" selected>Reel (vídeo)</option>
+              <% } else { %>
+                <option value="foto" <%= matter.tipo_publicacao !== 'texto' ? 'selected' : '' %>>Foto + legenda</option>
+                <option value="texto" <%= matter.tipo_publicacao === 'texto' ? 'selected' : '' %>>Texto</option>
+              <% } %>
             </select>
           </label>
 
           <% if (canEdit) { %>
-            <button type="button" id="btn-publicar" class="mt-4 w-full rounded-lg bg-[#1877F2] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#166FE5]">Publicar na Página</button>
+            <button type="button" id="btn-publicar" class="mt-4 w-full rounded-lg bg-[#1877F2] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#166FE5]" <%= reelProcessing ? 'disabled' : '' %>>
+              <%= isReel ? 'Publicar como Reels' : 'Publicar na Página' %>
+            </button>
 
             <div class="mt-4 border-t border-slate-800 pt-4">
               <label class="block text-xs text-slate-400">Agendar (horário de Araguaína −03)
@@ -228,6 +260,9 @@
       pageId: <%= matter.facebook_page_id ? Number(matter.facebook_page_id) : 'null' %>,
       canEdit: <%= canEdit ? 'true' : 'false' %>,
       canRepublish: <%= canRepublish ? 'true' : 'false' %>,
+      isReel: <%= isReel ? 'true' : 'false' %>,
+      reelProcessing: <%= reelProcessing ? 'true' : 'false' %>,
+      videoUrl: <%= videoUrl ? JSON.stringify(videoUrl) : 'null' %>,
       listUrl: '/minhas-materias',
     };
   </script>

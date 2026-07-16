@@ -251,9 +251,19 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     hashtags: overrides.hashtags || matter.hashtags,
   });
 
-  if (!mensagem.trim()) {
-    const err = new Error('Matéria vazia');
+  if (!mensagem.trim() || String(mensagem).startsWith('⏳')) {
+    const err = new Error(
+      String(mensagem).startsWith('⏳')
+        ? 'Aguarde o Reel terminar de processar (vídeo + legenda) antes de publicar.'
+        : 'Matéria vazia'
+    );
     err.status = 400;
+    throw err;
+  }
+
+  if (tipo === 'reel' && !matter.video_path) {
+    const err = new Error('Vídeo do Reel ainda não está pronto. Aguarde o processamento.');
+    err.status = 422;
     throw err;
   }
 
@@ -275,22 +285,23 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     materia: overrides.materia || matter.materia,
   });
   if (avisosDup.length && !overrides.forcar) {
-    // Aviso não bloqueia publicação manual, mas registra
     console.warn('[duplicidade]', avisosDup.join(' | '));
   }
 
+  const pubTipo = tipo === 'reel' ? 'reel' : tipo === 'foto' ? 'foto' : 'texto';
+
   const [pubId] = await Publications.create({
-    video_clip_id: null,
+    video_clip_id: matter.video_clip_id || null,
     imagem_id: null,
     facebook_page_id: page.id,
-    tipo: tipo === 'foto' ? 'foto' : 'texto',
+    tipo: pubTipo,
     status: 'pendente',
     texto: mensagem,
   });
 
   await AiMatters.update(matter.id, {
     facebook_page_id: page.id,
-    tipo_publicacao: tipo === 'foto' ? 'foto' : 'texto',
+    tipo_publicacao: pubTipo === 'reel' ? 'reel' : pubTipo === 'foto' ? 'foto' : 'texto',
     publication_id: pubId,
     status: 'pronto',
     error_message: null,
@@ -300,14 +311,39 @@ async function publicarMateria(userId, matterId, overrides = {}) {
 
   const executarPublicacao = async () => {
     const publishDispatch = require('./publishDispatch');
+    const { storageAbsolutePath } = require('./downloadService');
+    const fs = require('fs');
     const img = overrides.imagem_url || matter.imagem_url;
     const hasFoto = Boolean(img || matter.imagem_path);
+
+    let reelFile = null;
+    if (pubTipo === 'reel') {
+      const rel = matter.video_path;
+      if (!rel) {
+        const err = new Error('Vídeo do Reel não encontrado.');
+        err.status = 422;
+        throw err;
+      }
+      reelFile = storageAbsolutePath(rel);
+      if (!fs.existsSync(reelFile)) {
+        const err = new Error('Arquivo do Reel ausente no servidor. Gere novamente a partir do link.');
+        err.status = 422;
+        throw err;
+      }
+    }
+
     const result = await publishDispatch.publishContent({
       userId,
       page,
-      tipo: tipo === 'foto' && hasFoto ? 'foto' : 'texto',
-      imagemPath: matter.imagem_path || null,
-      imageUrl: tipo === 'foto' && img ? img : null,
+      tipo:
+        pubTipo === 'reel'
+          ? 'reel'
+          : tipo === 'foto' && hasFoto
+            ? 'foto'
+            : 'texto',
+      filePath: reelFile,
+      imagemPath: pubTipo === 'reel' ? null : matter.imagem_path || null,
+      imageUrl: pubTipo === 'foto' && img ? img : null,
       texto: mensagem,
     });
 
@@ -668,8 +704,67 @@ async function tickFilaJobs() {
 }
 
 /**
- * Reel/vídeo FB/IG: baixa → corte 9:16 → transcreve → matéria → capa (como YouTube na Fila).
- * Publicação posterior como Reels em /fila.
+ * Sincroniza AiMatter (tipo reel) após download/transcrição/capa do clipe.
+ */
+async function syncConteudoReelMatter({ matterId, clip, video, gerado = null }) {
+  if (!matterId || !clip?.id) return;
+  const AiMatters = require('../models/AiMatters');
+  const matter = await AiMatters.findById(matterId);
+  if (!matter) return;
+
+  const titulo =
+    String(gerado?.titulo || clip.capa_titulo || video?.titulo || matter.titulo || 'Reel')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 300);
+
+  const materia =
+    gerado?.materia ||
+    clip.legenda_sugerida ||
+    matter.materia ||
+    '';
+
+  const patch = {
+    titulo,
+    materia: String(materia).startsWith('⏳') && gerado?.materia ? gerado.materia : materia,
+    tipo_publicacao: 'reel',
+    video_path: clip.caminho_arquivo || matter.video_path || null,
+    video_clip_id: clip.id,
+    status: 'rascunho',
+    error_message:
+      clip.materia_status === 'erro'
+        ? String(clip.erro_mensagem || 'Falha ao gerar matéria do Reel').slice(0, 500)
+        : null,
+  };
+
+  if (gerado?.hashtags) {
+    patch.hashtags = JSON.stringify(gerado.hashtags);
+  }
+  if (video?.thumbnail && !matter.imagem_url) {
+    patch.imagem_url = video.thumbnail;
+  }
+
+  // Se ainda processando capa, mantém aviso amigável
+  if (!patch.video_path) {
+    patch.materia =
+      matter.materia && String(matter.materia).startsWith('⏳')
+        ? matter.materia
+        : '⏳ Processando Reel (capa)…';
+  } else if (String(patch.materia).startsWith('⏳') && !gerado?.materia && !clip.legenda_sugerida) {
+    // Vídeo pronto mas sem legenda — usa trecho do título longo
+    const meta =
+      video?.metadata && typeof video.metadata === 'object'
+        ? video.metadata
+        : {};
+    patch.materia = String(meta.titulo_completo || video?.titulo || titulo).slice(0, 1200);
+  }
+
+  await AiMatters.update(matterId, patch);
+  console.log(`[conteudo-reel] matter #${matterId} ← clip #${clip.id} video=${patch.video_path}`);
+}
+
+/**
+ * Reel/vídeo FB/IG → AiMatter em /materias-ia (vídeo + legenda), sem fluxo de cortes na Fila.
  */
 async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
   const Videos = require('../models/Videos');
@@ -680,28 +775,29 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
   const link = String(url || '').trim();
   const plataforma = detectarPlataformaSocial(link) || 'rede';
 
+  let meta = {};
+  let metaWarning = null;
+  try {
+    meta = await importService.fetchLinkMetadata(link);
+  } catch (metaErr) {
+    metaWarning = importService.humanizeYtDlpError(metaErr);
+    console.warn('[conteudo-reel] metadata:', metaWarning);
+    meta = { titulo: null, thumbnail: null, extractor: null, autor: null, autorUrl: null, duracao: null };
+  }
+
+  const tituloBruto = meta.titulo || `Reel — ${plataforma}`;
+  const titulo = String(tituloBruto).replace(/\s+/g, ' ').trim().slice(0, 280);
+
+  // Reaproveita vídeo já importado deste link
   let video = await Videos.findByUrl(userId, link);
-  let created = false;
+  let createdVideo = false;
 
   if (!video) {
-    let meta = {};
-    let metaWarning = null;
-    try {
-      meta = await importService.fetchLinkMetadata(link);
-    } catch (metaErr) {
-      metaWarning = importService.humanizeYtDlpError(metaErr);
-      console.warn('[conteudo-reel] metadata:', metaWarning);
-      meta = { titulo: null, thumbnail: null, extractor: null, autor: null, autorUrl: null, duracao: null };
-    }
-
-    const tituloBruto = meta.titulo || `Reel — ${plataforma}`;
-    const titulo = String(tituloBruto).replace(/\s+/g, ' ').trim().slice(0, 480);
-
-    const [id] = await Videos.create({
+    const [vid] = await Videos.create({
       user_id: userId,
       origem: 'link',
       termo_busca: `reel:${plataforma}`.slice(0, 255),
-      titulo: titulo || `Reel — ${plataforma}`,
+      titulo: titulo.slice(0, 480) || `Reel — ${plataforma}`,
       url_original: link,
       thumbnail: meta.thumbnail || null,
       duracao: meta.duracao,
@@ -717,44 +813,107 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
         titulo_completo: String(tituloBruto).slice(0, 2000),
       },
     });
-    video = await Videos.findById(id);
-    created = true;
+    video = await Videos.findById(vid);
+    createdVideo = true;
   }
 
-  // Já baixado sem clip pronto → retoma pipeline
+  // Matter existente já vinculada a este link?
+  let matter = null;
+  const existingMatters = await AiMatters.findByUser(userId, 80);
+  matter = existingMatters.find(
+    (m) => m.tipo_publicacao === 'reel' && String(m.fonte_url || '') === link
+  );
+  if (!matter && video?.id) {
+    const clips = await VideoClips.findByVideo(video.id);
+    const clipIds = new Set(clips.map((c) => Number(c.id)));
+    matter = existingMatters.find((m) => m.video_clip_id && clipIds.has(Number(m.video_clip_id)));
+  }
+
+  if (!matter) {
+    const [matterId] = await AiMatters.create({
+      user_id: userId,
+      facebook_page_id: facebookPageId || null,
+      titulo,
+      materia:
+        '⏳ Processando Reel: baixando o vídeo, transcrevendo a fala, gerando a legenda e aplicando a capa (Minha marca) no início…',
+      hashtags: JSON.stringify([]),
+      fonte_titulo: titulo,
+      fonte_url: link,
+      fonte_resumo: String(tituloBruto).slice(0, 1500),
+      status: 'rascunho',
+      tipo_publicacao: 'reel',
+      imagem_url: meta.thumbnail || video.thumbnail || null,
+      video_path: null,
+      video_clip_id: null,
+      error_message: null,
+    });
+    matter = await AiMatters.findById(matterId);
+  }
+
+  // Já tem vídeo com capa pronto → só sincroniza e abre a matéria
   if (video.caminho_local && (video.status === 'baixado' || video.status === 'cortado')) {
     const clips = await VideoClips.findByVideo(video.id);
-    const pronto = clips.find((c) => c.status === 'pronto' && c.capa_status === 'pronta');
-    if (pronto) {
+    const pronto = clips.find((c) => c.status === 'pronto' && c.caminho_arquivo);
+    if (pronto && (pronto.capa_status === 'pronta' || pronto.legenda_sugerida)) {
+      await syncConteudoReelMatter({
+        matterId: matter.id,
+        clip: pronto,
+        video,
+        gerado: pronto.legenda_sugerida
+          ? { titulo: pronto.capa_titulo, materia: pronto.legenda_sugerida }
+          : null,
+      });
+      matter = await AiMatters.findById(matter.id);
       return {
         modo: 'reel',
         queued: false,
-        created: false,
+        created: createdVideo,
         video,
         clip: pronto,
-        redirect: '/fila',
-        aviso:
-          'Este Reel já está pronto na Fila — revise a legenda/capa e publique como Reels.',
+        matter,
+        redirect: `/materias-ia/${matter.id}`,
+        aviso: 'Reel pronto — revise a legenda e publique como Reels.',
       };
     }
   }
 
-  importService.queueLinkImportAsReel(video, { facebookPageId });
+  // Guarda matter_id no vídeo para o pós-processo sincronizar
+  const metaBase =
+    video.metadata && typeof video.metadata === 'object'
+      ? video.metadata
+      : {};
+  await Videos.update(video.id, {
+    metadata: {
+      ...metaBase,
+      pipeline: 'conteudo_reel',
+      matter_id: matter.id,
+      facebook_page_id: facebookPageId || metaBase.facebook_page_id || null,
+      plataforma,
+      titulo_completo: metaBase.titulo_completo || String(tituloBruto).slice(0, 2000),
+    },
+  });
+  video = await Videos.findById(video.id);
+
+  importService.queueLinkImportAsReel(video, {
+    facebookPageId,
+    matterId: matter.id,
+  });
 
   return {
     modo: 'reel',
     queued: true,
-    created,
+    created: createdVideo,
     video,
-    redirect: '/fila',
+    matter,
+    redirect: `/materias-ia/${matter.id}`,
     aviso:
-      'Reel enfileirado: baixando o vídeo → transcrevendo → gerando matéria → aplicando capa no início (Minha marca). Acompanhe em /fila e publique como Reels.',
+      'Reel enfileirado. A página da matéria atualiza sozinha quando o vídeo, a legenda e a capa ficarem prontos.',
   };
 }
 
 /**
  * Usuário cola um link → apura a notícia OU post FB/IG → reescreve com furo (sem plagiar).
- * Reels/vídeos FB/IG → pipeline de Fila (download + fala + matéria + capa).
+ * Reels/vídeos FB/IG → AiMatter em /materias-ia (vídeo + legenda + capa).
  */
 async function gerarDeLink({
   userId,
@@ -851,6 +1010,7 @@ module.exports = {
   gerarPreviewDeTopico,
   gerarCompleto,
   gerarDeLink,
+  syncConteudoReelMatter,
   salvarMateria,
   publicarMateria,
   gerarEPublicarLote,

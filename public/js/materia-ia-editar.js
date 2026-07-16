@@ -566,9 +566,42 @@
     }
   });
 
-  // Usa cache da sessão se existir; só chama a API na primeira vez
-  if (cfg.canEdit) {
+  // Carrega miniaturas automaticamente ao abrir a edição (só foto)
+  if (cfg.canEdit && !cfg.isReel) {
     carregarSugestoesImagem({ silent: true, force: false });
+  }
+
+  // Reel em processamento: atualiza a página quando vídeo/legenda ficarem prontos
+  if (cfg.isReel && cfg.reelProcessing) {
+    setStatus('Processando Reel (download → fala → legenda → capa)…');
+    let tries = 0;
+    const poll = async () => {
+      tries += 1;
+      if (tries > 90) {
+        setStatus('Ainda processando. Atualize a página em instantes.', true);
+        return;
+      }
+      try {
+        const res = await fetch('/api/materias-ia/matters/' + cfg.id);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Falha ao consultar matéria');
+        const m = data.matter;
+        const ready =
+          m?.video_path && m?.materia && !String(m.materia).startsWith('⏳');
+        if (ready || (m?.video_path && tries > 3)) {
+          window.location.reload();
+          return;
+        }
+        if (m?.error_message && m?.status === 'erro' && !m.video_path) {
+          setStatus(m.error_message, true);
+          return;
+        }
+      } catch (err) {
+        console.warn(err);
+      }
+      setTimeout(poll, 4000);
+    };
+    setTimeout(poll, 3000);
   }
 
   document.getElementById('btn-buscar-imagem-fonte')?.addEventListener('click', async () => {

@@ -10,6 +10,7 @@ router.post('/gerar', controller.gerar);
 router.post('/gerar-preview', controller.gerarPreview);
 router.post('/gerar-lote', controller.gerarLote);
 router.get('/matters', controller.listarMaterias);
+router.get('/matters/:id', controller.obterMateria);
 router.put('/matters/:id', controller.atualizarMateria);
 router.patch('/matters/:id', controller.atualizarMateria);
 router.delete('/matters/:id', controller.removerMateria);

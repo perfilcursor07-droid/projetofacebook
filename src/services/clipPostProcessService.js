@@ -163,6 +163,24 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
         } catch (capaErr) {
           console.error(`[capa] auto clip ${clip.id}:`, capaErr.message || capaErr);
         }
+        try {
+          const freshClip = await VideoClips.findById(clip.id);
+          const meta =
+            video?.metadata && typeof video.metadata === 'object'
+              ? video.metadata
+              : {};
+          if (meta.pipeline === 'conteudo_reel' && meta.matter_id) {
+            const { syncConteudoReelMatter } = require('./materiaIaService');
+            await syncConteudoReelMatter({
+              matterId: meta.matter_id,
+              clip: freshClip,
+              video,
+              gerado: null,
+            });
+          }
+        } catch (syncErr) {
+          console.warn(`[conteudo-reel] sync after materia erro:`, syncErr.message);
+        }
         return;
       }
 
@@ -191,6 +209,32 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
           capa_status: 'erro',
           erro_mensagem: `Capa falhou: ${String(capaErr.message || capaErr).slice(0, 400)}`,
         });
+      }
+
+      // Reel via /conteudo → atualiza a matéria em /materias-ia
+      try {
+        const freshClip = await VideoClips.findById(clip.id);
+        const meta =
+          video?.metadata && typeof video.metadata === 'object'
+            ? video.metadata
+            : (() => {
+                try {
+                  return JSON.parse(video?.metadata || '{}');
+                } catch {
+                  return {};
+                }
+              })();
+        if (meta.pipeline === 'conteudo_reel' && meta.matter_id) {
+          const { syncConteudoReelMatter } = require('./materiaIaService');
+          await syncConteudoReelMatter({
+            matterId: meta.matter_id,
+            clip: freshClip,
+            video,
+            gerado,
+          });
+        }
+      } catch (syncErr) {
+        console.warn(`[conteudo-reel] sync matter clip ${clip.id}:`, syncErr.message);
       }
     } catch (err) {
       await VideoClips.update(clip.id, {

@@ -303,13 +303,16 @@
       if (!res.ok) throw new Error(data.error || 'Falha ao processar o link');
 
       if (data.modo === 'reel') {
-        st.textContent = data.aviso || 'Reel na Fila — acompanhe o progresso.';
+        const matterId = data.matter?.id;
+        st.textContent = data.aviso || 'Reel em processamento…';
         if (generatingText) {
-          generatingText.textContent = 'Reel enfileirado! Abrindo a Fila…';
+          generatingText.textContent = matterId
+            ? 'Abrindo a matéria do Reel…'
+            : 'Reel enfileirado…';
         }
         setTimeout(() => {
-          window.location.href = data.redirect || '/fila';
-        }, 600);
+          window.location.href = data.redirect || (matterId ? '/materias-ia/' + matterId : '/minhas-materias');
+        }, 500);
         return;
       }
 

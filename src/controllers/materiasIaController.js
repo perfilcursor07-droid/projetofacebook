@@ -145,15 +145,16 @@ async function reescreverLink(req, res, next) {
       status,
     });
 
-    // Reel: pipeline assíncrono na Fila (sem AiMatter)
+    // Reel: AiMatter + processamento em background → /materias-ia/:id
     if (result.modo === 'reel') {
       return res.status(result.queued ? 202 : 200).json({
         ok: true,
         modo: 'reel',
         queued: result.queued,
+        matter: result.matter,
         video: result.video,
         clip: result.clip || null,
-        redirect: result.redirect || '/fila',
+        redirect: result.redirect || (result.matter?.id ? `/materias-ia/${result.matter.id}` : '/minhas-materias'),
         aviso: result.aviso,
       });
     }
@@ -271,6 +272,19 @@ async function listarMaterias(req, res, next) {
   }
 }
 
+async function obterMateria(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    res.json({ ok: true, matter });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function removerMateria(req, res, next) {
   try {
     const matterId = Number(req.params.id);
@@ -321,7 +335,9 @@ async function atualizarMateria(req, res, next) {
     if (body.materia != null) patch.materia = String(body.materia);
     if (body.hashtags != null) patch.hashtags = JSON.stringify(parseHashtags(body.hashtags));
     if (body.tipoPublicacao != null || body.tipo_publicacao != null) {
-      patch.tipo_publicacao = pickTipo(body);
+      const t = pickTipo(body);
+      patch.tipo_publicacao =
+        matter.tipo_publicacao === 'reel' ? 'reel' : t === 'auto' || t === 'reel' ? matter.tipo_publicacao : t;
     }
     if (body.facebookPageId != null || body.facebook_page_id != null) {
       patch.facebook_page_id = pickPageId(body);
@@ -742,6 +758,7 @@ module.exports = {
   gerarLote,
   publicar,
   listarMaterias,
+  obterMateria,
   removerMateria,
   atualizarMateria,
   sugerirTitulo,

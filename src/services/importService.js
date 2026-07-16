@@ -352,7 +352,7 @@ function queueLinkImport(video) {
  * Download de Reel FB/IG → cria um corte 9:16 → fala → matéria → capa (Minha marca).
  * Mesmo pipeline da Fila/YouTube.
  */
-function queueLinkImportAsReel(video, { facebookPageId = null } = {}) {
+function queueLinkImportAsReel(video, { facebookPageId = null, matterId = null } = {}) {
   const VideoClips = require('../models/VideoClips');
   const { probe, MAX_CLIP_SECONDS, MIN_CLIP_SECONDS } = require('./ffmpegService');
   const processingService = require('./processingService');
@@ -402,16 +402,33 @@ function queueLinkImportAsReel(video, { facebookPageId = null } = {}) {
           ...metaBase,
           pipeline: 'conteudo_reel',
           facebook_page_id: facebookPageId || metaBase.facebook_page_id || null,
+          matter_id: matterId || metaBase.matter_id || null,
         },
       });
 
       const fresh = await Videos.findById(video.id);
       const existing = await VideoClips.findByVideo(video.id);
       if (existing.some((c) => c.status === 'pronto' || c.status === 'processando')) {
-        console.log(`[import-reel] vídeo #${video.id} já tem corte — pulando`);
+        const ready = existing.find((c) => c.status === 'pronto' && c.caminho_arquivo);
+        if (ready && (matterId || metaBase.matter_id)) {
+          const { syncConteudoReelMatter } = require('./materiaIaService');
+          await syncConteudoReelMatter({
+            matterId: matterId || metaBase.matter_id,
+            clip: ready,
+            video: fresh,
+          });
+          if (ready.materia_status !== 'pronta' || ready.capa_status !== 'pronta') {
+            processingService.queueClipMateriaAndCover(ready, fresh, {
+              userId: fresh.user_id,
+              force: ready.materia_status !== 'pronta',
+            });
+          }
+        }
+        console.log(`[import-reel] vídeo #${video.id} já tem corte — sincronizando matter`);
         return;
       }
 
+      // Reel inteiro (até 90s) — um único arquivo, sem “cortes” na UI de matéria
       const fim = Math.max(
         MIN_CLIP_SECONDS,
         Math.min(Number(duracao) || MAX_CLIP_SECONDS, MAX_CLIP_SECONDS)
@@ -430,7 +447,7 @@ function queueLinkImportAsReel(video, { facebookPageId = null } = {}) {
       const clip = await VideoClips.findById(clipId);
       processingService.queueClipGeneration(clip, fresh);
       console.log(
-        `[import-reel] vídeo #${video.id} → clip #${clipId} (0–${fim}s) matéria+capa enfileirados`
+        `[import-reel] vídeo #${video.id} → clip #${clipId} (0–${fim}s) → matter #${matterId || metaBase.matter_id || '?'}`
       );
     } catch (err) {
       const msg = String(err.stderr || err.message || err).slice(0, 500);
@@ -438,6 +455,20 @@ function queueLinkImportAsReel(video, { facebookPageId = null } = {}) {
         status: 'erro',
         erro_mensagem: `Importação Reel falhou: ${msg}`,
       });
+      const mid =
+        matterId ||
+        (video.metadata && typeof video.metadata === 'object' ? video.metadata.matter_id : null);
+      if (mid) {
+        try {
+          const AiMatters = require('../models/AiMatters');
+          await AiMatters.update(mid, {
+            status: 'erro',
+            error_message: `Falha ao baixar o Reel: ${msg}`,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
       throw err;
     }
   });
