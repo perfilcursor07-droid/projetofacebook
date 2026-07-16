@@ -400,11 +400,11 @@
     window.__IMG_SUGESTOES__ = imgs;
 
     if (meta) {
-      meta.textContent =
-        (data.aviso ? data.aviso + ' · ' : '') +
-        (data.pessoa ? data.pessoa + ' · ' : '') +
-        (data.motivo || 'Clique numa miniatura para trocar a arte') +
-        (data.consultas?.length ? ' · ' + data.consultas.slice(0, 2).join(' / ') : '');
+      const parts = [];
+      if (data.aviso) parts.push(data.aviso);
+      if (data.pessoa) parts.push(data.pessoa);
+      parts.push('Clique numa miniatura para trocar a arte');
+      meta.textContent = parts.join(' · ');
     }
 
     if (!strip) return;
@@ -427,9 +427,11 @@
                 ? 'Serper'
                 : img.origem || '';
         return `<button type="button" data-suggest-idx="${i}" title="${String(img.titulo || '').replace(/"/g, '&quot;')}"
-          class="relative h-20 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-950 hover:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400">
-          <img src="${thumb}" alt="" class="h-full w-full object-cover" loading="lazy" />
-          <span class="absolute bottom-0 left-0 right-0 bg-black/70 px-0.5 py-0.5 text-center text-[9px] text-slate-200">${label}</span>
+          class="relative shrink-0 overflow-hidden rounded-md border border-slate-700 bg-slate-950 hover:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+          style="width:48px;height:64px;padding:0;flex:0 0 48px">
+          <img src="${thumb}" alt="" loading="lazy" decoding="async"
+            style="width:100%;height:100%;object-fit:cover;display:block" />
+          <span class="absolute bottom-0 left-0 right-0 bg-black/75 py-px text-center text-[8px] leading-tight text-slate-200">${label}</span>
         </button>`;
       })
       .join('');
