@@ -1,11 +1,11 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const sharp = require('sharp');
 const AiMatters = require('../models/AiMatters');
 const Users = require('../models/Users');
 const { env } = require('../config/env');
-const { createEditorialCard, removeEditorialCard } = require('./editorialCardService');
+const { createEditorialCard, removeEditorialCard, ART_WIDTH, ART_HEIGHT } = require('./editorialCardService');
+const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 
 function isRemoteUrl(value) {
   return /^https?:\/\//i.test(String(value || ''));
@@ -91,9 +91,22 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
   const { normalizeArtModel } = require('./editorialCardModels');
   const modelId = normalizeArtModel(user.marca_modelo_arte);
   const currentFile = resolveArtworkPath(matter.imagem_path);
+
+  let sizeOk = false;
+  if (currentFile) {
+    try {
+      const meta = await sharp(currentFile).metadata();
+      sizeOk = Number(meta.width) === ART_WIDTH && Number(meta.height) === ART_HEIGHT;
+    } catch {
+      sizeOk = false;
+    }
+  }
+
+  // Reusa só se título/modelo iguais E arte já estiver no tamanho do feed (4:5).
   if (
     !force &&
     currentFile &&
+    sizeOk &&
     finalTitle === String(matter.titulo || '').trim() &&
     matter.arte_modelo === modelId
   ) {

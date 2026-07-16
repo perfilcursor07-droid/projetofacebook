@@ -265,7 +265,8 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
           matterId: matter.id,
           sourceUrl,
           title,
-          force: Boolean(req.body.republicar) || title !== String(matter.titulo || '').trim(),
+          // Sempre regenera no republicar / para corrigir artes antigas 9:16
+          force: true,
         });
         imagemUrl = artwork.publicUrl;
       } else if (!matter.imagem_path && !matter.imagem_url) {

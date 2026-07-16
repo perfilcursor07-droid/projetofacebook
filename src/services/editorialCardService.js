@@ -10,7 +10,7 @@ const { env } = require('../config/env');
 const WIDTH = 1080;
 /**
  * Formato do feed do Facebook (4:5).
- * 9:16 (Reels) deixa faixas laterais no feed; 4:5 preenche a largura do post.
+ * Preenche a largura do post no celular; 9:16 deixa faixas laterais.
  */
 const HEIGHT = 1350;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -121,7 +121,9 @@ function renderTitleLines(lines, { x, y, lineHeight, anchor = 'middle' }) {
 function buildOverlay({ title, category, footer, brandName, primary, secondary, hasLogo, model }) {
   const { normalizeArtModel } = require('./editorialCardModels');
   const modelId = normalizeArtModel(model);
-  const maxChars = modelId === 'faixa_classica' ? 27 : modelId === 'minimalista' ? 25 : 24;
+  const maxChars = modelId === 'faixa_classica' || modelId === 'impacto_central' ? 27
+    : modelId === 'minimalista' || modelId === 'faixa_topo' ? 25
+    : 24;
   const lines = wrapTitle(title, maxChars, 5);
   const fontSize = lines.length <= 3 ? 62 : lines.length === 4 ? 54 : 48;
   const lineHeight = Math.round(fontSize * 1.08);
@@ -154,6 +156,34 @@ function buildOverlay({ title, category, footer, brandName, primary, secondary, 
       <text x="108" y="${y(850)}" text-anchor="start" class="category">${safeCategory}</text>
       ${renderTitleLines(lines, { x: 108, y: y(934), lineHeight, anchor: 'start' })}
       <text x="108" y="${y(1298)}" text-anchor="start" class="footer">${safeFooter}</text>`;
+  } else if (modelId === 'faixa_topo') {
+    layout = `
+      <rect x="58" y="${y(790)}" width="964" height="88" rx="14" fill="url(#accent)"/>
+      <text x="540" y="${y(848)}" text-anchor="middle" class="category category-dark">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: 540, y: y(940), lineHeight })}
+      <text x="540" y="${y(1310)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
+  } else if (modelId === 'moldura_editorial') {
+    layout = `
+      <rect x="36" y="36" width="${WIDTH - 72}" height="${HEIGHT - 72}" rx="18" fill="none" stroke="url(#accent)" stroke-width="18"/>
+      <rect x="58" y="${y(868)}" width="964" height="12" rx="6" fill="url(#accent)"/>
+      <text x="540" y="${y(840)}" text-anchor="middle" class="category">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: 540, y: y(940), lineHeight })}
+      <text x="540" y="${y(1290)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
+  } else if (modelId === 'impacto_central') {
+    layout = `
+      <rect x="220" y="${y(822)}" width="140" height="10" rx="5" fill="url(#accent)"/>
+      <rect x="720" y="${y(822)}" width="140" height="10" rx="5" fill="url(#accent)"/>
+      <text x="540" y="${y(834)}" text-anchor="middle" class="category">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: 540, y: y(920), lineHeight })}
+      <rect x="430" y="${y(1268)}" width="220" height="10" rx="5" fill="url(#accent)"/>
+      <text x="540" y="${y(1310)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
+  } else if (modelId === 'canto_solido') {
+    layout = `
+      <rect x="0" y="${y(760)}" width="420" height="110" fill="url(#accent)"/>
+      <text x="36" y="${y(830)}" text-anchor="start" class="category category-dark">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: 58, y: y(940), lineHeight, anchor: 'start' })}
+      <rect x="58" y="${y(1260)}" width="180" height="10" rx="5" fill="url(#accent)"/>
+      <text x="58" y="${y(1310)}" text-anchor="start" class="footer">${safeFooter}</text>`;
   } else {
     const accentY = y(882);
     const accentHeight = 14;
@@ -247,12 +277,12 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const composites = [{ input: overlay, left: 0, top: 0 }];
   if (logo) composites.push(logo);
 
-  // Remove faixas sólidas laterais da origem (pillarbox) quando existirem.
+  // Base full-bleed 4:5: fundo desfocado + foto em cover (sem faixas laterais no arquivo).
   let sourcePrepared = source;
   try {
     sourcePrepared = await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
       .rotate()
-      .trim({ threshold: 28 })
+      .trim({ threshold: 35 })
       .toBuffer();
   } catch {
     sourcePrepared = await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
@@ -260,11 +290,29 @@ async function createEditorialCard({ sourceUrl, title, user }) {
       .toBuffer();
   }
 
-  await sharp(sourcePrepared)
+  const background = await sharp(sourcePrepared)
+    .resize(WIDTH, HEIGHT, { fit: 'cover', position: 'centre' })
+    .blur(42)
+    .modulate({ brightness: 0.78 })
+    .toBuffer();
+
+  const foreground = await sharp(sourcePrepared)
     .resize(WIDTH, HEIGHT, { fit: 'cover', position: 'attention' })
-    .composite(composites)
-    .jpeg({ quality: 91, chromaSubsampling: '4:4:4' })
+    .toBuffer();
+
+  await sharp(background)
+    .composite([{ input: foreground, gravity: 'centre' }, ...composites])
+    .jpeg({ quality: 92, chromaSubsampling: '4:4:4', mozjpeg: true })
     .toFile(outputPath);
+
+  // Garante metadados exatos (alguns viewers usam isso)
+  const meta = await sharp(outputPath).metadata();
+  if (meta.width !== WIDTH || meta.height !== HEIGHT) {
+    await sharp(outputPath)
+      .resize(WIDTH, HEIGHT, { fit: 'fill' })
+      .jpeg({ quality: 92, chromaSubsampling: '4:4:4', mozjpeg: true })
+      .toFile(outputPath);
+  }
 
   return {
     relativePath,
@@ -289,4 +337,11 @@ function removeEditorialCard(relativePath) {
   }
 }
 
-module.exports = { createEditorialCard, removeEditorialCard, wrapTitle, assertPublicImageUrl };
+module.exports = {
+  createEditorialCard,
+  removeEditorialCard,
+  wrapTitle,
+  assertPublicImageUrl,
+  ART_WIDTH: WIDTH,
+  ART_HEIGHT: HEIGHT,
+};
