@@ -385,11 +385,55 @@
         imgEl.src = j.imagemUrl + (j.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
         imgWrap?.classList.remove('hidden');
       }
+      // Marca a miniatura escolhida como "Atual" sem buscar de novo na API
+      const list = window.__IMG_SUGESTOES__ || [];
+      const idx = Number(el?.dataset?.suggestIdx);
+      list.forEach((img, i) => {
+        if (img.origem === 'fonte') img.origem = img._origemAntes || 'google';
+        if (i === idx) {
+          img._origemAntes = img.origem;
+          img.origem = 'fonte';
+        }
+      });
+      if (window.__IMG_SUGESTOES_CACHE__) {
+        window.__IMG_SUGESTOES_CACHE__.imagens = list;
+        saveSuggestCache(window.__IMG_SUGESTOES_CACHE__);
+      }
+      renderSuggestStrip(window.__IMG_SUGESTOES_CACHE__ || { imagens: list });
       setStatus('Imagem sugerida aplicada na arte ✓');
-      setTimeout(() => window.location.reload(), 500);
     } catch (err) {
       setStatus(err.message, true);
       if (el) el.disabled = false;
+    }
+  }
+
+  const SUGGEST_CACHE_KEY = 'matter-img-suggest:' + cfg.id;
+
+  function saveSuggestCache(data) {
+    try {
+      sessionStorage.setItem(
+        SUGGEST_CACHE_KEY,
+        JSON.stringify({
+          aviso: data.aviso || null,
+          pessoa: data.pessoa || null,
+          motivo: data.motivo || null,
+          imagens: data.imagens || [],
+        })
+      );
+    } catch {
+      /* ignore quota */
+    }
+  }
+
+  function loadSuggestCache() {
+    try {
+      const raw = sessionStorage.getItem(SUGGEST_CACHE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data?.imagens?.length) return null;
+      return data;
+    } catch {
+      return null;
     }
   }
 
@@ -398,6 +442,7 @@
     const meta = document.getElementById('matter-img-suggest-meta');
     const imgs = data.imagens || [];
     window.__IMG_SUGESTOES__ = imgs;
+    window.__IMG_SUGESTOES_CACHE__ = data;
 
     if (meta) {
       const parts = [];
@@ -416,8 +461,9 @@
     strip.innerHTML = imgs
       .map((img, i) => {
         const thumb = String(img.thumbnail || img.url || '').replace(/"/g, '&quot;');
+        const isAtual = img.origem === 'fonte';
         const label =
-          img.origem === 'fonte'
+          isAtual
             ? 'Atual'
             : img.origem === 'serpapi'
               ? 'Google'
@@ -426,8 +472,9 @@
               : img.origem === 'google'
                 ? 'Serper'
                 : img.origem || '';
+        const border = isAtual ? 'border-emerald-400' : 'border-slate-700 hover:border-violet-400';
         return `<button type="button" data-suggest-idx="${i}" title="${String(img.titulo || '').replace(/"/g, '&quot;')}"
-          class="relative shrink-0 overflow-hidden rounded-md border border-slate-700 bg-slate-950 hover:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+          class="relative shrink-0 overflow-hidden rounded-md border bg-slate-950 focus:outline-none focus:ring-1 focus:ring-violet-400 ${border}"
           style="width:48px;height:64px;padding:0;flex:0 0 48px">
           <img src="${thumb}" alt="" loading="lazy" decoding="async"
             style="width:100%;height:100%;object-fit:cover;display:block" />
@@ -444,10 +491,20 @@
     });
   }
 
-  async function carregarSugestoesImagem({ silent } = {}) {
+  async function carregarSugestoesImagem({ silent, force } = {}) {
     const meta = document.getElementById('matter-img-suggest-meta');
     const strip = document.getElementById('matter-img-suggest-strip');
     if (!cfg.canEdit || !strip) return;
+
+    if (!force) {
+      const cached = loadSuggestCache();
+      if (cached) {
+        renderSuggestStrip(cached);
+        if (!silent) setStatus('Sugestões em cache — clique em “Buscar novas” para atualizar');
+        return;
+      }
+    }
+
     if (!silent) setStatus('Buscando fotos relacionadas à matéria…');
     if (meta) meta.textContent = 'Buscando fotos relacionadas…';
     try {
@@ -458,6 +515,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao sugerir imagens');
+      saveSuggestCache(data);
       renderSuggestStrip(data);
       if (!silent) {
         setStatus((data.imagens || []).length + ' sugestões — clique numa miniatura para trocar');
@@ -479,7 +537,7 @@
       btn.textContent = 'Buscando…';
     }
     try {
-      await carregarSugestoesImagem({ silent: false });
+      await carregarSugestoesImagem({ silent: false, force: true });
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -488,9 +546,9 @@
     }
   });
 
-  // Carrega miniaturas automaticamente ao abrir a edição
+  // Usa cache da sessão se existir; só chama a API na primeira vez
   if (cfg.canEdit) {
-    carregarSugestoesImagem({ silent: true });
+    carregarSugestoesImagem({ silent: true, force: false });
   }
 
   document.getElementById('btn-buscar-imagem-fonte')?.addEventListener('click', async () => {
