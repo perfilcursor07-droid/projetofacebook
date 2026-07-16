@@ -3,10 +3,10 @@
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
     <%- include('partials/content-nav', { contentTab: 'production' }) %>
 
-    <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold text-white">Fila</h1>
-        <p class="mt-1 text-xs text-slate-500">Cortes por IA ou manuais, matérias, imagens e publicações em um só lugar.</p>
+        <h1 class="text-2xl font-semibold text-white">Produção</h1>
+        <p class="mt-1 text-sm text-slate-400">Corte, revise a matéria e publique no Facebook.</p>
       </div>
       <div class="flex items-center gap-3">
         <span id="last-updated" class="text-xs text-slate-500"></span>
@@ -17,19 +17,38 @@
       </div>
     </div>
 
+    <ol class="mt-5 grid gap-2 sm:grid-cols-4">
+      <li class="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2.5">
+        <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Passo 1</p>
+        <p class="mt-0.5 text-xs font-semibold text-white">Baixe o vídeo</p>
+      </li>
+      <li class="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2.5">
+        <p class="text-[10px] font-bold uppercase tracking-wider text-violet-400">Passo 2</p>
+        <p class="mt-0.5 text-xs font-semibold text-white">Gere os cortes</p>
+      </li>
+      <li class="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2.5">
+        <p class="text-[10px] font-bold uppercase tracking-wider text-sky-400">Passo 3</p>
+        <p class="mt-0.5 text-xs font-semibold text-white">Revise a matéria</p>
+      </li>
+      <li class="rounded-xl border border-[#1877F2]/30 bg-[#1877F2]/10 px-3 py-2.5">
+        <p class="text-[10px] font-bold uppercase tracking-wider text-[#1877F2]">Passo 4</p>
+        <p class="mt-0.5 text-xs font-semibold text-white">Publique no Facebook</p>
+      </li>
+    </ol>
+
     <div id="global-msg" class="mt-3 hidden rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-sm text-rose-200"></div>
 
     <details class="group mt-5 rounded-2xl border border-slate-800 bg-slate-900/40">
       <summary class="flex cursor-pointer list-none items-center justify-between px-5 py-3 text-sm font-medium text-slate-300 hover:text-white">
         <span class="inline-flex items-center gap-2">
           <svg class="h-4 w-4 text-[#1877F2]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12.5h2.54v-2.2c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.87h2.78l-.44 2.39h-2.34v6.99A10 10 0 0 0 22 12Z"/></svg>
-          Publicar texto rápido
+          Só texto (sem vídeo)
         </span>
-        <span class="text-xs text-slate-500 group-open:hidden">clique para expandir</span>
+        <span class="text-xs text-slate-500 group-open:hidden">opcional</span>
       </summary>
       <div class="space-y-3 border-t border-slate-800 p-5">
         <form id="text-post-form" class="space-y-3">
-          <textarea name="texto" rows="3" required maxlength="63206" placeholder="Texto do post…"
+          <textarea name="texto" rows="3" required maxlength="63206" placeholder="Escreva o post…"
             class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
           <div class="flex flex-wrap items-center gap-2">
             <span id="text-post-pages"></span>
@@ -37,23 +56,22 @@
               class="w-56 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
             <button type="submit"
               class="rounded-lg bg-[#1877F2] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#166FE5] disabled:opacity-50">
-              Publicar no Facebook
+              Publicar texto
             </button>
           </div>
         </form>
-        <p class="text-[11px] leading-relaxed text-slate-500">Reels 9:16 · 3–90s · ≥10s para monetização · conteúdo original · máx. 30 Reels/página/24h</p>
       </div>
     </details>
 
     <div class="mt-6 inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Seções da fila">
       <button type="button" data-tab="videos" class="tab-btn rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">
-        Vídeos <span id="count-videos" class="ml-1 font-normal opacity-70"></span>
+        Vídeos / Reels <span id="count-videos" class="ml-1 font-normal opacity-70"></span>
       </button>
       <button type="button" data-tab="imagens" class="tab-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
-        Imagens <span id="count-imagens" class="ml-1 font-normal opacity-70"></span>
+        Fotos <span id="count-imagens" class="ml-1 font-normal opacity-70"></span>
       </button>
       <button type="button" data-tab="publicacoes" class="tab-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
-        Publicações <span id="count-publicacoes" class="ml-1 font-normal opacity-70"></span>
+        Já publicados <span id="count-publicacoes" class="ml-1 font-normal opacity-70"></span>
       </button>
     </div>
 
@@ -118,21 +136,34 @@
         .replace(/"/g, '&quot;');
     }
 
+    const STATUS_LABEL = {
+      publicado: 'Publicado',
+      pronto: 'Pronto',
+      pronta: 'Pronta',
+      pendente: 'Aguardando',
+      processando: 'Processando…',
+      gerando: 'Gerando…',
+      baixado: 'Baixado',
+      cortado: 'Com cortes',
+      erro: 'Erro',
+      sugerido: 'Sugerido',
+    };
+
     function badge(status, label) {
       const tone = STATUS_TONE[status] || 'bg-slate-700/40 text-slate-300';
-      return `<span class="rounded-full px-2.5 py-0.5 text-[11px] font-medium ${tone}">${escapeHtml(label || status)}</span>`;
+      return `<span class="rounded-full px-2.5 py-0.5 text-[11px] font-medium ${tone}">${escapeHtml(label || STATUS_LABEL[status] || status)}</span>`;
     }
 
     function materiaStatusBadge(status) {
       if (!status || status === 'pendente') return '';
-      const map = { gerando: ['gerando', 'gerando…'], pronta: ['pronta', 'matéria ok'], erro: ['erro', 'erro matéria'] };
+      const map = { gerando: ['gerando', 'Gerando matéria…'], pronta: ['pronta', 'Matéria pronta'], erro: ['erro', 'Erro na matéria'] };
       const [key, label] = map[status] || ['sugerido', status];
       return badge(key, label);
     }
 
     function capaStatusBadge(status) {
       if (!status || status === 'pendente') return '';
-      const map = { gerando: ['gerando', 'capa…'], pronta: ['pronta', 'capa ok'], erro: ['erro', 'erro capa'] };
+      const map = { gerando: ['gerando', 'Gerando capa…'], pronta: ['pronta', 'Capa ok'], erro: ['erro', 'Erro na capa'] };
       const [key, label] = map[status] || ['sugerido', status];
       return badge(key, label);
     }
@@ -196,10 +227,10 @@
 
     const VIDEO_STATUSES = [
       { key: 'todos', label: 'Todos' },
-      { key: 'pendente', label: 'Pendente' },
-      { key: 'baixado', label: 'Baixado' },
-      { key: 'cortado', label: 'Cortado' },
-      { key: 'publicado', label: 'Publicado' },
+      { key: 'pendente', label: 'Baixar' },
+      { key: 'baixado', label: 'Cortar' },
+      { key: 'cortado', label: 'Publicar' },
+      { key: 'publicado', label: 'Publicados' },
       { key: 'erro', label: 'Erro' },
     ];
     const IMAGEM_STATUSES = [
@@ -297,33 +328,38 @@
       const editorLayout = Boolean(opts.editorLayout);
 
       if (isClip && editorLayout) {
-        // Layout estilo /materias-ia/:id — matéria no painel esquerdo; publicação no aside
+        const ready = Boolean(String(defaultLegenda || '').trim());
         const publishAside = fbPages.length
           ? `<div class="space-y-3">
               <label class="block text-sm">
-                <span class="text-slate-400">Página do Facebook</span>
+                <span class="font-medium text-slate-300">1. Escolha a Página</span>
                 <div class="mt-1.5">${pageSelectHtml(undefined, true)}</div>
               </label>
               <label class="block text-sm">
-                <span class="text-slate-400">Tipo</span>
+                <span class="font-medium text-slate-300">2. Formato</span>
                 <select name="modo" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
-                  <option value="reel">Reel (vídeo)</option>
-                  <option value="video">Vídeo</option>
+                  <option value="reel">Reel (recomendado)</option>
+                  <option value="video">Vídeo no feed</option>
                 </select>
               </label>
-              <button type="submit" class="mt-1 w-full rounded-lg bg-[#1877F2] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166FE5] disabled:opacity-50">
-                Publicar
+              <button type="submit" class="mt-2 w-full rounded-xl bg-[#1877F2] px-4 py-3 text-sm font-bold text-white shadow-lg shadow-[#1877F2]/20 transition hover:bg-[#166FE5] disabled:opacity-50">
+                3. Publicar no Facebook
               </button>
+              ${ready
+                ? '<p class="text-center text-[11px] text-emerald-400">Matéria pronta — é só publicar.</p>'
+                : '<p class="text-center text-[11px] text-amber-300">Gere ou espere a matéria antes de publicar.</p>'}
             </div>`
-          : `<a href="/paginas" class="inline-flex text-xs text-sky-400 hover:text-sky-300">Conecte uma página para publicar →</a>`;
+          : `<div class="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-center">
+              <p class="text-xs text-amber-100">Nenhuma Página conectada.</p>
+              <a href="/paginas" class="mt-2 inline-flex text-xs font-semibold text-sky-300 hover:text-sky-200">Conectar Facebook →</a>
+            </div>`;
 
         return {
           materiaField: `
             <label class="block text-sm">
-              <span class="text-slate-400">Matéria / legenda (Facebook)</span>
-              <textarea name="legenda" rows="12" placeholder="A matéria aparece aqui após gerar…"
-                class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none">${escapeHtml(defaultLegenda)}</textarea>
-              <p class="mt-1.5 text-[11px] leading-snug text-slate-500">Separe parágrafos com linha em branco. Ideal: ~520–900 caracteres no estilo News Gospel.</p>
+              <span class="font-medium text-slate-300">Texto que vai no Facebook</span>
+              <textarea name="legenda" rows="11" placeholder="A matéria aparece aqui sozinha depois do corte. Você pode editar antes de publicar."
+                class="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none">${escapeHtml(defaultLegenda)}</textarea>
             </label>`,
           publishAside,
         };
@@ -408,7 +444,6 @@
       const canRetry = clip.status === 'processando' || clip.status === 'erro';
       const extracting = clip.materia_status === 'gerando';
       const fala = cleanTranscript(clip.transcricao);
-      // Não mostrar transcrição no campo Matéria (só texto editorial)
       let materia = String(clip.legenda_sugerida || '').trim();
       if (
         !materia ||
@@ -422,17 +457,34 @@
       const dur = Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : null;
       const ratio = clip.aspect_ratio || '9:16';
       const pubParts = canAi ? publishFormHtml('clip', clip.id, materia, { editorLayout: true }) : null;
+      const materiaOk = Boolean(materia) && clip.materia_status === 'pronta';
+      const capaOk = clip.capa_status === 'pronta';
+      const readyToPublish = canAi && materiaOk && clip.status !== 'erro';
+      const isPublished = clip.status === 'publicado';
+
+      const checklist = canAi ? `
+        <div class="flex flex-wrap gap-2">
+          <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${canAi ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-500'}">
+            <span>${canAi ? '✓' : '○'}</span> Vídeo
+          </span>
+          <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${materiaOk ? 'bg-emerald-500/15 text-emerald-300' : extracting ? 'bg-amber-500/15 text-amber-200' : 'bg-slate-800 text-slate-500'}">
+            <span>${materiaOk ? '✓' : extracting ? '…' : '○'}</span> Matéria
+          </span>
+          <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${capaOk ? 'bg-emerald-500/15 text-emerald-300' : clip.capa_status === 'gerando' ? 'bg-amber-500/15 text-amber-200' : 'bg-slate-800 text-slate-500'}">
+            <span>${capaOk ? '✓' : clip.capa_status === 'gerando' ? '…' : '○'}</span> Capa
+          </span>
+        </div>` : '';
 
       return `
-        <article class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/40 shadow-sm shadow-black/10" data-clip-card="${clip.id}">
+        <article class="overflow-hidden rounded-2xl border ${readyToPublish ? 'border-emerald-500/35' : 'border-slate-800'} bg-slate-900/40 shadow-sm shadow-black/10" data-clip-card="${clip.id}">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 sm:px-5">
-            <div class="flex min-w-0 flex-wrap items-center gap-2">
-              <span class="inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-lg bg-violet-500/15 px-2 text-xs font-bold text-violet-300">#${index + 1}</span>
-              <h3 class="text-sm font-semibold text-white">Editar corte</h3>
-              ${badge(clip.status)}
-              ${materiaStatusBadge(clip.materia_status)}
-              ${capaStatusBadge(clip.capa_status)}
-              <span class="text-[11px] text-slate-500">${inicio}–${fim}s · ${dur != null ? dur + 's' : '—'} · ${escapeHtml(ratio)}</span>
+            <div class="min-w-0 space-y-2">
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <span class="inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-lg bg-violet-500/15 px-2 text-xs font-bold text-violet-300">#${index + 1}</span>
+                <h3 class="text-sm font-semibold text-white">${isPublished ? 'Publicado' : readyToPublish ? 'Pronto para publicar' : 'Preparando corte'}</h3>
+                <span class="text-[11px] text-slate-500">${dur != null ? dur + 's' : '—'} · ${escapeHtml(ratio)}</span>
+              </div>
+              ${checklist}
             </div>
             <button type="button"
               class="action-btn shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-rose-400/80 transition hover:bg-rose-500/10 hover:text-rose-300"
@@ -440,6 +492,11 @@
               Excluir
             </button>
           </div>
+
+          ${readyToPublish && !isPublished ? `
+          <div class="border-b border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-xs font-medium text-emerald-200 sm:px-5">
+            Revise o texto à esquerda e clique em <strong>Publicar no Facebook</strong> à direita.
+          </div>` : ''}
 
           ${clip.erro_mensagem ? `
           <div class="border-b border-rose-500/20 bg-rose-500/10 px-4 py-2.5 text-xs leading-relaxed text-rose-200 sm:px-5">
@@ -451,83 +508,81 @@
             <button type="button"
               class="ai-btn rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-500/20"
               data-action="retry-clip" data-id="${clip.id}">
-              Retentar corte
+              Tentar gerar o corte de novo
             </button>
           </div>` : ''}
 
           ${canAi ? `
           <form class="publish-form" data-kind="clip" data-id="${clip.id}">
             <div class="grid gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-              <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
-                <p class="text-xs text-slate-500">Corte #${index + 1} · revise o texto e publique quando quiser.</p>
-
-                <label class="mt-4 block text-sm">
-                  <span class="text-slate-400">Título da capa (Minha marca)</span>
+              <section class="space-y-4">
+                <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-xs font-bold uppercase tracking-wider text-sky-400">Passo 3 · Matéria</p>
+                    <button type="button"
+                      class="ai-btn rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-400"
+                      data-action="materia-clip" data-id="${clip.id}">${materia ? 'Refazer matéria' : 'Gerar matéria'}</button>
+                  </div>
                   <input type="text"
-                    class="clip-capa mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base font-semibold text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
-                    data-clip-capa="${clip.id}" placeholder="Título automático (pode editar)"
-                    value="${escapeHtml(clip.capa_titulo || '')}" maxlength="120"
-                    ${clip.capa_status === 'gerando' ? 'disabled' : ''} />
-                </label>
-                <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <button type="button"
-                    class="ai-btn rounded-lg border border-sky-500/40 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/25 disabled:opacity-50"
-                    data-action="capa-clip" data-id="${clip.id}"
-                    ${clip.capa_status === 'gerando' ? 'disabled' : ''}>
-                    ${clip.capa_status === 'pronta' ? 'Refazer capa' : clip.capa_status === 'gerando' ? 'Gerando capa…' : 'Gerar capa'}
-                  </button>
-                  ${clip.capa_status === 'pronta'
-                    ? `<button type="button" class="ai-btn rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-rose-500/50 hover:text-rose-300" data-action="remover-capa" data-id="${clip.id}">Remover capa</button>`
-                    : ''}
-                  ${clip.capa_status === 'pronta'
-                    ? '<span class="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">capa no início</span>'
-                    : clip.capa_status === 'gerando'
-                      ? '<span class="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-200">gerando…</span>'
-                      : ''}
-                </div>
-                ${clip.capa_status === 'gerando' ? `
-                <div class="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
-                  <span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>
-                  Montando capa e costurando no vídeo…
-                </div>` : ''}
-                <p class="mt-1.5 text-[11px] leading-snug text-slate-500">A capa (2,5s) usa um frame do vídeo + modelo Minha marca e entra antes do vídeo começar.</p>
-
-                <div class="mt-4 flex flex-wrap items-end gap-2">
-                  <label class="min-w-[160px] flex-1 text-sm">
-                    <span class="text-slate-400">Tema da matéria (opcional)</span>
-                    <input type="text"
-                      class="clip-tema mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
-                      data-clip-tema="${clip.id}" placeholder="Ex.: testemunho, alerta espiritual" />
-                  </label>
-                  <button type="button"
-                    class="ai-btn rounded-lg bg-violet-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-violet-400"
-                    data-action="materia-clip" data-id="${clip.id}">${materia ? 'Refazer matéria' : 'Gerar matéria'}</button>
-                  ${!fala
-                    ? `<button type="button" class="ai-btn rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white" data-action="transcribe-clip" data-id="${clip.id}">Extrair fala</button>`
-                    : `<span class="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-center text-[11px] text-emerald-300">Fala ok</span>`}
+                    class="clip-tema mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
+                    data-clip-tema="${clip.id}" placeholder="Tema opcional (ex.: testemunho, alerta espiritual)" />
+                  ${extracting ? `
+                  <div class="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+                    <span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>
+                    Gerando matéria…
+                  </div>` : ''}
+                  <div class="mt-3">${pubParts.materiaField}</div>
                 </div>
 
-                ${extracting && !fala ? `
-                <div class="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
-                  <span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>
-                  Extraindo fala…
-                </div>` : ''}
-
-                ${fala ? `
-                <details class="mt-3 rounded-lg border border-slate-800 bg-slate-950/40">
-                  <summary class="cursor-pointer px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200">Ver fala / transcrição</summary>
-                  <p class="border-t border-slate-800 px-3 py-2 text-xs leading-relaxed text-slate-400">${escapeHtml(fala)}</p>
-                </details>` : ''}
-
-                <div class="mt-4">
-                  ${pubParts.materiaField}
-                </div>
+                <details class="rounded-2xl border border-slate-800 bg-slate-900/40">
+                  <summary class="cursor-pointer px-4 py-3 text-xs font-medium text-slate-400 hover:text-slate-200">
+                    Opções extras · capa, título e fala
+                  </summary>
+                  <div class="space-y-3 border-t border-slate-800 px-4 py-4">
+                    <label class="block text-sm">
+                      <span class="text-slate-400">Título da capa (aparece 2,5s no início)</span>
+                      <input type="text"
+                        class="clip-capa mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
+                        data-clip-capa="${clip.id}" placeholder="Título automático"
+                        value="${escapeHtml(clip.capa_titulo || '')}" maxlength="120"
+                        ${clip.capa_status === 'gerando' ? 'disabled' : ''} />
+                    </label>
+                    <div class="flex flex-wrap gap-2">
+                      <button type="button"
+                        class="ai-btn rounded-lg border border-sky-500/40 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/25 disabled:opacity-50"
+                        data-action="capa-clip" data-id="${clip.id}"
+                        ${clip.capa_status === 'gerando' ? 'disabled' : ''}>
+                        ${clip.capa_status === 'pronta' ? 'Refazer capa' : clip.capa_status === 'gerando' ? 'Gerando…' : 'Gerar capa'}
+                      </button>
+                      ${clip.capa_status === 'pronta'
+                        ? `<button type="button" class="ai-btn rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300" data-action="remover-capa" data-id="${clip.id}">Remover capa</button>`
+                        : ''}
+                      ${!fala
+                        ? `<button type="button" class="ai-btn rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300" data-action="transcribe-clip" data-id="${clip.id}">Extrair fala</button>`
+                        : ''}
+                    </div>
+                    ${clip.capa_status === 'gerando' ? `
+                    <div class="flex items-center gap-2 text-xs text-amber-200">
+                      <span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>
+                      Montando capa…
+                    </div>` : ''}
+                    ${fala ? `
+                    <details class="rounded-lg border border-slate-800 bg-slate-950/40">
+                      <summary class="cursor-pointer px-3 py-2 text-xs text-slate-400">Ver transcrição</summary>
+                      <p class="border-t border-slate-800 px-3 py-2 text-xs leading-relaxed text-slate-400">${escapeHtml(fala)}</p>
+                    </details>` : ''}
+                    <p class="text-[11px] text-slate-500">Intervalo ${inicio}–${fim}s · a capa e a matéria costumam ser geradas sozinhas após o corte.</p>
+                  </div>
+                </details>
               </section>
 
               <aside class="space-y-4">
-                ${clipPreviewHtml(clip)}
-                <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Publicação</p>
+                <div>
+                  <p class="mb-2 text-xs font-bold uppercase tracking-wider text-violet-400">Prévia do Reel</p>
+                  ${clipPreviewHtml(clip)}
+                </div>
+                <div class="rounded-2xl border border-[#1877F2]/30 bg-slate-900/60 p-4">
+                  <p class="text-xs font-bold uppercase tracking-wider text-[#1877F2]">Passo 4 · Publicar</p>
                   <div class="mt-3">
                     ${pubParts.publishAside}
                   </div>
@@ -543,7 +598,12 @@
 
     function videoActionsHtml(v) {
       if (v.status === 'pendente' || v.status === 'erro') {
-        return `<button type="button" class="action-btn inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-sm shadow-emerald-950/30 transition hover:bg-emerald-400" data-action="download-video" data-id="${v.id}">Baixar vídeo</button>`;
+        return `
+          <div class="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center">
+            <p class="text-sm font-semibold text-white">Passo 1 · Baixar o vídeo</p>
+            <p class="mt-1 text-xs text-slate-400">Depois você gera os cortes e publica.</p>
+            <button type="button" class="action-btn mt-3 inline-flex items-center justify-center rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-emerald-400" data-action="download-video" data-id="${v.id}">Baixar vídeo</button>
+          </div>`;
       }
       if (v.status === 'baixado' || v.status === 'cortado') {
         const max = Number(v.duracao) > 0 ? Number(v.duracao) : 600;
@@ -551,63 +611,54 @@
         const defaultFim = Math.min(max, 90);
         const estimativa = Math.floor(max / 90) + (max % 90 >= 3 ? 1 : 0);
         return `
-          <form class="clip-form space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4" data-id="${v.id}" data-max="${max}">
-            <div class="grid gap-2 sm:grid-cols-3">
-              <div class="rounded-xl border border-fuchsia-500/25 bg-fuchsia-500/5 px-3 py-2.5">
-                <p class="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">Recomendado</p>
-                <p class="mt-0.5 text-xs font-semibold text-white">Melhores cortes por IA</p>
-                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">Fala completa, contexto e fechamento · 40–90s.</p>
-              </div>
-              <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2.5">
-                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Manual</p>
-                <p class="mt-0.5 text-xs font-semibold text-slate-200">Intervalo personalizado</p>
-                <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Você escolhe exatamente o início e o fim.</p>
-              </div>
-              <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2.5">
-                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Automático</p>
-                <p class="mt-0.5 text-xs font-semibold text-slate-200">Blocos de 90 segundos</p>
-                <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Divide tudo, sem avaliar o conteúdo da fala.</p>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <label class="text-[11px] font-medium text-slate-400">Início (s)
-                <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
-                  class="mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
-              </label>
-              <label class="text-[11px] font-medium text-slate-400">Fim (s)
-                <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
-                  class="clip-fim mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
-              </label>
-              <label class="col-span-2 text-[11px] font-medium text-slate-400 sm:col-span-1">Formato
-                <select name="aspect_ratio" class="mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none">
-                  <option value="9:16">9:16 · vertical</option>
-                  <option value="1:1">1:1 · quadrado</option>
-                  <option value="original">Formato original</option>
-                </select>
-              </label>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Definir fim:</span>
-              <button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 30)}">30s</button>
-              <button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 60)}">60s</button>
-              <button type="button" class="fim-preset rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300" data-fim="${Math.min(max, 90)}">90s</button>
-              ${max > 90 ? `<button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-amber-500 hover:text-amber-300" data-fim="${Math.min(max, 180)}">3min</button>` : ''}
-              ${max > 90 ? `<button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-amber-500 hover:text-amber-300" data-fim="${max}">Até o fim (${max}s)</button>` : ''}
-            </div>
-
-            <div class="grid gap-2 sm:grid-cols-3">
-              <button type="button" class="action-btn order-first rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 py-2.5 text-xs font-bold text-white shadow-sm shadow-fuchsia-950/40 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60 sm:order-last"
+          <form class="clip-form space-y-4" data-id="${v.id}" data-max="${max}">
+            <div class="rounded-2xl border border-fuchsia-500/30 bg-gradient-to-br from-fuchsia-500/10 to-violet-500/10 p-4">
+              <p class="text-xs font-bold uppercase tracking-wider text-fuchsia-300">Passo 2 · Gerar cortes</p>
+              <p class="mt-1 text-sm font-semibold text-white">Melhores cortes por IA</p>
+              <p class="mt-1 text-xs leading-relaxed text-slate-400">A IA escolhe trechos com fala completa (40–90s), gera a matéria e a capa sozinha.</p>
+              <button type="button" class="action-btn mt-3 w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 py-3 text-sm font-bold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
                 data-action="analyze-video" data-id="${v.id}">
                 Gerar melhores cortes
               </button>
-              <button type="submit" class="rounded-xl border border-violet-500/50 bg-violet-500/10 px-4 py-2.5 text-xs font-semibold text-violet-100 transition hover:bg-violet-500/20">Criar corte manual</button>
-              <button type="button" class="action-btn rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white"
-                data-action="clip-auto" data-id="${v.id}" data-aspect="9:16">
-                Dividir em 90s (~${estimativa})
-              </button>
             </div>
+
+            <details class="rounded-2xl border border-slate-800 bg-slate-950/50">
+              <summary class="cursor-pointer px-4 py-3 text-xs font-medium text-slate-400 hover:text-slate-200">
+                Outras formas de cortar (manual / 90s)
+              </summary>
+              <div class="space-y-3 border-t border-slate-800 p-4">
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <label class="text-[11px] font-medium text-slate-400">Início (s)
+                    <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
+                      class="mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
+                  </label>
+                  <label class="text-[11px] font-medium text-slate-400">Fim (s)
+                    <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
+                      class="clip-fim mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
+                  </label>
+                  <label class="col-span-2 text-[11px] font-medium text-slate-400 sm:col-span-1">Formato
+                    <select name="aspect_ratio" class="mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none">
+                      <option value="9:16">9:16 · vertical</option>
+                      <option value="1:1">1:1 · quadrado</option>
+                      <option value="original">Formato original</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  <button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 30)}">30s</button>
+                  <button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 60)}">60s</button>
+                  <button type="button" class="fim-preset rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300" data-fim="${Math.min(max, 90)}">90s</button>
+                  ${max > 90 ? `<button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400" data-fim="${max}">Até o fim</button>` : ''}
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <button type="submit" class="rounded-xl border border-violet-500/50 bg-violet-500/10 px-4 py-2.5 text-xs font-semibold text-violet-100 hover:bg-violet-500/20">Criar corte manual</button>
+                  <button type="button" class="action-btn rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:border-slate-500"
+                    data-action="clip-auto" data-id="${v.id}" data-aspect="9:16">
+                    Dividir em 90s (~${estimativa})
+                  </button>
+                </div>
+              </div>
+            </details>
           </form>`;
       }
       return '';
@@ -617,6 +668,16 @@
       if (!v?.metadata) return {};
       if (typeof v.metadata === 'object') return v.metadata;
       try { return JSON.parse(v.metadata); } catch { return {}; }
+    }
+
+    function videoNextStep(v, clips, analise) {
+      if (v.status === 'pendente' || v.status === 'erro') return 'Próximo: baixar o vídeo';
+      if (analise === 'processando') return 'IA analisando a fala…';
+      if (!clips.length && (v.status === 'baixado' || v.status === 'cortado')) return 'Próximo: gerar melhores cortes';
+      const ready = clips.filter((c) => (c.status === 'pronto' || c.status === 'publicado') && c.materia_status === 'pronta');
+      if (ready.length) return `${ready.length} corte(s) pronto(s) para publicar ↓`;
+      if (clips.length) return 'Aguarde matéria/capa ou revise os cortes ↓';
+      return '';
     }
 
     function videoHtml(v) {
@@ -630,9 +691,10 @@
       const meta = parseVideoMeta(v);
       const analise = meta.analise_status || '';
       const sugestoes = Array.isArray(meta.sugestoes_corte) ? meta.sugestoes_corte : [];
+      const nextStep = videoNextStep(v, clips, analise);
 
       return `
-        <article class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50 shadow-lg shadow-black/10 transition hover:border-slate-700" data-video-card="${v.id}">
+        <article class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50 shadow-lg shadow-black/10" data-video-card="${v.id}">
           <div class="p-4 sm:p-5">
             <div class="flex flex-col gap-4 sm:flex-row">
               <div class="h-28 w-full flex-shrink-0 overflow-hidden rounded-xl bg-slate-950 ring-1 ring-white/5 sm:h-[82px] sm:w-36">
@@ -644,89 +706,71 @@
                     <div class="flex flex-wrap items-center gap-1.5">
                       ${badge(v.status)}
                       ${analise === 'processando' ? badge('processando', 'IA analisando…') : ''}
-                      ${analise === 'pronta' ? badge('pronta', 'IA concluída') : ''}
                       <span class="text-xs text-slate-500">${escapeHtml(v.origem || 'pexels')} · ${durMin}</span>
                       ${clips.length ? `<span class="rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-300">${clips.length} corte(s)</span>` : ''}
-                      ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" class="rounded-full border border-emerald-500/20 px-2 py-0.5 text-[11px] text-emerald-400 transition hover:bg-emerald-500/10">Ver original</a>` : ''}
+                      ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" class="rounded-full border border-emerald-500/20 px-2 py-0.5 text-[11px] text-emerald-400 hover:bg-emerald-500/10">Ver original</a>` : ''}
                     </div>
-                    <p class="mt-2 break-words text-sm font-semibold leading-snug text-white">${escapeHtml(v.titulo || v.termo_busca)}</p>
+                    <p class="mt-2 break-words text-base font-semibold leading-snug text-white">${escapeHtml(v.titulo || v.termo_busca)}</p>
                     <p class="mt-1 text-xs text-slate-500">${escapeHtml(v.autor || '')}</p>
+                    ${nextStep ? `<p class="mt-2 text-xs font-medium text-emerald-300">${escapeHtml(nextStep)}</p>` : ''}
                   </div>
                   <div class="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-                    ${canCut ? `
-                    <button type="button" class="action-btn rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-3.5 py-2 text-xs font-bold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-50"
-                      data-action="analyze-video" data-id="${v.id}" ${analise === 'processando' ? 'disabled' : ''}>
-                      ${analise === 'processando' ? 'Analisando fala…' : (analise === 'pronta' ? 'Refazer melhores cortes' : 'Melhores cortes IA')}
-                    </button>` : ''}
                     <button type="button"
-                      class="collapse-btn rounded-xl border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-emerald-500 hover:text-emerald-300"
+                      class="collapse-btn rounded-xl border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:border-emerald-500 hover:text-emerald-300"
                       data-collapse-group="video" data-collapse-id="${v.id}">
-                      ${collapseLabel(cardCollapsed, 'Recolher', 'Expandir')}
+                      ${collapseLabel(cardCollapsed, 'Recolher', 'Abrir')}
                     </button>
-                    <button type="button" class="action-btn rounded-xl border border-transparent px-3 py-2 text-xs font-medium text-rose-400 transition hover:border-rose-500/20 hover:bg-rose-500/10 hover:text-rose-300" data-action="delete-video" data-id="${v.id}">Excluir</button>
+                    <button type="button" class="action-btn rounded-xl border border-transparent px-3 py-2 text-xs font-medium text-rose-400 hover:bg-rose-500/10" data-action="delete-video" data-id="${v.id}">Excluir</button>
                   </div>
                 </div>
                 ${v.erro_mensagem ? `<p class="mt-2 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">${escapeHtml(v.erro_mensagem)}</p>` : ''}
-                ${analise === 'processando' ? `<div class="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200"><span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>Ouvindo a fala e montando momentos completos de 40–90s…</div>` : ''}
+                ${analise === 'processando' ? `<div class="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200"><span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>Ouvindo a fala e montando cortes…</div>` : ''}
               </div>
             </div>
 
             ${analise === 'pronta' && sugestoes.length ? `
-            <div class="mt-4 rounded-xl border border-fuchsia-500/20 bg-gradient-to-r from-fuchsia-500/5 to-violet-500/5 p-3.5">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <p class="text-xs font-bold text-fuchsia-200">Melhores momentos encontrados</p>
-                <span class="text-[11px] text-slate-500">${sugestoes.length} sugestão(ões) · falas completas</span>
-              </div>
+            <div class="mt-4 rounded-xl border border-fuchsia-500/20 bg-fuchsia-500/5 p-3.5">
+              <p class="text-xs font-bold text-fuchsia-200">Momentos que a IA encontrou (${sugestoes.length})</p>
               <div class="mt-2.5 grid gap-2 md:grid-cols-3">
                 ${sugestoes.map((s, i) => {
                   const inicio = Number(s.inicio);
                   const fim = Number(s.fim);
                   const duracao = Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : 0;
-                  return `<div class="min-w-0 rounded-lg border border-slate-800/80 bg-slate-950/50 px-3 py-2">
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-[11px] font-bold text-fuchsia-300">#${i + 1} · ${inicio}–${fim}s</span>
-                      <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">${duracao}s</span>
-                    </div>
-                    <p class="mt-1.5 text-[11px] leading-relaxed text-slate-400">${escapeHtml(s.motivo || 'Momento selecionado pela análise da fala.')}</p>
+                  return `<div class="rounded-lg border border-slate-800/80 bg-slate-950/50 px-3 py-2">
+                    <span class="text-[11px] font-bold text-fuchsia-300">#${i + 1} · ${duracao}s</span>
+                    <p class="mt-1 text-[11px] text-slate-400">${escapeHtml(s.motivo || 'Trecho com fala completa.')}</p>
                   </div>`;
                 }).join('')}
               </div>
             </div>` : ''}
           </div>
 
-          <div class="video-body space-y-3 border-t border-slate-800 bg-slate-950/20 p-3 sm:p-4 ${cardCollapsed ? 'hidden' : ''}">
+          <div class="video-body space-y-4 border-t border-slate-800 bg-slate-950/20 p-3 sm:p-4 ${cardCollapsed ? 'hidden' : ''}">
             ${canCut && formHtml ? `
-            <div class="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/30">
+            <div class="overflow-hidden rounded-2xl border border-slate-800">
+              ${clips.length ? `
               <button type="button"
-                class="collapse-btn flex w-full items-center justify-between px-3.5 py-3 text-left text-xs font-medium text-slate-300 transition hover:bg-slate-900/50 hover:text-white"
+                class="collapse-btn flex w-full items-center justify-between px-4 py-3 text-left text-xs font-medium text-slate-400 hover:bg-slate-900/50 hover:text-white"
                 data-collapse-group="form" data-collapse-id="${v.id}">
-                <span class="inline-flex items-center gap-2">
-                  <span class="rounded-md bg-violet-500/15 px-2 py-1 font-semibold text-violet-300">Criar cortes</span>
-                  <span class="font-normal text-slate-500">IA · manual · blocos de 90s</span>
-                </span>
-                <span class="text-slate-500">${collapseLabel(formCollapsed, '▾ Recolher', '▸ Expandir')}</span>
+                <span>Gerar mais cortes</span>
+                <span>${collapseLabel(formCollapsed, '▾', '▸')}</span>
               </button>
-              <div class="border-t border-slate-800 p-3 ${formCollapsed ? 'hidden' : ''}">
-                ${formHtml}
-              </div>
+              <div class="border-t border-slate-800 p-3 ${formCollapsed ? 'hidden' : ''}">${formHtml}</div>`
+                : `<div class="p-3">${formHtml}</div>`}
             </div>` : (formHtml ? `<div>${formHtml}</div>` : '')}
 
             ${clips.length ? `
-            <div class="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/30">
-              <button type="button"
-                class="collapse-btn flex w-full items-center justify-between px-3.5 py-3 text-left text-xs font-medium text-slate-300 transition hover:bg-slate-900/50 hover:text-white"
-                data-collapse-group="clips" data-collapse-id="${v.id}">
-                <span class="inline-flex items-center gap-2">
-                  <span class="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md bg-violet-500/15 px-1.5 text-xs font-bold text-violet-300">${clips.length}</span>
-                  <span class="font-semibold uppercase tracking-wider text-slate-300">Cortes gerados</span>
-                  <span class="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] font-normal text-slate-500">editor · matéria + Reel</span>
-                </span>
-                <span class="text-slate-500">${collapseLabel(clipsCollapsed, '▾ Recolher', '▸ Expandir')}</span>
-              </button>
-              <div class="border-t border-slate-800 p-3 sm:p-4 ${clipsCollapsed ? 'hidden' : ''}">
-                <div class="space-y-4">
-                  ${clips.map((c, i) => clipHtml(c, i)).join('')}
-                </div>
+            <div>
+              <div class="mb-3 flex items-center justify-between gap-2 px-1">
+                <p class="text-xs font-bold uppercase tracking-wider text-sky-400">Passos 3 e 4 · Revisar e publicar</p>
+                <button type="button"
+                  class="collapse-btn text-xs text-slate-500 hover:text-slate-300"
+                  data-collapse-group="clips" data-collapse-id="${v.id}">
+                  ${collapseLabel(clipsCollapsed, 'Recolher cortes', 'Mostrar cortes')}
+                </button>
+              </div>
+              <div class="space-y-4 ${clipsCollapsed ? 'hidden' : ''}">
+                ${clips.map((c, i) => clipHtml(c, i)).join('')}
               </div>
             </div>` : ''}
           </div>
