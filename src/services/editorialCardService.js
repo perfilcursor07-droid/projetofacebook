@@ -79,13 +79,20 @@ async function fetchImage(url) {
   }
 
   const safeUrl = await assertPublicImageUrl(url);
+  const isMetaCdn = /fbsbx\.com|fbcdn\.net|cdninstagram\.com|instagram\.com|facebook\.com/i.test(safeUrl);
   const response = await axios.get(safeUrl, {
     responseType: 'arraybuffer',
     timeout: 30000,
     maxRedirects: 4,
     maxContentLength: MAX_IMAGE_BYTES,
     maxBodyLength: MAX_IMAGE_BYTES,
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ViralizeAI/1.0)' },
+    headers: {
+      'User-Agent': isMetaCdn
+        ? 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'
+        : 'Mozilla/5.0 (compatible; ViralizeAI/1.0)',
+      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      Referer: isMetaCdn ? 'https://www.facebook.com/' : undefined,
+    },
   });
   const contentType = String(response.headers['content-type'] || '').toLowerCase();
   if (!contentType.startsWith('image/')) throw new Error('A fonte não retornou uma imagem válida');

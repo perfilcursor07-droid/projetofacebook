@@ -668,7 +668,7 @@ async function tickFilaJobs() {
 }
 
 /**
- * Usuário cola um link → apura a notícia → reescreve com furo (sem plagiar).
+ * Usuário cola um link → apura a notícia OU post FB/IG → reescreve com furo (sem plagiar).
  */
 async function gerarDeLink({
   userId,
@@ -686,23 +686,38 @@ async function gerarDeLink({
 
   assertDeepseek();
 
-  const topicoBase = {
-    link,
-    titulo: null,
-    resumo: null,
-    fonte: null,
-  };
+  const { isSocialPostUrl, extrairPostSocial, socialParaTopico } = require('./socialPostExtract');
 
-  const apurado = await apurarTopico(topicoBase);
+  let apurado;
+  if (isSocialPostUrl(link)) {
+    const social = await extrairPostSocial(link);
+    apurado = socialParaTopico(social, link);
+    console.log('[materias-ia] post social', {
+      plataforma: social.plataforma,
+      metodo: social.metodo,
+      textoLen: (social.texto || '').length,
+      hasImage: Boolean(social.imagem),
+    });
+  } else {
+    const topicoBase = {
+      link,
+      titulo: null,
+      resumo: null,
+      fonte: null,
+    };
+    apurado = await apurarTopico(topicoBase);
+  }
+
   const temConteudo =
     Boolean(apurado.titulo) ||
     Boolean(apurado.resumo) ||
+    Boolean(apurado.imagemFonte) ||
     Boolean(apurado.fontesApuracao?.length) ||
     Boolean(apurado.contextoApuracao && apurado.contextoApuracao.length > 80);
 
   if (!temConteudo) {
     const err = new Error(
-      'Não foi possível ler a notícia deste link. Confira o endereço ou tente outro veículo.'
+      'Não foi possível ler este link. Use notícia, post público do Facebook ou Instagram.'
     );
     err.status = 422;
     throw err;

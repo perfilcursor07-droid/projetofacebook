@@ -258,7 +258,7 @@
     const tipoEl = document.getElementById('mia-link-tipo');
     const url = (urlEl?.value || '').trim();
     if (!url) {
-      st.textContent = 'Cole o link da notícia';
+      st.textContent = 'Cole o link da notícia, Facebook ou Instagram';
       return;
     }
     if (!/^https?:\/\//i.test(url)) {
@@ -268,9 +268,9 @@
 
     setGenerating(
       true,
-      'Lendo a notícia, montando o furo e reescrevendo sem plagiar. Em seguida você revisa a matéria.'
+      'Lendo o link (texto + imagem), montando o furo e reescrevendo. Em seguida você revisa a matéria.'
     );
-    st.textContent = 'Apurando link e gerando matéria…';
+    st.textContent = 'Extraindo conteúdo do link e gerando matéria…';
 
     try {
       const res = await fetch('/api/materias-ia/reescrever-link', {

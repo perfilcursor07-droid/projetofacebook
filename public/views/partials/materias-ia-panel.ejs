@@ -108,12 +108,18 @@
 
   <div id="mia-link" class="mia-panel mt-5 hidden space-y-4">
     <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-      <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">Reescrever notícia</p>
-      <p class="mt-2 text-sm text-slate-400">Cole o link de uma notícia. A IA lê a fonte, monta um <strong class="font-medium text-slate-300">furo de reportagem</strong> e reescreve 100% — sem copiar o texto original.</p>
+      <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">Reescrever a partir do link</p>
+      <p class="mt-2 text-sm text-slate-400">
+        Cole o link de uma <strong class="font-medium text-slate-300">notícia</strong>,
+        <strong class="font-medium text-slate-300">post do Facebook</strong> ou
+        <strong class="font-medium text-slate-300">Instagram</strong>.
+        A IA extrai texto e imagem, monta um furo de reportagem e reescreve 100% — sem copiar o original.
+      </p>
 
       <label class="mt-4 block text-sm">
-        <span class="text-slate-400">Link da notícia</span>
-        <input id="mia-link-url" type="url" inputmode="url" placeholder="https://…"
+        <span class="text-slate-400">Link (notícia, Facebook ou Instagram)</span>
+        <input id="mia-link-url" type="url" inputmode="url"
+          placeholder="https://www.facebook.com/…/posts/… ou https://www.instagram.com/p/… ou notícia"
           class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none" />
       </label>
 
