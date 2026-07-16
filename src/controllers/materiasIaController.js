@@ -10,7 +10,10 @@ function pickPageId(body = {}) {
 
 function pickTipo(body = {}) {
   const raw = body.tipoPublicacao ?? body.tipo_publicacao ?? 'texto';
-  return raw === 'foto' ? 'foto' : 'texto';
+  if (raw === 'foto') return 'foto';
+  if (raw === 'reel') return 'reel';
+  if (raw === 'auto') return 'auto';
+  return 'texto';
 }
 
 async function pesquisar(req, res, next) {
@@ -141,6 +144,19 @@ async function reescreverLink(req, res, next) {
       tipoPublicacao,
       status,
     });
+
+    // Reel: pipeline assíncrono na Fila (sem AiMatter)
+    if (result.modo === 'reel') {
+      return res.status(result.queued ? 202 : 200).json({
+        ok: true,
+        modo: 'reel',
+        queued: result.queued,
+        video: result.video,
+        clip: result.clip || null,
+        redirect: result.redirect || '/fila',
+        aviso: result.aviso,
+      });
+    }
 
     res.json({
       ok: true,

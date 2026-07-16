@@ -111,15 +111,18 @@
       <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">Reescrever a partir do link</p>
       <p class="mt-2 text-sm text-slate-400">
         Cole o link de uma <strong class="font-medium text-slate-300">notícia</strong>,
-        <strong class="font-medium text-slate-300">post do Facebook</strong> ou
-        <strong class="font-medium text-slate-300">Instagram</strong>.
-        A IA extrai texto e imagem, monta um furo de reportagem e reescreve 100% — sem copiar o original.
+        <strong class="font-medium text-slate-300">post (foto)</strong> ou
+        <strong class="font-medium text-slate-300">Reel/vídeo</strong> do Facebook ou Instagram.
       </p>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-500">
+        <li>Notícia ou post de foto → matéria com imagem (revisão em /materias-ia).</li>
+        <li>Reel ou vídeo → baixa, transcreve, gera legenda, coloca a capa no início e fica pronto na <a href="/fila" class="text-emerald-300 hover:underline">Fila</a> para publicar como Reels.</li>
+      </ul>
 
       <label class="mt-4 block text-sm">
         <span class="text-slate-400">Link (notícia, Facebook ou Instagram)</span>
         <input id="mia-link-url" type="url" inputmode="url"
-          placeholder="https://www.facebook.com/…/posts/… ou https://www.instagram.com/p/… ou notícia"
+          placeholder="https://www.facebook.com/reel/… ou https://www.instagram.com/reel/… ou notícia"
           class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none" />
       </label>
 
@@ -133,14 +136,16 @@
         <label class="block text-sm">
           <span class="text-slate-400">Tipo de publicação</span>
           <select id="mia-link-tipo" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
-            <option value="foto" selected>Foto + legenda</option>
+            <option value="auto" selected>Automático (detecta Reel)</option>
+            <option value="foto">Foto + legenda</option>
             <option value="texto">Texto</option>
+            <option value="reel">Reel (vídeo)</option>
           </select>
         </label>
       </div>
 
       <div class="mt-4 flex flex-wrap gap-2">
-        <button type="button" id="mia-btn-link" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Gerar matéria do link</button>
+        <button type="button" id="mia-btn-link" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Gerar a partir do link</button>
       </div>
       <p id="mia-link-status" class="mt-3 text-sm text-slate-400"></p>
     </div>

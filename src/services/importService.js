@@ -348,10 +348,106 @@ function queueLinkImport(video) {
   });
 }
 
+/**
+ * Download de Reel FB/IG → cria um corte 9:16 → fala → matéria → capa (Minha marca).
+ * Mesmo pipeline da Fila/YouTube.
+ */
+function queueLinkImportAsReel(video, { facebookPageId = null } = {}) {
+  const VideoClips = require('../models/VideoClips');
+  const { probe, MAX_CLIP_SECONDS, MIN_CLIP_SECONDS } = require('./ffmpegService');
+  const processingService = require('./processingService');
+
+  enqueue(`import reel video ${video.id}`, async () => {
+    try {
+      const dest = `videos/video_${video.id}.mp4`;
+      const abs = storageAbsolutePath(dest);
+
+      if (!fs.existsSync(abs)) {
+        await youtubedl(video.url_original, {
+          output: abs,
+          mergeOutputFormat: 'mp4',
+          remuxVideo: 'mp4',
+          ffmpegLocation: path.dirname(ffmpegPath),
+          noPlaylist: true,
+          noWarnings: true,
+        });
+      }
+
+      let duracao = video.duracao ? Number(video.duracao) : null;
+      try {
+        const info = await probe(abs);
+        const probed = Number(info?.format?.duration);
+        if (Number.isFinite(probed) && probed > 0) duracao = Math.round(probed);
+      } catch (probeErr) {
+        console.warn(`[import-reel] probe #${video.id}:`, probeErr.message);
+      }
+
+      const metaBase =
+        video.metadata && typeof video.metadata === 'object'
+          ? video.metadata
+          : (() => {
+              try {
+                return JSON.parse(video.metadata || '{}');
+              } catch {
+                return {};
+              }
+            })();
+
+      await Videos.update(video.id, {
+        status: 'baixado',
+        caminho_local: dest,
+        duracao: duracao || video.duracao || null,
+        erro_mensagem: null,
+        metadata: {
+          ...metaBase,
+          pipeline: 'conteudo_reel',
+          facebook_page_id: facebookPageId || metaBase.facebook_page_id || null,
+        },
+      });
+
+      const fresh = await Videos.findById(video.id);
+      const existing = await VideoClips.findByVideo(video.id);
+      if (existing.some((c) => c.status === 'pronto' || c.status === 'processando')) {
+        console.log(`[import-reel] vídeo #${video.id} já tem corte — pulando`);
+        return;
+      }
+
+      const fim = Math.max(
+        MIN_CLIP_SECONDS,
+        Math.min(Number(duracao) || MAX_CLIP_SECONDS, MAX_CLIP_SECONDS)
+      );
+
+      const [clipId] = await VideoClips.create({
+        video_id: video.id,
+        inicio_segundo: 0,
+        fim_segundo: fim,
+        aspect_ratio: '9:16',
+        legenda_sugerida: null,
+        status: 'processando',
+        materia_status: 'pendente',
+      });
+
+      const clip = await VideoClips.findById(clipId);
+      processingService.queueClipGeneration(clip, fresh);
+      console.log(
+        `[import-reel] vídeo #${video.id} → clip #${clipId} (0–${fim}s) matéria+capa enfileirados`
+      );
+    } catch (err) {
+      const msg = String(err.stderr || err.message || err).slice(0, 500);
+      await Videos.update(video.id, {
+        status: 'erro',
+        erro_mensagem: `Importação Reel falhou: ${msg}`,
+      });
+      throw err;
+    }
+  });
+}
+
 module.exports = {
   fetchLinkMetadata,
   humanizeYtDlpError,
   queueLinkImport,
+  queueLinkImportAsReel,
   searchYoutube,
   searchTiktok,
 };

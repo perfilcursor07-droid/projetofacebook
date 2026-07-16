@@ -668,7 +668,89 @@ async function tickFilaJobs() {
 }
 
 /**
+ * Reel/vídeo FB/IG: baixa → corte 9:16 → transcreve → matéria → capa (como YouTube na Fila).
+ * Publicação posterior como Reels em /fila.
+ */
+async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
+  const Videos = require('../models/Videos');
+  const VideoClips = require('../models/VideoClips');
+  const importService = require('./importService');
+  const { detectarPlataformaSocial } = require('./socialPostExtract');
+
+  const link = String(url || '').trim();
+  const plataforma = detectarPlataformaSocial(link) || 'rede';
+
+  let video = await Videos.findByUrl(userId, link);
+  let created = false;
+
+  if (!video) {
+    let meta = {};
+    let metaWarning = null;
+    try {
+      meta = await importService.fetchLinkMetadata(link);
+    } catch (metaErr) {
+      metaWarning = importService.humanizeYtDlpError(metaErr);
+      console.warn('[conteudo-reel] metadata:', metaWarning);
+      meta = { titulo: null, thumbnail: null, extractor: null, autor: null, autorUrl: null, duracao: null };
+    }
+
+    const [id] = await Videos.create({
+      user_id: userId,
+      origem: 'link',
+      termo_busca: `reel:${plataforma}`.slice(0, 255),
+      titulo: meta.titulo || `Reel — ${plataforma}`,
+      url_original: link,
+      thumbnail: meta.thumbnail || null,
+      duracao: meta.duracao,
+      autor: meta.autor,
+      autor_url: meta.autorUrl,
+      status: 'pendente',
+      metadata: {
+        extractor: meta.extractor,
+        pipeline: 'conteudo_reel',
+        facebook_page_id: facebookPageId || null,
+        metaWarning,
+        plataforma,
+      },
+    });
+    video = await Videos.findById(id);
+    created = true;
+  }
+
+  // Já baixado sem clip pronto → retoma pipeline
+  if (video.caminho_local && (video.status === 'baixado' || video.status === 'cortado')) {
+    const clips = await VideoClips.findByVideo(video.id);
+    const pronto = clips.find((c) => c.status === 'pronto' && c.capa_status === 'pronta');
+    if (pronto) {
+      return {
+        modo: 'reel',
+        queued: false,
+        created: false,
+        video,
+        clip: pronto,
+        redirect: '/fila',
+        aviso:
+          'Este Reel já está pronto na Fila — revise a legenda/capa e publique como Reels.',
+      };
+    }
+  }
+
+  importService.queueLinkImportAsReel(video, { facebookPageId });
+
+  return {
+    modo: 'reel',
+    queued: true,
+    created,
+    video,
+    redirect: '/fila',
+    aviso:
+      'Reel enfileirado: baixando o vídeo → transcrevendo → gerando matéria → aplicando capa no início (Minha marca). Acompanhe em /fila e publique como Reels.',
+  };
+}
+
+/**
  * Usuário cola um link → apura a notícia OU post FB/IG → reescreve com furo (sem plagiar).
+ * Reels/vídeos FB/IG → pipeline de Fila (download + fala + matéria + capa).
  */
 async function gerarDeLink({
   userId,
@@ -684,9 +766,28 @@ async function gerarDeLink({
     throw err;
   }
 
+  const {
+    isSocialPostUrl,
+    isSocialVideoUrl,
+    extrairPostSocial,
+    socialParaTopico,
+  } = require('./socialPostExtract');
+
+  // Reel / vídeo social → Fila (não vira AiMatter foto)
+  if (isSocialVideoUrl(link) || tipoPublicacao === 'reel') {
+    if (!isSocialVideoUrl(link) && tipoPublicacao === 'reel') {
+      const err = new Error(
+        'Para publicar como Reel, use um link de vídeo/Reel do Facebook ou Instagram.'
+      );
+      err.status = 422;
+      throw err;
+    }
+    return gerarDeLinkReel({ userId, url: link, facebookPageId });
+  }
+
   assertDeepseek();
 
-  const { isSocialPostUrl, extrairPostSocial, socialParaTopico } = require('./socialPostExtract');
+  const tipoFinal = tipoPublicacao === 'auto' || tipoPublicacao === 'reel' ? 'foto' : tipoPublicacao;
 
   let apurado;
   if (isSocialPostUrl(link)) {
@@ -717,7 +818,7 @@ async function gerarDeLink({
 
   if (!temConteudo) {
     const err = new Error(
-      'Não foi possível ler este link. Use notícia, post público do Facebook ou Instagram.'
+      'Não foi possível ler este link. Use notícia, post público do Facebook ou Instagram (foto) — ou Reel/vídeo para publicar como Reels.'
     );
     err.status = 422;
     throw err;
@@ -733,7 +834,7 @@ async function gerarDeLink({
     userId,
     topico: apurado,
     facebookPageId,
-    tipoPublicacao,
+    tipoPublicacao: tipoFinal,
     status,
     furoReportagem: true,
   });

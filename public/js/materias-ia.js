@@ -266,11 +266,27 @@
       return;
     }
 
+    const looksReel =
+      /\/reel\//i.test(url) ||
+      /\/reels\//i.test(url) ||
+      /\/videos\//i.test(url) ||
+      /fb\.watch/i.test(url) ||
+      /instagram\.com\/(reel|reels|tv)\//i.test(url);
+
+    let tipo = tipoEl?.value || 'foto';
+    if (tipo === 'auto') tipo = looksReel ? 'reel' : 'foto';
+
+    const isReel = tipo === 'reel' || looksReel;
+
     setGenerating(
       true,
-      'Lendo o link (texto + imagem), montando o furo e reescrevendo. Em seguida você revisa a matéria.'
+      isReel
+        ? 'Baixando o Reel, transcrevendo a fala, gerando a legenda e aplicando a capa no início…'
+        : 'Lendo o link (texto + imagem), montando o furo e reescrevendo. Em seguida você revisa a matéria.'
     );
-    st.textContent = 'Extraindo conteúdo do link e gerando matéria…';
+    st.textContent = isReel
+      ? 'Enfileirando Reel (download → fala → matéria → capa)…'
+      : 'Extraindo conteúdo do link e gerando matéria…';
 
     try {
       const res = await fetch('/api/materias-ia/reescrever-link', {
@@ -279,12 +295,23 @@
         body: JSON.stringify({
           url,
           facebookPageId: pageEl?.value ? Number(pageEl.value) : null,
-          tipoPublicacao: tipoEl?.value || 'foto',
+          tipoPublicacao: tipo,
           status: 'rascunho',
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao reescrever');
+      if (!res.ok) throw new Error(data.error || 'Falha ao processar o link');
+
+      if (data.modo === 'reel') {
+        st.textContent = data.aviso || 'Reel na Fila — acompanhe o progresso.';
+        if (generatingText) {
+          generatingText.textContent = 'Reel enfileirado! Abrindo a Fila…';
+        }
+        setTimeout(() => {
+          window.location.href = data.redirect || '/fila';
+        }, 600);
+        return;
+      }
 
       const matterId = data.matter?.id;
       if (!matterId) throw new Error('Matéria gerada, mas sem ID para abrir');

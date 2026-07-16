@@ -37,6 +37,16 @@ function isSocialPostUrl(url) {
   return /instagram\.com\/(p|reel|reels|tv)\//i.test(u);
 }
 
+/** Reel / vídeo (não foto) — baixa, transcreve e publica como Reels. */
+function isSocialVideoUrl(url) {
+  if (!isSocialPostUrl(url)) return false;
+  const u = String(url || '').toLowerCase();
+  if (/instagram\.com\/(reel|reels|tv)\//i.test(u)) return true;
+  if (/\/reel\//i.test(u) || /\/reels\//i.test(u)) return true;
+  if (/\/videos\//i.test(u) || /fb\.watch/i.test(u) || /\/watch\/?\?/i.test(u)) return true;
+  return false;
+}
+
 function decodificarEntidades(texto) {
   if (!texto) return '';
   let t = String(texto);
@@ -370,6 +380,7 @@ function socialParaTopico(extraido, linkOriginal) {
 module.exports = {
   detectarPlataformaSocial,
   isSocialPostUrl,
+  isSocialVideoUrl,
   extrairPostSocial,
   socialParaTopico,
 };
