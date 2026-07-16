@@ -8,13 +8,14 @@
 
     <div id="postpulse-box" class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div class="min-w-0 flex-1">
           <h2 class="text-sm font-semibold text-white">PostPulse (API comercial)</h2>
           <p class="mt-1 text-xs text-slate-400">
-            Publica sem App Review da Meta. Credenciais no .env; Redirect URI no painel PostPulse deve ser
+            Publica sem App Review da Meta. Redirect URI:
             <code class="text-slate-300">/api/auth/postpulse/callback</code>.
           </p>
           <p id="pp-status" class="mt-2 text-sm text-slate-300">Carregando status…</p>
+          <div id="pp-link-panel" class="mt-3 hidden"></div>
         </div>
         <div id="pp-actions" class="flex flex-wrap gap-2"></div>
       </div>
@@ -32,6 +33,85 @@
     const contentEl = document.getElementById('content');
     const ppStatusEl = document.getElementById('pp-status');
     const ppActionsEl = document.getElementById('pp-actions');
+    const ppLinkPanel = document.getElementById('pp-link-panel');
+    let lastPages = [];
+    window.__ppAccounts = [];
+
+    function renderLinkPanel() {
+      const accounts = window.__ppAccounts || [];
+      const unlinked = (lastPages || []).filter((p) => p.publica_via !== 'postpulse');
+      if (!accounts.length || !unlinked.length) {
+        ppLinkPanel.classList.add('hidden');
+        ppLinkPanel.innerHTML = '';
+        return;
+      }
+
+      const accOpts = accounts
+        .map(
+          (a) =>
+            `<option value="${a.id}">${escapeHtml(a.accountDisplayName || a.accountUsername || a.accountId || a.id)} (PP #${a.id})</option>`
+        )
+        .join('');
+      const pageOpts = unlinked
+        .map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)} (${escapeHtml(p.page_id)})</option>`)
+        .join('');
+
+      const warnName = accounts.some((a) => {
+        const n = String(a.accountDisplayName || '').toLowerCase();
+        return n && !unlinked.some((p) => normSimple(p.page_name) === normSimple(a.accountDisplayName));
+      });
+
+      ppLinkPanel.classList.remove('hidden');
+      ppLinkPanel.innerHTML = `
+        <div class="rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-3 text-sm text-violet-100">
+          ${warnName ? '<p class="mb-2 text-xs text-amber-200">A conta no PostPulse (“Erick Vinicius” ou similar) precisa ser a <strong>Página</strong> do Facebook (ex.: Apocalipse Gospel), não o perfil pessoal. Se for perfil, reconecte a Page no painel PostPulse.</p>' : ''}
+          <p class="mb-2 text-xs text-violet-200">IDs diferentes — vincule manualmente:</p>
+          <div class="flex flex-wrap items-end gap-2">
+            <label class="text-xs">Página do app
+              <select id="pp-link-page" class="mt-1 block rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-200">${pageOpts}</select>
+            </label>
+            <label class="text-xs">Conta PostPulse
+              <select id="pp-link-account" class="mt-1 block rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-200">${accOpts}</select>
+            </label>
+            <button type="button" id="pp-link-do"
+              class="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-500">
+              Vincular agora
+            </button>
+          </div>
+        </div>`;
+
+      document.getElementById('pp-link-do')?.addEventListener('click', async () => {
+        const pageId = Number(document.getElementById('pp-link-page').value);
+        const ppId = Number(document.getElementById('pp-link-account').value);
+        const btn = document.getElementById('pp-link-do');
+        btn.disabled = true;
+        try {
+          const r = await fetch('/api/facebook/postpulse/link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ facebook_page_id: pageId, postpulse_account_id: ppId }),
+          });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || 'Falha ao vincular');
+          alertEl.textContent = 'Vinculado: ' + (j.page?.page_name || 'ok') + ' → PostPulse';
+          alertEl.className =
+            'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+          await load();
+          renderLinkPanel();
+        } catch (err) {
+          alertEl.textContent = 'Erro: ' + err.message;
+          alertEl.className =
+            'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+          btn.disabled = false;
+        }
+      });
+    }
+
+    function normSimple(s) {
+      return String(s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+    }
 
     const params = new URLSearchParams(location.search);
     if (params.get('conectado') === '1') {
@@ -109,13 +189,14 @@
             Desconectar
           </button>`;
 
-        // Pré-carrega contas PostPulse para mostrar botão Vincular
+        // Pré-carrega contas PostPulse para mostrar painel Vincular
         try {
           const sr = await fetch('/api/facebook/postpulse/sync', { method: 'POST' });
           const sj = await sr.json();
           if (sr.ok) {
             window.__ppAccounts = sj.accounts || [];
-            if (sj.matched > 0) await load();
+            await load();
+            renderLinkPanel();
           }
         } catch (_) {}
 
@@ -139,13 +220,16 @@
                 .map((a) => a.accountDisplayName || a.accountId || a.id)
                 .join(', ');
               msg +=
-                '. IDs diferentes — use Vincular na página abaixo. Conta PostPulse: ' + names;
+                '. Conta PostPulse: ' +
+                names +
+                ' — use o painel “Vincular agora” abaixo (precisa ser a Página, não o perfil).';
             }
             alertEl.textContent = msg;
             alertEl.className =
               'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
             window.__ppAccounts = j.accounts || [];
             await load();
+            renderLinkPanel();
           } catch (err) {
             alertEl.textContent = 'Erro: ' + err.message;
             alertEl.className =
@@ -176,8 +260,13 @@
 
         if (!data.conectado) {
           contentEl.innerHTML = connectHtml;
+          lastPages = [];
+          renderLinkPanel();
           return;
         }
+
+        lastPages = data.pages || [];
+        renderLinkPanel();
 
         const ppAccounts = window.__ppAccounts || [];
         const pagesHtml = (data.pages || [])

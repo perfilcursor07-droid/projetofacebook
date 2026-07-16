@@ -33,11 +33,12 @@ async function syncPostpulseAccounts(userId) {
   }
 
   const accounts = await postpulseService.listAccounts(conn.access_token);
-  const fbAccounts = accounts.filter((a) =>
-    String(a.platform || '')
-      .toUpperCase()
-      .includes('FACEBOOK')
-  );
+  console.log('[postpulse] accounts raw', JSON.stringify(accounts).slice(0, 2000));
+
+  const fbAccounts = accounts.filter((a) => {
+    const p = String(a.platform || '').toUpperCase();
+    return p.includes('FACEBOOK') || p === 'FB';
+  });
 
   const account = await FacebookAccounts.findByUser(userId);
   if (!account) {
@@ -55,13 +56,23 @@ async function syncPostpulseAccounts(userId) {
   let autoLinked = false;
   const usedPpIds = new Set();
 
+  // Páginas já vinculadas contam e ocupam o slot PostPulse
   for (const page of pages) {
+    if (page.postpulse_account_id) {
+      usedPpIds.add(Number(page.postpulse_account_id));
+      matched += 1;
+    }
+  }
+
+  for (const page of pages) {
+    if (page.postpulse_account_id) continue;
+
     const byId = fbAccounts.find(
       (a) => a.accountId != null && String(a.accountId) === String(page.page_id)
     );
     if (byId) {
       await FacebookPages.setPostpulseAccount(page.id, byId.id);
-      usedPpIds.add(byId.id);
+      usedPpIds.add(Number(byId.id));
       matched += 1;
       continue;
     }
@@ -69,34 +80,50 @@ async function syncPostpulseAccounts(userId) {
     const pageNorm = normName(page.page_name);
     const byName = fbAccounts.find(
       (a) =>
-        !usedPpIds.has(a.id) &&
+        !usedPpIds.has(Number(a.id)) &&
         pageNorm &&
         (normName(a.accountDisplayName) === pageNorm ||
           normName(a.accountUsername) === pageNorm)
     );
     if (byName) {
       await FacebookPages.setPostpulseAccount(page.id, byName.id);
-      usedPpIds.add(byName.id);
+      usedPpIds.add(Number(byName.id));
       matched += 1;
     }
   }
 
-  // Recarrega e tenta vínculo 1:1 se ainda houver páginas sem PostPulse
   const pagesAfter = await FacebookPages.findByAccount(account.id);
   const unlinkedPages = pagesAfter.filter((p) => !p.postpulse_account_id);
-  const unusedPp = fbAccounts.filter((a) => !usedPpIds.has(a.id));
+  const unusedPp = fbAccounts.filter((a) => !usedPpIds.has(Number(a.id)));
 
+  // Sempre vincula 1:1 quando sobra exatamente uma de cada
   if (unlinkedPages.length === 1 && unusedPp.length === 1) {
     await FacebookPages.setPostpulseAccount(unlinkedPages[0].id, unusedPp[0].id);
-    usedPpIds.add(unusedPp[0].id);
     matched += 1;
     autoLinked = true;
+    console.log('[postpulse] auto-link 1:1', {
+      page: unlinkedPages[0].page_name,
+      page_id: unlinkedPages[0].page_id,
+      ppId: unusedPp[0].id,
+      ppName: unusedPp[0].accountDisplayName,
+      ppAccountId: unusedPp[0].accountId,
+    });
+  } else {
+    console.log('[postpulse] sync sem auto-link', {
+      pages: pagesAfter.length,
+      unlinked: unlinkedPages.length,
+      fbAccounts: fbAccounts.length,
+      unusedPp: unusedPp.length,
+      pageIds: pagesAfter.map((p) => p.page_id),
+      ppAccountIds: fbAccounts.map((a) => a.accountId),
+    });
   }
 
   const finalPages = await FacebookPages.findByAccount(account.id);
+  const linkedCount = finalPages.filter((p) => p.postpulse_account_id).length;
 
   return {
-    matched,
+    matched: linkedCount,
     autoLinked,
     accounts: fbAccounts.map(serializeAccount),
     pages: finalPages.map((p) => ({
