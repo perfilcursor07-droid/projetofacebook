@@ -812,6 +812,63 @@ Regras:
   return { titulo, tom: tomKey };
 }
 
+/**
+ * Gera consultas de busca de imagem alinhadas à matéria (prioriza pessoa/fato específico).
+ */
+async function sugerirConsultasImagem({ titulo, materia, fonteTitulo }) {
+  assertDeepseek();
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você monta buscas de imagem no Google Images para capa de matéria no Facebook.
+Responda APENAS JSON:
+{"pessoa":"nome próprio se houver ou null","consultas":["...","...","..."],"motivo":"frase curta"}
+Regras:
+- Se a matéria fala de pessoa pública/jogador/pastor/político, a 1ª consulta DEVE incluir o nome completo + contexto (ex.: "Julián Álvarez seleção argentina").
+- NÃO use termos genéricos tipo "igreja", "futebol", "homem" quando houver pessoa nomeada.
+- 3 consultas em português ou nome próprio + inglês se for celebridade internacional.
+- Consultas curtas (3–7 palavras), boas para Google Images.
+- Sem hashtag.`,
+      },
+      {
+        role: 'user',
+        content: [
+          titulo ? `Título: ${titulo}` : null,
+          fonteTitulo ? `Fonte: ${fonteTitulo}` : null,
+          materia ? `Matéria:\n${String(materia).slice(0, 2200)}` : null,
+          'Gere as consultas de imagem.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+    { temperature: 0.4, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+
+  const consultas = (Array.isArray(parsed.consultas) ? parsed.consultas : [])
+    .map((c) => String(c || '').replace(/\s+/g, ' ').trim())
+    .filter((c) => c.length >= 3)
+    .slice(0, 4);
+
+  if (!consultas.length && titulo) {
+    consultas.push(String(titulo).split(/\s+/).slice(0, 6).join(' '));
+  }
+
+  return {
+    pessoa: parsed.pessoa ? String(parsed.pessoa).trim() : null,
+    consultas,
+    motivo: parsed.motivo ? String(parsed.motivo).trim().slice(0, 160) : null,
+  };
+}
+
 module.exports = {
   gerarMateriaVideo,
   gerarMateriaImagem,
@@ -819,6 +876,7 @@ module.exports = {
   sugerirCortes,
   resumirAlertaBiblioteca,
   sugerirTituloMateria,
+  sugerirConsultasImagem,
   TITULO_TOMES,
   assertDeepseek,
   MAX_MATERIA_CHARS,

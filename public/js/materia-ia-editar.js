@@ -366,6 +366,96 @@
     }
   });
 
+  document.getElementById('btn-sugerir-imagens')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-sugerir-imagens');
+    const grid = document.getElementById('matter-img-suggest-grid');
+    const meta = document.getElementById('matter-img-suggest-meta');
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Analisando matéria e buscando fotos…';
+    }
+    setStatus('IA analisando o assunto e buscando fotos reais…');
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/sugerir-imagens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao sugerir imagens');
+
+      const imgs = data.imagens || [];
+      if (meta) {
+        meta.classList.remove('hidden');
+        meta.textContent =
+          (data.pessoa ? 'Pessoa: ' + data.pessoa + ' · ' : '') +
+          (data.motivo || 'Sugestões') +
+          (data.consultas?.length ? ' · Busca: ' + data.consultas.slice(0, 2).join(' / ') : '');
+      }
+      if (!grid) return;
+      if (!imgs.length) {
+        grid.classList.add('hidden');
+        grid.innerHTML = '';
+        setStatus('Nenhuma imagem encontrada para este assunto', true);
+        return;
+      }
+      grid.classList.remove('hidden');
+      grid.innerHTML = imgs
+        .map((img, i) => {
+          const thumb = img.thumbnail || img.url;
+          const srcLabel = img.origem === 'google' ? 'Google' : img.origem || '';
+          return `<button type="button" data-suggest-idx="${i}"
+            class="group relative overflow-hidden rounded-lg border border-slate-700 bg-slate-950 text-left hover:border-violet-400">
+            <img src="${String(thumb).replace(/"/g, '&quot;')}" alt="" class="aspect-[4/5] w-full object-cover" loading="lazy" />
+            <span class="absolute bottom-0 left-0 right-0 bg-black/65 px-1.5 py-1 text-[10px] text-slate-200">${srcLabel}</span>
+          </button>`;
+        })
+        .join('');
+
+      window.__IMG_SUGESTOES__ = imgs;
+      grid.querySelectorAll('[data-suggest-idx]').forEach((el) => {
+        el.addEventListener('click', async () => {
+          const idx = Number(el.dataset.suggestIdx);
+          const chosen = (window.__IMG_SUGESTOES__ || [])[idx];
+          if (!chosen?.url) return;
+          el.disabled = true;
+          setStatus('Aplicando imagem e gerando arte Minha marca…');
+          try {
+            const r = await fetch('/api/materias-ia/matters/' + cfg.id + '/aplicar-imagem-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                imageUrl: chosen.url,
+                titulo: tituloEl?.value || '',
+              }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || 'Falha ao aplicar imagem');
+            if (j.imagemUrl && imgEl) {
+              imgEl.src = j.imagemUrl + (j.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+              imgWrap?.classList.remove('hidden');
+            }
+            setStatus('Imagem sugerida aplicada na arte ✓');
+            setTimeout(() => window.location.reload(), 600);
+          } catch (err) {
+            setStatus(err.message, true);
+            el.disabled = false;
+          }
+        });
+      });
+
+      setStatus(imgs.length + ' imagens sugeridas — clique para usar na arte');
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original || 'Sugerir imagens para esta matéria';
+      }
+    }
+  });
+
   document.getElementById('btn-buscar-imagem-fonte')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-buscar-imagem-fonte');
     const original = btn?.textContent;

@@ -648,6 +648,68 @@ async function buscarImagemFonte(req, res, next) {
   }
 }
 
+/** IA analisa a matéria e sugere fotos reais (Google Images via Serper). */
+async function sugerirImagens(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+
+    const { sugerirImagensParaMateria } = require('../services/imageSuggestService');
+    const result = await sugerirImagensParaMateria({
+      titulo: matter.titulo,
+      materia: matter.materia,
+      fonteTitulo: matter.fonte_titulo,
+      limite: Math.min(Number(req.body?.limite) || 12, 18),
+    });
+
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+/** Aplica URL de imagem sugerida e gera arte Minha marca. */
+async function aplicarImagemUrl(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'Matéria já publicada. A imagem não pode ser alterada.' });
+    }
+
+    const imageUrl = String(req.body?.imageUrl || req.body?.url || '').trim();
+    if (!/^https?:\/\//i.test(imageUrl)) {
+      return res.status(400).json({ error: 'Informe a URL da imagem sugerida' });
+    }
+
+    const title = String(req.body?.titulo || matter.titulo || '').trim();
+    const artwork = await composeMatterArtwork({
+      userId: req.session.userId,
+      matterId,
+      sourceUrl: imageUrl,
+      title,
+      force: true,
+    });
+
+    return res.json({
+      ok: true,
+      matter: artwork.matter,
+      imagemUrl: artwork.publicUrl,
+      hasLogo: artwork.hasLogo,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 module.exports = {
   pesquisar,
   emAlta,
@@ -661,6 +723,8 @@ module.exports = {
   atualizarMateria,
   sugerirTitulo,
   buscarImagemFonte,
+  sugerirImagens,
+  aplicarImagemUrl,
   showMatter,
   listPage,
   listMinhasMaterias,
