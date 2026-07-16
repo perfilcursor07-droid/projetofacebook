@@ -54,7 +54,10 @@ function queuePublication({ publicationId, userId, page, filePath, texto, titulo
         fb_post_id: postId,
         fb_post_url: fbPostUrl,
         published_at: new Date(),
-        erro_mensagem: null,
+        // Se o FB ainda processa o Reel, guarda aviso informativo (não é erro)
+        erro_mensagem: result.pendingConfirmation
+          ? String(result.message || 'Reel enviado — Facebook ainda processando.').slice(0, 500)
+          : null,
       });
       if (onSuccess) await onSuccess();
     } catch (err) {

@@ -202,10 +202,20 @@ function platformStatusSummary(post) {
   };
 }
 
+const PROCESSING_STATUSES = new Set([
+  'IN_PROGRESS',
+  'PROCESSING',
+  'PENDING',
+  'QUEUED',
+  'SCHEDULED',
+  '',
+]);
+
 /**
  * Aguarda o PostSyncer terminar o envio ao Facebook (PUBLISHED / FAILED).
+ * Reels do YouTube costumam ficar IN_PROGRESS por vários minutos no Facebook.
  */
-async function waitForPostSettled(postId, { timeoutMs = 180_000, intervalMs = 6_000 } = {}) {
+async function waitForPostSettled(postId, { timeoutMs = 480_000, intervalMs = 8_000 } = {}) {
   const started = Date.now();
   let last = null;
   while (Date.now() - started < timeoutMs) {
@@ -216,6 +226,7 @@ async function waitForPostSettled(postId, { timeoutMs = 180_000, intervalMs = 6_
       status: summary.status,
       platformStatus: summary.platformStatus,
       postedOn: summary.postedOn,
+      elapsedSec: Math.round((Date.now() - started) / 1000),
     });
 
     const done =
@@ -350,21 +361,14 @@ async function publishToFacebook({
       })),
     });
 
-    // Confirma se o Facebook realmente publicou (API pode aceitar e falhar depois)
+    // Confirma se o Facebook realmente publicou (API pode aceitar e falhar depois).
+    // Reels (sobretudo YouTube) demoram: Facebook processa o vídeo em background.
     let settled = { post, ...platformStatusSummary(post) };
     if (numericId != null && fbType === 'REELS') {
-      settled = await waitForPostSettled(numericId, { timeoutMs: 180_000 });
+      settled = await waitForPostSettled(numericId, { timeoutMs: 480_000, intervalMs: 8_000 });
     }
 
     const finalStatus = String(settled.platformStatus || settled.status || '').toUpperCase();
-    if (settled.timedOut && finalStatus !== 'PUBLISHED') {
-      const err = new Error(
-        `PostSyncer aceitou o Reel (#${numericId}), mas o Facebook ainda não confirmou a publicação (status: ${finalStatus || 'PENDENTE'}). Confira em app.postsyncer.com se falhou ou ainda está processando.`
-      );
-      err.status = 502;
-      err.postsyncer = settled;
-      throw err;
-    }
     if (['FAILED', 'ERROR'].includes(finalStatus) || finalStatus === 'DRAFT') {
       const detail =
         typeof settled.platformError === 'string'
@@ -378,6 +382,19 @@ async function publishToFacebook({
       throw err;
     }
 
+    // Timeout ainda IN_PROGRESS = PostSyncer aceitou; FB só está processando o vídeo.
+    // Não marcar como erro — o post costuma sair nos minutos seguintes.
+    const pendingConfirmation =
+      settled.timedOut &&
+      finalStatus !== 'PUBLISHED' &&
+      PROCESSING_STATUSES.has(finalStatus);
+
+    if (pendingConfirmation) {
+      console.warn(
+        `[postsyncer] Reel #${numericId} ainda IN_PROGRESS após espera — tratando como aceito (verifique em app.postsyncer.com)`
+      );
+    }
+
     return {
       id: postId,
       post_id: postId,
@@ -386,6 +403,10 @@ async function publishToFacebook({
       status: settled.status || post?.status || null,
       platformStatus: settled.platformStatus || null,
       postedOn: settled.postedOn || null,
+      pendingConfirmation: Boolean(pendingConfirmation),
+      message: pendingConfirmation
+        ? `Reel enviado (#${numericId}). O Facebook ainda está processando — confira em alguns minutos na Página ou em app.postsyncer.com.`
+        : null,
     };
   } catch (err) {
     if (err.postsyncer) throw err;
