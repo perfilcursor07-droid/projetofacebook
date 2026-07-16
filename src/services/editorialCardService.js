@@ -8,7 +8,8 @@ const sharp = require('sharp');
 const { env } = require('../config/env');
 
 const WIDTH = 1080;
-const HEIGHT = 1350;
+/** Mesmo formato dos vídeos/Reels (9:16) — evita corte no feed do Facebook. */
+const HEIGHT = 1920;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 function escapeXml(value) {
@@ -123,38 +124,43 @@ function buildOverlay({ title, category, footer, brandName, primary, secondary, 
   const lineHeight = Math.round(fontSize * 1.08);
   const safeCategory = escapeXml(category || 'ÚLTIMAS');
   const safeFooter = escapeXml(footer || brandName || '');
+
+  // Layout proporcional à altura 9:16 (base visual antiga 1350 → 1920)
+  const y = (n) => Math.round((n / 1350) * HEIGHT);
+  const h = (n) => Math.round((n / 1350) * HEIGHT);
+
   let layout;
 
   if (modelId === 'bloco_inferior') {
     layout = `
-      <rect x="0" y="748" width="1080" height="602" fill="rgba(0,0,0,.74)"/>
-      <rect x="0" y="748" width="1080" height="16" fill="url(#accent)"/>
-      <text x="72" y="840" text-anchor="start" class="category">${safeCategory}</text>
-      ${renderTitleLines(lines, { x: 72, y: 930, lineHeight, anchor: 'start' })}
-      <text x="72" y="1295" text-anchor="start" class="footer">${safeFooter}</text>`;
+      <rect x="0" y="${y(748)}" width="${WIDTH}" height="${h(602)}" fill="rgba(0,0,0,.74)"/>
+      <rect x="0" y="${y(748)}" width="${WIDTH}" height="16" fill="url(#accent)"/>
+      <text x="72" y="${y(840)}" text-anchor="start" class="category">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: 72, y: y(930), lineHeight, anchor: 'start' })}
+      <text x="72" y="${y(1295)}" text-anchor="start" class="footer">${safeFooter}</text>`;
   } else if (modelId === 'minimalista') {
     layout = `
-      <rect x="58" y="805" width="380" height="74" rx="37" fill="url(#accent)"/>
-      <text x="248" y="855" text-anchor="middle" class="category category-dark">${safeCategory}</text>
-      <rect x="58" y="915" width="230" height="12" rx="6" fill="url(#accent)"/>
-      ${renderTitleLines(lines, { x: 58, y: 982, lineHeight, anchor: 'start' })}
-      <text x="58" y="1302" text-anchor="start" class="footer">${safeFooter}</text>`;
+      <rect x="58" y="${y(805)}" width="380" height="74" rx="37" fill="url(#accent)"/>
+      <text x="248" y="${y(855)}" text-anchor="middle" class="category category-dark">${safeCategory}</text>
+      <rect x="58" y="${y(915)}" width="230" height="12" rx="6" fill="url(#accent)"/>
+      ${renderTitleLines(lines, { x: 58, y: y(982), lineHeight, anchor: 'start' })}
+      <text x="58" y="${y(1302)}" text-anchor="start" class="footer">${safeFooter}</text>`;
   } else if (modelId === 'barra_lateral') {
     layout = `
-      <rect x="58" y="785" width="18" height="454" rx="9" fill="url(#accent)"/>
-      <text x="108" y="850" text-anchor="start" class="category">${safeCategory}</text>
-      ${renderTitleLines(lines, { x: 108, y: 934, lineHeight, anchor: 'start' })}
-      <text x="108" y="1298" text-anchor="start" class="footer">${safeFooter}</text>`;
+      <rect x="58" y="${y(785)}" width="18" height="${h(454)}" rx="9" fill="url(#accent)"/>
+      <text x="108" y="${y(850)}" text-anchor="start" class="category">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: 108, y: y(934), lineHeight, anchor: 'start' })}
+      <text x="108" y="${y(1298)}" text-anchor="start" class="footer">${safeFooter}</text>`;
   } else {
-    const accentY = 882;
+    const accentY = y(882);
     const accentHeight = 14;
     const titleGap = 30;
     const titleTop = accentY + accentHeight + titleGap + Math.round(fontSize * 0.78);
     layout = `
-      <text x="540" y="844" text-anchor="middle" class="category">${safeCategory}</text>
+      <text x="540" y="${y(844)}" text-anchor="middle" class="category">${safeCategory}</text>
       <rect x="58" y="${accentY}" width="964" height="${accentHeight}" rx="7" fill="url(#accent)"/>
       ${renderTitleLines(lines, { x: 540, y: titleTop, lineHeight })}
-      <text x="540" y="1310" text-anchor="middle" class="footer">${safeFooter}</text>`;
+      <text x="540" y="${y(1310)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
   }
 
   const fallbackBrand = hasLogo || !String(brandName || '').trim() ? '' : `
@@ -183,7 +189,7 @@ function buildOverlay({ title, category, footer, brandName, primary, secondary, 
           .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: 34px; letter-spacing: 1px; fill: ${primary}; filter: url(#shadow); }
         </style>
       </defs>
-      <rect width="1080" height="1350" fill="url(#shade)"/>
+      <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#shade)"/>
       ${fallbackBrand}
       ${layout}
     </svg>

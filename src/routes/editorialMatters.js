@@ -131,7 +131,7 @@ async function addArtwork(userId, result) {
     article.imagemOrigem = {
       ...(sourceMeta || {}),
       tipo: 'arte',
-      rotulo: `Arte final 4:5 com título${artwork.hasLogo ? ' e logomarca' : ''} · ${sourceMeta?.rotulo || 'foto editorial'}`,
+      rotulo: `Arte final 9:16 (1080×1920) com título${artwork.hasLogo ? ' e logomarca' : ''} · ${sourceMeta?.rotulo || 'foto editorial'}`,
       hasLogo: artwork.hasLogo,
     };
     return { ...result, matter: artwork.matter, artigo: article, preview: article, avisos: warnings };

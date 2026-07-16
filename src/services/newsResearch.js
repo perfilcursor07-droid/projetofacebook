@@ -70,8 +70,39 @@ function normalizarPeriodo(valor) {
   if (str === '24h' || str === '24') return { horas: 24, dias: 1 };
   if (str === '3d' || str === '3') return { dias: 3 };
   if (str === '7d' || str === '7') return { dias: 7 };
-  const dias = Math.min(Math.max(parseInt(str, 10) || 1, 1), 30);
-  return { dias };
+  if (str === '30d' || str === '1m' || str === '30') return { dias: 30 };
+  if (str === '90d' || str === '3m' || str === '90') return { dias: 90 };
+  if (str === '180d' || str === '6m' || str === '180') return { dias: 180 };
+  const m = str.match(/^(\d+)\s*(d|h|m)?$/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (m[2] === 'h') return { horas: Math.min(Math.max(n, 1), 24 * 180), dias: Math.ceil(n / 24) };
+    if (m[2] === 'm') return { dias: Math.min(Math.max(n * 30, 1), 180) };
+    return { dias: Math.min(Math.max(n || 1, 1), 180) };
+  }
+  return { dias: 1 };
+}
+
+/** Operador when: do Google News conforme o período (máx. ~1 ano na query; filtro fino depois). */
+function whenParaGoogle(periodo) {
+  const cfg = typeof periodo === 'object' ? periodo : normalizarPeriodo(periodo);
+  const dias = cfg.horas ? Math.ceil(cfg.horas / 24) : cfg.dias || 1;
+  if (dias <= 1) return '1d';
+  if (dias <= 3) return '3d';
+  if (dias <= 7) return '7d';
+  if (dias <= 31) return '1m';
+  if (dias <= 180) return '1y';
+  return '1y';
+}
+
+/** Freshness da Brave News API. */
+function freshnessBrave(periodo) {
+  const cfg = typeof periodo === 'object' ? periodo : normalizarPeriodo(periodo);
+  const dias = cfg.horas ? Math.ceil(cfg.horas / 24) : cfg.dias || 1;
+  if (dias <= 1) return 'pd';
+  if (dias <= 7) return 'pw';
+  if (dias <= 31) return 'pm';
+  return 'py';
 }
 
 function itemEhRecente(item, periodo) {
@@ -167,8 +198,9 @@ async function buscarGoogleNewsEmAlta(termo) {
 async function buscarBraveNews(termo, dias = 1) {
   if (!env.braveSearchApiKey) return [];
   try {
+    const freshness = freshnessBrave({ dias });
     const { data } = await axios.get('https://api.search.brave.com/res/v1/news/search', {
-      params: { q: termo, count: 10, freshness: dias <= 1 ? 'pd' : dias <= 3 ? 'pw' : 'pm', country: 'BR', search_lang: 'pt' },
+      params: { q: termo, count: 20, freshness, country: 'BR', search_lang: 'pt' },
       headers: {
         Accept: 'application/json',
         'X-Subscription-Token': env.braveSearchApiKey,
@@ -200,7 +232,7 @@ async function buscarSerperRedes(termo) {
   try {
     const { data } = await axios.post(
       'https://google.serper.dev/search',
-      { q: `${termo} site:instagram.com OR site:facebook.com OR site:x.com OR site:tiktok.com OR site:youtube.com`, num: 8, gl: 'br', hl: 'pt-br' },
+      { q: `${termo} site:instagram.com OR site:facebook.com OR site:x.com OR site:tiktok.com OR site:youtube.com`, num: 15, gl: 'br', hl: 'pt-br' },
       {
         headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
         timeout: 15000,
@@ -235,21 +267,21 @@ async function buscarSerperRedes(termo) {
 /**
  * Pesquisa assuntos por palavras-chave.
  */
-async function pesquisarNichos(palavrasChave, quantidadePorNicho = 5, opcoes = {}) {
+async function pesquisarNichos(palavrasChave, quantidadePorNicho = 8, opcoes = {}) {
   const termos = String(palavrasChave || '')
     .split(/[,;]/)
     .map((t) => t.trim())
     .filter((t) => t.length >= 2)
-    .slice(0, 8);
+    .slice(0, 10);
 
   if (!termos.length) return [];
 
-  const qtd = Math.min(Math.max(Number(quantidadePorNicho) || 5, 1), 10);
+  const qtd = Math.min(Math.max(Number(quantidadePorNicho) || 8, 1), 20);
   const periodo = normalizarPeriodo(opcoes.periodo || (opcoes.diasRecentes ? `${opcoes.diasRecentes}d` : '24h'));
   const filtrarPeriodo = opcoes.somenteRecentes !== false && opcoes.filtrarPeriodo !== false;
   const incluirRedes = Boolean(opcoes.incluirRedesSociais);
   const somenteRedes = Boolean(opcoes.somenteRedesSociais);
-  const when = periodo.horas === 24 || periodo.dias === 1 ? '1d' : periodo.dias <= 3 ? '3d' : '7d';
+  const when = whenParaGoogle(periodo);
 
   const lotes = [];
   for (const termo of termos) {
@@ -272,11 +304,11 @@ async function pesquisarNichos(palavrasChave, quantidadePorNicho = 5, opcoes = {
 
   lista.sort((a, b) => (b.dataTimestamp || 0) - (a.dataTimestamp || 0) || (b.emAlta ? 1 : 0) - (a.emAlta ? 1 : 0));
 
-  const limite = Math.min(termos.length * qtd, 24);
+  const limite = Math.min(termos.length * qtd, 80);
   const selecionados = lista.slice(0, limite);
 
   const apurados = [];
-  for (const item of selecionados.slice(0, 12)) {
+  for (const item of selecionados.slice(0, Math.min(limite, 40))) {
     try {
       apurados.push(await apurarTopico(item));
     } catch {
@@ -314,4 +346,6 @@ module.exports = {
   titulosSimilares,
   deduplicarTopicos,
   normalizarPeriodo,
+  whenParaGoogle,
+  freshnessBrave,
 };

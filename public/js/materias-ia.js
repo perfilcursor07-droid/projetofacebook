@@ -188,7 +188,8 @@
     }
     const onde = document.getElementById('mia-onde').value;
     const periodo = document.getElementById('mia-periodo').value;
-    const diasRecentes = periodo === '24h' ? 1 : periodo === '3d' ? 3 : 7;
+    const diasPorPeriodo = { '24h': 1, '3d': 3, '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
+    const diasRecentes = diasPorPeriodo[periodo] || 7;
     statusMia.textContent = 'Buscando assuntos…';
     try {
       const res = await fetch('/api/materias-ia/pesquisar', {
@@ -196,7 +197,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           palavrasChave,
-          quantidadePorNicho: Number(document.getElementById('mia-qtd').value || 5),
+          quantidadePorNicho: Number(document.getElementById('mia-qtd').value || 8),
           diasRecentes,
           periodo,
           incluirRedes: onde === 'tudo',
