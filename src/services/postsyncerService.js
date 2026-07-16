@@ -175,10 +175,20 @@ async function publishToFacebook({
 
   const media = [];
   if (filePath) {
+    console.log('[postsyncer] uploading media', path.basename(filePath));
     const mediaId = await uploadMediaFile({ workspaceId: wid, filePath });
     media.push(mediaId);
   } else if (imageUrl && /^https?:\/\//i.test(String(imageUrl))) {
     media.push(String(imageUrl));
+  }
+
+  if (
+    (publicationType === 'REELS' || publicationType === 'reel') &&
+    media.length === 0
+  ) {
+    const err = new Error('Reel exige vídeo: upload de mídia falhou ou arquivo ausente.');
+    err.status = 422;
+    throw err;
   }
 
   const fbType =
@@ -190,7 +200,8 @@ async function publishToFacebook({
 
   // PostSyncer Facebook: campo correto é post_type (não "type")
   const settings = { post_type: fbType };
-  if (title) settings.title = String(title).slice(0, 200);
+  // title sobrescreve a legenda no FB — só em POST de feed, nunca em REELS
+  if (title && fbType !== 'REELS') settings.title = String(title).slice(0, 200);
   if (link) settings.link = String(link);
 
   const body = {
@@ -213,8 +224,11 @@ async function publishToFacebook({
     workspaceId: wid,
     accountId: aid,
     type: fbType,
+    post_type: settings.post_type,
     mediaCount: media.length,
+    mediaIds: media,
     contentLen: String(content || '').length,
+    hasTitleOverride: Boolean(settings.title),
   });
 
   try {

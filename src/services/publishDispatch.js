@@ -117,9 +117,25 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
       throw err;
     }
 
+    if (tipo === 'reel' && !localFile) {
+      const err = new Error(
+        'Vídeo do Reel não encontrado para upload. Aguarde o processamento ou importe o link de novo.'
+      );
+      err.status = 422;
+      throw err;
+    }
+
     const publicationType = tipo === 'reel' ? 'REELS' : 'POST';
     const FacebookPages = require('../models/FacebookPages');
     const freshPage = await FacebookPages.findById(page.id);
+
+    console.log('[publish] postsyncer', {
+      pageId: page.id,
+      tipo,
+      publicationType,
+      hasFile: Boolean(localFile),
+      file: localFile ? path.basename(localFile) : null,
+    });
 
     const result = await postsyncerService.publishToFacebook({
       accountId: freshPage.postsyncer_account_id || page.postsyncer_account_id,
@@ -127,7 +143,8 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
       filePath: localFile || null,
       imageUrl: localFile ? null : remoteUrl,
       publicationType,
-      title: titulo || null,
+      // Em REELS o title sobrescreve a legenda no Facebook — só usar em POST
+      title: publicationType === 'REELS' ? null : titulo || null,
       link: link || null,
       scheduleType: 'publish_now',
     });

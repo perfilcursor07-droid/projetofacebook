@@ -229,7 +229,7 @@ async function salvarMateria({ userId, facebookPageId, gerado, topico, tipoPubli
 }
 
 async function publicarMateria(userId, matterId, overrides = {}) {
-  const matter = await AiMatters.findById(matterId);
+  let matter = await AiMatters.findById(matterId);
   if (!matter || matter.user_id !== userId) {
     const err = new Error('Matéria não encontrada');
     err.status = 404;
@@ -244,7 +244,13 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     throw err;
   }
 
-  const tipo = overrides.tipo_publicacao || matter.tipo_publicacao || 'texto';
+  // Reel nunca pode “cair” para texto por override do body (pickTipo default = texto)
+  const tipo =
+    matter.tipo_publicacao === 'reel'
+      ? 'reel'
+      : overrides.tipo_publicacao && overrides.tipo_publicacao !== 'auto'
+        ? overrides.tipo_publicacao
+        : matter.tipo_publicacao || 'texto';
   const mensagem = montarMensagem({
     titulo: overrides.titulo || matter.titulo,
     materia: overrides.materia || matter.materia,
@@ -261,7 +267,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     throw err;
   }
 
-  if (tipo === 'reel' && !matter.video_path) {
+  if (tipo === 'reel' && !matter.video_path && !matter.video_clip_id) {
     const err = new Error('Vídeo do Reel ainda não está pronto. Aguarde o processamento.');
     err.status = 422;
     throw err;
@@ -333,7 +339,18 @@ async function publicarMateria(userId, matterId, overrides = {}) {
         }
       }
 
-      const rel = matter.video_path;
+      // Preferir arquivo atual do clipe (com capa), não um path antigo deletado
+      let rel = matter.video_path;
+      if (matter.video_clip_id) {
+        try {
+          const VideoClips = require('../models/VideoClips');
+          const clip = await VideoClips.findById(matter.video_clip_id);
+          if (clip?.caminho_arquivo) rel = clip.caminho_arquivo;
+        } catch {
+          /* ignore */
+        }
+      }
+
       if (!rel) {
         const err = new Error('Vídeo do Reel não encontrado.');
         err.status = 422;
@@ -341,10 +358,19 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       }
       reelFile = storageAbsolutePath(rel);
       if (!fs.existsSync(reelFile)) {
-        const err = new Error('Arquivo do Reel ausente no servidor. Gere novamente a partir do link.');
+        const err = new Error(
+          `Arquivo do Reel ausente no servidor (${rel}). Gere novamente a partir do link.`
+        );
         err.status = 422;
         throw err;
       }
+      if (rel !== matter.video_path) {
+        await AiMatters.update(matter.id, { video_path: rel });
+        matter.video_path = rel;
+      }
+      console.log(
+        `[publicar-reel] matter #${matter.id} file=${rel} bytes=${fs.statSync(reelFile).size}`
+      );
     }
 
     const result = await publishDispatch.publishContent({
@@ -360,7 +386,8 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       imagemPath: pubTipo === 'reel' ? null : matter.imagem_path || null,
       imageUrl: pubTipo === 'foto' && img ? img : null,
       texto: mensagem,
-      titulo: overrides.titulo || matter.titulo || null,
+      // PostSyncer: settings.title sobrescreve a legenda — não enviar em Reels
+      titulo: pubTipo === 'reel' ? null : overrides.titulo || matter.titulo || null,
     });
 
     const postId = result.post_id || result.id;

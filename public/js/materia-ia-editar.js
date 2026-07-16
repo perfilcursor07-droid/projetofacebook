@@ -156,7 +156,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           facebookPageId: Number(pageSelect.value),
-          tipoPublicacao: tipoEl.value,
+          tipoPublicacao: cfg.isReel ? 'reel' : tipoEl.value,
           titulo: tituloEl.value,
           materia: materiaEl.value,
           sync: true,

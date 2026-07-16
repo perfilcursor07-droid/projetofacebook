@@ -244,9 +244,15 @@ async function publicar(req, res, next) {
   try {
     const matterId = Number(req.params.id);
     const body = req.body || {};
+    const matter = await AiMatters.findById(matterId);
+    const tipoBody = pickTipo(body);
+    // Se a matéria já é reel, nunca deixa o body forçar texto
+    const tipo =
+      matter?.tipo_publicacao === 'reel' ? 'reel' : tipoBody === 'auto' ? matter?.tipo_publicacao : tipoBody;
+
     const result = await materiaIaService.publicarMateria(req.session.userId, matterId, {
       facebook_page_id: pickPageId(body),
-      tipo_publicacao: pickTipo(body),
+      tipo_publicacao: tipo || matter?.tipo_publicacao || 'texto',
       titulo: body.titulo,
       materia: body.materia,
       imagem_url: body.imagem_url || body.imagemUrl,
