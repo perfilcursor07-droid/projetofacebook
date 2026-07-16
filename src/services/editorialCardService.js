@@ -8,8 +8,11 @@ const sharp = require('sharp');
 const { env } = require('../config/env');
 
 const WIDTH = 1080;
-/** Mesmo formato dos vídeos/Reels (9:16) — evita corte no feed do Facebook. */
-const HEIGHT = 1920;
+/**
+ * Formato do feed do Facebook (4:5).
+ * 9:16 (Reels) deixa faixas laterais no feed; 4:5 preenche a largura do post.
+ */
+const HEIGHT = 1350;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 function escapeXml(value) {
@@ -244,9 +247,21 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const composites = [{ input: overlay, left: 0, top: 0 }];
   if (logo) composites.push(logo);
 
-  await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
-    .rotate()
-    .resize(WIDTH, HEIGHT, { fit: 'cover', position: 'centre' })
+  // Remove faixas sólidas laterais da origem (pillarbox) quando existirem.
+  let sourcePrepared = source;
+  try {
+    sourcePrepared = await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .rotate()
+      .trim({ threshold: 28 })
+      .toBuffer();
+  } catch {
+    sourcePrepared = await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .rotate()
+      .toBuffer();
+  }
+
+  await sharp(sourcePrepared)
+    .resize(WIDTH, HEIGHT, { fit: 'cover', position: 'attention' })
     .composite(composites)
     .jpeg({ quality: 91, chromaSubsampling: '4:4:4' })
     .toFile(outputPath);

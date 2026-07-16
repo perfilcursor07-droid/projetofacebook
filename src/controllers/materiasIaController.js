@@ -195,6 +195,7 @@ async function publicar(req, res, next) {
       materia: body.materia,
       imagem_url: body.imagem_url || body.imagemUrl,
       sync: Boolean(body.sync),
+      forcar: Boolean(body.forcar || body.republicar),
     });
     res.status(result.queued ? 202 : 200).json({
       ok: true,

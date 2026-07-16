@@ -83,13 +83,21 @@
     }
 
     const publishBtn = document.getElementById('btn-publicar');
+    const isRepublish = Boolean(cfg.canRepublish || publishBtn?.dataset.republicar === '1');
+    if (isRepublish) {
+      const ok = window.confirm(
+        'Republicar esta matéria? Será criado um novo post na Página (o post antigo permanece).'
+      );
+      if (!ok) return;
+    }
+
     if (publishBtn) publishBtn.disabled = true;
 
     showPublishModal('publishing');
-    setStatus('Salvando e publicando…');
+    setStatus(isRepublish ? 'Republicando…' : 'Salvando e publicando…');
 
     try {
-      await salvar();
+      if (cfg.canEdit) await salvar();
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/publicar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,6 +107,8 @@
           titulo: tituloEl.value,
           materia: materiaEl.value,
           sync: true,
+          forcar: true,
+          republicar: isRepublish,
         }),
       });
       const data = await res.json();
@@ -110,7 +120,7 @@
       }
 
       showPublishModal('success', data.link || null);
-      setStatus('Publicado com sucesso ✓');
+      setStatus(isRepublish ? 'Republicada com sucesso ✓' : 'Publicado com sucesso ✓');
       setTimeout(() => {
         window.location.href = cfg.listUrl || '/minhas-materias';
       }, 1800);
@@ -137,8 +147,12 @@
       spin?.classList.add('hidden');
       ok?.classList.remove('hidden');
       ok?.classList.add('flex');
-      if (title) title.textContent = 'Publicado com sucesso';
-      if (text) text.textContent = 'A matéria foi enviada para a Página. Voltando para a lista…';
+      if (title) title.textContent = cfg.canRepublish ? 'Republicada com sucesso' : 'Publicado com sucesso';
+      if (text) {
+        text.textContent = cfg.canRepublish
+          ? 'Um novo post foi enviado para a Página. Voltando para a lista…'
+          : 'A matéria foi enviada para a Página. Voltando para a lista…';
+      }
       if (linkEl && link) {
         linkEl.href = link;
         linkEl.classList.remove('hidden');

@@ -131,7 +131,7 @@ async function addArtwork(userId, result) {
     article.imagemOrigem = {
       ...(sourceMeta || {}),
       tipo: 'arte',
-      rotulo: `Arte final 9:16 (1080×1920) com título${artwork.hasLogo ? ' e logomarca' : ''} · ${sourceMeta?.rotulo || 'foto editorial'}`,
+      rotulo: `Arte final 4:5 (1080×1350) com título${artwork.hasLogo ? ' e logomarca' : ''} · ${sourceMeta?.rotulo || 'foto editorial'}`,
       hasLogo: artwork.hasLogo,
     };
     return { ...result, matter: artwork.matter, artigo: article, preview: article, avisos: warnings };
@@ -258,13 +258,19 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
       const title = String(req.body.titulo || matter.titulo || '').trim();
       const sourceUrl = matter.imagem_fonte_url ||
         (!matter.imagem_path && /^https?:\/\//i.test(String(matter.imagem_url || '')) ? matter.imagem_url : null);
-      const artwork = await composeMatterArtwork({
-        userId,
-        matterId: matter.id,
-        sourceUrl,
-        title,
-        force: title !== String(matter.titulo || '').trim(),
-      });
+      let imagemUrl = matter.imagem_url;
+      if (sourceUrl) {
+        const artwork = await composeMatterArtwork({
+          userId,
+          matterId: matter.id,
+          sourceUrl,
+          title,
+          force: Boolean(req.body.republicar) || title !== String(matter.titulo || '').trim(),
+        });
+        imagemUrl = artwork.publicUrl;
+      } else if (!matter.imagem_path && !matter.imagem_url) {
+        return res.status(422).json({ error: 'Gere a arte com título e logomarca antes de publicar' });
+      }
       const published = await publishEditorialPhoto({
         userId,
         matterId: matter.id,
@@ -272,7 +278,7 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
         title,
         body: req.body.materia || matter.materia,
       });
-      return res.json({ ok: true, ...published, link: published.fbPostUrl, imagemUrl: artwork.publicUrl });
+      return res.json({ ok: true, ...published, link: published.fbPostUrl, imagemUrl });
     }
 
     const published = await materiaIaService.publicarMateria(userId, matter.id, {
@@ -281,6 +287,7 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
       titulo: req.body.titulo,
       materia: req.body.materia,
       sync: Boolean(req.body.sync),
+      forcar: Boolean(req.body.forcar || req.body.republicar),
     });
     return res.status(published.queued ? 202 : 200).json({
       ok: true,
