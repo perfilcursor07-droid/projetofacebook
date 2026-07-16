@@ -30,9 +30,20 @@ const env = {
     redirectUri:
       process.env.POSTPULSE_REDIRECT_URI ||
       'http://localhost:3000/api/auth/postpulse/callback',
-    /** auto | postpulse | facebook */
+    /**
+     * auto | postsyncer | postpulse | facebook
+     * auto: PostSyncer (se vinculado) → PostPulse → Graph API
+     */
     publishProvider: (process.env.PUBLISH_PROVIDER || 'auto').toLowerCase(),
   },
+  postsyncer: {
+    apiKey: process.env.POSTSYNCER_API_KEY || '',
+    workspaceId: process.env.POSTSYNCER_WORKSPACE_ID
+      ? Number(process.env.POSTSYNCER_WORKSPACE_ID)
+      : null,
+  },
+  /** URL pública do app (opcional; útil para mídia https) */
+  appPublicUrl: String(process.env.APP_PUBLIC_URL || '').replace(/\/$/, ''),
   ffmpegPath: process.env.FFMPEG_PATH || '',
   pythonPath: process.env.PYTHON_PATH || '',
   storagePath: process.env.STORAGE_PATH || './storage',

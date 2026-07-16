@@ -1,5 +1,6 @@
 const facebookService = require('./facebookService');
 const postpulseService = require('./postpulseService');
+const postsyncerService = require('./postsyncerService');
 const PostpulseConnections = require('../models/PostpulseConnections');
 const { env } = require('../config/env');
 const fs = require('fs');
@@ -8,12 +9,26 @@ const { storageAbsolutePath } = require('./downloadService');
 const { resolveArtworkPath } = require('./matterArtworkService');
 
 /**
- * Decide se a publicação deve ir pelo PostPulse.
- * provider: auto | postpulse | facebook
+ * Decide o provedor de publicação.
+ * provider: auto | postsyncer | postpulse | facebook
  */
 async function resolveProvider(userId, page) {
   const mode = env.postpulse.publishProvider || 'auto';
   if (mode === 'facebook') return 'facebook';
+
+  const canPostsyncer =
+    postsyncerService.isConfigured() && Boolean(page?.postsyncer_account_id);
+
+  if (mode === 'postsyncer') {
+    if (!canPostsyncer) {
+      const err = new Error(
+        'Publicação via PostSyncer exigida, mas a página não está vinculada. Em /paginas sincronize o PostSyncer.'
+      );
+      err.status = 400;
+      throw err;
+    }
+    return 'postsyncer';
+  }
 
   const conn = await PostpulseConnections.findByUser(userId);
   const canPostpulse =
@@ -30,19 +45,21 @@ async function resolveProvider(userId, page) {
     return 'postpulse';
   }
 
+  // auto: PostSyncer → PostPulse → Graph
+  if (canPostsyncer) return 'postsyncer';
   return canPostpulse ? 'postpulse' : 'facebook';
 }
 
 function buildFbPostUrl(page, postId) {
   if (!postId) return null;
   const id = String(postId);
-  if (id.startsWith('postpulse:')) return null;
+  if (id.startsWith('postpulse:') || id.startsWith('postsyncer:')) return null;
   if (id.includes('_')) return `https://www.facebook.com/${id}`;
   return `https://www.facebook.com/${page.page_id}/posts/${id}`;
 }
 
 /**
- * Converte imagem da matéria em arquivo local (PostPulse exige upload ou https).
+ * Converte imagem da matéria em arquivo local (PostPulse/PostSyncer exigem upload ou https).
  * Aceita imagem_path (artes/…) ou URL /media/….
  */
 function resolveLocalImageFile({ imagemPath, imageUrl }) {
@@ -58,7 +75,6 @@ function resolveLocalImageFile({ imagemPath, imageUrl }) {
     if (fs.existsSync(absolute)) return absolute;
   }
 
-  // URL absoluta apontando para o próprio /media/
   try {
     const parsed = new URL(url);
     if (parsed.pathname.startsWith('/media/')) {
@@ -74,8 +90,7 @@ function resolveLocalImageFile({ imagemPath, imageUrl }) {
 }
 
 /**
- * Publica foto/vídeo/reel/texto na página (PostPulse ou Graph API).
- * Aceita filePath local e/ou imageUrl pública.
+ * Publica foto/vídeo/reel/texto na página (PostSyncer, PostPulse ou Graph API).
  */
 async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, titulo, link, imagemPath }) {
   const provider = await resolveProvider(userId, page);
@@ -89,6 +104,42 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
     !localFile && imageUrl && /^https?:\/\//i.test(String(imageUrl)) && !String(imageUrl).includes('/media/')
       ? String(imageUrl)
       : null;
+
+  if (provider === 'postsyncer') {
+    let content = texto || '';
+    if (link) content = content ? `${content}\n\n${link}` : link;
+
+    if (tipo === 'foto' && !localFile && !remoteUrl) {
+      const err = new Error(
+        'Imagem da arte não encontrada no servidor. Gere a arte novamente antes de publicar.'
+      );
+      err.status = 422;
+      throw err;
+    }
+
+    const publicationType = tipo === 'reel' ? 'REELS' : 'POST';
+    const FacebookPages = require('../models/FacebookPages');
+    const freshPage = await FacebookPages.findById(page.id);
+
+    const result = await postsyncerService.publishToFacebook({
+      accountId: freshPage.postsyncer_account_id || page.postsyncer_account_id,
+      content,
+      filePath: localFile || null,
+      imageUrl: localFile ? null : remoteUrl,
+      publicationType,
+      title: titulo || null,
+      link: link || null,
+      scheduleType: 'publish_now',
+    });
+
+    const postId = result.post_id || result.id;
+    return {
+      ...result,
+      id: postId,
+      post_id: postId,
+      fb_post_url: buildFbPostUrl(page, postId),
+    };
+  }
 
   if (provider === 'postpulse') {
     const conn = await PostpulseConnections.findByUser(userId);
@@ -123,7 +174,6 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
       chatId: freshPage.postpulse_chat_id || chatId,
       content,
       filePath: localFile || null,
-      // Só envia URL se for https pública — nunca /media/ relativo
       imageUrl: localFile ? null : remoteUrl,
       publicationType,
     });
@@ -187,8 +237,13 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
 
 function publishErrorMessage(err) {
   const url = String(err.response?.config?.url || '');
+  if (url.includes('postsyncer.com')) return postsyncerService.apiErrorMessage(err);
   if (url.includes('post-pulse')) return postpulseService.apiErrorMessage(err);
-  return facebookService.graphErrorMessage(err) || postpulseService.apiErrorMessage(err);
+  return (
+    facebookService.graphErrorMessage(err) ||
+    postsyncerService.apiErrorMessage(err) ||
+    postpulseService.apiErrorMessage(err)
+  );
 }
 
 module.exports = {

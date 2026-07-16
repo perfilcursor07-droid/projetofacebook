@@ -35,6 +35,15 @@ const FacebookPages = {
     if (postpulseChatId !== undefined) patch.postpulse_chat_id = postpulseChatId;
     return db(this.table).where({ id }).update(patch);
   },
+
+  setPostsyncerAccount(id, postsyncerAccountId) {
+    return db(this.table)
+      .where({ id })
+      .update({
+        postsyncer_account_id: postsyncerAccountId,
+        updated_at: db.fn.now(),
+      });
+  },
 };
 
 module.exports = FacebookPages;

@@ -110,6 +110,8 @@ async function listPages(req, res, next) {
     const ppConn = postpulseService.isConfigured()
       ? await PostpulseConnections.findByUser(req.session.userId)
       : null;
+    const postsyncerService = require('../services/postsyncerService');
+    const psConfigured = postsyncerService.isConfigured();
 
     res.json({
       conectado: true,
@@ -120,19 +122,28 @@ async function listPages(req, res, next) {
         connected: Boolean(ppConn?.access_token),
         expires_at: ppConn?.expires_at || null,
       },
-      pages: pages.map((p) => ({
-        id: p.id,
-        page_id: p.page_id,
-        page_name: p.page_name,
-        postpulse_account_id: p.postpulse_account_id || null,
-        postpulse_chat_id: p.postpulse_chat_id || null,
-        publica_via:
-          p.postpulse_account_id && p.postpulse_chat_id && ppConn?.access_token
-            ? 'postpulse'
-            : p.postpulse_account_id && ppConn?.access_token
-              ? 'postpulse_sem_pagina'
-              : 'facebook',
-      })),
+      postsyncer: {
+        configured: psConfigured,
+      },
+      pages: pages.map((p) => {
+        let publica_via = 'facebook';
+        if (psConfigured && p.postsyncer_account_id) {
+          publica_via = 'postsyncer';
+        } else if (p.postpulse_account_id && p.postpulse_chat_id && ppConn?.access_token) {
+          publica_via = 'postpulse';
+        } else if (p.postpulse_account_id && ppConn?.access_token) {
+          publica_via = 'postpulse_sem_pagina';
+        }
+        return {
+          id: p.id,
+          page_id: p.page_id,
+          page_name: p.page_name,
+          postpulse_account_id: p.postpulse_account_id || null,
+          postpulse_chat_id: p.postpulse_chat_id || null,
+          postsyncer_account_id: p.postsyncer_account_id || null,
+          publica_via,
+        };
+      }),
     });
   } catch (err) {
     err.message = facebookService.graphErrorMessage(err);
