@@ -262,7 +262,7 @@
       canRepublish: <%= canRepublish ? 'true' : 'false' %>,
       isReel: <%= isReel ? 'true' : 'false' %>,
       reelProcessing: <%= reelProcessing ? 'true' : 'false' %>,
-      videoUrl: <%= videoUrl ? JSON.stringify(videoUrl) : 'null' %>,
+      videoUrl: <%- JSON.stringify(videoUrl || null) %>,
       listUrl: '/minhas-materias',
     };
   </script>

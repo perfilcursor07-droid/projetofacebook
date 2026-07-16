@@ -418,9 +418,10 @@ function queueLinkImportAsReel(video, { facebookPageId = null, matterId = null }
             video: fresh,
           });
           if (ready.materia_status !== 'pronta' || ready.capa_status !== 'pronta') {
-            processingService.queueClipMateriaAndCover(ready, fresh, {
+            const { queueClipMateriaAndCover } = require('./clipPostProcessService');
+            queueClipMateriaAndCover(ready, fresh, {
               userId: fresh.user_id,
-              force: ready.materia_status !== 'pronta',
+              force: true,
             });
           }
         }
