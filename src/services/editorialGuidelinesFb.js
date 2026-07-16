@@ -250,8 +250,9 @@ function blocoRegrasFacebook(faixa) {
   return `
 DIRETRIZES FACEBOOK / PEOPLE-FIRST:
 - Texto para leitor de Página, não para engajar de forma inautêntica.
-- NUNCA copie fontes; reescreva 100%.
-- NÃO invente fatos, números, datas, igrejas, pastores nem declarações entre aspas.
+- NÃO copie a fonte inteira; reescreva a narrativa com estrutura própria.
+- FALAS LITERAIS: quando a apuração trouxer fala/transcrição/legendas de vídeo ou post, DEIXE 1 a 3 trechos curtos e fortes entre aspas ("…") — fiéis ao que foi dito. O restante do texto contextualiza com suas palavras. Sem aspas o texto fica genérico demais.
+- NÃO invente fatos, números, datas, igrejas, pastores nem declarações entre aspas que NÃO estejam nas fontes.
 - Sem clickbait, sem pedir like/compartilhar.
 - Formato OBRIGATÓRIO: texto puro com PARÁGRAFOS CURTOS (1–2 frases) separados por linha em branco (\\n\\n). Nunca um bloco único.
 - Gancho forte nos primeiros ~80 caracteres (o que aparece antes do “Ver mais” no celular).

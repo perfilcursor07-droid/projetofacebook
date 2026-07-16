@@ -97,7 +97,9 @@ function parseArtigoJson(raw) {
 const SYSTEM_PROMPT_VIDEO = `Você é um redator de Páginas do Facebook. Escreva matérias/legendas ORIGINAIS em português brasileiro.
 
 Regras obrigatórias (Facebook / monetização / anti-plágio):
-- NUNCA copie a transcrição ou o texto-fonte palavra por palavra. Reescreva com suas próprias palavras.
+- NÃO cole a transcrição inteira nem parafraseie frase a frase. Estruture como matéria de Página (gancho + desenvolvimento + fechamento).
+- DEIXE 1 a 3 FALAS LITERAIS do vídeo entre aspas ("…"), curtas e marcantes — exatamente como foram ditas (ou o trecho mais fiel da transcrição). Isso evita texto genérico.
+- O resto do texto é seu: contextualize quem falou, o que motivou e o impacto. Não invente falas que não estejam na transcrição.
 - Não invente fatos, números, nomes ou eventos que não estejam na fonte.
 - Sem clickbait enganoso, sem pedir likes/compartilhamentos de forma inautêntica.
 - Tom de matéria jornalística leve, clara e pública (adequada a Página do Facebook).
@@ -161,12 +163,14 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
 
   const basePrompt = [
     'Crie uma matéria/legenda ORIGINAL para um Reel no Facebook.',
-    'PROIBIDO colar ou parafrasear linha a linha a transcrição. Reescreva como redator de Página.',
-    'Estrutura: gancho (1 frase) + desenvolvimento (2–4 frases) + fechamento + hashtags.',
+    'PROIBIDO colar a transcrição inteira. Reescreva a narrativa como redator de Página.',
+    'OBRIGATÓRIO: inclua 1 a 3 falas literais curtas da transcrição entre aspas ("assim"), as frases mais fortes ou características do que foi dito.',
+    'Exemplo de uso: Ele afirma: "não basta carregar um sobrenome". Depois contextualize com suas palavras.',
+    'Estrutura: gancho (1 frase) + desenvolvimento com aspas + fechamento + hashtags.',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
     titulo ? `Título/contexto do vídeo de origem: ${titulo}` : null,
     idioma ? `Idioma detectado da fala: ${idioma}` : null,
-    'Abaixo está APENAS referência de conteúdo (NÃO copie o texto):',
+    'Transcrição de referência (use trechos curtos entre aspas; o restante reescreva):',
     '---',
     String(transcricao).slice(0, 8000),
     '---',
@@ -180,8 +184,9 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     const retryPrompt = [
       basePrompt,
       '',
-      'ALERTA: sua resposta anterior copiou a transcrição. Reescreva 100% com palavras novas.',
-      'Não use as mesmas sequências de frases da fala. Mude a ordem das ideias.',
+      'ALERTA: sua resposta anterior ficou quase igual à transcrição inteira.',
+      'Reescreva a estrutura e a maior parte do texto com palavras novas.',
+      'Mantenha apenas 1–3 frases curtas entre aspas ("…") tiradas da fala — o resto NÃO pode ser cópia.',
     ].join('\n');
     artigo = await chatJson(retryPrompt, 0.9);
   }
@@ -235,12 +240,13 @@ Formato Facebook (obrigatório):
 
 ${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização.' : ''}
 ${furoReportagem ? `MODO FURO DE REPORTAGEM (obrigatório):
-- A fonte é uma notícia já publicada. Você NÃO resume nem parafraseia parágrafo a parágrafo.
+- A fonte é uma notícia/post/vídeo já publicado. Você NÃO resume nem parafraseia parágrafo a parágrafo.
 - Encontre o FURO: o ângulo mais jornalístico e específico (o detalhe, a consequência, o conflito ou o desdobramento que o leitor não vê no lead genérico).
-- Reescreva 100% com estrutura própria (lead + desenvolvimento + fechamento). Frases e ordem diferentes da fonte.
-- Título próprio — nunca copie a manchete da fonte.
+- Reescreva com estrutura própria (lead + desenvolvimento + fechamento). Ordem e a maior parte das frases diferentes da fonte.
+- OBRIGATÓRIO: preserve 1 a 3 falas literais curtas entre aspas ("…") quando houver declaração, frase de efeito ou trecho dito no vídeo/post — exatamente como na apuração. Sem isso o texto fica genérico.
+- Título próprio — nunca copie a manchete da fonte (pode usar um trecho curto entre aspas simples no título se for a fala-chave).
 - Mantenha todos os fatos verificáveis da apuração; sem inventar exclusividade falsa (“revelamos”, “apuração exclusiva”) se não houver.
-- Cite o veículo só de forma genérica se necessário (“segundo informações divulgadas”), sem colar trechos.` : ''}
+- Cite o veículo só de forma genérica se necessário (“segundo informações divulgadas”).` : ''}
 
 Responda APENAS JSON válido: {"titulo":"...","materia":"...","hashtags":["..."],"termos_imagem":["..."]}`;
 }
@@ -308,7 +314,7 @@ async function gerarMateriaNoticiaFacebook({
     nicho ? `Nicho/palavras-chave: ${nicho}` : null,
     emAlta ? 'Contexto: assunto em alta agora.' : null,
     redeSocial
-      ? 'A fonte principal pode ser uma postagem de rede — transforme em matéria de Página, sem copiar o texto literal do post.'
+      ? 'A fonte é post/vídeo de rede social. Transforme em matéria de Página: contextualize com suas palavras, mas DEIXE 1–3 falas literais curtas entre aspas ("…") tiradas do texto/transcrição da apuração — as frases mais fortes do autor do vídeo.'
       : null,
     furoReportagem
       ? 'PRIORIDADE: ângulo de furo de reportagem + reescrita total. Não parafraseie a fonte; reconstrua a narrativa.'
@@ -320,6 +326,7 @@ async function gerarMateriaNoticiaFacebook({
     contextoApuracao ? `Contexto de apuração:\n${String(contextoApuracao).slice(0, 6000)}` : null,
     fontesTxt ? `Fontes documentadas:\n${fontesTxt}` : null,
     'Se faltar detalhe factual, generalise com cuidado (ex.: “segundo informações divulgadas”) sem inventar.',
+    'Quando houver fala documentada na apuração, use aspas em pelo menos uma frase literal no corpo da matéria.',
   ]
     .filter(Boolean)
     .join('\n\n');
