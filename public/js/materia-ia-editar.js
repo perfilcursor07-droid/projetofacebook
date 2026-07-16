@@ -366,10 +366,28 @@
     }
   });
 
+  function setSuggestLoading(on) {
+    const box = document.getElementById('matter-img-suggest-loading');
+    const strip = document.getElementById('matter-img-suggest-strip');
+    const wrap = document.getElementById('matter-img-wrap');
+    if (box) {
+      box.classList.toggle('hidden', !on);
+      box.classList.toggle('flex', on);
+    }
+    if (strip) {
+      strip.style.opacity = on ? '0.45' : '';
+      strip.style.pointerEvents = on ? 'none' : '';
+    }
+    if (wrap) {
+      wrap.style.opacity = on ? '0.55' : '';
+    }
+  }
+
   async function aplicarImagemSugerida(chosen, el) {
     if (!chosen?.url) return;
     if (el) el.disabled = true;
-    setStatus('Aplicando imagem e gerando arte Minha marca…');
+    setSuggestLoading(true);
+    setStatus('Aguarde, alterando a arte…');
     try {
       const r = await fetch('/api/materias-ia/matters/' + cfg.id + '/aplicar-imagem-url', {
         method: 'POST',
@@ -400,10 +418,12 @@
         saveSuggestCache(window.__IMG_SUGESTOES_CACHE__);
       }
       renderSuggestStrip(window.__IMG_SUGESTOES_CACHE__ || { imagens: list });
-      setStatus('Imagem sugerida aplicada na arte ✓');
+      setStatus('Arte atualizada ✓');
     } catch (err) {
       setStatus(err.message, true);
       if (el) el.disabled = false;
+    } finally {
+      setSuggestLoading(false);
     }
   }
 
