@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const axios = require('axios');
 const FormData = require('form-data');
+const ffmpeg = require('fluent-ffmpeg');
 const { env } = require('../config/env');
 
 const API = 'https://postsyncer.com/api/v1';
@@ -54,6 +56,31 @@ function unwrapList(data) {
   if (Array.isArray(data?.data)) return data.data;
   if (data && typeof data === 'object' && data.id != null) return [data];
   return [];
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function safeUnlink(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Extrai 1 frame JPG do vídeo para thumbnail obrigatória de Reels no Facebook. */
+function extractVideoThumbnail(videoPath, outputPath, atSecond = 0.8) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(videoPath)
+      .seekInput(atSecond)
+      .frames(1)
+      .outputOptions(['-q:v', '3'])
+      .on('error', reject)
+      .on('end', () => resolve(outputPath))
+      .save(outputPath);
+  });
 }
 
 async function listWorkspaces() {
@@ -148,6 +175,59 @@ async function uploadMediaUrl({ workspaceId, url }) {
   return id != null ? Number(id) : null;
 }
 
+async function getPost(postId) {
+  const id = String(postId).replace(/^postsyncer:/i, '');
+  const { data } = await axios.get(`${API}/posts/${id}`, {
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    timeout: 60_000,
+  });
+  return data?.data || data;
+}
+
+function platformStatusSummary(post) {
+  const platforms = Array.isArray(post?.platforms) ? post.platforms : [];
+  const fb =
+    platforms.find((p) => /facebook/i.test(String(p.platform || ''))) || platforms[0] || null;
+  return {
+    status: String(post?.status || '').toUpperCase(),
+    platformStatus: String(fb?.status || '').toUpperCase(),
+    platformError:
+      fb?.error ||
+      fb?.error_message ||
+      fb?.message ||
+      (Array.isArray(fb?.errors) ? fb.errors[0] : null) ||
+      null,
+    postedOn: post?.posted_on || fb?.posted_on || null,
+    platforms,
+  };
+}
+
+/**
+ * Aguarda o PostSyncer terminar o envio ao Facebook (PUBLISHED / FAILED).
+ */
+async function waitForPostSettled(postId, { timeoutMs = 180_000, intervalMs = 6_000 } = {}) {
+  const started = Date.now();
+  let last = null;
+  while (Date.now() - started < timeoutMs) {
+    last = await getPost(postId);
+    const summary = platformStatusSummary(last);
+    console.log('[postsyncer] post status', {
+      id: postId,
+      status: summary.status,
+      platformStatus: summary.platformStatus,
+      postedOn: summary.postedOn,
+    });
+
+    const done =
+      ['PUBLISHED', 'FAILED', 'ERROR', 'DRAFT'].includes(summary.platformStatus) ||
+      ['PUBLISHED', 'FAILED', 'ERROR'].includes(summary.status);
+
+    if (done) return { post: last, ...summary };
+    await sleep(intervalMs);
+  }
+  return { post: last, ...platformStatusSummary(last), timedOut: true };
+}
+
 /**
  * Publica na conta Facebook do PostSyncer.
  * tipo: foto | texto | reel | video
@@ -182,10 +262,7 @@ async function publishToFacebook({
     media.push(String(imageUrl));
   }
 
-  if (
-    (publicationType === 'REELS' || publicationType === 'reel') &&
-    media.length === 0
-  ) {
+  if ((publicationType === 'REELS' || publicationType === 'reel') && media.length === 0) {
     const err = new Error('Reel exige vídeo: upload de mídia falhou ou arquivo ausente.');
     err.status = 422;
     throw err;
@@ -198,20 +275,42 @@ async function publishToFacebook({
         ? 'STORIES'
         : 'POST';
 
+  // Facebook / IG Reels: thumbnail obrigatória (cover_image.thumbnail)
+  let coverImage = null;
+  if (fbType === 'REELS' && filePath && fs.existsSync(filePath)) {
+    const thumbPath = path.join(os.tmpdir(), `ps_reel_thumb_${Date.now()}.jpg`);
+    try {
+      await extractVideoThumbnail(filePath, thumbPath, 0.8);
+      const thumbId = await uploadMediaFile({ workspaceId: wid, filePath: thumbPath });
+      coverImage = { thumbnail: thumbId };
+      console.log('[postsyncer] thumbnail uploaded', thumbId);
+    } catch (thumbErr) {
+      console.warn('[postsyncer] thumbnail falhou:', thumbErr.message);
+      const err = new Error(
+        `Falha ao gerar/enviar a capa (thumbnail) do Reel exigida pelo Facebook: ${thumbErr.message}`
+      );
+      err.status = 422;
+      throw err;
+    } finally {
+      safeUnlink(thumbPath);
+    }
+  }
+
   // PostSyncer Facebook: campo correto é post_type (não "type")
   const settings = { post_type: fbType };
   // title sobrescreve a legenda no FB — só em POST de feed, nunca em REELS
   if (title && fbType !== 'REELS') settings.title = String(title).slice(0, 200);
   if (link) settings.link = String(link);
 
+  const contentItem = {
+    text: content || '',
+    media,
+  };
+  if (coverImage) contentItem.cover_image = coverImage;
+
   const body = {
     workspace_id: wid,
-    content: [
-      {
-        text: content || '',
-        media,
-      },
-    ],
+    content: [contentItem],
     schedule_type: scheduleType || 'publish_now',
     accounts: [{ id: aid, settings }],
   };
@@ -227,6 +326,7 @@ async function publishToFacebook({
     post_type: settings.post_type,
     mediaCount: media.length,
     mediaIds: media,
+    hasThumbnail: Boolean(coverImage?.thumbnail),
     contentLen: String(content || '').length,
     hasTitleOverride: Boolean(settings.title),
   });
@@ -238,15 +338,57 @@ async function publishToFacebook({
     });
 
     const post = data?.data || data;
-    const postId = post?.id != null ? `postsyncer:${post.id}` : null;
+    const numericId = post?.id;
+    const postId = numericId != null ? `postsyncer:${numericId}` : null;
+
+    console.log('[postsyncer] create ok', {
+      id: numericId,
+      status: post?.status,
+      platforms: (post?.platforms || []).map((p) => ({
+        platform: p.platform,
+        status: p.status,
+      })),
+    });
+
+    // Confirma se o Facebook realmente publicou (API pode aceitar e falhar depois)
+    let settled = { post, ...platformStatusSummary(post) };
+    if (numericId != null && fbType === 'REELS') {
+      settled = await waitForPostSettled(numericId, { timeoutMs: 180_000 });
+    }
+
+    const finalStatus = String(settled.platformStatus || settled.status || '').toUpperCase();
+    if (settled.timedOut && finalStatus !== 'PUBLISHED') {
+      const err = new Error(
+        `PostSyncer aceitou o Reel (#${numericId}), mas o Facebook ainda não confirmou a publicação (status: ${finalStatus || 'PENDENTE'}). Confira em app.postsyncer.com se falhou ou ainda está processando.`
+      );
+      err.status = 502;
+      err.postsyncer = settled;
+      throw err;
+    }
+    if (['FAILED', 'ERROR'].includes(finalStatus) || finalStatus === 'DRAFT') {
+      const detail =
+        typeof settled.platformError === 'string'
+          ? settled.platformError
+          : settled.platformError
+            ? JSON.stringify(settled.platformError).slice(0, 300)
+            : finalStatus;
+      const err = new Error(`Facebook/PostSyncer recusou o Reel: ${detail}`);
+      err.status = 502;
+      err.postsyncer = settled;
+      throw err;
+    }
+
     return {
       id: postId,
       post_id: postId,
       provider: 'postsyncer',
-      raw: post,
-      status: post?.status || null,
+      raw: settled.post || post,
+      status: settled.status || post?.status || null,
+      platformStatus: settled.platformStatus || null,
+      postedOn: settled.postedOn || null,
     };
   } catch (err) {
+    if (err.postsyncer) throw err;
     const msg = apiErrorMessage(err);
     console.error('[postsyncer] publish failed:', msg, err.response?.data);
     err.message = msg;
@@ -264,5 +406,7 @@ module.exports = {
   isFacebookAccount,
   uploadMediaFile,
   uploadMediaUrl,
+  getPost,
+  waitForPostSettled,
   publishToFacebook,
 };

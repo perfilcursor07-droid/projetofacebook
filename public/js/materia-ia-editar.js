@@ -227,7 +227,7 @@
     if (title) title.textContent = cfg.isReel ? 'Publicando Reel…' : 'Publicando…';
     if (text) {
       text.textContent = cfg.isReel
-        ? 'Enviando o vídeo para o Facebook. Isso pode levar 1 a 3 minutos — não feche a página.'
+        ? 'Enviando o vídeo + capa e aguardando confirmação do Facebook. Pode levar até 3–4 minutos — não feche a página.'
         : 'Enviando a matéria para a Página do Facebook.';
     }
     if (linkEl) linkEl.classList.add('hidden');
