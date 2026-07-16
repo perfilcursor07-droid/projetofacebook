@@ -366,16 +366,86 @@
     }
   });
 
-  document.getElementById('btn-sugerir-imagens')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-sugerir-imagens');
-    const grid = document.getElementById('matter-img-suggest-grid');
-    const meta = document.getElementById('matter-img-suggest-meta');
-    const original = btn?.textContent;
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Analisando matéria e buscando fotos…';
+  async function aplicarImagemSugerida(chosen, el) {
+    if (!chosen?.url) return;
+    if (el) el.disabled = true;
+    setStatus('Aplicando imagem e gerando arte Minha marca…');
+    try {
+      const r = await fetch('/api/materias-ia/matters/' + cfg.id + '/aplicar-imagem-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: chosen.url,
+          titulo: tituloEl?.value || '',
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Falha ao aplicar imagem');
+      if (j.imagemUrl && imgEl) {
+        imgEl.src = j.imagemUrl + (j.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        imgWrap?.classList.remove('hidden');
+      }
+      setStatus('Imagem sugerida aplicada na arte ✓');
+      setTimeout(() => window.location.reload(), 500);
+    } catch (err) {
+      setStatus(err.message, true);
+      if (el) el.disabled = false;
     }
-    setStatus('IA analisando o assunto e buscando fotos reais…');
+  }
+
+  function renderSuggestStrip(data) {
+    const strip = document.getElementById('matter-img-suggest-strip');
+    const meta = document.getElementById('matter-img-suggest-meta');
+    const imgs = data.imagens || [];
+    window.__IMG_SUGESTOES__ = imgs;
+
+    if (meta) {
+      meta.textContent =
+        (data.aviso ? data.aviso + ' · ' : '') +
+        (data.pessoa ? data.pessoa + ' · ' : '') +
+        (data.motivo || 'Clique numa miniatura para trocar a arte') +
+        (data.consultas?.length ? ' · ' + data.consultas.slice(0, 2).join(' / ') : '');
+    }
+
+    if (!strip) return;
+    if (!imgs.length) {
+      strip.innerHTML = '<p class="text-[11px] text-slate-500">Nenhuma sugestão encontrada.</p>';
+      return;
+    }
+
+    strip.innerHTML = imgs
+      .map((img, i) => {
+        const thumb = String(img.thumbnail || img.url || '').replace(/"/g, '&quot;');
+        const label =
+          img.origem === 'fonte'
+            ? 'Atual'
+            : img.origem === 'brave'
+              ? 'Brave'
+              : img.origem === 'google'
+                ? 'Google'
+                : img.origem || '';
+        return `<button type="button" data-suggest-idx="${i}" title="${String(img.titulo || '').replace(/"/g, '&quot;')}"
+          class="relative h-20 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-950 hover:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400">
+          <img src="${thumb}" alt="" class="h-full w-full object-cover" loading="lazy" />
+          <span class="absolute bottom-0 left-0 right-0 bg-black/70 px-0.5 py-0.5 text-center text-[9px] text-slate-200">${label}</span>
+        </button>`;
+      })
+      .join('');
+
+    strip.querySelectorAll('[data-suggest-idx]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const chosen = (window.__IMG_SUGESTOES__ || [])[Number(el.dataset.suggestIdx)];
+        aplicarImagemSugerida(chosen, el);
+      });
+    });
+  }
+
+  async function carregarSugestoesImagem({ silent } = {}) {
+    const meta = document.getElementById('matter-img-suggest-meta');
+    const strip = document.getElementById('matter-img-suggest-strip');
+    if (!cfg.canEdit || !strip) return;
+    if (!silent) setStatus('Buscando fotos relacionadas à matéria…');
+    if (meta) meta.textContent = 'Buscando fotos relacionadas…';
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/sugerir-imagens', {
         method: 'POST',
@@ -384,77 +454,40 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao sugerir imagens');
-
-      const imgs = data.imagens || [];
-      if (meta) {
-        meta.classList.remove('hidden');
-        meta.textContent =
-          (data.pessoa ? 'Pessoa: ' + data.pessoa + ' · ' : '') +
-          (data.motivo || 'Sugestões') +
-          (data.consultas?.length ? ' · Busca: ' + data.consultas.slice(0, 2).join(' / ') : '');
+      renderSuggestStrip(data);
+      if (!silent) {
+        setStatus((data.imagens || []).length + ' sugestões — clique numa miniatura para trocar');
       }
-      if (!grid) return;
-      if (!imgs.length) {
-        grid.classList.add('hidden');
-        grid.innerHTML = '';
-        setStatus('Nenhuma imagem encontrada para este assunto', true);
-        return;
-      }
-      grid.classList.remove('hidden');
-      grid.innerHTML = imgs
-        .map((img, i) => {
-          const thumb = img.thumbnail || img.url;
-          const srcLabel = img.origem === 'google' ? 'Google' : img.origem || '';
-          return `<button type="button" data-suggest-idx="${i}"
-            class="group relative overflow-hidden rounded-lg border border-slate-700 bg-slate-950 text-left hover:border-violet-400">
-            <img src="${String(thumb).replace(/"/g, '&quot;')}" alt="" class="aspect-[4/5] w-full object-cover" loading="lazy" />
-            <span class="absolute bottom-0 left-0 right-0 bg-black/65 px-1.5 py-1 text-[10px] text-slate-200">${srcLabel}</span>
-          </button>`;
-        })
-        .join('');
-
-      window.__IMG_SUGESTOES__ = imgs;
-      grid.querySelectorAll('[data-suggest-idx]').forEach((el) => {
-        el.addEventListener('click', async () => {
-          const idx = Number(el.dataset.suggestIdx);
-          const chosen = (window.__IMG_SUGESTOES__ || [])[idx];
-          if (!chosen?.url) return;
-          el.disabled = true;
-          setStatus('Aplicando imagem e gerando arte Minha marca…');
-          try {
-            const r = await fetch('/api/materias-ia/matters/' + cfg.id + '/aplicar-imagem-url', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                imageUrl: chosen.url,
-                titulo: tituloEl?.value || '',
-              }),
-            });
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(j.error || 'Falha ao aplicar imagem');
-            if (j.imagemUrl && imgEl) {
-              imgEl.src = j.imagemUrl + (j.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
-              imgWrap?.classList.remove('hidden');
-            }
-            setStatus('Imagem sugerida aplicada na arte ✓');
-            setTimeout(() => window.location.reload(), 600);
-          } catch (err) {
-            setStatus(err.message, true);
-            el.disabled = false;
-          }
-        });
-      });
-
-      setStatus(imgs.length + ' imagens sugeridas — clique para usar na arte');
     } catch (err) {
-      setStatus(err.message, true);
+      if (meta) meta.textContent = err.message;
+      if (strip) {
+        strip.innerHTML = `<p class="text-[11px] text-rose-300">${String(err.message || '').replace(/</g, '')}</p>`;
+      }
+      if (!silent) setStatus(err.message, true);
+    }
+  }
+
+  document.getElementById('btn-sugerir-imagens')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-sugerir-imagens');
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Buscando…';
+    }
+    try {
+      await carregarSugestoesImagem({ silent: false });
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = original || 'Sugerir imagens para esta matéria';
+        btn.textContent = original || 'Buscar novas sugestões';
       }
     }
   });
+
+  // Carrega miniaturas automaticamente ao abrir a edição
+  if (cfg.canEdit) {
+    carregarSugestoesImagem({ silent: true });
+  }
 
   document.getElementById('btn-buscar-imagem-fonte')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-buscar-imagem-fonte');

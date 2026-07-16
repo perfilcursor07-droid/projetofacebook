@@ -658,10 +658,17 @@ async function sugerirImagens(req, res, next) {
     }
 
     const { sugerirImagensParaMateria } = require('../services/imageSuggestService');
+    const imagemAtual =
+      matter.imagem_fonte_url ||
+      (!matter.imagem_path && /^https?:\/\//i.test(String(matter.imagem_url || ''))
+        ? matter.imagem_url
+        : null);
+
     const result = await sugerirImagensParaMateria({
       titulo: matter.titulo,
       materia: matter.materia,
       fonteTitulo: matter.fonte_titulo,
+      imagemAtual,
       limite: Math.min(Number(req.body?.limite) || 12, 18),
     });
 
