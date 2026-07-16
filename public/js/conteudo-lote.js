@@ -24,9 +24,26 @@
         topicos: data.topicos.slice(0, 8),
         facebookPageId: data.facebookPageId ? Number(data.facebookPageId) : null,
         tipoPublicacao: data.tipoPublicacao === 'texto' ? 'texto' : 'foto',
+        progresso: Array.isArray(data.progresso) ? data.progresso : [],
       };
     } catch {
       return null;
+    }
+  }
+
+  function persistProgress() {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      const base = raw ? JSON.parse(raw) : {};
+      base.progresso = items.map((item) => ({
+        status: item.status === 'gerando' ? 'pendente' : item.status,
+        matterId: item.matterId || null,
+        error: item.error || null,
+        titulo: item.titulo,
+      }));
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(base));
+    } catch {
+      /* ignore quota */
     }
   }
 
@@ -37,14 +54,20 @@
     return;
   }
 
-  /** @type {{ topico: object, status: string, matterId?: number, error?: string, titulo?: string }[]} */
-  const items = payload.topicos.map((topico) => ({
-    topico,
-    status: 'pendente',
-    matterId: null,
-    error: null,
-    titulo: String(topico?.titulo || 'Sem título').trim(),
-  }));
+  /** @type {{ topico: object, status: string, matterId?: number|null, error?: string|null, titulo?: string }[]} */
+  const items = payload.topicos.map((topico, idx) => {
+    const prev = payload.progresso[idx] || {};
+    const restoredOk = prev.status === 'pronta' && prev.matterId;
+    return {
+      topico,
+      status: restoredOk ? 'pronta' : prev.status === 'erro' ? 'erro' : 'pendente',
+      matterId: restoredOk ? prev.matterId : null,
+      error: prev.status === 'erro' ? prev.error || 'Erro ao gerar' : null,
+      titulo: String(prev.titulo || topico?.titulo || 'Sem título').trim(),
+    };
+  });
+
+  let authLost = false;
 
   function counts() {
     const prontas = items.filter((i) => i.status === 'pronta').length;
@@ -57,8 +80,14 @@
     const { prontas, erros, gerando, total } = counts();
     if (progressEl) progressEl.textContent = `${prontas}/${total} prontas`;
     if (hintEl) {
-      if (gerando) hintEl.textContent = 'Gerando a próxima…';
-      else if (prontas + erros >= total) {
+      if (authLost) {
+        hintEl.innerHTML =
+          'Sessão expirou. <a class="text-sky-400 hover:underline" href="/login?next=' +
+          encodeURIComponent('/conteudo/lote') +
+          '">Entrar de novo</a> para continuar o lote.';
+      } else if (gerando) {
+        hintEl.textContent = 'Gerando a próxima…';
+      } else if (prontas + erros >= total) {
         hintEl.textContent = erros
           ? `${erros} com erro — use Tentar de novo`
           : 'Todas prontas — clique para editar';
@@ -86,6 +115,7 @@
 
   function render() {
     updateProgress();
+    persistProgress();
     listEl.innerHTML = items
       .map((item, idx) => {
         const canOpen = item.status === 'pronta' && item.matterId;
@@ -102,7 +132,7 @@
           <div class="flex shrink-0 flex-wrap items-center gap-2">
             ${statusBadge(item)}
             ${
-              item.status === 'erro'
+              item.status === 'erro' && !authLost
                 ? `<button type="button" data-retry="${idx}" class="rounded-lg border border-amber-500/40 px-2.5 py-1 text-[11px] font-medium text-amber-100 hover:bg-amber-500/15">Tentar de novo</button>`
                 : ''
             }
@@ -118,7 +148,7 @@
 
   async function gerarItem(idx) {
     const item = items[idx];
-    if (!item || item.status === 'pronta' || item.status === 'gerando') return;
+    if (!item || item.status === 'pronta' || item.status === 'gerando' || authLost) return;
     item.status = 'gerando';
     item.error = null;
     render();
@@ -127,6 +157,7 @@
       const res = await fetch('/api/materias-ia/gerar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({
           topico: item.topico,
           facebookPageId: payload.facebookPageId,
@@ -135,6 +166,15 @@
         }),
       });
       const data = await res.json().catch(() => ({}));
+
+      if (res.status === 401) {
+        authLost = true;
+        item.status = 'pendente';
+        item.error = null;
+        render();
+        return;
+      }
+
       if (!res.ok) throw new Error(data.error || 'Falha ao gerar matéria');
       const matterId = data.matter?.id;
       if (!matterId) throw new Error('Matéria gerada sem ID');
@@ -155,15 +195,16 @@
   const retryQueue = [];
 
   async function runQueue() {
-    if (queueRunning) return;
+    if (queueRunning || authLost) return;
     queueRunning = true;
     try {
       for (let i = 0; i < items.length; i += 1) {
+        if (authLost) break;
         if (items[i].status === 'pendente') {
           await gerarItem(i);
         }
       }
-      while (retryQueue.length) {
+      while (!authLost && retryQueue.length) {
         const idx = retryQueue.shift();
         if (items[idx]?.status === 'erro' || items[idx]?.status === 'pendente') {
           items[idx].status = 'pendente';
@@ -172,7 +213,7 @@
       }
     } finally {
       queueRunning = false;
-      if (retryQueue.length) runQueue();
+      if (!authLost && retryQueue.length) runQueue();
     }
   }
 
@@ -181,6 +222,7 @@
     if (!btn) return;
     e.preventDefault();
     e.stopPropagation();
+    if (authLost) return;
     const idx = Number(btn.dataset.retry);
     if (!Number.isFinite(idx) || !items[idx]) return;
     items[idx].status = 'pendente';

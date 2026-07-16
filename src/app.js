@@ -17,11 +17,14 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.use('/media', express.static(path.resolve(env.storagePath)));
 
 const isProd = env.nodeEnv === 'production';
+const { createSessionStore } = require('./config/sessionStore');
 app.use(
   session({
     secret: env.sessionSecret,
     resave: false,
     saveUninitialized: false,
+    rolling: true,
+    store: createSessionStore(),
     proxy: isProd,
     cookie: {
       httpOnly: true,

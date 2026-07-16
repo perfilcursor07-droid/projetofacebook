@@ -19,7 +19,9 @@ module.exports = {
       exec_mode: 'fork',
       autorestart: true,
       watch: false,
-      max_memory_restart: '512M',
+      // Geração de matérias/capa (sharp) pode passar de 512MB e o restart
+      // derrubava a sessão em memória — login “sumia” no meio do lote.
+      max_memory_restart: '1024M',
       env: {
         NODE_ENV: 'production',
         PORT: 3010,
