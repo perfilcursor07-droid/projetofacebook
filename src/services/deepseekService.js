@@ -13,6 +13,7 @@ const {
   blocoRegrasFacebook,
   mensagemAvisoQualidade,
   quebrarEmParagrafos,
+  blocoEstiloNewsGospel,
 } = require('./editorialGuidelinesFb');
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
@@ -65,9 +66,11 @@ function parseArtigoJson(raw) {
   }
   const titulo = String(parsed.titulo || '').trim();
   let materia = String(parsed.materia || parsed.conteudo || '').trim();
-  // Facebook: texto puro — remove HTML residual, mas PRESERVA parágrafos (\\n\\n)
+  // Facebook: texto puro — remove HTML/markdown residual, mas PRESERVA parágrafos
   materia = materia
     .replace(/<\/?[^>]+>/g, ' ')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -94,17 +97,16 @@ function parseArtigoJson(raw) {
   return { titulo, materia, hashtags, termos_imagem: termosImagem };
 }
 
-const SYSTEM_PROMPT_VIDEO = `Você é um redator de Páginas do Facebook. Escreva matérias/legendas ORIGINAIS em português brasileiro.
+const SYSTEM_PROMPT_VIDEO = `Você é redator de Página gospel no Facebook (estilo News Gospel). Escreva matérias/legendas ORIGINAIS em português brasileiro.
 
-Regras obrigatórias (Facebook / monetização / anti-plágio):
-- NÃO cole a transcrição inteira nem parafraseie frase a frase. Estruture como matéria de Página (gancho + desenvolvimento + fechamento).
-- DEIXE 1 a 3 FALAS LITERAIS do vídeo entre aspas ("…"), curtas e marcantes — exatamente como foram ditas (ou o trecho mais fiel da transcrição). Isso evita texto genérico.
-- O resto do texto é seu: contextualize quem falou, o que motivou e o impacto. Não invente falas que não estejam na transcrição.
-- Não invente fatos, números, nomes ou eventos que não estejam na fonte.
-- Sem clickbait enganoso, sem pedir likes/compartilhamentos de forma inautêntica.
-- Tom de matéria jornalística leve, clara e pública (adequada a Página do Facebook).
-- Não inclua links externos desnecessários nem música/copyright de terceiros.
-- Inclua 3 a 6 hashtags relevantes no campo hashtags (sem # duplicado no texto).
+${blocoEstiloNewsGospel()}
+
+Regras obrigatórias:
+- NÃO cole a transcrição/legenda inteira nem parafraseie frase a frase.
+- DEIXE 1 a 3 FALAS LITERAIS curtas entre aspas ("…") quando houver na fonte — exatamente como foram ditas.
+- Não invente fatos, números, nomes ou falas que não estejam na fonte.
+- Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
+- Inclua 3 a 5 hashtags relevantes no campo hashtags (sem # no valor).
 - A matéria final deve ter no máximo ${MAX_MATERIA_CHARS} caracteres.
 - Responda APENAS com JSON válido, sem markdown: {"titulo":"...","materia":"...","hashtags":["..."]}`;
 
@@ -164,17 +166,20 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
   }
 
   const basePrompt = [
-    'Crie uma matéria/legenda ORIGINAL para um Reel no Facebook.',
-    'A base abaixo é a FALA do vídeo (transcrição) OU a legenda original do post no Facebook/Instagram — use SOMENTE esse conteúdo. Não invente fatos fora dele.',
-    'PROIBIDO colar a transcrição/legenda inteira. Reescreva a narrativa como redator de Página.',
-    'OBRIGATÓRIO: inclua 1 a 3 falas literais curtas da base entre aspas ("assim"), as frases mais fortes ou características do que foi dito.',
-    'Exemplo de uso: Ele afirma: "não basta carregar um sobrenome". Depois contextualize com suas palavras.',
-    'Estrutura: gancho (1 frase) + desenvolvimento com aspas + fechamento + hashtags.',
-    'O campo "titulo" deve ser uma MANCHETE CURTA (máx. 90 caracteres) — NÃO cole a legenda/transcrição inteira no título.',
+    'Crie uma matéria ORIGINAL estilo News Gospel para um Reel no Facebook.',
+    'A base abaixo é a FALA do vídeo (transcrição) OU a legenda original do post — use SOMENTE esse conteúdo. Não invente fatos fora dele.',
+    'PROIBIDO colar a transcrição/legenda inteira. Reescreva como redator de portal gospel.',
+    'ESTRUTURA OBRIGATÓRIA:',
+    '1) Lead: apresente quem fala / o tema com contexto (nome, o que é conhecido, o assunto).',
+    '2) Desenvolvimento: narre o conteúdo com suas palavras + 1 a 3 falas literais curtas entre aspas ("…").',
+    '3) Fechamento de fé: oração, gratidão, esperança ou reflexão espiritual ligada ao fato — sem pedir like/compartilhar.',
+    'Exemplo de aspas: Ele afirma: "Eu entendi que sem Deus eu não era nada".',
+    'O campo "titulo" = MANCHETE CURTA (máx. 90 caracteres). NÃO cole a legenda/transcrição no título.',
+    'Separe parágrafos com linha em branco. Alvo: 550–900 caracteres.',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
     titulo ? `Título/contexto do vídeo de origem: ${String(titulo).slice(0, 120)}` : null,
     idioma ? `Idioma detectado da fala: ${idioma}` : null,
-    'Base (transcrição da fala ou legenda do Reel FB/IG — use trechos curtos entre aspas; o restante reescreva):',
+    'Base (transcrição ou legenda — use trechos curtos entre aspas; o restante reescreva):',
     '---',
     String(transcricao).slice(0, 8000),
     '---',
@@ -189,8 +194,9 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
       basePrompt,
       '',
       'ALERTA: sua resposta anterior ficou quase igual à transcrição inteira.',
-      'Reescreva a estrutura e a maior parte do texto com palavras novas.',
+      'Reescreva no estilo News Gospel: lead + desenvolvimento + fechamento de fé.',
       'Mantenha apenas 1–3 frases curtas entre aspas ("…") tiradas da fala — o resto NÃO pode ser cópia.',
+      'Feche com oração, gratidão ou reflexão espiritual — sem pedir like/compartilhar.',
     ].join('\n');
     artigo = await chatJson(retryPrompt, 0.9);
   }
@@ -220,12 +226,15 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
   }
 
   const userContent = [
-    'Crie uma matéria/legenda ORIGINAL para um post de FOTO no Facebook.',
+    'Crie uma matéria ORIGINAL estilo News Gospel para um post de FOTO no Facebook.',
     `Tipo/tema pedido pelo usuário: ${tema}`,
     termo ? `Termo de busca / contexto: ${termo}` : null,
     descricaoImagem ? `Descrição/alt da imagem: ${descricaoImagem}` : null,
-    autor ? `Autor da foto (crédito se fizer sentido): ${autor}` : null,
-    'A imagem acompanha o texto no mesmo post — escreva como legenda/matéria completa e autêntica.',
+    autor ? `Autor da foto (crédito se fizer sentido no fechamento): ${autor}` : null,
+    'ESTRUTURA: lead com o fato/tema → desenvolvimento com detalhes → fechamento de fé (oração, gratidão ou reflexão).',
+    'Tom de portal gospel: caloroso, claro, sem clickbait e sem pedir like/compartilhar.',
+    'Parágrafos curtos com linha em branco. Alvo: 520–850 caracteres.',
+    'Se fizer sentido, no último parágrafo pode citar crédito curto (ex.: Reprodução) — sem inventar @ de quem não foi informado.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -234,27 +243,27 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
 }
 
 function systemPromptNoticia(faixa, investigativa, furoReportagem = false) {
-  return `Você é redator de Páginas do Facebook. Escreva matérias ORIGINAIS em português brasileiro.
+  return `Você é redator de Página gospel no Facebook (estilo News Gospel). Escreva matérias ORIGINAIS em português brasileiro.
 
 ${blocoRegrasFacebook(faixa)}
 
 Formato Facebook (obrigatório):
-- Campo "materia" = texto puro da legenda/matéria (SEM HTML, SEM meta description, SEM keywords SEO).
-- Campo "hashtags" = 3 a 6 termos sem #.
+- Campo "materia" = texto puro da legenda/matéria (SEM HTML, SEM markdown, SEM meta description).
+- Campo "hashtags" = 3 a 5 termos sem #.
 - Campo "termos_imagem" = 2 a 4 consultas específicas para encontrar uma foto realmente relacionada.
-  - Se houver pessoas, use primeiro os nomes completos e exatos em português (ex.: ["Silas Malafaia Flávio Bolsonaro","Silas Malafaia","Flávio Bolsonaro"]).
+  - Se houver pessoas, use primeiro os nomes completos e exatos em português (ex.: ["Ricky Tavares Get Church","Ricky Tavares"]).
   - Não troque pessoas citadas por conceitos genéricos como "church", "politics" ou "gospel".
   - Use termos de stock em inglês somente quando a pauta não citar pessoa, organização ou lugar específico.
 - NÃO invente fatos, nomes, cargos, números ou citações que não estejam nas fontes de apuração.
 
-${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização.' : ''}
+${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização falsa.' : ''}
 ${furoReportagem ? `MODO FURO DE REPORTAGEM (obrigatório):
 - A fonte é uma notícia/post/vídeo já publicado. Você NÃO resume nem parafraseia parágrafo a parágrafo.
-- Encontre o FURO: o ângulo mais jornalístico e específico (o detalhe, a consequência, o conflito ou o desdobramento que o leitor não vê no lead genérico).
-- Reescreva com estrutura própria (lead + desenvolvimento + fechamento). Ordem e a maior parte das frases diferentes da fonte.
-- OBRIGATÓRIO: preserve 1 a 3 falas literais curtas entre aspas ("…") quando houver declaração, frase de efeito ou trecho dito no vídeo/post — exatamente como na apuração. Sem isso o texto fica genérico.
-- Título próprio — nunca copie a manchete da fonte (pode usar um trecho curto entre aspas simples no título se for a fala-chave).
-- Mantenha todos os fatos verificáveis da apuração; sem inventar exclusividade falsa (“revelamos”, “apuração exclusiva”) se não houver.
+- Encontre o FURO: o ângulo mais jornalístico e específico (detalhe, consequência, testemunho ou desdobramento).
+- Reescreva com estrutura News Gospel: lead (quem + fato) + desenvolvimento com aspas + fechamento de fé.
+- OBRIGATÓRIO: preserve 1 a 3 falas literais curtas entre aspas ("…") quando houver declaração na apuração.
+- Título próprio — nunca copie a manchete da fonte.
+- Mantenha os fatos verificáveis; sem inventar exclusividade falsa (“revelamos”, “apuração exclusiva”).
 - Cite o veículo só de forma genérica se necessário (“segundo informações divulgadas”).` : ''}
 
 Responda APENAS JSON válido: {"titulo":"...","materia":"...","hashtags":["..."],"termos_imagem":["..."]}`;
@@ -314,19 +323,20 @@ async function gerarMateriaNoticiaFacebook({
     .join('\n');
 
   const userContent = [
-    'Crie uma matéria ORIGINAL para postar na Página do Facebook (texto/foto + legenda).',
-    `VOZ DO REDATOR (obrigatório seguir nesta geração): ${voz}`,
+    'Crie uma matéria ORIGINAL estilo News Gospel para postar na Página do Facebook (foto + legenda).',
+    `VOZ DO REDATOR (obrigatório): ${voz}`,
     `ESTILO DO LEAD: ${lead}`,
     `ESTILO DO TÍTULO: ${estiloTitulo}`,
-    `EXTENSÃO ALVO: ${faixa.min}–${faixa.max} caracteres (curto = mais alcance no feed).`,
-    'FORMATAÇÃO: use parágrafos curtos separados por linha em branco. Gancho forte na 1ª frase.',
+    `EXTENSÃO ALVO: ${faixa.min}–${faixa.max} caracteres.`,
+    'FORMATAÇÃO: 3 a 5 parágrafos curtos separados por linha em branco.',
+    'ESTRUTURA: (1) lead com quem + fato; (2) desenvolvimento com contexto e aspas reais; (3) fechamento de fé (oração, gratidão ou esperança) — sem pedir like/compartilhar.',
     nicho ? `Nicho/palavras-chave: ${nicho}` : null,
     emAlta ? 'Contexto: assunto em alta agora.' : null,
     redeSocial
-      ? 'A fonte é post/vídeo de rede social. Transforme em matéria de Página: contextualize com suas palavras, mas DEIXE 1–3 falas literais curtas entre aspas ("…") tiradas do texto/transcrição da apuração — as frases mais fortes do autor do vídeo.'
+      ? 'A fonte é post/vídeo de rede social. Transforme em matéria gospel: contextualize com suas palavras e DEIXE 1–3 falas literais curtas entre aspas ("…") da apuração.'
       : null,
     furoReportagem
-      ? 'PRIORIDADE: ângulo de furo de reportagem + reescrita total. Não parafraseie a fonte; reconstrua a narrativa.'
+      ? 'PRIORIDADE: ângulo de furo + reescrita total no estilo News Gospel. Não parafraseie a fonte; reconstrua a narrativa.'
       : null,
     tituloReferencia ? `Título de referência: ${tituloReferencia}` : null,
     resumoReferencia ? `Resumo de referência: ${resumoReferencia}` : null,
@@ -335,7 +345,8 @@ async function gerarMateriaNoticiaFacebook({
     contextoApuracao ? `Contexto de apuração:\n${String(contextoApuracao).slice(0, 6000)}` : null,
     fontesTxt ? `Fontes documentadas:\n${fontesTxt}` : null,
     'Se faltar detalhe factual, generalise com cuidado (ex.: “segundo informações divulgadas”) sem inventar.',
-    'Quando houver fala documentada na apuração, use aspas em pelo menos uma frase literal no corpo da matéria.',
+    'Quando houver fala documentada, use aspas em pelo menos uma frase literal no corpo.',
+    'MODELO DE TOM (inspire-se, não copie): "O ator X tem se dedicado ao chamado…", "Em meio à devastação… uma notícia trouxe esperança…", "Que Deus console… Seguimos em oração…", "Glória a Deus por essa segunda oportunidade…".',
   ]
     .filter(Boolean)
     .join('\n\n');

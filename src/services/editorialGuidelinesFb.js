@@ -9,8 +9,11 @@
  * Fontes: Hootsuite/HubSpot (≤80 chars +66% engajamento), fold ~480 chars.
  */
 
-/** Teto prático: acima disso o feed esconde quase tudo atrás de “Ver mais”. */
-const MAX_MATERIA_CHARS = 800;
+/**
+ * Teto para Página gospel (estilo News Gospel): matérias um pouco mais longas
+ * que o fold do feed, com desenvolvimento + fechamento de fé.
+ */
+const MAX_MATERIA_CHARS = 1200;
 
 const FRASES_PROIBIDAS_IA = [
   'é importante ressaltar', 'vale ressaltar', 'vale destacar', 'vale lembrar',
@@ -26,27 +29,29 @@ const FRASES_PROIBIDAS_IA = [
   'trajetória marcada', 'figura conhecida', 'deixa um legado',
   'ganhou as redes', 'tomou as redes', 'movimentou as redes',
   'segue repercutindo', 'resta saber', 'só o tempo dirá',
-  'em meio a', 'diante do ocorrido', 'diante da repercussão',
+  'diante do ocorrido', 'diante da repercussão',
+  'não perca', 'assista até o final', 'compartilhe com quem precisa',
+  'curta e compartilhe', 'deixe seu like', 'comente aqui embaixo',
 ];
 
 function sortearFaixaChars() {
-  // Faixas alinhadas ao “fold” do feed (~480) e a legendas de notícia com foto.
+  // News Gospel: desenvolvimento + aspas + fechamento de fé.
   const faixas = [
-    { min: 400, max: 520 },
-    { min: 450, max: 600 },
-    { min: 480, max: 650 },
-    { min: 420, max: 580 },
+    { min: 520, max: 720 },
+    { min: 580, max: 820 },
+    { min: 620, max: 900 },
+    { min: 550, max: 780 },
   ];
   return faixas[Math.floor(Math.random() * faixas.length)];
 }
 
 function sortearEstiloLead() {
   const estilos = [
-    'Abra pelo FATO direto: o que aconteceu, quem e onde, em uma frase forte.',
-    'Abra pela CONSEQUÊNCIA/repercussão: o efeito que o fato causou, e só depois explique o que houve.',
-    'Abra por um DETALHE concreto e específico das fontes (número, local, data, frase dita) e amarre ao fato principal.',
-    'Abra pelo CONTRASTE: o que se esperava versus o que de fato aconteceu.',
-    'Abra situando o LEITOR no momento: quando e onde o fato veio à tona, e por que importa agora.',
+    'Abra apresentando QUEM é a pessoa + o que ela fez/decidiu agora (ex.: ator X tem se dedicado ao chamado missionário…).',
+    'Abra pelo FATO com tom de esperança ou contraste (ex.: em meio à devastação, uma notícia trouxe esperança…).',
+    'Abra situando a pessoa pelo que o público já conhece (novelas, ministério, cargo) e em seguida o fato novo.',
+    'Abra pelo testemunho/decisão espiritual da pessoa, já no primeiro parágrafo.',
+    'Abra por um detalhe humano concreto (dias sob escombros, frase dita, lugar) e amarre ao fato principal.',
   ];
   return estilos[Math.floor(Math.random() * estilos.length)];
 }
@@ -54,23 +59,37 @@ function sortearEstiloLead() {
 function sortearEstiloTitulo() {
   const estilos = [
     'Manchete direta e factual (sujeito + verbo + fato).',
-    'Manchete com o dado ou detalhe mais forte da apuração em evidência.',
-    'Manchete de duas partes separadas por ponto e vírgula ou dois-pontos (fato; desdobramento).',
-    'Manchete começando pelo desdobramento ou consequência do fato.',
-    'Manchete com termo-chave entre aspas simples, só se a fala/termo estiver nas fontes.',
+    'Manchete com o detalhe mais forte da apuração (número, decisão, milagre, chamada).',
+    'Manchete de duas partes (fato: desdobramento espiritual ou humano).',
+    'Manchete curta e impactante, sem clickbait enganoso.',
+    'Manchete com trecho curto entre aspas simples só se a fala estiver nas fontes.',
   ];
   return estilos[Math.floor(Math.random() * estilos.length)];
 }
 
 function sortearVozRedator() {
   const vozes = [
-    'Redator veterano de redação: frases secas, diretas, sem adjetivos desnecessários. Vai direto ao fato.',
-    'Repórter de cotidiano: ritmo ágil, frases curtas intercaladas com uma mais longa, linguagem próxima do leitor comum.',
-    'Repórter de política/religião: preciso com nomes, cargos e datas; tom sóbrio, sem dramatizar.',
-    'Redator de portal popular: texto vivo e acessível, mas sem sensacionalismo; prioriza o detalhe humano do fato.',
-    'Repórter analítico: conecta o fato ao seu contexto com uma observação própria, mas sem opinar; frases médias e bem encadeadas.',
+    'Redator de portal gospel (estilo News Gospel): jornalístico, claro e caloroso; apresenta a pessoa, conta o fato e fecha com fé — sem sensacionalismo barato.',
+    'Repórter de testemunho cristão: prioriza nomes, contexto (igreja, cidade, carreira) e falas reais entre aspas; tom respeitoso e próximo do leitor.',
+    'Redator de notícia com esperança: narra o fato com precisão e encerra com oração, gratidão ou reflexão espiritual natural.',
+    'Cronista gospel leve: frases médias bem encadeadas, linguagem acessível, sem muletas de IA nem pedido de like.',
+    'Repórter de fé e cultura: situar quem é a pessoa (TV, ministério, cargo), o que mudou e por que isso importa para a fé.',
   ];
   return vozes[Math.floor(Math.random() * vozes.length)];
+}
+
+/**
+ * Critérios do estilo News Gospel — usados em vídeo, imagem, link e pauta.
+ */
+function blocoEstiloNewsGospel() {
+  return `
+ESTILO NEWS GOSPEL (obrigatório — imite a voz de Página gospel de notícias):
+1) LEAD: comece apresentando quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
+2) DESENVOLVIMENTO: conte a história com fatos concretos (obras, datas, lugares, decisões). Use 1 a 3 FALAS LITERAIS entre aspas ("…") quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
+3) FECHAMENTO DE FÉ: termine com reflexão espiritual, oração, gratidão ou esperança (ex.: "Que Deus console…", "Glória a Deus…", "Essa história nos lembra que…"). NUNCA feche pedindo like, comentário ou compartilhamento.
+4) TOM: jornalístico + evangélico caloroso. Emocionante sem drama falso. Sem clickbait. Sem sermão genérico desconectado do fato.
+5) FORMATO: 3 a 5 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML. Sem markdown (**negrito**). Emojis só se fizerem sentido no fechamento (no máximo 1–2), nunca no meio de cada frase.
+6) PROIBIDO: colar a fonte/transcrição inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".`;
 }
 
 function sortearTemperatura(investigativa = false) {
@@ -249,17 +268,19 @@ function formatFacebookCaption({ titulo, materia, hashtags } = {}) {
 function blocoRegrasFacebook(faixa) {
   return `
 DIRETRIZES FACEBOOK / PEOPLE-FIRST:
-- Texto para leitor de Página, não para engajar de forma inautêntica.
+- Texto para leitor de Página gospel, não para engajar de forma inautêntica.
 - NÃO copie a fonte inteira; reescreva a narrativa com estrutura própria.
-- FALAS LITERAIS: quando a apuração trouxer fala/transcrição/legendas de vídeo ou post, DEIXE 1 a 3 trechos curtos e fortes entre aspas ("…") — fiéis ao que foi dito. O restante do texto contextualiza com suas palavras. Sem aspas o texto fica genérico demais.
+- FALAS LITERAIS: quando a apuração trouxer fala/transcrição/legendas, DEIXE 1 a 3 trechos curtos e fortes entre aspas ("…") — fiéis ao que foi dito. Introduza com "afirmou", "declarou", "contou".
 - NÃO invente fatos, números, datas, igrejas, pastores nem declarações entre aspas que NÃO estejam nas fontes.
-- Sem clickbait, sem pedir like/compartilhar.
-- Formato OBRIGATÓRIO: texto puro com PARÁGRAFOS CURTOS (1–2 frases) separados por linha em branco (\\n\\n). Nunca um bloco único.
-- Gancho forte nos primeiros ~80 caracteres (o que aparece antes do “Ver mais” no celular).
-- Extensão alvo desta geração: ${faixa.min}–${faixa.max} caracteres (máx absoluto ${MAX_MATERIA_CHARS}). Textos longos perdem alcance no feed.
-- 3 a 5 hashtags no campo hashtags, SEM espaços internos (ex.: EstadoLaico), sem # no valor.
-- Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 20).map((f) => `"${f}"`).join(', ')}…
-- Feche com fato/desdobramento — nunca “como vimos” / “em suma”.`;
+- Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
+- Formato OBRIGATÓRIO: 3 a 5 parágrafos curtos separados por linha em branco (\\n\\n). Nunca um bloco único.
+- Gancho forte nos primeiros ~120 caracteres (quem + fato).
+- Extensão alvo desta geração: ${faixa.min}–${faixa.max} caracteres (máx absoluto ${MAX_MATERIA_CHARS}).
+- 3 a 5 hashtags no campo hashtags, SEM espaços internos (ex.: FeCrista), sem # no valor.
+- Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 22).map((f) => `"${f}"`).join(', ')}…
+- FECHAMENTO: reflexão de fé, oração ou gratidão ligada ao fato — nunca “como vimos” / “em suma” / CTA de engajamento.
+
+${blocoEstiloNewsGospel()}`;
 }
 
 function mensagemAvisoQualidade(avaliacao) {
@@ -287,6 +308,7 @@ module.exports = {
   titulosParecidos,
   normalizarBusca,
   blocoRegrasFacebook,
+  blocoEstiloNewsGospel,
   mensagemAvisoQualidade,
   formatFacebookCaption,
   quebrarEmParagrafos,
