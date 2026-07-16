@@ -13,6 +13,51 @@ function serperSemCredito(err) {
   return msg.includes('not enough credits') || msg.includes('insufficient credits');
 }
 
+/**
+ * SerpApi Google Images — preferido para pessoa/assunto específico.
+ * Docs: https://serpapi.com/search?engine=google_images
+ */
+async function buscarSerpApiImagens(consulta, { num = 12 } = {}) {
+  if (!env.serpApiKey) return [];
+  try {
+    const { data } = await axios.get('https://serpapi.com/search.json', {
+      params: {
+        engine: 'google_images',
+        q: consulta,
+        hl: 'pt-br',
+        gl: 'br',
+        api_key: env.serpApiKey,
+        // ijn: 0 = primeira página
+        ijn: 0,
+      },
+      timeout: 30000,
+    });
+
+    const list = data?.images_results || [];
+    return list
+      .slice(0, num)
+      .map((img, idx) => ({
+        id: `serpapi:${idx}:${String(img.original || img.link || '').slice(-36)}`,
+        url: img.original || img.link || null,
+        thumbnail: img.thumbnail || img.original || null,
+        titulo: img.title || consulta,
+        fonte: img.source || img.domain || null,
+        link: img.link || null,
+        largura: img.original_width || null,
+        altura: img.original_height || null,
+        origem: 'serpapi',
+        consulta,
+      }))
+      .filter((i) => i.url && /^https?:\/\//i.test(i.url) && !imagemPareceRuim(i));
+  } catch (err) {
+    console.warn(
+      '[sugerirImagens] serpapi:',
+      err.response?.data?.error || err.message
+    );
+    return [];
+  }
+}
+
 async function buscarSerperImagens(consulta, { num = 10 } = {}) {
   if (!env.serperApiKey) return { imagens: [], esgotado: false };
   try {
@@ -49,9 +94,6 @@ async function buscarSerperImagens(consulta, { num = 10 } = {}) {
   }
 }
 
-/**
- * Brave Images — bom para pessoa específica (fotos reais).
- */
 async function buscarBraveImagens(consulta, { count = 10 } = {}) {
   if (!env.braveSearchApiKey) return [];
   try {
@@ -66,9 +108,8 @@ async function buscarBraveImagens(consulta, { count = 10 } = {}) {
 
     return (data?.results || [])
       .map((img, idx) => {
-        const url = img.properties?.url || img.url || null;
+        const url = img.properties?.url || null;
         const thumbnail = img.thumbnail?.src || url;
-        // Preferir URL da imagem, não a página Getty
         const imageUrl =
           url && /\.(jpe?g|png|webp|gif)(\?|$)/i.test(url)
             ? url
@@ -119,24 +160,28 @@ async function buscarPexelsImagens(consulta, { perPage = 6 } = {}) {
 }
 
 async function buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef }) {
-  // 1) Serper (se ainda tiver crédito)
+  // 1) SerpApi (Google Images) — principal
+  const serpapi = await buscarSerpApiImagens(consulta, { num: 12 });
+  if (serpapi.length) return serpapi;
+
+  // 2) Serper.dev (se ainda tiver crédito)
   if (env.serperApiKey && !serperEsgotadoRef.value) {
     const { imagens, esgotado } = await buscarSerperImagens(consulta, { num: 10 });
     if (esgotado) serperEsgotadoRef.value = true;
     if (imagens.length) return imagens;
   }
 
-  // 2) Brave — prioridade para pessoa específica
+  // 3) Brave
   const brave = await buscarBraveImagens(consulta, { count: 12 });
   if (brave.length) return brave;
 
-  // 3) Pexels só sem pessoa nomeada
+  // 4) Pexels só sem pessoa nomeada
   if (!temPessoa) return buscarPexelsImagens(consulta, { perPage: 8 });
   return [];
 }
 
 /**
- * IA analisa a matéria → busca fotos reais (Serper → Brave → Pexels).
+ * IA analisa a matéria → busca fotos reais (SerpApi → Serper → Brave → Pexels).
  */
 async function sugerirImagensParaMateria({
   titulo,
@@ -160,7 +205,6 @@ async function sugerirImagensParaMateria({
   const serperEsgotadoRef = { value: false };
   let fonteUsada = null;
 
-  // Inclui a imagem atual/fonte como 1ª opção
   if (imagemAtual && /^https?:\/\//i.test(imagemAtual)) {
     const key = imagemAtual.split('?')[0].toLowerCase();
     vistos.add(key);
@@ -203,34 +247,36 @@ async function sugerirImagensParaMateria({
   }
 
   if (!imagens.length || (imagens.length === 1 && imagens[0].origem === 'fonte' && temPessoa)) {
-    const extra = serperEsgotadoRef.value
-      ? ' Serper sem créditos — use Brave (BRAVE_SEARCH_API_KEY) ou recarregue créditos do Serper.'
-      : '';
     if (imagens.length <= (imagemAtual ? 1 : 0)) {
       const err = new Error(
-        (temPessoa
-          ? `Não encontramos fotos de “${plano.pessoa}”.`
-          : 'Nenhuma imagem sugerida.') + extra
+        temPessoa
+          ? `Não encontramos fotos de “${plano.pessoa}”. Confira SERPAPI_API_KEY no .env.`
+          : 'Nenhuma imagem sugerida. Configure SERPAPI_API_KEY no .env.'
       );
       err.status = 422;
       throw err;
     }
   }
 
+  const avisoParts = [];
+  if (fonteUsada === 'serpapi') avisoParts.push('Fotos via SerpApi (Google Images)');
+  else if (fonteUsada === 'brave') avisoParts.push('Fotos via Brave Images');
+  else if (fonteUsada === 'google') avisoParts.push('Fotos via Serper');
+  if (serperEsgotadoRef.value) avisoParts.push('Serper.dev sem créditos');
+
   return {
     pessoa: plano.pessoa,
     motivo: plano.motivo,
     consultas: consultasUsadas,
     imagens: imagens.slice(0, limite),
-    fontePreferida: fonteUsada || (env.braveSearchApiKey ? 'brave' : 'serper'),
-    aviso: serperEsgotadoRef.value
-      ? 'Serper sem créditos — sugestões via Brave Images.'
-      : null,
+    fontePreferida: fonteUsada || (env.serpApiKey ? 'serpapi' : 'brave'),
+    aviso: avisoParts.length ? avisoParts.join(' · ') : null,
   };
 }
 
 module.exports = {
   sugerirImagensParaMateria,
+  buscarSerpApiImagens,
   buscarSerperImagens,
   buscarBraveImagens,
 };

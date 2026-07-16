@@ -17,6 +17,8 @@ const env = {
   pexelsApiKey: process.env.PEXELS_API_KEY || '',
   braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   serperApiKey: process.env.SERPER_API_KEY || '',
+  /** SerpApi (serpapi.com) — Google Images para sugestões de capa */
+  serpApiKey: process.env.SERPAPI_API_KEY || '',
   facebook: {
     appId: process.env.FACEBOOK_APP_ID || '',
     appSecret: process.env.FACEBOOK_APP_SECRET || '',

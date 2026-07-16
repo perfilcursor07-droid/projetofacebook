@@ -419,10 +419,12 @@
         const label =
           img.origem === 'fonte'
             ? 'Atual'
-            : img.origem === 'brave'
+            : img.origem === 'serpapi'
+              ? 'Google'
+              : img.origem === 'brave'
               ? 'Brave'
               : img.origem === 'google'
-                ? 'Google'
+                ? 'Serper'
                 : img.origem || '';
         return `<button type="button" data-suggest-idx="${i}" title="${String(img.titulo || '').replace(/"/g, '&quot;')}"
           class="relative h-20 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-950 hover:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400">
