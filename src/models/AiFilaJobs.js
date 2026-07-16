@@ -8,9 +8,10 @@ const AiFilaJobs = {
   },
 
   findDue(limit = 10) {
+    // Compara com o relógio do Node (UTC) — evita divergência com NOW() do MySQL
     return db(this.table)
       .where({ status: 'pendente' })
-      .andWhere('run_at', '<=', db.fn.now())
+      .andWhere('run_at', '<=', new Date())
       .orderBy('run_at', 'asc')
       .limit(limit);
   },

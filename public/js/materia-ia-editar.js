@@ -185,18 +185,19 @@
     }
     setStatus('Salvando e agendando…');
     try {
+      // Envia o valor do datetime-local; o servidor interpreta como Araguaína (UTC−3)
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/agendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          run_at: new Date(runAt).toISOString(),
+          run_at: runAt,
           titulo: tituloEl.value,
           materia: materiaEl.value,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao agendar');
-      setStatus('Agendada ✓');
+      setStatus('Agendada ✓ (horário de Araguaína)');
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {
       setStatus(err.message, true);

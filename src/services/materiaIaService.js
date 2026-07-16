@@ -246,7 +246,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
   }
 
   const imagemUrl = overrides.imagem_url || matter.imagem_url;
-  if (tipo === 'foto' && !imagemUrl) {
+  if (tipo === 'foto' && !imagemUrl && !matter.imagem_path) {
     await AiMatters.update(matter.id, {
       status: 'rascunho',
       error_message: 'Foto sem imagem — salva como rascunho',
@@ -289,10 +289,12 @@ async function publicarMateria(userId, matterId, overrides = {}) {
   const executarPublicacao = async () => {
     const publishDispatch = require('./publishDispatch');
     const img = overrides.imagem_url || matter.imagem_url;
+    const hasFoto = Boolean(img || matter.imagem_path);
     const result = await publishDispatch.publishContent({
       userId,
       page,
-      tipo: tipo === 'foto' && img ? 'foto' : 'texto',
+      tipo: tipo === 'foto' && hasFoto ? 'foto' : 'texto',
+      imagemPath: matter.imagem_path || null,
       imageUrl: tipo === 'foto' && img ? img : null,
       texto: mensagem,
     });
@@ -584,9 +586,9 @@ async function agendarMateria({ userId, matterId, runAt }) {
     err.status = 404;
     throw err;
   }
-  const when = new Date(runAt);
+  const when = parseScheduleDate(runAt);
   if (Number.isNaN(when.getTime()) || when <= new Date()) {
-    const err = new Error('Informe uma data/hora futura para agendar');
+    const err = new Error('Informe uma data/hora futura (horário de Araguaína / Tocantins)');
     err.status = 400;
     throw err;
   }
@@ -601,17 +603,54 @@ async function agendarMateria({ userId, matterId, runAt }) {
   return { jobId, matterId: matter.id, runAt: when };
 }
 
+/** Interpreta agendamento no fuso America/Araguaina (UTC−3, sem horário de verão). */
+function parseScheduleDate(runAt) {
+  const raw = String(runAt || '').trim();
+  if (!raw) return new Date(NaN);
+
+  // Já veio em ISO com fuso (ex.: 2026-07-16T12:15:00.000Z)
+  if (/Z$|[+-]\d{2}:\d{2}$/.test(raw)) {
+    return new Date(raw);
+  }
+
+  // datetime-local: 2026-07-16T09:15 → trata como Araguaína (UTC-3)
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const sec = m[6] || '00';
+    return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${sec}-03:00`);
+  }
+
+  return new Date(raw);
+}
+
 async function tickFilaJobs() {
   const jobs = await AiFilaJobs.findDue(5);
   for (const job of jobs) {
     await AiFilaJobs.update(job.id, { status: 'processando', attempts: Number(job.attempts || 0) + 1 });
     try {
       if (job.matter_id) {
-        await publicarMateria(job.user_id, job.matter_id);
+        // sync:true — espera o PostPulse/Graph e captura erro no job
+        await publicarMateria(job.user_id, job.matter_id, { sync: true });
       }
       await AiFilaJobs.update(job.id, { status: 'feito', erro: null });
     } catch (err) {
       await AiFilaJobs.update(job.id, { status: 'erro', erro: String(err.message).slice(0, 500) });
+    }
+  }
+
+  // Fallback: matérias agendadas vencidas (sem job pendente ou job perdido)
+  const db = require('../config/db');
+  const dueMatters = await db('ai_matters')
+    .where({ status: 'agendado' })
+    .andWhere('scheduled_at', '<=', new Date())
+    .orderBy('scheduled_at', 'asc')
+    .limit(5);
+
+  for (const matter of dueMatters) {
+    try {
+      await publicarMateria(matter.user_id, matter.id, { sync: true });
+    } catch (err) {
+      console.error(`[agendado] matéria #${matter.id}:`, err.message);
     }
   }
 }
