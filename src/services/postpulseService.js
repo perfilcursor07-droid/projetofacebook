@@ -71,13 +71,30 @@ async function exchangeCodeForToken(code) {
 
 function apiErrorMessage(err) {
   const body = err.response?.data;
-  return (
+  if (!body) return err.message || 'Erro desconhecido na API PostPulse';
+
+  const details = body?.error?.details;
+  let detailText = '';
+  if (Array.isArray(details) && details.length) {
+    detailText = details
+      .map((d) => (d.field ? `${d.field}: ${d.message}` : d.message || JSON.stringify(d)))
+      .join('; ');
+  }
+
+  const main =
     body?.error?.message ||
     body?.message ||
     (typeof body?.error === 'string' ? body.error : null) ||
-    err.message ||
-    'Erro desconhecido na API PostPulse'
-  );
+    (typeof body === 'string' ? body : null);
+
+  if (main && detailText) return `${main} (${detailText})`;
+  if (main) return main;
+  if (detailText) return detailText;
+  try {
+    return JSON.stringify(body).slice(0, 400);
+  } catch {
+    return err.message || 'Erro desconhecido na API PostPulse';
+  }
 }
 
 function authHeaders(accessToken) {
@@ -90,6 +107,19 @@ async function listAccounts(accessToken) {
     timeout: 30_000,
   });
   return Array.isArray(data) ? data : data?.accounts || data?.data || [];
+}
+
+/**
+ * Páginas/canais ligados à conta (Facebook e Telegram usam chatId no post).
+ * GET /v1/accounts/{id}/chats?platform=FACEBOOK
+ */
+async function listChats(accessToken, accountId, platform = 'FACEBOOK') {
+  const { data } = await axios.get(`${API}/v1/accounts/${accountId}/chats`, {
+    headers: authHeaders(accessToken),
+    params: { platform },
+    timeout: 30_000,
+  });
+  return Array.isArray(data) ? data : data?.chats || data?.data || [];
 }
 
 function contentTypeForFile(filePath) {
@@ -130,11 +160,13 @@ async function uploadMedia(accessToken, filePath) {
 
 /**
  * Publica (agenda) no Facebook via PostPulse.
+ * Facebook Pages exigem chatId (igual Telegram).
  * publicationType: FEED | REELS | STORY
  */
 async function publishToFacebook({
   accessToken,
   socialMediaAccountId,
+  chatId,
   content,
   filePath,
   imageUrl,
@@ -144,12 +176,18 @@ async function publishToFacebook({
   if (filePath) {
     attachmentPaths.push(await uploadMedia(accessToken, filePath));
   } else if (imageUrl) {
-    // PostPulse importa URL pública automaticamente em attachmentPaths
     attachmentPaths.push(String(imageUrl));
   }
 
-  // "Imediato": 1 minuto à frente para evitar rejeição de horário passado.
   const scheduledTime = new Date(Date.now() + 60_000).toISOString();
+
+  const post = {
+    content: content || '',
+    ...(attachmentPaths.length ? { attachmentPaths } : {}),
+  };
+  if (chatId != null && String(chatId).trim() !== '') {
+    post.chatId = String(chatId);
+  }
 
   const payload = {
     scheduledTime,
@@ -161,28 +199,40 @@ async function publishToFacebook({
           type: 'FACEBOOK',
           publicationType,
         },
-        posts: [
-          {
-            content: content || '',
-            ...(attachmentPaths.length ? { attachmentPaths } : {}),
-          },
-        ],
+        posts: [post],
       },
     ],
   };
 
-  const { data } = await axios.post(`${API}/v1/posts`, payload, {
-    headers: { ...authHeaders(accessToken), 'Content-Type': 'application/json' },
-    timeout: 2 * 60 * 1000,
+  console.log('[postpulse] POST /v1/posts', {
+    socialMediaAccountId: payload.publications[0].socialMediaAccountId,
+    chatId: post.chatId || null,
+    publicationType,
+    hasMedia: Boolean(attachmentPaths.length),
+    contentLen: (content || '').length,
   });
 
-  const scheduleId = data?.id;
-  return {
-    id: scheduleId != null ? `postpulse:${scheduleId}` : null,
-    post_id: scheduleId != null ? `postpulse:${scheduleId}` : null,
-    schedule: data,
-    provider: 'postpulse',
-  };
+  try {
+    const { data } = await axios.post(`${API}/v1/posts`, payload, {
+      headers: { ...authHeaders(accessToken), 'Content-Type': 'application/json' },
+      timeout: 2 * 60 * 1000,
+    });
+
+    const scheduleId = data?.id;
+    return {
+      id: scheduleId != null ? `postpulse:${scheduleId}` : null,
+      post_id: scheduleId != null ? `postpulse:${scheduleId}` : null,
+      schedule: data,
+      provider: 'postpulse',
+    };
+  } catch (err) {
+    const msg = apiErrorMessage(err);
+    console.error('[postpulse] publish failed:', msg, err.response?.data);
+    const e = new Error(msg);
+    e.status = err.response?.status || 502;
+    e.response = err.response;
+    throw e;
+  }
 }
 
 module.exports = {
@@ -191,6 +241,7 @@ module.exports = {
   loginUrl,
   exchangeCodeForToken,
   listAccounts,
+  listChats,
   uploadMedia,
   publishToFacebook,
   apiErrorMessage,

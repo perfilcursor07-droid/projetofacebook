@@ -50,9 +50,24 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
     let content = texto || '';
     if (link) content = content ? `${content}\n\n${link}` : link;
 
+    const { ensureChatId } = require('./postpulseSync');
+    const chatId = await ensureChatId(userId, page);
+    if (!chatId) {
+      const err = new Error(
+        'PostPulse: Página (chat) não encontrada. Em /paginas clique em Sincronizar páginas. No PostPulse a conta Facebook precisa ter a Page conectada.'
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    // Garante page atualizado com chat_id
+    const FacebookPages = require('../models/FacebookPages');
+    const freshPage = await FacebookPages.findById(page.id);
+
     const result = await postpulseService.publishToFacebook({
       accessToken: conn.access_token,
-      socialMediaAccountId: page.postpulse_account_id,
+      socialMediaAccountId: freshPage.postpulse_account_id || page.postpulse_account_id,
+      chatId: freshPage.postpulse_chat_id || chatId,
       content,
       filePath: filePath || null,
       imageUrl: imageUrl || null,

@@ -212,7 +212,9 @@
             let msg =
               'PostPulse: ' +
               j.matched +
-              ' página(s) vinculada(s). Contas FB no PostPulse: ' +
+              ' página(s) vinculada(s)' +
+              (j.chatsResolved != null ? ', ' + j.chatsResolved + ' Page/chat resolvido(s)' : '') +
+              '. Contas FB no PostPulse: ' +
               (j.accounts || []).length;
             if (j.autoLinked) msg += ' (vínculo automático 1:1)';
             if (j.matched === 0 && (j.accounts || []).length) {
@@ -271,11 +273,18 @@
         const ppAccounts = window.__ppAccounts || [];
         const pagesHtml = (data.pages || [])
           .map((p) => {
-            const via = p.publica_via === 'postpulse' ? 'PostPulse' : 'Graph API';
+            const via =
+              p.publica_via === 'postpulse'
+                ? 'PostPulse'
+                : p.publica_via === 'postpulse_sem_pagina'
+                  ? 'PostPulse (falta Page)'
+                  : 'Graph API';
             const viaClass =
               p.publica_via === 'postpulse'
                 ? 'bg-violet-500/15 text-violet-300'
-                : 'bg-sky-500/15 text-sky-300';
+                : p.publica_via === 'postpulse_sem_pagina'
+                  ? 'bg-amber-500/15 text-amber-300'
+                  : 'bg-sky-500/15 text-sky-300';
             let linkBtn = '';
             if (p.publica_via !== 'postpulse' && ppAccounts.length === 1) {
               linkBtn = `<button type="button" data-link-page="${p.id}" data-pp-id="${ppAccounts[0].id}"

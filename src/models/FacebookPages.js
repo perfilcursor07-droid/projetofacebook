@@ -28,6 +28,13 @@ const FacebookPages = {
         updated_at: db.fn.now(),
       });
   },
+
+  setPostpulseLink(id, { postpulseAccountId, postpulseChatId }) {
+    const patch = { updated_at: db.fn.now() };
+    if (postpulseAccountId !== undefined) patch.postpulse_account_id = postpulseAccountId;
+    if (postpulseChatId !== undefined) patch.postpulse_chat_id = postpulseChatId;
+    return db(this.table).where({ id }).update(patch);
+  },
 };
 
 module.exports = FacebookPages;

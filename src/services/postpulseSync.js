@@ -22,14 +22,85 @@ function serializeAccount(a) {
   };
 }
 
+function matchChat(page, chats) {
+  if (!Array.isArray(chats) || !chats.length) return null;
+
+  const byId = chats.find(
+    (c) =>
+      c.id != null &&
+      (String(c.id) === String(page.page_id) || String(c.id).includes(String(page.page_id)))
+  );
+  if (byId) return byId;
+
+  const pageNorm = normName(page.page_name);
+  if (!pageNorm) return null;
+
+  return (
+    chats.find(
+      (c) =>
+        normName(c.title) === pageNorm ||
+        normName(c.name) === pageNorm ||
+        normName(c.accountDisplayName) === pageNorm
+    ) || null
+  );
+}
+
 /**
- * Associa contas FACEBOOK do PostPulse às páginas do app.
- * Ordem: page_id === accountId → nome igual → 1 página + 1 conta FB (auto).
+ * Busca chats (Pages) no PostPulse e grava postpulse_chat_id.
+ */
+async function resolveChatsForPages(accessToken, pages) {
+  const byAccount = new Map();
+  let chatsResolved = 0;
+
+  for (const page of pages) {
+    if (!page.postpulse_account_id) continue;
+
+    const accId = Number(page.postpulse_account_id);
+    if (!byAccount.has(accId)) {
+      try {
+        const chats = await postpulseService.listChats(accessToken, accId, 'FACEBOOK');
+        console.log('[postpulse] chats for account', accId, JSON.stringify(chats).slice(0, 1500));
+        byAccount.set(accId, chats);
+      } catch (err) {
+        console.warn(
+          '[postpulse] listChats falhou',
+          accId,
+          postpulseService.apiErrorMessage(err)
+        );
+        byAccount.set(accId, []);
+      }
+    }
+
+    const chats = byAccount.get(accId) || [];
+    let chat = matchChat(page, chats);
+
+    // 1 página app + 1 chat PostPulse → auto
+    if (!chat && chats.length === 1) {
+      const pagesWithThisAcc = pages.filter(
+        (p) => Number(p.postpulse_account_id) === accId
+      );
+      if (pagesWithThisAcc.length === 1) chat = chats[0];
+    }
+
+    if (chat?.id != null) {
+      await FacebookPages.setPostpulseLink(page.id, {
+        postpulseAccountId: page.postpulse_account_id,
+        postpulseChatId: String(chat.id),
+      });
+      chatsResolved += 1;
+    }
+  }
+
+  return chatsResolved;
+}
+
+/**
+ * Associa contas FACEBOOK do PostPulse às páginas do app + resolve chatId da Page.
  */
 async function syncPostpulseAccounts(userId) {
   const conn = await PostpulseConnections.findByUser(userId);
   if (!conn?.access_token) {
-    return { matched: 0, accounts: [], pages: [], autoLinked: false };
+    return { matched: 0, chatsResolved: 0, accounts: [], pages: [], autoLinked: false };
   }
 
   const accounts = await postpulseService.listAccounts(conn.access_token);
@@ -44,6 +115,7 @@ async function syncPostpulseAccounts(userId) {
   if (!account) {
     return {
       matched: 0,
+      chatsResolved: 0,
       accounts: fbAccounts.map(serializeAccount),
       pages: [],
       autoLinked: false,
@@ -52,15 +124,12 @@ async function syncPostpulseAccounts(userId) {
   }
 
   const pages = await FacebookPages.findByAccount(account.id);
-  let matched = 0;
   let autoLinked = false;
   const usedPpIds = new Set();
 
-  // Páginas já vinculadas contam e ocupam o slot PostPulse
   for (const page of pages) {
     if (page.postpulse_account_id) {
       usedPpIds.add(Number(page.postpulse_account_id));
-      matched += 1;
     }
   }
 
@@ -73,7 +142,6 @@ async function syncPostpulseAccounts(userId) {
     if (byId) {
       await FacebookPages.setPostpulseAccount(page.id, byId.id);
       usedPpIds.add(Number(byId.id));
-      matched += 1;
       continue;
     }
 
@@ -88,42 +156,27 @@ async function syncPostpulseAccounts(userId) {
     if (byName) {
       await FacebookPages.setPostpulseAccount(page.id, byName.id);
       usedPpIds.add(Number(byName.id));
-      matched += 1;
     }
   }
 
-  const pagesAfter = await FacebookPages.findByAccount(account.id);
-  const unlinkedPages = pagesAfter.filter((p) => !p.postpulse_account_id);
+  const pagesAfterLink = await FacebookPages.findByAccount(account.id);
+  const unlinkedPages = pagesAfterLink.filter((p) => !p.postpulse_account_id);
   const unusedPp = fbAccounts.filter((a) => !usedPpIds.has(Number(a.id)));
 
-  // Sempre vincula 1:1 quando sobra exatamente uma de cada
   if (unlinkedPages.length === 1 && unusedPp.length === 1) {
     await FacebookPages.setPostpulseAccount(unlinkedPages[0].id, unusedPp[0].id);
-    matched += 1;
     autoLinked = true;
-    console.log('[postpulse] auto-link 1:1', {
-      page: unlinkedPages[0].page_name,
-      page_id: unlinkedPages[0].page_id,
-      ppId: unusedPp[0].id,
-      ppName: unusedPp[0].accountDisplayName,
-      ppAccountId: unusedPp[0].accountId,
-    });
-  } else {
-    console.log('[postpulse] sync sem auto-link', {
-      pages: pagesAfter.length,
-      unlinked: unlinkedPages.length,
-      fbAccounts: fbAccounts.length,
-      unusedPp: unusedPp.length,
-      pageIds: pagesAfter.map((p) => p.page_id),
-      ppAccountIds: fbAccounts.map((a) => a.accountId),
-    });
   }
+
+  const pagesForChats = await FacebookPages.findByAccount(account.id);
+  const chatsResolved = await resolveChatsForPages(conn.access_token, pagesForChats);
 
   const finalPages = await FacebookPages.findByAccount(account.id);
   const linkedCount = finalPages.filter((p) => p.postpulse_account_id).length;
 
   return {
     matched: linkedCount,
+    chatsResolved,
     autoLinked,
     accounts: fbAccounts.map(serializeAccount),
     pages: finalPages.map((p) => ({
@@ -131,12 +184,13 @@ async function syncPostpulseAccounts(userId) {
       page_id: p.page_id,
       page_name: p.page_name,
       postpulse_account_id: p.postpulse_account_id || null,
+      postpulse_chat_id: p.postpulse_chat_id || null,
     })),
   };
 }
 
 /**
- * Vincula manualmente uma página do app a uma conta PostPulse.
+ * Vincula manualmente uma página do app a uma conta PostPulse e resolve o chat.
  */
 async function linkPageToPostpulse(userId, facebookPageId, postpulseAccountId) {
   const account = await FacebookAccounts.findByUser(userId);
@@ -169,14 +223,40 @@ async function linkPageToPostpulse(userId, facebookPageId, postpulseAccountId) {
   }
 
   await FacebookPages.setPostpulseAccount(page.id, hit.id);
+
+  const refreshed = await FacebookPages.findById(page.id);
+  await resolveChatsForPages(conn.access_token, [refreshed]);
+  const finalPage = await FacebookPages.findById(page.id);
+
   return {
     page: {
-      id: page.id,
-      page_name: page.page_name,
-      postpulse_account_id: hit.id,
+      id: finalPage.id,
+      page_name: finalPage.page_name,
+      postpulse_account_id: finalPage.postpulse_account_id,
+      postpulse_chat_id: finalPage.postpulse_chat_id || null,
     },
     postpulse: serializeAccount(hit),
   };
 }
 
-module.exports = { syncPostpulseAccounts, linkPageToPostpulse };
+/**
+ * Garante chatId antes de publicar (busca chats se faltar).
+ */
+async function ensureChatId(userId, page) {
+  if (page.postpulse_chat_id) return String(page.postpulse_chat_id);
+  if (!page.postpulse_account_id) return null;
+
+  const conn = await PostpulseConnections.findByUser(userId);
+  if (!conn?.access_token) return null;
+
+  await resolveChatsForPages(conn.access_token, [page]);
+  const refreshed = await FacebookPages.findById(page.id);
+  return refreshed?.postpulse_chat_id ? String(refreshed.postpulse_chat_id) : null;
+}
+
+module.exports = {
+  syncPostpulseAccounts,
+  linkPageToPostpulse,
+  ensureChatId,
+  resolveChatsForPages,
+};

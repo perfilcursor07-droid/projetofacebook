@@ -64,6 +64,7 @@ async function syncHandler(req, res, next) {
     res.json({
       ok: true,
       matched: result.matched,
+      chatsResolved: result.chatsResolved || 0,
       autoLinked: Boolean(result.autoLinked),
       hint: result.hint || null,
       accounts: result.accounts || [],
@@ -119,7 +120,10 @@ async function disconnectHandler(req, res, next) {
     if (account) {
       const pages = await FacebookPages.findByAccount(account.id);
       for (const page of pages) {
-        await FacebookPages.setPostpulseAccount(page.id, null);
+        await FacebookPages.setPostpulseLink(page.id, {
+          postpulseAccountId: null,
+          postpulseChatId: null,
+        });
       }
     }
     res.json({ ok: true });

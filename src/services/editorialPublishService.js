@@ -62,8 +62,6 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
   });
 
   try {
-    // Upload unpublished + /feed com attached_media → aparece em Posts (não só em Fotos).
-    // Com PostPulse vinculado, publishDispatch usa a API comercial automaticamente.
     const publishDispatch = require('./publishDispatch');
     const result = await publishDispatch.publishContent({
       userId,
@@ -99,7 +97,9 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
       status: 'erro',
       error_message: String(messageError).slice(0, 500),
     });
-    throw err;
+    const out = new Error(messageError);
+    out.status = err.status || err.response?.status || 502;
+    throw out;
   }
 }
 

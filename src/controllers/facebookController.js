@@ -125,7 +125,13 @@ async function listPages(req, res, next) {
         page_id: p.page_id,
         page_name: p.page_name,
         postpulse_account_id: p.postpulse_account_id || null,
-        publica_via: p.postpulse_account_id && ppConn?.access_token ? 'postpulse' : 'facebook',
+        postpulse_chat_id: p.postpulse_chat_id || null,
+        publica_via:
+          p.postpulse_account_id && p.postpulse_chat_id && ppConn?.access_token
+            ? 'postpulse'
+            : p.postpulse_account_id && ppConn?.access_token
+              ? 'postpulse_sem_pagina'
+              : 'facebook',
       })),
     });
   } catch (err) {
