@@ -128,7 +128,7 @@ async function marcarJaPublicados(userId, facebookPageId, topicos) {
   });
 }
 
-async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublicacao = 'texto', investigativa = false } = {}) {
+async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublicacao = 'texto', investigativa = false, furoReportagem = false } = {}) {
   assertDeepseek();
   const apurado = await apurarTopico(topico || {});
   const gerado = await gerarMateriaNoticiaFacebook({
@@ -142,6 +142,7 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
     emAlta: Boolean(apurado.emAlta || apurado.emAltaAgora),
     redeSocial: Boolean(apurado.redeSocial || apurado.tipoFonte === 'rede_social'),
     investigativa,
+    furoReportagem,
   });
 
   const imagemUrl = await escolherImagemCapa(apurado, gerado);
@@ -370,6 +371,7 @@ async function gerarCompleto({
   tipoPublicacao = 'texto',
   status = 'rascunho',
   investigativa = false,
+  furoReportagem = false,
 }) {
   const tipo = tipoPublicacao === 'foto' ? 'foto' : 'texto';
   const gerado = await gerarPreviewDeTopico(topico, {
@@ -377,6 +379,7 @@ async function gerarCompleto({
     facebookPageId,
     tipoPublicacao: tipo,
     investigativa,
+    furoReportagem,
   });
   const topicoApurado = gerado.topico || topico;
 
@@ -597,12 +600,70 @@ async function tickFilaJobs() {
   }
 }
 
+/**
+ * Usuário cola um link → apura a notícia → reescreve com furo (sem plagiar).
+ */
+async function gerarDeLink({
+  userId,
+  url,
+  facebookPageId = null,
+  tipoPublicacao = 'foto',
+  status = 'rascunho',
+}) {
+  const link = String(url || '').trim();
+  if (!/^https?:\/\//i.test(link)) {
+    const err = new Error('Informe um link válido (http ou https)');
+    err.status = 400;
+    throw err;
+  }
+
+  assertDeepseek();
+
+  const topicoBase = {
+    link,
+    titulo: null,
+    resumo: null,
+    fonte: null,
+  };
+
+  const apurado = await apurarTopico(topicoBase);
+  const temConteudo =
+    Boolean(apurado.titulo) ||
+    Boolean(apurado.resumo) ||
+    Boolean(apurado.fontesApuracao?.length) ||
+    Boolean(apurado.contextoApuracao && apurado.contextoApuracao.length > 80);
+
+  if (!temConteudo) {
+    const err = new Error(
+      'Não foi possível ler a notícia deste link. Confira o endereço ou tente outro veículo.'
+    );
+    err.status = 422;
+    throw err;
+  }
+
+  if (!apurado.titulo) {
+    apurado.titulo = apurado.veiculo
+      ? `Notícia — ${apurado.veiculo}`
+      : 'Notícia a partir do link';
+  }
+
+  return gerarCompleto({
+    userId,
+    topico: apurado,
+    facebookPageId,
+    tipoPublicacao,
+    status,
+    furoReportagem: true,
+  });
+}
+
 module.exports = {
   pesquisarNichos,
   buscarEmAltaAgora,
   marcarJaPublicados,
   gerarPreviewDeTopico,
   gerarCompleto,
+  gerarDeLink,
   salvarMateria,
   publicarMateria,
   gerarEPublicarLote,

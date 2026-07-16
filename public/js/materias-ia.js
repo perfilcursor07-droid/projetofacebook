@@ -42,15 +42,23 @@
       const res = await fetch('/api/facebook/pages');
       const data = await res.json();
       const pages = data.pages || [];
-      if (!pages.length) {
-        pageSelect.innerHTML = '<option value="">Conecte uma página em /paginas</option>';
-        return;
+      const selects = document.querySelectorAll('.mia-page-select');
+      const html = !pages.length
+        ? '<option value="">Conecte uma página em /paginas</option>'
+        : pages
+            .map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)}</option>`)
+            .join('');
+      selects.forEach((el) => {
+        el.innerHTML = html;
+      });
+      if (!selects.length && pageSelect) {
+        pageSelect.innerHTML = html;
       }
-      pageSelect.innerHTML = pages
-        .map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)}</option>`)
-        .join('');
     } catch {
-      pageSelect.innerHTML = '<option value="">Erro ao carregar páginas</option>';
+      document.querySelectorAll('.mia-page-select').forEach((el) => {
+        el.innerHTML = '<option value="">Erro ao carregar páginas</option>';
+      });
+      if (pageSelect) pageSelect.innerHTML = '<option value="">Erro ao carregar páginas</option>';
     }
   }
   loadPages();
@@ -65,9 +73,10 @@
         b.classList.toggle('text-slate-300', !on);
       });
       const modo = btn.dataset.miaModo;
-      document.getElementById('mia-buscar').classList.toggle('hidden', modo !== 'buscar');
-      document.getElementById('mia-alta').classList.toggle('hidden', modo !== 'alta');
-      document.getElementById('mia-auto').classList.toggle('hidden', modo !== 'auto');
+      document.getElementById('mia-buscar')?.classList.toggle('hidden', modo !== 'buscar');
+      document.getElementById('mia-alta')?.classList.toggle('hidden', modo !== 'alta');
+      document.getElementById('mia-link')?.classList.toggle('hidden', modo !== 'link');
+      document.getElementById('mia-auto')?.classList.toggle('hidden', modo !== 'auto');
       if (modo === 'auto') loadMonitores();
     });
   });
@@ -239,6 +248,62 @@
         (data.topicos || []).length + ' em alta · analisados ' + (data.totalAnalisado || 0);
     } catch (err) {
       st.textContent = err.message;
+    }
+  });
+
+  document.getElementById('mia-btn-link')?.addEventListener('click', async () => {
+    const st = document.getElementById('mia-link-status');
+    const urlEl = document.getElementById('mia-link-url');
+    const pageEl = document.getElementById('mia-link-page');
+    const tipoEl = document.getElementById('mia-link-tipo');
+    const url = (urlEl?.value || '').trim();
+    if (!url) {
+      st.textContent = 'Cole o link da notícia';
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      st.textContent = 'O link precisa começar com http:// ou https://';
+      return;
+    }
+
+    setGenerating(
+      true,
+      'Lendo a notícia, montando o furo e reescrevendo sem plagiar. Em seguida você revisa a matéria.'
+    );
+    st.textContent = 'Apurando link e gerando matéria…';
+
+    try {
+      const res = await fetch('/api/materias-ia/reescrever-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          facebookPageId: pageEl?.value ? Number(pageEl.value) : null,
+          tipoPublicacao: tipoEl?.value || 'foto',
+          status: 'rascunho',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao reescrever');
+
+      const matterId = data.matter?.id;
+      if (!matterId) throw new Error('Matéria gerada, mas sem ID para abrir');
+
+      st.textContent = 'Abrindo matéria gerada…';
+      if (generatingText) {
+        generatingText.textContent = 'Matéria pronta! Abrindo a tela de edição…';
+      }
+      window.location.href = '/materias-ia/' + matterId;
+    } catch (err) {
+      setGenerating(false);
+      st.textContent = err.message;
+    }
+  });
+
+  document.getElementById('mia-link-url')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('mia-btn-link')?.click();
     }
   });
 

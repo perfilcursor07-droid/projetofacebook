@@ -61,10 +61,6 @@
       <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v14H4z"/><path d="m4 15 4-4 3 3 3-4 6 6"/><circle cx="9" cy="8" r="1"/></svg>
       <span class="sidebar-text">Minha marca</span>
     </a>
-    <a href="/extensao" title="Extensão de publicação" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= itemClass('/extensao') %>">
-      <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v6M12 16v6M4.9 4.9l4.2 4.2M14.9 14.9l4.2 4.2M2 12h6M16 12h6M4.9 19.1l4.2-4.2M14.9 9.1l4.2-4.2"/><circle cx="12" cy="12" r="3"/></svg>
-      <span class="sidebar-text">Extensão FB</span>
-    </a>
     <% if (loggedUser && loggedUser.nivel_acesso === 'administrador') { %>
       <p class="sidebar-label mb-2 mt-5 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-600">Administração</p>
       <a href="/usuarios" title="Usuários" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= itemClass('/usuarios') %>">

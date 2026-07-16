@@ -102,6 +102,7 @@ async function gerar(req, res, next) {
       tipoPublicacao,
       status,
       investigativa: Boolean(body.investigativa),
+      furoReportagem: Boolean(body.furoReportagem || body.furo_reportagem),
     });
 
     res.json({
@@ -112,6 +113,44 @@ async function gerar(req, res, next) {
     });
   } catch (err) {
     next(err);
+  }
+}
+
+async function reescreverLink(req, res, next) {
+  try {
+    const body = req.body || {};
+    const url = body.url || body.link;
+    if (!String(url || '').trim()) {
+      return res.status(400).json({ error: 'Cole o link da notícia' });
+    }
+
+    const facebookPageId = pickPageId(body);
+    const tipoPublicacao = pickTipo(body);
+    const status = String(body.status || 'rascunho').toLowerCase() === 'publicado'
+      ? 'publicado'
+      : 'rascunho';
+
+    if (status === 'publicado' && !facebookPageId) {
+      return res.status(400).json({ error: 'Selecione a página do Facebook para publicar' });
+    }
+
+    const result = await materiaIaService.gerarDeLink({
+      userId: req.session.userId,
+      url,
+      facebookPageId,
+      tipoPublicacao,
+      status,
+    });
+
+    res.json({
+      ok: true,
+      ...result,
+      preview: result.artigo,
+      link: result.fbPostUrl || null,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
   }
 }
 
@@ -250,127 +289,6 @@ function parseHashtags(value) {
       .filter(Boolean);
   }
   return [];
-}
-
-/** Marca matéria como `pronto` para a extensão publicar (sem Graph API). */
-async function enfileirarUmaMateria(userId, matterId, body = {}) {
-  const matter = await AiMatters.findById(matterId);
-  if (!matter || Number(matter.user_id) !== Number(userId)) {
-    const err = new Error('Matéria não encontrada');
-    err.status = 404;
-    throw err;
-  }
-  if (matter.status === 'publicado') {
-    const err = new Error('Matéria já publicada');
-    err.status = 400;
-    throw err;
-  }
-
-  const patch = {};
-  if (body.titulo != null) patch.titulo = String(body.titulo).trim().slice(0, 300);
-  if (body.materia != null) patch.materia = String(body.materia);
-  if (body.tipoPublicacao != null || body.tipo_publicacao != null) {
-    patch.tipo_publicacao = pickTipo(body);
-  }
-  if (body.facebookPageId != null || body.facebook_page_id != null) {
-    patch.facebook_page_id = pickPageId(body);
-  }
-
-  const pageId = patch.facebook_page_id != null ? patch.facebook_page_id : matter.facebook_page_id;
-  if (!pageId) {
-    const err = new Error('Selecione a Página do Facebook');
-    err.status = 400;
-    throw err;
-  }
-
-  const tipo = patch.tipo_publicacao || matter.tipo_publicacao || 'texto';
-  const imagemUrl = matter.imagem_url || matter.imagem_path;
-  if (tipo === 'foto' && !imagemUrl) {
-    const err = new Error('Matéria do tipo foto precisa de imagem antes de enfileirar');
-    err.status = 400;
-    throw err;
-  }
-
-  patch.status = 'pronto';
-  patch.error_message = null;
-  await AiMatters.update(matterId, patch);
-  return AiMatters.findById(matterId);
-}
-
-async function enfileirarExtensao(req, res, next) {
-  try {
-    const matterId = Number(req.params.id);
-    const updated = await enfileirarUmaMateria(req.session.userId, matterId, req.body || {});
-    return res.json({ ok: true, matter: updated, message: 'Na fila da extensão (status pronto)' });
-  } catch (err) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
-    return next(err);
-  }
-}
-
-/** Enfileira várias matérias de uma vez (checkboxes em /extensao). */
-async function enfileirarExtensaoLote(req, res, next) {
-  try {
-    const body = req.body || {};
-    const ids = Array.isArray(body.ids)
-      ? body.ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
-      : [];
-    if (!ids.length) {
-      return res.status(400).json({ error: 'Selecione ao menos uma matéria' });
-    }
-
-    const facebookPageId = pickPageId(body);
-    if (!facebookPageId) {
-      return res.status(400).json({ error: 'Selecione a Página do Facebook' });
-    }
-
-    const ok = [];
-    const erros = [];
-    for (const id of ids) {
-      try {
-        const matter = await enfileirarUmaMateria(req.session.userId, id, { facebookPageId });
-        ok.push({ id, titulo: matter.titulo });
-      } catch (err) {
-        erros.push({ id, error: err.message || 'Falha' });
-      }
-    }
-
-    return res.json({
-      ok: true,
-      enfileiradas: ok.length,
-      falhas: erros.length,
-      itens: ok,
-      erros,
-      message: `${ok.length} na fila da extensão` + (erros.length ? ` · ${erros.length} com erro` : ''),
-    });
-  } catch (err) {
-    return next(err);
-  }
-}
-
-/** Tira da fila da extensão (volta para rascunho). */
-async function desenfileirarExtensaoLote(req, res, next) {
-  try {
-    const ids = Array.isArray(req.body?.ids)
-      ? req.body.ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
-      : [];
-    if (!ids.length) {
-      return res.status(400).json({ error: 'Selecione ao menos uma matéria' });
-    }
-
-    let changed = 0;
-    for (const id of ids) {
-      const matter = await AiMatters.findById(id);
-      if (!matter || Number(matter.user_id) !== Number(req.session.userId)) continue;
-      if (!['pronto', 'agendado', 'erro'].includes(matter.status)) continue;
-      await AiMatters.update(id, { status: 'rascunho', error_message: null });
-      changed += 1;
-    }
-
-    return res.json({ ok: true, removidas: changed });
-  } catch (err) {
-    return next(err);
-  }
 }
 
 async function atualizarMateria(req, res, next) {
@@ -586,15 +504,13 @@ module.exports = {
   pesquisar,
   emAlta,
   gerar,
+  reescreverLink,
   gerarPreview,
   gerarLote,
   publicar,
   listarMaterias,
   removerMateria,
   atualizarMateria,
-  enfileirarExtensao,
-  enfileirarExtensaoLote,
-  desenfileirarExtensaoLote,
   showMatter,
   listPage,
   listMinhasMaterias,

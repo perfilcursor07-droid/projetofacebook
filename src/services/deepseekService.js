@@ -213,7 +213,7 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
   return chatJson(userContent, sortearTemperatura(false));
 }
 
-function systemPromptNoticia(faixa, investigativa) {
+function systemPromptNoticia(faixa, investigativa, furoReportagem = false) {
   return `Você é redator de Páginas do Facebook. Escreva matérias ORIGINAIS em português brasileiro.
 
 ${blocoRegrasFacebook(faixa)}
@@ -228,6 +228,13 @@ Formato Facebook (obrigatório):
 - NÃO invente fatos, nomes, cargos, números ou citações que não estejam nas fontes de apuração.
 
 ${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização.' : ''}
+${furoReportagem ? `MODO FURO DE REPORTAGEM (obrigatório):
+- A fonte é uma notícia já publicada. Você NÃO resume nem parafraseia parágrafo a parágrafo.
+- Encontre o FURO: o ângulo mais jornalístico e específico (o detalhe, a consequência, o conflito ou o desdobramento que o leitor não vê no lead genérico).
+- Reescreva 100% com estrutura própria (lead + desenvolvimento + fechamento). Frases e ordem diferentes da fonte.
+- Título próprio — nunca copie a manchete da fonte.
+- Mantenha todos os fatos verificáveis da apuração; sem inventar exclusividade falsa (“revelamos”, “apuração exclusiva”) se não houver.
+- Cite o veículo só de forma genérica se necessário (“segundo informações divulgadas”), sem colar trechos.` : ''}
 
 Responda APENAS JSON válido: {"titulo":"...","materia":"...","hashtags":["..."],"termos_imagem":["..."]}`;
 }
@@ -246,6 +253,7 @@ async function gerarMateriaNoticiaFacebook({
   emAlta,
   redeSocial,
   investigativa = false,
+  furoReportagem = false,
 }) {
   assertDeepseek();
 
@@ -253,8 +261,10 @@ async function gerarMateriaNoticiaFacebook({
   const voz = sortearVozRedator();
   const lead = sortearEstiloLead();
   const estiloTitulo = sortearEstiloTitulo();
-  const temperature = sortearTemperatura(investigativa);
-  const systemMsg = systemPromptNoticia(faixa, investigativa);
+  const temperature = furoReportagem
+    ? 0.72 + Math.random() * 0.08
+    : sortearTemperatura(investigativa);
+  const systemMsg = systemPromptNoticia(faixa, investigativa, furoReportagem);
 
   const fontesTxt = Array.isArray(fontesApuracao) && fontesApuracao.length
     ? fontesApuracao
@@ -292,6 +302,9 @@ async function gerarMateriaNoticiaFacebook({
     emAlta ? 'Contexto: assunto em alta agora.' : null,
     redeSocial
       ? 'A fonte principal pode ser uma postagem de rede — transforme em matéria de Página, sem copiar o texto literal do post.'
+      : null,
+    furoReportagem
+      ? 'PRIORIDADE: ângulo de furo de reportagem + reescrita total. Não parafraseie a fonte; reconstrua a narrativa.'
       : null,
     tituloReferencia ? `Título de referência: ${tituloReferencia}` : null,
     resumoReferencia ? `Resumo de referência: ${resumoReferencia}` : null,
