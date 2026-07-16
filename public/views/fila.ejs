@@ -3,12 +3,21 @@
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
     <%- include('partials/content-nav', { contentTab: 'production' }) %>
 
-    <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-2xl font-semibold text-white">Produção</h1>
-        <p class="mt-1 text-sm text-slate-400">Corte, revise a matéria e publique no Facebook.</p>
+        <h1 class="text-xl font-semibold text-white">Produção</h1>
+        <p class="mt-0.5 text-sm text-slate-400">Baixe · corte · revise · publique</p>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <ol class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-emerald-300">1 Baixar</li>
+          <li class="text-slate-600">→</li>
+          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-violet-300">2 Cortar</li>
+          <li class="text-slate-600">→</li>
+          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-sky-300">3 Revisar</li>
+          <li class="text-slate-600">→</li>
+          <li class="rounded-md bg-[#1877F2]/15 px-2 py-1 text-[#1877F2]">4 Publicar</li>
+        </ol>
         <span id="last-updated" class="text-xs text-slate-500"></span>
         <button id="refresh-btn" type="button"
           class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-emerald-300">
@@ -17,78 +26,44 @@
       </div>
     </div>
 
-    <ol class="mt-5 grid gap-2 sm:grid-cols-4">
-      <li class="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2.5">
-        <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Passo 1</p>
-        <p class="mt-0.5 text-xs font-semibold text-white">Baixe o vídeo</p>
-      </li>
-      <li class="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2.5">
-        <p class="text-[10px] font-bold uppercase tracking-wider text-violet-400">Passo 2</p>
-        <p class="mt-0.5 text-xs font-semibold text-white">Gere os cortes</p>
-      </li>
-      <li class="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2.5">
-        <p class="text-[10px] font-bold uppercase tracking-wider text-sky-400">Passo 3</p>
-        <p class="mt-0.5 text-xs font-semibold text-white">Revise a matéria</p>
-      </li>
-      <li class="rounded-xl border border-[#1877F2]/30 bg-[#1877F2]/10 px-3 py-2.5">
-        <p class="text-[10px] font-bold uppercase tracking-wider text-[#1877F2]">Passo 4</p>
-        <p class="mt-0.5 text-xs font-semibold text-white">Publique no Facebook</p>
-      </li>
-    </ol>
-
     <div id="global-msg" class="mt-3 hidden rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-sm text-rose-200"></div>
 
-    <details class="group mt-5 rounded-2xl border border-slate-800 bg-slate-900/40">
-      <summary class="flex cursor-pointer list-none items-center justify-between px-5 py-3 text-sm font-medium text-slate-300 hover:text-white">
-        <span class="inline-flex items-center gap-2">
-          <svg class="h-4 w-4 text-[#1877F2]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12.5h2.54v-2.2c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.87h2.78l-.44 2.39h-2.34v6.99A10 10 0 0 0 22 12Z"/></svg>
-          Só texto (sem vídeo)
-        </span>
-        <span class="text-xs text-slate-500 group-open:hidden">opcional</span>
-      </summary>
-      <div class="space-y-3 border-t border-slate-800 p-5">
-        <form id="text-post-form" class="space-y-3">
-          <textarea name="texto" rows="3" required maxlength="63206" placeholder="Escreva o post…"
-            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
-          <div class="flex flex-wrap items-center gap-2">
-            <span id="text-post-pages"></span>
-            <input type="url" name="link" placeholder="Link (opcional)"
-              class="w-56 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
-            <button type="submit"
-              class="rounded-lg bg-[#1877F2] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#166FE5] disabled:opacity-50">
-              Publicar texto
-            </button>
-          </div>
-        </form>
+    <div class="mt-4 flex flex-wrap items-center gap-2">
+      <div class="inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Seções da fila">
+        <button type="button" data-tab="videos" class="tab-btn rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-slate-950">
+          Vídeos <span id="count-videos" class="ml-1 font-normal opacity-70"></span>
+        </button>
+        <button type="button" data-tab="imagens" class="tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
+          Fotos <span id="count-imagens" class="ml-1 font-normal opacity-70"></span>
+        </button>
+        <button type="button" data-tab="publicacoes" class="tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
+          Publicados <span id="count-publicacoes" class="ml-1 font-normal opacity-70"></span>
+        </button>
       </div>
-    </details>
-
-    <div class="mt-6 inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Seções da fila">
-      <button type="button" data-tab="videos" class="tab-btn rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">
-        Vídeos / Reels <span id="count-videos" class="ml-1 font-normal opacity-70"></span>
-      </button>
-      <button type="button" data-tab="imagens" class="tab-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
-        Fotos <span id="count-imagens" class="ml-1 font-normal opacity-70"></span>
-      </button>
-      <button type="button" data-tab="publicacoes" class="tab-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
-        Já publicados <span id="count-publicacoes" class="ml-1 font-normal opacity-70"></span>
-      </button>
+      <details class="relative rounded-lg border border-slate-800 bg-slate-900/40">
+        <summary class="cursor-pointer list-none px-3 py-1.5 text-xs text-slate-400 hover:text-white">Só texto</summary>
+        <div class="absolute right-0 z-10 mt-1 w-[min(100vw-2rem,28rem)] space-y-3 rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-xl">
+          <form id="text-post-form" class="space-y-3">
+            <textarea name="texto" rows="3" required maxlength="63206" placeholder="Escreva o post…"
+              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="text-post-pages"></span>
+              <input type="url" name="link" placeholder="Link (opcional)"
+                class="w-40 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+              <button type="submit"
+                class="rounded-lg bg-[#1877F2] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#166FE5] disabled:opacity-50">
+                Publicar
+              </button>
+            </div>
+          </form>
+        </div>
+      </details>
     </div>
 
     <section id="tab-videos" class="tab-panel mt-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div id="videos-filter" class="flex flex-wrap gap-1.5"></div>
-        <div class="flex items-center gap-2">
-          <button type="button" id="collapse-all-videos"
-            class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-slate-500 hover:text-slate-200">
-            Recolher todos
-          </button>
-          <button type="button" id="expand-all-videos"
-            class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-slate-500 hover:text-slate-200">
-            Expandir todos
-          </button>
-          <span id="videos-status" class="text-xs text-slate-500">Carregando…</span>
-        </div>
+        <span id="videos-status" class="text-xs text-slate-500">Carregando…</span>
       </div>
       <div id="videos-list" class="mt-3 space-y-3"></div>
     </section>
@@ -440,7 +415,7 @@
     }
 
     function clipHtml(clip, index) {
-      const canAi = clip.status === 'pronto' || clip.status === 'publicado';
+      const canOpen = clip.status === 'pronto' || clip.status === 'publicado';
       const canRetry = clip.status === 'processando' || clip.status === 'erro';
       const extracting = clip.materia_status === 'gerando';
       const fala = cleanTranscript(clip.transcricao);
@@ -456,209 +431,99 @@
       const fim = Number(clip.fim_segundo);
       const dur = Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : null;
       const ratio = clip.aspect_ratio || '9:16';
-      const pubParts = canAi ? publishFormHtml('clip', clip.id, materia, { editorLayout: true }) : null;
       const materiaOk = Boolean(materia) && clip.materia_status === 'pronta';
-      const capaOk = clip.capa_status === 'pronta';
-      const readyToPublish = canAi && materiaOk && clip.status !== 'erro';
+      const readyToPublish = canOpen && materiaOk && clip.status !== 'erro';
       const isPublished = clip.status === 'publicado';
 
-      const checklist = canAi ? `
-        <div class="flex flex-wrap gap-2">
-          <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${canAi ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-500'}">
-            <span>${canAi ? '✓' : '○'}</span> Vídeo
-          </span>
-          <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${materiaOk ? 'bg-emerald-500/15 text-emerald-300' : extracting ? 'bg-amber-500/15 text-amber-200' : 'bg-slate-800 text-slate-500'}">
-            <span>${materiaOk ? '✓' : extracting ? '…' : '○'}</span> Matéria
-          </span>
-          <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${capaOk ? 'bg-emerald-500/15 text-emerald-300' : clip.capa_status === 'gerando' ? 'bg-amber-500/15 text-amber-200' : 'bg-slate-800 text-slate-500'}">
-            <span>${capaOk ? '✓' : clip.capa_status === 'gerando' ? '…' : '○'}</span> Capa
-          </span>
-        </div>` : '';
+      let statusLabel = 'Preparando…';
+      let statusTone = 'bg-amber-500/15 text-amber-200';
+      if (clip.status === 'processando') statusLabel = 'Processando…';
+      else if (clip.status === 'erro') { statusLabel = 'Erro'; statusTone = 'bg-rose-500/15 text-rose-300'; }
+      else if (isPublished) { statusLabel = 'Publicado'; statusTone = 'bg-emerald-500/15 text-emerald-300'; }
+      else if (readyToPublish) { statusLabel = 'Pronto'; statusTone = 'bg-emerald-500/15 text-emerald-300'; }
+      else if (extracting || clip.capa_status === 'gerando') statusLabel = 'Gerando matéria…';
+      else if (canOpen) { statusLabel = 'Revisar'; statusTone = 'bg-sky-500/15 text-sky-300'; }
+
+      const thumb = clip.caminho_arquivo
+        ? `<video class="h-14 w-10 rounded-md border border-slate-700 bg-black object-cover" muted playsinline preload="metadata" src="/media/${escapeHtml(String(clip.caminho_arquivo).replace(/^\/+/, ''))}#t=0.5"></video>`
+        : `<div class="flex h-14 w-10 items-center justify-center rounded-md border border-slate-700 bg-slate-950 text-[10px] text-slate-600">#${index + 1}</div>`;
 
       return `
-        <article class="overflow-hidden rounded-2xl border ${readyToPublish ? 'border-emerald-500/35' : 'border-slate-800'} bg-slate-900/40 shadow-sm shadow-black/10" data-clip-card="${clip.id}">
-          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 sm:px-5">
-            <div class="min-w-0 space-y-2">
-              <div class="flex min-w-0 flex-wrap items-center gap-2">
-                <span class="inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-lg bg-violet-500/15 px-2 text-xs font-bold text-violet-300">#${index + 1}</span>
-                <h3 class="text-sm font-semibold text-white">${isPublished ? 'Publicado' : readyToPublish ? 'Pronto para publicar' : 'Preparando corte'}</h3>
-                <span class="text-[11px] text-slate-500">${dur != null ? dur + 's' : '—'} · ${escapeHtml(ratio)}</span>
-              </div>
-              ${checklist}
+        <div class="flex flex-wrap items-center gap-3 rounded-xl border ${readyToPublish ? 'border-emerald-500/30' : 'border-slate-800'} bg-slate-900/50 px-3 py-2.5" data-clip-card="${clip.id}">
+          ${thumb}
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-semibold text-white">Corte #${index + 1}</span>
+              <span class="rounded-full px-2 py-0.5 text-[11px] font-medium ${statusTone}">${statusLabel}</span>
+              <span class="text-[11px] text-slate-500">${dur != null ? dur + 's' : '—'} · ${escapeHtml(ratio)}</span>
             </div>
-            <button type="button"
-              class="action-btn shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-rose-400/80 transition hover:bg-rose-500/10 hover:text-rose-300"
-              data-action="delete-clip" data-id="${clip.id}" title="Excluir corte">
-              Excluir
-            </button>
+            ${clip.erro_mensagem ? `<p class="mt-1 text-[11px] text-rose-300 truncate">${escapeHtml(clip.erro_mensagem)}</p>` : ''}
           </div>
-
-          ${readyToPublish && !isPublished ? `
-          <div class="border-b border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-xs font-medium text-emerald-200 sm:px-5">
-            Revise o texto à esquerda e clique em <strong>Publicar no Facebook</strong> à direita.
-          </div>` : ''}
-
-          ${clip.erro_mensagem ? `
-          <div class="border-b border-rose-500/20 bg-rose-500/10 px-4 py-2.5 text-xs leading-relaxed text-rose-200 sm:px-5">
-            ${escapeHtml(clip.erro_mensagem)}
-          </div>` : ''}
-
-          ${canRetry ? `
-          <div class="border-b border-slate-800 px-4 py-3 sm:px-5">
+          <div class="flex shrink-0 flex-wrap items-center gap-1.5">
+            ${canRetry ? `
+              <button type="button" class="ai-btn rounded-lg border border-amber-500/40 px-2.5 py-1.5 text-[11px] font-medium text-amber-100 hover:bg-amber-500/15"
+                data-action="retry-clip" data-id="${clip.id}">Retentar</button>` : ''}
+            ${canOpen ? `
+              <a href="/fila/corte/${clip.id}"
+                class="rounded-lg bg-[#1877F2] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#166FE5]">
+                ${isPublished ? 'Ver' : 'Revisar e publicar'}
+              </a>` : ''}
             <button type="button"
-              class="ai-btn rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-500/20"
-              data-action="retry-clip" data-id="${clip.id}">
-              Tentar gerar o corte de novo
-            </button>
-          </div>` : ''}
-
-          ${canAi ? `
-          <form class="publish-form" data-kind="clip" data-id="${clip.id}">
-            <div class="grid gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-              <section class="space-y-4">
-                <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <p class="text-xs font-bold uppercase tracking-wider text-sky-400">Passo 3 · Matéria</p>
-                    <button type="button"
-                      class="ai-btn rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-400"
-                      data-action="materia-clip" data-id="${clip.id}">${materia ? 'Refazer matéria' : 'Gerar matéria'}</button>
-                  </div>
-                  <input type="text"
-                    class="clip-tema mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
-                    data-clip-tema="${clip.id}" placeholder="Tema opcional (ex.: testemunho, alerta espiritual)" />
-                  ${extracting ? `
-                  <div class="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
-                    <span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>
-                    Gerando matéria…
-                  </div>` : ''}
-                  <div class="mt-3">${pubParts.materiaField}</div>
-                </div>
-
-                <details class="rounded-2xl border border-slate-800 bg-slate-900/40">
-                  <summary class="cursor-pointer px-4 py-3 text-xs font-medium text-slate-400 hover:text-slate-200">
-                    Opções extras · capa, título e fala
-                  </summary>
-                  <div class="space-y-3 border-t border-slate-800 px-4 py-4">
-                    <label class="block text-sm">
-                      <span class="text-slate-400">Título da capa (aparece 2,5s no início)</span>
-                      <input type="text"
-                        class="clip-capa mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
-                        data-clip-capa="${clip.id}" placeholder="Título automático"
-                        value="${escapeHtml(clip.capa_titulo || '')}" maxlength="120"
-                        ${clip.capa_status === 'gerando' ? 'disabled' : ''} />
-                    </label>
-                    <div class="flex flex-wrap gap-2">
-                      <button type="button"
-                        class="ai-btn rounded-lg border border-sky-500/40 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/25 disabled:opacity-50"
-                        data-action="capa-clip" data-id="${clip.id}"
-                        ${clip.capa_status === 'gerando' ? 'disabled' : ''}>
-                        ${clip.capa_status === 'pronta' ? 'Refazer capa' : clip.capa_status === 'gerando' ? 'Gerando…' : 'Gerar capa'}
-                      </button>
-                      ${clip.capa_status === 'pronta'
-                        ? `<button type="button" class="ai-btn rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300" data-action="remover-capa" data-id="${clip.id}">Remover capa</button>`
-                        : ''}
-                      ${!fala
-                        ? `<button type="button" class="ai-btn rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300" data-action="transcribe-clip" data-id="${clip.id}">Extrair fala</button>`
-                        : ''}
-                    </div>
-                    ${clip.capa_status === 'gerando' ? `
-                    <div class="flex items-center gap-2 text-xs text-amber-200">
-                      <span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>
-                      Montando capa…
-                    </div>` : ''}
-                    ${fala ? `
-                    <details class="rounded-lg border border-slate-800 bg-slate-950/40">
-                      <summary class="cursor-pointer px-3 py-2 text-xs text-slate-400">Ver transcrição</summary>
-                      <p class="border-t border-slate-800 px-3 py-2 text-xs leading-relaxed text-slate-400">${escapeHtml(fala)}</p>
-                    </details>` : ''}
-                    <p class="text-[11px] text-slate-500">Intervalo ${inicio}–${fim}s · a capa e a matéria costumam ser geradas sozinhas após o corte.</p>
-                  </div>
-                </details>
-              </section>
-
-              <aside class="space-y-4">
-                <div>
-                  <p class="mb-2 text-xs font-bold uppercase tracking-wider text-violet-400">Prévia do Reel</p>
-                  ${clipPreviewHtml(clip)}
-                </div>
-                <div class="rounded-2xl border border-[#1877F2]/30 bg-slate-900/60 p-4">
-                  <p class="text-xs font-bold uppercase tracking-wider text-[#1877F2]">Passo 4 · Publicar</p>
-                  <div class="mt-3">
-                    ${pubParts.publishAside}
-                  </div>
-                </div>
-              </aside>
-            </div>
-          </form>` : `
-          <div class="p-4 sm:p-5">
-            ${clipPreviewHtml(clip)}
-          </div>`}
-        </article>`;
+              class="action-btn rounded-lg px-2 py-1.5 text-[11px] text-rose-400/80 hover:bg-rose-500/10 hover:text-rose-300"
+              data-action="delete-clip" data-id="${clip.id}" title="Excluir">Excluir</button>
+          </div>
+        </div>`;
     }
 
     function videoActionsHtml(v) {
       if (v.status === 'pendente' || v.status === 'erro') {
         return `
-          <div class="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-center">
-            <p class="text-sm font-semibold text-white">Passo 1 · Baixar o vídeo</p>
-            <p class="mt-1 text-xs text-slate-400">Depois você gera os cortes e publica.</p>
-            <button type="button" class="action-btn mt-3 inline-flex items-center justify-center rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-emerald-400" data-action="download-video" data-id="${v.id}">Baixar vídeo</button>
+          <div class="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3">
+            <p class="flex-1 text-sm text-slate-200">Baixe o vídeo para gerar os cortes.</p>
+            <button type="button" class="action-btn rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-emerald-400" data-action="download-video" data-id="${v.id}">Baixar vídeo</button>
           </div>`;
       }
       if (v.status === 'baixado' || v.status === 'cortado') {
         const max = Number(v.duracao) > 0 ? Number(v.duracao) : 600;
         if (max < 3) return `<p class="text-xs text-amber-300">Vídeo menor que 3s</p>`;
         const defaultFim = Math.min(max, 90);
-        const estimativa = Math.floor(max / 90) + (max % 90 >= 3 ? 1 : 0);
         return `
-          <form class="clip-form space-y-4" data-id="${v.id}" data-max="${max}">
-            <div class="rounded-2xl border border-fuchsia-500/30 bg-gradient-to-br from-fuchsia-500/10 to-violet-500/10 p-4">
-              <p class="text-xs font-bold uppercase tracking-wider text-fuchsia-300">Passo 2 · Gerar cortes</p>
-              <p class="mt-1 text-sm font-semibold text-white">Melhores cortes por IA</p>
-              <p class="mt-1 text-xs leading-relaxed text-slate-400">A IA escolhe trechos com fala completa (40–90s), gera a matéria e a capa sozinha.</p>
-              <button type="button" class="action-btn mt-3 w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 py-3 text-sm font-bold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+          <form class="clip-form" data-id="${v.id}" data-max="${max}">
+            <div class="flex flex-wrap gap-2">
+              <button type="button"
+                class="action-btn flex-1 min-w-[160px] rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 py-2.5 text-sm font-bold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
                 data-action="analyze-video" data-id="${v.id}">
                 Gerar melhores cortes
               </button>
+              <details class="relative flex-1 min-w-[140px]">
+                <summary class="cursor-pointer list-none rounded-xl border border-slate-600 bg-slate-900 px-4 py-2.5 text-center text-sm font-semibold text-slate-200 hover:border-violet-500 hover:text-white">
+                  Manual
+                </summary>
+                <div class="absolute left-0 right-0 z-20 mt-2 space-y-3 rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-xl">
+                  <div class="grid grid-cols-2 gap-2">
+                    <label class="text-[11px] text-slate-400">Início (s)
+                      <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
+                        class="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
+                    </label>
+                    <label class="text-[11px] text-slate-400">Fim (s)
+                      <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
+                        class="clip-fim mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
+                    </label>
+                  </div>
+                  <select name="aspect_ratio" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100">
+                    <option value="9:16">9:16 · vertical</option>
+                    <option value="1:1">1:1 · quadrado</option>
+                    <option value="original">Original</option>
+                  </select>
+                  <div class="flex flex-wrap gap-1.5">
+                    <button type="button" class="fim-preset rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 30)}">30s</button>
+                    <button type="button" class="fim-preset rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 60)}">60s</button>
+                    <button type="button" class="fim-preset rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300" data-fim="${Math.min(max, 90)}">90s</button>
+                  </div>
+                  <button type="submit" class="w-full rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-400">Criar corte</button>
+                </div>
+              </details>
             </div>
-
-            <details class="rounded-2xl border border-slate-800 bg-slate-950/50">
-              <summary class="cursor-pointer px-4 py-3 text-xs font-medium text-slate-400 hover:text-slate-200">
-                Outras formas de cortar (manual / 90s)
-              </summary>
-              <div class="space-y-3 border-t border-slate-800 p-4">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <label class="text-[11px] font-medium text-slate-400">Início (s)
-                    <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
-                      class="mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
-                  </label>
-                  <label class="text-[11px] font-medium text-slate-400">Fim (s)
-                    <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
-                      class="clip-fim mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
-                  </label>
-                  <label class="col-span-2 text-[11px] font-medium text-slate-400 sm:col-span-1">Formato
-                    <select name="aspect_ratio" class="mt-1.5 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none">
-                      <option value="9:16">9:16 · vertical</option>
-                      <option value="1:1">1:1 · quadrado</option>
-                      <option value="original">Formato original</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="flex flex-wrap gap-1.5">
-                  <button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 30)}">30s</button>
-                  <button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 60)}">60s</button>
-                  <button type="button" class="fim-preset rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300" data-fim="${Math.min(max, 90)}">90s</button>
-                  ${max > 90 ? `<button type="button" class="fim-preset rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400" data-fim="${max}">Até o fim</button>` : ''}
-                </div>
-                <div class="grid gap-2 sm:grid-cols-2">
-                  <button type="submit" class="rounded-xl border border-violet-500/50 bg-violet-500/10 px-4 py-2.5 text-xs font-semibold text-violet-100 hover:bg-violet-500/20">Criar corte manual</button>
-                  <button type="button" class="action-btn rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:border-slate-500"
-                    data-action="clip-auto" data-id="${v.id}" data-aspect="9:16">
-                    Dividir em 90s (~${estimativa})
-                  </button>
-                </div>
-              </div>
-            </details>
           </form>`;
       }
       return '';
@@ -673,10 +538,10 @@
     function videoNextStep(v, clips, analise) {
       if (v.status === 'pendente' || v.status === 'erro') return 'Próximo: baixar o vídeo';
       if (analise === 'processando') return 'IA analisando a fala…';
-      if (!clips.length && (v.status === 'baixado' || v.status === 'cortado')) return 'Próximo: gerar melhores cortes';
+      if (!clips.length && (v.status === 'baixado' || v.status === 'cortado')) return 'Gere os cortes com os botões abaixo';
       const ready = clips.filter((c) => (c.status === 'pronto' || c.status === 'publicado') && c.materia_status === 'pronta');
-      if (ready.length) return `${ready.length} corte(s) pronto(s) para publicar ↓`;
-      if (clips.length) return 'Aguarde matéria/capa ou revise os cortes ↓';
+      if (ready.length) return `${ready.length} pronto(s) — abra Revisar e publicar`;
+      if (clips.length) return 'Cortes em andamento';
       return '';
     }
 
@@ -684,9 +549,6 @@
       const clips = v.clips || [];
       const durMin = v.duracao ? Math.round(v.duracao / 60) + ' min' : '—';
       const cardCollapsed = isCollapsed('video', v.id);
-      const formCollapsed = isCollapsed('form', v.id);
-      const clipsCollapsed = isCollapsed('clips', v.id);
-      const canCut = v.status === 'baixado' || v.status === 'cortado';
       const formHtml = videoActionsHtml(v);
       const meta = parseVideoMeta(v);
       const analise = meta.analise_status || '';
@@ -729,49 +591,16 @@
             </div>
 
             ${analise === 'pronta' && sugestoes.length ? `
-            <div class="mt-4 rounded-xl border border-fuchsia-500/20 bg-fuchsia-500/5 p-3.5">
-              <p class="text-xs font-bold text-fuchsia-200">Momentos que a IA encontrou (${sugestoes.length})</p>
-              <div class="mt-2.5 grid gap-2 md:grid-cols-3">
-                ${sugestoes.map((s, i) => {
-                  const inicio = Number(s.inicio);
-                  const fim = Number(s.fim);
-                  const duracao = Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : 0;
-                  return `<div class="rounded-lg border border-slate-800/80 bg-slate-950/50 px-3 py-2">
-                    <span class="text-[11px] font-bold text-fuchsia-300">#${i + 1} · ${duracao}s</span>
-                    <p class="mt-1 text-[11px] text-slate-400">${escapeHtml(s.motivo || 'Trecho com fala completa.')}</p>
-                  </div>`;
-                }).join('')}
-              </div>
-            </div>` : ''}
+            <p class="mt-3 text-xs text-fuchsia-200/80">IA encontrou ${sugestoes.length} momento(s) · cortes abaixo</p>` : ''}
           </div>
 
-          <div class="video-body space-y-4 border-t border-slate-800 bg-slate-950/20 p-3 sm:p-4 ${cardCollapsed ? 'hidden' : ''}">
-            ${canCut && formHtml ? `
-            <div class="overflow-hidden rounded-2xl border border-slate-800">
-              ${clips.length ? `
-              <button type="button"
-                class="collapse-btn flex w-full items-center justify-between px-4 py-3 text-left text-xs font-medium text-slate-400 hover:bg-slate-900/50 hover:text-white"
-                data-collapse-group="form" data-collapse-id="${v.id}">
-                <span>Gerar mais cortes</span>
-                <span>${collapseLabel(formCollapsed, '▾', '▸')}</span>
-              </button>
-              <div class="border-t border-slate-800 p-3 ${formCollapsed ? 'hidden' : ''}">${formHtml}</div>`
-                : `<div class="p-3">${formHtml}</div>`}
-            </div>` : (formHtml ? `<div>${formHtml}</div>` : '')}
+          <div class="video-body space-y-3 border-t border-slate-800 bg-slate-950/20 p-3 sm:p-4 ${cardCollapsed ? 'hidden' : ''}">
+            ${formHtml ? `<div>${formHtml}</div>` : ''}
 
             ${clips.length ? `
-            <div>
-              <div class="mb-3 flex items-center justify-between gap-2 px-1">
-                <p class="text-xs font-bold uppercase tracking-wider text-sky-400">Passos 3 e 4 · Revisar e publicar</p>
-                <button type="button"
-                  class="collapse-btn text-xs text-slate-500 hover:text-slate-300"
-                  data-collapse-group="clips" data-collapse-id="${v.id}">
-                  ${collapseLabel(clipsCollapsed, 'Recolher cortes', 'Mostrar cortes')}
-                </button>
-              </div>
-              <div class="space-y-4 ${clipsCollapsed ? 'hidden' : ''}">
-                ${clips.map((c, i) => clipHtml(c, i)).join('')}
-              </div>
+            <div class="space-y-2">
+              <p class="px-0.5 text-xs font-medium text-slate-500">${clips.length} corte(s)</p>
+              ${clips.map((c, i) => clipHtml(c, i)).join('')}
             </div>` : ''}
           </div>
         </article>`;
@@ -989,24 +818,6 @@
       if (group === 'video') { filterVideo = value; renderVideos(); }
       else if (group === 'imagem') { filterImagem = value; renderImagens(); }
       else if (group === 'pub') { filterPub = value; renderPublicacoes(); }
-    });
-
-    document.getElementById('collapse-all-videos').addEventListener('click', () => {
-      allVideos.forEach((v) => {
-        setCollapsed('video', v.id, true);
-        setCollapsed('form', v.id, true);
-        setCollapsed('clips', v.id, true);
-      });
-      renderVideos();
-    });
-
-    document.getElementById('expand-all-videos').addEventListener('click', () => {
-      allVideos.forEach((v) => {
-        setCollapsed('video', v.id, false);
-        setCollapsed('form', v.id, false);
-        setCollapsed('clips', v.id, false);
-      });
-      renderVideos();
     });
 
     // —— ações de IA (gerar matéria, transcrever, retentar) ——

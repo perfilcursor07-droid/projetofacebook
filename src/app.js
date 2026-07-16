@@ -84,7 +84,8 @@ app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController
 app.get('/biblioteca', requireAuth, require('./controllers/bibliotecaController').listPage);
 app.get('/minhas-materias', requireAuth, require('./controllers/materiasIaController').listMinhasMaterias);
 app.get('/materias-ia/:id', requireAuth, require('./controllers/materiasIaController').showMatter);
-app.get('/fila', requireAuth, (_req, res) => renderPage(res, 'fila', 'Fila'));
+app.get('/fila', requireAuth, (_req, res) => renderPage(res, 'fila', 'Produção'));
+app.get('/fila/corte/:id', requireAuth, require('./controllers/clipsController').showClipPage);
 app.get('/paginas', requireAuth, (_req, res) => renderPage(res, 'paginas', 'Páginas'));
 app.get('/dashboard', requireAuth, require('./controllers/dashboardController').show);
 app.get('/cookies', requireAuth, (_req, res) => renderPage(res, 'cookies', 'Cookies do YouTube'));

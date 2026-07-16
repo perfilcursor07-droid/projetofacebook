@@ -191,6 +191,34 @@ async function removerCapa(req, res, next) {
   }
 }
 
+/** Página dedicada: revisar matéria e publicar o corte. */
+async function showClipPage(req, res, next) {
+  try {
+    const clip = await VideoClips.findById(req.params.id);
+    if (!clip) {
+      const err = httpError('Corte não encontrado', 404);
+      return next(err);
+    }
+    const video = await Videos.findById(clip.video_id);
+    if (!video || video.user_id !== req.session.userId) {
+      return next(httpError('Corte não encontrado', 404));
+    }
+
+    let materia = String(clip.legenda_sugerida || '').trim();
+    if (!materia || /^\[(sem fala|falha)/i.test(materia)) materia = '';
+
+    res.render('fila-corte', {
+      title: `Corte #${clip.id}`,
+      clip,
+      video,
+      materia,
+      currentPath: '/fila',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   transcribe,
   gerarMateria,
@@ -200,4 +228,5 @@ module.exports = {
   removerCapa,
   queueClipCover,
   resolveCapaTitulo,
+  showClipPage,
 };
