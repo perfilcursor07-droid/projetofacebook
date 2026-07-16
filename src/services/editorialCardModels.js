@@ -3,43 +3,43 @@ const DEFAULT_ART_MODEL = 'faixa_classica';
 const ART_MODELS = Object.freeze([
   Object.freeze({
     id: 'faixa_classica',
-    name: 'Clássica',
-    description: 'Faixa e título centralizados.',
+    name: 'Faixa clássica',
+    description: 'Categoria e faixa horizontal, com título centralizado e espaçamento confortável.',
   }),
   Object.freeze({
     id: 'bloco_inferior',
-    name: 'Painel',
-    description: 'Bloco escuro no rodapé.',
+    name: 'Bloco inferior',
+    description: 'Painel escuro no rodapé e conteúdo alinhado à esquerda.',
   }),
   Object.freeze({
     id: 'minimalista',
-    name: 'Minimal',
-    description: 'Foto em destaque, badge leve.',
+    name: 'Minimalista',
+    description: 'Mais destaque para a foto, com elementos leves e título amplo.',
   }),
   Object.freeze({
     id: 'barra_lateral',
-    name: 'Editorial',
-    description: 'Acento vertical à esquerda.',
+    name: 'Barra lateral',
+    description: 'Acento vertical e conteúdo editorial alinhado à esquerda.',
   }),
   Object.freeze({
-    id: 'vidro',
-    name: 'Vidro',
-    description: 'Painel translúcido arredondado.',
+    id: 'faixa_topo',
+    name: 'Faixa no topo',
+    description: 'Banner colorido da categoria com título limpo abaixo.',
   }),
   Object.freeze({
-    id: 'manchete',
-    name: 'Manchete',
-    description: 'Caixa de título com impacto.',
+    id: 'moldura_editorial',
+    name: 'Moldura editorial',
+    description: 'Moldura dupla e tipografia central, estilo revista.',
   }),
   Object.freeze({
-    id: 'fita_diagonal',
-    name: 'Fita',
-    description: 'Categoria em faixa diagonal.',
+    id: 'impacto_central',
+    name: 'Impacto central',
+    description: 'Placa escura central com título de alto impacto.',
   }),
   Object.freeze({
-    id: 'ticker',
-    name: 'Ticker',
-    description: 'Barra de notícia no rodapé.',
+    id: 'canto_solido',
+    name: 'Canto sólido',
+    description: 'Selo angular no canto e hierarquia editorial à esquerda.',
   }),
 ]);
 
