@@ -910,8 +910,14 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     meta = { titulo: null, thumbnail: null, extractor: null, autor: null, autorUrl: null, duracao: null };
   }
 
-  const tituloBruto = meta.titulo || meta.description || `Reel — ${plataforma}`;
-  const textoLimpo = limparTextoReelSocial(tituloBruto);
+  const tituloBruto = meta.description || meta.titulo || `Reel — ${plataforma}`;
+  // Prefere o texto mais longo entre title e description (FB costuma meter a legenda em um dos dois)
+  const candidatosTexto = [meta.description, meta.titulo]
+    .filter(Boolean)
+    .map((t) => limparTextoReelSocial(t))
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const textoLimpo = candidatosTexto[0] || limparTextoReelSocial(tituloBruto);
   const titulo = tituloCurtoReel(textoLimpo || `Reel — ${plataforma}`, 100);
 
   // Reaproveita vídeo já importado deste link

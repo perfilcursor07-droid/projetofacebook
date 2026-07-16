@@ -149,7 +149,9 @@ function materiaCopiaTranscricao(materia, transcricao) {
 function isTranscricaoInutil(transcricao) {
   const t = String(transcricao || '').trim();
   if (!t) return true;
-  return /^\[(sem fala|falha)/i.test(t);
+  if (/^\[(sem fala|falha)/i.test(t)) return true;
+  // Aceita legenda curta do FB/IG (manchete) — melhor que falhar sem Whisper
+  return t.length < 12;
 }
 
 async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {

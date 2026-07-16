@@ -291,9 +291,37 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
                 }
               })();
         const { limparTextoReelSocial } = require('./materiaIaService');
-        const caption = limparTextoReelSocial(
-          meta.titulo_completo || meta.description || video?.titulo || ''
-        );
+
+        const candidatos = [
+          meta.titulo_completo,
+          meta.description,
+          video?.titulo,
+        ];
+        // Matéria do Reel pode ter a legenda limpa em fonte_resumo
+        if (meta.matter_id) {
+          try {
+            const AiMatters = require('../models/AiMatters');
+            const matterRow = await AiMatters.findById(meta.matter_id);
+            if (matterRow) {
+              candidatos.push(
+                matterRow.fonte_resumo,
+                matterRow.fonte_titulo,
+                String(matterRow.materia || '').startsWith('⏳') ? null : matterRow.materia,
+                matterRow.titulo
+              );
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
+        let caption = '';
+        for (const raw of candidatos) {
+          const limpo = limparTextoReelSocial(raw);
+          if (limpo && limpo.length > caption.length && !limpo.startsWith('⏳')) {
+            caption = limpo;
+          }
+        }
 
         try {
           // Áudio SEM capa (evita transcrever o silêncio da intro)
@@ -311,15 +339,21 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
             `[materia] clip ${clip.id}: fala via ${result.source || 'transcrição'} (${String(transcricao).length} chars)`
           );
         } catch (txErr) {
-          // Fallback: legenda original do Reel no Facebook/Instagram
-          if (caption && caption.length >= 40) {
+          // Sem Whisper/legendas: usa legenda/título do post FB/IG (mesmo se curto)
+          if (caption && caption.length >= 12) {
             console.warn(
-              `[materia] clip ${clip.id}: sem fala (${txErr.message}). Usando legenda do post FB/IG.`
+              `[materia] clip ${clip.id}: sem fala (${txErr.message}). Usando legenda/título do post (${caption.length} chars).`
             );
             transcricao = caption;
             idioma = 'pt';
           } else {
-            throw txErr;
+            console.warn(
+              `[materia] clip ${clip.id}: sem fala e sem legenda útil (${txErr.message}). Seguindo só com título.`
+            );
+            transcricao =
+              limparTextoReelSocial(video?.titulo || video?.termo_busca || '') ||
+              'Reel sem legenda disponível — gere a matéria com base no título.';
+            idioma = 'pt';
           }
         }
         await VideoClips.update(clip.id, { transcricao });
@@ -424,11 +458,36 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
         console.warn(`[conteudo-reel] sync matter clip ${clip.id}:`, syncErr.message);
       }
     } catch (err) {
+      console.error(`[materia] clip ${clip.id} falhou:`, err.message || err);
       await VideoClips.update(clip.id, {
         materia_status: 'erro',
         erro_mensagem: `Matéria falhou: ${String(err.message || err).slice(0, 400)}`,
       });
-      throw err;
+      // Não relança: a fila não precisa “falhar” — capa ainda pode ser tentada
+      try {
+        const tituloCapa = resolveCapaTitulo({
+          videoTitulo: video?.titulo || video?.termo_busca,
+        });
+        await queueClipCover({ clipId: clip.id, userId: uid, titulo: tituloCapa });
+      } catch (capaErr) {
+        console.warn(`[capa] após erro matéria clip ${clip.id}:`, capaErr.message);
+      }
+      try {
+        const meta =
+          video?.metadata && typeof video.metadata === 'object' ? video.metadata : {};
+        if (meta.pipeline === 'conteudo_reel' && meta.matter_id) {
+          const freshClip = await VideoClips.findById(clip.id);
+          const { syncConteudoReelMatter } = require('./materiaIaService');
+          await syncConteudoReelMatter({
+            matterId: meta.matter_id,
+            clip: freshClip,
+            video,
+            gerado: null,
+          });
+        }
+      } catch {
+        /* ignore */
+      }
     }
   });
 
