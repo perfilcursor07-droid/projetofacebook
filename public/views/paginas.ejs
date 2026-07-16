@@ -2,38 +2,23 @@
 
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
     <h1 class="text-2xl font-semibold text-white">Páginas do Facebook</h1>
-    <p class="mt-2 text-slate-400">Conecte sua conta e escolha em quais páginas publicar.</p>
+    <p class="mt-2 text-slate-400">Conecte sua conta e vincule as páginas ao PostSyncer para publicar.</p>
 
     <div id="alert" class="mt-4 hidden rounded-lg px-4 py-3 text-sm"></div>
 
     <div id="postsyncer-box" class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
-          <h2 class="text-sm font-semibold text-white">PostSyncer (API comercial)</h2>
+          <h2 class="text-sm font-semibold text-white">PostSyncer</h2>
           <p class="mt-1 text-xs text-slate-400">
-            Alternativa ao PostPulse. Conecte a Página em
+            Conecte a Página em
             <a href="https://app.postsyncer.com" target="_blank" rel="noopener" class="text-sky-400 hover:underline">app.postsyncer.com</a>
-            e sincronize aqui. Use <code class="text-slate-300">POSTSYNCER_API_KEY</code> no .env.
+            e sincronize aqui. Publicação sem App Review da Meta.
           </p>
           <p id="ps-status" class="mt-2 text-sm text-slate-300">Carregando status…</p>
           <div id="ps-link-panel" class="mt-3 hidden"></div>
         </div>
         <div id="ps-actions" class="flex flex-wrap gap-2"></div>
-      </div>
-    </div>
-
-    <div id="postpulse-box" class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <h2 class="text-sm font-semibold text-white">PostPulse (API comercial)</h2>
-          <p class="mt-1 text-xs text-slate-400">
-            Publica sem App Review da Meta. Redirect URI:
-            <code class="text-slate-300">/api/auth/postpulse/callback</code>.
-          </p>
-          <p id="pp-status" class="mt-2 text-sm text-slate-300">Carregando status…</p>
-          <div id="pp-link-panel" class="mt-3 hidden"></div>
-        </div>
-        <div id="pp-actions" class="flex flex-wrap gap-2"></div>
       </div>
     </div>
 
@@ -47,84 +32,18 @@
   <script>
     const alertEl = document.getElementById('alert');
     const contentEl = document.getElementById('content');
-    const ppStatusEl = document.getElementById('pp-status');
-    const ppActionsEl = document.getElementById('pp-actions');
-    const ppLinkPanel = document.getElementById('pp-link-panel');
     const psStatusEl = document.getElementById('ps-status');
     const psActionsEl = document.getElementById('ps-actions');
     const psLinkPanel = document.getElementById('ps-link-panel');
     let lastPages = [];
-    window.__ppAccounts = [];
     window.__psAccounts = [];
 
-    function renderLinkPanel() {
-      const accounts = window.__ppAccounts || [];
-      const unlinked = (lastPages || []).filter((p) => p.publica_via !== 'postpulse');
-      if (!accounts.length || !unlinked.length) {
-        ppLinkPanel.classList.add('hidden');
-        ppLinkPanel.innerHTML = '';
-        return;
-      }
-
-      const accOpts = accounts
-        .map(
-          (a) =>
-            `<option value="${a.id}">${escapeHtml(a.accountDisplayName || a.accountUsername || a.accountId || a.id)} (PP #${a.id})</option>`
-        )
-        .join('');
-      const pageOpts = unlinked
-        .map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)} (${escapeHtml(p.page_id)})</option>`)
-        .join('');
-
-      const warnName = accounts.some((a) => {
-        const n = String(a.accountDisplayName || '').toLowerCase();
-        return n && !unlinked.some((p) => normSimple(p.page_name) === normSimple(a.accountDisplayName));
-      });
-
-      ppLinkPanel.classList.remove('hidden');
-      ppLinkPanel.innerHTML = `
-        <div class="rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-3 text-sm text-violet-100">
-          ${warnName ? '<p class="mb-2 text-xs text-amber-200">A conta no PostPulse (“Erick Vinicius” ou similar) precisa ser a <strong>Página</strong> do Facebook (ex.: Apocalipse Gospel), não o perfil pessoal. Se for perfil, reconecte a Page no painel PostPulse.</p>' : ''}
-          <p class="mb-2 text-xs text-violet-200">IDs diferentes — vincule manualmente:</p>
-          <div class="flex flex-wrap items-end gap-2">
-            <label class="text-xs">Página do app
-              <select id="pp-link-page" class="mt-1 block rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-200">${pageOpts}</select>
-            </label>
-            <label class="text-xs">Conta PostPulse
-              <select id="pp-link-account" class="mt-1 block rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-200">${accOpts}</select>
-            </label>
-            <button type="button" id="pp-link-do"
-              class="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-500">
-              Vincular agora
-            </button>
-          </div>
-        </div>`;
-
-      document.getElementById('pp-link-do')?.addEventListener('click', async () => {
-        const pageId = Number(document.getElementById('pp-link-page').value);
-        const ppId = Number(document.getElementById('pp-link-account').value);
-        const btn = document.getElementById('pp-link-do');
-        btn.disabled = true;
-        try {
-          const r = await fetch('/api/facebook/postpulse/link', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ facebook_page_id: pageId, postpulse_account_id: ppId }),
-          });
-          const j = await r.json();
-          if (!r.ok) throw new Error(j.error || 'Falha ao vincular');
-          alertEl.textContent = 'Vinculado: ' + (j.page?.page_name || 'ok') + ' → PostPulse';
-          alertEl.className =
-            'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
-          await load();
-          renderLinkPanel();
-        } catch (err) {
-          alertEl.textContent = 'Erro: ' + err.message;
-          alertEl.className =
-            'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
-          btn.disabled = false;
-        }
-      });
+    function escapeHtml(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
     }
 
     function renderPsLinkPanel() {
@@ -153,7 +72,6 @@
       const pageOpts = unlinked
         .map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)} (${escapeHtml(p.page_id)})</option>`)
         .join('');
-
       const accountList = accounts
         .map((a) => `<li>${escapeHtml(a.label || a.name || a.username || '#' + a.id)}</li>`)
         .join('');
@@ -161,8 +79,8 @@
       psLinkPanel.classList.remove('hidden');
       psLinkPanel.innerHTML = `
         <div class="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-3 text-sm text-sky-100">
-          <p class="mb-1 text-xs font-semibold text-sky-200">Vínculo manual necessário</p>
-          <p class="mb-2 text-xs text-sky-300/90">O nome no PostSyncer pode ser diferente da Página. Contas FB no PostSyncer:</p>
+          <p class="mb-1 text-xs font-semibold text-sky-200">Vínculo manual</p>
+          <p class="mb-2 text-xs text-sky-300/90">Escolha a Página do app e a conta correspondente no PostSyncer:</p>
           <ul class="mb-3 list-disc pl-4 text-xs text-sky-100/90">${accountList}</ul>
           <div class="flex flex-wrap items-end gap-2">
             <label class="text-xs">Página do app
@@ -205,33 +123,17 @@
       });
     }
 
-    function normSimple(s) {
-      return String(s || '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '');
-    }
-
     const params = new URLSearchParams(location.search);
     if (params.get('conectado') === '1') {
       alertEl.textContent = 'Conta do Facebook conectada com sucesso!';
-      alertEl.className = 'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
-      history.replaceState({}, '', '/paginas');
-    } else if (params.get('postpulse') === '1') {
-      alertEl.textContent = 'PostPulse conectado! Sincronize para vincular as páginas.';
-      alertEl.className = 'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+      alertEl.className =
+        'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
       history.replaceState({}, '', '/paginas');
     } else if (params.get('erro')) {
       alertEl.textContent = 'Erro: ' + params.get('erro');
-      alertEl.className = 'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+      alertEl.className =
+        'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
       history.replaceState({}, '', '/paginas');
-    }
-
-    function escapeHtml(text) {
-      return String(text || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
     }
 
     const connectHtml = `
@@ -242,115 +144,9 @@
           Conectar com Facebook
         </a>
         <p class="mt-4 text-xs text-slate-500">
-          Ainda usado para listar páginas. A publicação pode ir pelo PostPulse quando vinculado.
+          Usado para listar as páginas. A publicação sai pelo PostSyncer após vincular.
         </p>
       </div>`;
-
-    async function loadPostpulse() {
-      try {
-        const res = await fetch('/api/facebook/postpulse/status');
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Falha no status PostPulse');
-
-        if (!data.configured) {
-          ppStatusEl.textContent = 'Não configurado — adicione POSTPULSE_CLIENT_ID e POSTPULSE_CLIENT_SECRET no .env';
-          ppActionsEl.innerHTML = '';
-          return;
-        }
-
-        if (!data.connected) {
-          ppStatusEl.innerHTML =
-            'Desconectado. Redirect URI cadastrado no PostPulse deve ser:<br><code class="text-emerald-300">' +
-            escapeHtml(data.redirect_uri) +
-            '</code>';
-          ppActionsEl.innerHTML = `
-            <a href="/api/auth/postpulse"
-              class="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500">
-              Conectar PostPulse
-            </a>`;
-          return;
-        }
-
-        ppStatusEl.textContent =
-          'Conectado' +
-          (data.expires_at
-            ? ' · token expira em ' + new Date(data.expires_at).toLocaleDateString('pt-BR')
-            : '');
-        ppActionsEl.innerHTML = `
-          <button id="pp-sync" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">
-            Sincronizar páginas
-          </button>
-          <a href="/api/auth/postpulse" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">
-            Reconectar
-          </a>
-          <button id="pp-disconnect" class="rounded-lg border border-rose-800 px-3 py-1.5 text-sm text-rose-300 hover:border-rose-500">
-            Desconectar
-          </button>`;
-
-        // Pré-carrega contas PostPulse para mostrar painel Vincular
-        try {
-          const sr = await fetch('/api/facebook/postpulse/sync', { method: 'POST' });
-          const sj = await sr.json();
-          if (sr.ok) {
-            window.__ppAccounts = sj.accounts || [];
-            await load();
-            renderLinkPanel();
-          }
-        } catch (_) {}
-
-        document.getElementById('pp-sync')?.addEventListener('click', async (e) => {
-          const btn = e.currentTarget;
-          btn.disabled = true;
-          btn.textContent = 'Sincronizando…';
-          try {
-            const r = await fetch('/api/facebook/postpulse/sync', { method: 'POST' });
-            const j = await r.json();
-            if (!r.ok) throw new Error(j.error || 'Falha ao sincronizar');
-
-            let msg =
-              'PostPulse: ' +
-              j.matched +
-              ' página(s) vinculada(s)' +
-              (j.chatsResolved != null ? ', ' + j.chatsResolved + ' Page/chat resolvido(s)' : '') +
-              '. Contas FB no PostPulse: ' +
-              (j.accounts || []).length;
-            if (j.autoLinked) msg += ' (vínculo automático 1:1)';
-            if (j.matched === 0 && (j.accounts || []).length) {
-              const names = (j.accounts || [])
-                .map((a) => a.accountDisplayName || a.accountId || a.id)
-                .join(', ');
-              msg +=
-                '. Conta PostPulse: ' +
-                names +
-                ' — use o painel “Vincular agora” abaixo (precisa ser a Página, não o perfil).';
-            }
-            alertEl.textContent = msg;
-            alertEl.className =
-              'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
-            window.__ppAccounts = j.accounts || [];
-            await load();
-            renderLinkPanel();
-          } catch (err) {
-            alertEl.textContent = 'Erro: ' + err.message;
-            alertEl.className =
-              'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
-          } finally {
-            btn.disabled = false;
-            btn.textContent = 'Sincronizar páginas';
-          }
-        });
-
-        document.getElementById('pp-disconnect')?.addEventListener('click', async () => {
-          if (!confirm('Desconectar PostPulse?')) return;
-          await fetch('/api/facebook/postpulse', { method: 'DELETE' });
-          await loadPostpulse();
-          await load();
-        });
-      } catch (err) {
-        ppStatusEl.textContent = err.message;
-        ppActionsEl.innerHTML = '';
-      }
-    }
 
     async function load() {
       try {
@@ -361,63 +157,35 @@
         if (!data.conectado) {
           contentEl.innerHTML = connectHtml;
           lastPages = [];
-          renderLinkPanel();
+          renderPsLinkPanel();
           return;
         }
 
         lastPages = data.pages || [];
-        renderLinkPanel();
         renderPsLinkPanel();
 
-        const ppAccounts = window.__ppAccounts || [];
+        const psAccounts = window.__psAccounts || [];
         const pagesHtml = (data.pages || [])
           .map((p) => {
-            const via =
-              p.publica_via === 'postsyncer'
-                ? 'PostSyncer'
-                : p.publica_via === 'postpulse'
-                  ? 'PostPulse'
-                  : p.publica_via === 'postpulse_sem_pagina'
-                    ? 'PostPulse (falta Page)'
-                    : 'Graph API';
-            const viaClass =
-              p.publica_via === 'postsyncer'
-                ? 'bg-sky-500/15 text-sky-300'
-                : p.publica_via === 'postpulse'
-                  ? 'bg-violet-500/15 text-violet-300'
-                  : p.publica_via === 'postpulse_sem_pagina'
-                    ? 'bg-amber-500/15 text-amber-300'
-                    : 'bg-slate-500/15 text-slate-300';
+            const linked = Boolean(p.postsyncer_account_id);
+            const via = linked ? 'PostSyncer' : 'Não vinculado';
+            const viaClass = linked ? 'bg-sky-500/15 text-sky-300' : 'bg-amber-500/15 text-amber-300';
             let linkBtn = '';
-            const psAccounts = window.__psAccounts || [];
-            if (p.publica_via !== 'postsyncer' && psAccounts.length === 1) {
+            if (!linked && psAccounts.length === 1) {
               linkBtn = `<button type="button" data-ps-link-page="${p.id}" data-ps-id="${psAccounts[0].id}"
                 class="ps-link-btn rounded-lg border border-sky-700 px-2.5 py-1 text-xs text-sky-300 hover:border-sky-400">
                 Vincular PostSyncer
               </button>`;
-            } else if (p.publica_via !== 'postsyncer' && psAccounts.length > 1) {
+            } else if (!linked && psAccounts.length > 1) {
               const opts = psAccounts
-                .map((a) => `<option value="${a.id}">${escapeHtml(a.name || a.username || a.id)}</option>`)
-                .join('');
-              linkBtn = `<span class="inline-flex items-center gap-1">
-                <select data-ps-page="${p.id}" class="ps-select rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200">${opts}</select>
-                <button type="button" data-ps-link-select="${p.id}" class="ps-link-select rounded-lg border border-sky-700 px-2.5 py-1 text-xs text-sky-300">Vincular PS</button>
-              </span>`;
-            } else if (p.publica_via !== 'postpulse' && ppAccounts.length === 1) {
-              linkBtn = `<button type="button" data-link-page="${p.id}" data-pp-id="${ppAccounts[0].id}"
-                class="pp-link-btn rounded-lg border border-violet-700 px-2.5 py-1 text-xs text-violet-300 hover:border-violet-400">
-                Vincular PostPulse
-              </button>`;
-            } else if (p.publica_via !== 'postpulse' && ppAccounts.length > 1) {
-              const opts = ppAccounts
                 .map(
                   (a) =>
-                    `<option value="${a.id}">${escapeHtml(a.accountDisplayName || a.accountId || a.id)}</option>`
+                    `<option value="${a.id}">${escapeHtml(a.label || a.name || a.username || a.id)}</option>`
                 )
                 .join('');
               linkBtn = `<span class="inline-flex items-center gap-1">
-                <select data-page="${p.id}" class="pp-select rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200">${opts}</select>
-                <button type="button" data-link-select="${p.id}" class="pp-link-select rounded-lg border border-violet-700 px-2.5 py-1 text-xs text-violet-300">Vincular</button>
+                <select data-ps-page="${p.id}" class="ps-select rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200">${opts}</select>
+                <button type="button" data-ps-link-select="${p.id}" class="ps-link-select rounded-lg border border-sky-700 px-2.5 py-1 text-xs text-sky-300">Vincular</button>
               </span>`;
             }
             return `
@@ -508,70 +276,11 @@
           });
         });
 
-        contentEl.querySelectorAll('.pp-link-btn').forEach((btn) => {
-          btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            try {
-              const r = await fetch('/api/facebook/postpulse/link', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  facebook_page_id: Number(btn.dataset.linkPage),
-                  postpulse_account_id: Number(btn.dataset.ppId),
-                }),
-              });
-              const j = await r.json();
-              if (!r.ok) throw new Error(j.error || 'Falha ao vincular');
-              alertEl.textContent = 'Página vinculada ao PostPulse: ' + (j.page?.page_name || '');
-              alertEl.className =
-                'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
-              await load();
-            } catch (err) {
-              alertEl.textContent = 'Erro: ' + err.message;
-              alertEl.className =
-                'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
-              btn.disabled = false;
-            }
-          });
+        document.getElementById('refresh-pages')?.addEventListener('click', async (e) => {
+          e.currentTarget.disabled = true;
+          await fetch('/api/facebook/pages?refresh=1');
+          load();
         });
-
-        contentEl.querySelectorAll('.pp-link-select').forEach((btn) => {
-          btn.addEventListener('click', async () => {
-            const pageId = btn.dataset.linkSelect;
-            const sel = contentEl.querySelector(`select[data-page="${pageId}"]`);
-            btn.disabled = true;
-            try {
-              const r = await fetch('/api/facebook/postpulse/link', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  facebook_page_id: Number(pageId),
-                  postpulse_account_id: Number(sel.value),
-                }),
-              });
-              const j = await r.json();
-              if (!r.ok) throw new Error(j.error || 'Falha ao vincular');
-              alertEl.textContent = 'Página vinculada ao PostPulse';
-              alertEl.className =
-                'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
-              await load();
-            } catch (err) {
-              alertEl.textContent = 'Erro: ' + err.message;
-              alertEl.className =
-                'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
-              btn.disabled = false;
-            }
-          });
-        });
-
-        const refreshBtn = document.getElementById('refresh-pages');
-        if (refreshBtn) {
-          refreshBtn.addEventListener('click', async () => {
-            refreshBtn.disabled = true;
-            await fetch('/api/facebook/pages?refresh=1');
-            load();
-          });
-        }
       } catch (err) {
         contentEl.innerHTML = `<p class="text-rose-300">${escapeHtml(err.message)}</p>` + connectHtml;
       }
@@ -584,8 +293,7 @@
         if (!res.ok) throw new Error(data.error || 'Falha no status PostSyncer');
 
         if (!data.configured) {
-          psStatusEl.textContent =
-            'Não configurado — adicione POSTSYNCER_API_KEY no .env (e opcionalmente POSTSYNCER_WORKSPACE_ID)';
+          psStatusEl.textContent = 'Não configurado — adicione POSTSYNCER_API_KEY no .env';
           psActionsEl.innerHTML = '';
           return;
         }
@@ -627,10 +335,7 @@
               (j.accounts || []).length;
             if (j.needs_manual) {
               const names = (j.accounts || []).map((a) => a.label || a.name || a.id).join(' | ');
-              msg +=
-                '. Vincule manualmente no painel azul abaixo (contas: ' +
-                names +
-                ').';
+              msg += '. Vincule manualmente no painel abaixo (contas: ' + names + ').';
             }
             alertEl.textContent = msg;
             alertEl.className =
@@ -653,7 +358,6 @@
     }
 
     loadPostsyncer();
-    loadPostpulse();
     load();
   </script>
 <%- include('partials/app-end') %>
