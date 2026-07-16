@@ -3,6 +3,8 @@ const db = require('../config/db');
 function prepare(data) {
   if (!data || typeof data !== 'object') return data;
   const out = { ...data };
+  // VARCHAR(500) — evita ER_DATA_TOO_LONG em títulos longos do Facebook/IG
+  if (out.titulo != null) out.titulo = String(out.titulo).replace(/\s+/g, ' ').trim().slice(0, 500);
   if (out.metadata != null && typeof out.metadata === 'object') {
     out.metadata = JSON.stringify(out.metadata);
   }

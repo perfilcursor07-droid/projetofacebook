@@ -129,12 +129,39 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
       let idioma = null;
 
       if (!transcricao || /^\[(sem fala|falha)/i.test(String(transcricao))) {
-        const result = await transcriptionService.transcribeClip({
-          clipPath: current.caminho_arquivo,
-          sourceUrl: video.url_original,
-        });
-        transcricao = result.empty ? '[sem fala detectada]' : result.text;
-        idioma = result.language;
+        try {
+          const result = await transcriptionService.transcribeClip({
+            clipPath: current.caminho_arquivo,
+            sourceUrl: video.url_original,
+          });
+          transcricao = result.empty ? '[sem fala detectada]' : result.text;
+          idioma = result.language;
+        } catch (txErr) {
+          // Sem Whisper/legendas: usa a legenda/descrição do post (comum em Reels FB/IG)
+          const meta =
+            video?.metadata && typeof video.metadata === 'object'
+              ? video.metadata
+              : (() => {
+                  try {
+                    return JSON.parse(video?.metadata || '{}');
+                  } catch {
+                    return {};
+                  }
+                })();
+          const { limparTextoReelSocial } = require('./materiaIaService');
+          const caption = limparTextoReelSocial(
+            meta.titulo_completo || video?.titulo || meta.description || ''
+          );
+          if (caption && caption.length >= 40) {
+            console.warn(
+              `[materia] clip ${clip.id}: transcrição indisponível (${txErr.message}). Usando legenda do post.`
+            );
+            transcricao = caption;
+            idioma = 'pt';
+          } else {
+            throw txErr;
+          }
+        }
         await VideoClips.update(clip.id, { transcricao });
       }
 

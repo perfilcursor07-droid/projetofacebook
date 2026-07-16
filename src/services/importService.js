@@ -63,6 +63,7 @@ async function fetchLinkMetadata(url) {
 
   return {
     titulo: info.title || null,
+    description: info.description || null,
     duracao: info.duration ? Math.round(info.duration) : null,
     thumbnail: info.thumbnail || null,
     autor: info.uploader || info.channel || null,

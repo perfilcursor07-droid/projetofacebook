@@ -167,8 +167,9 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     'OBRIGATÓRIO: inclua 1 a 3 falas literais curtas da transcrição entre aspas ("assim"), as frases mais fortes ou características do que foi dito.',
     'Exemplo de uso: Ele afirma: "não basta carregar um sobrenome". Depois contextualize com suas palavras.',
     'Estrutura: gancho (1 frase) + desenvolvimento com aspas + fechamento + hashtags.',
+    'O campo "titulo" deve ser uma MANCHETE CURTA (máx. 90 caracteres) — NÃO cole a legenda/transcrição inteira no título.',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
-    titulo ? `Título/contexto do vídeo de origem: ${titulo}` : null,
+    titulo ? `Título/contexto do vídeo de origem: ${String(titulo).slice(0, 120)}` : null,
     idioma ? `Idioma detectado da fala: ${idioma}` : null,
     'Transcrição de referência (use trechos curtos entre aspas; o restante reescreva):',
     '---',
@@ -197,6 +198,11 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     );
     err.status = 502;
     throw err;
+  }
+
+  // Garante manchete curta mesmo se o modelo exagerar
+  if (artigo?.titulo) {
+    artigo.titulo = String(artigo.titulo).replace(/\s+/g, ' ').trim().slice(0, 100);
   }
 
   return artigo;

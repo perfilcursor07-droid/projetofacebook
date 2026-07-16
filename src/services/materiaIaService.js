@@ -715,7 +715,8 @@ function limparTextoReelSocial(raw) {
     /\bshares?\b/i.test(p) ||
     /curtida/i.test(p) ||
     /visualiza/i.test(p) ||
-    /coment[aá]rio/i.test(p);
+    /coment[aá]rio/i.test(p) ||
+    /^\d[\d.,]*\s*[KkMm]?\s*(views?|likes?)$/i.test(p);
 
   if (t.includes('|')) {
     const parts = t
@@ -730,11 +731,35 @@ function limparTextoReelSocial(raw) {
   }
 
   t = t
-    .replace(/^[\d.,]+\s*[KkMm]?\s*reactions?\s*[·•\-–]\s*[\d.,]+\s*[KkMm]?\s*shares?\s*/i, '')
+    .replace(
+      /^[\d.,]+\s*[KkMm]?\s*(reactions?|curtidas?|likes?)\s*[·•\-–]\s*[\d.,]+\s*[KkMm]?\s*(shares?|compartilhamentos?)\s*/i,
+      ''
+    )
     .replace(/^[|·•\-–]\s*/, '')
     .trim();
 
   return t;
+}
+
+/**
+ * Manchete curta para Reel (capa / campo título / VARCHAR).
+ * Usa a 1ª frase do texto limpo; nunca devolve a legenda inteira.
+ */
+function tituloCurtoReel(raw, maxLen = 100) {
+  const limpo = limparTextoReelSocial(raw);
+  if (!limpo) return 'Reel';
+
+  const sentence = limpo.match(/^(.{12,}?[.!?…])(?:\s|$)/);
+  let t = (sentence ? sentence[1] : limpo).trim();
+
+  if (t.length > maxLen) {
+    t = t.slice(0, maxLen);
+    const sp = t.lastIndexOf(' ');
+    if (sp > Math.floor(maxLen * 0.45)) t = t.slice(0, sp);
+    t = `${t.replace(/[.,;:\-–—\s]+$/g, '')}…`;
+  }
+
+  return t || 'Reel';
 }
 
 /**
@@ -757,10 +782,10 @@ async function syncConteudoReelMatter({ matterId, clip, video, gerado = null }) 
           }
         })();
 
-  const tituloLimpo = limparTextoReelSocial(
-    gerado?.titulo || clip.capa_titulo || meta.titulo_completo || video?.titulo || matter.titulo || 'Reel'
+  const titulo = tituloCurtoReel(
+    gerado?.titulo || clip.capa_titulo || meta.titulo_completo || video?.titulo || matter.titulo || 'Reel',
+    100
   );
-  const titulo = tituloLimpo.slice(0, 300) || 'Reel';
 
   let materia =
     gerado?.materia ||
@@ -772,6 +797,11 @@ async function syncConteudoReelMatter({ matterId, clip, video, gerado = null }) 
     // Sem legenda da IA ainda — usa texto limpo do post (sem reactions/shares)
     const fallback = limparTextoReelSocial(meta.titulo_completo || video?.titulo || '');
     materia = fallback || '⏳ Processando Reel (legenda e capa)…';
+  }
+
+  // Campo matéria não deve ser o título gigante do FB nem métricas
+  if (/reaction|shares?/i.test(String(materia))) {
+    materia = limparTextoReelSocial(materia) || '⏳ Processando Reel (legenda e capa)…';
   }
 
   // Prefere arquivo COM capa (caminho_arquivo após addCoverToClip)
@@ -836,9 +866,9 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     meta = { titulo: null, thumbnail: null, extractor: null, autor: null, autorUrl: null, duracao: null };
   }
 
-  const tituloBruto = meta.titulo || `Reel — ${plataforma}`;
+  const tituloBruto = meta.titulo || meta.description || `Reel — ${plataforma}`;
   const textoLimpo = limparTextoReelSocial(tituloBruto);
-  const titulo = (textoLimpo || `Reel — ${plataforma}`).slice(0, 280);
+  const titulo = tituloCurtoReel(textoLimpo || `Reel — ${plataforma}`, 100);
 
   // Reaproveita vídeo já importado deste link
   let video = await Videos.findByUrl(userId, link);
@@ -849,7 +879,7 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
       user_id: userId,
       origem: 'link',
       termo_busca: `reel:${plataforma}`.slice(0, 255),
-      titulo: titulo.slice(0, 480) || `Reel — ${plataforma}`,
+      titulo: titulo || `Reel — ${plataforma}`,
       url_original: link,
       thumbnail: meta.thumbnail || null,
       duracao: meta.duracao,
@@ -867,6 +897,21 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     });
     video = await Videos.findById(vid);
     createdVideo = true;
+  } else if (/reaction|shares?/i.test(String(video.titulo || '')) || String(video.titulo || '').length > 120) {
+    // Corrige título antigo longo/sujo sem recriar o vídeo
+    const metaBase =
+      video.metadata && typeof video.metadata === 'object' ? video.metadata : {};
+    await Videos.update(video.id, {
+      titulo,
+      metadata: {
+        ...metaBase,
+        titulo_completo:
+          metaBase.titulo_completo ||
+          textoLimpo.slice(0, 2000) ||
+          String(tituloBruto).slice(0, 2000),
+      },
+    });
+    video = await Videos.findById(video.id);
   }
 
   // Matter existente já vinculada a este link?
@@ -901,23 +946,23 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     });
     matter = await AiMatters.findById(matterId);
   } else {
-    // Limpa título/fonte sujos de tentativas anteriores (reactions/shares)
-    const patchLimpeza = {};
-    if (/reaction|shares?/i.test(String(matter.titulo || ''))) {
-      patchLimpeza.titulo = titulo;
-      patchLimpeza.fonte_titulo = titulo;
-    }
-    if (/reaction|shares?/i.test(String(matter.materia || ''))) {
+    // Sempre normaliza título curto + limpa lixo de tentativas anteriores
+    const patchLimpeza = {
+      titulo,
+      fonte_titulo: titulo,
+    };
+    if (
+      /reaction|shares?/i.test(String(matter.materia || '')) ||
+      String(matter.materia || '').length > 900
+    ) {
       patchLimpeza.materia =
         '⏳ Processando Reel: baixando o vídeo, transcrevendo a fala, gerando a legenda e aplicando a capa (Minha marca) no início…';
     }
-    if (/reaction|shares?/i.test(String(matter.error_message || ''))) {
+    if (matter.error_message) {
       patchLimpeza.error_message = null;
     }
-    if (Object.keys(patchLimpeza).length) {
-      await AiMatters.update(matter.id, patchLimpeza);
-      matter = await AiMatters.findById(matter.id);
-    }
+    await AiMatters.update(matter.id, patchLimpeza);
+    matter = await AiMatters.findById(matter.id);
   }
 
   // Já tem clipe pronto → sincroniza; se faltar capa/matéria, reenfileira
@@ -1127,6 +1172,7 @@ module.exports = {
   gerarDeLink,
   syncConteudoReelMatter,
   limparTextoReelSocial,
+  tituloCurtoReel,
   salvarMateria,
   publicarMateria,
   gerarEPublicarLote,
