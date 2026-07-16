@@ -62,38 +62,116 @@ async function queueClipCover({ clipId, userId, titulo }) {
   });
 
   enqueue(`capa clip ${clipId}`, async () => {
-    const fresh = await VideoClips.findById(clipId);
-    if (!fresh) return;
-    try {
-      const { relativePath } = await clipCoverService.addCoverToClip({
-        clip: fresh,
-        user,
-        titulo: finalTitulo,
-      });
-
-      const semCapa = fresh.arquivo_sem_capa || fresh.caminho_arquivo;
-      if (fresh.arquivo_sem_capa && fresh.caminho_arquivo !== fresh.arquivo_sem_capa) {
-        safeUnlink(fresh.caminho_arquivo);
-      }
-
-      await VideoClips.update(clipId, {
-        caminho_arquivo: relativePath,
-        arquivo_sem_capa: semCapa,
-        capa_titulo: finalTitulo,
-        capa_status: 'pronta',
-        erro_mensagem: null,
-      });
-    } catch (err) {
-      console.error(`[capa] clip ${clipId}:`, err.message || err);
-      await VideoClips.update(clipId, {
-        capa_status: 'erro',
-        erro_mensagem: `Capa falhou: ${String(err.message || err).slice(0, 400)}`,
-      });
-      throw err;
-    }
+    await applyCoverToClipNow({ clipId, userId, titulo: finalTitulo });
   });
 
   return { queued: true, titulo: finalTitulo };
+}
+
+/**
+ * Aplica a capa Minha marca de forma síncrona e atualiza a matéria do Reel (video_path).
+ */
+async function applyCoverToClipNow({ clipId, userId, titulo = null }) {
+  const clip = await VideoClips.findById(clipId);
+  if (!clip) throw Object.assign(new Error('Clipe não encontrado'), { status: 404 });
+  if (!clip.caminho_arquivo && !clip.arquivo_sem_capa) {
+    throw Object.assign(new Error('Clipe sem arquivo'), { status: 422 });
+  }
+
+  const video = await Videos.findById(clip.video_id);
+  const user = await Users.findById(userId);
+  if (!user) throw Object.assign(new Error('Usuário não encontrado'), { status: 404 });
+
+  const finalTitulo = resolveCapaTitulo({
+    titulo,
+    materia: clip.legenda_sugerida,
+    videoTitulo: video?.titulo || video?.termo_busca,
+  });
+
+  await VideoClips.update(clipId, {
+    capa_status: 'gerando',
+    capa_titulo: finalTitulo,
+    erro_mensagem: null,
+  });
+
+  const fresh = await VideoClips.findById(clipId);
+  try {
+    const { relativePath } = await clipCoverService.addCoverToClip({
+      clip: fresh,
+      user,
+      titulo: finalTitulo,
+    });
+
+    const semCapa = fresh.arquivo_sem_capa || fresh.caminho_arquivo;
+    if (fresh.arquivo_sem_capa && fresh.caminho_arquivo !== fresh.arquivo_sem_capa) {
+      safeUnlink(fresh.caminho_arquivo);
+    }
+
+    await VideoClips.update(clipId, {
+      caminho_arquivo: relativePath,
+      arquivo_sem_capa: semCapa,
+      capa_titulo: finalTitulo,
+      capa_status: 'pronta',
+      erro_mensagem: null,
+    });
+
+    const updatedClip = await VideoClips.findById(clipId);
+    const meta =
+      video?.metadata && typeof video.metadata === 'object'
+        ? video.metadata
+        : (() => {
+            try {
+              return JSON.parse(video?.metadata || '{}');
+            } catch {
+              return {};
+            }
+          })();
+
+    // Sempre atualiza video_path da matéria do Reel para o arquivo COM capa
+    if (meta.pipeline === 'conteudo_reel' && meta.matter_id) {
+      try {
+        const { syncConteudoReelMatter } = require('./materiaIaService');
+        await syncConteudoReelMatter({
+          matterId: meta.matter_id,
+          clip: updatedClip,
+          video,
+          gerado: updatedClip.legenda_sugerida
+            ? { titulo: finalTitulo, materia: updatedClip.legenda_sugerida }
+            : null,
+        });
+      } catch (syncErr) {
+        console.warn(`[conteudo-reel] sync after capa:`, syncErr.message);
+      }
+    } else {
+      // Matéria vinculada pelo video_clip_id
+      try {
+        const AiMatters = require('../models/AiMatters');
+        const db = require('../config/db');
+        const matter = await db('ai_matters')
+          .where({ video_clip_id: clipId, tipo_publicacao: 'reel' })
+          .orderBy('id', 'desc')
+          .first();
+        if (matter) {
+          await AiMatters.update(matter.id, {
+            video_path: relativePath,
+            titulo: finalTitulo.slice(0, 300),
+            error_message: null,
+          });
+        }
+      } catch (linkErr) {
+        console.warn(`[capa] link matter clip ${clipId}:`, linkErr.message);
+      }
+    }
+
+    return { relativePath, titulo: finalTitulo, clip: updatedClip };
+  } catch (err) {
+    console.error(`[capa] clip ${clipId}:`, err.message || err);
+    await VideoClips.update(clipId, {
+      capa_status: 'erro',
+      erro_mensagem: `Capa falhou: ${String(err.message || err).slice(0, 400)}`,
+    });
+    throw err;
+  }
 }
 
 /**
@@ -129,32 +207,41 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
       let idioma = null;
 
       if (!transcricao || /^\[(sem fala|falha)/i.test(String(transcricao))) {
+        const meta =
+          video?.metadata && typeof video.metadata === 'object'
+            ? video.metadata
+            : (() => {
+                try {
+                  return JSON.parse(video?.metadata || '{}');
+                } catch {
+                  return {};
+                }
+              })();
+        const { limparTextoReelSocial } = require('./materiaIaService');
+        const caption = limparTextoReelSocial(
+          meta.titulo_completo || meta.description || video?.titulo || ''
+        );
+
         try {
+          // Áudio SEM capa (evita transcrever o silêncio da intro)
+          const clipPath = current.arquivo_sem_capa || current.caminho_arquivo;
           const result = await transcriptionService.transcribeClip({
-            clipPath: current.caminho_arquivo,
+            clipPath,
             sourceUrl: video.url_original,
           });
-          transcricao = result.empty ? '[sem fala detectada]' : result.text;
+          if (result.empty || !String(result.text || '').trim()) {
+            throw new Error('sem fala detectada');
+          }
+          transcricao = result.text;
           idioma = result.language;
-        } catch (txErr) {
-          // Sem Whisper/legendas: usa a legenda/descrição do post (comum em Reels FB/IG)
-          const meta =
-            video?.metadata && typeof video.metadata === 'object'
-              ? video.metadata
-              : (() => {
-                  try {
-                    return JSON.parse(video?.metadata || '{}');
-                  } catch {
-                    return {};
-                  }
-                })();
-          const { limparTextoReelSocial } = require('./materiaIaService');
-          const caption = limparTextoReelSocial(
-            meta.titulo_completo || video?.titulo || meta.description || ''
+          console.log(
+            `[materia] clip ${clip.id}: fala via ${result.source || 'transcrição'} (${String(transcricao).length} chars)`
           );
+        } catch (txErr) {
+          // Fallback: legenda original do Reel no Facebook/Instagram
           if (caption && caption.length >= 40) {
             console.warn(
-              `[materia] clip ${clip.id}: transcrição indisponível (${txErr.message}). Usando legenda do post.`
+              `[materia] clip ${clip.id}: sem fala (${txErr.message}). Usando legenda do post FB/IG.`
             );
             transcricao = caption;
             idioma = 'pt';
@@ -278,6 +365,7 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
 module.exports = {
   resolveCapaTitulo,
   queueClipCover,
+  applyCoverToClipNow,
   queueClipMateriaAndCover,
   safeUnlink,
 };

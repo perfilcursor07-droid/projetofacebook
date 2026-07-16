@@ -106,11 +106,18 @@
         imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
         imgWrap?.classList.remove('hidden');
       }
+      const reelVideo = document.getElementById('matter-reel-video');
+      if (data.videoUrl && reelVideo) {
+        reelVideo.src = data.videoUrl + (data.videoUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        reelVideo.load();
+      }
       setStatus(
         data.aviso ||
-          (data.imagemUrl
-            ? 'Novo título aplicado e arte atualizada ✓'
-            : 'Novo título aplicado ✓')
+          (data.videoUrl
+            ? 'Novo título aplicado e capa do Reel atualizada ✓'
+            : data.imagemUrl
+              ? 'Novo título aplicado e arte atualizada ✓'
+              : 'Novo título aplicado ✓')
       );
     } catch (err) {
       setStatus(err.message, true);

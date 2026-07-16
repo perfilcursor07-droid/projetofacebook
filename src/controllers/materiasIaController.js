@@ -567,31 +567,51 @@ async function sugerirTitulo(req, res, next) {
 
     let updated = await AiMatters.findById(matterId);
     let imagemUrl = updated.imagem_url || null;
+    let videoUrl = null;
     let aviso = null;
 
-    const sourceUrl =
-      updated.imagem_fonte_url ||
-      (!updated.imagem_path && /^https?:\/\//i.test(String(updated.imagem_url || ''))
-        ? updated.imagem_url
-        : null);
-
-    if (sourceUrl) {
+    // Reel: regenera capa no início do vídeo com modelo Minha marca + novo título
+    if (updated.tipo_publicacao === 'reel' && updated.video_clip_id) {
       try {
-        const artwork = await composeMatterArtwork({
+        const { applyCoverToClipNow } = require('../services/clipPostProcessService');
+        await applyCoverToClipNow({
+          clipId: updated.video_clip_id,
           userId: req.session.userId,
-          matterId: updated.id,
-          sourceUrl,
-          title: sugerido.titulo,
-          force: true,
+          titulo: sugerido.titulo,
         });
-        updated = artwork.matter;
-        imagemUrl = artwork.publicUrl;
+        updated = await AiMatters.findById(matterId);
+        if (updated.video_path) {
+          videoUrl = `/media/${String(updated.video_path).replace(/\\/g, '/')}`;
+        }
+        aviso = 'Novo título aplicado e capa do Reel atualizada (Minha marca) ✓';
       } catch (err) {
-        aviso = `Título atualizado, mas a arte não foi regenerada: ${err.message}`;
+        aviso = `Título atualizado, mas a capa do Reel não foi regenerada: ${err.message}`;
       }
     } else {
-      aviso =
-        'Título atualizado. Para gravar o título na arte, escolha uma imagem e aplique Minha marca.';
+      const sourceUrl =
+        updated.imagem_fonte_url ||
+        (!updated.imagem_path && /^https?:\/\//i.test(String(updated.imagem_url || ''))
+          ? updated.imagem_url
+          : null);
+
+      if (sourceUrl) {
+        try {
+          const artwork = await composeMatterArtwork({
+            userId: req.session.userId,
+            matterId: updated.id,
+            sourceUrl,
+            title: sugerido.titulo,
+            force: true,
+          });
+          updated = artwork.matter;
+          imagemUrl = artwork.publicUrl;
+        } catch (err) {
+          aviso = `Título atualizado, mas a arte não foi regenerada: ${err.message}`;
+        }
+      } else {
+        aviso =
+          'Título atualizado. Para gravar o título na arte, escolha uma imagem e aplique Minha marca.';
+      }
     }
 
     return res.json({
@@ -600,6 +620,7 @@ async function sugerirTitulo(req, res, next) {
       tom: sugerido.tom,
       matter: updated,
       imagemUrl,
+      videoUrl,
       aviso,
     });
   } catch (err) {

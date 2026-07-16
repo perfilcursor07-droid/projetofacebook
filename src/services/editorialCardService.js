@@ -125,96 +125,111 @@ function renderTitleLines(lines, { x, y, lineHeight, anchor = 'middle' }) {
   )).join('');
 }
 
-function buildOverlay({ title, category, footer, brandName, primary, secondary, hasLogo, model }) {
+function buildOverlay({
+  title,
+  category,
+  footer,
+  brandName,
+  primary,
+  secondary,
+  hasLogo,
+  model,
+  width = WIDTH,
+  height = HEIGHT,
+}) {
   const { normalizeArtModel } = require('./editorialCardModels');
   const modelId = normalizeArtModel(model);
+  const W = Math.max(320, Math.round(Number(width) || WIDTH));
+  const H = Math.max(320, Math.round(Number(height) || HEIGHT));
+  const sx = W / 1080;
+  const sy = H / 1350;
+  const x = (n) => Math.round(n * sx);
+  const y = (n) => Math.round(n * sy);
+  const ww = (n) => Math.round(n * sx);
+  const hh = (n) => Math.round(n * sy);
   const maxChars = modelId === 'faixa_classica' || modelId === 'impacto_central' ? 27
     : modelId === 'minimalista' || modelId === 'faixa_topo' ? 25
     : 24;
   const lines = wrapTitle(title, maxChars, 5);
-  const fontSize = lines.length <= 3 ? 62 : lines.length === 4 ? 54 : 48;
+  const fontSize = Math.round((lines.length <= 3 ? 62 : lines.length === 4 ? 54 : 48) * Math.min(sx, sy));
   const lineHeight = Math.round(fontSize * 1.08);
   const safeCategory = escapeXml(category || 'ÚLTIMAS');
   const safeFooter = escapeXml(footer || brandName || '');
-
-  // Layout proporcional à altura 9:16 (base visual antiga 1350 → 1920)
-  const y = (n) => Math.round((n / 1350) * HEIGHT);
-  const h = (n) => Math.round((n / 1350) * HEIGHT);
 
   let layout;
 
   if (modelId === 'bloco_inferior') {
     layout = `
-      <rect x="0" y="${y(748)}" width="${WIDTH}" height="${h(602)}" fill="rgba(0,0,0,.74)"/>
-      <rect x="0" y="${y(748)}" width="${WIDTH}" height="16" fill="url(#accent)"/>
-      <text x="72" y="${y(840)}" text-anchor="start" class="category">${safeCategory}</text>
-      ${renderTitleLines(lines, { x: 72, y: y(930), lineHeight, anchor: 'start' })}
-      <text x="72" y="${y(1295)}" text-anchor="start" class="footer">${safeFooter}</text>`;
+      <rect x="0" y="${y(748)}" width="${W}" height="${hh(602)}" fill="rgba(0,0,0,.74)"/>
+      <rect x="0" y="${y(748)}" width="${W}" height="${hh(16)}" fill="url(#accent)"/>
+      <text x="${x(72)}" y="${y(840)}" text-anchor="start" class="category">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: x(72), y: y(930), lineHeight, anchor: 'start' })}
+      <text x="${x(72)}" y="${y(1295)}" text-anchor="start" class="footer">${safeFooter}</text>`;
   } else if (modelId === 'minimalista') {
     layout = `
-      <rect x="58" y="${y(805)}" width="380" height="74" rx="37" fill="url(#accent)"/>
-      <text x="248" y="${y(855)}" text-anchor="middle" class="category category-dark">${safeCategory}</text>
-      <rect x="58" y="${y(915)}" width="230" height="12" rx="6" fill="url(#accent)"/>
-      ${renderTitleLines(lines, { x: 58, y: y(982), lineHeight, anchor: 'start' })}
-      <text x="58" y="${y(1302)}" text-anchor="start" class="footer">${safeFooter}</text>`;
+      <rect x="${x(58)}" y="${y(805)}" width="${ww(380)}" height="${hh(74)}" rx="${hh(37)}" fill="url(#accent)"/>
+      <text x="${x(248)}" y="${y(855)}" text-anchor="middle" class="category category-dark">${safeCategory}</text>
+      <rect x="${x(58)}" y="${y(915)}" width="${ww(230)}" height="${hh(12)}" rx="${hh(6)}" fill="url(#accent)"/>
+      ${renderTitleLines(lines, { x: x(58), y: y(982), lineHeight, anchor: 'start' })}
+      <text x="${x(58)}" y="${y(1302)}" text-anchor="start" class="footer">${safeFooter}</text>`;
   } else if (modelId === 'barra_lateral') {
     layout = `
-      <rect x="58" y="${y(785)}" width="18" height="${h(454)}" rx="9" fill="url(#accent)"/>
-      <text x="108" y="${y(850)}" text-anchor="start" class="category">${safeCategory}</text>
-      ${renderTitleLines(lines, { x: 108, y: y(934), lineHeight, anchor: 'start' })}
-      <text x="108" y="${y(1298)}" text-anchor="start" class="footer">${safeFooter}</text>`;
+      <rect x="${x(58)}" y="${y(785)}" width="${ww(18)}" height="${hh(454)}" rx="${ww(9)}" fill="url(#accent)"/>
+      <text x="${x(108)}" y="${y(850)}" text-anchor="start" class="category">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: x(108), y: y(934), lineHeight, anchor: 'start' })}
+      <text x="${x(108)}" y="${y(1298)}" text-anchor="start" class="footer">${safeFooter}</text>`;
   } else if (modelId === 'faixa_topo') {
-    const titleBlockH = Math.min(h(420), 56 + lines.length * lineHeight + 90);
+    const titleBlockH = Math.min(hh(420), Math.round(56 * sy) + lines.length * lineHeight + Math.round(90 * sy));
     layout = `
-      <rect x="48" y="${y(772)}" width="${WIDTH - 96}" height="${titleBlockH}" rx="28" fill="rgba(0,0,0,.55)"/>
-      <rect x="72" y="${y(798)}" width="${WIDTH - 144}" height="78" rx="18" fill="url(#accent)"/>
-      <text x="540" y="${y(850)}" text-anchor="middle" class="category category-dark">${safeCategory}</text>
-      ${renderTitleLines(lines, { x: 540, y: y(930), lineHeight })}
-      <text x="540" y="${y(1298)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
+      <rect x="${x(48)}" y="${y(772)}" width="${W - ww(96)}" height="${titleBlockH}" rx="${ww(28)}" fill="rgba(0,0,0,.55)"/>
+      <rect x="${x(72)}" y="${y(798)}" width="${W - ww(144)}" height="${hh(78)}" rx="${ww(18)}" fill="url(#accent)"/>
+      <text x="${x(540)}" y="${y(850)}" text-anchor="middle" class="category category-dark">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: x(540), y: y(930), lineHeight })}
+      <text x="${x(540)}" y="${y(1298)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
   } else if (modelId === 'moldura_editorial') {
     layout = `
-      <rect x="28" y="28" width="${WIDTH - 56}" height="${HEIGHT - 56}" rx="22" fill="none" stroke="url(#accent)" stroke-width="22"/>
-      <rect x="52" y="52" width="${WIDTH - 104}" height="${HEIGHT - 104}" rx="14" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="3"/>
-      <rect x="120" y="${y(818)}" width="840" height="8" rx="4" fill="url(#accent)"/>
-      <text x="540" y="${y(800)}" text-anchor="middle" class="category">${safeCategory}</text>
-      ${renderTitleLines(lines, { x: 540, y: y(900), lineHeight })}
-      <rect x="470" y="${y(1248)}" width="140" height="6" rx="3" fill="url(#accent)"/>
-      <text x="540" y="${y(1295)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
+      <rect x="${x(28)}" y="${y(28)}" width="${W - ww(56)}" height="${H - hh(56)}" rx="${ww(22)}" fill="none" stroke="url(#accent)" stroke-width="${Math.max(8, ww(22))}"/>
+      <rect x="${x(52)}" y="${y(52)}" width="${W - ww(104)}" height="${H - hh(104)}" rx="${ww(14)}" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="${Math.max(2, ww(3))}"/>
+      <rect x="${x(120)}" y="${y(818)}" width="${ww(840)}" height="${hh(8)}" rx="${hh(4)}" fill="url(#accent)"/>
+      <text x="${x(540)}" y="${y(800)}" text-anchor="middle" class="category">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: x(540), y: y(900), lineHeight })}
+      <rect x="${x(470)}" y="${y(1248)}" width="${ww(140)}" height="${hh(6)}" rx="${hh(3)}" fill="url(#accent)"/>
+      <text x="${x(540)}" y="${y(1295)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
   } else if (modelId === 'impacto_central') {
-    const plateH = Math.min(h(460), 80 + lines.length * lineHeight + 120);
+    const plateH = Math.min(hh(460), Math.round(80 * sy) + lines.length * lineHeight + Math.round(120 * sy));
     layout = `
-      <rect x="64" y="${y(760)}" width="${WIDTH - 128}" height="${plateH}" rx="32" fill="rgba(0,0,0,.62)"/>
-      <circle cx="360" cy="${y(812)}" r="7" fill="url(#accent)"/>
-      <circle cx="720" cy="${y(812)}" r="7" fill="url(#accent)"/>
-      <text x="540" y="${y(822)}" text-anchor="middle" class="category">${safeCategory}</text>
-      <rect x="300" y="${y(848)}" width="480" height="6" rx="3" fill="url(#accent)"/>
-      ${renderTitleLines(lines, { x: 540, y: y(930), lineHeight })}
-      <text x="540" y="${y(1298)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
+      <rect x="${x(64)}" y="${y(760)}" width="${W - ww(128)}" height="${plateH}" rx="${ww(32)}" fill="rgba(0,0,0,.62)"/>
+      <circle cx="${x(360)}" cy="${y(812)}" r="${Math.max(4, ww(7))}" fill="url(#accent)"/>
+      <circle cx="${x(720)}" cy="${y(812)}" r="${Math.max(4, ww(7))}" fill="url(#accent)"/>
+      <text x="${x(540)}" y="${y(822)}" text-anchor="middle" class="category">${safeCategory}</text>
+      <rect x="${x(300)}" y="${y(848)}" width="${ww(480)}" height="${hh(6)}" rx="${hh(3)}" fill="url(#accent)"/>
+      ${renderTitleLines(lines, { x: x(540), y: y(930), lineHeight })}
+      <text x="${x(540)}" y="${y(1298)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
   } else if (modelId === 'canto_solido') {
     layout = `
-      <polygon points="0,${y(742)} 460,${y(742)} 400,${y(872)} 0,${y(872)}" fill="url(#accent)"/>
-      <text x="42" y="${y(822)}" text-anchor="start" class="category category-dark">${safeCategory}</text>
-      <rect x="58" y="${y(900)}" width="210" height="10" rx="5" fill="url(#accent)"/>
-      ${renderTitleLines(lines, { x: 58, y: y(970), lineHeight, anchor: 'start' })}
-      <text x="58" y="${y(1305)}" text-anchor="start" class="footer">${safeFooter}</text>`;
+      <polygon points="0,${y(742)} ${x(460)},${y(742)} ${x(400)},${y(872)} 0,${y(872)}" fill="url(#accent)"/>
+      <text x="${x(42)}" y="${y(822)}" text-anchor="start" class="category category-dark">${safeCategory}</text>
+      <rect x="${x(58)}" y="${y(900)}" width="${ww(210)}" height="${hh(10)}" rx="${hh(5)}" fill="url(#accent)"/>
+      ${renderTitleLines(lines, { x: x(58), y: y(970), lineHeight, anchor: 'start' })}
+      <text x="${x(58)}" y="${y(1305)}" text-anchor="start" class="footer">${safeFooter}</text>`;
   } else {
     const accentY = y(882);
-    const accentHeight = 14;
-    const titleGap = 30;
+    const accentHeight = Math.max(8, hh(14));
+    const titleGap = Math.round(30 * sy);
     const titleTop = accentY + accentHeight + titleGap + Math.round(fontSize * 0.78);
     layout = `
-      <text x="540" y="${y(844)}" text-anchor="middle" class="category">${safeCategory}</text>
-      <rect x="58" y="${accentY}" width="964" height="${accentHeight}" rx="7" fill="url(#accent)"/>
-      ${renderTitleLines(lines, { x: 540, y: titleTop, lineHeight })}
-      <text x="540" y="${y(1310)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
+      <text x="${x(540)}" y="${y(844)}" text-anchor="middle" class="category">${safeCategory}</text>
+      <rect x="${x(58)}" y="${accentY}" width="${ww(964)}" height="${accentHeight}" rx="${Math.round(7 * sx)}" fill="url(#accent)"/>
+      ${renderTitleLines(lines, { x: x(540), y: titleTop, lineHeight })}
+      <text x="${x(540)}" y="${y(1310)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
   }
 
   const fallbackBrand = hasLogo || !String(brandName || '').trim() ? '' : `
-    <rect x="240" y="52" width="600" height="118" rx="28" fill="rgba(255,255,255,.88)"/>
-    <text x="540" y="128" text-anchor="middle" class="brand">${escapeXml(brandName)}</text>`;
+    <rect x="${x(240)}" y="${y(52)}" width="${ww(600)}" height="${hh(118)}" rx="${ww(28)}" fill="rgba(255,255,255,.88)"/>
+    <text x="${x(540)}" y="${y(128)}" text-anchor="middle" class="brand">${escapeXml(brandName)}</text>`;
 
   return Buffer.from(`
-    <svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="#000" stop-opacity="0"/>
@@ -226,35 +241,88 @@ function buildOverlay({ title, category, footer, brandName, primary, secondary, 
           <stop offset="0%" stop-color="${primary}"/>
           <stop offset="100%" stop-color="${secondary}"/>
         </linearGradient>
-        <filter id="shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity=".75"/></filter>
+        <filter id="shadow"><feDropShadow dx="0" dy="${Math.max(2, Math.round(3 * sy))}" stdDeviation="${Math.max(3, Math.round(4 * sy))}" flood-opacity=".75"/></filter>
         <style>
-          .brand { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: 50px; fill: #111827; }
-          .category { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: 42px; letter-spacing: 2px; fill: #fff; filter: url(#shadow); }
+          .brand { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(50 * Math.min(sx, sy))}px; fill: #111827; }
+          .category { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(42 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #fff; filter: url(#shadow); }
           .category-dark { fill: #111827; filter: none; }
           .title { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${fontSize}px; fill: #fff; filter: url(#shadow); }
-          .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: 34px; letter-spacing: 1px; fill: ${primary}; filter: url(#shadow); }
+          .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(1 * sx))}px; fill: ${primary}; filter: url(#shadow); }
         </style>
       </defs>
-      <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#shade)"/>
+      <rect width="${W}" height="${H}" fill="url(#shade)"/>
       ${fallbackBrand}
       ${layout}
     </svg>
   `);
 }
 
-async function buildLogoComposite(logoPath) {
+/**
+ * Aplica overlay Minha marca (modelo escolhido) sobre uma imagem local (ex.: frame do Reel).
+ */
+async function composeBrandOverlayOnImage({
+  imagePath,
+  outputPath,
+  title,
+  user,
+  width,
+  height,
+}) {
+  if (!imagePath || !fs.existsSync(imagePath)) {
+    throw new Error('Imagem base da capa não encontrada');
+  }
+  if (!title) throw new Error('Informe o título da capa');
+  if (!user?.id) throw new Error('Usuário inválido para compor a capa');
+
+  const { normalizeArtModel } = require('./editorialCardModels');
+  const modelId = normalizeArtModel(user.marca_modelo_arte);
+  const w = Math.max(320, Math.round(Number(width) || WIDTH));
+  const h = Math.max(320, Math.round(Number(height) || HEIGHT));
+  const primary = normalizeColor(user.marca_cor_primaria, '#facc15');
+  const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
+  const brandName = String(user.marca_nome || '').trim();
+  const logo = await buildLogoComposite(user.logo_path, w);
+  const overlay = buildOverlay({
+    title,
+    category: user.marca_categoria || 'ÚLTIMAS',
+    footer: user.marca_rodape || brandName,
+    brandName,
+    primary,
+    secondary,
+    hasLogo: Boolean(logo),
+    model: modelId,
+    width: w,
+    height: h,
+  });
+
+  const composites = [{ input: overlay, left: 0, top: 0 }];
+  if (logo) composites.push(logo);
+
+  await sharp(imagePath, { failOn: 'error' })
+    .resize(w, h, { fit: 'cover', position: 'centre' })
+    .composite(composites)
+    .jpeg({ quality: 92, chromaSubsampling: '4:4:4' })
+    .toFile(outputPath);
+
+  return { outputPath, modelId, width: w, height: h };
+}
+
+async function buildLogoComposite(logoPath, canvasWidth = WIDTH) {
   if (!logoPath) return null;
   const absolute = path.resolve(env.storagePath, logoPath);
   const storageRoot = path.resolve(env.storagePath);
   if (!absolute.startsWith(storageRoot + path.sep) || !fs.existsSync(absolute)) return null;
+  const cw = Math.max(320, Math.round(Number(canvasWidth) || WIDTH));
+  const maxW = Math.round(cw * (560 / 1080));
+  const maxH = Math.round(cw * (125 / 1080));
   const input = await sharp(absolute)
-    .resize(560, 125, { fit: 'inside', withoutEnlargement: true })
+    .resize(maxW, maxH, { fit: 'inside', withoutEnlargement: true })
     .png()
     .toBuffer({ resolveWithObject: true });
   return {
     input: input.data,
-    left: Math.max(30, Math.round((WIDTH - input.info.width) / 2)),
-    top: 48,
+    left: Math.max(20, Math.round((cw - input.info.width) / 2)),
+    top: Math.round(cw * (48 / 1080)),
   };
 }
 
@@ -359,6 +427,7 @@ function removeEditorialCard(relativePath) {
 
 module.exports = {
   createEditorialCard,
+  composeBrandOverlayOnImage,
   removeEditorialCard,
   wrapTitle,
   assertPublicImageUrl,

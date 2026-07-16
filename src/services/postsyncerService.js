@@ -188,7 +188,8 @@ async function publishToFacebook({
         ? 'STORIES'
         : 'POST';
 
-  const settings = { type: fbType };
+  // PostSyncer Facebook: campo correto é post_type (não "type")
+  const settings = { post_type: fbType };
   if (title) settings.title = String(title).slice(0, 200);
   if (link) settings.link = String(link);
 

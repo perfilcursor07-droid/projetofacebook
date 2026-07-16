@@ -318,6 +318,21 @@ async function publicarMateria(userId, matterId, overrides = {}) {
 
     let reelFile = null;
     if (pubTipo === 'reel') {
+      // Garante capa Minha marca (modelo + título atual) no início antes de publicar
+      if (matter.video_clip_id) {
+        try {
+          const { applyCoverToClipNow } = require('./clipPostProcessService');
+          await applyCoverToClipNow({
+            clipId: matter.video_clip_id,
+            userId,
+            titulo: overrides.titulo || matter.titulo,
+          });
+          matter = await AiMatters.findById(matter.id);
+        } catch (capaErr) {
+          console.warn(`[publicar-reel] capa matter #${matter.id}:`, capaErr.message);
+        }
+      }
+
       const rel = matter.video_path;
       if (!rel) {
         const err = new Error('Vídeo do Reel não encontrado.');
@@ -345,6 +360,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       imagemPath: pubTipo === 'reel' ? null : matter.imagem_path || null,
       imageUrl: pubTipo === 'foto' && img ? img : null,
       texto: mensagem,
+      titulo: overrides.titulo || matter.titulo || null,
     });
 
     const postId = result.post_id || result.id;
