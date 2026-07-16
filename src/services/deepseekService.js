@@ -776,6 +776,68 @@ const TITULO_TOMES = {
   factual: 'Factual e sóbrio: máximo de precisão, mínimo de adjetivo.',
 };
 
+function normalizeTituloCmp(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[''`´"″«»“”‘’]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseTituloFromAi(raw) {
+  let text = String(raw || '').trim();
+  if (!text) return '';
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) text = fence[1].trim();
+
+  let parsed = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        parsed = JSON.parse(m[0]);
+      } catch {
+        parsed = null;
+      }
+    }
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    const candidate =
+      parsed.titulo ||
+      parsed.title ||
+      parsed.manchete ||
+      parsed.headline ||
+      (parsed.data && (parsed.data.titulo || parsed.data.title));
+    const titulo = String(candidate || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 120);
+    if (titulo) return titulo;
+  }
+
+  // Fallback: resposta veio como texto puro
+  const plain = text
+    .replace(/^["'\s]+|["'\s]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  if (plain && !plain.startsWith('{') && plain.length >= 20) return plain;
+  return '';
+}
+
+function tituloJaUsado(titulo, tituloAtual, evitarList) {
+  const n = normalizeTituloCmp(titulo);
+  if (!n) return true;
+  if (n === normalizeTituloCmp(tituloAtual)) return true;
+  return evitarList.some((t) => normalizeTituloCmp(t) === n);
+}
+
 /**
  * Sugere um novo título (manchete) para matéria de Página Facebook.
  */
@@ -794,49 +856,63 @@ async function sugerirTituloMateria({
     .filter(Boolean)
     .slice(0, 8);
 
-  const raw = await chatCompletion(
-    [
-      {
-        role: 'system',
-        content: `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
+  const baseMessages = (attempt) => [
+    {
+      role: 'system',
+      content: `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
 Regras:
-- Responda APENAS JSON: {"titulo":"..."}.
+- Responda APENAS JSON válido: {"titulo":"sua manchete aqui"}
 - Uma manchete em português do Brasil, 70–110 caracteres (máx 120).
 - NÃO invente fatos que não estejam no texto.
 - NÃO use clickbait mentiroso, Caps Lock excessivo nem pontos de exclamação em série.
 - Tom pedido: ${tomDesc}
-- Diferente do título atual e dos títulos a evitar.`,
-      },
-      {
-        role: 'user',
-        content: [
-          `Tom: ${tomKey}`,
-          tituloAtual ? `Título atual: ${tituloAtual}` : null,
-          evitarList.length ? `Evitar (já sugeridos):\n- ${evitarList.join('\n- ')}` : null,
-          fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
-          materia ? `Texto da matéria:\n${String(materia).slice(0, 2500)}` : null,
-          'Gere UMA manchete nova nesse tom.',
-        ]
-          .filter(Boolean)
-          .join('\n\n'),
-      },
-    ],
-    { temperature: tomKey === 'polemico' ? 0.9 : 0.82, json: true }
-  );
+- OBRIGATÓRIO: a manchete deve ser SUBSTANCIALMENTE diferente do título atual (mude ângulo, sujeito ou formulação).
+${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastante a estrutura da frase.' : ''}`,
+    },
+    {
+      role: 'user',
+      content: [
+        `Tom: ${tomKey}`,
+        tituloAtual ? `Título atual (NÃO repetir):\n${tituloAtual}` : null,
+        evitarList.length ? `Também NÃO use estes:\n- ${evitarList.join('\n- ')}` : null,
+        fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
+        materia ? `Texto da matéria:\n${String(materia).slice(0, 2500)}` : null,
+        attempt > 1
+          ? 'Gere UMA manchete NOVA, com palavras e estrutura bem diferentes.'
+          : 'Gere UMA manchete nova nesse tom.',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    },
+  ];
 
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    parsed = {};
+  let ultimoTitulo = '';
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const temp =
+      attempt === 1
+        ? tomKey === 'polemico'
+          ? 0.95
+          : 0.88
+        : 1.05;
+    const raw = await chatCompletion(baseMessages(attempt), {
+      temperature: Math.min(temp, 1.3),
+      json: true,
+    });
+    const titulo = parseTituloFromAi(raw);
+    ultimoTitulo = titulo;
+    if (titulo && !tituloJaUsado(titulo, tituloAtual, evitarList)) {
+      return { titulo, tom: tomKey };
+    }
   }
-  let titulo = String(parsed.titulo || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-  if (!titulo || titulo.toLowerCase() === String(tituloAtual || '').trim().toLowerCase()) {
-    const err = new Error('A IA não gerou um título diferente. Tente outro tom ou de novo.');
-    err.status = 502;
-    throw err;
-  }
-  return { titulo, tom: tomKey };
+
+  const err = new Error(
+    ultimoTitulo
+      ? 'A IA repetiu um título parecido. Troque o tom (ex.: Direto ou Curiosidade) e tente de novo.'
+      : 'A IA não devolveu um título válido. Tente de novo em alguns segundos.'
+  );
+  err.status = 502;
+  throw err;
 }
 
 /**

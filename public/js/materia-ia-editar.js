@@ -93,6 +93,8 @@
         body: JSON.stringify({
           tom: tomEl?.value || 'natural',
           evitar: tituloSugestoes.slice(-8),
+          tituloAtual: String(tituloEl?.value || '').trim(),
+          materia: String(materiaEl?.value || '').trim(),
         }),
       });
       const data = await res.json().catch(() => ({}));

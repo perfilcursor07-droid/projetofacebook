@@ -555,13 +555,16 @@ async function sugerirTitulo(req, res, next) {
 
     const tom = String(req.body?.tom || 'natural').trim().toLowerCase();
     const evitar = Array.isArray(req.body?.evitar) ? req.body.evitar : [];
+    const tituloNaTela = String(req.body?.tituloAtual || '').trim();
+    const tituloAtual = tituloNaTela || String(matter.titulo || '').trim();
+    const materiaNaTela = String(req.body?.materia || '').trim();
 
     const sugerido = await deepseekService.sugerirTituloMateria({
-      tituloAtual: matter.titulo,
-      materia: matter.materia,
+      tituloAtual,
+      materia: materiaNaTela || matter.materia,
       fonteTitulo: matter.fonte_titulo,
       tom,
-      evitar: [...evitar, matter.titulo],
+      evitar: [...evitar, matter.titulo, tituloAtual].filter(Boolean),
     });
 
     const patch = {
