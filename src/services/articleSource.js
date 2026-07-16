@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const USER_AGENT =
-  'Mozilla/5.0 (compatible; ViralizeAI/1.0; +http://localhost:3000)';
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 function decodificarHtml(texto) {
   if (!texto) return '';
@@ -9,6 +9,10 @@ function decodificarHtml(texto) {
   // Entidades primeiro (RSS do Google News vem com &lt;a&gt;…&lt;/a&gt;)
   t = t
     .replace(/&nbsp;/gi, ' ')
+    .replace(/&#8211;/gi, '–')
+    .replace(/&#8212;/gi, '—')
+    .replace(/&#8216;|&#8217;/gi, "'")
+    .replace(/&#8220;|&#8221;/gi, '"')
     .replace(/&amp;/gi, '&')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
@@ -23,6 +27,25 @@ function decodificarHtml(texto) {
   return t;
 }
 
+function decodificarUrlMeta(value) {
+  return String(value || '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .trim();
+}
+
+function absolutizarUrl(baseUrl, maybeRelative) {
+  const raw = decodificarUrlMeta(maybeRelative);
+  if (!raw) return null;
+  try {
+    const abs = new URL(raw, baseUrl || undefined).href;
+    return /^https?:\/\//i.test(abs) ? abs : null;
+  } catch {
+    return null;
+  }
+}
+
 function extrairMeta(html, propriedade) {
   const padroes = [
     new RegExp(`<meta[^>]+property=["']${propriedade}["'][^>]+content=["']([^"']+)["']`, 'i'),
@@ -34,17 +57,116 @@ function extrairMeta(html, propriedade) {
     const m = html.match(re);
     if (m?.[1]) {
       // URLs de metadados não podem passar por decodificarHtml(), que remove links.
-      if (/^(?:og:image|og:url)$/i.test(propriedade)) {
-        return String(m[1])
-          .replace(/&amp;/gi, '&')
-          .replace(/&quot;/gi, '"')
-          .replace(/&#39;/gi, "'")
-          .trim();
+      if (/^(?:og:image|og:url|twitter:image)$/i.test(propriedade)) {
+        return decodificarUrlMeta(m[1]);
       }
       return decodificarHtml(m[1]);
     }
   }
   return null;
+}
+
+function imagemPareceLogoOuAvatar(url, className = '') {
+  const hay = `${url} ${className}`.toLowerCase();
+  return /(?:^|[\s/_-])(?:logo|avatar|icons?|sprite|emoji|favicon|badge)(?:[\s/_.-]|$)|gravatar|wp-smiley|site-logo|cropped-logo|\/ads?\/|banner-sm|[-_]ads?[-_]/i.test(
+    hay
+  );
+}
+
+function attrsImagem(tagOrAttrs) {
+  const attrs = String(tagOrAttrs || '');
+  const cls = attrs.match(/\bclass=["']([^"']+)["']/i)?.[1] || '';
+  const src =
+    attrs.match(/\bsrc=["']([^"']+)["']/i)?.[1] ||
+    attrs.match(/\bdata-src=["']([^"']+)["']/i)?.[1] ||
+    attrs.match(/\bsrcset=["']([^"']+)["']/i)?.[1]?.split(',')[0]?.trim()?.split(/\s+/)[0] ||
+    null;
+  const w = Number(attrs.match(/\bwidth=["']?(\d+)/i)?.[1] || 0);
+  const h = Number(attrs.match(/\bheight=["']?(\d+)/i)?.[1] || 0);
+  return { cls, src, w, h };
+}
+
+/**
+ * Extrai capa editorial: og/twitter → featured WP (1ª do artigo) → JSON-LD → maior <img> útil.
+ */
+function extrairImagemCapa(html, pageUrl) {
+  const candidatosMeta = [
+    extrairMeta(html, 'og:image'),
+    extrairMeta(html, 'og:image:secure_url'),
+    extrairMeta(html, 'twitter:image'),
+    extrairMeta(html, 'twitter:image:src'),
+  ];
+  for (const c of candidatosMeta) {
+    const abs = absolutizarUrl(pageUrl, c);
+    if (abs && !imagemPareceLogoOuAvatar(abs)) return abs;
+  }
+
+  // Recorta o HTML do artigo quando possível (evita thumbs de "relacionados")
+  const artigoHtml =
+    html.match(/<article\b[^>]*>[\s\S]*?<\/article>/i)?.[0] ||
+    html.match(/class=["'][^"']*ast-article-single[^"']*["'][\s\S]{0,25000}/i)?.[0] ||
+    html.match(/class=["'][^"']*entry-content[^"']*["'][\s\S]{0,25000}/i)?.[0] ||
+    html;
+
+  // WordPress featured / schema microdata — sempre a primeira do artigo
+  const featuredRes = [
+    /<img[^>]+class=["'][^"']*wp-post-image[^"']*["'][^>]*>/i,
+    /<img[^>]+itemprop=["']image["'][^>]*>/i,
+    /<img[^>]+class=["'][^"']*(?:featured(?:-image)?|post-thumbnail)[^"']*["'][^>]*>/i,
+    /<img[^>]+fetchpriority=["']high["'][^>]*>/i,
+  ];
+  for (const re of featuredRes) {
+    const tag = artigoHtml.match(re)?.[0];
+    if (!tag) continue;
+    const { cls, src } = attrsImagem(tag);
+    const abs = absolutizarUrl(pageUrl, src);
+    if (abs && !imagemPareceLogoOuAvatar(abs, cls)) return abs;
+  }
+
+  // JSON-LD image
+  const ldBlocks = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  for (const block of ldBlocks) {
+    try {
+      const data = JSON.parse(block[1]);
+      const nodes = Array.isArray(data) ? data : [data, ...(Array.isArray(data['@graph']) ? data['@graph'] : [])];
+      for (const node of nodes) {
+        if (!node || typeof node !== 'object') continue;
+        const img = node.image || node.thumbnailUrl;
+        const raw = Array.isArray(img) ? img[0] : img;
+        const url = typeof raw === 'string' ? raw : raw?.url || raw?.contentUrl || null;
+        const abs = absolutizarUrl(pageUrl, url);
+        if (abs && !imagemPareceLogoOuAvatar(abs)) return abs;
+      }
+    } catch {
+      /* JSON-LD inválido — ignora */
+    }
+  }
+
+  // Maior <img> candidata dentro do artigo
+  let melhor = null;
+  for (const m of artigoHtml.matchAll(/<img\b([^>]+)>/gi)) {
+    const { cls, src, w, h } = attrsImagem(m[1]);
+    const abs = absolutizarUrl(pageUrl, src);
+    if (!abs || imagemPareceLogoOuAvatar(abs, cls)) continue;
+    if (!/\.(jpe?g|png|webp|gif)(\?|$)/i.test(abs) && !/\/uploads?\//i.test(abs)) continue;
+
+    let score = w * h;
+    if (!score) {
+      const srcsetMax = [...String(m[1].match(/\bsrcset=["']([^"']+)["']/i)?.[1] || '').matchAll(/(\d+)w/g)]
+        .map((x) => Number(x[1]))
+        .sort((a, b) => b - a)[0];
+      score = srcsetMax ? srcsetMax * 600 : 1;
+    }
+    if (w && w < 200 && h && h < 200) continue;
+    if (/cropped-|[-_]300x300|avatar|author/i.test(abs + cls)) score *= 0.2;
+    if (/wp-post-image|featured|attachment-large|size-large|hero|fetchpriority/i.test(cls + m[1])) {
+      score *= 5;
+    }
+    // Preferir a primeira imagem boa do artigo em empate
+    if (!melhor || score > melhor.score) melhor = { url: abs, score };
+  }
+
+  return melhor?.url || null;
 }
 
 function urlValida(url) {
@@ -97,26 +219,33 @@ async function extrairMetadadosArtigo(url) {
 
   try {
     const res = await axios.get(urlReal, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html' },
+      headers: {
+        'User-Agent': USER_AGENT,
+        Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      },
       timeout: 15000,
       maxRedirects: 5,
       validateStatus: (s) => s >= 200 && s < 400,
     });
     const html = String(res.data || '');
-    const titulo = extrairMeta(html, 'og:title') || decodificarHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '');
+    const finalUrl = res.request?.res?.responseUrl || res.config?.url || urlReal;
+    const titulo =
+      extrairMeta(html, 'og:title') ||
+      decodificarHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '');
     const resumo = extrairMeta(html, 'og:description') || extrairMeta(html, 'description') || '';
-    const imagem = extrairMeta(html, 'og:image');
+    const imagem = extrairImagemCapa(html, finalUrl);
     const paragrafos = extrairParagrafos(html);
 
     return {
-      url: urlReal,
+      url: finalUrl,
       titulo: titulo || null,
       resumo: resumo || null,
-      imagem: imagem && /^https?:\/\//i.test(imagem) ? imagem : null,
+      imagem: imagem || null,
       trecho: paragrafos.slice(0, 8).join('\n\n'),
       veiculo: (() => {
         try {
-          return new URL(urlReal).hostname.replace(/^www\./, '');
+          return new URL(finalUrl).hostname.replace(/^www\./, '');
         } catch {
           return null;
         }
@@ -256,6 +385,8 @@ async function apurarTopico(topico) {
 
   return {
     ...base,
+    titulo: meta?.titulo || base.titulo || null,
+    resumo: meta?.resumo || base.resumo || null,
     linkOriginal,
     link: meta?.url || linkOriginal,
     imagemFonte: meta?.imagem || base.imagemFonte || null,
@@ -270,5 +401,6 @@ module.exports = {
   decodificarHtml,
   apurarTopico,
   extrairMetadadosArtigo,
+  extrairImagemCapa,
   resolverUrlNoticia,
 };

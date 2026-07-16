@@ -366,6 +366,40 @@
     }
   });
 
+  document.getElementById('btn-buscar-imagem-fonte')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-buscar-imagem-fonte');
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Buscando na fonte…';
+    }
+    setStatus('Buscando a foto de capa na página da notícia…');
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/buscar-imagem-fonte', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Não foi possível buscar a imagem da fonte');
+
+      if (data.imagemUrl && imgEl) {
+        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        imgWrap?.classList.remove('hidden');
+      }
+      setStatus(data.aviso || 'Imagem da fonte aplicada e arte gerada ✓');
+      // Recarrega para mostrar botão "Aplicar marca" e preview corretos
+      setTimeout(() => window.location.reload(), 700);
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original || 'Buscar imagem da fonte';
+      }
+    }
+  });
+
   window.addEventListener('beforeunload', releaseImagePreview);
   loadPages();
 })();

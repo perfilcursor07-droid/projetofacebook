@@ -576,6 +576,78 @@ async function sugerirTitulo(req, res, next) {
   }
 }
 
+/** Rebusca a capa na URL da fonte e aplica Minha marca. */
+async function buscarImagemFonte(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'Matéria já publicada. A imagem não pode ser alterada.' });
+    }
+
+    const fonteUrl = String(req.body?.url || matter.fonte_url || '').trim();
+    if (!/^https?:\/\//i.test(fonteUrl)) {
+      return res.status(400).json({
+        error: 'Esta matéria não tem URL de fonte. Cole o link da notícia ou envie uma imagem manualmente.',
+      });
+    }
+
+    const { extrairMetadadosArtigo } = require('../services/articleSource');
+    const meta = await extrairMetadadosArtigo(fonteUrl);
+    if (!meta?.imagem) {
+      return res.status(422).json({
+        error:
+          'Não encontramos foto de capa nessa página. Escolha uma imagem manualmente ou tente outro link da notícia.',
+      });
+    }
+
+    const patch = {
+      imagem_url: meta.imagem,
+      error_message: null,
+    };
+    if (meta.titulo && (!matter.fonte_titulo || /^not[ií]cia\s*[—\-]/i.test(matter.fonte_titulo))) {
+      patch.fonte_titulo = meta.titulo;
+    }
+    if (meta.url && meta.url !== matter.fonte_url) {
+      patch.fonte_url = meta.url;
+    }
+    if (matter.status !== 'agendado') patch.status = 'rascunho';
+    await AiMatters.update(matterId, patch);
+
+    let updated = await AiMatters.findById(matterId);
+    let imagemUrl = meta.imagem;
+    let aviso = null;
+
+    try {
+      const artwork = await composeMatterArtwork({
+        userId: req.session.userId,
+        matterId: updated.id,
+        sourceUrl: meta.imagem,
+        title: updated.titulo,
+        force: true,
+      });
+      updated = artwork.matter;
+      imagemUrl = artwork.publicUrl;
+    } catch (err) {
+      aviso = `Imagem da fonte encontrada, mas a arte Minha marca falhou: ${err.message}`;
+    }
+
+    return res.json({
+      ok: true,
+      matter: updated,
+      imagemUrl,
+      imagemFonte: meta.imagem,
+      aviso,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 module.exports = {
   pesquisar,
   emAlta,
@@ -588,6 +660,7 @@ module.exports = {
   removerMateria,
   atualizarMateria,
   sugerirTitulo,
+  buscarImagemFonte,
   showMatter,
   listPage,
   listMinhasMaterias,
