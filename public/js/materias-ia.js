@@ -133,25 +133,41 @@
       .filter(Boolean);
   }
 
-  async function gerarSelecionado(statusEl, { publicar = false } = {}) {
-    const sel = selecionados();
-    if (!sel.length) {
-      statusEl.textContent = 'Marque 1 assunto na lista';
+  function irParaLote(topicos, statusEl) {
+    const tipoEl = document.getElementById('mia-tipo');
+    const payload = {
+      topicos: topicos.slice(0, 8),
+      facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
+      tipoPublicacao: tipoEl ? tipoEl.value : 'foto',
+    };
+    try {
+      sessionStorage.setItem('mia_lote_v1', JSON.stringify(payload));
+    } catch {
+      statusEl.textContent = 'Não foi possível abrir o lote neste navegador';
       return;
     }
-    if (publicar && !pageSelect.value) {
-      statusEl.textContent = 'Selecione a Página do Facebook';
+    statusEl.textContent = `Abrindo lote com ${payload.topicos.length} pauta(s)…`;
+    window.location.href = '/conteudo/lote';
+  }
+
+  async function gerarSelecionado(statusEl) {
+    const sel = selecionados();
+    if (!sel.length) {
+      statusEl.textContent = 'Marque ao menos 1 assunto na lista';
+      return;
+    }
+
+    if (sel.length > 1) {
+      irParaLote(sel, statusEl);
       return;
     }
 
     const tipoEl = document.getElementById('mia-tipo');
     setGenerating(
       true,
-      publicar
-        ? 'Gerando e publicando na Página. Aguarde…'
-        : 'Apurando fontes, escrevendo o texto e montando a arte. Em seguida você verá a matéria salva para editar.'
+      'Apurando fontes, escrevendo o texto e montando a arte. Em seguida você verá a matéria salva para editar.'
     );
-    statusEl.textContent = publicar ? 'Gerando e publicando…' : 'Gerando matéria…';
+    statusEl.textContent = 'Gerando matéria…';
 
     try {
       const res = await fetch('/api/materias-ia/gerar', {
@@ -161,7 +177,7 @@
           topico: sel[0],
           facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
           tipoPublicacao: tipoEl ? tipoEl.value : 'texto',
-          status: publicar ? 'publicado' : 'rascunho',
+          status: 'rascunho',
         }),
       });
       const data = await res.json();
@@ -170,15 +186,7 @@
       const matterId = data.matter?.id;
       if (!matterId) throw new Error('Matéria gerada, mas sem ID para abrir');
 
-      if (publicar && data.link) {
-        statusEl.innerHTML =
-          'Publicado ✓ <a class="text-sky-400 hover:underline" href="' +
-          escapeHtml(data.link) +
-          '" target="_blank" rel="noopener">Ver post</a>';
-      } else {
-        statusEl.textContent = 'Abrindo matéria gerada…';
-      }
-
+      statusEl.textContent = 'Abrindo matéria gerada…';
       if (generatingText) {
         generatingText.textContent = 'Matéria pronta! Abrindo a tela de edição…';
       }
@@ -339,49 +347,23 @@
 
   document
     .getElementById('mia-btn-preview')
-    ?.addEventListener('click', () => gerarSelecionado(statusMia, { publicar: false }));
+    ?.addEventListener('click', () => gerarSelecionado(statusMia));
   document.getElementById('mia-btn-preview-alta')?.addEventListener('click', () => {
     const st = document.getElementById('mia-alta-status');
-    gerarSelecionado(st || statusMia, { publicar: false });
+    gerarSelecionado(st || statusMia);
   });
 
-  document.getElementById('mia-btn-lote')?.addEventListener('click', async () => {
+  document.getElementById('mia-btn-lote')?.addEventListener('click', () => {
     const sel = selecionados();
     if (!sel.length) {
-      statusMia.textContent = 'Marque tópicos';
+      statusMia.textContent = 'Marque ao menos 1 assunto';
       return;
     }
-    if (!pageSelect.value) {
-      statusMia.textContent = 'Selecione a Página';
+    if (sel.length === 1) {
+      gerarSelecionado(statusMia);
       return;
     }
-    setGenerating(true, 'Gerando e publicando o lote selecionado…');
-    statusMia.textContent = 'Gerando e enfileirando publicação…';
-    try {
-      const res = await fetch('/api/materias-ia/gerar-lote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topicos: sel,
-          facebookPageId: Number(pageSelect.value),
-          tipoPublicacao: document.getElementById('mia-tipo').value,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha no lote');
-      setGenerating(false);
-      statusMia.textContent =
-        `Criados: ${(data.criados || []).length} · Erros: ${(data.erros || []).length}`;
-      const firstId = data.criados?.[0]?.matterId;
-      if (firstId && (data.criados || []).length === 1) {
-        window.location.href = '/materias-ia/' + firstId;
-      } else {
-        window.location.reload();
-      }
-    } catch (err) {
-      setGenerating(false);
-      statusMia.textContent = err.message;
-    }
+    irParaLote(sel, statusMia);
   });
 
   async function loadMonitores() {

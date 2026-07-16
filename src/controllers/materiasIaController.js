@@ -439,6 +439,17 @@ async function listPage(req, res, next) {
   }
 }
 
+async function showLotePage(req, res, next) {
+  try {
+    return res.render('conteudo-lote', {
+      title: 'Gerando matérias',
+      currentPath: '/conteudo',
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function listMinhasMaterias(req, res, next) {
   try {
     const matters = await AiMatters.findByUser(req.session.userId, 100);
@@ -798,6 +809,7 @@ module.exports = {
   aplicarImagemUrl,
   showMatter,
   listPage,
+  showLotePage,
   listMinhasMaterias,
   agendar,
   monitorCriar,

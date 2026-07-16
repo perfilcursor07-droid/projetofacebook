@@ -79,6 +79,7 @@ app.post('/login', async (req, res, next) => {
 });
 
 app.get('/conteudo', requireAuth, require('./controllers/materiasIaController').listPage);
+app.get('/conteudo/lote', requireAuth, require('./controllers/materiasIaController').showLotePage);
 app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Vídeo e imagem'));
 app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController').listPage);
 app.get('/biblioteca', requireAuth, require('./controllers/bibliotecaController').listPage);
