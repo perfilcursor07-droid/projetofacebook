@@ -3,7 +3,7 @@ const postpulseService = require('../services/postpulseService');
 const PostpulseConnections = require('../models/PostpulseConnections');
 const FacebookAccounts = require('../models/FacebookAccounts');
 const FacebookPages = require('../models/FacebookPages');
-const { syncPostpulseAccounts } = require('../services/postpulseSync');
+const { syncPostpulseAccounts, linkPageToPostpulse } = require('../services/postpulseSync');
 const { env } = require('../config/env');
 
 function postpulseLogin(req, res, next) {
@@ -64,15 +64,35 @@ async function syncHandler(req, res, next) {
     res.json({
       ok: true,
       matched: result.matched,
-      accounts: (result.accounts || []).map((a) => ({
-        id: a.id,
-        platform: a.platform,
-        accountId: a.accountId,
-        accountDisplayName: a.accountDisplayName || a.accountUsername,
-      })),
+      autoLinked: Boolean(result.autoLinked),
+      hint: result.hint || null,
+      accounts: result.accounts || [],
+      pages: result.pages || [],
     });
   } catch (err) {
     err.message = postpulseService.apiErrorMessage(err);
+    next(err);
+  }
+}
+
+async function linkHandler(req, res, next) {
+  try {
+    postpulseService.assertConfigured();
+    const facebookPageId = Number(req.body.facebook_page_id);
+    const postpulseAccountId = Number(req.body.postpulse_account_id);
+    if (!facebookPageId || !postpulseAccountId) {
+      const err = new Error('Informe facebook_page_id e postpulse_account_id');
+      err.status = 400;
+      throw err;
+    }
+    const result = await linkPageToPostpulse(
+      req.session.userId,
+      facebookPageId,
+      postpulseAccountId
+    );
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    if (!err.status) err.message = postpulseService.apiErrorMessage(err);
     next(err);
   }
 }
@@ -112,6 +132,7 @@ module.exports = {
   postpulseLogin,
   postpulseCallback,
   syncHandler,
+  linkHandler,
   statusHandler,
   disconnectHandler,
 };
