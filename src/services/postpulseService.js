@@ -73,6 +73,9 @@ function apiErrorMessage(err) {
   const body = err.response?.data;
   if (!body) return err.message || 'Erro desconhecido na API PostPulse';
 
+  // PostPulse às vezes devolve { error: "texto" } (string)
+  if (typeof body.error === 'string') return body.error;
+
   const details = body?.error?.details;
   let detailText = '';
   if (Array.isArray(details) && details.length) {
@@ -84,7 +87,6 @@ function apiErrorMessage(err) {
   const main =
     body?.error?.message ||
     body?.message ||
-    (typeof body?.error === 'string' ? body.error : null) ||
     (typeof body === 'string' ? body : null);
 
   if (main && detailText) return `${main} (${detailText})`;
@@ -172,6 +174,14 @@ async function publishToFacebook({
   imageUrl,
   publicationType = 'FEED',
 }) {
+  if (chatId == null || String(chatId).trim() === '') {
+    const err = new Error(
+      'PostPulse: chatId da Página ausente. Sincronize em /paginas (Page ID do Facebook).'
+    );
+    err.status = 400;
+    throw err;
+  }
+
   const attachmentPaths = [];
   if (filePath) {
     attachmentPaths.push(await uploadMedia(accessToken, filePath));
@@ -180,14 +190,6 @@ async function publishToFacebook({
   }
 
   const scheduledTime = new Date(Date.now() + 60_000).toISOString();
-
-  const post = {
-    content: content || '',
-    ...(attachmentPaths.length ? { attachmentPaths } : {}),
-  };
-  if (chatId != null && String(chatId).trim() !== '') {
-    post.chatId = String(chatId);
-  }
 
   const payload = {
     scheduledTime,
@@ -199,17 +201,25 @@ async function publishToFacebook({
           type: 'FACEBOOK',
           publicationType,
         },
-        posts: [post],
+        // Facebook Feed: exatamente 1 post por Page (chatId = ID da Página)
+        posts: [
+          {
+            content: content || '',
+            chatId: String(chatId),
+            ...(attachmentPaths.length ? { attachmentPaths } : {}),
+          },
+        ],
       },
     ],
   };
 
   console.log('[postpulse] POST /v1/posts', {
     socialMediaAccountId: payload.publications[0].socialMediaAccountId,
-    chatId: post.chatId || null,
+    chatId: String(chatId),
     publicationType,
     hasMedia: Boolean(attachmentPaths.length),
     contentLen: (content || '').length,
+    postsCount: 1,
   });
 
   try {

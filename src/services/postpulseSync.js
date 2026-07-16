@@ -47,6 +47,7 @@ function matchChat(page, chats) {
 
 /**
  * Busca chats (Pages) no PostPulse e grava postpulse_chat_id.
+ * Fallback: usa o page_id da Graph API (ID numérico da Página).
  */
 async function resolveChatsForPages(accessToken, pages) {
   const byAccount = new Map();
@@ -74,7 +75,6 @@ async function resolveChatsForPages(accessToken, pages) {
     const chats = byAccount.get(accId) || [];
     let chat = matchChat(page, chats);
 
-    // 1 página app + 1 chat PostPulse → auto
     if (!chat && chats.length === 1) {
       const pagesWithThisAcc = pages.filter(
         (p) => Number(p.postpulse_account_id) === accId
@@ -82,13 +82,20 @@ async function resolveChatsForPages(accessToken, pages) {
       if (pagesWithThisAcc.length === 1) chat = chats[0];
     }
 
-    if (chat?.id != null) {
-      await FacebookPages.setPostpulseLink(page.id, {
-        postpulseAccountId: page.postpulse_account_id,
-        postpulseChatId: String(chat.id),
-      });
-      chatsResolved += 1;
-    }
+    // Fallback forte: o chatId da Page no PostPulse costuma ser o próprio page_id do Facebook
+    const chatId = chat?.id != null ? String(chat.id) : String(page.page_id);
+
+    await FacebookPages.setPostpulseLink(page.id, {
+      postpulseAccountId: page.postpulse_account_id,
+      postpulseChatId: chatId,
+    });
+    chatsResolved += 1;
+    console.log('[postpulse] chat vinculado', {
+      page: page.page_name,
+      page_id: page.page_id,
+      chatId,
+      fromApi: Boolean(chat?.id),
+    });
   }
 
   return chatsResolved;
@@ -251,7 +258,17 @@ async function ensureChatId(userId, page) {
 
   await resolveChatsForPages(conn.access_token, [page]);
   const refreshed = await FacebookPages.findById(page.id);
-  return refreshed?.postpulse_chat_id ? String(refreshed.postpulse_chat_id) : null;
+  if (refreshed?.postpulse_chat_id) return String(refreshed.postpulse_chat_id);
+
+  // Último recurso: page_id da Graph
+  if (page.page_id) {
+    await FacebookPages.setPostpulseLink(page.id, {
+      postpulseAccountId: page.postpulse_account_id,
+      postpulseChatId: String(page.page_id),
+    });
+    return String(page.page_id);
+  }
+  return null;
 }
 
 module.exports = {
