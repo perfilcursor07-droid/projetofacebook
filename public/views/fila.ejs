@@ -5,7 +5,7 @@
 
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-2xl font-semibold text-white">Produção e publicação</h1>
+        <h1 class="text-2xl font-semibold text-white">Fila</h1>
         <p class="mt-1 text-xs text-slate-500">Cortes por IA ou manuais, matérias, imagens e publicações em um só lugar.</p>
       </div>
       <div class="flex items-center gap-3">
@@ -487,7 +487,7 @@
                     ? `<button type="button" class="ai-btn rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-rose-500/50 hover:text-rose-300" data-action="remover-capa" data-id="${clip.id}">Remover capa</button>`
                     : ''}
                 </div>
-                <p class="text-[10px] leading-relaxed text-slate-500">Ao gerar a matéria, a capa já é criada sozinha (2,5s no início). Ou clique aqui — o título sai da matéria se você deixar em branco.</p>
+                <p class="text-[10px] leading-relaxed text-slate-500">Ao gerar o corte, a matéria e a capa (2,5s no início) já são criadas sozinhas. Use os botões só para refazer.</p>
               </div>
               ${publishFormHtml('clip', clip.id, materia)}
             </div>` : ''}

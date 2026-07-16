@@ -1,11 +1,12 @@
 const VideoClips = require('../models/VideoClips');
 const Videos = require('../models/Videos');
-const Users = require('../models/Users');
-const clipCoverService = require('../services/clipCoverService');
-const deepseekService = require('../services/deepseekService');
-const transcriptionService = require('../services/transcriptionService');
 const processingService = require('../services/processingService');
-const { enqueue } = require('../workers/queue');
+const {
+  resolveCapaTitulo,
+  queueClipCover,
+  queueClipMateriaAndCover,
+} = require('../services/clipPostProcessService');
+const deepseekService = require('../services/deepseekService');
 
 function httpError(message, status) {
   const err = new Error(message);
@@ -21,85 +22,6 @@ async function assertOwnedClip(req) {
     throw httpError('Clipe não encontrado', 404);
   }
   return { clip, video };
-}
-
-/** Título curto/chamativo a partir da matéria, do título da IA ou do vídeo. */
-function resolveCapaTitulo({ titulo, iaTitulo, materia, videoTitulo }) {
-  const candidates = [
-    String(titulo || '').trim(),
-    String(iaTitulo || '').trim(),
-    String(materia || '')
-      .replace(/#\w+/g, ' ')
-      .split(/[.!?\n]/)
-      .map((s) => s.trim())
-      .find((s) => s.length >= 12),
-    String(videoTitulo || '').trim(),
-    'Assista até o final',
-  ];
-  const picked = candidates.find(Boolean) || 'Assista até o final';
-  return picked.replace(/\s+/g, ' ').slice(0, 90);
-}
-
-/**
- * Enfileira geração da capa (frame + título Minha marca no início do corte).
- * @returns {Promise<{ queued: true, titulo: string }>}
- */
-async function queueClipCover({ clipId, userId, titulo }) {
-  const clip = await VideoClips.findById(clipId);
-  if (!clip) throw httpError('Clipe não encontrado', 404);
-  if (!clip.caminho_arquivo) {
-    throw httpError('Clipe sem arquivo — gere o corte novamente', 422);
-  }
-
-  const video = await Videos.findById(clip.video_id);
-  const user = await Users.findById(userId);
-  if (!user) throw httpError('Usuário não encontrado', 404);
-
-  const finalTitulo = resolveCapaTitulo({
-    titulo,
-    materia: clip.legenda_sugerida,
-    videoTitulo: video?.titulo || video?.termo_busca,
-  });
-
-  await VideoClips.update(clipId, {
-    capa_status: 'gerando',
-    capa_titulo: finalTitulo,
-    erro_mensagem: null,
-  });
-
-  enqueue(`capa clip ${clipId}`, async () => {
-    const fresh = await VideoClips.findById(clipId);
-    if (!fresh) return;
-    try {
-      const { relativePath } = await clipCoverService.addCoverToClip({
-        clip: fresh,
-        user,
-        titulo: finalTitulo,
-      });
-
-      const semCapa = fresh.arquivo_sem_capa || fresh.caminho_arquivo;
-      if (fresh.arquivo_sem_capa && fresh.caminho_arquivo !== fresh.arquivo_sem_capa) {
-        processingService.safeUnlink(fresh.caminho_arquivo);
-      }
-
-      await VideoClips.update(clipId, {
-        caminho_arquivo: relativePath,
-        arquivo_sem_capa: semCapa,
-        capa_titulo: finalTitulo,
-        capa_status: 'pronta',
-        erro_mensagem: null,
-      });
-    } catch (err) {
-      console.error(`[capa] clip ${clipId}:`, err.message || err);
-      await VideoClips.update(clipId, {
-        capa_status: 'erro',
-        erro_mensagem: `Capa falhou: ${String(err.message || err).slice(0, 400)}`,
-      });
-      throw err;
-    }
-  });
-
-  return { queued: true, titulo: finalTitulo };
 }
 
 /** Reenfileira um corte preso em processando/erro. */
@@ -159,27 +81,16 @@ async function transcribe(req, res, next) {
       erro_mensagem: null,
     });
 
-    enqueue(`transcribe clip ${clip.id}`, async () => {
-      try {
-        const result = await transcriptionService.transcribeClip({
-          clipPath: clip.caminho_arquivo,
-          sourceUrl: video.url_original,
-        });
-        await VideoClips.update(clip.id, {
-          transcricao: result.text,
-          materia_status: 'pendente',
-          erro_mensagem: null,
-        });
-      } catch (err) {
-        await VideoClips.update(clip.id, {
-          materia_status: 'erro',
-          erro_mensagem: `Transcrição falhou: ${String(err.message || err).slice(0, 400)}`,
-        });
-        throw err;
-      }
+    queueClipMateriaAndCover(clip, video, {
+      userId: req.session.userId,
+      force: true,
     });
 
-    res.status(202).json({ queued: true, clipId: clip.id, message: 'Extração de fala enfileirada' });
+    res.status(202).json({
+      queued: true,
+      clipId: clip.id,
+      message: 'Extração de fala + matéria + capa enfileiradas',
+    });
   } catch (err) {
     next(err);
   }
@@ -201,71 +112,16 @@ async function gerarMateria(req, res, next) {
 
     deepseekService.assertDeepseek();
     const tema = String(req.body.tema || '').trim() || null;
-    const userId = req.session.userId;
 
     await VideoClips.update(clip.id, {
       materia_status: 'gerando',
       erro_mensagem: null,
     });
 
-    const fresh = await VideoClips.findById(clip.id);
-
-    enqueue(`materia clip ${clip.id}`, async () => {
-      try {
-        let transcricao = fresh.transcricao;
-        let idioma = null;
-
-        if (!transcricao || /^\[(sem fala|falha)/i.test(String(transcricao))) {
-          const result = await transcriptionService.transcribeClip({
-            clipPath: clip.caminho_arquivo,
-            sourceUrl: video.url_original,
-          });
-          transcricao = result.empty ? '[sem fala detectada]' : result.text;
-          idioma = result.language;
-          await VideoClips.update(clip.id, { transcricao });
-        }
-
-        const gerado = await deepseekService.gerarMateriaVideo({
-          transcricao,
-          titulo: video.titulo || video.termo_busca,
-          tema,
-          idioma,
-        });
-
-        const tituloCapa = resolveCapaTitulo({
-          iaTitulo: gerado.titulo,
-          materia: gerado.materia,
-          videoTitulo: video.titulo || video.termo_busca,
-        });
-
-        await VideoClips.update(clip.id, {
-          legenda_sugerida: gerado.materia,
-          materia_status: 'pronta',
-          capa_titulo: tituloCapa,
-          erro_mensagem: null,
-        });
-
-        // Capa automática com título chamativo da IA
-        try {
-          await queueClipCover({
-            clipId: clip.id,
-            userId,
-            titulo: tituloCapa,
-          });
-        } catch (capaErr) {
-          console.error(`[capa] auto clip ${clip.id}:`, capaErr.message || capaErr);
-          await VideoClips.update(clip.id, {
-            capa_status: 'erro',
-            erro_mensagem: `Capa falhou: ${String(capaErr.message || capaErr).slice(0, 400)}`,
-          });
-        }
-      } catch (err) {
-        await VideoClips.update(clip.id, {
-          materia_status: 'erro',
-          erro_mensagem: `Matéria falhou: ${String(err.message || err).slice(0, 400)}`,
-        });
-        throw err;
-      }
+    queueClipMateriaAndCover(clip, video, {
+      tema,
+      userId: req.session.userId,
+      force: true,
     });
 
     res.status(202).json({
@@ -343,4 +199,5 @@ module.exports = {
   gerarCapa,
   removerCapa,
   queueClipCover,
+  resolveCapaTitulo,
 };

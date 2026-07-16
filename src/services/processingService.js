@@ -9,6 +9,7 @@ const { downloadToStorage, storageAbsolutePath } = require('./downloadService');
 const { cutClip } = require('./ffmpegService');
 const transcriptionService = require('./transcriptionService');
 const deepseekService = require('./deepseekService');
+const { queueClipMateriaAndCover } = require('./clipPostProcessService');
 const { MAX_CLIP_SECONDS, MIN_CLIP_SECONDS } = require('./ffmpegService');
 
 function extFromUrl(url, fallback) {
@@ -73,43 +74,12 @@ function queueImageDownload(imagem) {
   });
 }
 
-/** Extrai fala de um clipe pronto (legendas ou Whisper). */
+/** Extrai fala de um clipe pronto (legendas ou Whisper). Preferir queueClipMateriaAndCover. */
 function queueClipTranscription(clip, video) {
-  enqueue(`transcribe clip ${clip.id}`, async () => {
-    try {
-      await VideoClips.update(clip.id, {
-        materia_status: 'gerando',
-        erro_mensagem: null,
-      });
-      const fresh = await VideoClips.findById(clip.id);
-      const result = await transcriptionService.transcribeClip({
-        clipPath: fresh.caminho_arquivo,
-        sourceUrl: video.url_original,
-      });
-
-      // Sem fala: grava marcador para não reenfileirar em loop no recover
-      const texto = result.empty || !result.text
-        ? '[sem fala detectada]'
-        : result.text;
-
-      await VideoClips.update(clip.id, {
-        transcricao: texto,
-        materia_status: 'pendente',
-        erro_mensagem: result.empty ? 'Whisper não detectou fala (pode ser música/silêncio)' : null,
-      });
-    } catch (err) {
-      // Evita loop infinito no recover: marca transcrição para não retry automático
-      await VideoClips.update(clip.id, {
-        transcricao: '[falha na transcrição]',
-        materia_status: 'erro',
-        erro_mensagem: `Transcrição falhou: ${String(err.message || err).slice(0, 400)}`,
-      });
-      throw err;
-    }
-  });
+  queueClipMateriaAndCover(clip, video, { userId: video?.user_id });
 }
 
-/** Enfileira a geração de um corte; ao ficar pronto, extrai a fala automaticamente. */
+/** Enfileira a geração de um corte; ao ficar pronto, gera fala + matéria + capa. */
 function queueClipGeneration(clip, video) {
   enqueue(`clip ${clip.id} (video ${video.id})`, async () => {
     try {
@@ -130,7 +100,8 @@ function queueClipGeneration(clip, video) {
       await Videos.update(video.id, { status: 'cortado' });
 
       const ready = await VideoClips.findById(clip.id);
-      queueClipTranscription(ready, video);
+      // Automático: fala → matéria → capa (Minha marca)
+      queueClipMateriaAndCover(ready, video, { userId: video.user_id });
     } catch (err) {
       await VideoClips.update(clip.id, {
         status: 'erro',
@@ -159,31 +130,35 @@ async function recoverStuckJobs() {
     queueClipGeneration(clip, video);
   }
 
-  // Clip pronto sem transcrição → reextrai fala (não reprocessa marcadores/erros finais)
-  const needTranscript = await db('video_clips')
+  // Clip pronto sem matéria → retoma fala + matéria + capa
+  const needPostProcess = await db('video_clips')
     .where({ status: 'pronto' })
+    .whereNotNull('caminho_arquivo')
     .where(function whereNeed() {
-      this.whereNull('transcricao').orWhere('transcricao', '');
+      this.whereNull('materia_status')
+        .orWhereIn('materia_status', ['pendente', 'gerando'])
+        .orWhereNull('transcricao')
+        .orWhere('transcricao', '');
     })
-    .whereNotIn('materia_status', ['erro']);
+    .whereNot('materia_status', 'pronta')
+    .whereNot('materia_status', 'erro');
 
-  for (const clip of needTranscript) {
-    if (clip.status !== 'pronto' || !clip.caminho_arquivo) continue;
-    if (clip.transcricao) continue;
-    if (clip.materia_status === 'gerando') continue; // já em andamento nesta sessão
+  for (const clip of needPostProcess) {
+    if (!clip.caminho_arquivo) continue;
+    if (clip.materia_status === 'pronta' && clip.legenda_sugerida) continue;
     const video = await Videos.findById(clip.video_id);
     if (!video) continue;
-    console.log(`[recover] reenfileirando transcrição do corte #${clip.id}`);
-    queueClipTranscription(clip, video);
+    console.log(`[recover] reenfileirando matéria/capa do corte #${clip.id}`);
+    queueClipMateriaAndCover(clip, video, { userId: video.user_id });
   }
 
   const nImgs = await db('imagens')
     .where({ materia_status: 'gerando' })
     .update({ materia_status: 'pendente' });
 
-  if (stuckClips.length || needTranscript.length || nImgs) {
+  if (stuckClips.length || needPostProcess.length || nImgs) {
     console.log(
-      `[recover] cortes=${stuckClips.length}, transcrições=${needTranscript.length}, imagens matéria reset=${nImgs}`
+      `[recover] cortes=${stuckClips.length}, pós-processo=${needPostProcess.length}, imagens matéria reset=${nImgs}`
     );
   }
 }
@@ -263,8 +238,7 @@ function queueVideoAnalyze(video, opts = {}) {
           ));
           if (duplicate) continue;
 
-          // Não grava legenda da análise em legenda_sugerida (campo da Matéria).
-          // A matéria só nasce em "Gerar matéria" — evita colar a transcrição no post.
+          // Matéria + capa nascem automaticamente quando o corte fica pronto.
           const [clipId] = await VideoClips.create({
             video_id: video.id,
             inicio_segundo: s.inicio,

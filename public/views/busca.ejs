@@ -5,7 +5,7 @@
 
     <div>
       <h1 class="text-2xl font-semibold text-white">Vídeo e imagem</h1>
-      <p class="mt-1 text-sm text-slate-400">Busque, envie ou importe mídias para continuar na produção.</p>
+      <p class="mt-1 text-sm text-slate-400">Busque, envie ou importe mídias para continuar na fila.</p>
     </div>
 
     <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5">
@@ -305,21 +305,24 @@
               <p class="line-clamp-2 text-sm font-semibold leading-snug text-white" title="${escapeHtml(title)}">${escapeHtml(title)}</p>
               <p class="mt-1 truncate text-xs text-slate-400">${escapeHtml(item.autor || 'Autor desconhecido')}${meta ? ' · ' + meta : ''}</p>
             </div>
-            <div class="mt-auto flex items-center gap-2">
-              <button
-                type="button"
-                class="select-btn flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
-                data-mode="${isLink ? 'link' : 'pexels'}"
-                data-url="${escapeHtml(item.url || '')}"
-                data-pexels-id="${escapeHtml(item.pexelsId || '')}"
-                data-fonte="${escapeHtml(item.source || fonte)}"
-                data-tipo="${isVideo ? 'videos' : 'imagens'}"
-              >
-                Adicionar à fila
-              </button>
-              <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener"
-                class="shrink-0 rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
-                title="Abrir original">↗</a>
+            <div class="mt-auto flex flex-col gap-2">
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="select-btn flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                  data-mode="${isLink ? 'link' : 'pexels'}"
+                  data-url="${escapeHtml(item.url || '')}"
+                  data-pexels-id="${escapeHtml(item.pexelsId || '')}"
+                  data-fonte="${escapeHtml(item.source || fonte)}"
+                  data-tipo="${isVideo ? 'videos' : 'imagens'}"
+                >
+                  Adicionar à fila
+                </button>
+                <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener"
+                  class="shrink-0 rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
+                  title="Abrir original">↗</a>
+              </div>
+              <a href="/fila" class="fila-link hidden text-center text-xs font-medium text-emerald-400 hover:text-emerald-300">Ir para a fila →</a>
             </div>
           </div>
         </article>`;
@@ -464,6 +467,8 @@
 
         btn.textContent = data.created === false ? 'Já na fila' : 'Na fila ✓';
         btn.classList.add('bg-emerald-600');
+        const filaLink = btn.closest('article')?.querySelector('.fila-link');
+        if (filaLink) filaLink.classList.remove('hidden');
       } catch (err) {
         btn.textContent = original;
         btn.disabled = false;

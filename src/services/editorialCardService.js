@@ -283,7 +283,7 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const composites = [{ input: overlay, left: 0, top: 0 }];
   if (logo) composites.push(logo);
 
-  // Base full-bleed 4:5: fundo desfocado + foto em cover (sem faixas laterais no arquivo).
+  // Base 4:5: fundo desfocado em cover + foto inteira em contain (sem cortar o assunto).
   let sourcePrepared = source;
   try {
     sourcePrepared = await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
@@ -303,11 +303,18 @@ async function createEditorialCard({ sourceUrl, title, user }) {
     .toBuffer();
 
   const foreground = await sharp(sourcePrepared)
-    .resize(WIDTH, HEIGHT, { fit: 'cover', position: 'attention' })
-    .toBuffer();
+    .resize(WIDTH, HEIGHT, { fit: 'inside' })
+    .toBuffer({ resolveWithObject: true });
 
   await sharp(background)
-    .composite([{ input: foreground, gravity: 'centre' }, ...composites])
+    .composite([
+      {
+        input: foreground.data,
+        left: Math.max(0, Math.round((WIDTH - foreground.info.width) / 2)),
+        top: Math.max(0, Math.round((HEIGHT - foreground.info.height) / 2)),
+      },
+      ...composites,
+    ])
     .jpeg({ quality: 92, chromaSubsampling: '4:4:4', mozjpeg: true })
     .toFile(outputPath);
 
