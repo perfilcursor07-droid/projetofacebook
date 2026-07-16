@@ -82,12 +82,15 @@ async function importLink(req, res, next) {
       user_id: req.session.userId,
       origem: 'link',
       termo_busca: (req.body.termo || meta.extractor || 'link').toString().slice(0, 255),
-      titulo: meta.titulo || req.body.titulo || url.slice(0, 120),
+      titulo: String(meta.titulo || req.body.titulo || url)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 480),
       url_original: url,
       thumbnail: meta.thumbnail || req.body.thumbnail || null,
       duracao: meta.duracao,
-      autor: meta.autor,
-      autor_url: meta.autorUrl,
+      autor: meta.autor ? String(meta.autor).slice(0, 255) : null,
+      autor_url: meta.autorUrl ? String(meta.autorUrl).slice(0, 500) : null,
       status: 'pendente',
       metadata: { extractor: meta.extractor, fonte: req.body.fonte || null, metaWarning },
     });

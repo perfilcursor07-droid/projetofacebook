@@ -694,16 +694,19 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
       meta = { titulo: null, thumbnail: null, extractor: null, autor: null, autorUrl: null, duracao: null };
     }
 
+    const tituloBruto = meta.titulo || `Reel — ${plataforma}`;
+    const titulo = String(tituloBruto).replace(/\s+/g, ' ').trim().slice(0, 480);
+
     const [id] = await Videos.create({
       user_id: userId,
       origem: 'link',
       termo_busca: `reel:${plataforma}`.slice(0, 255),
-      titulo: meta.titulo || `Reel — ${plataforma}`,
+      titulo: titulo || `Reel — ${plataforma}`,
       url_original: link,
       thumbnail: meta.thumbnail || null,
       duracao: meta.duracao,
-      autor: meta.autor,
-      autor_url: meta.autorUrl,
+      autor: meta.autor ? String(meta.autor).slice(0, 255) : null,
+      autor_url: meta.autorUrl ? String(meta.autorUrl).slice(0, 500) : null,
       status: 'pendente',
       metadata: {
         extractor: meta.extractor,
@@ -711,6 +714,7 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
         facebook_page_id: facebookPageId || null,
         metaWarning,
         plataforma,
+        titulo_completo: String(tituloBruto).slice(0, 2000),
       },
     });
     video = await Videos.findById(id);
