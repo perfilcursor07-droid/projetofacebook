@@ -2,13 +2,10 @@ const AiMatters = require('../models/AiMatters');
 const Publications = require('../models/Publications');
 const materiaIaService = require('./materiaIaService');
 const { resolveArtworkPath } = require('./matterArtworkService');
+const { formatFacebookCaption } = require('./editorialGuidelinesFb');
 
-function buildMessage(title, body) {
-  const cleanTitle = String(title || '').trim();
-  const cleanBody = String(body || '').trim();
-  if (!cleanTitle) return cleanBody;
-  if (cleanBody.toLowerCase().startsWith(cleanTitle.toLowerCase())) return cleanBody;
-  return `${cleanTitle}\n\n${cleanBody}`;
+function buildMessage(title, body, hashtags) {
+  return formatFacebookCaption({ titulo: title, materia: body, hashtags });
 }
 
 async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, body }) {
@@ -35,7 +32,15 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
 
   const finalTitle = String(title || matter.titulo || '').trim();
   const finalBody = String(body || matter.materia || '').trim();
-  const message = buildMessage(finalTitle, finalBody);
+  let hashtags = [];
+  try {
+    const raw = matter.hashtags;
+    if (Array.isArray(raw)) hashtags = raw;
+    else if (typeof raw === 'string' && raw.trim()) hashtags = JSON.parse(raw);
+  } catch {
+    hashtags = [];
+  }
+  const message = buildMessage(finalTitle, finalBody, hashtags);
   if (!message) {
     const err = new Error('Matéria vazia');
     err.status = 400;

@@ -12,6 +12,7 @@ const {
   detectarCitacoesInventadas,
   blocoRegrasFacebook,
   mensagemAvisoQualidade,
+  quebrarEmParagrafos,
 } = require('./editorialGuidelinesFb');
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
@@ -64,10 +65,17 @@ function parseArtigoJson(raw) {
   }
   const titulo = String(parsed.titulo || '').trim();
   let materia = String(parsed.materia || parsed.conteudo || '').trim();
-  // Facebook: texto puro — remove HTML residual se o modelo escapar
-  materia = materia.replace(/<\/?[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  // Facebook: texto puro — remove HTML residual, mas PRESERVA parágrafos (\\n\\n)
+  materia = materia
+    .replace(/<\/?[^>]+>/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+  materia = quebrarEmParagrafos(materia);
   const hashtags = Array.isArray(parsed.hashtags)
-    ? parsed.hashtags.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean).slice(0, 6)
+    ? parsed.hashtags.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean).slice(0, 5)
     : [];
   const termosImagem = Array.isArray(parsed.termos_imagem)
     ? parsed.termos_imagem.map((t) => String(t).trim()).filter(Boolean).slice(0, 5)
@@ -79,9 +87,7 @@ function parseArtigoJson(raw) {
     throw err;
   }
 
-  if (hashtags.length && !materia.includes('#')) {
-    materia = `${materia.trim()}\n\n${hashtags.map((h) => `#${h}`).join(' ')}`;
-  }
+  // Não cola hashtags no corpo aqui — formatFacebookCaption faz isso na publicação/exibição
   if (materia.length > MAX_MATERIA_CHARS) {
     materia = `${materia.slice(0, MAX_MATERIA_CHARS - 1).trim()}…`;
   }
@@ -297,7 +303,8 @@ async function gerarMateriaNoticiaFacebook({
     `VOZ DO REDATOR (obrigatório seguir nesta geração): ${voz}`,
     `ESTILO DO LEAD: ${lead}`,
     `ESTILO DO TÍTULO: ${estiloTitulo}`,
-    `EXTENSÃO ALVO: ${faixa.min}–${faixa.max} caracteres.`,
+    `EXTENSÃO ALVO: ${faixa.min}–${faixa.max} caracteres (curto = mais alcance no feed).`,
+    'FORMATAÇÃO: use parágrafos curtos separados por linha em branco. Gancho forte na 1ª frase.',
     nicho ? `Nicho/palavras-chave: ${nicho}` : null,
     emAlta ? 'Contexto: assunto em alta agora.' : null,
     redeSocial
@@ -733,12 +740,86 @@ async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, sni
   };
 }
 
+const TITULO_TOMES = {
+  natural: 'Natural e jornalístico: claro, fluido, sem exagero.',
+  polemico: 'Mais polêmico e provocativo: tensão e contraste, sem fake news nem ofensa gratuita.',
+  direto: 'Direto e seco: sujeito + verbo + fato, manchete de portal.',
+  curiosidade: 'Curiosidade: abre lacuna ou pergunta implícita que faz a pessoa querer ler.',
+  emocional: 'Emocional e humano: ângulo de sentimento/fé, sem melodramático falso.',
+  factual: 'Factual e sóbrio: máximo de precisão, mínimo de adjetivo.',
+};
+
+/**
+ * Sugere um novo título (manchete) para matéria de Página Facebook.
+ */
+async function sugerirTituloMateria({
+  tituloAtual,
+  materia,
+  fonteTitulo,
+  tom = 'natural',
+  evitar = [],
+}) {
+  assertDeepseek();
+  const tomKey = TITULO_TOMES[tom] ? tom : 'natural';
+  const tomDesc = TITULO_TOMES[tomKey];
+  const evitarList = (Array.isArray(evitar) ? evitar : [])
+    .map((t) => String(t || '').trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
+Regras:
+- Responda APENAS JSON: {"titulo":"..."}.
+- Uma manchete em português do Brasil, 70–110 caracteres (máx 120).
+- NÃO invente fatos que não estejam no texto.
+- NÃO use clickbait mentiroso, Caps Lock excessivo nem pontos de exclamação em série.
+- Tom pedido: ${tomDesc}
+- Diferente do título atual e dos títulos a evitar.`,
+      },
+      {
+        role: 'user',
+        content: [
+          `Tom: ${tomKey}`,
+          tituloAtual ? `Título atual: ${tituloAtual}` : null,
+          evitarList.length ? `Evitar (já sugeridos):\n- ${evitarList.join('\n- ')}` : null,
+          fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
+          materia ? `Texto da matéria:\n${String(materia).slice(0, 2500)}` : null,
+          'Gere UMA manchete nova nesse tom.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+    { temperature: tomKey === 'polemico' ? 0.9 : 0.82, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+  let titulo = String(parsed.titulo || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  if (!titulo || titulo.toLowerCase() === String(tituloAtual || '').trim().toLowerCase()) {
+    const err = new Error('A IA não gerou um título diferente. Tente outro tom ou de novo.');
+    err.status = 502;
+    throw err;
+  }
+  return { titulo, tom: tomKey };
+}
+
 module.exports = {
   gerarMateriaVideo,
   gerarMateriaImagem,
   gerarMateriaNoticiaFacebook,
   sugerirCortes,
   resumirAlertaBiblioteca,
+  sugerirTituloMateria,
+  TITULO_TOMES,
   assertDeepseek,
   MAX_MATERIA_CHARS,
 };

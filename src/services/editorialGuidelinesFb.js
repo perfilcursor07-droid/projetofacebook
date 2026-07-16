@@ -1,9 +1,16 @@
 /**
  * Diretrizes editoriais para matérias de Página do Facebook (texto curto).
  * Adaptado de site-gospel/editorialGuidelines.js — sem HTML longo.
+ *
+ * Alcance no Facebook (referência 2024–2026):
+ * - Pico de engajamento: ~40–80 caracteres (posts curtíssimos).
+ * - “Ver mais” no mobile: ~400–480 caracteres — texto acima disso some atrás do clique.
+ * - Para Página de notícias com foto: 400–700 caracteres com gancho forte no início.
+ * Fontes: Hootsuite/HubSpot (≤80 chars +66% engajamento), fold ~480 chars.
  */
 
-const MAX_MATERIA_CHARS = 3500;
+/** Teto prático: acima disso o feed esconde quase tudo atrás de “Ver mais”. */
+const MAX_MATERIA_CHARS = 800;
 
 const FRASES_PROIBIDAS_IA = [
   'é importante ressaltar', 'vale ressaltar', 'vale destacar', 'vale lembrar',
@@ -23,11 +30,12 @@ const FRASES_PROIBIDAS_IA = [
 ];
 
 function sortearFaixaChars() {
+  // Faixas alinhadas ao “fold” do feed (~480) e a legendas de notícia com foto.
   const faixas = [
-    { min: 900, max: 1400 },
-    { min: 1200, max: 1800 },
-    { min: 1600, max: 2400 },
-    { min: 1100, max: 2000 },
+    { min: 400, max: 520 },
+    { min: 450, max: 600 },
+    { min: 480, max: 650 },
+    { min: 420, max: 580 },
   ];
   return faixas[Math.floor(Math.random() * faixas.length)];
 }
@@ -76,8 +84,8 @@ function contarChars(texto) {
 
 function avaliarComprimentoFb(materia, faixa) {
   const chars = contarChars(materia);
-  const min = faixa?.min || 900;
-  const max = Math.min(faixa?.max || 2400, MAX_MATERIA_CHARS);
+  const min = faixa?.min || 400;
+  const max = Math.min(faixa?.max || 650, MAX_MATERIA_CHARS);
   return {
     chars,
     curto: chars < min * 0.85,
@@ -141,6 +149,103 @@ function titulosParecidos(a, b) {
   return inter >= Math.min(4, Math.ceil(Math.min(na.length, nb.length) * 0.55));
 }
 
+function normalizeHashtagToken(raw) {
+  return String(raw || '')
+    .replace(/^#/, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9À-ÿ]/g, '')
+    .trim();
+}
+
+function formatHashtagsLine(tags) {
+  const list = Array.isArray(tags) ? tags : [];
+  const cleaned = list
+    .map((t) => normalizeHashtagToken(t))
+    .filter((t) => t.length >= 2)
+    .slice(0, 5);
+  return cleaned.map((t) => `#${t}`).join(' ');
+}
+
+/** Extrai hashtags do final do texto e devolve { body, tags }. */
+function extrairHashtagsDoTexto(texto) {
+  const raw = String(texto || '').replace(/\r\n/g, '\n').trim();
+  const match =
+    raw.match(/\n\n((?:#[\wÀ-ÿ]+(?:\s+|$))+)$/u) ||
+    raw.match(/\n((?:#[\wÀ-ÿ]+(?:\s+|$))+)$/u);
+  if (!match) return { body: raw, tags: [] };
+  const tags = match[1]
+    .trim()
+    .split(/\s+/)
+    .map((t) => t.replace(/^#/, ''))
+    .filter(Boolean);
+  const body = raw.slice(0, match.index).trim();
+  return { body, tags };
+}
+
+/**
+ * Quebra texto corrido em parágrafos curtos (1–2 frases) para o feed do Facebook.
+ */
+function quebrarEmParagrafos(texto) {
+  let t = String(texto || '').replace(/\r\n/g, '\n').trim();
+  if (!t) return '';
+
+  if (/\n\s*\n/.test(t)) {
+    return t
+      .split(/\n\s*\n/)
+      .map((p) => p.replace(/[ \t]+/g, ' ').replace(/\n+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  const sentences = t.match(/[^.!?…]+[.!?…]+(?:["”')\]]*)?|[^.!?…]+$/g) || [t];
+  const paras = [];
+  let buf = '';
+  let frasesNoBuf = 0;
+
+  for (const raw of sentences) {
+    const piece = String(raw).replace(/\s+/g, ' ').trim();
+    if (!piece) continue;
+    const next = buf ? `${buf} ${piece}` : piece;
+    const wouldBeLong = next.length > 240;
+    if (buf && (frasesNoBuf >= 2 || wouldBeLong)) {
+      paras.push(buf);
+      buf = piece;
+      frasesNoBuf = 1;
+    } else {
+      buf = next;
+      frasesNoBuf += 1;
+    }
+  }
+  if (buf) paras.push(buf);
+  return paras.join('\n\n');
+}
+
+/**
+ * Monta a legenda final do post: título + corpo em parágrafos + hashtags, com espaços.
+ */
+function formatFacebookCaption({ titulo, materia, hashtags } = {}) {
+  const title = String(titulo || '').replace(/\s+/g, ' ').trim();
+  const extracted = extrairHashtagsDoTexto(materia);
+  let body = extracted.body;
+
+  if (title && body.toLowerCase().startsWith(title.toLowerCase())) {
+    body = body.slice(title.length).replace(/^[\s:—\-–.]+/, '').trim();
+  }
+
+  body = quebrarEmParagrafos(body);
+
+  const tagsLine = formatHashtagsLine(
+    Array.isArray(hashtags) && hashtags.length ? hashtags : extracted.tags
+  );
+
+  const parts = [];
+  if (title) parts.push(title);
+  if (body) parts.push(body);
+  if (tagsLine) parts.push(tagsLine);
+  return parts.join('\n\n').trim();
+}
+
 function blocoRegrasFacebook(faixa) {
   return `
 DIRETRIZES FACEBOOK / PEOPLE-FIRST:
@@ -148,9 +253,10 @@ DIRETRIZES FACEBOOK / PEOPLE-FIRST:
 - NUNCA copie fontes; reescreva 100%.
 - NÃO invente fatos, números, datas, igrejas, pastores nem declarações entre aspas.
 - Sem clickbait, sem pedir like/compartilhar.
-- Formato: texto puro (sem HTML), parágrafos curtos separados por linha em branco.
-- Extensão alvo desta geração: ${faixa.min}–${faixa.max} caracteres (máx absoluto ${MAX_MATERIA_CHARS}).
-- 3 a 6 hashtags no campo hashtags (não repetir no meio do texto se já forem anexadas no fim).
+- Formato OBRIGATÓRIO: texto puro com PARÁGRAFOS CURTOS (1–2 frases) separados por linha em branco (\\n\\n). Nunca um bloco único.
+- Gancho forte nos primeiros ~80 caracteres (o que aparece antes do “Ver mais” no celular).
+- Extensão alvo desta geração: ${faixa.min}–${faixa.max} caracteres (máx absoluto ${MAX_MATERIA_CHARS}). Textos longos perdem alcance no feed.
+- 3 a 5 hashtags no campo hashtags, SEM espaços internos (ex.: EstadoLaico), sem # no valor.
 - Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 20).map((f) => `"${f}"`).join(', ')}…
 - Feche com fato/desdobramento — nunca “como vimos” / “em suma”.`;
 }
@@ -160,7 +266,7 @@ function mensagemAvisoQualidade(avaliacao) {
     return `Texto com ${avaliacao.chars} caracteres (alvo mín. ~${avaliacao.min}). Complemente antes de publicar.`;
   }
   if (avaliacao.longo) {
-    return `Texto com ${avaliacao.chars} caracteres (alvo máx. ~${avaliacao.max}). Enxugue antes de publicar.`;
+    return `Texto com ${avaliacao.chars} caracteres (alvo máx. ~${avaliacao.max} para melhor alcance no feed). Enxugue antes de publicar.`;
   }
   return null;
 }
@@ -181,4 +287,7 @@ module.exports = {
   normalizarBusca,
   blocoRegrasFacebook,
   mensagemAvisoQualidade,
+  formatFacebookCaption,
+  quebrarEmParagrafos,
+  formatHashtagsLine,
 };

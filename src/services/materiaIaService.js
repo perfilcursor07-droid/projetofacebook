@@ -11,7 +11,7 @@ const { gerarMateriaNoticiaFacebook, assertDeepseek } = require('./deepseekServi
 const pexelsService = require('./pexelsService');
 const { enqueue } = require('../workers/queue');
 const { env } = require('../config/env');
-const { titulosParecidos } = require('./editorialGuidelinesFb');
+const { titulosParecidos, formatFacebookCaption } = require('./editorialGuidelinesFb');
 const { applyBrandArtworkToResult } = require('./matterArtworkService');
 
 async function resolvePage(userId, facebookPageId) {
@@ -22,12 +22,23 @@ async function resolvePage(userId, facebookPageId) {
   return page;
 }
 
-function montarMensagem({ titulo, materia }) {
-  const t = String(titulo || '').trim();
-  const m = String(materia || '').trim();
-  if (!t) return m;
-  if (m.toLowerCase().startsWith(t.toLowerCase())) return m;
-  return `${t}\n\n${m}`;
+function parseHashtagsField(raw) {
+  try {
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string' && raw.trim()) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+/** Legenda formatada para o Facebook (espaços, parágrafos, hashtags). */
+function montarMensagem({ titulo, materia, hashtags }) {
+  return formatFacebookCaption({
+    titulo,
+    materia,
+    hashtags: parseHashtagsField(hashtags),
+  });
 }
 
 /**
@@ -237,6 +248,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
   const mensagem = montarMensagem({
     titulo: overrides.titulo || matter.titulo,
     materia: overrides.materia || matter.materia,
+    hashtags: overrides.hashtags || matter.hashtags,
   });
 
   if (!mensagem.trim()) {

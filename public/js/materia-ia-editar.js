@@ -76,6 +76,52 @@
     }
   });
 
+  const tituloSugestoes = [];
+  document.getElementById('btn-sugerir-titulo')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-sugerir-titulo');
+    const tomEl = document.getElementById('matter-titulo-tom');
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Gerando título…';
+    }
+    setStatus('A IA está sugerindo outro título…');
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/sugerir-titulo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tom: tomEl?.value || 'natural',
+          evitar: tituloSugestoes.slice(-8),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao sugerir título');
+
+      if (data.titulo && tituloEl) {
+        tituloEl.value = data.titulo;
+        tituloSugestoes.push(data.titulo);
+      }
+      if (data.imagemUrl && imgEl) {
+        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        imgWrap?.classList.remove('hidden');
+      }
+      setStatus(
+        data.aviso ||
+          (data.imagemUrl
+            ? 'Novo título aplicado e arte atualizada ✓'
+            : 'Novo título aplicado ✓')
+      );
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original || 'Sugerir outro título';
+      }
+    }
+  });
+
   document.getElementById('btn-publicar')?.addEventListener('click', async () => {
     if (!pageSelect.value) {
       setStatus('Selecione a Página do Facebook', true);

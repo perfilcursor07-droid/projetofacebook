@@ -15,6 +15,7 @@ router.patch('/matters/:id', controller.atualizarMateria);
 router.delete('/matters/:id', controller.removerMateria);
 router.post('/matters/:id/publicar', controller.publicar);
 router.post('/matters/:id/agendar', controller.agendar);
+router.post('/matters/:id/sugerir-titulo', controller.sugerirTitulo);
 router.post('/monitor', controller.monitorCriar);
 router.get('/monitor', controller.monitorLista);
 router.post('/monitor/:id/pausar', controller.monitorPausar);

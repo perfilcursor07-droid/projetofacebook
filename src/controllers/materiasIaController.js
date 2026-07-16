@@ -500,6 +500,82 @@ async function monitorRetomar(req, res, next) {
   }
 }
 
+/** Sugere outro título via IA (tom opcional) e regenera a arte Minha marca. */
+async function sugerirTitulo(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'Matéria já publicada. Gere uma nova se precisar alterar o título.' });
+    }
+
+    const deepseekService = require('../services/deepseekService');
+    deepseekService.assertDeepseek();
+
+    const tom = String(req.body?.tom || 'natural').trim().toLowerCase();
+    const evitar = Array.isArray(req.body?.evitar) ? req.body.evitar : [];
+
+    const sugerido = await deepseekService.sugerirTituloMateria({
+      tituloAtual: matter.titulo,
+      materia: matter.materia,
+      fonteTitulo: matter.fonte_titulo,
+      tom,
+      evitar: [...evitar, matter.titulo],
+    });
+
+    const patch = {
+      titulo: sugerido.titulo,
+      error_message: null,
+    };
+    if (matter.status !== 'agendado') patch.status = 'rascunho';
+    await AiMatters.update(matterId, patch);
+
+    let updated = await AiMatters.findById(matterId);
+    let imagemUrl = updated.imagem_url || null;
+    let aviso = null;
+
+    const sourceUrl =
+      updated.imagem_fonte_url ||
+      (!updated.imagem_path && /^https?:\/\//i.test(String(updated.imagem_url || ''))
+        ? updated.imagem_url
+        : null);
+
+    if (sourceUrl) {
+      try {
+        const artwork = await composeMatterArtwork({
+          userId: req.session.userId,
+          matterId: updated.id,
+          sourceUrl,
+          title: sugerido.titulo,
+          force: true,
+        });
+        updated = artwork.matter;
+        imagemUrl = artwork.publicUrl;
+      } catch (err) {
+        aviso = `Título atualizado, mas a arte não foi regenerada: ${err.message}`;
+      }
+    } else {
+      aviso =
+        'Título atualizado. Para gravar o título na arte, escolha uma imagem e aplique Minha marca.';
+    }
+
+    return res.json({
+      ok: true,
+      titulo: sugerido.titulo,
+      tom: sugerido.tom,
+      matter: updated,
+      imagemUrl,
+      aviso,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 module.exports = {
   pesquisar,
   emAlta,
@@ -511,6 +587,7 @@ module.exports = {
   listarMaterias,
   removerMateria,
   atualizarMateria,
+  sugerirTitulo,
   showMatter,
   listPage,
   listMinhasMaterias,
