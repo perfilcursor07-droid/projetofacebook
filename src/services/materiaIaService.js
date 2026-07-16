@@ -12,6 +12,7 @@ const pexelsService = require('./pexelsService');
 const { enqueue } = require('../workers/queue');
 const { env } = require('../config/env');
 const { titulosParecidos } = require('./editorialGuidelinesFb');
+const { applyBrandArtworkToResult } = require('./matterArtworkService');
 
 async function resolvePage(userId, facebookPageId) {
   const page = await FacebookPages.findById(facebookPageId);
@@ -395,7 +396,7 @@ async function gerarCompleto({
     status: statusSalvar,
   });
 
-  const payload = {
+  let payload = {
     matter,
     artigo: {
       titulo: gerado.titulo,
@@ -415,17 +416,32 @@ async function gerarCompleto({
     fbPostUrl: null,
   };
 
+  // Aplica Minha marca (arte 4:5) antes de qualquer publicação.
+  if (tipo === 'foto' || gerado.imagemUrl) {
+    payload = await applyBrandArtworkToResult(userId, payload);
+    if (payload.matter?.forcarRascunho || (tipo === 'foto' && !payload.matter?.imagem_path && !payload.artigo?.imagemUrl)) {
+      /* avisos já vêm em payload.avisos */
+    }
+  }
+
   const querPublicar = status === 'publicado' && !gerado.forcarRascunho && facebookPageId;
   if (querPublicar) {
-    const pub = await publicarMateria(userId, matter.id, {
+    if (tipo === 'foto' && !payload.matter?.imagem_path) {
+      payload.avisos = [
+        ...(payload.avisos || []),
+        'A publicação não foi enviada porque a arte final não pôde ser criada.',
+      ];
+      return payload;
+    }
+    const pub = await publicarMateria(userId, payload.matter.id, {
       facebook_page_id: facebookPageId,
       tipo_publicacao: tipo,
-      imagem_url: gerado.imagemUrl,
+      imagem_url: payload.artigo.imagemUrl || payload.matter.imagem_url,
       sync: true,
     });
     payload.publication = pub;
     payload.fbPostUrl = pub.fbPostUrl || null;
-    payload.matter = await AiMatters.findById(matter.id);
+    payload.matter = await AiMatters.findById(payload.matter.id);
   }
 
   return payload;

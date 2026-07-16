@@ -5,6 +5,7 @@ const AiMatters = require('../models/AiMatters');
 const materiaIaService = require('../services/materiaIaService');
 const {
   composeMatterArtwork,
+  applyBrandArtworkToResult,
   storeMatterSourceImage,
   removeMatterSourceImage,
 } = require('../services/matterArtworkService');
@@ -76,7 +77,14 @@ router.post('/matters/:id/arte/regenerar', async (req, res, next) => {
     if (matter.status === 'publicado') {
       return res.status(400).json({ error: 'A arte de uma matéria publicada não pode ser alterada' });
     }
-    if (!matter.imagem_fonte_url) {
+
+    const sourceUrl =
+      matter.imagem_fonte_url ||
+      (!matter.imagem_path && /^https?:\/\//i.test(String(matter.imagem_url || ''))
+        ? matter.imagem_url
+        : null);
+
+    if (!sourceUrl) {
       return res.status(400).json({
         error: 'A foto original não está disponível. Escolha outra imagem para gerar a arte novamente.',
       });
@@ -85,6 +93,7 @@ router.post('/matters/:id/arte/regenerar', async (req, res, next) => {
     const artwork = await composeMatterArtwork({
       userId: req.session.userId,
       matterId,
+      sourceUrl,
       title: matter.titulo,
       force: true,
     });
@@ -112,46 +121,7 @@ function publicationType(body = {}) {
 }
 
 async function addArtwork(userId, result) {
-  const article = result.artigo || result.preview || {};
-  const matter = result.matter;
-  const warnings = Array.isArray(result.avisos) ? [...result.avisos] : [];
-  const sourceUrl = article.imagemUrl || matter?.imagem_fonte_url || null;
-  if (!matter?.id || !sourceUrl) return { ...result, artigo: article, preview: article, avisos: warnings };
-
-  const sourceMeta = article.imagemOrigem || null;
-  try {
-    const artwork = await composeMatterArtwork({
-      userId,
-      matterId: matter.id,
-      sourceUrl,
-      title: article.titulo || matter.titulo,
-      force: true,
-    });
-    article.imagemUrl = artwork.publicUrl;
-    article.imagemOrigem = {
-      ...(sourceMeta || {}),
-      tipo: 'arte',
-      rotulo: `Arte final 4:5 (1080×1350) com título${artwork.hasLogo ? ' e logomarca' : ''} · ${sourceMeta?.rotulo || 'foto editorial'}`,
-      hasLogo: artwork.hasLogo,
-    };
-    return { ...result, matter: artwork.matter, artigo: article, preview: article, avisos: warnings };
-  } catch (err) {
-    await AiMatters.update(matter.id, {
-      imagem_fonte_url: sourceUrl,
-      imagem_path: null,
-      imagem_url: null,
-      error_message: String(err.message).slice(0, 500),
-    });
-    article.imagemUrl = null;
-    warnings.push(`Não foi possível criar a arte com título e logomarca: ${err.message}`);
-    return {
-      ...result,
-      matter: await AiMatters.findById(matter.id),
-      artigo: article,
-      preview: article,
-      avisos: warnings,
-    };
-  }
+  return applyBrandArtworkToResult(userId, result);
 }
 
 async function publishGenerated(userId, result, facebookPageId, type) {

@@ -152,8 +152,67 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
   };
 }
 
+/**
+ * Após gerar a matéria, compõe a arte 4:5 com título + Minha marca.
+ * Se falhar, guarda a foto de origem e avisa (não derruba o fluxo).
+ */
+async function applyBrandArtworkToResult(userId, result) {
+  const article = { ...(result.artigo || result.preview || {}) };
+  const matter = result.matter;
+  const warnings = Array.isArray(result.avisos) ? [...result.avisos] : [];
+  const sourceUrl =
+    article.imagemUrl ||
+    matter?.imagem_fonte_url ||
+    (matter && !matter.imagem_path && isRemoteUrl(matter.imagem_url) ? matter.imagem_url : null);
+
+  if (!matter?.id || !sourceUrl) {
+    return { ...result, artigo: article, preview: article, avisos: warnings };
+  }
+
+  // Já tem arte com marca no tamanho certo — evita regenerar em loops.
+  if (matter.imagem_path && matter.arte_modelo && matter.imagem_fonte_url) {
+    return { ...result, artigo: article, preview: article, avisos: warnings };
+  }
+
+  const sourceMeta = article.imagemOrigem || null;
+  try {
+    const artwork = await composeMatterArtwork({
+      userId,
+      matterId: matter.id,
+      sourceUrl,
+      title: article.titulo || matter.titulo,
+      force: true,
+    });
+    article.imagemUrl = artwork.publicUrl;
+    article.imagemOrigem = {
+      ...(sourceMeta || {}),
+      tipo: 'arte',
+      rotulo: `Arte final 4:5 (1080×1350) com título${artwork.hasLogo ? ' e logomarca' : ''} · ${sourceMeta?.rotulo || 'foto editorial'}`,
+      hasLogo: artwork.hasLogo,
+    };
+    return { ...result, matter: artwork.matter, artigo: article, preview: article, avisos: warnings };
+  } catch (err) {
+    await AiMatters.update(matter.id, {
+      imagem_fonte_url: sourceUrl,
+      imagem_path: null,
+      imagem_url: null,
+      error_message: String(err.message).slice(0, 500),
+    });
+    article.imagemUrl = null;
+    warnings.push(`Não foi possível criar a arte com título e logomarca: ${err.message}`);
+    return {
+      ...result,
+      matter: await AiMatters.findById(matter.id),
+      artigo: article,
+      preview: article,
+      avisos: warnings,
+    };
+  }
+}
+
 module.exports = {
   composeMatterArtwork,
+  applyBrandArtworkToResult,
   resolveArtworkPath,
   storeMatterSourceImage,
   removeMatterSourceImage,
