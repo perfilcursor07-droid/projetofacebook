@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const facebookService = require('../services/facebookService');
+const postpulseService = require('../services/postpulseService');
+const PostpulseConnections = require('../models/PostpulseConnections');
 const FacebookAccounts = require('../models/FacebookAccounts');
 const FacebookPages = require('../models/FacebookPages');
 const db = require('../config/db');
@@ -96,14 +98,35 @@ async function listPages(req, res, next) {
           }))
         );
       }
+      try {
+        const { syncPostpulseAccounts } = require('../services/postpulseSync');
+        await syncPostpulseAccounts(req.session.userId);
+      } catch (syncErr) {
+        console.warn('PostPulse sync após refresh:', postpulseService.apiErrorMessage(syncErr));
+      }
     }
 
     const pages = await FacebookPages.findByAccount(account.id);
+    const ppConn = postpulseService.isConfigured()
+      ? await PostpulseConnections.findByUser(req.session.userId)
+      : null;
+
     res.json({
       conectado: true,
       fb_user_id: account.fb_user_id,
       expira_em: account.expires_at,
-      pages: pages.map((p) => ({ id: p.id, page_id: p.page_id, page_name: p.page_name })),
+      postpulse: {
+        configured: postpulseService.isConfigured(),
+        connected: Boolean(ppConn?.access_token),
+        expires_at: ppConn?.expires_at || null,
+      },
+      pages: pages.map((p) => ({
+        id: p.id,
+        page_id: p.page_id,
+        page_name: p.page_name,
+        postpulse_account_id: p.postpulse_account_id || null,
+        publica_via: p.postpulse_account_id && ppConn?.access_token ? 'postpulse' : 'facebook',
+      })),
     });
   } catch (err) {
     err.message = facebookService.graphErrorMessage(err);

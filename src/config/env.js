@@ -24,6 +24,15 @@ const env = {
       process.env.FACEBOOK_REDIRECT_URI ||
       'http://localhost:3000/api/auth/facebook/callback',
   },
+  postpulse: {
+    clientId: process.env.POSTPULSE_CLIENT_ID || '',
+    clientSecret: process.env.POSTPULSE_CLIENT_SECRET || '',
+    redirectUri:
+      process.env.POSTPULSE_REDIRECT_URI ||
+      'http://localhost:3000/api/auth/postpulse/callback',
+    /** auto | postpulse | facebook */
+    publishProvider: (process.env.PUBLISH_PROVIDER || 'auto').toLowerCase(),
+  },
   ffmpegPath: process.env.FFMPEG_PATH || '',
   pythonPath: process.env.PYTHON_PATH || '',
   storagePath: process.env.STORAGE_PATH || './storage',

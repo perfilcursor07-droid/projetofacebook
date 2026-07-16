@@ -6,6 +6,20 @@
 
     <div id="alert" class="mt-4 hidden rounded-lg px-4 py-3 text-sm"></div>
 
+    <div id="postpulse-box" class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-white">PostPulse (API comercial)</h2>
+          <p class="mt-1 text-xs text-slate-400">
+            Publica sem App Review da Meta. Credenciais no .env; Redirect URI no painel PostPulse deve ser
+            <code class="text-slate-300">/api/auth/postpulse/callback</code>.
+          </p>
+          <p id="pp-status" class="mt-2 text-sm text-slate-300">Carregando status…</p>
+        </div>
+        <div id="pp-actions" class="flex flex-wrap gap-2"></div>
+      </div>
+    </div>
+
     <div id="content" class="mt-8">
       <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
         <p class="text-slate-300">Carregando…</p>
@@ -16,10 +30,16 @@
   <script>
     const alertEl = document.getElementById('alert');
     const contentEl = document.getElementById('content');
+    const ppStatusEl = document.getElementById('pp-status');
+    const ppActionsEl = document.getElementById('pp-actions');
 
     const params = new URLSearchParams(location.search);
     if (params.get('conectado') === '1') {
       alertEl.textContent = 'Conta do Facebook conectada com sucesso!';
+      alertEl.className = 'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+      history.replaceState({}, '', '/paginas');
+    } else if (params.get('postpulse') === '1') {
+      alertEl.textContent = 'PostPulse conectado! Sincronize para vincular as páginas.';
       alertEl.className = 'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
       history.replaceState({}, '', '/paginas');
     } else if (params.get('erro')) {
@@ -44,10 +64,88 @@
           Conectar com Facebook
         </a>
         <p class="mt-4 text-xs text-slate-500">
-          Requer app criado em developers.facebook.com com FACEBOOK_APP_ID e FACEBOOK_APP_SECRET no .env.<br/>
-          Escopos: pages_show_list, pages_manage_posts, pages_read_engagement.
+          Ainda usado para listar páginas. A publicação pode ir pelo PostPulse quando vinculado.
         </p>
       </div>`;
+
+    async function loadPostpulse() {
+      try {
+        const res = await fetch('/api/facebook/postpulse/status');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha no status PostPulse');
+
+        if (!data.configured) {
+          ppStatusEl.textContent = 'Não configurado — adicione POSTPULSE_CLIENT_ID e POSTPULSE_CLIENT_SECRET no .env';
+          ppActionsEl.innerHTML = '';
+          return;
+        }
+
+        if (!data.connected) {
+          ppStatusEl.innerHTML =
+            'Desconectado. Redirect URI cadastrado no PostPulse deve ser:<br><code class="text-emerald-300">' +
+            escapeHtml(data.redirect_uri) +
+            '</code>';
+          ppActionsEl.innerHTML = `
+            <a href="/api/auth/postpulse"
+              class="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500">
+              Conectar PostPulse
+            </a>`;
+          return;
+        }
+
+        ppStatusEl.textContent =
+          'Conectado' +
+          (data.expires_at
+            ? ' · token expira em ' + new Date(data.expires_at).toLocaleDateString('pt-BR')
+            : '');
+        ppActionsEl.innerHTML = `
+          <button id="pp-sync" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">
+            Sincronizar páginas
+          </button>
+          <a href="/api/auth/postpulse" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">
+            Reconectar
+          </a>
+          <button id="pp-disconnect" class="rounded-lg border border-rose-800 px-3 py-1.5 text-sm text-rose-300 hover:border-rose-500">
+            Desconectar
+          </button>`;
+
+        document.getElementById('pp-sync')?.addEventListener('click', async (e) => {
+          const btn = e.currentTarget;
+          btn.disabled = true;
+          btn.textContent = 'Sincronizando…';
+          try {
+            const r = await fetch('/api/facebook/postpulse/sync', { method: 'POST' });
+            const j = await r.json();
+            if (!r.ok) throw new Error(j.error || 'Falha ao sincronizar');
+            alertEl.textContent =
+              'PostPulse: ' +
+              j.matched +
+              ' página(s) vinculada(s). Contas FB no PostPulse: ' +
+              (j.accounts || []).length;
+            alertEl.className =
+              'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+            await load();
+          } catch (err) {
+            alertEl.textContent = 'Erro: ' + err.message;
+            alertEl.className =
+              'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+          } finally {
+            btn.disabled = false;
+            btn.textContent = 'Sincronizar páginas';
+          }
+        });
+
+        document.getElementById('pp-disconnect')?.addEventListener('click', async () => {
+          if (!confirm('Desconectar PostPulse?')) return;
+          await fetch('/api/facebook/postpulse', { method: 'DELETE' });
+          await loadPostpulse();
+          await load();
+        });
+      } catch (err) {
+        ppStatusEl.textContent = err.message;
+        ppActionsEl.innerHTML = '';
+      }
+    }
 
     async function load() {
       try {
@@ -60,15 +158,26 @@
           return;
         }
 
-        const pagesHtml = (data.pages || []).map((p) => `
+        const pagesHtml = (data.pages || [])
+          .map((p) => {
+            const via = p.publica_via === 'postpulse' ? 'PostPulse' : 'Graph API';
+            const viaClass =
+              p.publica_via === 'postpulse'
+                ? 'bg-violet-500/15 text-violet-300'
+                : 'bg-sky-500/15 text-sky-300';
+            return `
           <div class="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
             <div>
               <p class="text-white">${escapeHtml(p.page_name)}</p>
               <p class="text-xs text-slate-500">ID: ${escapeHtml(p.page_id)}</p>
             </div>
-            <span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs text-emerald-300">conectada</span>
-          </div>
-        `).join('');
+            <div class="flex items-center gap-2">
+              <span class="rounded-full ${viaClass} px-2.5 py-0.5 text-xs">via ${via}</span>
+              <span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs text-emerald-300">conectada</span>
+            </div>
+          </div>`;
+          })
+          .join('');
 
         contentEl.innerHTML = `
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -98,6 +207,7 @@
       }
     }
 
+    loadPostpulse();
     load();
   </script>
 <%- include('partials/app-end') %>

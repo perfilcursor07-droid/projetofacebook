@@ -7,6 +7,7 @@ const Imagens = require('../models/Imagens');
 const FacebookPages = require('../models/FacebookPages');
 const FacebookAccounts = require('../models/FacebookAccounts');
 const facebookService = require('../services/facebookService');
+const publishDispatch = require('../services/publishDispatch');
 const { validateReelFile } = require('../services/ffmpegService');
 const { storageAbsolutePath } = require('../services/downloadService');
 const { enqueue } = require('../workers/queue');
@@ -29,48 +30,29 @@ function httpError(message, status) {
   return err;
 }
 
-function queuePublication({ publicationId, page, filePath, texto, titulo, tipo, onSuccess }) {
+function queuePublication({ publicationId, userId, page, filePath, texto, titulo, tipo, onSuccess }) {
   enqueue(`publish ${tipo} pub ${publicationId}`, async () => {
     try {
-      let result;
-      if (tipo === 'reel') {
-        result = await facebookService.publishReel({
-          pageId: page.page_id,
-          pageAccessToken: page.page_access_token,
-          filePath,
-          description: texto,
-          title: titulo,
-        });
-      } else if (tipo === 'video') {
-        result = await facebookService.publishVideo({
-          pageId: page.page_id,
-          pageAccessToken: page.page_access_token,
-          filePath,
-          description: texto,
-        });
-      } else if (tipo === 'foto') {
-        result = await facebookService.publishPhoto({
-          pageId: page.page_id,
-          pageAccessToken: page.page_access_token,
-          filePath,
-          caption: texto,
-        });
-      } else {
-        result = await facebookService.publishText({
-          pageId: page.page_id,
-          pageAccessToken: page.page_access_token,
-          message: texto,
-        });
-      }
+      const result = await publishDispatch.publishContent({
+        userId,
+        page,
+        tipo,
+        filePath,
+        texto,
+        titulo,
+      });
 
       const postId = result.post_id || result.id;
+      const fbPostUrl =
+        result.fb_post_url ||
+        (tipo === 'reel' && postId && !String(postId).startsWith('postpulse:')
+          ? `https://www.facebook.com/reel/${postId}`
+          : publishDispatch.buildFbPostUrl(page, postId));
+
       await Publications.update(publicationId, {
         status: 'publicado',
         fb_post_id: postId,
-        fb_post_url:
-          tipo === 'reel'
-            ? `https://www.facebook.com/reel/${postId}`
-            : `https://www.facebook.com/${postId}`,
+        fb_post_url: fbPostUrl,
         published_at: new Date(),
         erro_mensagem: null,
       });
@@ -78,7 +60,7 @@ function queuePublication({ publicationId, page, filePath, texto, titulo, tipo, 
     } catch (err) {
       await Publications.update(publicationId, {
         status: 'erro',
-        erro_mensagem: facebookService.graphErrorMessage(err).slice(0, 500),
+        erro_mensagem: publishDispatch.publishErrorMessage(err).slice(0, 500),
       });
       await Publications.increment(publicationId);
       throw err;
@@ -145,6 +127,7 @@ async function publishClip(req, res, next) {
 
     queuePublication({
       publicationId: pubId,
+      userId: req.session.userId,
       page,
       filePath,
       texto,
@@ -200,6 +183,7 @@ async function publishImage(req, res, next) {
 
     queuePublication({
       publicationId: pubId,
+      userId: req.session.userId,
       page,
       filePath,
       texto,
@@ -241,23 +225,24 @@ async function publishTextPost(req, res, next) {
 
     enqueue(`publish texto pub ${pubId}`, async () => {
       try {
-        const result = await facebookService.publishText({
-          pageId: page.page_id,
-          pageAccessToken: page.page_access_token,
-          message: texto,
+        const result = await publishDispatch.publishContent({
+          userId: req.session.userId,
+          page,
+          tipo: 'texto',
+          texto,
           link: link || undefined,
         });
         await Publications.update(pubId, {
           status: 'publicado',
-          fb_post_id: result.id,
-          fb_post_url: `https://www.facebook.com/${result.id}`,
+          fb_post_id: result.post_id || result.id,
+          fb_post_url: result.fb_post_url || publishDispatch.buildFbPostUrl(page, result.id),
           published_at: new Date(),
           erro_mensagem: null,
         });
       } catch (err) {
         await Publications.update(pubId, {
           status: 'erro',
-          erro_mensagem: facebookService.graphErrorMessage(err).slice(0, 500),
+          erro_mensagem: publishDispatch.publishErrorMessage(err).slice(0, 500),
         });
         await Publications.increment(pubId);
         throw err;

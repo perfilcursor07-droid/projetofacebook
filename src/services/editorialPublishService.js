@@ -1,7 +1,6 @@
 const AiMatters = require('../models/AiMatters');
 const Publications = require('../models/Publications');
 const materiaIaService = require('./materiaIaService');
-const facebookService = require('./facebookService');
 const { resolveArtworkPath } = require('./matterArtworkService');
 
 function buildMessage(title, body) {
@@ -64,16 +63,17 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
 
   try {
     // Upload unpublished + /feed com attached_media → aparece em Posts (não só em Fotos).
-    const result = await facebookService.publishPhoto({
-      pageId: page.page_id,
-      pageAccessToken: page.page_access_token,
+    // Com PostPulse vinculado, publishDispatch usa a API comercial automaticamente.
+    const publishDispatch = require('./publishDispatch');
+    const result = await publishDispatch.publishContent({
+      userId,
+      page,
+      tipo: 'foto',
       filePath,
-      caption: message,
+      texto: message,
     });
     const postId = result.post_id || result.id;
-    const fbPostUrl = postId.includes('_')
-      ? `https://www.facebook.com/${postId}`
-      : `https://www.facebook.com/${page.page_id}/posts/${postId}`;
+    const fbPostUrl = result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId);
     await Publications.update(publicationId, {
       status: 'publicado',
       fb_post_id: postId,
@@ -88,7 +88,8 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
     });
     return { matterId: matter.id, publicationId, queued: false, postId, fbPostUrl };
   } catch (err) {
-    const messageError = facebookService.graphErrorMessage(err);
+    const publishDispatch = require('./publishDispatch');
+    const messageError = publishDispatch.publishErrorMessage(err);
     await Publications.update(publicationId, {
       status: 'erro',
       erro_mensagem: String(messageError).slice(0, 500),

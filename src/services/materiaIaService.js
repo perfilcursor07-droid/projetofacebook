@@ -8,7 +8,6 @@ const { pesquisarNichos } = require('./newsResearch');
 const { buscarEmAltaAgora } = require('./trendingTopics');
 const { apurarTopico } = require('./articleSource');
 const { gerarMateriaNoticiaFacebook, assertDeepseek } = require('./deepseekService');
-const facebookService = require('./facebookService');
 const pexelsService = require('./pexelsService');
 const { enqueue } = require('../workers/queue');
 const { env } = require('../config/env');
@@ -286,27 +285,18 @@ async function publicarMateria(userId, matterId, overrides = {}) {
   });
 
   const executarPublicacao = async () => {
-    let result;
+    const publishDispatch = require('./publishDispatch');
     const img = overrides.imagem_url || matter.imagem_url;
-    if (tipo === 'foto' && img) {
-      result = await facebookService.publishPhotoFromUrl({
-        pageId: page.page_id,
-        pageAccessToken: page.page_access_token,
-        imageUrl: img,
-        caption: mensagem,
-      });
-    } else {
-      result = await facebookService.publishText({
-        pageId: page.page_id,
-        pageAccessToken: page.page_access_token,
-        message: mensagem,
-      });
-    }
+    const result = await publishDispatch.publishContent({
+      userId,
+      page,
+      tipo: tipo === 'foto' && img ? 'foto' : 'texto',
+      imageUrl: tipo === 'foto' && img ? img : null,
+      texto: mensagem,
+    });
 
     const postId = result.post_id || result.id;
-    const fbPostUrl = String(postId).includes('_')
-      ? `https://www.facebook.com/${postId}`
-      : `https://www.facebook.com/${page.page_id}/posts/${postId}`;
+    const fbPostUrl = result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId);
     await Publications.update(pubId, {
       status: 'publicado',
       fb_post_id: postId,
@@ -333,9 +323,8 @@ async function publicarMateria(userId, matterId, overrides = {}) {
         fbPostUrl: published.fbPostUrl,
       };
     } catch (err) {
-      const msg = facebookService.graphErrorMessage
-        ? facebookService.graphErrorMessage(err)
-        : err.message;
+      const publishDispatch = require('./publishDispatch');
+      const msg = publishDispatch.publishErrorMessage(err);
       await Publications.update(pubId, {
         status: 'erro',
         erro_mensagem: String(msg).slice(0, 500),
@@ -353,9 +342,8 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     try {
       await executarPublicacao();
     } catch (err) {
-      const msg = facebookService.graphErrorMessage
-        ? facebookService.graphErrorMessage(err)
-        : err.message;
+      const publishDispatch = require('./publishDispatch');
+      const msg = publishDispatch.publishErrorMessage(err);
       await Publications.update(pubId, {
         status: 'erro',
         erro_mensagem: String(msg).slice(0, 500),

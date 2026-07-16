@@ -1,5 +1,6 @@
 const express = require('express');
 const facebookController = require('../controllers/facebookController');
+const postpulseController = require('../controllers/postpulseController');
 const authController = require('../controllers/authController');
 const { requireAuth } = require('../middleware/requireAuth');
 
@@ -12,5 +13,8 @@ router.get('/me', requireAuth, authController.me);
 
 router.get('/facebook', requireAuth, facebookController.facebookLogin);
 router.get('/facebook/callback', requireAuth, facebookController.facebookCallback);
+
+router.get('/postpulse', requireAuth, postpulseController.postpulseLogin);
+router.get('/postpulse/callback', requireAuth, postpulseController.postpulseCallback);
 
 module.exports = router;

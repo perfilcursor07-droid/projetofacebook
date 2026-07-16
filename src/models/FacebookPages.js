@@ -19,6 +19,15 @@ const FacebookPages = {
       .onConflict(['facebook_account_id', 'page_id'])
       .merge(['page_name', 'page_access_token', 'updated_at']);
   },
+
+  setPostpulseAccount(id, postpulseAccountId) {
+    return db(this.table)
+      .where({ id })
+      .update({
+        postpulse_account_id: postpulseAccountId,
+        updated_at: db.fn.now(),
+      });
+  },
 };
 
 module.exports = FacebookPages;
