@@ -35,6 +35,19 @@ function resolveCapaTitulo({ titulo, iaTitulo, materia, videoTitulo }) {
   return picked.replace(/\s+/g, ' ').slice(0, 90);
 }
 
+function sameCapaTitulo(a, b) {
+  return (
+    String(a || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase() ===
+    String(b || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+  );
+}
+
 /**
  * Enfileira geração da capa (frame + título Minha marca no início do corte).
  */
@@ -69,9 +82,11 @@ async function queueClipCover({ clipId, userId, titulo }) {
 }
 
 /**
- * Aplica a capa Minha marca de forma síncrona e atualiza a matéria do Reel (video_path).
+ * Aplica a capa Minha marca e atualiza a matéria do Reel (video_path).
+ * Por padrão reutiliza capa já pronta (evita travar a publicação por minutos no ffmpeg).
+ * Passe force: true ao mudar o título.
  */
-async function applyCoverToClipNow({ clipId, userId, titulo = null }) {
+async function applyCoverToClipNow({ clipId, userId, titulo = null, force = false }) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw Object.assign(new Error('Clipe não encontrado'), { status: 404 });
   if (!clip.caminho_arquivo && !clip.arquivo_sem_capa) {
@@ -88,6 +103,63 @@ async function applyCoverToClipNow({ clipId, userId, titulo = null }) {
     videoTitulo: video?.titulo || video?.termo_busca,
   });
 
+  // Reutiliza capa pronta (ou arquivo _capa_ se o status ficou preso em "gerando")
+  const looksLikeCover =
+    Boolean(clip.caminho_arquivo) && /_capa_/i.test(String(clip.caminho_arquivo));
+  if (
+    !force &&
+    clip.caminho_arquivo &&
+    (clip.capa_status === 'pronta' || looksLikeCover)
+  ) {
+    const abs = storageAbsolutePath(clip.caminho_arquivo);
+    const titleOk = !titulo || sameCapaTitulo(clip.capa_titulo, finalTitulo);
+    if (titleOk && fs.existsSync(abs)) {
+      if (clip.capa_status !== 'pronta') {
+        await VideoClips.update(clipId, {
+          capa_status: 'pronta',
+          capa_titulo: clip.capa_titulo || finalTitulo,
+          erro_mensagem: null,
+        });
+      }
+      console.log(`[capa] clip ${clipId}: reutilizando capa pronta (${clip.caminho_arquivo})`);
+      try {
+        const meta =
+          video?.metadata && typeof video.metadata === 'object'
+            ? video.metadata
+            : {};
+        if (meta.pipeline === 'conteudo_reel' && meta.matter_id) {
+          const { syncConteudoReelMatter } = require('./materiaIaService');
+          await syncConteudoReelMatter({
+            matterId: meta.matter_id,
+            clip,
+            video,
+            gerado: clip.legenda_sugerida
+              ? { titulo: clip.capa_titulo || finalTitulo, materia: clip.legenda_sugerida }
+              : null,
+          });
+        } else {
+          const db = require('../config/db');
+          const AiMatters = require('../models/AiMatters');
+          const matter = await db('ai_matters')
+            .where({ video_clip_id: clipId, tipo_publicacao: 'reel' })
+            .orderBy('id', 'desc')
+            .first();
+          if (matter) {
+            await AiMatters.update(matter.id, { video_path: clip.caminho_arquivo });
+          }
+        }
+      } catch (syncErr) {
+        console.warn(`[capa] sync reuse clip ${clipId}:`, syncErr.message);
+      }
+      return {
+        relativePath: clip.caminho_arquivo,
+        titulo: clip.capa_titulo || finalTitulo,
+        clip,
+        reused: true,
+      };
+    }
+  }
+
   await VideoClips.update(clipId, {
     capa_status: 'gerando',
     capa_titulo: finalTitulo,
@@ -96,11 +168,14 @@ async function applyCoverToClipNow({ clipId, userId, titulo = null }) {
 
   const fresh = await VideoClips.findById(clipId);
   try {
+    console.log(`[capa] clip ${clipId}: gerando capa (“${finalTitulo.slice(0, 60)}”)…`);
+    const started = Date.now();
     const { relativePath } = await clipCoverService.addCoverToClip({
       clip: fresh,
       user,
       titulo: finalTitulo,
     });
+    console.log(`[capa] clip ${clipId}: pronta em ${Math.round((Date.now() - started) / 1000)}s`);
 
     const semCapa = fresh.arquivo_sem_capa || fresh.caminho_arquivo;
     if (fresh.arquivo_sem_capa && fresh.caminho_arquivo !== fresh.arquivo_sem_capa) {
@@ -127,7 +202,6 @@ async function applyCoverToClipNow({ clipId, userId, titulo = null }) {
             }
           })();
 
-    // Sempre atualiza video_path da matéria do Reel para o arquivo COM capa
     if (meta.pipeline === 'conteudo_reel' && meta.matter_id) {
       try {
         const { syncConteudoReelMatter } = require('./materiaIaService');
@@ -143,7 +217,6 @@ async function applyCoverToClipNow({ clipId, userId, titulo = null }) {
         console.warn(`[conteudo-reel] sync after capa:`, syncErr.message);
       }
     } else {
-      // Matéria vinculada pelo video_clip_id
       try {
         const AiMatters = require('../models/AiMatters');
         const db = require('../config/db');
@@ -163,7 +236,7 @@ async function applyCoverToClipNow({ clipId, userId, titulo = null }) {
       }
     }
 
-    return { relativePath, titulo: finalTitulo, clip: updatedClip };
+    return { relativePath, titulo: finalTitulo, clip: updatedClip, reused: false };
   } catch (err) {
     console.error(`[capa] clip ${clipId}:`, err.message || err);
     await VideoClips.update(clipId, {

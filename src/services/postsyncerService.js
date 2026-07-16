@@ -116,7 +116,7 @@ async function uploadMediaFile({ workspaceId, filePath }) {
     },
     maxContentLength: Infinity,
     maxBodyLength: Infinity,
-    timeout: 120_000,
+    timeout: 300_000,
   });
 
   const media = data?.data || data?.media || data;
@@ -234,7 +234,7 @@ async function publishToFacebook({
   try {
     const { data } = await axios.post(`${API}/posts`, body, {
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      timeout: 120_000,
+      timeout: 300_000,
     });
 
     const post = data?.data || data;

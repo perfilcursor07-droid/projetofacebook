@@ -324,7 +324,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
 
     let reelFile = null;
     if (pubTipo === 'reel') {
-      // Garante capa Minha marca (modelo + título atual) no início antes de publicar
+      // Só regenera capa se ainda não estiver pronta (ffmpeg demora minutos — não refazer a cada publish)
       if (matter.video_clip_id) {
         try {
           const { applyCoverToClipNow } = require('./clipPostProcessService');
@@ -332,6 +332,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
             clipId: matter.video_clip_id,
             userId,
             titulo: overrides.titulo || matter.titulo,
+            force: false,
           });
           matter = await AiMatters.findById(matter.id);
         } catch (capaErr) {

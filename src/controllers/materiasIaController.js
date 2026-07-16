@@ -584,6 +584,7 @@ async function sugerirTitulo(req, res, next) {
           clipId: updated.video_clip_id,
           userId: req.session.userId,
           titulo: sugerido.titulo,
+          force: true,
         });
         updated = await AiMatters.findById(matterId);
         if (updated.video_path) {

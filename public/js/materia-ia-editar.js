@@ -147,7 +147,13 @@
     if (publishBtn) publishBtn.disabled = true;
 
     showPublishModal('publishing');
-    setStatus(isRepublish ? 'Republicando…' : 'Salvando e publicando…');
+    setStatus(
+      cfg.isReel
+        ? 'Publicando Reel (upload do vídeo pode levar 1–3 min)…'
+        : isRepublish
+          ? 'Republicando…'
+          : 'Salvando e publicando…'
+    );
 
     try {
       if (cfg.canEdit) await salvar();
@@ -218,8 +224,12 @@
     spin?.classList.remove('hidden');
     ok?.classList.add('hidden');
     ok?.classList.remove('flex');
-    if (title) title.textContent = 'Publicando…';
-    if (text) text.textContent = 'Enviando a matéria para a Página do Facebook.';
+    if (title) title.textContent = cfg.isReel ? 'Publicando Reel…' : 'Publicando…';
+    if (text) {
+      text.textContent = cfg.isReel
+        ? 'Enviando o vídeo para o Facebook. Isso pode levar 1 a 3 minutos — não feche a página.'
+        : 'Enviando a matéria para a Página do Facebook.';
+    }
     if (linkEl) linkEl.classList.add('hidden');
   }
 
