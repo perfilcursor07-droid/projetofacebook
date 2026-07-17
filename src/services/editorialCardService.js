@@ -298,7 +298,7 @@ async function composeBrandOverlayOnImage({
   const modelId = normalizeArtModel(user.marca_modelo_arte);
   const w = Math.max(320, Math.round(Number(width) || WIDTH));
   const h = Math.max(320, Math.round(Number(height) || HEIGHT));
-  const primary = normalizeColor(user.marca_cor_primaria, '#facc15');
+  const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
   const brandName = String(user.marca_nome || '').trim();
   const logo = await buildLogoComposite(user.logo_path, w);
@@ -358,7 +358,7 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const modelId = normalizeArtModel(user.marca_modelo_arte);
   const source = await fetchImage(sourceUrl);
   const logo = await buildLogoComposite(user.logo_path);
-  const primary = normalizeColor(user.marca_cor_primaria, '#facc15');
+  const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
   const brandName = String(user.marca_nome || '').trim();
   const overlay = buildOverlay({

@@ -8,7 +8,7 @@ exports.up = async function up(knex) {
     table.string('marca_nome', 120).nullable();
     table.string('marca_categoria', 80).nullable().defaultTo('ÚLTIMAS');
     table.string('marca_rodape', 160).nullable();
-    table.string('marca_cor_primaria', 7).notNullable().defaultTo('#facc15');
+    table.string('marca_cor_primaria', 7).notNullable().defaultTo('#ffbd59');
     table.string('marca_cor_secundaria', 7).notNullable().defaultTo('#fb923c');
   });
 

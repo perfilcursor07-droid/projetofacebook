@@ -55,7 +55,7 @@ const TITLE_COLORS = [
   { id: 'primaria', name: 'Cor principal', value: null },
   { id: 'secundaria', name: 'Cor secundária', value: null },
   { id: 'preto', name: 'Preto', value: '#111827' },
-  { id: 'amarelo', name: 'Amarelo bold', value: '#facc15' },
+  { id: 'amarelo', name: 'Amarelo bold', value: '#ffbd59' },
   { id: 'laranja', name: 'Laranja bold', value: '#fb923c' },
 ];
 
@@ -107,7 +107,7 @@ function getTitleSize(value) {
 
 function resolveTitleFill(colorId, primary, secondary) {
   const id = normalizeTitleColor(colorId);
-  if (id === 'primaria') return primary || '#facc15';
+  if (id === 'primaria') return primary || '#ffbd59';
   if (id === 'secundaria') return secondary || '#fb923c';
   const entry = TITLE_COLORS.find((c) => c.id === id);
   return entry?.value || '#ffffff';

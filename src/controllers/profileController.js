@@ -91,7 +91,7 @@ async function update(req, res, next) {
       marca_nome: clean(req.body.marca_nome, 120),
       marca_categoria: clean(req.body.marca_categoria, 80) || 'ÚLTIMAS',
       marca_rodape: clean(req.body.marca_rodape, 160),
-      marca_cor_primaria: color(req.body.marca_cor_primaria, '#facc15'),
+      marca_cor_primaria: color(req.body.marca_cor_primaria, '#ffbd59'),
       marca_cor_secundaria: color(req.body.marca_cor_secundaria, '#fb923c'),
       marca_modelo_arte: requestedModel,
       marca_fonte: normalizeBrandFont(req.body.marca_fonte),

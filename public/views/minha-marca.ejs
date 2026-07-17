@@ -45,7 +45,7 @@
           <label class="block">
             <span class="text-sm text-slate-400">Cor principal</span>
             <div class="mt-1.5 flex gap-2 rounded-lg border border-slate-700 bg-slate-950 p-2">
-              <input type="color" name="marca_cor_primaria" value="<%= profile.marca_cor_primaria || '#facc15' %>" class="h-8 w-full cursor-pointer border-0 bg-transparent" />
+              <input type="color" name="marca_cor_primaria" value="<%= profile.marca_cor_primaria || '#ffbd59' %>" class="h-8 w-full cursor-pointer border-0 bg-transparent" />
             </div>
           </label>
           <label class="block">
@@ -77,7 +77,7 @@
           <p class="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-500">Cor bold do título</p>
           <div class="mt-2 flex flex-wrap gap-2">
             <% titleColors.forEach((c) => {
-              const swatch = c.id === 'primaria' ? (profile.marca_cor_primaria || '#facc15')
+              const swatch = c.id === 'primaria' ? (profile.marca_cor_primaria || '#ffbd59')
                 : c.id === 'secundaria' ? (profile.marca_cor_secundaria || '#fb923c')
                 : c.value;
             %>
@@ -247,12 +247,12 @@
     }
 
     function resolvePreviewColor(colorId) {
-      const primary = document.querySelector('input[name="marca_cor_primaria"]')?.value || '#facc15';
+      const primary = document.querySelector('input[name="marca_cor_primaria"]')?.value || '#ffbd59';
       const secondary = document.querySelector('input[name="marca_cor_secundaria"]')?.value || '#fb923c';
       if (colorId === 'primaria') return primary;
       if (colorId === 'secundaria') return secondary;
       if (colorId === 'preto') return '#111827';
-      if (colorId === 'amarelo') return '#facc15';
+      if (colorId === 'amarelo') return '#ffbd59';
       if (colorId === 'laranja') return '#fb923c';
       return '#ffffff';
     }
