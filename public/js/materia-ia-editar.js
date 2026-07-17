@@ -216,6 +216,68 @@
     }
   });
 
+  document.getElementById('btn-reescrever-info')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-reescrever-info');
+    const infoEl = document.getElementById('matter-info-extra');
+    const infoExtra = String(infoEl?.value || '').trim();
+    if (!infoExtra) {
+      setStatus('Cole as informações extras no campo antes de reescrever.', true);
+      infoEl?.focus();
+      return;
+    }
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Reescrevendo…';
+    }
+    setStatus('A IA está reforçando o texto com as informações incluídas…');
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/reescrever-com-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          infoExtra,
+          titulo: tituloEl?.value || '',
+          materia: materiaEl?.value || '',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao reescrever o texto');
+
+      if (data.titulo && tituloEl) tituloEl.value = data.titulo;
+      if (data.materia && materiaEl) materiaEl.value = data.materia;
+
+      const tagsLine = document.getElementById('matter-hashtags-line');
+      const tagsWrap = document.getElementById('matter-hashtags-wrap');
+      if (Array.isArray(data.hashtags) && data.hashtags.length && tagsLine) {
+        tagsLine.textContent = data.hashtags
+          .map((h) => '#' + String(h).replace(/^#/, ''))
+          .join(' ');
+        tagsWrap?.classList.remove('hidden');
+        tagsLine.parentElement?.classList.remove('hidden');
+      }
+
+      if (data.imagemUrl && imgEl) {
+        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        imgWrap?.classList.remove('hidden');
+      }
+      const reelVideo = document.getElementById('matter-reel-video');
+      if (data.videoUrl && reelVideo) {
+        reelVideo.src = data.videoUrl + (data.videoUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        reelVideo.load();
+      }
+
+      setStatus(data.aviso || 'Texto reescrito com as informações incluídas ✓');
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original || 'Reescrever texto com informações incluídas';
+      }
+    }
+  });
+
   document.getElementById('btn-publicar')?.addEventListener('click', async () => {
     if (!pageSelect.value) {
       setStatus('Selecione a Página do Facebook', true);

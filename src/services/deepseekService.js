@@ -920,6 +920,105 @@ ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastan
 }
 
 /**
+ * Reescreve a matéria incorporando informações avulsas fornecidas pelo usuário.
+ */
+async function reescreverMateriaComInfo({
+  titulo,
+  materia,
+  infoExtra,
+  hashtags = [],
+  fonteTitulo = null,
+}) {
+  assertDeepseek();
+  const extra = String(infoExtra || '').trim();
+  if (!extra) {
+    const err = new Error('Cole as informações extras para a IA incorporar no texto.');
+    err.status = 400;
+    throw err;
+  }
+  if (!String(materia || '').trim()) {
+    const err = new Error('Não há matéria para reescrever.');
+    err.status = 400;
+    throw err;
+  }
+
+  const tagsHint = Array.isArray(hashtags) && hashtags.length
+    ? hashtags.map((h) => String(h).replace(/^#/, '')).slice(0, 6).join(', ')
+    : null;
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é redator de Páginas do Facebook (gospel/notícias).
+Reescreva a matéria/legenda incorporando as INFORMAÇÕES EXTRAS do usuário.
+Regras:
+- Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."]}
+- O título pode melhorar levemente (máx. 110 chars) se as novas infos mudarem o gancho; senão mantenha próximo do atual.
+- A matéria deve ficar mais forte e completa: use as infos extras (fatos, nomes, números, contexto) sem inventar o que não estiver no texto atual nem nas extras.
+- Português do Brasil, parágrafos curtos separados por linha em branco (\\n\\n).
+- Ideal 400–650 caracteres no corpo (sem hashtags).
+- 3 a 5 hashtags sem # no JSON.
+- Sem pedir like, sem clickbait mentiroso, sem Caps Lock excessivo.`,
+      },
+      {
+        role: 'user',
+        content: [
+          titulo ? `Título atual: ${titulo}` : null,
+          fonteTitulo ? `Fonte: ${fonteTitulo}` : null,
+          tagsHint ? `Hashtags atuais: ${tagsHint}` : null,
+          `Matéria atual:\n${String(materia).slice(0, 4000)}`,
+          `INFORMAÇÕES EXTRAS PARA INCORPORAR:\n${extra.slice(0, 3000)}`,
+          'Reescreva título + matéria integrando as extras de forma natural.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+    { temperature: 0.75, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+
+  const novoTitulo = String(parsed.titulo || titulo || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  let novaMateria = String(parsed.materia || '')
+    .replace(/\r\n/g, '\n')
+    .trim();
+  if (!novaMateria) {
+    const err = new Error('A IA não devolveu o texto reescrito. Tente de novo.');
+    err.status = 502;
+    throw err;
+  }
+  // Garante parágrafos com linha em branco
+  novaMateria = novaMateria
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .join('\n\n');
+
+  let novasHashtags = Array.isArray(parsed.hashtags)
+    ? parsed.hashtags.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean).slice(0, 6)
+    : [];
+  if (!novasHashtags.length && Array.isArray(hashtags)) {
+    novasHashtags = hashtags.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean).slice(0, 6);
+  }
+
+  return {
+    titulo: novoTitulo || String(titulo || '').trim(),
+    materia: novaMateria.slice(0, 4000),
+    hashtags: novasHashtags,
+  };
+}
+
+/**
  * Gera consultas de busca de imagem alinhadas à matéria (prioriza pessoa/fato específico).
  */
 async function sugerirConsultasImagem({ titulo, materia, fonteTitulo }) {
@@ -983,6 +1082,7 @@ module.exports = {
   sugerirCortes,
   resumirAlertaBiblioteca,
   sugerirTituloMateria,
+  reescreverMateriaComInfo,
   sugerirConsultasImagem,
   TITULO_TOMES,
   assertDeepseek,

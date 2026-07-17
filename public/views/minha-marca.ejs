@@ -123,7 +123,9 @@
                 <span class="block overflow-hidden rounded-xl border-2 border-slate-600 bg-slate-950 transition peer-checked:border-emerald-400 peer-checked:ring-2 peer-checked:ring-emerald-400/25 hover:border-slate-400">
                   <span class="relative flex aspect-[4/5] flex-col overflow-hidden bg-gradient-to-br from-slate-600 via-slate-900 to-black p-2">
                     <span class="pointer-events-none absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black via-black/50 to-transparent"></span>
-                    <span class="relative z-10 mx-auto mt-0.5 rounded bg-white/90 px-2 py-0.5 text-[8px] font-bold leading-none text-slate-900">MARCA</span>
+                    <% if (model.id !== 'estilo_fatos') { %>
+                      <span class="relative z-10 mx-auto mt-0.5 rounded bg-white/90 px-2 py-0.5 text-[8px] font-bold leading-none text-slate-900">MARCA</span>
+                    <% } %>
                     <span class="relative z-10 mt-auto space-y-1">
                       <% if (model.id === 'faixa_classica') { %>
                         <span class="block text-center text-[8px] font-bold tracking-wide text-white">ÚLTIMAS</span>
@@ -172,6 +174,9 @@
                         <span class="-ml-2 inline-block bg-gradient-to-r from-yellow-400 to-orange-400 py-1 pl-2 pr-3 text-[8px] font-black text-slate-950" style="clip-path: polygon(0 0, 100% 0, 88% 100%, 0 100%)">ÚLTIMAS</span>
                         <span class="block h-1 w-8 rounded bg-yellow-400"></span>
                         <span class="block pb-1 text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
+                      <% } else if (model.id === 'estilo_fatos') { %>
+                        <span class="mx-auto mb-1 block h-3 w-10 rounded bg-white/90"></span>
+                        <span class="block pb-1 text-center text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA EM<br />DESTAQUE</span>
                       <% } else { %>
                         <span class="block text-center text-[8px] font-bold tracking-wide text-white">ÚLTIMAS</span>
                         <span class="mx-auto block h-1 w-full rounded bg-gradient-to-r from-yellow-400 to-orange-400"></span>
@@ -205,7 +210,7 @@
             class="<%= profile.logo_path ? '' : 'hidden' %> max-h-full max-w-full object-contain" />
           <p id="logo-empty" class="<%= profile.logo_path ? 'hidden' : '' %> text-center text-sm text-slate-500">Nenhuma logomarca configurada.</p>
         </div>
-        <p class="mt-4 text-xs leading-relaxed text-slate-500">A arte final usa o formato do feed do Facebook (1080×1350 · 4:5), que preenche a largura sem faixas laterais. Vídeos/Reels continuam em 9:16.</p>
+        <p class="mt-4 text-xs leading-relaxed text-slate-500">A arte final usa o formato do feed do Facebook (1080×1350 · 4:5), com a foto preenchendo o quadro inteiro (sem faixas laterais). Vídeos/Reels continuam em 9:16.</p>
       </aside>
     </form>
   </main>

@@ -798,6 +798,125 @@ async function aplicarImagemUrl(req, res, next) {
   }
 }
 
+/**
+ * Reescreve a matéria incorporando informações avulsas digitadas pelo usuário.
+ */
+async function reescreverComInfo(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({
+        error: 'Matéria já publicada. Gere uma nova se precisar reescrever o texto.',
+      });
+    }
+
+    const infoExtra = String(req.body?.infoExtra || req.body?.info || req.body?.texto || '').trim();
+    if (!infoExtra) {
+      return res.status(400).json({ error: 'Cole as informações extras no campo antes de reescrever.' });
+    }
+
+    const deepseekService = require('../services/deepseekService');
+    deepseekService.assertDeepseek();
+
+    let hashtags = [];
+    try {
+      hashtags = Array.isArray(matter.hashtags)
+        ? matter.hashtags
+        : JSON.parse(matter.hashtags || '[]');
+    } catch {
+      hashtags = [];
+    }
+
+    const materiaAtual = String(req.body?.materia || matter.materia || '').trim();
+    const tituloAtual = String(req.body?.titulo || matter.titulo || '').trim();
+
+    const reescrito = await deepseekService.reescreverMateriaComInfo({
+      titulo: tituloAtual,
+      materia: materiaAtual,
+      infoExtra,
+      hashtags,
+      fonteTitulo: matter.fonte_titulo,
+    });
+
+    const patch = {
+      titulo: reescrito.titulo,
+      materia: reescrito.materia,
+      hashtags: JSON.stringify(reescrito.hashtags || []),
+      error_message: null,
+    };
+    if (matter.status !== 'agendado') patch.status = 'rascunho';
+    await AiMatters.update(matterId, patch);
+
+    let updated = await AiMatters.findById(matterId);
+    let imagemUrl = updated.imagem_url || null;
+    let videoUrl = null;
+    let aviso = 'Texto reescrito com as informações incluídas ✓';
+
+    // Atualiza arte/capa se o título mudou
+    const titleChanged =
+      String(reescrito.titulo || '').trim() !== String(matter.titulo || '').trim();
+
+    if (titleChanged && updated.tipo_publicacao === 'reel' && updated.video_clip_id) {
+      try {
+        const { applyCoverToClipNow } = require('../services/clipPostProcessService');
+        await applyCoverToClipNow({
+          clipId: updated.video_clip_id,
+          userId: req.session.userId,
+          titulo: reescrito.titulo,
+          force: true,
+        });
+        updated = await AiMatters.findById(matterId);
+        if (updated.video_path) {
+          videoUrl = `/media/${String(updated.video_path).replace(/\\/g, '/')}`;
+        }
+        aviso = 'Texto reescrito e capa do Reel atualizada ✓';
+      } catch (err) {
+        aviso = `Texto reescrito, mas a capa do Reel não foi regenerada: ${err.message}`;
+      }
+    } else if (titleChanged) {
+      const sourceUrl =
+        updated.imagem_fonte_url ||
+        (!updated.imagem_path && /^https?:\/\//i.test(String(updated.imagem_url || ''))
+          ? updated.imagem_url
+          : null);
+      if (sourceUrl) {
+        try {
+          const artwork = await composeMatterArtwork({
+            userId: req.session.userId,
+            matterId: updated.id,
+            sourceUrl,
+            title: reescrito.titulo,
+            force: true,
+          });
+          updated = artwork.matter;
+          imagemUrl = artwork.publicUrl;
+          aviso = 'Texto reescrito e arte atualizada ✓';
+        } catch (err) {
+          aviso = `Texto reescrito, mas a arte não foi regenerada: ${err.message}`;
+        }
+      }
+    }
+
+    return res.json({
+      ok: true,
+      titulo: reescrito.titulo,
+      materia: reescrito.materia,
+      hashtags: reescrito.hashtags,
+      matter: updated,
+      imagemUrl,
+      videoUrl,
+      aviso,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 module.exports = {
   pesquisar,
   emAlta,
@@ -811,6 +930,7 @@ module.exports = {
   removerMateria,
   atualizarMateria,
   sugerirTitulo,
+  reescreverComInfo,
   buscarImagemFonte,
   sugerirImagens,
   aplicarImagemUrl,

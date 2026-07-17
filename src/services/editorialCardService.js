@@ -125,6 +125,14 @@ function renderTitleLines(lines, { x, y, lineHeight, anchor = 'middle' }) {
   )).join('');
 }
 
+/** Posição vertical do título no modelo Estilo Fatos (base 1350). */
+function fatosTitleTopBase(lineCount) {
+  if (lineCount <= 2) return 1085;
+  if (lineCount === 3) return 1045;
+  if (lineCount === 4) return 1005;
+  return 965;
+}
+
 function buildOverlay({
   title,
   category,
@@ -164,20 +172,25 @@ function buildOverlay({
   const y = (n) => Math.round(n * sy);
   const ww = (n) => Math.round(n * sx);
   const hh = (n) => Math.round(n * sy);
-  const baseMaxChars = modelId === 'faixa_classica' || modelId === 'impacto_central' ? 27
+  const baseMaxChars = modelId === 'estilo_fatos' ? 30
+    : modelId === 'faixa_classica' || modelId === 'impacto_central' ? 27
     : modelId === 'minimalista' || modelId === 'faixa_topo' ? 25
     : 24;
   const maxChars = Math.max(16, baseMaxChars + (sizeMeta?.maxCharsBonus || 0));
   const lines = wrapTitle(title, maxChars, 5);
   // tamanho escolhido em Minha marca (30–50, padrão 43), escalado ao canvas
   const fontSize = Math.round((sizeMeta?.px || 43) * Math.min(sx, sy));
-  const lineHeight = Math.round(fontSize * 1.08);
+  const lineHeight = Math.round(fontSize * (modelId === 'estilo_fatos' ? 1.12 : 1.08));
   const safeCategory = escapeXml(category || 'ÚLTIMAS');
   const safeFooter = escapeXml(footer || brandName || '');
 
   let layout;
 
-  if (modelId === 'bloco_inferior') {
+  if (modelId === 'estilo_fatos') {
+    const titleTop = y(fatosTitleTopBase(lines.length));
+    layout = `
+      ${renderTitleLines(lines, { x: x(540), y: titleTop, lineHeight })}`;
+  } else if (modelId === 'bloco_inferior') {
     layout = `
       <rect x="0" y="${y(748)}" width="${W}" height="${hh(602)}" fill="rgba(0,0,0,.74)"/>
       <rect x="0" y="${y(748)}" width="${W}" height="${hh(16)}" fill="url(#accent)"/>
@@ -243,18 +256,38 @@ function buildOverlay({
       <text x="${x(540)}" y="${y(1310)}" text-anchor="middle" class="footer">${safeFooter}</text>`;
   }
 
-  const fallbackBrand = hasLogo || !String(brandName || '').trim() ? '' : `
-    <rect x="${x(240)}" y="${y(52)}" width="${ww(600)}" height="${hh(118)}" rx="${ww(28)}" fill="rgba(255,255,255,.88)"/>
-    <text x="${x(540)}" y="${y(128)}" text-anchor="middle" class="brand">${escapeXml(brandName)}</text>`;
+  const brandLabel = String(brandName || '').trim();
+  let fallbackBrand = '';
+  if (!hasLogo && brandLabel) {
+    if (modelId === 'estilo_fatos') {
+      const brandY = y(fatosTitleTopBase(lines.length) - 95);
+      fallbackBrand = `
+        <text x="${x(540)}" y="${brandY}" text-anchor="middle" class="brand-fatos">${escapeXml(brandLabel)}</text>`;
+    } else {
+      fallbackBrand = `
+        <rect x="${x(240)}" y="${y(52)}" width="${ww(600)}" height="${hh(118)}" rx="${ww(28)}" fill="rgba(255,255,255,.88)"/>
+        <text x="${x(540)}" y="${y(128)}" text-anchor="middle" class="brand">${escapeXml(brandLabel)}</text>`;
+    }
+  }
+
+  const shadeStops = modelId === 'estilo_fatos'
+    ? `
+          <stop offset="0%" stop-color="#000" stop-opacity="0"/>
+          <stop offset="38%" stop-color="#000" stop-opacity="0"/>
+          <stop offset="58%" stop-color="#000" stop-opacity=".45"/>
+          <stop offset="78%" stop-color="#000" stop-opacity=".92"/>
+          <stop offset="100%" stop-color="#000" stop-opacity="1"/>`
+    : `
+          <stop offset="0%" stop-color="#000" stop-opacity="0"/>
+          <stop offset="42%" stop-color="#000" stop-opacity=".08"/>
+          <stop offset="68%" stop-color="#000" stop-opacity=".68"/>
+          <stop offset="100%" stop-color="#000" stop-opacity=".96"/>`;
 
   return Buffer.from(`
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#000" stop-opacity="0"/>
-          <stop offset="42%" stop-color="#000" stop-opacity=".08"/>
-          <stop offset="68%" stop-color="#000" stop-opacity=".68"/>
-          <stop offset="100%" stop-color="#000" stop-opacity=".96"/>
+          ${shadeStops}
         </linearGradient>
         <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stop-color="${primary}"/>
@@ -264,6 +297,7 @@ function buildOverlay({
         <style>
           ${fontFace.faceCss}
           .brand { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(50 * Math.min(sx, sy))}px; fill: #111827; }
+          .brand-fatos { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(36 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #fff; filter: url(#shadow); }
           .category { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(42 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #fff; filter: url(#shadow); }
           .category-dark { fill: #111827; filter: none; }
           .title { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${fontSize}px; fill: ${titleFill}; filter: url(#shadow); }
@@ -301,7 +335,13 @@ async function composeBrandOverlayOnImage({
   const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
   const brandName = String(user.marca_nome || '').trim();
-  const logo = await buildLogoComposite(user.logo_path, w);
+  const maxChars = modelId === 'estilo_fatos' ? 30 : 27;
+  const titleLines = wrapTitle(title, maxChars, 5);
+  const logo = await buildLogoComposite(user.logo_path, w, {
+    model: modelId,
+    canvasHeight: h,
+    titleLineCount: titleLines.length,
+  });
   const overlay = buildOverlay({
     title,
     category: user.marca_categoria || 'ÚLTIMAS',
@@ -330,22 +370,35 @@ async function composeBrandOverlayOnImage({
   return { outputPath, modelId, width: w, height: h };
 }
 
-async function buildLogoComposite(logoPath, canvasWidth = WIDTH) {
+async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
   if (!logoPath) return null;
   const absolute = path.resolve(env.storagePath, logoPath);
   const storageRoot = path.resolve(env.storagePath);
   if (!absolute.startsWith(storageRoot + path.sep) || !fs.existsSync(absolute)) return null;
+  const { normalizeArtModel } = require('./editorialCardModels');
+  const modelId = normalizeArtModel(options.model);
   const cw = Math.max(320, Math.round(Number(canvasWidth) || WIDTH));
-  const maxW = Math.round(cw * (560 / 1080));
-  const maxH = Math.round(cw * (125 / 1080));
+  const ch = Math.max(320, Math.round(Number(options.canvasHeight) || HEIGHT));
+  const isFatos = modelId === 'estilo_fatos';
+  const maxW = Math.round(cw * ((isFatos ? 480 : 560) / 1080));
+  const maxH = Math.round(cw * ((isFatos ? 110 : 125) / 1080));
   const input = await sharp(absolute)
     .resize(maxW, maxH, { fit: 'inside', withoutEnlargement: true })
     .png()
     .toBuffer({ resolveWithObject: true });
+
+  let top = Math.round(cw * (48 / 1080));
+  if (isFatos) {
+    const sy = ch / 1350;
+    const titleTop = Math.round(fatosTitleTopBase(options.titleLineCount || 3) * sy);
+    const gap = Math.round(28 * sy);
+    top = Math.max(Math.round(720 * sy), titleTop - input.info.height - gap);
+  }
+
   return {
     input: input.data,
     left: Math.max(20, Math.round((cw - input.info.width) / 2)),
-    top: Math.round(cw * (48 / 1080)),
+    top,
   };
 }
 
@@ -357,10 +410,16 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const { normalizeArtModel } = require('./editorialCardModels');
   const modelId = normalizeArtModel(user.marca_modelo_arte);
   const source = await fetchImage(sourceUrl);
-  const logo = await buildLogoComposite(user.logo_path);
   const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
   const brandName = String(user.marca_nome || '').trim();
+  const maxChars = modelId === 'estilo_fatos' ? 30 : 27;
+  const titleLines = wrapTitle(title, maxChars, 5);
+  const logo = await buildLogoComposite(user.logo_path, WIDTH, {
+    model: modelId,
+    canvasHeight: HEIGHT,
+    titleLineCount: titleLines.length,
+  });
   const overlay = buildOverlay({
     title,
     category: user.marca_categoria || 'ÚLTIMAS',
@@ -384,39 +443,26 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const composites = [{ input: overlay, left: 0, top: 0 }];
   if (logo) composites.push(logo);
 
-  // Base 4:5: fundo desfocado em cover + foto inteira em contain (sem cortar o assunto).
+  // Full-bleed 4:5 (1080×1350): a foto preenche o post inteiro (estilo Fatos Desconhecidos).
+  // Sem faixas borradas / letterbox — Facebook mostra a arte de ponta a ponta.
   let sourcePrepared = source;
   try {
     sourcePrepared = await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
       .rotate()
-      .trim({ threshold: 35 })
       .toBuffer();
   } catch {
-    sourcePrepared = await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
-      .rotate()
-      .toBuffer();
+    sourcePrepared = source;
   }
 
-  const background = await sharp(sourcePrepared)
-    .resize(WIDTH, HEIGHT, { fit: 'cover', position: 'centre' })
-    .blur(42)
-    .modulate({ brightness: 0.78 })
-    .toBuffer();
-
-  const foreground = await sharp(sourcePrepared)
-    .resize(WIDTH, HEIGHT, { fit: 'inside' })
-    .toBuffer({ resolveWithObject: true });
-
-  await sharp(background)
-    .composite([
-      {
-        input: foreground.data,
-        left: Math.max(0, Math.round((WIDTH - foreground.info.width) / 2)),
-        top: Math.max(0, Math.round((HEIGHT - foreground.info.height) / 2)),
-      },
-      ...composites,
-    ])
-    .jpeg({ quality: 92, chromaSubsampling: '4:4:4', mozjpeg: true })
+  await sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+    .resize(WIDTH, HEIGHT, {
+      fit: 'cover',
+      position: 'centre',
+      withoutEnlargement: false,
+      kernel: sharp.kernel.lanczos3,
+    })
+    .composite(composites)
+    .jpeg({ quality: 95, chromaSubsampling: '4:4:4', mozjpeg: true })
     .toFile(outputPath);
 
   // Garante metadados exatos (alguns viewers usam isso)
@@ -424,7 +470,7 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   if (meta.width !== WIDTH || meta.height !== HEIGHT) {
     await sharp(outputPath)
       .resize(WIDTH, HEIGHT, { fit: 'fill' })
-      .jpeg({ quality: 92, chromaSubsampling: '4:4:4', mozjpeg: true })
+      .jpeg({ quality: 95, chromaSubsampling: '4:4:4', mozjpeg: true })
       .toFile(outputPath);
   }
 

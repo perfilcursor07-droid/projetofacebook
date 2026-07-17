@@ -17,6 +17,7 @@ router.delete('/matters/:id', controller.removerMateria);
 router.post('/matters/:id/publicar', controller.publicar);
 router.post('/matters/:id/agendar', controller.agendar);
 router.post('/matters/:id/sugerir-titulo', controller.sugerirTitulo);
+router.post('/matters/:id/reescrever-com-info', controller.reescreverComInfo);
 router.post('/matters/:id/buscar-imagem-fonte', controller.buscarImagemFonte);
 router.post('/matters/:id/sugerir-imagens', controller.sugerirImagens);
 router.post('/matters/:id/aplicar-imagem-url', controller.aplicarImagemUrl);

@@ -41,6 +41,11 @@ const ART_MODELS = Object.freeze([
     name: 'Canto sólido',
     description: 'Selo angular no canto e hierarquia editorial à esquerda.',
   }),
+  Object.freeze({
+    id: 'estilo_fatos',
+    name: 'Estilo Fatos',
+    description: 'Foto full-bleed, logo da marca acima do título e tipografia grande no rodapé escuro.',
+  }),
 ]);
 
 const ART_MODEL_IDS = new Set(ART_MODELS.map((model) => model.id));

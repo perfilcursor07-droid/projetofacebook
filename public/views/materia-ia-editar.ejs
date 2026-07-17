@@ -93,10 +93,31 @@
           <p class="mt-1.5 text-[11px] leading-snug text-slate-500">Separe parágrafos com linha em branco. Ideal: ~400–650 caracteres (melhor alcance no feed; “Ver mais” aparece perto de 480).</p>
         </label>
 
+        <% if (canEdit) { %>
+          <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <label class="block text-sm">
+              <span class="text-slate-400">Informações extras (opcional)</span>
+              <textarea id="matter-info-extra" rows="4"
+                placeholder="Cole fatos, nomes, números ou contexto que faltam no texto…"
+                class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"></textarea>
+            </label>
+            <button type="button" id="btn-reescrever-info"
+              class="mt-2.5 rounded-lg border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/25">
+              Reescrever texto com informações incluídas
+            </button>
+            <p class="mt-1.5 text-[11px] leading-snug text-slate-500">A IA reforça a matéria com o que você colou, sem inventar fora disso.</p>
+          </div>
+        <% } %>
+
         <% if (hashtags && hashtags.length) { %>
           <div class="mt-4">
             <p class="text-xs uppercase tracking-wide text-slate-500">Hashtags sugeridas</p>
-            <p class="mt-1.5 text-sm text-slate-400"><%= hashtags.map((h) => '#' + String(h).replace(/^#/, '')).join(' ') %></p>
+            <p id="matter-hashtags-line" class="mt-1.5 text-sm text-slate-400"><%= hashtags.map((h) => '#' + String(h).replace(/^#/, '')).join(' ') %></p>
+          </div>
+        <% } else { %>
+          <div class="mt-4 hidden" id="matter-hashtags-wrap">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Hashtags sugeridas</p>
+            <p id="matter-hashtags-line" class="mt-1.5 text-sm text-slate-400"></p>
           </div>
         <% } %>
 
