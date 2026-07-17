@@ -110,19 +110,20 @@
     <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
       <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">Reescrever a partir do link</p>
       <p class="mt-2 text-sm text-slate-400">
-        Cole o link de uma <strong class="font-medium text-slate-300">notícia</strong>,
-        <strong class="font-medium text-slate-300">post (foto)</strong> ou
-        <strong class="font-medium text-slate-300">Reel/vídeo</strong> do Facebook ou Instagram.
+        Cole o link de uma <strong class="font-medium text-slate-300">foto do Facebook</strong>,
+        <strong class="font-medium text-slate-300">notícia</strong> ou
+        <strong class="font-medium text-slate-300">Reel</strong>.
       </p>
       <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-500">
-        <li>Notícia ou post de foto → matéria com imagem (revisão em /materias-ia).</li>
-        <li>Reel ou vídeo → baixa, transcreve, gera legenda, coloca a capa no início e abre em /materias-ia para revisar e publicar como Reels (sem cortes).</li>
+        <li><strong class="font-medium text-slate-400">Post de foto FB/IG</strong> → extrai a legenda e a imagem, a IA reescreve a matéria; na edição você pode manter a foto do post ou escolher outra sugerida.</li>
+        <li>Notícia → matéria com imagem da fonte (ou sugestões).</li>
+        <li>Reel/vídeo → baixa, transcreve, legenda + capa e abre em /materias-ia.</li>
       </ul>
 
       <label class="mt-4 block text-sm">
-        <span class="text-slate-400">Link (notícia, Facebook ou Instagram)</span>
+        <span class="text-slate-400">Link (foto do Facebook, notícia ou Reel)</span>
         <input id="mia-link-url" type="url" inputmode="url"
-          placeholder="https://www.facebook.com/reel/… ou https://www.instagram.com/reel/… ou notícia"
+          placeholder="https://www.facebook.com/photo/?fbid=… ou /posts/… ou Reel"
           class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none" />
       </label>
 

@@ -29,7 +29,12 @@ function isSocialPostUrl(url) {
       /\/reel\//i.test(u) ||
       /\/videos\//i.test(u) ||
       /\/share\//i.test(u) ||
-      /\/photo/i.test(u) ||
+      /\/photo\.php/i.test(u) ||
+      /\/photo\/?\?/i.test(u) ||
+      /\/photo\//i.test(u) ||
+      /\/photos\//i.test(u) ||
+      /[?&]fbid=/i.test(u) ||
+      /pfbid/i.test(u) ||
       /fb\.watch/i.test(u)
     );
   }
@@ -97,19 +102,24 @@ function absolutizar(base, maybe) {
   }
 }
 
-async function extrairViaOg(url) {
+async function fetchHtml(url, userAgent) {
   const res = await axios.get(url, {
     timeout: 20000,
     maxRedirects: 5,
     validateStatus: (s) => s >= 200 && s < 400,
     headers: {
-      'User-Agent': CRAWLER_UA,
+      'User-Agent': userAgent,
       Accept: 'text/html,application/xhtml+xml',
       'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
     },
   });
-  const html = String(res.data || '');
-  const finalUrl = res.request?.res?.responseUrl || url;
+  return {
+    html: String(res.data || ''),
+    finalUrl: res.request?.res?.responseUrl || url,
+  };
+}
+
+function parseOgFromHtml(html, finalUrl) {
   const titulo = pickMeta(html, 'og:title') || pickMeta(html, 'twitter:title');
   const resumo = pickMeta(html, 'og:description') || pickMeta(html, 'twitter:description');
   const imagem =
@@ -120,7 +130,8 @@ async function extrairViaOg(url) {
   let veiculo = null;
   try {
     const host = new URL(finalUrl).hostname.replace(/^www\./, '');
-    veiculo = titulo && !/facebook|instagram/i.test(titulo) ? titulo : host;
+    // og:title em foto FB costuma ser "Nome da Página" — útil como veículo
+    veiculo = titulo && !/^(facebook|instagram)$/i.test(titulo) ? titulo : host;
   } catch {
     veiculo = null;
   }
@@ -133,6 +144,26 @@ async function extrairViaOg(url) {
     veiculo,
     metodo: 'og',
   };
+}
+
+async function extrairViaOg(url) {
+  // Crawler UA primeiro (melhor OG); se falhar imagem/texto, tenta browser UA
+  let best = { url, titulo: null, texto: null, imagem: null, veiculo: null, metodo: 'og' };
+  for (const ua of [CRAWLER_UA, BROWSER_UA]) {
+    try {
+      const { html, finalUrl } = await fetchHtml(url, ua);
+      const parsed = parseOgFromHtml(html, finalUrl);
+      if ((!best.texto || best.texto.length < 40) && parsed.texto) best.texto = parsed.texto;
+      if (!best.imagem && parsed.imagem) best.imagem = parsed.imagem;
+      if (!best.titulo && parsed.titulo) best.titulo = parsed.titulo;
+      if (!best.veiculo && parsed.veiculo) best.veiculo = parsed.veiculo;
+      best.url = parsed.url || best.url;
+      if (best.texto && best.imagem) break;
+    } catch (err) {
+      console.warn('[socialPost] og ua:', err.message);
+    }
+  }
+  return best;
 }
 
 /**
@@ -359,7 +390,8 @@ function socialParaTopico(extraido, linkOriginal) {
       extraido.veiculo ? `Página/perfil: ${extraido.veiculo}` : null,
       `Plataforma: ${extraido.plataforma}`,
       `URL: ${extraido.url || linkOriginal}`,
-      trecho ? `Texto original do post:\n${trecho.slice(0, 3500)}` : null,
+      extraido.imagem ? `Imagem do post: ${extraido.imagem}` : null,
+      trecho ? `Texto original do post (legenda):\n${trecho.slice(0, 3500)}` : null,
     ]
       .filter(Boolean)
       .join('\n\n'),

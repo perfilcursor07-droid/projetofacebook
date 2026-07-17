@@ -281,6 +281,17 @@
       /fb\.watch/i.test(url) ||
       /instagram\.com\/(reel|reels|tv)\//i.test(url);
 
+    const looksPhotoPost =
+      !looksReel &&
+      (/facebook\.com|fb\.com|instagram\.com/i.test(url) &&
+        (/\/photo/i.test(url) ||
+          /\/photos\//i.test(url) ||
+          /[?&]fbid=/i.test(url) ||
+          /pfbid/i.test(url) ||
+          /\/posts\//i.test(url) ||
+          /\/permalink/i.test(url) ||
+          /instagram\.com\/p\//i.test(url)));
+
     let tipo = tipoEl?.value || 'foto';
     if (tipo === 'auto') tipo = looksReel ? 'reel' : 'foto';
 
@@ -290,11 +301,15 @@
       true,
       isReel
         ? 'Baixando o Reel, transcrevendo a fala, gerando a legenda e aplicando a capa no início…'
-        : 'Lendo o link (texto + imagem), montando o furo e reescrevendo. Em seguida você revisa a matéria.'
+        : looksPhotoPost
+          ? 'Extraindo texto e imagem do post, reescrevendo com IA… Depois você pode trocar a foto por outra sugerida.'
+          : 'Lendo o link (texto + imagem), montando o furo e reescrevendo. Em seguida você revisa a matéria.'
     );
     st.textContent = isReel
       ? 'Enfileirando Reel (download → fala → matéria → capa)…'
-      : 'Extraindo conteúdo do link e gerando matéria…';
+      : looksPhotoPost
+        ? 'Lendo post (legenda + foto) e gerando matéria…'
+        : 'Extraindo conteúdo do link e gerando matéria…';
 
     try {
       const res = await fetch('/api/materias-ia/reescrever-link', {

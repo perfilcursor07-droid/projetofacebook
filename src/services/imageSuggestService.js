@@ -212,8 +212,8 @@ async function sugerirImagensParaMateria({
       id: 'atual',
       url: imagemAtual,
       thumbnail: imagemAtual,
-      titulo: 'Imagem atual / fonte',
-      fonte: 'Fonte',
+      titulo: 'Foto do post / fonte',
+      fonte: 'Post',
       origem: 'fonte',
       consulta: null,
     });

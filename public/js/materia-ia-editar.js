@@ -503,14 +503,14 @@
         const isAtual = img.origem === 'fonte';
         const label =
           isAtual
-            ? 'Atual'
+            ? 'Post'
             : img.origem === 'serpapi'
               ? 'Google'
               : img.origem === 'brave'
-              ? 'Brave'
-              : img.origem === 'google'
-                ? 'Serper'
-                : img.origem || '';
+                ? 'Brave'
+                : img.origem === 'google'
+                  ? 'Serper'
+                  : img.origem || '';
         const border = isAtual ? 'border-emerald-400' : 'border-slate-700 hover:border-violet-400';
         return `<button type="button" data-suggest-idx="${i}" title="${String(img.titulo || '').replace(/"/g, '&quot;')}"
           class="relative shrink-0 overflow-hidden rounded-md border bg-slate-950 focus:outline-none focus:ring-1 focus:ring-violet-400 ${border}"

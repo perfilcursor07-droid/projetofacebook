@@ -339,6 +339,29 @@ async function buscarFontesPorTitulo(titulo) {
 async function apurarTopico(topico) {
   const base = { ...topico };
   const linkOriginal = base.link || null;
+  const jaSocial =
+    Boolean(base.redeSocial || base.tipoFonte === 'rede_social') &&
+    String(base.contextoApuracao || '').length > 80;
+
+  // Post FB/IG já extraído (texto + imagem) — não re-raspar a página (403/login)
+  // nem sobrescrever o contexto original.
+  if (jaSocial) {
+    return {
+      ...base,
+      linkOriginal,
+      link: base.link || linkOriginal,
+      titulo: base.titulo || null,
+      resumo: base.resumo || null,
+      imagemFonte: base.imagemFonte || null,
+      contextoApuracao: base.contextoApuracao,
+      fontesApuracao: Array.isArray(base.fontesApuracao) ? base.fontesApuracao : [],
+      dataReferencia: base.data || null,
+      veiculo: base.veiculo || base.fonte || null,
+      redeSocial: true,
+      tipoFonte: 'rede_social',
+    };
+  }
+
   let meta = null;
 
   if (linkOriginal?.includes('news.google.com')) {
@@ -375,13 +398,22 @@ async function apurarTopico(topico) {
     });
   }
 
-  const contextoPartes = [
+  const contextoNovo = [
     `Assunto: ${base.titulo || ''}`,
     base.resumo ? `Resumo inicial: ${base.resumo}` : null,
     meta?.trecho ? `Trechos documentados da fonte:\n${meta.trecho.slice(0, 3500)}` : null,
     meta?.veiculo ? `Veículo: ${meta.veiculo}` : null,
     meta?.url ? `URL: ${meta.url}` : null,
-  ].filter(Boolean);
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const contextoBase = String(base.contextoApuracao || '');
+  const fontesFinais = fontesApuracao.length
+    ? fontesApuracao
+    : Array.isArray(base.fontesApuracao)
+      ? base.fontesApuracao
+      : [];
 
   return {
     ...base,
@@ -390,8 +422,8 @@ async function apurarTopico(topico) {
     linkOriginal,
     link: meta?.url || linkOriginal,
     imagemFonte: meta?.imagem || base.imagemFonte || null,
-    contextoApuracao: contextoPartes.join('\n\n'),
-    fontesApuracao,
+    contextoApuracao: contextoBase.length > contextoNovo.length ? contextoBase : contextoNovo,
+    fontesApuracao: fontesFinais,
     dataReferencia: base.data || null,
     veiculo: meta?.veiculo || base.veiculo || base.fonte || null,
   };
