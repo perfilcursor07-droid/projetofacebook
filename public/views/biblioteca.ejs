@@ -6,7 +6,7 @@
       <div>
         <h1 class="text-2xl font-semibold text-white">Biblioteca de fontes</h1>
         <p class="mt-2 max-w-2xl text-slate-400">
-          Salve perfis do YouTube, Facebook e Instagram. A IA monitora novidades, notifica com resumo e gera post em texto ou vídeo.
+          Salve perfis do YouTube, Facebook, Instagram ou o link de um site de notícias. A IA busca as últimas publicações, notifica e gera matéria em texto ou vídeo.
         </p>
       </div>
       <div class="flex items-center gap-3">
@@ -24,8 +24,10 @@
       <form id="bib-form" class="mt-4 grid gap-3 md:grid-cols-2">
         <label class="block md:col-span-2">
           <span class="text-xs text-slate-500">URL do perfil / canal</span>
-          <input id="bib-url" name="url" required placeholder="https://www.youtube.com/@canal ou instagram.com/perfil"
+          <input id="bib-url" name="url" required
+            placeholder="instagram.com/perfil · youtube.com/@canal · facebook.com/pagina · https://g1.globo.com"
             class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+          <p class="mt-1 text-[11px] text-slate-500">Instagram/Facebook/YouTube: últimos posts. Site de notícias: até 10 matérias recentes (RSS + busca).</p>
         </label>
         <label class="block">
           <span class="text-xs text-slate-500">Nome (opcional)</span>

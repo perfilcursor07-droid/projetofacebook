@@ -136,9 +136,26 @@ function buildOverlay({
   model,
   width = WIDTH,
   height = HEIGHT,
+  fontId,
+  titleColorId,
+  titleSizeId,
 }) {
   const { normalizeArtModel } = require('./editorialCardModels');
+  const {
+    normalizeBrandFont,
+    normalizeTitleColor,
+    getTitleSize,
+    resolveTitleFill,
+    buildSvgFontFace,
+  } = require('./brandFonts');
+
   const modelId = normalizeArtModel(model);
+  const brandFontId = normalizeBrandFont(fontId);
+  const sizeMeta = getTitleSize(titleSizeId);
+  const titleFill = resolveTitleFill(normalizeTitleColor(titleColorId), primary, secondary);
+  const fontFace = buildSvgFontFace(brandFontId);
+  const titleFontFamily = fontFace.cssFamily;
+
   const W = Math.max(320, Math.round(Number(width) || WIDTH));
   const H = Math.max(320, Math.round(Number(height) || HEIGHT));
   const sx = W / 1080;
@@ -147,11 +164,13 @@ function buildOverlay({
   const y = (n) => Math.round(n * sy);
   const ww = (n) => Math.round(n * sx);
   const hh = (n) => Math.round(n * sy);
-  const maxChars = modelId === 'faixa_classica' || modelId === 'impacto_central' ? 27
+  const baseMaxChars = modelId === 'faixa_classica' || modelId === 'impacto_central' ? 27
     : modelId === 'minimalista' || modelId === 'faixa_topo' ? 25
     : 24;
+  const maxChars = Math.max(16, baseMaxChars + (sizeMeta?.maxCharsBonus || 0));
   const lines = wrapTitle(title, maxChars, 5);
-  const fontSize = Math.round((lines.length <= 3 ? 62 : lines.length === 4 ? 54 : 48) * Math.min(sx, sy));
+  // tamanho escolhido em Minha marca (30–50, padrão 43), escalado ao canvas
+  const fontSize = Math.round((sizeMeta?.px || 43) * Math.min(sx, sy));
   const lineHeight = Math.round(fontSize * 1.08);
   const safeCategory = escapeXml(category || 'ÚLTIMAS');
   const safeFooter = escapeXml(footer || brandName || '');
@@ -243,10 +262,11 @@ function buildOverlay({
         </linearGradient>
         <filter id="shadow"><feDropShadow dx="0" dy="${Math.max(2, Math.round(3 * sy))}" stdDeviation="${Math.max(3, Math.round(4 * sy))}" flood-opacity=".75"/></filter>
         <style>
+          ${fontFace.faceCss}
           .brand { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(50 * Math.min(sx, sy))}px; fill: #111827; }
           .category { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(42 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #fff; filter: url(#shadow); }
           .category-dark { fill: #111827; filter: none; }
-          .title { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${fontSize}px; fill: #fff; filter: url(#shadow); }
+          .title { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${fontSize}px; fill: ${titleFill}; filter: url(#shadow); }
           .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(1 * sx))}px; fill: ${primary}; filter: url(#shadow); }
         </style>
       </defs>
@@ -293,6 +313,9 @@ async function composeBrandOverlayOnImage({
     model: modelId,
     width: w,
     height: h,
+    fontId: user.marca_fonte,
+    titleColorId: user.marca_titulo_cor,
+    titleSizeId: user.marca_titulo_tamanho,
   });
 
   const composites = [{ input: overlay, left: 0, top: 0 }];
@@ -347,6 +370,9 @@ async function createEditorialCard({ sourceUrl, title, user }) {
     secondary,
     hasLogo: Boolean(logo),
     model: modelId,
+    fontId: user.marca_fonte,
+    titleColorId: user.marca_titulo_cor,
+    titleSizeId: user.marca_titulo_tamanho,
   });
 
   const relativeDir = `artes/user_${user.id}`;

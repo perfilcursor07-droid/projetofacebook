@@ -35,6 +35,8 @@ function detectarPlataforma(url) {
     if (host.includes('facebook.com') || host === 'fb.com' || host === 'fb.watch') return 'facebook';
     if (host.includes('instagram.com')) return 'instagram';
     if (host.includes('tiktok.com')) return 'tiktok';
+    // site de notícias / portal (não rede social)
+    if (host && !host.includes('google.') && !host.includes('bing.')) return 'site';
   } catch {
     /* ignore */
   }
@@ -86,37 +88,96 @@ function nextRun(intervaloMinutos) {
   return new Date(Date.now() + mins * 60_000);
 }
 
+const SCAN_LIMIT = 10;
+
+function dedupeItens(itens) {
+  const seen = new Set();
+  const out = [];
+  for (const item of itens) {
+    if (!item?.url) continue;
+    const key = String(item.externalId || item.url)
+      .split('?')[0]
+      .toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= SCAN_LIMIT) break;
+  }
+  return out;
+}
+
 /**
- * Lista itens recentes de um canal/perfil.
+ * Lista itens recentes de um canal/perfil/site.
  */
 async function coletarItensFonte(fonte) {
   const plataforma = fonte.plataforma;
   const url = fonte.url;
+  const erros = [];
 
   if (plataforma === 'youtube' || plataforma === 'tiktok') {
-    return coletarViaYtDlp(url, plataforma);
+    try {
+      return dedupeItens(await coletarViaYtDlp(url, plataforma));
+    } catch (err) {
+      console.warn('[biblioteca] yt-dlp:', err.message);
+      erros.push(err.message);
+    }
   }
 
-  if (plataforma === 'instagram' || plataforma === 'facebook') {
-    return coletarViaSerper(fonte);
+  if (plataforma === 'instagram') {
+    const collected = [];
+    try {
+      collected.push(...(await coletarViaYtDlp(url, 'instagram')));
+    } catch (err) {
+      console.warn('[biblioteca] ig yt-dlp:', err.message);
+      erros.push(`yt-dlp: ${err.message}`);
+    }
+    if (collected.length < SCAN_LIMIT) {
+      collected.push(...(await coletarViaSerper(fonte)));
+    }
+    if (collected.length < 3) {
+      collected.push(...(await coletarViaBraveWeb(fonte)));
+    }
+    if (collected.length < 3) {
+      try {
+        collected.push(...(await coletarInstagramHtml(fonte)));
+      } catch (err) {
+        console.warn('[biblioteca] ig html:', err.message);
+        erros.push(`html: ${err.message}`);
+      }
+    }
+    const itens = dedupeItens(collected);
+    if (!itens.length) {
+      const err = new Error(
+        erros.length
+          ? `Não foi possível listar posts do Instagram. ${erros[0]} Configure cookies do Instagram no yt-dlp ou SERPER_API_KEY.`
+          : 'Não foi possível listar posts do Instagram. O perfil pode ser privado ou o Serper está sem créditos.'
+      );
+      err.status = 422;
+      throw err;
+    }
+    return itens;
   }
 
-  // fallback genérico
-  try {
-    const meta = await importService.fetchLinkMetadata(url);
-    return [
-      {
-        externalId: url,
-        titulo: meta.titulo || fonte.nome,
-        url,
-        resumo: null,
-        thumbnail: meta.thumbnail || null,
-        publicadoEm: null,
-      },
-    ];
-  } catch {
-    return [];
+  if (plataforma === 'facebook') {
+    const collected = [];
+    collected.push(...(await coletarViaSerper(fonte)));
+    if (collected.length < 3) collected.push(...(await coletarViaBraveWeb(fonte)));
+    const itens = dedupeItens(collected);
+    if (!itens.length) {
+      const err = new Error(
+        'Não foi possível listar posts do Facebook. Confira SERPER_API_KEY / BRAVE_SEARCH_API_KEY no .env.'
+      );
+      err.status = 422;
+      throw err;
+    }
+    return itens;
   }
+
+  if (plataforma === 'site' || plataforma === 'outro') {
+    return coletarViaSite(fonte);
+  }
+
+  return [];
 }
 
 async function coletarViaYtDlp(profileUrl, plataforma) {
@@ -146,17 +207,22 @@ async function coletarViaYtDlp(profileUrl, plataforma) {
   const exec = binary ? youtubedlPkg.create(binary) : youtubedlPkg;
   const run = (u, flags) => runYtDlp(exec, u, flags);
 
-  let target = profileUrl;
-  if (plataforma === 'youtube' && !/\/(videos|streams|shorts)/i.test(profileUrl)) {
-    if (/youtube\.com\/@/i.test(profileUrl)) {
-      target = `${profileUrl.replace(/\/$/, '')}/videos`;
+  let target = String(profileUrl || '').replace(/\/$/, '');
+  if (plataforma === 'youtube' && !/\/(videos|streams|shorts)/i.test(target)) {
+    if (/youtube\.com\/@/i.test(target)) target = `${target}/videos`;
+  }
+  if (plataforma === 'instagram') {
+    // perfil → lista de posts
+    target = target.replace(/\/(reels|tagged|followers|following)\/?$/i, '');
+    if (!/instagram\.com\/[^/]+\/?$/i.test(target) && !/\/p\//i.test(target)) {
+      /* keep */
     }
   }
 
   const data = await run(target, {
     dumpSingleJson: true,
     flatPlaylist: true,
-    playlistEnd: 8,
+    playlistEnd: SCAN_LIMIT,
     noWarnings: true,
     skipDownload: true,
   });
@@ -165,14 +231,20 @@ async function coletarViaYtDlp(profileUrl, plataforma) {
   return entries
     .map((e) => {
       const id = e.id || e.url || null;
-      const link =
-        e.url ||
+      let link =
         e.webpage_url ||
+        e.url ||
         (plataforma === 'youtube' && id ? `https://www.youtube.com/watch?v=${id}` : null);
+      if (plataforma === 'instagram' && id && !/^https?:/i.test(String(link || ''))) {
+        link = `https://www.instagram.com/p/${id}/`;
+      }
+      if (plataforma === 'instagram' && link && /instagram\.com\/(p|reel)\//i.test(link) === false && id) {
+        link = `https://www.instagram.com/p/${id}/`;
+      }
       if (!link) return null;
       return {
         externalId: String(id || link),
-        titulo: e.title || 'Sem título',
+        titulo: e.title || e.description?.slice(0, 80) || 'Publicação',
         url: link,
         resumo: e.description ? String(e.description).slice(0, 400) : null,
         thumbnail: e.thumbnail || (Array.isArray(e.thumbnails) ? e.thumbnails.at(-1)?.url : null) || null,
@@ -190,40 +262,388 @@ async function coletarViaYtDlp(profileUrl, plataforma) {
 
 async function coletarViaSerper(fonte) {
   if (!env.serperApiKey) return [];
-  const handle = fonte.handle || extrairHandle(fonte.url, fonte.plataforma);
-  const site =
-    fonte.plataforma === 'instagram'
-      ? 'instagram.com'
-      : fonte.plataforma === 'facebook'
-        ? 'facebook.com'
-        : null;
-  if (!site) return [];
-
-  const q = handle
-    ? `site:${site}/${String(handle).replace(/^@/, '')}`
-    : `site:${site} ${fonte.nome}`;
+  const handle = String(fonte.handle || extrairHandle(fonte.url, fonte.plataforma) || '')
+    .replace(/^@/, '')
+    .trim();
+  let q;
+  if (fonte.plataforma === 'instagram' && handle) {
+    q = `site:instagram.com/${handle} (inurl:/p/ OR inurl:/reel/)`;
+  } else if (fonte.plataforma === 'facebook' && handle) {
+    q = `site:facebook.com/${handle}`;
+  } else if (fonte.plataforma === 'site') {
+    try {
+      const host = new URL(fonte.url).hostname.replace(/^www\./, '');
+      q = `site:${host}`;
+    } catch {
+      return [];
+    }
+  } else {
+    q = fonte.nome ? String(fonte.nome) : fonte.url;
+  }
 
   try {
     const { data } = await axios.post(
       'https://google.serper.dev/search',
-      { q, num: 8, gl: 'br', hl: 'pt-br' },
+      { q, num: SCAN_LIMIT, gl: 'br', hl: 'pt-br' },
       {
         headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
         timeout: 15_000,
       }
     );
-    return (data?.organic || []).map((r) => ({
-      externalId: r.link,
-      titulo: r.title || 'Publicação',
-      url: r.link,
-      resumo: r.snippet || null,
-      thumbnail: null,
-      publicadoEm: r.date ? new Date(r.date) : null,
-    }));
+    return (data?.organic || [])
+      .filter((r) => r.link)
+      .map((r) => ({
+        externalId: r.link,
+        titulo: r.title || 'Publicação',
+        url: r.link,
+        resumo: r.snippet || null,
+        thumbnail: null,
+        publicadoEm: r.date ? new Date(r.date) : null,
+      }));
   } catch (err) {
-    console.warn('[biblioteca] serper:', err.message);
+    const detail = err.response?.data?.message || err.message;
+    console.warn('[biblioteca] serper:', detail);
     return [];
   }
+}
+
+async function coletarViaBraveWeb(fonte) {
+  if (!env.braveSearchApiKey) return [];
+  const handle = String(fonte.handle || extrairHandle(fonte.url, fonte.plataforma) || '')
+    .replace(/^@/, '')
+    .trim();
+  let q;
+  if (fonte.plataforma === 'instagram' && handle) {
+    q = `site:instagram.com/${handle}`;
+  } else if (fonte.plataforma === 'facebook' && handle) {
+    q = `site:facebook.com/${handle}`;
+  } else if (fonte.plataforma === 'site') {
+    try {
+      q = `site:${new URL(fonte.url).hostname.replace(/^www\./, '')}`;
+    } catch {
+      return [];
+    }
+  } else {
+    return [];
+  }
+
+  try {
+    const { data } = await axios.get('https://api.search.brave.com/res/v1/web/search', {
+      params: { q, count: SCAN_LIMIT, country: 'BR', search_lang: 'pt' },
+      headers: {
+        Accept: 'application/json',
+        'X-Subscription-Token': env.braveSearchApiKey,
+      },
+      timeout: 15_000,
+    });
+    const results = data?.web?.results || [];
+    return results
+      .filter((r) => r.url)
+      .map((r) => ({
+        externalId: r.url,
+        titulo: r.title || 'Publicação',
+        url: r.url,
+        resumo: r.description || null,
+        thumbnail: r.thumbnail?.src || null,
+        publicadoEm: r.age ? null : null,
+      }));
+  } catch (err) {
+    console.warn('[biblioteca] brave web:', err.message);
+    return [];
+  }
+}
+
+/** Tenta ler o JSON embutido da página pública do perfil Instagram. */
+async function coletarInstagramHtml(fonte) {
+  const handle = String(fonte.handle || extrairHandle(fonte.url, 'instagram') || '')
+    .replace(/^@/, '')
+    .trim();
+  if (!handle) return [];
+  const profileUrl = `https://www.instagram.com/${handle}/`;
+  const { data: html } = await axios.get(profileUrl, {
+    timeout: 20000,
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      Accept: 'text/html',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+    },
+    validateStatus: (s) => s >= 200 && s < 400,
+  });
+  const raw = String(html || '');
+  const edges = [];
+
+  // window._sharedData
+  const shared = raw.match(/window\._sharedData\s*=\s*(\{.+?\});<\/script>/s);
+  if (shared) {
+    try {
+      const json = JSON.parse(shared[1]);
+      const media =
+        json?.entry_data?.ProfilePage?.[0]?.graphql?.user?.edge_owner_to_timeline_media?.edges || [];
+      for (const edge of media) {
+        const n = edge.node;
+        if (!n?.shortcode) continue;
+        edges.push({
+          externalId: n.shortcode,
+          titulo: (n.edge_media_to_caption?.edges?.[0]?.node?.text || 'Post Instagram').slice(0, 120),
+          url: `https://www.instagram.com/p/${n.shortcode}/`,
+          resumo: n.edge_media_to_caption?.edges?.[0]?.node?.text?.slice(0, 400) || null,
+          thumbnail: n.thumbnail_src || n.display_url || null,
+          publicadoEm: n.taken_at_timestamp ? new Date(n.taken_at_timestamp * 1000) : null,
+        });
+      }
+    } catch {
+      /* ignore parse */
+    }
+  }
+
+  // fallback: shortcodes no HTML
+  if (!edges.length) {
+    const codes = [...raw.matchAll(/\/p\/([A-Za-z0-9_-]+)\//g)].map((m) => m[1]);
+    const unique = [...new Set(codes)].slice(0, SCAN_LIMIT);
+    for (const code of unique) {
+      edges.push({
+        externalId: code,
+        titulo: `Post @${handle}`,
+        url: `https://www.instagram.com/p/${code}/`,
+        resumo: null,
+        thumbnail: null,
+        publicadoEm: null,
+      });
+    }
+  }
+
+  return edges.slice(0, SCAN_LIMIT);
+}
+
+/**
+ * Site / portal: RSS + busca site:domínio (últimas notícias).
+ */
+async function coletarViaSite(fonte) {
+  const collected = [];
+  const erros = [];
+
+  try {
+    collected.push(...(await coletarViaRss(fonte.url)));
+  } catch (err) {
+    erros.push(`rss: ${err.message}`);
+  }
+
+  if (collected.length < SCAN_LIMIT) {
+    try {
+      collected.push(...(await coletarSiteGoogleNews(fonte.url)));
+    } catch (err) {
+      erros.push(`gnews: ${err.message}`);
+    }
+  }
+
+  if (collected.length < SCAN_LIMIT) {
+    collected.push(...(await coletarViaSerper({ ...fonte, plataforma: 'site' })));
+  }
+
+  if (collected.length < 3) {
+    collected.push(...(await coletarViaBraveWeb({ ...fonte, plataforma: 'site' })));
+  }
+
+  if (collected.length < 3) {
+    try {
+      collected.push(...(await coletarLinksHomepage(fonte.url)));
+    } catch (err) {
+      erros.push(`home: ${err.message}`);
+    }
+  }
+
+  const itens = dedupeItens(collected);
+  if (!itens.length) {
+    const err = new Error(
+      `Não encontrei notícias neste site. ${erros[0] || 'Tente a URL da home ou do feed RSS.'}`
+    );
+    err.status = 422;
+    throw err;
+  }
+  return itens;
+}
+
+async function coletarViaRss(pageUrl) {
+  const feeds = await descobrirFeedsRss(pageUrl);
+  const itens = [];
+  for (const feed of feeds.slice(0, 3)) {
+    try {
+      const { data } = await axios.get(feed, {
+        timeout: 15000,
+        headers: { Accept: 'application/rss+xml, application/xml, text/xml, */*' },
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+      const xml = String(data || '');
+      const blocks = xml.match(/<item[\s\S]*?<\/item>/gi) || xml.match(/<entry[\s\S]*?<\/entry>/gi) || [];
+      for (const block of blocks.slice(0, SCAN_LIMIT)) {
+        const titulo = (block.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i) || [])[1];
+        const link =
+          (block.match(/<link[^>]*href=["']([^"']+)["']/i) || [])[1] ||
+          (block.match(/<link[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i) || [])[1];
+        const desc = (block.match(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i) ||
+          block.match(/<summary[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/summary>/i) ||
+          [])[1];
+        const pub = (block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i) ||
+          block.match(/<updated[^>]*>([\s\S]*?)<\/updated>/i) ||
+          [])[1];
+        const cleanTitle = String(titulo || '')
+          .replace(/<[^>]+>/g, '')
+          .trim();
+        const cleanLink = String(link || '').trim();
+        if (!cleanLink || !/^https?:/i.test(cleanLink)) continue;
+        itens.push({
+          externalId: cleanLink,
+          titulo: cleanTitle || 'Notícia',
+          url: cleanLink,
+          resumo: desc
+            ? String(desc)
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 400)
+            : null,
+          thumbnail: null,
+          publicadoEm: pub ? new Date(pub) : null,
+        });
+      }
+      if (itens.length >= SCAN_LIMIT) break;
+    } catch (err) {
+      console.warn('[biblioteca] rss feed:', err.message);
+    }
+  }
+  return itens;
+}
+
+async function descobrirFeedsRss(pageUrl) {
+  const feeds = new Set();
+  try {
+    const base = new URL(pageUrl);
+    const candidates = [
+      new URL('/feed', base).href,
+      new URL('/rss', base).href,
+      new URL('/feed/', base).href,
+      new URL('/rss.xml', base).href,
+      new URL('/atom.xml', base).href,
+      new URL('/index.xml', base).href,
+    ];
+    candidates.forEach((f) => feeds.add(f));
+
+    const { data: html } = await axios.get(pageUrl, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ViralizeAI/1.0; +https://www.viralizeai.online)',
+        Accept: 'text/html',
+      },
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+    const links = String(html || '').matchAll(
+      /<link[^>]+type=["']application\/(rss|atom)\+xml["'][^>]*>/gi
+    );
+    for (const m of links) {
+      const href = (m[0].match(/href=["']([^"']+)["']/i) || [])[1];
+      if (href) {
+        try {
+          feeds.add(new URL(href, pageUrl).href);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[biblioteca] descobrir rss:', err.message);
+  }
+  return [...feeds];
+}
+
+async function coletarSiteGoogleNews(pageUrl) {
+  let host;
+  try {
+    host = new URL(pageUrl).hostname.replace(/^www\./, '');
+  } catch {
+    return [];
+  }
+  const q = encodeURIComponent(`site:${host} when:1d`);
+  const rssUrl = `https://news.google.com/rss/search?q=${q}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
+  const { data } = await axios.get(rssUrl, {
+    timeout: 15000,
+    headers: { Accept: 'application/rss+xml, text/xml' },
+  });
+  const xml = String(data || '');
+  const blocks = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
+  return blocks.slice(0, SCAN_LIMIT).map((block) => {
+    const titulo = (block.match(/<title[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/title>/i) ||
+      block.match(/<title[^>]*>([\s\S]*?)<\/title>/i) ||
+      [])[1];
+    const link = (block.match(/<link[^>]*>([\s\S]*?)<\/link>/i) || [])[1];
+    const desc = (block.match(/<description[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/description>/i) ||
+      block.match(/<description[^>]*>([\s\S]*?)<\/description>/i) ||
+      [])[1];
+    const pub = (block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i) || [])[1];
+    return {
+      externalId: String(link || '').trim(),
+      titulo: String(titulo || 'Notícia')
+        .replace(/<[^>]+>/g, '')
+        .trim(),
+      url: String(link || '').trim(),
+      resumo: desc
+        ? String(desc)
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 400)
+        : null,
+      thumbnail: null,
+      publicadoEm: pub ? new Date(pub) : null,
+    };
+  }).filter((i) => i.url && /^https?:/i.test(i.url));
+}
+
+async function coletarLinksHomepage(pageUrl) {
+  const { data: html } = await axios.get(pageUrl, {
+    timeout: 15000,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; ViralizeAI/1.0)',
+      Accept: 'text/html',
+    },
+    validateStatus: (s) => s >= 200 && s < 400,
+  });
+  const base = new URL(pageUrl);
+  const hrefs = [...String(html || '').matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+  const itens = [];
+  const seen = new Set();
+  for (const m of hrefs) {
+    let href;
+    try {
+      href = new URL(m[1], pageUrl).href;
+    } catch {
+      continue;
+    }
+    if (href.split('#')[0] === pageUrl.replace(/\/$/, '')) continue;
+    if (!href.includes(base.hostname)) continue;
+    if (/\.(jpg|png|gif|css|js|pdf|zip)(\?|$)/i.test(href)) continue;
+    if (!/\/\d{4}\/|\/noticia|\/news|\/materia|\/post|\/article|\.html?$/i.test(href) && href.split('/').filter(Boolean).length < 4) {
+      continue;
+    }
+    const key = href.split('?')[0].toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const titulo = String(m[2] || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (titulo.length < 18) continue;
+    itens.push({
+      externalId: href,
+      titulo: titulo.slice(0, 200),
+      url: href,
+      resumo: null,
+      thumbnail: null,
+      publicadoEm: null,
+    });
+    if (itens.length >= SCAN_LIMIT) break;
+  }
+  return itens;
 }
 
 async function criarFonte({
@@ -387,10 +807,12 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
 async function escanearFonte(fonte, { silentFirst = false } = {}) {
   const itens = await coletarItensFonte(fonte);
   const jaTemPosts = (await BibliotecaPosts.findByFonte(fonte.id, 1)).length > 0;
+  const lote = itens.slice(0, SCAN_LIMIT);
 
-  // primeira varredura: registra baseline sem flood de alertas
+  // primeira varredura automática (monitor): baseline sem flood de alertas
   if (!jaTemPosts && silentFirst) {
-    for (const item of itens.slice(0, 5)) {
+    let salvos = 0;
+    for (const item of lote) {
       const externalId = String(item.externalId || item.url).slice(0, 300);
       const exists = await BibliotecaPosts.findByExternal(fonte.id, externalId);
       if (exists) continue;
@@ -405,26 +827,31 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
         publicado_em: item.publicadoEm || null,
         status: 'visto',
       });
+      salvos += 1;
     }
     await BibliotecaFontes.update(fonte.id, {
       ultimo_scan: new Date(),
       proxima_execucao: nextRun(fonte.intervalo_minutos),
       ultimo_erro: null,
-      ultimo_external_id: itens[0] ? String(itens[0].externalId || itens[0].url).slice(0, 300) : fonte.ultimo_external_id,
-      total_detectados: Number(fonte.total_detectados || 0) + Math.min(itens.length, 5),
+      ultimo_external_id: lote[0]
+        ? String(lote[0].externalId || lote[0].url).slice(0, 300)
+        : fonte.ultimo_external_id,
+      total_detectados: Number(fonte.total_detectados || 0) + salvos,
     });
-    return { novos: [], itens: itens.length };
+    return { novos: [], itens: lote.length, salvos };
   }
 
-  const novos = await registrarItensNovos(fonte, itens, { gerarResumoIa: true });
+  const novos = await registrarItensNovos(fonte, lote, { gerarResumoIa: true });
   await BibliotecaFontes.update(fonte.id, {
     ultimo_scan: new Date(),
     proxima_execucao: nextRun(fonte.intervalo_minutos),
     ultimo_erro: null,
-    ultimo_external_id: itens[0] ? String(itens[0].externalId || itens[0].url).slice(0, 300) : fonte.ultimo_external_id,
+    ultimo_external_id: lote[0]
+      ? String(lote[0].externalId || lote[0].url).slice(0, 300)
+      : fonte.ultimo_external_id,
     total_detectados: Number(fonte.total_detectados || 0) + novos.length,
   });
-  return { novos, itens: itens.length };
+  return { novos, itens: lote.length };
 }
 
 async function escanearAgora(userId, fonteId) {
@@ -435,7 +862,8 @@ async function escanearAgora(userId, fonteId) {
     throw err;
   }
   try {
-    return await escanearFonte(fonte, { silentFirst: true });
+    // Scan manual: salva até 10 posts como novos (para gerar matéria na hora)
+    return await escanearFonte(fonte, { silentFirst: false });
   } catch (err) {
     await BibliotecaFontes.update(fonte.id, {
       ultimo_erro: String(err.message || err).slice(0, 1000),

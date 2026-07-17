@@ -8,6 +8,19 @@ const {
   DEFAULT_ART_MODEL,
   isArtModel,
 } = require('../services/editorialCardModels');
+const {
+  BRAND_FONTS,
+  DEFAULT_BRAND_FONT,
+  TITLE_COLORS,
+  DEFAULT_TITLE_COLOR,
+  TITLE_SIZE_MIN,
+  TITLE_SIZE_MAX,
+  DEFAULT_TITLE_SIZE,
+  normalizeBrandFont,
+  normalizeTitleColor,
+  normalizeTitleSize,
+  googleFontsHref,
+} = require('../services/brandFonts');
 
 function clean(value, max) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max) || null;
@@ -39,6 +52,14 @@ async function show(req, res, next) {
       profile,
       artModels: ART_MODELS,
       defaultArtModel: DEFAULT_ART_MODEL,
+      brandFonts: BRAND_FONTS,
+      defaultBrandFont: DEFAULT_BRAND_FONT,
+      titleColors: TITLE_COLORS,
+      defaultTitleColor: DEFAULT_TITLE_COLOR,
+      titleSizeMin: TITLE_SIZE_MIN,
+      titleSizeMax: TITLE_SIZE_MAX,
+      defaultTitleSize: DEFAULT_TITLE_SIZE,
+      googleFontsHref: googleFontsHref(),
       saved: req.query.saved === '1',
       error: req.query.error || null,
     });
@@ -73,6 +94,9 @@ async function update(req, res, next) {
       marca_cor_primaria: color(req.body.marca_cor_primaria, '#facc15'),
       marca_cor_secundaria: color(req.body.marca_cor_secundaria, '#fb923c'),
       marca_modelo_arte: requestedModel,
+      marca_fonte: normalizeBrandFont(req.body.marca_fonte),
+      marca_titulo_cor: normalizeTitleColor(req.body.marca_titulo_cor),
+      marca_titulo_tamanho: normalizeTitleSize(req.body.marca_titulo_tamanho),
     };
 
     const removeLogo = req.body.remover_logo === '1';

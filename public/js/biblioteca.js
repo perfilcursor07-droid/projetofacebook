@@ -66,7 +66,13 @@
       if (scan) {
         setBusy(true, 'Escaneando fonte…');
         const data = await api(`/api/biblioteca/fontes/${scan.dataset.id}/escanear`, { method: 'POST', body: '{}' });
-        alert(`Scan ok: ${data.itens || 0} item(ns), ${data.novos?.length || 0} novo(s).`);
+        const n = data.novos?.length || 0;
+        const t = data.itens || 0;
+        alert(
+          t
+            ? `Encontrados ${t} item(ns), ${n} novo(s) salvos. Abra “Ver posts” para gerar matéria.`
+            : 'Nenhum item encontrado nesta fonte.'
+        );
         location.reload();
       }
       if (toggle) {
