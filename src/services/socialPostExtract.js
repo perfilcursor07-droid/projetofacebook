@@ -391,93 +391,111 @@ async function extrairViaInstagramMirror(url) {
 async function extrairViaInstagramApi(url) {
   const {
     buildInstagramCookieHeader,
+    diagnoseInstagramCookies,
     shortcodeToMediaId,
     instagramApiHeaders,
   } = require('./instagramCookies');
 
   const code = extrairShortcodeIg(url);
+  if (!code) {
+    console.warn('[socialPost] ig-api: shortcode inválido');
+    return null;
+  }
+
   const cookieHeader = buildInstagramCookieHeader();
-  if (!code || !cookieHeader) return null;
+  if (!cookieHeader) {
+    const diag = diagnoseInstagramCookies();
+    console.warn('[socialPost] ig-api: sem sessionid —', diag.reason, diag.file || '');
+    return null;
+  }
 
   const mediaId = shortcodeToMediaId(code);
-  const headers = instagramApiHeaders(cookieHeader);
+  console.warn(`[socialPost] ig-api: tentando shortcode=${code} mediaId=${mediaId}`);
 
   const endpoints = [
-    mediaId
-      ? `https://www.instagram.com/api/v1/media/${mediaId}/info/`
-      : null,
+    mediaId ? `https://www.instagram.com/api/v1/media/${mediaId}/info/` : null,
     mediaId ? `https://i.instagram.com/api/v1/media/${mediaId}/info/` : null,
     `https://www.instagram.com/p/${code}/?__a=1&__d=dis`,
     `https://www.instagram.com/reel/${code}/?__a=1&__d=dis`,
   ].filter(Boolean);
 
-  for (const endpoint of endpoints) {
-    try {
-      const { data, status } = await axios.get(endpoint, {
-        timeout: 25000,
-        headers,
-        validateStatus: (s) => s >= 200 && s < 500,
-      });
-      if (status >= 400 || !data) continue;
+  const headerVariants = [
+    instagramApiHeaders(cookieHeader, { mobile: false }),
+    instagramApiHeaders(cookieHeader, { mobile: true }),
+  ];
 
-      const item =
-        data?.items?.[0] ||
-        data?.graphql?.shortcode_media ||
-        data?.data?.xdt_shortcode_media ||
-        data?.items?.[0] ||
-        null;
+  for (const headers of headerVariants) {
+    for (const endpoint of endpoints) {
+      try {
+        const { data, status } = await axios.get(endpoint, {
+          timeout: 25000,
+          headers,
+          validateStatus: (s) => s >= 200 && s < 500,
+        });
+        if (status >= 400 || !data) {
+          console.warn(`[socialPost] ig-api: ${status} ${endpoint.slice(0, 70)}`);
+          continue;
+        }
 
-      // formato __a=1 antigo
-      const media =
-        item ||
-        data?.graphql?.shortcode_media ||
-        (typeof data === 'object' ? Object.values(data)?.[0]?.graphql?.shortcode_media : null);
+        let media =
+          data?.items?.[0] ||
+          data?.graphql?.shortcode_media ||
+          data?.data?.xdt_shortcode_media ||
+          null;
 
-      const node = item || media;
-      if (!node || typeof node !== 'object') continue;
+        if (!media && data && typeof data === 'object') {
+          for (const v of Object.values(data)) {
+            if (v?.graphql?.shortcode_media) {
+              media = v.graphql.shortcode_media;
+              break;
+            }
+            if (v?.items?.[0]) {
+              media = v.items[0];
+              break;
+            }
+          }
+        }
+        if (!media || typeof media !== 'object') continue;
 
-      const textoRaw =
-        node.caption?.text ||
-        node.edge_media_to_caption?.edges?.[0]?.node?.text ||
-        node.accessibility_caption ||
-        '';
-      const texto = limparLegendaInstagram(textoRaw) || String(textoRaw || '').trim();
-      const veiculo =
-        node.user?.username ||
-        node.owner?.username ||
-        node.user?.full_name ||
-        null;
-      const imagem =
-        node.image_versions2?.candidates?.[0]?.url ||
-        node.display_url ||
-        node.display_resources?.slice?.(-1)?.[0]?.src ||
-        node.carousel_media?.[0]?.image_versions2?.candidates?.[0]?.url ||
-        null;
+        const textoRaw =
+          media.caption?.text ||
+          media.edge_media_to_caption?.edges?.[0]?.node?.text ||
+          media.accessibility_caption ||
+          '';
+        let texto = limparLegendaInstagram(textoRaw) || String(textoRaw || '').trim();
+        const veiculo =
+          media.user?.username || media.owner?.username || media.user?.full_name || null;
+        const imagem =
+          media.image_versions2?.candidates?.[0]?.url ||
+          media.display_url ||
+          media.display_resources?.slice?.(-1)?.[0]?.src ||
+          media.carousel_media?.[0]?.image_versions2?.candidates?.[0]?.url ||
+          null;
 
-      if (texto && texto.length >= 40) {
-        return {
-          url,
-          titulo: texto.slice(0, 140),
-          texto,
-          imagem: imagem || null,
-          veiculo,
-          metodo: 'ig-api',
-        };
+        if (texto && texto.length >= 40) {
+          console.warn(`[socialPost] ig-api: ok (${texto.length} chars) via ${endpoint.slice(0, 60)}`);
+          return {
+            url,
+            titulo: texto.slice(0, 140),
+            texto,
+            imagem: imagem || null,
+            veiculo,
+            metodo: 'ig-api',
+          };
+        }
+        if (imagem && texto && texto.length >= 20) {
+          return {
+            url,
+            titulo: texto.slice(0, 140),
+            texto,
+            imagem,
+            veiculo,
+            metodo: 'ig-api',
+          };
+        }
+      } catch (err) {
+        console.warn('[socialPost] ig-api:', err.response?.status || err.message);
       }
-
-      // só imagem: ainda útil se o usuário colar texto manual depois — mas para gerar precisa texto
-      if (imagem && texto && texto.length >= 20) {
-        return {
-          url,
-          titulo: texto.slice(0, 140),
-          texto,
-          imagem,
-          veiculo,
-          metodo: 'ig-api',
-        };
-      }
-    } catch (err) {
-      console.warn('[socialPost] ig-api:', err.response?.status || err.message);
     }
   }
 
@@ -487,6 +505,7 @@ async function extrairViaInstagramApi(url) {
       Cookie: cookieHeader,
       'X-IG-App-ID': '936619743392459',
     });
+    console.warn(`[socialPost] ig-cookie-html: len=${html.length}`);
     const parsed = parseOgFromHtml(html, finalUrl || url);
     if (parsed.texto && parsed.texto.length >= 40) {
       parsed.metodo = 'ig-cookie-html';
@@ -523,6 +542,7 @@ async function extrairViaInstagramApi(url) {
     console.warn('[socialPost] ig-cookie-html:', err.message);
   }
 
+  console.warn('[socialPost] ig-api: falhou em todos os endpoints');
   return null;
 }
 
@@ -792,8 +812,8 @@ async function extrairPostSocial(url, opts = {}) {
     melhor = mesclarExtracao(melhor, await extrairViaInstagramMirror(link));
   }
 
-  // 2) oEmbed (app token) — Meta exige review; pode falhar com (#10)
-  if (textoGenericoSocial(melhor.texto) || !melhor.imagem) {
+  // 2) oEmbed — só Facebook (Instagram Meta oEmbed exige review #10 e só atrasa)
+  if (plataforma === 'facebook' && (textoGenericoSocial(melhor.texto) || !melhor.imagem)) {
     melhor = mesclarExtracao(melhor, await extrairViaOembed(link));
   }
 
@@ -811,9 +831,15 @@ async function extrairPostSocial(url, opts = {}) {
     melhor = mesclarExtracao(melhor, await extrairViaMbasic(link));
   }
 
-  // 5) yt-dlp (cookies IG via YTDLP_IG_COOKIES_FILE)
-  if (textoGenericoSocial(melhor.texto) || !melhor.imagem) {
+  // 5) yt-dlp — Instagram /p/ (foto) costuma HTTP 400; só tenta reel/tv
+  const igEhVideo = /instagram\.com\/(reel|reels|tv)\//i.test(link);
+  if (
+    (textoGenericoSocial(melhor.texto) || !melhor.imagem) &&
+    (plataforma !== 'instagram' || igEhVideo)
+  ) {
     melhor = mesclarExtracao(melhor, await extrairViaYtDlp(link));
+  } else if (plataforma === 'instagram' && !igEhVideo && textoGenericoSocial(melhor.texto)) {
+    console.warn('[socialPost] yt-dlp: pulado (post foto /p/ — use ig-api + cookies)');
   }
 
   // Fallback manual (usuário colou a legenda / URL da imagem)
@@ -826,12 +852,13 @@ async function extrairPostSocial(url, opts = {}) {
   }
 
   if (textoGenericoSocial(melhor.texto)) {
-    const temCookiesIg = Boolean(String(env.ytDlp?.igCookiesFile || '').trim());
+    const { diagnoseInstagramCookies } = require('./instagramCookies');
+    const igDiag = plataforma === 'instagram' ? diagnoseInstagramCookies() : null;
     const err = new Error(
       plataforma === 'instagram'
-        ? temCookiesIg
-          ? 'O Instagram bloqueou a leitura automática (sessão expirada ou post restrito). Atualize YTDLP_IG_COOKIES_FILE ou cole a legenda em “Texto da postagem”.'
-          : 'O Instagram bloqueou a leitura automática neste servidor. Configure cookies Netscape em YTDLP_IG_COOKIES_FILE (conta logada no Instagram), ou cole a legenda em “Texto da postagem”.'
+        ? igDiag?.ok
+          ? 'O Instagram bloqueou a leitura automática (sessão expirada, checkpoint ou post restrito). Atualize os cookies em YTDLP_IG_COOKIES_FILE ou cole a legenda em “Texto da postagem”.'
+          : `Cookies do Instagram inválidos (${igDiag?.reason || 'ausentes'}). Exporte de novo para /home/viralizeai/secrets/instagram-cookies.txt ou cole a legenda em “Texto da postagem”.`
         : 'O Facebook bloqueou a leitura automática deste post (pede login no servidor). Cole a legenda do post no campo “Texto da postagem” (e, se puder, a URL da imagem) e gere de novo.'
     );
     err.status = 422;

@@ -15,6 +15,16 @@ for (const dir of storageDirs) {
 app.listen(env.port, async () => {
   console.log(`ViralizeAI rodando em http://localhost:${env.port}`);
   try {
+    const { diagnoseInstagramCookies } = require('./services/instagramCookies');
+    const ig = diagnoseInstagramCookies();
+    console.log(
+      `[ig-cookies] ${ig.ok ? 'OK' : 'FALHA'} — ${ig.reason}` +
+        (ig.file ? ` (${ig.file}, ${ig.size || 0}b, tabs=${ig.hasTabs})` : '')
+    );
+  } catch (err) {
+    console.warn('[ig-cookies] diagnose:', err.message);
+  }
+  try {
     await recoverStuckJobs();
   } catch (err) {
     console.error('[recover] falhou:', err.message);
