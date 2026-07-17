@@ -137,7 +137,7 @@ function shortcodeToMediaId(shortcode) {
   return id.toString();
 }
 
-function instagramApiHeaders(cookieHeader, { mobile = false } = {}) {
+function instagramApiHeaders(cookieHeader, { mobile = false, wwwClaim = '0' } = {}) {
   const csrf = loadInstagramCookies()?.cookies?.csrftoken || '';
   const ua = mobile
     ? 'Instagram 192.168.2.4.117 Android (33/13; 420dpi; 1080x2400; Xiaomi; M2101K6G; sweet; qcom; pt_BR; 458229257)'
@@ -148,13 +148,62 @@ function instagramApiHeaders(cookieHeader, { mobile = false } = {}) {
     'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
     'X-IG-App-ID': IG_APP_ID,
     'X-ASBD-ID': '129477',
-    'X-IG-WWW-Claim': '0',
+    'X-IG-WWW-Claim': wwwClaim || '0',
     'X-Requested-With': 'XMLHttpRequest',
     Referer: 'https://www.instagram.com/',
     Origin: 'https://www.instagram.com',
     Cookie: cookieHeader,
     ...(csrf ? { 'X-CSRFToken': csrf } : {}),
   };
+}
+
+/**
+ * Visita a home com cookies e captura x-ig-set-www-claim
+ * (sem o claim, a API media info costuma responder 400).
+ * @returns {Promise<{ claim: string, cookieHeader: string }|null>}
+ */
+async function bootstrapInstagramSession(axiosClient) {
+  const cookieHeader = buildInstagramCookieHeader();
+  if (!cookieHeader || !axiosClient) return null;
+  try {
+    const res = await axiosClient.get('https://www.instagram.com/', {
+      timeout: 20000,
+      maxRedirects: 5,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        Cookie: cookieHeader,
+      },
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    const h = res.headers || {};
+    const claim =
+      h['x-ig-set-www-claim'] ||
+      h['ig-set-www-claim'] ||
+      h['X-IG-Set-WWW-Claim'] ||
+      null;
+    // Set-Cookie extras do response
+    let merged = cookieHeader;
+    const setCookie = h['set-cookie'];
+    if (Array.isArray(setCookie) && setCookie.length) {
+      const extras = [];
+      for (const raw of setCookie) {
+        const pair = String(raw).split(';')[0];
+        if (pair && pair.includes('=')) extras.push(pair);
+      }
+      if (extras.length) merged = `${cookieHeader}; ${extras.join('; ')}`;
+    }
+    return {
+      claim: claim && claim !== '0' ? String(claim) : '0',
+      cookieHeader: merged,
+      homeStatus: res.status,
+      homeLen: String(res.data || '').length,
+    };
+  } catch (err) {
+    return { claim: '0', cookieHeader, error: err.message };
+  }
 }
 
 module.exports = {
@@ -167,4 +216,5 @@ module.exports = {
   resolveCleanInstagramCookiesFile,
   shortcodeToMediaId,
   instagramApiHeaders,
+  bootstrapInstagramSession,
 };

@@ -16,6 +16,7 @@ const {
   shortcodeToMediaId,
   instagramApiHeaders,
   loadInstagramCookies,
+  bootstrapInstagramSession,
 } = require('../src/services/instagramCookies');
 const { extrairPostSocial, normalizarUrlSocial } = require('../src/services/socialPostExtract');
 
@@ -69,13 +70,28 @@ async function probeEndpoint(label, url, headers) {
     process.exit(2);
   }
 
-  const cookieHeader = buildInstagramCookieHeader();
+  let cookieHeader = buildInstagramCookieHeader();
+  const boot = await bootstrapInstagramSession(axios);
+  if (boot?.cookieHeader) cookieHeader = boot.cookieHeader;
+  console.log('Bootstrap:', {
+    homeStatus: boot?.homeStatus,
+    hasClaim: Boolean(boot?.claim && boot.claim !== '0'),
+    homeLen: boot?.homeLen,
+    error: boot?.error || null,
+  });
+
   const code = String(url).match(/\/(p|reel|reels|tv)\/([^/?#]+)/i)?.[2];
   const mediaId = shortcodeToMediaId(code);
   const dsUserId = loadInstagramCookies()?.cookies?.ds_user_id;
-  const headers = instagramApiHeaders(cookieHeader);
+  const headers = instagramApiHeaders(cookieHeader, {
+    wwwClaim: boot?.claim || '0',
+  });
 
-  console.log('IDs:', { code, mediaId, dsUserId: dsUserId ? `${String(dsUserId).slice(0, 4)}…` : null });
+  console.log('IDs:', {
+    code,
+    mediaId,
+    dsUserId: dsUserId ? `${String(dsUserId).slice(0, 4)}…` : null,
+  });
 
   console.log('Probes (status only):');
   await probeEndpoint(
@@ -88,27 +104,24 @@ async function probeEndpoint(label, url, headers) {
     `https://i.instagram.com/api/v1/media/${mediaId}/info/`,
     headers
   );
-  if (dsUserId) {
-    await probeEndpoint(
-      'media-info-user',
-      `https://i.instagram.com/api/v1/media/${mediaId}_${dsUserId}/info/`,
-      headers
-    );
-  }
-  await probeEndpoint(
-    'post-crawler+cookie',
-    url,
-    {
-      ...headers,
-      'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-    }
-  );
+  await probeEndpoint('post-crawler+cookie', url, {
+    ...headers,
+    'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+  });
   await probeEndpoint(
     'embed-captioned',
     `https://www.instagram.com/p/${code}/embed/captioned/`,
     {
       ...headers,
       'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+    }
+  );
+  await probeEndpoint(
+    'embed-no-cookie',
+    `https://www.instagram.com/p/${code}/embed/captioned/`,
+    {
+      'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+      Accept: 'text/html',
     }
   );
   await probeEndpoint(

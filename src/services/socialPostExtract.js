@@ -236,6 +236,36 @@ function extrairDadosDoHtmlInstagram(html, url) {
     }
   }
 
+  // Scripts JSON embutidos (Instagram 2024+ data-sjs / application/json)
+  if (!texto || texto.length < 40) {
+    const scripts = [
+      ...html.matchAll(/<script[^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi),
+      ...html.matchAll(/<script[^>]*data-sjs[^>]*>([\s\S]*?)<\/script>/gi),
+    ];
+    for (const sm of scripts.slice(0, 40)) {
+      const body = sm[1] || '';
+      if (body.length < 80 || body.length > 2_000_000) continue;
+      if (!/caption|shortcode|display_url|xdt_shortcode/i.test(body)) continue;
+      const m =
+        body.match(/"caption"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/) ||
+        body.match(/"caption"\s*:\s*\{[^]{0,800}?"text"\s*:\s*"((?:\\.|[^"\\])*)"/) ||
+        body.match(/"text"\s*:\s*"((?:\\.|[^"\\]){50,5000})"/);
+      if (!m?.[1]) continue;
+      let candidate = unescapeJsonString(m[1]);
+      candidate = limparLegendaInstagram(candidate) || candidate;
+      if (
+        candidate &&
+        candidate.length >= 40 &&
+        !/^(Log in|Sign up|Instagram|Meta)/i.test(candidate) &&
+        candidate.length > (texto?.length || 0)
+      ) {
+        texto = candidate;
+        signals.hasCaptionText = true;
+        break;
+      }
+    }
+  }
+
   if (!imagem) {
     const imgRes = [
       /"display_url"\s*:\s*"(https:[^"]+)"/i,
@@ -514,6 +544,7 @@ async function extrairViaInstagramApi(url) {
     diagnoseInstagramCookies,
     shortcodeToMediaId,
     instagramApiHeaders,
+    bootstrapInstagramSession,
   } = require('./instagramCookies');
 
   const code = extrairShortcodeIg(url);
@@ -522,11 +553,24 @@ async function extrairViaInstagramApi(url) {
     return null;
   }
 
-  const cookieHeader = buildInstagramCookieHeader();
+  let cookieHeader = buildInstagramCookieHeader();
   if (!cookieHeader) {
     const diag = diagnoseInstagramCookies();
     console.warn('[socialPost] ig-api: sem sessionid —', diag.reason, diag.file || '');
     return null;
+  }
+
+  // Bootstrap www-claim (sem isso /media/*/info/ costuma 400 no datacenter)
+  let wwwClaim = '0';
+  try {
+    const boot = await bootstrapInstagramSession(axios);
+    if (boot?.cookieHeader) cookieHeader = boot.cookieHeader;
+    if (boot?.claim) wwwClaim = boot.claim;
+    console.warn(
+      `[socialPost] ig-api: bootstrap status=${boot?.homeStatus || '?'} claim=${wwwClaim !== '0'} homeLen=${boot?.homeLen || 0}`
+    );
+  } catch (err) {
+    console.warn('[socialPost] ig-api: bootstrap', err.message);
   }
 
   const mediaId = shortcodeToMediaId(code);
@@ -538,17 +582,21 @@ async function extrairViaInstagramApi(url) {
     mediaId ? `https://www.instagram.com/api/v1/media/${mediaId}/info/` : null,
     mediaId ? `https://i.instagram.com/api/v1/media/${mediaId}/info/` : null,
     mediaIdWithUser ? `https://i.instagram.com/api/v1/media/${mediaIdWithUser}/info/` : null,
-    // GraphQL web (doc_id público usado pelo site; pode mudar)
     `https://www.instagram.com/graphql/query/?doc_id=10015901848456354&variables=${encodeURIComponent(
-      JSON.stringify({ shortcode: code, fetch_tagged_user_count: null, hoisted_comment_id: null, hoisted_reply_id: null })
+      JSON.stringify({
+        shortcode: code,
+        fetch_tagged_user_count: null,
+        hoisted_comment_id: null,
+        hoisted_reply_id: null,
+      })
     )}`,
     `https://www.instagram.com/p/${code}/?__a=1&__d=dis`,
     `https://www.instagram.com/reel/${code}/?__a=1&__d=dis`,
   ].filter(Boolean);
 
   const headerVariants = [
-    instagramApiHeaders(cookieHeader, { mobile: false }),
-    instagramApiHeaders(cookieHeader, { mobile: true }),
+    instagramApiHeaders(cookieHeader, { mobile: false, wwwClaim }),
+    instagramApiHeaders(cookieHeader, { mobile: true, wwwClaim }),
   ];
 
   for (const headers of headerVariants) {
@@ -627,8 +675,13 @@ async function extrairViaInstagramApi(url) {
     }
   }
 
-  // HTML autenticado: crawler UA (melhor OG) + browser UA
-  for (const ua of [CRAWLER_UA, BROWSER_UA]) {
+  // HTML: com cookies (claim) + embed público (às vezes funciona sem cookie no crawler UA)
+  const htmlAttempts = [
+    { ua: CRAWLER_UA, cookie: cookieHeader },
+    { ua: BROWSER_UA, cookie: cookieHeader },
+    { ua: CRAWLER_UA, cookie: null },
+  ];
+  for (const attempt of htmlAttempts) {
     try {
       const pages = [
         url,
@@ -636,16 +689,18 @@ async function extrairViaInstagramApi(url) {
         `https://www.instagram.com/p/${code}/embed/`,
       ];
       for (const pageUrl of pages) {
-        const { html, finalUrl } = await fetchHtml(pageUrl, ua, {
-          Cookie: cookieHeader,
+        const extra = {
           'X-IG-App-ID': '936619743392459',
-        });
+          ...(attempt.cookie ? { Cookie: attempt.cookie } : {}),
+          ...(wwwClaim && wwwClaim !== '0' ? { 'X-IG-WWW-Claim': wwwClaim } : {}),
+        };
+        const { html, finalUrl } = await fetchHtml(pageUrl, attempt.ua, extra);
         const extracted = extrairDadosDoHtmlInstagram(html, finalUrl || url);
         const sig = extracted?.signals
           ? `login=${extracted.signals.hasLogin} og=${extracted.signals.hasOgDesc} captionJson=${extracted.signals.hasCaptionText} xdt=${extracted.signals.hasXdt} embedCap=${extracted.signals.hasClassCaption}`
           : '';
         console.warn(
-          `[socialPost] ig-html: ua=${ua.slice(0, 18)} url=${pageUrl.slice(-40)} len=${html.length} ${sig}`
+          `[socialPost] ig-html: cookie=${Boolean(attempt.cookie)} ua=${attempt.ua.slice(0, 18)} url=${pageUrl.slice(-36)} len=${html.length} ${sig}`
         );
         if (extracted && !extracted.empty && extracted.texto && extracted.texto.length >= 40) {
           console.warn(`[socialPost] ig-html: ok (${extracted.texto.length} chars)`);
