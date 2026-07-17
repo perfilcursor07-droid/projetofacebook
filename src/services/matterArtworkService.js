@@ -57,8 +57,8 @@ async function storeMatterSourceImage({ userId, matterId, buffer }) {
   try {
     await sharp(buffer, { failOn: 'error', limitInputPixels: 40_000_000 })
       .rotate()
-      .resize(2400, 2400, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 92, chromaSubsampling: '4:4:4' })
+      .resize(3600, 3600, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 95, chromaSubsampling: '4:4:4', mozjpeg: true })
       .toFile(outputPath);
   } catch (_err) {
     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);

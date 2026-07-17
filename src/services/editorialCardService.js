@@ -402,6 +402,75 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
   };
 }
 
+/**
+ * Monta canvas 4:5 (1080×1350) para o feed do Facebook.
+ * - Foto quase 4:5 → full-bleed (cover)
+ * - Foto larga/paisagem (colagens) → imagem inteira (contain) + fundo desfocado
+ *   assim o post fica alto no feed e a foto não é cortada.
+ */
+async function buildFeedBaseImage(sourceBuffer) {
+  let sourcePrepared = sourceBuffer;
+  try {
+    sourcePrepared = await sharp(sourceBuffer, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .rotate()
+      .toBuffer();
+  } catch {
+    sourcePrepared = sourceBuffer;
+  }
+
+  const meta = await sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 }).metadata();
+  const srcW = Number(meta.width) || WIDTH;
+  const srcH = Number(meta.height) || HEIGHT;
+  const srcRatio = srcW / Math.max(1, srcH);
+  const targetRatio = WIDTH / HEIGHT;
+  const ratioDiff = Math.abs(srcRatio - targetRatio) / targetRatio;
+
+  // Próximo de 4:5: preenche o post sem faixas.
+  if (ratioDiff <= 0.14) {
+    return sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .resize(WIDTH, HEIGHT, {
+        fit: 'cover',
+        position: 'attention',
+        withoutEnlargement: false,
+        kernel: sharp.kernel.lanczos3,
+      })
+      .sharpen({ sigma: 0.6, m1: 0.5, m2: 0.3 })
+      .png()
+      .toBuffer();
+  }
+
+  // Colagem/paisagem: mostra a imagem inteira e completa a altura com blur.
+  const blurred = await sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+    .resize(WIDTH, HEIGHT, {
+      fit: 'cover',
+      position: 'centre',
+      withoutEnlargement: false,
+      kernel: sharp.kernel.lanczos3,
+    })
+    .blur(48)
+    .modulate({ brightness: 0.45, saturation: 0.85 })
+    .png()
+    .toBuffer();
+
+  const foreground = await sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+    .resize(WIDTH, HEIGHT, {
+      fit: 'inside',
+      withoutEnlargement: false,
+      kernel: sharp.kernel.lanczos3,
+    })
+    .sharpen({ sigma: 0.55, m1: 0.5, m2: 0.3 })
+    .png()
+    .toBuffer({ resolveWithObject: true });
+
+  const left = Math.max(0, Math.round((WIDTH - foreground.info.width) / 2));
+  const top = Math.max(0, Math.round((HEIGHT - foreground.info.height) / 2));
+
+  return sharp(blurred)
+    .composite([{ input: foreground.data, left, top }])
+    .png()
+    .toBuffer();
+}
+
 async function createEditorialCard({ sourceUrl, title, user }) {
   if (!sourceUrl) throw new Error('A matéria não possui imagem editorial para compor a arte');
   if (!title) throw new Error('Informe o título da arte');
@@ -443,36 +512,13 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const composites = [{ input: overlay, left: 0, top: 0 }];
   if (logo) composites.push(logo);
 
-  // Full-bleed 4:5 (1080×1350): a foto preenche o post inteiro (estilo Fatos Desconhecidos).
-  // Sem faixas borradas / letterbox — Facebook mostra a arte de ponta a ponta.
-  let sourcePrepared = source;
-  try {
-    sourcePrepared = await sharp(source, { failOn: 'error', limitInputPixels: 40_000_000 })
-      .rotate()
-      .toBuffer();
-  } catch {
-    sourcePrepared = source;
-  }
+  const feedBase = await buildFeedBaseImage(source);
 
-  await sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
-    .resize(WIDTH, HEIGHT, {
-      fit: 'cover',
-      position: 'centre',
-      withoutEnlargement: false,
-      kernel: sharp.kernel.lanczos3,
-    })
+  await sharp(feedBase, { failOn: 'error', limitInputPixels: 40_000_000 })
+    .resize(WIDTH, HEIGHT, { fit: 'fill' })
     .composite(composites)
-    .jpeg({ quality: 95, chromaSubsampling: '4:4:4', mozjpeg: true })
+    .jpeg({ quality: 97, chromaSubsampling: '4:4:4', mozjpeg: true })
     .toFile(outputPath);
-
-  // Garante metadados exatos (alguns viewers usam isso)
-  const meta = await sharp(outputPath).metadata();
-  if (meta.width !== WIDTH || meta.height !== HEIGHT) {
-    await sharp(outputPath)
-      .resize(WIDTH, HEIGHT, { fit: 'fill' })
-      .jpeg({ quality: 95, chromaSubsampling: '4:4:4', mozjpeg: true })
-      .toFile(outputPath);
-  }
 
   return {
     relativePath,
