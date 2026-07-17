@@ -67,11 +67,12 @@ function getYtDlpAuthFlags(opts = {}) {
   // Instagram: usa arquivo próprio (não misturar com cookies do YouTube)
   if (platform === 'instagram') {
     const igFile = String(env.ytDlp.igCookiesFile || '').trim();
-    if (igFile) {
-      const real = validateCookiesFile(igFile, 'Instagram');
-      return real ? { cookies: real } : {};
-    }
-    return {};
+    if (!igFile) return {};
+    // Valida caminho configurado (segurança); depois sanitiza aspas/\054 p/ yt-dlp
+    validateCookiesFile(igFile, 'Instagram');
+    const { resolveCleanInstagramCookiesFile } = require('./instagramCookies');
+    const cleaned = resolveCleanInstagramCookiesFile();
+    return cleaned ? { cookies: cleaned } : {};
   }
 
   const configuredFile = String(env.ytDlp.cookiesFile || '').trim();

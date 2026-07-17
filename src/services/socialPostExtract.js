@@ -1,4 +1,3 @@
-const fs = require('fs');
 const axios = require('axios');
 const { env } = require('../config/env');
 
@@ -58,27 +57,8 @@ function extrairShortcodeIg(url) {
 
 /** sessionid etc. de YTDLP_IG_COOKIES_FILE (Netscape). */
 async function buildInstagramCookieHeader() {
-  const file = String(env.ytDlp?.igCookiesFile || '').trim();
-  if (!file || !fs.existsSync(file)) return null;
-  try {
-    const text = await fs.promises.readFile(file, 'utf8');
-    const wanted = new Set(['sessionid', 'csrftoken', 'ds_user_id', 'mid', 'ig_did']);
-    const parts = [];
-    for (const line of text.split(/\r?\n/)) {
-      if (!line || line.startsWith('#')) continue;
-      const cols = line.split('\t');
-      if (cols.length < 7) continue;
-      const domain = cols[0];
-      const name = cols[5];
-      const value = cols[6];
-      if (!wanted.has(name)) continue;
-      if (!/instagram\.com/i.test(domain) && domain !== '.instagram.com') continue;
-      parts.push(`${name}=${value}`);
-    }
-    return parts.length ? parts.join('; ') : null;
-  } catch {
-    return null;
-  }
+  const { buildInstagramCookieHeader: build } = require('./instagramCookies');
+  return build();
 }
 
 function textoGenericoSocial(texto) {
@@ -405,6 +385,148 @@ async function extrairViaInstagramMirror(url) {
 }
 
 /**
+ * API web do Instagram com sessionid (melhor caminho para foto /p/ no servidor).
+ * yt-dlp costuma devolver HTTP 400 em posts só com imagem.
+ */
+async function extrairViaInstagramApi(url) {
+  const {
+    buildInstagramCookieHeader,
+    shortcodeToMediaId,
+    instagramApiHeaders,
+  } = require('./instagramCookies');
+
+  const code = extrairShortcodeIg(url);
+  const cookieHeader = buildInstagramCookieHeader();
+  if (!code || !cookieHeader) return null;
+
+  const mediaId = shortcodeToMediaId(code);
+  const headers = instagramApiHeaders(cookieHeader);
+
+  const endpoints = [
+    mediaId
+      ? `https://www.instagram.com/api/v1/media/${mediaId}/info/`
+      : null,
+    mediaId ? `https://i.instagram.com/api/v1/media/${mediaId}/info/` : null,
+    `https://www.instagram.com/p/${code}/?__a=1&__d=dis`,
+    `https://www.instagram.com/reel/${code}/?__a=1&__d=dis`,
+  ].filter(Boolean);
+
+  for (const endpoint of endpoints) {
+    try {
+      const { data, status } = await axios.get(endpoint, {
+        timeout: 25000,
+        headers,
+        validateStatus: (s) => s >= 200 && s < 500,
+      });
+      if (status >= 400 || !data) continue;
+
+      const item =
+        data?.items?.[0] ||
+        data?.graphql?.shortcode_media ||
+        data?.data?.xdt_shortcode_media ||
+        data?.items?.[0] ||
+        null;
+
+      // formato __a=1 antigo
+      const media =
+        item ||
+        data?.graphql?.shortcode_media ||
+        (typeof data === 'object' ? Object.values(data)?.[0]?.graphql?.shortcode_media : null);
+
+      const node = item || media;
+      if (!node || typeof node !== 'object') continue;
+
+      const textoRaw =
+        node.caption?.text ||
+        node.edge_media_to_caption?.edges?.[0]?.node?.text ||
+        node.accessibility_caption ||
+        '';
+      const texto = limparLegendaInstagram(textoRaw) || String(textoRaw || '').trim();
+      const veiculo =
+        node.user?.username ||
+        node.owner?.username ||
+        node.user?.full_name ||
+        null;
+      const imagem =
+        node.image_versions2?.candidates?.[0]?.url ||
+        node.display_url ||
+        node.display_resources?.slice?.(-1)?.[0]?.src ||
+        node.carousel_media?.[0]?.image_versions2?.candidates?.[0]?.url ||
+        null;
+
+      if (texto && texto.length >= 40) {
+        return {
+          url,
+          titulo: texto.slice(0, 140),
+          texto,
+          imagem: imagem || null,
+          veiculo,
+          metodo: 'ig-api',
+        };
+      }
+
+      // só imagem: ainda útil se o usuário colar texto manual depois — mas para gerar precisa texto
+      if (imagem && texto && texto.length >= 20) {
+        return {
+          url,
+          titulo: texto.slice(0, 140),
+          texto,
+          imagem,
+          veiculo,
+          metodo: 'ig-api',
+        };
+      }
+    } catch (err) {
+      console.warn('[socialPost] ig-api:', err.response?.status || err.message);
+    }
+  }
+
+  // Última tentativa: HTML autenticado + OG / JSON embutido
+  try {
+    const { html, finalUrl } = await fetchHtml(url, BROWSER_UA, {
+      Cookie: cookieHeader,
+      'X-IG-App-ID': '936619743392459',
+    });
+    const parsed = parseOgFromHtml(html, finalUrl || url);
+    if (parsed.texto && parsed.texto.length >= 40) {
+      parsed.metodo = 'ig-cookie-html';
+      return parsed;
+    }
+
+    const captionMatch = html.match(
+      /"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/
+    );
+    if (captionMatch?.[1]) {
+      let texto;
+      try {
+        texto = JSON.parse(`"${captionMatch[1]}"`);
+      } catch {
+        texto = decodificarEntidades(captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'));
+      }
+      texto = limparLegendaInstagram(texto) || texto;
+      if (texto && texto.length >= 40) {
+        const img =
+          html.match(/"display_url"\s*:\s*"(https:[^"]+)"/)?.[1]?.replace(/\\u0026/g, '&') ||
+          parsed.imagem;
+        const user = html.match(/"username"\s*:\s*"([a-z0-9._]+)"/i)?.[1];
+        return {
+          url,
+          titulo: texto.slice(0, 140),
+          texto,
+          imagem: img || null,
+          veiculo: user || parsed.veiculo,
+          metodo: 'ig-cookie-html',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[socialPost] ig-cookie-html:', err.message);
+  }
+
+  return null;
+}
+
+/**
  * Jina Reader — texto mais completo de posts públicos.
  * https://r.jina.ai/<url>
  */
@@ -657,7 +779,12 @@ async function extrairPostSocial(url, opts = {}) {
     console.warn('[socialPost] og:', err.message);
   }
 
-  // 1b) Embed / mirror Instagram (datacenter costuma bloquear a página do post)
+  // 1a) API Instagram autenticada (prioridade no servidor — fotos /p/)
+  if (plataforma === 'instagram' && (textoGenericoSocial(melhor.texto) || !melhor.imagem)) {
+    melhor = mesclarExtracao(melhor, await extrairViaInstagramApi(link));
+  }
+
+  // 1b) Embed / mirror Instagram
   if (plataforma === 'instagram' && (textoGenericoSocial(melhor.texto) || !melhor.imagem)) {
     melhor = mesclarExtracao(melhor, await extrairViaInstagramEmbed(link));
   }

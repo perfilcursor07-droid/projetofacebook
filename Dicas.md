@@ -44,8 +44,11 @@ pm2 logs viralizeai --lines 50
 # 1) Extensão "Get cookies.txt LOCALLY" no Chrome
 # 2) Logado no instagram.com → exportar cookies Netscape
 # 3) Salvar em /home/viralizeai/secrets/instagram-cookies.txt
-# 4) No .env / ecosystem: YTDLP_IG_COOKIES_FILE=/home/viralizeai/secrets/instagram-cookies.txt
-# 5) pm2 reload viralizeai --update-env
-# Obs: Meta oEmbed (#10) exige review do app — não funciona sem aprovação da Facebook.
+# 4) chmod 600 /home/viralizeai/secrets/instagram-cookies.txt
+# 5) YTDLP_IG_COOKIES_FILE já está no ecosystem.config.cjs
+# 6) pm2 delete viralizeai && pm2 start ecosystem.config.cjs && pm2 save
+# Obs: Meta oEmbed (#10) exige review — não funciona sem aprovação.
+# Obs: posts só com FOTO costumam falhar no yt-dlp (HTTP 400); o app usa a API web com sessionid.
+# Se colar o sessionid em chat/log, regenere: sair do IG no browser e exportar cookies de novo.
 
 # Biblioteca de fontes: /biblioteca — monitor YouTube/TikTok (yt-dlp) + IG/FB (cookies/Serper)

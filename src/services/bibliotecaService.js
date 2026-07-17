@@ -455,28 +455,8 @@ async function coletarInstagramWebApi(fonte) {
 
 /** Lê sessionid/csrftoken de YTDLP_IG_COOKIES_FILE (Netscape) se existir. */
 async function buildInstagramCookieHeader() {
-  const fs = require('fs');
-  const file = String(env.ytDlp.igCookiesFile || '').trim();
-  if (!file || !fs.existsSync(file)) return null;
-  try {
-    const text = await fs.promises.readFile(file, 'utf8');
-    const wanted = new Set(['sessionid', 'csrftoken', 'ds_user_id', 'mid', 'ig_did']);
-    const parts = [];
-    for (const line of text.split(/\r?\n/)) {
-      if (!line || line.startsWith('#')) continue;
-      const cols = line.split('\t');
-      if (cols.length < 7) continue;
-      const domain = cols[0];
-      const name = cols[5];
-      const value = cols[6];
-      if (!wanted.has(name)) continue;
-      if (!/instagram\.com/i.test(domain) && domain !== '.instagram.com') continue;
-      parts.push(`${name}=${value}`);
-    }
-    return parts.length ? parts.join('; ') : null;
-  } catch {
-    return null;
-  }
+  const { buildInstagramCookieHeader: build } = require('./instagramCookies');
+  return build();
 }
 
 /** Tenta ler o JSON embutido da página pública do perfil Instagram. */
