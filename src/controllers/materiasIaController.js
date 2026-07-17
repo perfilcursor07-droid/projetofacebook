@@ -418,6 +418,11 @@ async function showMatter(req, res, next) {
       hashtags = [];
     }
 
+    const { anexarHashtagsAoFinal } = require('../services/editorialGuidelinesFb');
+    if (Array.isArray(hashtags) && hashtags.length) {
+      matter.materia = anexarHashtagsAoFinal(matter.materia || '', hashtags);
+    }
+
     return res.render('materia-ia-editar', {
       title: matter.titulo || 'Matéria IA',
       matter,

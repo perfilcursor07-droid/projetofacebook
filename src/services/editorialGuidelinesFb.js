@@ -186,6 +186,21 @@ function formatHashtagsLine(tags) {
   return cleaned.map((t) => `#${t}`).join(' ');
 }
 
+/**
+ * Garante hashtags no final do texto (após o corpo), sem duplicar.
+ */
+function anexarHashtagsAoFinal(materia, hashtags) {
+  const extracted = extrairHashtagsDoTexto(materia);
+  const tags =
+    Array.isArray(hashtags) && hashtags.length
+      ? hashtags
+      : extracted.tags;
+  const line = formatHashtagsLine(tags);
+  const body = String(extracted.body || '').trim();
+  if (!line) return body;
+  return `${body}\n\n${line}`.trim();
+}
+
 /** Extrai hashtags do final do texto e devolve { body, tags }. */
 function extrairHashtagsDoTexto(texto) {
   const raw = String(texto || '').replace(/\r\n/g, '\n').trim();
@@ -313,4 +328,6 @@ module.exports = {
   formatFacebookCaption,
   quebrarEmParagrafos,
   formatHashtagsLine,
+  anexarHashtagsAoFinal,
+  extrairHashtagsDoTexto,
 };

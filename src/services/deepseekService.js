@@ -90,10 +90,14 @@ function parseArtigoJson(raw) {
     throw err;
   }
 
-  // Não cola hashtags no corpo aqui — formatFacebookCaption faz isso na publicação/exibição
-  if (materia.length > MAX_MATERIA_CHARS) {
-    materia = `${materia.slice(0, MAX_MATERIA_CHARS - 1).trim()}…`;
+  const { anexarHashtagsAoFinal, formatHashtagsLine } = require('./editorialGuidelinesFb');
+  const tagsLine = formatHashtagsLine(hashtags);
+  const reserve = tagsLine ? tagsLine.length + 2 : 0;
+  if (materia.length > MAX_MATERIA_CHARS - reserve) {
+    materia = `${materia.slice(0, Math.max(40, MAX_MATERIA_CHARS - reserve - 1)).trim()}…`;
   }
+  // Hashtags sempre no final do texto gerado (visível na edição e no copy)
+  materia = anexarHashtagsAoFinal(materia, hashtags);
   return { titulo, materia, hashtags, termos_imagem: termosImagem };
 }
 

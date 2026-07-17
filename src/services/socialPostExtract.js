@@ -1,11 +1,12 @@
+const fs = require('fs');
 const axios = require('axios');
 const { env } = require('../config/env');
 
 const BROWSER_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const CRAWLER_UA = 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)';
 
-/** Remove redirect de login e normaliza URL de foto/post do Facebook. */
+/** Remove redirect de login e normaliza URL de foto/post do Facebook / Instagram. */
 function normalizarUrlSocial(url) {
   let link = String(url || '').trim();
   if (!link) return link;
@@ -22,6 +23,18 @@ function normalizarUrlSocial(url) {
   try {
     const u = new URL(link);
     const host = u.hostname.replace(/^www\./, '').toLowerCase();
+    if (host.includes('instagram.com')) {
+      u.hostname = 'www.instagram.com';
+      u.hash = '';
+      u.search = '';
+      // /p/CODE/ ou /reel/CODE/ — canônico sem utm/igsh
+      const m = u.pathname.match(/\/(p|reel|reels|tv)\/([^/?#]+)/i);
+      if (m) {
+        const kind = m[1].toLowerCase() === 'reels' ? 'reel' : m[1].toLowerCase();
+        return `https://www.instagram.com/${kind}/${m[2]}/`;
+      }
+      return u.toString();
+    }
     if (host.includes('facebook.com') || host === 'fb.com' || host === 'm.facebook.com') {
       u.hostname = 'www.facebook.com';
       u.hash = '';
@@ -36,6 +49,36 @@ function normalizarUrlSocial(url) {
     /* keep */
   }
   return link;
+}
+
+function extrairShortcodeIg(url) {
+  const m = String(url || '').match(/instagram\.com\/(?:p|reel|reels|tv)\/([^/?#]+)/i);
+  return m?.[1] || null;
+}
+
+/** sessionid etc. de YTDLP_IG_COOKIES_FILE (Netscape). */
+async function buildInstagramCookieHeader() {
+  const file = String(env.ytDlp?.igCookiesFile || '').trim();
+  if (!file || !fs.existsSync(file)) return null;
+  try {
+    const text = await fs.promises.readFile(file, 'utf8');
+    const wanted = new Set(['sessionid', 'csrftoken', 'ds_user_id', 'mid', 'ig_did']);
+    const parts = [];
+    for (const line of text.split(/\r?\n/)) {
+      if (!line || line.startsWith('#')) continue;
+      const cols = line.split('\t');
+      if (cols.length < 7) continue;
+      const domain = cols[0];
+      const name = cols[5];
+      const value = cols[6];
+      if (!wanted.has(name)) continue;
+      if (!/instagram\.com/i.test(domain) && domain !== '.instagram.com') continue;
+      parts.push(`${name}=${value}`);
+    }
+    return parts.length ? parts.join('; ') : null;
+  } catch {
+    return null;
+  }
 }
 
 function textoGenericoSocial(texto) {
@@ -122,6 +165,24 @@ function decodificarEntidades(texto) {
   return t.replace(/\s+/g, ' ').trim();
 }
 
+/** Tira prefixo "X likes, Y comments - user on date:" e pega a legenda entre aspas. */
+function limparLegendaInstagram(raw) {
+  let t = decodificarEntidades(String(raw || '').trim());
+  if (!t) return null;
+  const quoted = t.match(/["“]([\s\S]+?)["”]\s*$/);
+  if (quoted?.[1] && quoted[1].trim().length >= 40) {
+    return quoted[1].trim();
+  }
+  const afterColon = t.match(
+    /(?:likes?|curtidas?|comments?|coment[aá]rios?)[^.]*?:\s*["“]?([\s\S]+)/i
+  );
+  if (afterColon?.[1]) {
+    const cleaned = afterColon[1].replace(/^["“]|["”]$/g, '').trim();
+    if (cleaned.length >= 40) return cleaned;
+  }
+  return t;
+}
+
 function pickMeta(html, prop) {
   const patterns = [
     new RegExp(`property=["']${prop}["'][^>]+content=["']([^"']+)["']`, 'i'),
@@ -145,7 +206,7 @@ function absolutizar(base, maybe) {
   }
 }
 
-async function fetchHtml(url, userAgent) {
+async function fetchHtml(url, userAgent, extraHeaders = {}) {
   const res = await axios.get(url, {
     timeout: 20000,
     maxRedirects: 5,
@@ -154,17 +215,18 @@ async function fetchHtml(url, userAgent) {
       'User-Agent': userAgent,
       Accept: 'text/html,application/xhtml+xml',
       'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      ...extraHeaders,
     },
   });
   return {
     html: String(res.data || ''),
-    finalUrl: res.request?.res?.responseUrl || url,
+    finalUrl: res.request?.res?.responseURL || res.request?.res?.responseUrl || url,
   };
 }
 
 function parseOgFromHtml(html, finalUrl) {
-  const titulo = pickMeta(html, 'og:title') || pickMeta(html, 'twitter:title');
-  const resumo = pickMeta(html, 'og:description') || pickMeta(html, 'twitter:description');
+  let titulo = pickMeta(html, 'og:title') || pickMeta(html, 'twitter:title');
+  let resumo = pickMeta(html, 'og:description') || pickMeta(html, 'twitter:description');
   const imagem =
     absolutizar(finalUrl, pickMeta(html, 'og:image')) ||
     absolutizar(finalUrl, pickMeta(html, 'og:image:secure_url')) ||
@@ -179,6 +241,23 @@ function parseOgFromHtml(html, finalUrl) {
     veiculo = null;
   }
 
+  // Instagram: limpa legenda do og:description / og:title
+  if (/instagram\.com/i.test(finalUrl)) {
+    const limpo = limparLegendaInstagram(resumo) || limparLegendaInstagram(titulo);
+    if (limpo && limpo.length >= 40) {
+      resumo = limpo;
+      if (!titulo || /(?:on|no)\s+Instagram:/i.test(titulo) || /instagram photos/i.test(titulo)) {
+        titulo = limpo.slice(0, 140);
+      }
+    }
+    const authorFromTitle = String(titulo || '').match(/^(.+?)\s+on Instagram:/i);
+    if (authorFromTitle?.[1]) veiculo = authorFromTitle[1].trim();
+    const authorFromDesc = String(pickMeta(html, 'og:description') || '').match(
+      /-\s*([a-z0-9._]+)\s+(?:on|no)\s+/i
+    );
+    if (authorFromDesc?.[1]) veiculo = authorFromDesc[1];
+  }
+
   return {
     url: finalUrl,
     titulo: titulo || null,
@@ -190,11 +269,15 @@ function parseOgFromHtml(html, finalUrl) {
 }
 
 async function extrairViaOg(url) {
+  const cookie =
+    /instagram\.com/i.test(url) ? await buildInstagramCookieHeader() : null;
+  const extra = cookie ? { Cookie: cookie } : {};
+
   // Crawler UA primeiro (melhor OG); se falhar imagem/texto, tenta browser UA
   let best = { url, titulo: null, texto: null, imagem: null, veiculo: null, metodo: 'og' };
   for (const ua of [CRAWLER_UA, BROWSER_UA]) {
     try {
-      const { html, finalUrl } = await fetchHtml(url, ua);
+      const { html, finalUrl } = await fetchHtml(url, ua, extra);
       const parsed = parseOgFromHtml(html, finalUrl);
       if ((!best.texto || best.texto.length < 40) && parsed.texto) best.texto = parsed.texto;
       if (!best.imagem && parsed.imagem) best.imagem = parsed.imagem;
@@ -207,6 +290,118 @@ async function extrairViaOg(url) {
     }
   }
   return best;
+}
+
+/**
+ * Embed público do Instagram — muitas vezes devolve a legenda mesmo quando o post
+ * principal bloqueia IPs de datacenter.
+ */
+async function extrairViaInstagramEmbed(url) {
+  const code = extrairShortcodeIg(url);
+  if (!code) return null;
+
+  const cookie = await buildInstagramCookieHeader();
+  const extra = cookie ? { Cookie: cookie } : {};
+  const candidates = [
+    `https://www.instagram.com/p/${code}/embed/captioned/`,
+    `https://www.instagram.com/reel/${code}/embed/captioned/`,
+    `https://www.instagram.com/p/${code}/embed/`,
+  ];
+
+  for (const embedUrl of candidates) {
+    for (const ua of [CRAWLER_UA, BROWSER_UA]) {
+      try {
+        const { html } = await fetchHtml(embedUrl, ua, extra);
+        if (!html || html.length < 500) continue;
+
+        let texto = null;
+        let veiculo = null;
+        let imagem = null;
+
+        const edge = html.match(
+          /"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/
+        );
+        if (edge?.[1]) {
+          try {
+            texto = JSON.parse(`"${edge[1]}"`);
+          } catch {
+            texto = decodificarEntidades(edge[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'));
+          }
+        }
+
+        if (!texto || texto.length < 40) {
+          const capBlock = html.match(
+            /class="Caption"[^>]*>([\s\S]*?)(?:class="CaptionComments"|class="SocialProof"|<\/blockquote>)/i
+          );
+          if (capBlock?.[1]) {
+            const userMatch = capBlock[1].match(/CaptionUsername[^>]*>([^<]+)</i);
+            if (userMatch?.[1]) veiculo = decodificarEntidades(userMatch[1]).replace(/^@/, '');
+            texto = decodificarEntidades(
+              capBlock[1]
+                .replace(/<a[^>]*CaptionUsername[\s\S]*?<\/a>/i, ' ')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/p>/gi, '\n')
+                .replace(/<[^>]+>/g, ' ')
+            );
+          }
+        }
+
+        if (!veiculo) {
+          const user = html.match(/instagram\.com\/([a-z0-9._]+)\/?\?utm_source=ig_embed/i);
+          if (user?.[1] && !/^(p|reel|reels|tv|explore)$/i.test(user[1])) veiculo = user[1];
+        }
+
+        const imgMatch =
+          html.match(
+            /(https:\/\/[^"'\s]+(?:cdninstagram|fbcdn)[^"'\s]+\.(?:jpg|webp)[^"'\s]*)/i
+          ) || html.match(/content=["'](https:\/\/[^"']+scontent[^"']+)["']/i);
+        if (imgMatch?.[1] && !/rsrc\.php|static\.cdninstagram/i.test(imgMatch[1])) {
+          imagem = imgMatch[1].replace(/&amp;/g, '&');
+        }
+
+        texto = limparLegendaInstagram(texto) || texto;
+        if (texto && texto.length >= 40) {
+          return {
+            url,
+            titulo: texto.slice(0, 140),
+            texto,
+            imagem,
+            veiculo,
+            metodo: 'ig-embed',
+          };
+        }
+      } catch (err) {
+        console.warn('[socialPost] ig-embed:', err.message);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Mirrors (ddinstagram etc.) — útil quando o domínio oficial bloqueia o servidor.
+ */
+async function extrairViaInstagramMirror(url) {
+  const code = extrairShortcodeIg(url);
+  if (!code) return null;
+  const mirrors = [
+    `https://www.ddinstagram.com/p/${code}/`,
+    `https://ddinstagram.com/p/${code}/`,
+  ];
+  for (const mirror of mirrors) {
+    try {
+      const { html, finalUrl } = await fetchHtml(mirror, CRAWLER_UA);
+      const parsed = parseOgFromHtml(html, finalUrl || mirror);
+      if (parsed.texto && parsed.texto.length >= 40) {
+        parsed.url = url;
+        parsed.metodo = 'ig-mirror';
+        return parsed;
+      }
+    } catch (err) {
+      console.warn('[socialPost] ig-mirror:', err.message);
+    }
+  }
+  return null;
 }
 
 /**
@@ -321,48 +516,59 @@ async function extrairViaYtDlp(url) {
   }
 }
 
-/** oEmbed oficial (app token) — às vezes devolve HTML com legenda. */
+/** oEmbed oficial (app token) — FB e IG; Meta costuma exigir review do oEmbed Read. */
 async function extrairViaOembed(url) {
   if (!env.facebook?.appId || !env.facebook?.appSecret) return null;
-  try {
-    const token = `${env.facebook.appId}|${env.facebook.appSecret}`;
-    const { data } = await axios.get('https://graph.facebook.com/v21.0/oembed_post', {
-      params: { url, access_token: token, omitscript: true },
-      timeout: 20000,
-      validateStatus: (s) => s >= 200 && s < 400,
-    });
-    const html = String(data.html || '');
-    const author = data.author_name || null;
-    // Extrai texto do blockquote do embed
-    let texto = null;
-    const bq = html.match(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i);
-    if (bq) {
-      texto = decodificarEntidades(
-        bq[1]
-          .replace(/<br\s*\/?>/gi, '\n')
-          .replace(/<\/p>/gi, '\n')
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim()
-      );
+  const isIg = /instagram\.com/i.test(url);
+  const endpoints = isIg
+    ? [
+        'https://graph.facebook.com/v21.0/instagram_oembed',
+        'https://graph.facebook.com/v21.0/oembed_post',
+      ]
+    : ['https://graph.facebook.com/v21.0/oembed_post'];
+
+  const token = `${env.facebook.appId}|${env.facebook.appSecret}`;
+  for (const endpoint of endpoints) {
+    try {
+      const { data } = await axios.get(endpoint, {
+        params: { url, access_token: token, omitscript: true },
+        timeout: 20000,
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+      const html = String(data.html || '');
+      const author = data.author_name || null;
+      let texto = null;
+      const bq = html.match(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i);
+      if (bq) {
+        texto = decodificarEntidades(
+          bq[1]
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/p>/gi, '\n')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+        );
+      }
+      if (texto) texto = limparLegendaInstagram(texto) || texto;
+      const img =
+        absolutizar(url, pickMeta(html, 'og:image')) ||
+        (html.match(/src=["'](https:\/\/[^"']+(?:fbcdn|scontent|cdninstagram)[^"']+)["']/i) ||
+          [])[1] ||
+        null;
+      if (!texto && !img && !author) continue;
+      return {
+        url,
+        titulo: author ? `Post — ${author}` : null,
+        texto: texto && !textoGenericoSocial(texto) ? texto : null,
+        imagem: img,
+        veiculo: author,
+        metodo: 'oembed',
+      };
+    } catch (err) {
+      console.warn('[socialPost] oembed:', err.response?.data?.error?.message || err.message);
     }
-    const img =
-      absolutizar(url, pickMeta(html, 'og:image')) ||
-      (html.match(/src=["'](https:\/\/[^"']+(?:fbcdn|scontent)[^"']+)["']/i) || [])[1] ||
-      null;
-    if (!texto && !img && !author) return null;
-    return {
-      url,
-      titulo: author ? `Post — ${author}` : null,
-      texto: texto && !textoGenericoSocial(texto) ? texto : null,
-      imagem: img,
-      veiculo: author,
-      metodo: 'oembed',
-    };
-  } catch (err) {
-    console.warn('[socialPost] oembed:', err.response?.data?.error?.message || err.message);
-    return null;
   }
+  return null;
 }
 
 /** mbasic — às vezes passa onde www exige login. */
@@ -444,14 +650,22 @@ async function extrairPostSocial(url, opts = {}) {
     plataforma,
   };
 
-  // 1) Open Graph
+  // 1) Open Graph (com cookies IG se configurados)
   try {
     melhor = mesclarExtracao(melhor, await extrairViaOg(link));
   } catch (err) {
     console.warn('[socialPost] og:', err.message);
   }
 
-  // 2) oEmbed (app token)
+  // 1b) Embed / mirror Instagram (datacenter costuma bloquear a página do post)
+  if (plataforma === 'instagram' && (textoGenericoSocial(melhor.texto) || !melhor.imagem)) {
+    melhor = mesclarExtracao(melhor, await extrairViaInstagramEmbed(link));
+  }
+  if (plataforma === 'instagram' && textoGenericoSocial(melhor.texto)) {
+    melhor = mesclarExtracao(melhor, await extrairViaInstagramMirror(link));
+  }
+
+  // 2) oEmbed (app token) — Meta exige review; pode falhar com (#10)
   if (textoGenericoSocial(melhor.texto) || !melhor.imagem) {
     melhor = mesclarExtracao(melhor, await extrairViaOembed(link));
   }
@@ -470,7 +684,7 @@ async function extrairPostSocial(url, opts = {}) {
     melhor = mesclarExtracao(melhor, await extrairViaMbasic(link));
   }
 
-  // 5) yt-dlp (não em URL de login)
+  // 5) yt-dlp (cookies IG via YTDLP_IG_COOKIES_FILE)
   if (textoGenericoSocial(melhor.texto) || !melhor.imagem) {
     melhor = mesclarExtracao(melhor, await extrairViaYtDlp(link));
   }
@@ -485,9 +699,12 @@ async function extrairPostSocial(url, opts = {}) {
   }
 
   if (textoGenericoSocial(melhor.texto)) {
+    const temCookiesIg = Boolean(String(env.ytDlp?.igCookiesFile || '').trim());
     const err = new Error(
       plataforma === 'instagram'
-        ? 'O Instagram bloqueou a leitura automática. Cole a legenda do post no campo “Texto da postagem” e tente de novo.'
+        ? temCookiesIg
+          ? 'O Instagram bloqueou a leitura automática (sessão expirada ou post restrito). Atualize YTDLP_IG_COOKIES_FILE ou cole a legenda em “Texto da postagem”.'
+          : 'O Instagram bloqueou a leitura automática neste servidor. Configure cookies Netscape em YTDLP_IG_COOKIES_FILE (conta logada no Instagram), ou cole a legenda em “Texto da postagem”.'
         : 'O Facebook bloqueou a leitura automática deste post (pede login no servidor). Cole a legenda do post no campo “Texto da postagem” (e, se puder, a URL da imagem) e gere de novo.'
     );
     err.status = 422;

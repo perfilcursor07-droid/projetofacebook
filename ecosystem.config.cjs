@@ -32,6 +32,8 @@ module.exports = {
         YTDLP_PATH: '/usr/local/bin/yt-dlp',
         YTDLP_JS_RUNTIME: 'node',
         YTDLP_COOKIES_FILE: '/home/viralizeai/secrets/youtube-cookies.txt',
+        // Cookies Netscape do Instagram (Biblioteca + /conteudo com link IG)
+        YTDLP_IG_COOKIES_FILE: '/home/viralizeai/secrets/instagram-cookies.txt',
       },
       error_file: '/home/viralizeai/logs/viralizeai-error.log',
       out_file: '/home/viralizeai/logs/viralizeai-out.log',

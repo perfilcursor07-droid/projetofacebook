@@ -40,4 +40,12 @@ pm2 logs viralizeai --lines 50
 # YouTube cookies (se expirar): exportar em aba anônima + robots.txt
 # YTDLP_COOKIES_FILE=/home/viralizeai/secrets/youtube-cookies.txt
 
-# Biblioteca de fontes: /biblioteca — monitor YouTube/TikTok (yt-dlp) + IG/FB (Serper)
+# Instagram (Biblioteca + /conteudo a partir de link):
+# 1) Extensão "Get cookies.txt LOCALLY" no Chrome
+# 2) Logado no instagram.com → exportar cookies Netscape
+# 3) Salvar em /home/viralizeai/secrets/instagram-cookies.txt
+# 4) No .env / ecosystem: YTDLP_IG_COOKIES_FILE=/home/viralizeai/secrets/instagram-cookies.txt
+# 5) pm2 reload viralizeai --update-env
+# Obs: Meta oEmbed (#10) exige review do app — não funciona sem aprovação da Facebook.
+
+# Biblioteca de fontes: /biblioteca — monitor YouTube/TikTok (yt-dlp) + IG/FB (cookies/Serper)
