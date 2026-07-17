@@ -125,18 +125,14 @@ async function coletarItensFonte(fonte) {
 
   if (plataforma === 'instagram') {
     const collected = [];
+    // 1) API web pública (sem Serper / sem cookies YT)
     try {
-      collected.push(...(await coletarViaYtDlp(url, 'instagram')));
+      collected.push(...(await coletarInstagramWebApi(fonte)));
     } catch (err) {
-      console.warn('[biblioteca] ig yt-dlp:', err.message);
-      erros.push(`yt-dlp: ${err.message}`);
+      console.warn('[biblioteca] ig api:', err.message);
+      erros.push(`api: ${err.message}`);
     }
-    if (collected.length < SCAN_LIMIT) {
-      collected.push(...(await coletarViaSerper(fonte)));
-    }
-    if (collected.length < 3) {
-      collected.push(...(await coletarViaBraveWeb(fonte)));
-    }
+    // 2) HTML / espelhos
     if (collected.length < 3) {
       try {
         collected.push(...(await coletarInstagramHtml(fonte)));
@@ -145,12 +141,32 @@ async function coletarItensFonte(fonte) {
         erros.push(`html: ${err.message}`);
       }
     }
+    // 3) yt-dlp com cookies do Instagram (não usa cookies do YouTube)
+    if (collected.length < 3) {
+      try {
+        collected.push(...(await coletarViaYtDlp(url, 'instagram')));
+      } catch (err) {
+        console.warn('[biblioteca] ig yt-dlp:', err.message);
+        erros.push(`yt-dlp: ${err.message}`);
+      }
+    }
+    // 4) buscas (podem falhar por crédito)
+    if (collected.length < SCAN_LIMIT) {
+      collected.push(...(await coletarViaSerper(fonte)));
+    }
+    if (collected.length < 3) {
+      collected.push(...(await coletarViaBraveWeb(fonte)));
+    }
     const itens = dedupeItens(collected);
     if (!itens.length) {
       const err = new Error(
-        erros.length
-          ? `Não foi possível listar posts do Instagram. ${erros[0]} Configure cookies do Instagram no yt-dlp ou SERPER_API_KEY.`
-          : 'Não foi possível listar posts do Instagram. O perfil pode ser privado ou o Serper está sem créditos.'
+        [
+          'Não foi possível listar posts do Instagram.',
+          erros[0] || '',
+          'Dica: exporte cookies do Instagram (Netscape) para YTDLP_IG_COOKIES_FILE, ou recarregue créditos do Serper.',
+        ]
+          .filter(Boolean)
+          .join(' ')
       );
       err.status = 422;
       throw err;
@@ -205,18 +221,14 @@ async function coletarViaYtDlp(profileUrl, plataforma) {
     }
   }
   const exec = binary ? youtubedlPkg.create(binary) : youtubedlPkg;
-  const run = (u, flags) => runYtDlp(exec, u, flags);
+  const run = (u, flags) => runYtDlp(exec, u, flags, { platform: plataforma });
 
   let target = String(profileUrl || '').replace(/\/$/, '');
   if (plataforma === 'youtube' && !/\/(videos|streams|shorts)/i.test(target)) {
     if (/youtube\.com\/@/i.test(target)) target = `${target}/videos`;
   }
   if (plataforma === 'instagram') {
-    // perfil → lista de posts
     target = target.replace(/\/(reels|tagged|followers|following)\/?$/i, '');
-    if (!/instagram\.com\/[^/]+\/?$/i.test(target) && !/\/p\//i.test(target)) {
-      /* keep */
-    }
   }
 
   const data = await run(target, {
@@ -353,27 +365,167 @@ async function coletarViaBraveWeb(fonte) {
   }
 }
 
+/** API web do Instagram (perfis públicos) — sem Serper. */
+async function coletarInstagramWebApi(fonte) {
+  const handle = String(fonte.handle || extrairHandle(fonte.url, 'instagram') || '')
+    .replace(/^@/, '')
+    .trim();
+  if (!handle) return [];
+
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    Accept: '*/*',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+    'X-IG-App-ID': '936619743392459',
+    'X-ASBD-ID': '129477',
+    'X-Requested-With': 'XMLHttpRequest',
+    Referer: `https://www.instagram.com/${handle}/`,
+    Origin: 'https://www.instagram.com',
+  };
+
+  // cookies IG opcionais (Netscape → cookie header simples sessionid/csrftoken se houver)
+  const cookieHeader = await buildInstagramCookieHeader();
+  if (cookieHeader) headers.Cookie = cookieHeader;
+
+  const urls = [
+    `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(handle)}`,
+    `https://i.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(handle)}`,
+  ];
+
+  let user = null;
+  let lastErr = null;
+  for (const apiUrl of urls) {
+    try {
+      const { data } = await axios.get(apiUrl, {
+        headers,
+        timeout: 20000,
+        validateStatus: (s) => s >= 200 && s < 500,
+      });
+      if (data?.data?.user) {
+        user = data.data.user;
+        break;
+      }
+      if (data?.user) {
+        user = data.user;
+        break;
+      }
+      lastErr = new Error(data?.message || `HTTP sem user (${apiUrl})`);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (!user) {
+    if (lastErr) throw lastErr;
+    return [];
+  }
+
+  const edges =
+    user.edge_owner_to_timeline_media?.edges ||
+    user.edge_felix_video_timeline?.edges ||
+    [];
+
+  const items = [];
+  for (const edge of edges) {
+    const n = edge?.node;
+    if (!n) continue;
+    const shortcode = n.shortcode || n.code;
+    if (!shortcode) continue;
+    const isReel = n.product_type === 'clips' || n.is_video;
+    const pathPart = isReel && !n.edge_sidecar_to_children ? 'reel' : 'p';
+    const caption =
+      n.edge_media_to_caption?.edges?.[0]?.node?.text ||
+      n.caption?.text ||
+      null;
+    items.push({
+      externalId: String(shortcode),
+      titulo: String(caption || `Post @${handle}`).slice(0, 120),
+      url: `https://www.instagram.com/${pathPart}/${shortcode}/`,
+      resumo: caption ? String(caption).slice(0, 400) : null,
+      thumbnail: n.thumbnail_src || n.display_url || n.thumbnail_url || null,
+      publicadoEm: n.taken_at_timestamp
+        ? new Date(n.taken_at_timestamp * 1000)
+        : n.taken_at
+          ? new Date(Number(n.taken_at) * 1000)
+          : null,
+    });
+  }
+  return items.slice(0, SCAN_LIMIT);
+}
+
+/** Lê sessionid/csrftoken de YTDLP_IG_COOKIES_FILE (Netscape) se existir. */
+async function buildInstagramCookieHeader() {
+  const fs = require('fs');
+  const file = String(env.ytDlp.igCookiesFile || '').trim();
+  if (!file || !fs.existsSync(file)) return null;
+  try {
+    const text = await fs.promises.readFile(file, 'utf8');
+    const wanted = new Set(['sessionid', 'csrftoken', 'ds_user_id', 'mid', 'ig_did']);
+    const parts = [];
+    for (const line of text.split(/\r?\n/)) {
+      if (!line || line.startsWith('#')) continue;
+      const cols = line.split('\t');
+      if (cols.length < 7) continue;
+      const domain = cols[0];
+      const name = cols[5];
+      const value = cols[6];
+      if (!wanted.has(name)) continue;
+      if (!/instagram\.com/i.test(domain) && domain !== '.instagram.com') continue;
+      parts.push(`${name}=${value}`);
+    }
+    return parts.length ? parts.join('; ') : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Tenta ler o JSON embutido da página pública do perfil Instagram. */
 async function coletarInstagramHtml(fonte) {
   const handle = String(fonte.handle || extrairHandle(fonte.url, 'instagram') || '')
     .replace(/^@/, '')
     .trim();
   if (!handle) return [];
-  const profileUrl = `https://www.instagram.com/${handle}/`;
-  const { data: html } = await axios.get(profileUrl, {
-    timeout: 20000,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      Accept: 'text/html',
-      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-    },
-    validateStatus: (s) => s >= 200 && s < 400,
-  });
-  const raw = String(html || '');
+
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    Accept: 'text/html,application/xhtml+xml',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Upgrade-Insecure-Requests': '1',
+  };
+  const cookieHeader = await buildInstagramCookieHeader();
+  if (cookieHeader) headers.Cookie = cookieHeader;
+
+  const candidates = [
+    `https://www.instagram.com/${handle}/`,
+    `https://www.ddinstagram.com/${handle}/`,
+    `https://imginn.com/${handle}/`,
+  ];
+
+  let raw = '';
+  for (const profileUrl of candidates) {
+    try {
+      const { data: html, status } = await axios.get(profileUrl, {
+        timeout: 20000,
+        headers,
+        validateStatus: (s) => s >= 200 && s < 500,
+        maxRedirects: 5,
+      });
+      if (status >= 400 || !html) continue;
+      raw = String(html || '');
+      if (raw.length > 500) break;
+    } catch (err) {
+      console.warn('[biblioteca] ig fetch', profileUrl, err.message);
+    }
+  }
+  if (!raw) return [];
+
   const edges = [];
 
-  // window._sharedData
+  // window._sharedData (legado)
   const shared = raw.match(/window\._sharedData\s*=\s*(\{.+?\});<\/script>/s);
   if (shared) {
     try {
@@ -397,15 +549,20 @@ async function coletarInstagramHtml(fonte) {
     }
   }
 
-  // fallback: shortcodes no HTML
+  // JSON embutido moderno: "shortcode":"XXXX"
   if (!edges.length) {
-    const codes = [...raw.matchAll(/\/p\/([A-Za-z0-9_-]+)\//g)].map((m) => m[1]);
+    const codes = [
+      ...raw.matchAll(/"shortcode"\s*:\s*"([A-Za-z0-9_-]+)"/g),
+      ...raw.matchAll(/\/p\/([A-Za-z0-9_-]+)\//g),
+      ...raw.matchAll(/\/reel\/([A-Za-z0-9_-]+)\//g),
+    ].map((m) => m[1]);
     const unique = [...new Set(codes)].slice(0, SCAN_LIMIT);
     for (const code of unique) {
+      const isReel = new RegExp(`/reel/${code}/`).test(raw);
       edges.push({
         externalId: code,
         titulo: `Post @${handle}`,
-        url: `https://www.instagram.com/p/${code}/`,
+        url: `https://www.instagram.com/${isReel ? 'reel' : 'p'}/${code}/`,
         resumo: null,
         thumbnail: null,
         publicadoEm: null,

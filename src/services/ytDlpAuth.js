@@ -19,38 +19,65 @@ function resolveNodeBinary() {
   const configured = String(env.ytDlp.jsRuntimePath || '').trim();
   if (configured && fs.existsSync(configured)) return configured;
   // process.execPath = node que está rodando o app (NVM do usuário do site).
-  // Evita /usr/local/bin/node, que pode ser symlink para home de outro usuário
-  // sem permissão de leitura — isso quebra o desafio JS do YouTube.
   return process.execPath || 'node';
 }
 
-function getYtDlpAuthFlags() {
+function validateCookiesFile(configuredFile, label = 'YouTube') {
+  if (!configuredFile) return null;
+  if (!path.isAbsolute(configuredFile)) {
+    throw configError(`${label}: o caminho do arquivo de cookies deve ser absoluto.`);
+  }
+  let realPath;
+  try {
+    realPath = fs.realpathSync(configuredFile);
+  } catch {
+    throw configError(`Arquivo de autenticação do ${label} não encontrado.`);
+  }
+  const stat = fs.statSync(realPath);
+  const publicRoot = path.resolve(__dirname, '../../public');
+  const storageRoot = path.resolve(env.storagePath);
+  if (
+    !stat.isFile() ||
+    stat.size < 1 ||
+    stat.size > 5 * 1024 * 1024 ||
+    path.extname(realPath).toLowerCase() !== '.txt'
+  ) {
+    throw configError(`Arquivo de autenticação do ${label} inválido.`);
+  }
+  if (isInside(publicRoot, realPath) || isInside(storageRoot, realPath)) {
+    throw configError(`O arquivo de cookies do ${label} deve ficar fora das pastas public e storage.`);
+  }
+  return realPath;
+}
+
+/**
+ * @param {{ platform?: string, noCookies?: boolean, cookiesFile?: string }} [opts]
+ */
+function getYtDlpAuthFlags(opts = {}) {
+  if (opts.noCookies) return {};
+
+  const platform = String(opts.platform || 'youtube').toLowerCase();
+
+  // Cookies explícitos na chamada
+  if (opts.cookiesFile) {
+    const real = validateCookiesFile(opts.cookiesFile, platform === 'instagram' ? 'Instagram' : 'YouTube');
+    return real ? { cookies: real } : {};
+  }
+
+  // Instagram: usa arquivo próprio (não misturar com cookies do YouTube)
+  if (platform === 'instagram') {
+    const igFile = String(env.ytDlp.igCookiesFile || '').trim();
+    if (igFile) {
+      const real = validateCookiesFile(igFile, 'Instagram');
+      return real ? { cookies: real } : {};
+    }
+    return {};
+  }
+
   const configuredFile = String(env.ytDlp.cookiesFile || '').trim();
   if (configuredFile) {
-    if (!path.isAbsolute(configuredFile)) {
-      throw configError('YTDLP_COOKIES_FILE deve usar um caminho absoluto.');
-    }
-    let realPath;
-    try {
-      realPath = fs.realpathSync(configuredFile);
-    } catch {
-      throw configError('Arquivo de autenticação do YouTube não encontrado.');
-    }
-    const stat = fs.statSync(realPath);
-    const publicRoot = path.resolve(__dirname, '../../public');
-    const storageRoot = path.resolve(env.storagePath);
-    if (
-      !stat.isFile() ||
-      stat.size < 1 ||
-      stat.size > 5 * 1024 * 1024 ||
-      path.extname(realPath).toLowerCase() !== '.txt'
-    ) {
-      throw configError('Arquivo de autenticação do YouTube inválido.');
-    }
-    if (isInside(publicRoot, realPath) || isInside(storageRoot, realPath)) {
-      throw configError('O arquivo de cookies do YouTube deve ficar fora das pastas public e storage.');
-    }
-    return { cookies: realPath };
+    const real = validateCookiesFile(configuredFile, 'YouTube');
+    return real ? { cookies: real } : {};
   }
 
   const browser = String(env.ytDlp.cookiesFromBrowser || '').trim().toLowerCase();
@@ -81,10 +108,31 @@ function getYtDlpBaseFlags() {
   };
 }
 
-function runYtDlp(executable, url, flags = {}) {
-  const auth = getYtDlpAuthFlags();
+function detectPlatformFromUrl(url) {
+  const u = String(url || '').toLowerCase();
+  if (u.includes('instagram.com')) return 'instagram';
+  if (u.includes('tiktok.com')) return 'tiktok';
+  if (u.includes('facebook.com') || u.includes('fb.watch')) return 'facebook';
+  return 'youtube';
+}
+
+/**
+ * @param {Function} executable
+ * @param {string} url
+ * @param {object} [flags]
+ * @param {{ platform?: string, noCookies?: boolean, cookiesFile?: string }} [authOpts]
+ */
+function runYtDlp(executable, url, flags = {}, authOpts = {}) {
+  const platform = authOpts.platform || detectPlatformFromUrl(url);
+  const auth = getYtDlpAuthFlags({ ...authOpts, platform });
   const base = getYtDlpBaseFlags();
   const merged = { ...base, ...auth, ...flags };
+
+  // Chamada pediu cookies: false / null → remove
+  if (flags.cookies === false || flags.cookies === null) {
+    delete merged.cookies;
+    delete merged.cookiesFromBrowser;
+  }
 
   if (flags.jsRuntimes && !Object.prototype.hasOwnProperty.call(flags, 'noJsRuntimes')) {
     delete merged.noJsRuntimes;
@@ -92,10 +140,15 @@ function runYtDlp(executable, url, flags = {}) {
 
   return executable(url, merged).catch((error) => {
     const raw = String(error?.stderr || error?.message || '').toLowerCase();
-    if (raw.includes('sign in') || raw.includes('not a bot') || raw.includes('confirm you')) {
+    const isIg = platform === 'instagram';
+    if (raw.includes('sign in') || raw.includes('not a bot') || raw.includes('confirm you') || raw.includes('login required')) {
       const message = Object.keys(auth).length
-        ? 'A sessão usada para acessar o YouTube expirou. Atualize os cookies e tente novamente.'
-        : 'O YouTube solicitou autenticação. Configure YTDLP_COOKIES_FROM_BROWSER no ambiente local ou YTDLP_COOKIES_FILE no servidor.';
+        ? isIg
+          ? 'A sessão do Instagram expirou. Atualize YTDLP_IG_COOKIES_FILE e tente novamente.'
+          : 'A sessão usada para acessar o YouTube expirou. Atualize os cookies e tente novamente.'
+        : isIg
+          ? 'O Instagram pediu autenticação. Configure YTDLP_IG_COOKIES_FILE (cookies Netscape do Instagram).'
+          : 'O YouTube solicitou autenticação. Configure YTDLP_COOKIES_FROM_BROWSER no ambiente local ou YTDLP_COOKIES_FILE no servidor.';
       error.message = message;
       error.stderr = message;
     } else if (raw.includes('n challenge') || raw.includes('javascript runtime') || raw.includes('js runtime')) {
@@ -108,4 +161,10 @@ function runYtDlp(executable, url, flags = {}) {
   });
 }
 
-module.exports = { getYtDlpAuthFlags, getYtDlpBaseFlags, resolveNodeBinary, runYtDlp };
+module.exports = {
+  getYtDlpAuthFlags,
+  getYtDlpBaseFlags,
+  resolveNodeBinary,
+  runYtDlp,
+  detectPlatformFromUrl,
+};

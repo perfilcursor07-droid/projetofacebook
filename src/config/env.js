@@ -51,6 +51,8 @@ const env = {
   storagePath: process.env.STORAGE_PATH || './storage',
   ytDlp: {
     cookiesFile: process.env.YTDLP_COOKIES_FILE || '',
+    /** Cookies Netscape do Instagram (recomendado para scan/download de perfis) */
+    igCookiesFile: process.env.YTDLP_IG_COOKIES_FILE || process.env.INSTAGRAM_COOKIES_FILE || '',
     cookiesFromBrowser: process.env.YTDLP_COOKIES_FROM_BROWSER || '',
     /** ex.: node  |  node:/usr/local/bin/node  |  deno */
     jsRuntime: process.env.YTDLP_JS_RUNTIME || '',
