@@ -9,12 +9,97 @@
   const tipoEl = document.getElementById('matter-tipo');
   const imgEl = document.getElementById('matter-img');
   const imgWrap = document.getElementById('matter-img-wrap');
+  const btnBaixarArte = document.getElementById('btn-baixar-arte');
+  const btnCopiarLegenda = document.getElementById('btn-copiar-legenda');
 
   function setStatus(msg, isError) {
     if (!statusEl) return;
     statusEl.textContent = msg || '';
     statusEl.className = 'mt-4 text-sm ' + (isError ? 'text-rose-300' : 'text-slate-400');
   }
+
+  function syncDownloadArtLink(url) {
+    if (!btnBaixarArte) return;
+    if (!url) {
+      btnBaixarArte.classList.add('hidden');
+      btnBaixarArte.removeAttribute('href');
+      return;
+    }
+    btnBaixarArte.href = url;
+    btnBaixarArte.setAttribute('download', 'arte-materia-' + cfg.id + '.jpg');
+    btnBaixarArte.classList.remove('hidden');
+  }
+
+  function setArtImage(url) {
+    if (!imgEl || !url) return;
+    const withCache = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+    imgEl.src = withCache;
+    if (imgWrap) imgWrap.classList.remove('hidden');
+    syncDownloadArtLink(withCache);
+  }
+
+  async function copiarLegenda() {
+    const texto = String(materiaEl?.value || '').trim();
+    if (!texto) {
+      setStatus('Não há legenda para copiar.', true);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(texto);
+      const prev = btnCopiarLegenda?.textContent;
+      if (btnCopiarLegenda) btnCopiarLegenda.textContent = 'Copiado ✓';
+      setStatus('Legenda copiada ✓');
+      setTimeout(() => {
+        if (btnCopiarLegenda && prev) btnCopiarLegenda.textContent = prev;
+      }, 1600);
+    } catch {
+      // fallback
+      materiaEl.focus();
+      materiaEl.select();
+      try {
+        document.execCommand('copy');
+        setStatus('Legenda copiada ✓');
+      } catch {
+        setStatus('Não foi possível copiar. Selecione o texto manualmente.', true);
+      }
+    }
+  }
+
+  async function baixarArte(e) {
+    if (e) e.preventDefault();
+    const url = imgEl?.currentSrc || imgEl?.src || btnBaixarArte?.getAttribute('href');
+    if (!url || url === '#' || url.endsWith('/#')) {
+      setStatus('Nenhuma arte disponível para baixar.', true);
+      return;
+    }
+    try {
+      setStatus('Preparando download da arte…');
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('Falha ao baixar (' + res.status + ')');
+      const blob = await res.blob();
+      const ext = (blob.type || '').includes('png') ? 'png' : 'jpg';
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = 'arte-materia-' + cfg.id + '.' + ext;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+      setStatus('Download da arte iniciado ✓');
+    } catch (err) {
+      // fallback: abre em nova aba
+      window.open(url, '_blank', 'noopener');
+      setStatus(err.message || 'Abra a imagem e salve manualmente.', true);
+    }
+  }
+
+  btnCopiarLegenda?.addEventListener('click', (e) => {
+    e.preventDefault();
+    copiarLegenda();
+  });
+  btnBaixarArte?.addEventListener('click', baixarArte);
+  if (imgEl?.src) syncDownloadArtLink(imgEl.src);
 
   function escapeHtml(text) {
     return String(text || '')
@@ -59,7 +144,7 @@
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Falha ao salvar');
     if (data.imagemUrl && imgEl) {
-      imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+      setArtImage(data.imagemUrl);
       imgWrap?.classList.remove('hidden');
     }
     if (data.aviso) setStatus(data.aviso);
@@ -105,7 +190,7 @@
         tituloSugestoes.push(data.titulo);
       }
       if (data.imagemUrl && imgEl) {
-        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        setArtImage(data.imagemUrl);
         imgWrap?.classList.remove('hidden');
       }
       const reelVideo = document.getElementById('matter-reel-video');
@@ -176,7 +261,7 @@
       if (!res.ok) throw new Error(data.error || 'Falha ao publicar');
 
       if (data.imagemUrl && imgEl) {
-        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        setArtImage(data.imagemUrl);
         imgWrap?.classList.remove('hidden');
       }
 
@@ -341,7 +426,7 @@
       if (!res.ok) throw new Error(data.error || 'Falha ao trocar a imagem');
 
       if (data.imagemUrl && imgEl) {
-        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        setArtImage(data.imagemUrl);
         imgWrap?.classList.remove('hidden');
       }
       clearImageSelection();
@@ -373,7 +458,7 @@
       if (!res.ok) throw new Error(data.error || 'Falha ao recarregar o modelo da marca');
 
       if (data.imagemUrl && imgEl) {
-        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        setArtImage(data.imagemUrl);
         imgWrap?.classList.remove('hidden');
       }
       setStatus('Modelo, logo e cores atuais aplicados à arte ✓');
@@ -419,7 +504,7 @@
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || 'Falha ao aplicar imagem');
       if (j.imagemUrl && imgEl) {
-        imgEl.src = j.imagemUrl + (j.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        setArtImage(j.imagemUrl);
         imgWrap?.classList.remove('hidden');
       }
       // Marca a miniatura escolhida como "Atual" sem buscar de novo na API
@@ -641,7 +726,7 @@
       if (!res.ok) throw new Error(data.error || 'Não foi possível buscar a imagem da fonte');
 
       if (data.imagemUrl && imgEl) {
-        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        setArtImage(data.imagemUrl);
         imgWrap?.classList.remove('hidden');
       }
       setStatus(data.aviso || 'Imagem da fonte aplicada e arte gerada ✓');
