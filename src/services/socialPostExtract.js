@@ -163,6 +163,126 @@ function limparLegendaInstagram(raw) {
   return t;
 }
 
+function unescapeJsonString(raw) {
+  try {
+    return JSON.parse(`"${raw}"`);
+  } catch {
+    return decodificarEntidades(
+      String(raw || '')
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .replace(/\\u([0-9a-f]{4})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    );
+  }
+}
+
+/**
+ * Extrai legenda/imagem do HTML do Instagram (SPA / embed / OG).
+ * HTML autenticado no datacenter costuma ter ~600kb sem edge_media clássico.
+ */
+function extrairDadosDoHtmlInstagram(html, url) {
+  if (!html || html.length < 200) return null;
+
+  const signals = {
+    len: html.length,
+    hasLogin: /\/accounts\/login/i.test(html.slice(0, 8000)),
+    hasOgDesc: /og:description/i.test(html),
+    hasOgImage: /og:image/i.test(html),
+    hasCaptionText: /"caption"\s*:\s*\{[^]{0,400}?"text"\s*:/i.test(html),
+    hasXdt: /xdt_shortcode_media/i.test(html),
+    hasEdgeCaption: /edge_media_to_caption/i.test(html),
+    hasDisplayUrl: /"display_url"\s*:/i.test(html),
+    hasClassCaption: /class="Caption"/i.test(html),
+  };
+
+  const parsedOg = parseOgFromHtml(html, url);
+  let texto = parsedOg.texto;
+  let imagem = parsedOg.imagem;
+  let veiculo = parsedOg.veiculo;
+
+  const captionRes = [
+    /"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/,
+    /"caption"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/,
+    /"caption"\s*:\s*\{[^]{0,500}?"text"\s*:\s*"((?:\\.|[^"\\])*)"/,
+    /"xdt_shortcode_media"[\s\S]{0,4000}?"text"\s*:\s*"((?:\\.|[^"\\])*)"/,
+  ];
+
+  for (const re of captionRes) {
+    const m = html.match(re);
+    if (!m?.[1]) continue;
+    let candidate = unescapeJsonString(m[1]);
+    candidate = limparLegendaInstagram(candidate) || candidate;
+    if (candidate && candidate.length >= 20 && candidate.length > (texto?.length || 0)) {
+      texto = candidate;
+      break;
+    }
+  }
+
+  // Embed: <div class="Caption">...</div>
+  if ((!texto || texto.length < 40) && signals.hasClassCaption) {
+    const cap = html.match(
+      /class="Caption"[^>]*>([\s\S]*?)(?:class="CaptionComments"|class="SocialProof"|<\/blockquote>)/i
+    );
+    if (cap?.[1]) {
+      const userMatch = cap[1].match(/CaptionUsername[^>]*>([^<]+)</i);
+      if (userMatch?.[1]) veiculo = decodificarEntidades(userMatch[1]).replace(/^@/, '');
+      const plain = decodificarEntidades(
+        cap[1]
+          .replace(/<a[^>]*CaptionUsername[\s\S]*?<\/a>/i, ' ')
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<[^>]+>/g, ' ')
+      );
+      if (plain.length >= 40) texto = plain;
+    }
+  }
+
+  if (!imagem) {
+    const imgRes = [
+      /"display_url"\s*:\s*"(https:[^"]+)"/i,
+      /"image_versions2"[\s\S]{0,400}?"url"\s*:\s*"(https:[^"]+)"/i,
+    ];
+    for (const re of imgRes) {
+      const m = html.match(re);
+      if (m?.[1] && !/rsrc\.php|static\.cdninstagram/i.test(m[1])) {
+        imagem = m[1].replace(/\\u0026/g, '&').replace(/&amp;/g, '&');
+        break;
+      }
+    }
+    if (!imagem) imagem = parsedOg.imagem;
+  }
+
+  if (!veiculo) {
+    veiculo =
+      html.match(/"owner"\s*:\s*\{[^}]*"username"\s*:\s*"([a-z0-9._]+)"/i)?.[1] ||
+      html.match(/"username"\s*:\s*"([a-z0-9._]+)"/i)?.[1] ||
+      parsedOg.veiculo ||
+      null;
+  }
+
+  if (texto && texto.length >= 40) {
+    return {
+      url,
+      titulo: texto.slice(0, 140),
+      texto,
+      imagem: imagem || null,
+      veiculo,
+      metodo: 'ig-html',
+      signals,
+    };
+  }
+
+  return {
+    url,
+    titulo: parsedOg.titulo || null,
+    texto: texto || null,
+    imagem: imagem || null,
+    veiculo,
+    metodo: 'ig-html',
+    signals,
+    empty: true,
+  };
+}
+
 function pickMeta(html, prop) {
   const patterns = [
     new RegExp(`property=["']${prop}["'][^>]+content=["']([^"']+)["']`, 'i'),
@@ -410,11 +530,18 @@ async function extrairViaInstagramApi(url) {
   }
 
   const mediaId = shortcodeToMediaId(code);
+  const dsUserId = require('./instagramCookies').loadInstagramCookies()?.cookies?.ds_user_id;
+  const mediaIdWithUser = mediaId && dsUserId ? `${mediaId}_${dsUserId}` : null;
   console.warn(`[socialPost] ig-api: tentando shortcode=${code} mediaId=${mediaId}`);
 
   const endpoints = [
     mediaId ? `https://www.instagram.com/api/v1/media/${mediaId}/info/` : null,
     mediaId ? `https://i.instagram.com/api/v1/media/${mediaId}/info/` : null,
+    mediaIdWithUser ? `https://i.instagram.com/api/v1/media/${mediaIdWithUser}/info/` : null,
+    // GraphQL web (doc_id público usado pelo site; pode mudar)
+    `https://www.instagram.com/graphql/query/?doc_id=10015901848456354&variables=${encodeURIComponent(
+      JSON.stringify({ shortcode: code, fetch_tagged_user_count: null, hoisted_comment_id: null, hoisted_reply_id: null })
+    )}`,
     `https://www.instagram.com/p/${code}/?__a=1&__d=dis`,
     `https://www.instagram.com/reel/${code}/?__a=1&__d=dis`,
   ].filter(Boolean);
@@ -441,6 +568,7 @@ async function extrairViaInstagramApi(url) {
           data?.items?.[0] ||
           data?.graphql?.shortcode_media ||
           data?.data?.xdt_shortcode_media ||
+          data?.data?.shortcode_media ||
           null;
 
         if (!media && data && typeof data === 'object') {
@@ -499,47 +627,41 @@ async function extrairViaInstagramApi(url) {
     }
   }
 
-  // Última tentativa: HTML autenticado + OG / JSON embutido
-  try {
-    const { html, finalUrl } = await fetchHtml(url, BROWSER_UA, {
-      Cookie: cookieHeader,
-      'X-IG-App-ID': '936619743392459',
-    });
-    console.warn(`[socialPost] ig-cookie-html: len=${html.length}`);
-    const parsed = parseOgFromHtml(html, finalUrl || url);
-    if (parsed.texto && parsed.texto.length >= 40) {
-      parsed.metodo = 'ig-cookie-html';
-      return parsed;
-    }
-
-    const captionMatch = html.match(
-      /"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/
-    );
-    if (captionMatch?.[1]) {
-      let texto;
-      try {
-        texto = JSON.parse(`"${captionMatch[1]}"`);
-      } catch {
-        texto = decodificarEntidades(captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'));
+  // HTML autenticado: crawler UA (melhor OG) + browser UA
+  for (const ua of [CRAWLER_UA, BROWSER_UA]) {
+    try {
+      const pages = [
+        url,
+        `https://www.instagram.com/p/${code}/embed/captioned/`,
+        `https://www.instagram.com/p/${code}/embed/`,
+      ];
+      for (const pageUrl of pages) {
+        const { html, finalUrl } = await fetchHtml(pageUrl, ua, {
+          Cookie: cookieHeader,
+          'X-IG-App-ID': '936619743392459',
+        });
+        const extracted = extrairDadosDoHtmlInstagram(html, finalUrl || url);
+        const sig = extracted?.signals
+          ? `login=${extracted.signals.hasLogin} og=${extracted.signals.hasOgDesc} captionJson=${extracted.signals.hasCaptionText} xdt=${extracted.signals.hasXdt} embedCap=${extracted.signals.hasClassCaption}`
+          : '';
+        console.warn(
+          `[socialPost] ig-html: ua=${ua.slice(0, 18)} url=${pageUrl.slice(-40)} len=${html.length} ${sig}`
+        );
+        if (extracted && !extracted.empty && extracted.texto && extracted.texto.length >= 40) {
+          console.warn(`[socialPost] ig-html: ok (${extracted.texto.length} chars)`);
+          return {
+            url,
+            titulo: extracted.titulo,
+            texto: extracted.texto,
+            imagem: extracted.imagem,
+            veiculo: extracted.veiculo,
+            metodo: 'ig-cookie-html',
+          };
+        }
       }
-      texto = limparLegendaInstagram(texto) || texto;
-      if (texto && texto.length >= 40) {
-        const img =
-          html.match(/"display_url"\s*:\s*"(https:[^"]+)"/)?.[1]?.replace(/\\u0026/g, '&') ||
-          parsed.imagem;
-        const user = html.match(/"username"\s*:\s*"([a-z0-9._]+)"/i)?.[1];
-        return {
-          url,
-          titulo: texto.slice(0, 140),
-          texto,
-          imagem: img || null,
-          veiculo: user || parsed.veiculo,
-          metodo: 'ig-cookie-html',
-        };
-      }
+    } catch (err) {
+      console.warn('[socialPost] ig-cookie-html:', err.message);
     }
-  } catch (err) {
-    console.warn('[socialPost] ig-cookie-html:', err.message);
   }
 
   console.warn('[socialPost] ig-api: falhou em todos os endpoints');
