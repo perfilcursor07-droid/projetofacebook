@@ -1,8 +1,51 @@
 const axios = require('axios');
+const { env } = require('../config/env');
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 const CRAWLER_UA = 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)';
+
+/** Remove redirect de login e normaliza URL de foto/post do Facebook. */
+function normalizarUrlSocial(url) {
+  let link = String(url || '').trim();
+  if (!link) return link;
+  try {
+    const u = new URL(link);
+    // Facebook manda o scraper para /login/?next=...
+    if (/\/login/i.test(u.pathname) && u.searchParams.get('next')) {
+      const next = u.searchParams.get('next');
+      if (next) link = decodeURIComponent(next);
+    }
+  } catch {
+    /* keep */
+  }
+  try {
+    const u = new URL(link);
+    const host = u.hostname.replace(/^www\./, '').toLowerCase();
+    if (host.includes('facebook.com') || host === 'fb.com' || host === 'm.facebook.com') {
+      u.hostname = 'www.facebook.com';
+      u.hash = '';
+      // photo/?fbid=X → forma canônica
+      const fbid = u.searchParams.get('fbid');
+      if (fbid && /\/photo/i.test(u.pathname)) {
+        return `https://www.facebook.com/photo/?fbid=${fbid}`;
+      }
+      return u.toString();
+    }
+  } catch {
+    /* keep */
+  }
+  return link;
+}
+
+function textoGenericoSocial(texto) {
+  const t = String(texto || '').trim();
+  if (!t) return true;
+  if (t.length < 60) return true;
+  if (/^(facebook|instagram|log in|sign up)$/i.test(t)) return true;
+  if (/faça login|entre no facebook|create an account/i.test(t)) return true;
+  return false;
+}
 
 function detectarPlataformaSocial(url) {
   try {
@@ -233,9 +276,10 @@ async function extrairViaJina(url) {
 
 async function extrairViaYtDlp(url) {
   try {
+    // Não gasta yt-dlp em URL de login
+    if (/facebook\.com\/login/i.test(url)) return null;
     const importService = require('./importService');
     const meta = await importService.fetchLinkMetadata(url);
-    // fetchLinkMetadata não devolve description — chamar yt-dlp direto
     const fs = require('fs');
     const youtubedlPkg = require('youtube-dl-exec');
     const { runYtDlp } = require('./ytDlpAuth');
@@ -277,17 +321,118 @@ async function extrairViaYtDlp(url) {
   }
 }
 
+/** oEmbed oficial (app token) — às vezes devolve HTML com legenda. */
+async function extrairViaOembed(url) {
+  if (!env.facebook?.appId || !env.facebook?.appSecret) return null;
+  try {
+    const token = `${env.facebook.appId}|${env.facebook.appSecret}`;
+    const { data } = await axios.get('https://graph.facebook.com/v21.0/oembed_post', {
+      params: { url, access_token: token, omitscript: true },
+      timeout: 20000,
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+    const html = String(data.html || '');
+    const author = data.author_name || null;
+    // Extrai texto do blockquote do embed
+    let texto = null;
+    const bq = html.match(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i);
+    if (bq) {
+      texto = decodificarEntidades(
+        bq[1]
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      );
+    }
+    const img =
+      absolutizar(url, pickMeta(html, 'og:image')) ||
+      (html.match(/src=["'](https:\/\/[^"']+(?:fbcdn|scontent)[^"']+)["']/i) || [])[1] ||
+      null;
+    if (!texto && !img && !author) return null;
+    return {
+      url,
+      titulo: author ? `Post — ${author}` : null,
+      texto: texto && !textoGenericoSocial(texto) ? texto : null,
+      imagem: img,
+      veiculo: author,
+      metodo: 'oembed',
+    };
+  } catch (err) {
+    console.warn('[socialPost] oembed:', err.response?.data?.error?.message || err.message);
+    return null;
+  }
+}
+
+/** mbasic — às vezes passa onde www exige login. */
+async function extrairViaMbasic(url) {
+  try {
+    const u = new URL(normalizarUrlSocial(url));
+    if (!u.hostname.includes('facebook.com')) return null;
+    u.hostname = 'mbasic.facebook.com';
+    const { html, finalUrl } = await fetchHtml(u.toString(), BROWSER_UA);
+    if (/\/login/i.test(finalUrl) || /log in|entre no facebook/i.test(html.slice(0, 2000))) {
+      return null;
+    }
+    const parsed = parseOgFromHtml(html, finalUrl);
+    // Legenda em mbasic costuma estar em <div class="..."> longos
+    if (!parsed.texto || parsed.texto.length < 80) {
+      const plain = decodificarEntidades(
+        html
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/(p|div|span)>/gi, '\n')
+          .replace(/<[^>]+>/g, ' ')
+      );
+      const linhas = plain
+        .split(/\n+/)
+        .map((l) => l.replace(/\s+/g, ' ').trim())
+        .filter((l) => l.length >= 50 && !/^(Log In|Sign Up|Facebook|Menu|Notific)/i.test(l));
+      const candidato = linhas.slice(0, 4).join('\n\n');
+      if (candidato.length >= 60) parsed.texto = candidato.slice(0, 3500);
+    }
+    parsed.metodo = 'mbasic';
+    return parsed;
+  } catch (err) {
+    console.warn('[socialPost] mbasic:', err.message);
+    return null;
+  }
+}
+
+function mesclarExtracao(melhor, extra) {
+  if (!extra) return melhor;
+  const out = { ...melhor };
+  if (extra.texto && (!out.texto || extra.texto.length > out.texto.length)) {
+    out.texto = extra.texto;
+  }
+  if (!out.imagem && extra.imagem) out.imagem = extra.imagem;
+  if (!out.titulo && extra.titulo) out.titulo = extra.titulo;
+  if (!out.veiculo && extra.veiculo) out.veiculo = extra.veiculo;
+  if (extra.url && !/\/login/i.test(extra.url)) out.url = extra.url;
+  if (extra.metodo) {
+    out.metodo = out.metodo ? `${out.metodo}+${extra.metodo}` : extra.metodo;
+  }
+  return out;
+}
+
 /**
  * Extrai texto + imagem de post Facebook / Instagram.
+ * @param {string} url
+ * @param {{ textoManual?: string, imagemManual?: string }} [opts]
  */
-async function extrairPostSocial(url) {
-  const link = String(url || '').trim();
+async function extrairPostSocial(url, opts = {}) {
+  const link = normalizarUrlSocial(url);
   const plataforma = detectarPlataformaSocial(link);
   if (!plataforma) {
     const err = new Error('Link não é de Facebook ou Instagram');
     err.status = 400;
     throw err;
   }
+
+  const textoManual = String(opts.textoManual || '').trim();
+  const imagemManual = String(opts.imagemManual || '').trim();
 
   let melhor = {
     url: link,
@@ -299,52 +444,54 @@ async function extrairPostSocial(url) {
     plataforma,
   };
 
-  // 1) Open Graph (rápido, funciona em muitos posts públicos)
+  // 1) Open Graph
   try {
-    const og = await extrairViaOg(link);
-    melhor = { ...melhor, ...og, plataforma };
+    melhor = mesclarExtracao(melhor, await extrairViaOg(link));
   } catch (err) {
     console.warn('[socialPost] og:', err.message);
   }
 
-  // 2) Jina — texto completo quando OG veio truncado ou vazio
-  const textoCurto = !melhor.texto || melhor.texto.length < 120 || /\.\.\.$/.test(melhor.texto);
-  if (textoCurto || !melhor.imagem) {
+  // 2) oEmbed (app token)
+  if (textoGenericoSocial(melhor.texto) || !melhor.imagem) {
+    melhor = mesclarExtracao(melhor, await extrairViaOembed(link));
+  }
+
+  // 3) Jina
+  if (textoGenericoSocial(melhor.texto) || !melhor.imagem) {
     try {
-      const jina = await extrairViaJina(link);
-      if (jina.texto && (!melhor.texto || jina.texto.length > melhor.texto.length)) {
-        melhor.texto = jina.texto;
-        melhor.metodo = melhor.metodo ? `${melhor.metodo}+jina` : 'jina';
-      }
-      if (!melhor.imagem && jina.imagem) melhor.imagem = jina.imagem;
-      if (!melhor.titulo && jina.titulo) melhor.titulo = jina.titulo;
-      if (!melhor.veiculo && jina.veiculo) melhor.veiculo = jina.veiculo;
+      melhor = mesclarExtracao(melhor, await extrairViaJina(link));
     } catch (err) {
       console.warn('[socialPost] jina:', err.message);
     }
   }
 
-  // 3) yt-dlp (útil com cookies no servidor)
-  if (!melhor.texto || !melhor.imagem) {
-    const ytdlp = await extrairViaYtDlp(link);
-    if (ytdlp) {
-      if (ytdlp.texto && (!melhor.texto || ytdlp.texto.length > melhor.texto.length)) {
-        melhor.texto = ytdlp.texto;
-      }
-      if (!melhor.imagem && ytdlp.imagem) melhor.imagem = ytdlp.imagem;
-      if (!melhor.titulo && ytdlp.titulo) melhor.titulo = ytdlp.titulo;
-      if (!melhor.veiculo && ytdlp.veiculo) melhor.veiculo = ytdlp.veiculo;
-      melhor.metodo = melhor.metodo ? `${melhor.metodo}+yt-dlp` : 'yt-dlp';
-    }
+  // 4) mbasic
+  if (plataforma === 'facebook' && (textoGenericoSocial(melhor.texto) || !melhor.imagem)) {
+    melhor = mesclarExtracao(melhor, await extrairViaMbasic(link));
   }
 
-  if (!melhor.texto && !melhor.titulo) {
+  // 5) yt-dlp (não em URL de login)
+  if (textoGenericoSocial(melhor.texto) || !melhor.imagem) {
+    melhor = mesclarExtracao(melhor, await extrairViaYtDlp(link));
+  }
+
+  // Fallback manual (usuário colou a legenda / URL da imagem)
+  if (textoManual.length >= 40) {
+    melhor.texto = textoManual;
+    melhor.metodo = melhor.metodo ? `${melhor.metodo}+manual` : 'manual';
+  }
+  if (/^https?:\/\//i.test(imagemManual)) {
+    melhor.imagem = imagemManual;
+  }
+
+  if (textoGenericoSocial(melhor.texto)) {
     const err = new Error(
       plataforma === 'instagram'
-        ? 'Não foi possível ler este post do Instagram (pode ser privado ou exigir login). Tente outro link público.'
-        : 'Não foi possível ler este post do Facebook (pode ser privado ou restringido). Tente outro link público.'
+        ? 'O Instagram bloqueou a leitura automática. Cole a legenda do post no campo “Texto da postagem” e tente de novo.'
+        : 'O Facebook bloqueou a leitura automática deste post (pede login no servidor). Cole a legenda do post no campo “Texto da postagem” (e, se puder, a URL da imagem) e gere de novo.'
     );
     err.status = 422;
+    err.code = 'SOCIAL_EXTRACT_BLOCKED';
     throw err;
   }
 
@@ -362,8 +509,10 @@ async function extrairPostSocial(url) {
   ) {
     melhor.titulo = firstSentence.slice(0, 140);
   }
-  if (!melhor.titulo) {
-    melhor.titulo = `Post — ${melhor.veiculo || plataforma}`;
+  if (!melhor.titulo || /^(facebook|instagram)$/i.test(melhor.titulo)) {
+    melhor.titulo = firstSentence
+      ? firstSentence.slice(0, 140)
+      : String(melhor.texto).slice(0, 120);
   }
 
   return melhor;
@@ -413,6 +562,7 @@ module.exports = {
   detectarPlataformaSocial,
   isSocialPostUrl,
   isSocialVideoUrl,
+  normalizarUrlSocial,
   extrairPostSocial,
   socialParaTopico,
 };

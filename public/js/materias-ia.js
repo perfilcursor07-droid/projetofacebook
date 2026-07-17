@@ -312,6 +312,9 @@
         : 'Extraindo conteúdo do link e gerando matéria…';
 
     try {
+      const textoManual = String(document.getElementById('mia-link-texto')?.value || '').trim();
+      const imagemManual = String(document.getElementById('mia-link-imagem')?.value || '').trim();
+
       const res = await fetch('/api/materias-ia/reescrever-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -320,10 +323,17 @@
           facebookPageId: pageEl?.value ? Number(pageEl.value) : null,
           tipoPublicacao: tipo,
           status: 'rascunho',
+          textoManual: textoManual || undefined,
+          imagemManual: imagemManual || undefined,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao processar o link');
+      if (!res.ok) {
+        if (data.error && /cole a legenda|texto da postagem|bloqueou/i.test(data.error)) {
+          document.querySelector('#mia-link details')?.setAttribute('open', '');
+        }
+        throw new Error(data.error || 'Falha ao processar o link');
+      }
 
       if (data.modo === 'reel') {
         const matterId = data.matter?.id;

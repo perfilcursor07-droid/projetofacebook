@@ -127,6 +127,27 @@
           class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none" />
       </label>
 
+      <details class="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5">
+        <summary class="cursor-pointer px-3 py-2.5 text-xs font-medium text-amber-100 hover:text-white">
+          Se o Facebook bloquear a leitura — cole a legenda aqui
+        </summary>
+        <div class="space-y-3 border-t border-amber-500/20 px-3 py-3">
+          <p class="text-[11px] leading-relaxed text-slate-400">
+            O Facebook muitas vezes pede login no servidor e a extração falha. Copie o texto do post (como no app) e cole abaixo. A IA usa esse texto — não inventa outro assunto.
+          </p>
+          <label class="block text-sm">
+            <span class="text-slate-400">Texto da postagem (legenda)</span>
+            <textarea id="mia-link-texto" rows="4" placeholder="Cole aqui a legenda completa do post…"
+              class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
+          </label>
+          <label class="block text-sm">
+            <span class="text-slate-400">URL da imagem (opcional)</span>
+            <input id="mia-link-imagem" type="url" placeholder="https://… (link direto da foto, se tiver)"
+              class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+          </label>
+        </div>
+      </details>
+
       <div class="mt-3 grid gap-3 lg:grid-cols-2">
         <label class="block text-sm">
           <span class="text-slate-400">Página do Facebook</span>

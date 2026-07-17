@@ -1131,6 +1131,8 @@ async function gerarDeLink({
   facebookPageId = null,
   tipoPublicacao = 'foto',
   status = 'rascunho',
+  textoManual = '',
+  imagemManual = '',
 }) {
   const link = String(url || '').trim();
   if (!/^https?:\/\//i.test(link)) {
@@ -1164,7 +1166,7 @@ async function gerarDeLink({
 
   let apurado;
   if (isSocialPostUrl(link)) {
-    const social = await extrairPostSocial(link);
+    const social = await extrairPostSocial(link, { textoManual, imagemManual });
     apurado = socialParaTopico(social, link);
     console.log('[materias-ia] post social', {
       plataforma: social.plataforma,
@@ -1172,6 +1174,15 @@ async function gerarDeLink({
       textoLen: (social.texto || '').length,
       hasImage: Boolean(social.imagem),
     });
+
+    // Nunca gerar matéria social sem legenda real (evita alucinação)
+    if (String(social.texto || '').trim().length < 60) {
+      const err = new Error(
+        'Não foi possível ler a legenda deste post. Cole o texto da postagem no campo auxiliar e tente de novo.'
+      );
+      err.status = 422;
+      throw err;
+    }
   } else {
     const topicoBase = {
       link,

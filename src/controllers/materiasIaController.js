@@ -143,6 +143,8 @@ async function reescreverLink(req, res, next) {
       facebookPageId,
       tipoPublicacao,
       status,
+      textoManual: body.textoManual || body.legenda || body.texto || '',
+      imagemManual: body.imagemManual || body.imagemUrl || body.imagem || '',
     });
 
     // Reel: AiMatter + processamento em background → /materias-ia/:id
