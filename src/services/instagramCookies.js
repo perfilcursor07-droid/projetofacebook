@@ -31,12 +31,13 @@ function parseNetscapeLine(line) {
   }
   if (cols.length < 7) return null;
   const domain = cols[0];
+  const expiresAt = Number(cols[4]) || 0;
   const name = cols[5];
   let value = cols.slice(6).join('\t').trim();
   value = value.replace(/^"|"$/g, '').replace(/\\054/g, ',');
   if (!name || !value) return null;
   if (!/instagram\.com/i.test(domain) && domain !== '.instagram.com') return null;
-  return { domain, name, value };
+  return { domain, name, value, expiresAt };
 }
 
 /**
@@ -49,13 +50,17 @@ function loadInstagramCookies() {
 
   const text = fs.readFileSync(file, 'utf8');
   const cookies = {};
+  const expires = {};
   for (const line of text.split(/\r?\n/)) {
     const parsed = parseNetscapeLine(line);
     if (!parsed) continue;
     cookies[parsed.name] = parsed.value;
+    expires[parsed.name] = parsed.expiresAt;
   }
   if (!cookies.sessionid) return null;
-  return { file, cookies, names: Object.keys(cookies) };
+  const sessionExpiresAt = Number(expires.sessionid || 0);
+  const sessionExpired = sessionExpiresAt > 0 && sessionExpiresAt <= Math.floor(Date.now() / 1000);
+  return { file, cookies, expires, names: Object.keys(cookies), sessionExpiresAt, sessionExpired };
 }
 
 function diagnoseInstagramCookies() {
@@ -72,23 +77,28 @@ function diagnoseInstagramCookies() {
   const hasSession = /(?:^|\t|\s)sessionid(?:\t|\s)/m.test(text);
   const loaded = loadInstagramCookies();
   return {
-    ok: Boolean(loaded?.cookies?.sessionid),
+    ok: Boolean(loaded?.cookies?.sessionid) && !loaded?.sessionExpired,
     file,
     size: stat.size,
     hasTabs,
     hasSessionLine: hasSession,
     parsedNames: loaded?.names || [],
-    reason: loaded?.cookies?.sessionid
-      ? 'ok'
-      : hasSession
-        ? 'sessionid na linha mas parse falhou (formato?)'
-        : 'sessionid ausente no arquivo',
+    sessionExpiresAt: loaded?.sessionExpiresAt || null,
+    sessionExpired: Boolean(loaded?.sessionExpired),
+    reason: loaded?.sessionExpired
+      ? 'sessionid expirado no arquivo'
+      : loaded?.cookies?.sessionid
+        ? 'formato válido (autenticação ainda não testada)'
+        : hasSession
+          ? 'sessionid na linha mas parse falhou (formato?)'
+          : 'sessionid ausente no arquivo',
   };
 }
 
 function buildInstagramCookieHeader(cookiesMap = null) {
-  const loaded = cookiesMap || loadInstagramCookies()?.cookies;
-  if (!loaded) return null;
+  const source = cookiesMap ? { cookies: cookiesMap, sessionExpired: false } : loadInstagramCookies();
+  if (!source?.cookies || source.sessionExpired) return null;
+  const loaded = source.cookies;
   const wanted = ['sessionid', 'csrftoken', 'ds_user_id', 'mid', 'ig_did', 'datr', 'rur'];
   const parts = [];
   for (const name of wanted) {
@@ -103,7 +113,7 @@ function buildInstagramCookieHeader(cookiesMap = null) {
 
 function resolveCleanInstagramCookiesFile() {
   const loaded = loadInstagramCookies();
-  if (!loaded) return null;
+  if (!loaded || loaded.sessionExpired) return null;
 
   const raw = fs.readFileSync(loaded.file, 'utf8');
   const needsClean = /"[^\t\n]*"|\\054/.test(raw) || !raw.includes('\t');
@@ -206,6 +216,104 @@ async function bootstrapInstagramSession(axiosClient) {
   }
 }
 
+function instagramFailureReason(data, status) {
+  const message = String(
+    data?.message || data?.error_title || data?.error_type || data?.status || ''
+  )
+    .replace(/\s+/g, ' ')
+    .slice(0, 160);
+  const normalized = message.toLowerCase();
+  if (normalized.includes('challenge') || data?.challenge) return 'checkpoint/challenge exigido';
+  if (normalized.includes('login') || normalized.includes('logged')) return 'login_required';
+  if (status === 429) return 'limite de requisições (HTTP 429)';
+  return message ? `${message} (HTTP ${status})` : `HTTP ${status}`;
+}
+
+/** Testa a sessão remotamente sem retornar usuário, IDs ou valores de cookies. */
+async function validateInstagramSession(axiosClient, bootstrap = null) {
+  const loaded = loadInstagramCookies();
+  if (!loaded?.cookies?.sessionid) {
+    return { ok: false, status: null, reason: 'sessionid ausente' };
+  }
+  if (loaded.sessionExpired) {
+    return { ok: false, status: null, reason: 'sessionid expirado no arquivo' };
+  }
+  if (!axiosClient) return { ok: false, status: null, reason: 'cliente HTTP ausente' };
+
+  const boot = bootstrap || (await bootstrapInstagramSession(axiosClient));
+  const cookieHeader = boot?.cookieHeader || buildInstagramCookieHeader();
+  const webHeaders = instagramApiHeaders(cookieHeader, {
+    mobile: false,
+    wwwClaim: boot?.claim || '0',
+  });
+  const mobileHeaders = instagramApiHeaders(cookieHeader, {
+    mobile: true,
+    wwwClaim: boot?.claim || '0',
+  });
+
+  try {
+    let userId = null;
+    const search = await axiosClient.get('https://www.instagram.com/web/search/topsearch/', {
+      params: { query: 'instagram' },
+      headers: webHeaders,
+      timeout: 20000,
+      maxRedirects: 5,
+      validateStatus: () => true,
+    });
+    if (search.status >= 200 && search.status < 300) {
+      const users = (Array.isArray(search.data?.users) ? search.data.users : []).map(
+        (entry) => entry?.user || entry
+      );
+      const account = users.find(
+        (item) => String(item?.username || '').toLowerCase() === 'instagram'
+      );
+      userId = account?.pk || account?.id || null;
+    }
+    if (!userId) {
+      return {
+        ok: false,
+        status: search.status,
+        reason: instagramFailureReason(search.data, search.status),
+        homeStatus: boot?.homeStatus || null,
+        hasClaim: Boolean(boot?.claim && boot.claim !== '0'),
+      };
+    }
+
+    const feed = await axiosClient.get(
+      `https://i.instagram.com/api/v1/feed/user/${encodeURIComponent(String(userId))}/`,
+      {
+        params: { count: 1 },
+        headers: mobileHeaders,
+        timeout: 20000,
+        maxRedirects: 5,
+        validateStatus: () => true,
+      }
+    );
+    const ok =
+      feed.status >= 200 &&
+      feed.status < 300 &&
+      Array.isArray(feed.data?.items) &&
+      feed.data.items.length > 0;
+    return {
+      ok,
+      status: feed.status,
+      reason: ok ? 'sessão utilizável para feeds' : instagramFailureReason(feed.data, feed.status),
+      homeStatus: boot?.homeStatus || null,
+      hasClaim: Boolean(boot?.claim && boot.claim !== '0'),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: err.response?.status || null,
+      reason: err.response
+        ? instagramFailureReason(err.response.data, err.response.status || 0)
+        : String(err.message || 'falha de rede').slice(0, 160),
+      homeStatus: boot?.homeStatus || null,
+      hasClaim: Boolean(boot?.claim && boot.claim !== '0'),
+    };
+  }
+}
+
 module.exports = {
   IG_APP_ID,
   DEFAULT_IG_COOKIES,
@@ -217,4 +325,6 @@ module.exports = {
   shortcodeToMediaId,
   instagramApiHeaders,
   bootstrapInstagramSession,
+  instagramFailureReason,
+  validateInstagramSession,
 };

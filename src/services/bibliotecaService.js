@@ -188,7 +188,7 @@ async function coletarItensFonte(fonte) {
         [
           'Não foi possível listar posts do Instagram.',
           erros[0] || '',
-          'Dica: exporte cookies do Instagram (Netscape) para YTDLP_IG_COOKIES_FILE, ou recarregue créditos do Serper.',
+          'Valide a sessão no servidor com: node scripts/test-ig-cookies.js. Se aparecer login_required ou challenge, reexporte os cookies Netscape de uma sessão ativa do Instagram.',
         ]
           .filter(Boolean)
           .join(' ')
@@ -401,6 +401,8 @@ async function coletarInstagramAuthenticatedApi(handle) {
     buildInstagramCookieHeader,
     bootstrapInstagramSession,
     instagramApiHeaders,
+    instagramFailureReason,
+    validateInstagramSession,
   } = require('./instagramCookies');
 
   const configuredCookies = buildInstagramCookieHeader();
@@ -408,44 +410,123 @@ async function coletarInstagramAuthenticatedApi(handle) {
 
   const boot = await bootstrapInstagramSession(axios);
   const cookieHeader = boot?.cookieHeader || configuredCookies;
-  const headers = instagramApiHeaders(cookieHeader, {
+  const webHeaders = instagramApiHeaders(cookieHeader, {
+    mobile: false,
+    wwwClaim: boot?.claim || '0',
+  });
+  const mobileHeaders = instagramApiHeaders(cookieHeader, {
     mobile: true,
     wwwClaim: boot?.claim || '0',
   });
+  const attempts = [];
+  let user = null;
 
-  const search = await axios.get('https://i.instagram.com/api/v1/users/search/', {
-    params: { q: handle, count: 10 },
-    headers,
-    timeout: 20000,
-    validateStatus: (s) => s >= 200 && s < 500,
-  });
-  if (search.status >= 400) {
-    throw new Error(`busca autenticada HTTP ${search.status}`);
-  }
-
-  const users = Array.isArray(search.data?.users) ? search.data.users : [];
-  const user = users.find(
-    (item) => String(item?.username || '').toLowerCase() === handle.toLowerCase()
-  );
-  if (!user?.pk) throw new Error(`usuário @${handle} não encontrado na busca autenticada`);
-
-  const feed = await axios.get(
-    `https://i.instagram.com/api/v1/feed/user/${encodeURIComponent(String(user.pk))}/`,
+  const searchAttempts = [
     {
-      params: { count: SCAN_LIMIT },
-      headers: {
-        ...headers,
-        Referer: `https://www.instagram.com/${handle}/`,
+      label: 'topsearch-web',
+      url: 'https://www.instagram.com/web/search/topsearch/',
+      params: { query: handle },
+      headers: webHeaders,
+      users(data) {
+        return (Array.isArray(data?.users) ? data.users : []).map((entry) => entry?.user || entry);
       },
-      timeout: 20000,
-      validateStatus: (s) => s >= 200 && s < 500,
+    },
+    {
+      label: 'users-search-web',
+      url: 'https://www.instagram.com/api/v1/users/search/',
+      params: { q: handle, count: 10 },
+      headers: webHeaders,
+      users(data) {
+        return Array.isArray(data?.users) ? data.users : [];
+      },
+    },
+    {
+      label: 'users-search-mobile',
+      url: 'https://i.instagram.com/api/v1/users/search/',
+      params: { q: handle, count: 10 },
+      headers: mobileHeaders,
+      users(data) {
+        return Array.isArray(data?.users) ? data.users : [];
+      },
+    },
+  ];
+
+  for (const attempt of searchAttempts) {
+    try {
+      const response = await axios.get(attempt.url, {
+        params: attempt.params,
+        headers: attempt.headers,
+        timeout: 20000,
+        validateStatus: () => true,
+      });
+      if (response.status >= 400) {
+        attempts.push(`${attempt.label}: ${instagramFailureReason(response.data, response.status)}`);
+        continue;
+      }
+      const users = attempt.users(response.data);
+      user = users.find(
+        (item) => String(item?.username || '').toLowerCase() === handle.toLowerCase()
+      );
+      if (user?.pk || user?.id) break;
+      attempts.push(`${attempt.label}: usuário não retornado`);
+    } catch (err) {
+      attempts.push(`${attempt.label}: ${instagramFailureReason(err.response?.data, err.response?.status || 0)}`);
     }
-  );
-  if (feed.status >= 400) {
-    throw new Error(`feed autenticado HTTP ${feed.status}`);
   }
 
-  const items = Array.isArray(feed.data?.items) ? feed.data.items : [];
+  const userId = user?.pk || user?.id;
+  if (!userId) {
+    const session = await validateInstagramSession(axios, boot);
+    if (!session.ok) {
+      throw new Error(`sessão do Instagram rejeitada: ${session.reason}`);
+    }
+    throw new Error(`usuário @${handle} não encontrado (${attempts.slice(0, 2).join('; ')})`);
+  }
+
+  const feedAttempts = [
+    {
+      label: 'feed-web',
+      url: `https://www.instagram.com/api/v1/feed/user/${encodeURIComponent(String(userId))}/`,
+      headers: webHeaders,
+    },
+    {
+      label: 'feed-mobile',
+      url: `https://i.instagram.com/api/v1/feed/user/${encodeURIComponent(String(userId))}/`,
+      headers: mobileHeaders,
+    },
+  ];
+  let items = [];
+  for (const attempt of feedAttempts) {
+    try {
+      const response = await axios.get(attempt.url, {
+        params: { count: SCAN_LIMIT },
+        headers: {
+          ...attempt.headers,
+          Referer: `https://www.instagram.com/${handle}/`,
+        },
+        timeout: 20000,
+        validateStatus: () => true,
+      });
+      if (response.status >= 400) {
+        attempts.push(`${attempt.label}: ${instagramFailureReason(response.data, response.status)}`);
+        continue;
+      }
+      items = Array.isArray(response.data?.items) ? response.data.items : [];
+      if (items.length) break;
+      attempts.push(`${attempt.label}: feed vazio`);
+    } catch (err) {
+      attempts.push(`${attempt.label}: ${instagramFailureReason(err.response?.data, err.response?.status || 0)}`);
+    }
+  }
+
+  if (!items.length) {
+    const session = await validateInstagramSession(axios, boot);
+    if (!session.ok) {
+      throw new Error(`sessão do Instagram rejeitada: ${session.reason}`);
+    }
+    throw new Error(`feed autenticado indisponível (${attempts.slice(-2).join('; ')})`);
+  }
+
   return items
     .map((item) => {
       const shortcode = item?.code;
