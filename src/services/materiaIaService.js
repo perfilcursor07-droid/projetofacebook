@@ -942,9 +942,19 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
   const VideoClips = require('../models/VideoClips');
   const importService = require('./importService');
   const { detectarPlataformaSocial } = require('./socialPostExtract');
+  const scrapeCreators = require('./scrapeCreatorsSocial');
 
   const link = String(url || '').trim();
   const plataforma = detectarPlataformaSocial(link) || 'rede';
+
+  let socialMeta = null;
+  if (scrapeCreators.isConfigured() && (plataforma === 'instagram' || plataforma === 'facebook')) {
+    try {
+      socialMeta = await scrapeCreators.extrairPost(link, plataforma);
+    } catch (socialErr) {
+      console.warn('[conteudo-reel] scrapecreators:', socialErr.message);
+    }
+  }
 
   let meta = {};
   let metaWarning = null;
@@ -954,6 +964,18 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     metaWarning = importService.humanizeYtDlpError(metaErr);
     console.warn('[conteudo-reel] metadata:', metaWarning);
     meta = { titulo: null, thumbnail: null, extractor: null, autor: null, autorUrl: null, duracao: null };
+  }
+
+  if (socialMeta) {
+    meta = {
+      ...meta,
+      description: socialMeta.texto || meta.description || null,
+      titulo: socialMeta.titulo || meta.titulo || null,
+      thumbnail: socialMeta.imagem || meta.thumbnail || null,
+      autor: socialMeta.veiculo || meta.autor || null,
+      autorUrl: socialMeta.autorUrl || meta.autorUrl || null,
+      extractor: [socialMeta.metodo, meta.extractor].filter(Boolean).join('+') || null,
+    };
   }
 
   const tituloBruto = meta.description || meta.titulo || `Reel — ${plataforma}`;
@@ -993,20 +1015,28 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     });
     video = await Videos.findById(vid);
     createdVideo = true;
-  } else if (/reaction|shares?/i.test(String(video.titulo || '')) || String(video.titulo || '').length > 120) {
-    // Corrige título antigo longo/sujo sem recriar o vídeo
+  } else {
     const metaBase =
       video.metadata && typeof video.metadata === 'object' ? video.metadata : {};
-    await Videos.update(video.id, {
-      titulo,
+    const tituloSujo =
+      /reaction|shares?/i.test(String(video.titulo || '')) ||
+      String(video.titulo || '').length > 120;
+    const patchVideo = {
       metadata: {
         ...metaBase,
+        extractor: meta.extractor || metaBase.extractor || null,
         titulo_completo:
-          metaBase.titulo_completo ||
           textoLimpo.slice(0, 2000) ||
+          metaBase.titulo_completo ||
           String(tituloBruto).slice(0, 2000),
       },
-    });
+    };
+    if (socialMeta || tituloSujo) patchVideo.titulo = titulo;
+    if (socialMeta?.imagem) patchVideo.thumbnail = socialMeta.imagem;
+    if (socialMeta?.veiculo) patchVideo.autor = String(socialMeta.veiculo).slice(0, 255);
+    if (socialMeta?.autorUrl) patchVideo.autor_url = String(socialMeta.autorUrl).slice(0, 500);
+
+    await Videos.update(video.id, patchVideo);
     video = await Videos.findById(video.id);
   }
 
@@ -1042,10 +1072,12 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     });
     matter = await AiMatters.findById(matterId);
   } else {
-    // Sempre normaliza título curto + limpa lixo de tentativas anteriores
+    // Sempre normaliza os metadados da fonte e limpa lixo de tentativas anteriores.
     const patchLimpeza = {
       titulo,
       fonte_titulo: titulo,
+      fonte_resumo: textoLimpo.slice(0, 1500) || matter.fonte_resumo || null,
+      imagem_url: meta.thumbnail || matter.imagem_url || null,
     };
     if (
       /reaction|shares?/i.test(String(matter.materia || '')) ||
@@ -1221,10 +1253,11 @@ async function gerarDeLink({
       hasImage: Boolean(social.imagem),
     });
 
-    // Nunca gerar matéria social sem legenda real (evita alucinação)
-    if (String(social.texto || '').trim().length < 60) {
+    // Nunca gerar matéria social sem legenda suficiente (evita alucinação).
+    // O extrator manual já exige 40 caracteres; mantenha o mesmo limite aqui.
+    if (String(social.texto || '').trim().length < 40) {
       const err = new Error(
-        'Não foi possível ler a legenda deste post. Cole o texto da postagem no campo auxiliar e tente de novo.'
+        'A legenda deste post está vazia ou é muito curta para gerar uma matéria sem inventar informações. Cole o texto completo da postagem no campo auxiliar e tente de novo.'
       );
       err.status = 422;
       throw err;
