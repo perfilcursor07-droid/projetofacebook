@@ -473,6 +473,17 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
       } catch (syncErr) {
         console.warn(`[conteudo-reel] sync matter clip ${clip.id}:`, syncErr.message);
       }
+
+      // Se o Reel veio do piloto da Biblioteca, publica somente após matéria e capa prontas.
+      try {
+        const reelAutopilot = require('./bibliotecaReelAutopilotService');
+        await reelAutopilot.publicarSePronto({
+          videoId: video.id,
+          clipId: clip.id,
+        });
+      } catch (publishErr) {
+        console.warn(`[biblioteca-autopilot] publicação Reel clip #${clip.id}:`, publishErr.message);
+      }
     } catch (err) {
       console.error(`[materia] clip ${clip.id} falhou:`, err.message || err);
       await VideoClips.update(clip.id, {

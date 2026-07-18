@@ -904,6 +904,7 @@ async function ranquearPostsViralFacebook(candidatos, topN = 3) {
       resumo: String(c.resumo || '').slice(0, 400),
       fonte: String(c.fonte || c.fonte_nome || '').slice(0, 120),
       plataforma: String(c.plataforma || c.fonte_plataforma || '').slice(0, 40),
+      tipo_midia: String(c.tipo_midia || c.media_type || 'post').slice(0, 20),
     }));
 
   const n = Math.min(Math.max(Number(topN) || 1, 1), 5);
@@ -923,7 +924,8 @@ async function ranquearPostsViralFacebook(candidatos, topN = 3) {
         role: 'system',
         content: `Você é editor de uma página no Facebook (estilo notícia / engajamento).
 Escolha os posts com MAIOR potencial de viralizar no Facebook AGORA.
-Critérios: relevância, emoção/curiosidade legítima, clareza do assunto, atualidade, potencial de compartilhamento.
+Critérios: relevância, emoção/curiosidade legítima, clareza do assunto, atualidade, potencial de compartilhamento e adequação ao formato indicado em tipo_midia.
+Vídeos/Reels podem ser escolhidos quando o assunto e a narrativa tiverem potencial real; não priorize o formato sozinho.
 PROIBIDO priorizar: clickbait enganoso, sensacionalismo falso, conteúdo que viole diretrizes do Facebook (ódio, violência gráfica, desinformação deliberada, spam, nudez, etc.).
 Título chamativo é bem-vindo se for honesto com o conteúdo.
 Responda APENAS JSON: {"ranking":[{"id":123,"score":0-100,"motivo":"frase curta"}]}.

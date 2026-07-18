@@ -27,6 +27,16 @@ const BibliotecaAutopilot = {
     return db(this.table).where({ id }).update({ ...data, updated_at: db.fn.now() });
   },
 
+  incrementPublishedByUser(userId, amount = 1) {
+    const delta = Math.max(1, Number(amount) || 1);
+    return db(this.table)
+      .where({ user_id: userId })
+      .update({
+        total_publicados: db.raw('total_publicados + ?', [delta]),
+        updated_at: db.fn.now(),
+      });
+  },
+
   updateByUser(userId, data) {
     return db(this.table).where({ user_id: userId }).update({ ...data, updated_at: db.fn.now() });
   },

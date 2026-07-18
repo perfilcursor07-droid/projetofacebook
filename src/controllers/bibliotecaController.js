@@ -130,11 +130,13 @@ async function gerarTexto(req, res, next) {
 
 async function gerarVideo(req, res, next) {
   try {
+    const body = req.body || {};
     const result = await bibliotecaService.gerarVideoDePost({
       userId: req.session.userId,
       postId: Number(req.params.postId),
+      facebookPageId: body.facebookPageId || body.facebook_page_id || null,
     });
-    res.status(202).json({ ok: true, ...result, redirect: '/fila' });
+    res.status(202).json({ ok: true, ...result, redirect: result.redirect || '/fila' });
   } catch (err) {
     next(err);
   }
@@ -172,6 +174,30 @@ async function marcarTodosLidos(req, res, next) {
   }
 }
 
+async function listarMelhores(req, res, next) {
+  try {
+    const melhores = await bibliotecaService.listarMelhoresParaPublicar(
+      req.session.userId,
+      Number(req.query.limit) || 5
+    );
+    res.json({ ok: true, melhores });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function analisarMelhores(req, res, next) {
+  try {
+    const melhores = await bibliotecaService.analisarMelhoresParaPublicar(
+      req.session.userId,
+      Number(req.body?.limit) || 5
+    );
+    res.json({ ok: true, melhores });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getAutopilot(req, res, next) {
   try {
     const autopilot = await bibliotecaService.obterAutopilot(req.session.userId);
@@ -204,6 +230,8 @@ module.exports = {
   listarAlertas,
   marcarAlertaLido,
   marcarTodosLidos,
+  listarMelhores,
+  analisarMelhores,
   getAutopilot,
   putAutopilot,
 };

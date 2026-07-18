@@ -4,8 +4,9 @@ const BibliotecaAlertas = {
   table: 'biblioteca_alertas',
 
   findByUser(userId, { apenasNaoLidos = false, limit = 40 } = {}) {
+    // Só alertas de fontes que ainda existem (some junto com a exclusão)
     const q = db(`${this.table} as a`)
-      .leftJoin('biblioteca_fontes as f', 'f.id', 'a.fonte_id')
+      .innerJoin('biblioteca_fontes as f', 'f.id', 'a.fonte_id')
       .where('a.user_id', userId)
       .orderBy('a.created_at', 'desc')
       .limit(limit)
@@ -20,7 +21,26 @@ const BibliotecaAlertas = {
   },
 
   countNaoLidos(userId) {
-    return db(this.table).where({ user_id: userId, lido: false }).count({ total: '*' }).first();
+    return db(`${this.table} as a`)
+      .innerJoin('biblioteca_fontes as f', 'f.id', 'a.fonte_id')
+      .where('a.user_id', userId)
+      .andWhere('a.lido', false)
+      .count({ total: '*' })
+      .first();
+  },
+
+  /** Remove alertas cuja fonte já foi apagada (lixo órfão). */
+  limparOrfaos(userId) {
+    return db(this.table)
+      .where({ user_id: userId })
+      .where(function orphan() {
+        this.whereNull('fonte_id').orWhereNotExists(function () {
+          this.select(db.raw('1'))
+            .from('biblioteca_fontes as f')
+            .whereRaw('f.id = biblioteca_alertas.fonte_id');
+        });
+      })
+      .del();
   },
 
   create(data) {

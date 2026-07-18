@@ -34,6 +34,11 @@
     return el && el.value ? Number(el.value) : null;
   }
 
+  function recommendationPageId() {
+    const el = document.getElementById('bib-melhores-page');
+    return el && el.value ? Number(el.value) : null;
+  }
+
   if (form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -182,12 +187,15 @@
     }
   });
 
-  async function gerarTexto(id) {
-    setBusy(true, 'IA gerando texto…');
+  async function gerarTexto(id, { tipo = 'texto', facebookPageId = pageId() } = {}) {
+    setBusy(true, tipo === 'foto' ? 'IA preparando matéria e capa…' : 'IA gerando texto…');
     try {
       const data = await api(`/api/biblioteca/posts/${id}/gerar-texto`, {
         method: 'POST',
-        body: JSON.stringify({ facebook_page_id: pageId(), tipoPublicacao: 'texto' }),
+        body: JSON.stringify({
+          facebook_page_id: facebookPageId,
+          tipoPublicacao: tipo,
+        }),
       });
       if (data.redirect) location.href = data.redirect;
       else location.href = '/minhas-materias';
@@ -198,12 +206,12 @@
     }
   }
 
-  async function gerarVideo(id) {
-    setBusy(true, 'Enfileirando vídeo…');
+  async function gerarVideo(id, facebookPageId = recommendationPageId() || pageId()) {
+    setBusy(true, 'Baixando e preparando o Reel…');
     try {
       const data = await api(`/api/biblioteca/posts/${id}/gerar-video`, {
         method: 'POST',
-        body: '{}',
+        body: JSON.stringify({ facebook_page_id: facebookPageId }),
       });
       if (data.redirect) location.href = data.redirect;
       else location.href = '/fila';
@@ -215,10 +223,36 @@
   }
 
   document.body.addEventListener('click', (e) => {
+    const preparar = e.target.closest('.bib-preparar-melhor');
     const t = e.target.closest('.bib-gen-texto');
     const v = e.target.closest('.bib-gen-video');
+    if (preparar) {
+      const id = preparar.dataset.id;
+      const destinationPage = recommendationPageId();
+      if (preparar.dataset.media === 'video') gerarVideo(id, destinationPage);
+      else gerarTexto(id, { tipo: 'foto', facebookPageId: destinationPage });
+      return;
+    }
     if (t) gerarTexto(t.dataset.id);
     if (v) gerarVideo(v.dataset.id);
+  });
+
+  document.getElementById('bib-analisar-melhores')?.addEventListener('click', async () => {
+    try {
+      setBusy(true, 'IA analisando conteúdos de todas as fontes…');
+      const data = await api('/api/biblioteca/melhores/analisar', {
+        method: 'POST',
+        body: JSON.stringify({ limit: 5 }),
+      });
+      if (!data.melhores?.length) {
+        alert('Nenhum conteúdo pendente encontrado. Escaneie suas fontes primeiro.');
+      }
+      location.reload();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setBusy(false);
+    }
   });
 
   document.getElementById('bib-mark-all')?.addEventListener('click', async () => {

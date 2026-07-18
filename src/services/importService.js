@@ -383,12 +383,16 @@ function queueLinkImportAsReel(video, { facebookPageId = null, matterId = null }
         console.warn(`[import-reel] probe #${video.id}:`, probeErr.message);
       }
 
+      // O piloto pode autorizar publicação enquanto o download está em andamento.
+      // Recarrega o registro para não sobrescrever metadata persistida após o enqueue.
+      const persistedVideo = await Videos.findById(video.id);
+      const metaSource = persistedVideo?.metadata;
       const metaBase =
-        video.metadata && typeof video.metadata === 'object'
-          ? video.metadata
+        metaSource && typeof metaSource === 'object'
+          ? metaSource
           : (() => {
               try {
-                return JSON.parse(video.metadata || '{}');
+                return JSON.parse(metaSource || '{}');
               } catch {
                 return {};
               }
@@ -397,7 +401,7 @@ function queueLinkImportAsReel(video, { facebookPageId = null, matterId = null }
       await Videos.update(video.id, {
         status: 'baixado',
         caminho_local: dest,
-        duracao: duracao || video.duracao || null,
+        duracao: duracao || persistedVideo?.duracao || video.duracao || null,
         erro_mensagem: null,
         metadata: {
           ...metaBase,

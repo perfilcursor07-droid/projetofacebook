@@ -116,6 +116,21 @@ function queueClipGeneration(clip, video) {
  * Recupera trabalhos perdidos quando o servidor reinicia (fila em memória).
  */
 async function recoverStuckJobs() {
+  // Downloads de Reel usam fila em memória; após reinício, retoma os que ainda estão pendentes.
+  const pendingVideos = await db('videos').where({ status: 'pendente' }).limit(40);
+  let pendingReels = 0;
+  for (const video of pendingVideos) {
+    const meta = mergeMetadata(video.metadata, {});
+    if (meta.pipeline !== 'conteudo_reel' || !meta.matter_id) continue;
+    pendingReels += 1;
+    console.log(`[recover] reenfileirando download Reel #${video.id}`);
+    const importService = require('./importService');
+    importService.queueLinkImportAsReel(video, {
+      facebookPageId: meta.facebook_page_id || null,
+      matterId: meta.matter_id,
+    });
+  }
+
   const stuckClips = await db('video_clips').where({ status: 'processando' });
   for (const clip of stuckClips) {
     const video = await Videos.findById(clip.video_id);
@@ -196,9 +211,9 @@ async function recoverStuckJobs() {
     .where({ materia_status: 'gerando' })
     .update({ materia_status: 'pendente' });
 
-  if (stuckClips.length || needPostProcess.length || needCapa.length || nImgs) {
+  if (pendingReels || stuckClips.length || needPostProcess.length || needCapa.length || nImgs) {
     console.log(
-      `[recover] cortes=${stuckClips.length}, pós-processo=${needPostProcess.length}, capas=${needCapa.length}, imagens matéria reset=${nImgs}`
+      `[recover] downloads Reel=${pendingReels}, cortes=${stuckClips.length}, pós-processo=${needPostProcess.length}, capas=${needCapa.length}, imagens matéria reset=${nImgs}`
     );
   }
 }

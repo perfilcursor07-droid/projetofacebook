@@ -27,8 +27,18 @@ const BibliotecaFontes = {
     return db(this.table).where({ id }).update({ ...data, updated_at: db.fn.now() });
   },
 
-  deleteByUser(id, userId) {
-    return db(this.table).where({ id, user_id: userId }).del();
+  async deleteByUser(id, userId) {
+    const fonteId = Number(id);
+    const uid = Number(userId);
+    const fonte = await db(this.table).where({ id: fonteId, user_id: uid }).first();
+    if (!fonte) return 0;
+
+    return db.transaction(async (trx) => {
+      // Explícito: no WAMP o FK CASCADE às vezes não remove alertas/posts
+      await trx('biblioteca_alertas').where({ fonte_id: fonteId }).del();
+      await trx('biblioteca_posts').where({ fonte_id: fonteId }).del();
+      return trx(this.table).where({ id: fonteId, user_id: uid }).del();
+    });
   },
 };
 
