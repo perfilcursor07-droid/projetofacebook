@@ -110,23 +110,30 @@
   }
 
   async function loadPages() {
-    if (!pageSelect) return;
+    const selects = [
+      pageSelect,
+      document.getElementById('matter-nova-link-page'),
+    ].filter(Boolean);
+    if (!selects.length) return;
     try {
       const res = await fetch('/api/facebook/pages');
       const data = await res.json();
       const pages = data.pages || [];
-      if (!pages.length) {
-        pageSelect.innerHTML = '<option value="">Conecte uma página em /paginas</option>';
-        return;
-      }
-      pageSelect.innerHTML = pages
-        .map((p) => {
-          const selected = Number(p.id) === Number(cfg.pageId) ? ' selected' : '';
-          return `<option value="${p.id}"${selected}>${escapeHtml(p.page_name)}</option>`;
-        })
-        .join('');
+      const html = !pages.length
+        ? '<option value="">Conecte uma página em /paginas</option>'
+        : pages
+            .map((p) => {
+              const selected = Number(p.id) === Number(cfg.pageId) ? ' selected' : '';
+              return `<option value="${p.id}"${selected}>${escapeHtml(p.page_name)}</option>`;
+            })
+            .join('');
+      selects.forEach((el) => {
+        el.innerHTML = html;
+      });
     } catch {
-      pageSelect.innerHTML = '<option value="">Erro ao carregar páginas</option>';
+      selects.forEach((el) => {
+        el.innerHTML = '<option value="">Erro ao carregar páginas</option>';
+      });
     }
   }
 
@@ -809,6 +816,141 @@
         btn.disabled = false;
         btn.textContent = original || 'Buscar imagem da fonte';
       }
+    }
+  });
+
+  // Limpar → começar outra matéria pelo link sem sair da tela
+  const novaLinkPanel = document.getElementById('matter-nova-link');
+  const editAtual = document.getElementById('matter-edit-atual');
+  const novaLinkUrl = document.getElementById('matter-nova-link-url');
+  const novaLinkStatus = document.getElementById('matter-nova-link-status');
+
+  function mostrarModoNovaLink() {
+    if (editAtual) editAtual.classList.add('hidden');
+    if (novaLinkPanel) novaLinkPanel.classList.remove('hidden');
+    document.querySelector('aside')?.classList.add('opacity-40', 'pointer-events-none');
+    if (novaLinkUrl) {
+      novaLinkUrl.value = '';
+      novaLinkUrl.focus();
+    }
+    const texto = document.getElementById('matter-nova-link-texto');
+    const imagem = document.getElementById('matter-nova-link-imagem');
+    const tipo = document.getElementById('matter-nova-link-tipo');
+    if (texto) texto.value = '';
+    if (imagem) imagem.value = '';
+    if (tipo) tipo.value = 'auto';
+    if (novaLinkStatus) {
+      novaLinkStatus.textContent = 'Cole o link e gere a próxima matéria.';
+      novaLinkStatus.className = 'text-sm text-slate-400';
+    }
+    setStatus('');
+  }
+
+  function mostrarModoEdicaoAtual() {
+    if (novaLinkPanel) novaLinkPanel.classList.add('hidden');
+    if (editAtual) editAtual.classList.remove('hidden');
+    document.querySelector('aside')?.classList.remove('opacity-40', 'pointer-events-none');
+    if (novaLinkStatus) novaLinkStatus.textContent = '';
+  }
+
+  document.getElementById('btn-limpar-nova-materia')?.addEventListener('click', () => {
+    mostrarModoNovaLink();
+  });
+
+  document.getElementById('btn-cancelar-nova-link')?.addEventListener('click', () => {
+    mostrarModoEdicaoAtual();
+  });
+
+  document.getElementById('btn-gerar-nova-link')?.addEventListener('click', async () => {
+    const url = String(novaLinkUrl?.value || '').trim();
+    const pageEl = document.getElementById('matter-nova-link-page');
+    const tipoEl = document.getElementById('matter-nova-link-tipo');
+    const st = novaLinkStatus;
+    const btn = document.getElementById('btn-gerar-nova-link');
+
+    if (!url) {
+      if (st) {
+        st.textContent = 'Cole o link da notícia, Facebook ou Instagram';
+        st.className = 'text-sm text-rose-300';
+      }
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      if (st) {
+        st.textContent = 'O link precisa começar com http:// ou https://';
+        st.className = 'text-sm text-rose-300';
+      }
+      return;
+    }
+
+    const looksReel =
+      /\/reel\//i.test(url) ||
+      /\/reels\//i.test(url) ||
+      /\/videos\//i.test(url) ||
+      /fb\.watch/i.test(url) ||
+      /instagram\.com\/(reel|reels|tv)\//i.test(url);
+
+    let tipo = tipoEl?.value || 'auto';
+    if (tipo === 'auto') tipo = looksReel ? 'reel' : 'foto';
+
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = looksReel || tipo === 'reel' ? 'Enfileirando Reel…' : 'Gerando matéria…';
+    }
+    if (st) {
+      st.textContent =
+        looksReel || tipo === 'reel'
+          ? 'Baixando Reel, legenda e capa…'
+          : 'Lendo o link e montando a minimatéria…';
+      st.className = 'text-sm text-slate-400';
+    }
+
+    try {
+      const textoManual = String(document.getElementById('matter-nova-link-texto')?.value || '').trim();
+      const imagemManual = String(document.getElementById('matter-nova-link-imagem')?.value || '').trim();
+      const res = await fetch('/api/materias-ia/reescrever-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          facebookPageId: pageEl?.value ? Number(pageEl.value) : null,
+          tipoPublicacao: tipo,
+          status: 'rascunho',
+          textoManual: textoManual || undefined,
+          imagemManual: imagemManual || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.error && /cole a legenda|texto da postagem|bloqueou/i.test(data.error)) {
+          document.querySelector('#matter-nova-link details')?.setAttribute('open', '');
+        }
+        throw new Error(data.error || 'Falha ao processar o link');
+      }
+
+      const matterId = data.matter?.id;
+      const dest = data.redirect || (matterId ? '/materias-ia/' + matterId : null);
+      if (!dest) throw new Error('Matéria gerada, mas sem ID para abrir');
+
+      if (st) st.textContent = 'Pronta — abrindo a nova matéria…';
+      window.location.href = dest;
+    } catch (err) {
+      if (st) {
+        st.textContent = err.message;
+        st.className = 'text-sm text-rose-300';
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original || 'Gerar a partir do link';
+      }
+    }
+  });
+
+  novaLinkUrl?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('btn-gerar-nova-link')?.click();
     }
   });
 
