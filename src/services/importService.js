@@ -44,7 +44,7 @@ if (env.nodeEnv === 'production') {
 }
 const Videos = require('../models/Videos');
 const { enqueue } = require('../workers/queue');
-const { storageAbsolutePath } = require('./downloadService');
+const { downloadToStorage, storageAbsolutePath } = require('./downloadService');
 
 /**
  * Metadados de um link (YouTube, TikTok, URL direta) via yt-dlp.
@@ -363,7 +363,107 @@ function queueLinkImportAsReel(video, { facebookPageId = null, matterId = null }
       const dest = `videos/video_${video.id}.mp4`;
       const abs = storageAbsolutePath(dest);
 
-      if (!fs.existsSync(abs)) {
+      const parseMetadata = (value) => {
+        if (value && typeof value === 'object') return value;
+        try {
+          return JSON.parse(value || '{}');
+        } catch {
+          return {};
+        }
+      };
+      const metadataInicial = parseMetadata(video.metadata);
+      const removerParcial = () => {
+        try {
+          if (fs.existsSync(abs)) fs.unlinkSync(abs);
+        } catch {
+          /* ignore */
+        }
+      };
+      let arquivoBaixado = false;
+      if (video.status !== 'erro' && fs.existsSync(abs)) {
+        try {
+          const existingInfo = await probe(abs);
+          const temStreamVideo =
+            Array.isArray(existingInfo?.streams) &&
+            existingInfo.streams.some((stream) => stream.codec_type === 'video');
+          const duracaoExistente = Number(existingInfo?.format?.duration);
+          arquivoBaixado = temStreamVideo && Number.isFinite(duracaoExistente) && duracaoExistente > 0;
+          if (!arquivoBaixado) removerParcial();
+        } catch {
+          removerParcial();
+        }
+      }
+
+      let directVideoUrl = String(metadataInicial.scrapecreators_video_url || '').trim();
+
+      const tentarDownloadDireto = async (url) => {
+        if (!/^https?:\/\//i.test(String(url || ''))) return false;
+        removerParcial();
+        try {
+          await downloadToStorage(url, dest);
+          const info = await probe(abs);
+          const temVideo =
+            Array.isArray(info?.streams) &&
+            info.streams.some((stream) => stream.codec_type === 'video');
+          const duracaoDireta = Number(info?.format?.duration);
+          if (!temVideo || !Number.isFinite(duracaoDireta) || duracaoDireta <= 0) {
+            throw new Error('arquivo recebido não contém vídeo completo com duração válida');
+          }
+          console.log(`[import-reel] vídeo #${video.id} baixado pela ScrapeCreators`);
+          return true;
+        } catch (directErr) {
+          removerParcial();
+          console.warn(
+            `[import-reel] download direto #${video.id} falhou; tentando alternativa:`,
+            String(directErr.message || directErr).slice(0, 180)
+          );
+          return false;
+        }
+      };
+
+      if (!arquivoBaixado && directVideoUrl) {
+        arquivoBaixado = await tentarDownloadDireto(directVideoUrl);
+      }
+
+      // URLs de CDN expiram. Se o link persistido falhar (ou não existir), solicita um novo.
+      if (!arquivoBaixado) {
+        try {
+          const scrapeCreators = require('./scrapeCreatorsSocial');
+          const plataforma =
+            metadataInicial.plataforma ||
+            (/instagram\.com/i.test(String(video.url_original || ''))
+              ? 'instagram'
+              : /facebook\.com|fb\.watch/i.test(String(video.url_original || ''))
+                ? 'facebook'
+                : null);
+          if (scrapeCreators.isConfigured() && plataforma) {
+            const refreshed = await scrapeCreators.extrairPost(video.url_original, plataforma);
+            const refreshedUrl = String(refreshed?.videoUrl || '').trim();
+            if (refreshedUrl && refreshedUrl !== directVideoUrl) {
+              directVideoUrl = refreshedUrl;
+              const latest = await Videos.findById(video.id);
+              const latestMeta = parseMetadata(latest?.metadata);
+              await Videos.update(video.id, {
+                metadata: {
+                  ...latestMeta,
+                  scrapecreators_video_url: refreshedUrl,
+                  plataforma,
+                },
+              });
+              arquivoBaixado = await tentarDownloadDireto(refreshedUrl);
+            }
+          }
+        } catch (refreshErr) {
+          console.warn(
+            `[import-reel] renovação ScrapeCreators #${video.id} falhou:`,
+            String(refreshErr.message || refreshErr).slice(0, 180)
+          );
+        }
+      }
+
+      // Fallback para redes/provedores sem URL direta ou se a CDN recusou o arquivo.
+      if (!arquivoBaixado) {
+        removerParcial();
         await youtubedl(video.url_original, {
           output: abs,
           mergeOutputFormat: 'mp4',

@@ -956,14 +956,24 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     }
   }
 
-  let meta = {};
+  let meta = {
+    titulo: null,
+    thumbnail: null,
+    extractor: null,
+    autor: null,
+    autorUrl: null,
+    duracao: null,
+  };
   let metaWarning = null;
-  try {
-    meta = await importService.fetchLinkMetadata(link);
-  } catch (metaErr) {
-    metaWarning = importService.humanizeYtDlpError(metaErr);
-    console.warn('[conteudo-reel] metadata:', metaWarning);
-    meta = { titulo: null, thumbnail: null, extractor: null, autor: null, autorUrl: null, duracao: null };
+  // Quando a ScrapeCreators já entregou a mídia, evita uma chamada yt-dlp que costuma
+  // falhar com HTTP 400 no Instagram. A duração será obtida pelo ffprobe após o download.
+  if (!socialMeta?.videoUrl) {
+    try {
+      meta = await importService.fetchLinkMetadata(link);
+    } catch (metaErr) {
+      metaWarning = importService.humanizeYtDlpError(metaErr);
+      console.warn('[conteudo-reel] metadata:', metaWarning);
+    }
   }
 
   if (socialMeta) {
@@ -1177,6 +1187,8 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
       matter_id: matter.id,
       facebook_page_id: facebookPageId || metaBase.facebook_page_id || null,
       plataforma,
+      scrapecreators_video_url:
+        socialMeta?.videoUrl || metaBase.scrapecreators_video_url || null,
       titulo_completo: metaBase.titulo_completo || String(tituloBruto).slice(0, 2000),
     },
   });
