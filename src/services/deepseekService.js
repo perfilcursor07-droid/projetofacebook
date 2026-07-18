@@ -3,6 +3,8 @@ const { env } = require('../config/env');
 const {
   MAX_MATERIA_CHARS,
   sortearFaixaChars,
+  classificarVolumeFonte,
+  blocoRegraTamanhoAdaptativo,
   sortearEstiloLead,
   sortearEstiloTitulo,
   sortearVozRedator,
@@ -179,7 +181,8 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     '3) Fechamento de fé: oração, gratidão, esperança ou reflexão espiritual ligada ao fato — sem pedir like/compartilhar.',
     'Exemplo de aspas: Ele afirma: "Eu entendi que sem Deus eu não era nada".',
     'O campo "titulo" = MANCHETE CURTA (máx. 90 caracteres). NÃO cole a legenda/transcrição no título.',
-    'Separe parágrafos com linha em branco. Alvo: 1100–1700 caracteres (minimatéria).',
+    'Separe parágrafos com linha em branco. Alvo: 1700–2100 caracteres (máximo útil Face/Insta).',
+    'Se a base for longa, condense preservando os dados principais; se for curta, complete com contexto real até o máximo.',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
     titulo ? `Título/contexto do vídeo de origem: ${String(titulo).slice(0, 120)}` : null,
     idioma ? `Idioma detectado da fala: ${idioma}` : null,
@@ -237,7 +240,7 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
     autor ? `Autor da foto (crédito se fizer sentido no fechamento): ${autor}` : null,
     'ESTRUTURA: lead com o fato/tema → desenvolvimento com detalhes → fechamento de fé (oração, gratidão ou reflexão).',
     'Tom de portal gospel: caloroso, claro, sem clickbait e sem pedir like/compartilhar.',
-    'Parágrafos curtos com linha em branco. Alvo: 1100–1700 caracteres (minimatéria).',
+    'Parágrafos curtos com linha em branco. Alvo: 1700–2100 caracteres (máximo útil Face/Insta).',
     'Se fizer sentido, no último parágrafo pode citar crédito curto (ex.: Reprodução) — sem inventar @ de quem não foi informado.',
   ]
     .filter(Boolean)
@@ -246,12 +249,12 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
   return chatJson(userContent, sortearTemperatura(false));
 }
 
-function systemPromptNoticia(faixa, investigativa, furoReportagem = false) {
-  return `Você é redator de Página gospel no Facebook (estilo News Gospel). Escreva matérias ORIGINAIS em português brasileiro.
+function systemPromptNoticia(faixa, investigativa, furoReportagem = false, volumeFonte = 'media') {
+  return `Você é redator de Página gospel no Facebook e Instagram (estilo News Gospel). Escreva matérias ORIGINAIS em português brasileiro.
 
-${blocoRegrasFacebook(faixa)}
+${blocoRegrasFacebook(faixa, volumeFonte)}
 
-Formato Facebook (obrigatório):
+Formato Facebook/Instagram (obrigatório):
 - Campo "materia" = texto puro da legenda/matéria (SEM HTML, SEM markdown, SEM meta description).
 - Campo "hashtags" = 3 a 5 termos sem #.
 - Campo "termos_imagem" = 2 a 4 consultas específicas para encontrar uma foto realmente relacionada.
@@ -262,13 +265,13 @@ Formato Facebook (obrigatório):
 
 ${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização falsa.' : ''}
 ${furoReportagem ? `MODO FURO / MINIMATÉRIA (obrigatório):
-- A fonte é uma notícia/post/vídeo já publicado. Você NÃO faz resumo telegráfico.
-- Escreva uma MINIMATÉRIA: reconte o conteúdo original com desenvolvimento completo (contexto, detalhes, desdobramentos), em voz própria.
-- Encontre o FURO: o ângulo mais jornalístico e específico (detalhe, consequência, testemunho ou desdobramento).
-- Estrutura: lead (quem + fato) + vários parágrafos de desenvolvimento com aspas + fechamento de fé.
+- A fonte é uma notícia/post/vídeo já publicado.
+- Se a fonte for LONGA: condense no tamanho máximo Face/Insta, preservando os dados principais.
+- Se a fonte for CURTA: amplie com contexto real da apuração até o tamanho máximo — sem inventar.
+- Encontre o FURO: o ângulo mais jornalístico e específico.
+- Estrutura: lead (quem + fato) + desenvolvimento com aspas + fechamento de fé.
 - OBRIGATÓRIO: preserve 1 a 3 falas literais curtas entre aspas ("…") quando houver declaração na apuração.
 - Título próprio — nunca copie a manchete da fonte.
-- Mantenha os fatos verificáveis; sem inventar exclusividade falsa (“revelamos”, “apuração exclusiva”).
 - Não inclua bloco "Fontes:" — o sistema anexa créditos da origem e da imagem.` : ''}
 
 Responda APENAS JSON válido: {"titulo":"...","materia":"...","hashtags":["..."],"termos_imagem":["..."]}`;
@@ -299,7 +302,6 @@ async function gerarMateriaNoticiaFacebook({
   const temperature = furoReportagem
     ? 0.72 + Math.random() * 0.08
     : sortearTemperatura(investigativa);
-  const systemMsg = systemPromptNoticia(faixa, investigativa, furoReportagem);
 
   const fontesTxt = Array.isArray(fontesApuracao) && fontesApuracao.length
     ? fontesApuracao
@@ -327,22 +329,26 @@ async function gerarMateriaNoticiaFacebook({
     .filter(Boolean)
     .join('\n');
 
+  const volumeFonte = classificarVolumeFonte(materialApuracao);
+  const systemMsg = systemPromptNoticia(faixa, investigativa, furoReportagem, volumeFonte);
+
   const userContent = [
-    'Crie uma MINIMATÉRIA ORIGINAL estilo News Gospel para a Página do Facebook (foto + legenda).',
+    'Crie uma MINIMATÉRIA ORIGINAL estilo News Gospel para Facebook/Instagram (foto + legenda).',
     `VOZ DO REDATOR (obrigatório): ${voz}`,
     `ESTILO DO LEAD: ${lead}`,
     `ESTILO DO TÍTULO: ${estiloTitulo}`,
-    `EXTENSÃO ALVO: ${faixa.min}–${faixa.max} caracteres (corpo da minimatéria — sem hashtags).`,
+    `VOLUME DA FONTE: ${volumeFonte.toUpperCase()}.`,
+    blocoRegraTamanhoAdaptativo(faixa, volumeFonte),
+    `EXTENSÃO OBRIGATÓRIA DO CORPO: ${faixa.min}–${faixa.max} caracteres (sem hashtags). Meta: perto de ${faixa.max}.`,
     'FORMATAÇÃO: 5 a 8 parágrafos curtos separados por linha em branco.',
-    'ESTRUTURA: (1) lead com quem + fato; (2) desenvolvimento AMPLO com contexto, detalhes da apuração e aspas reais; (3) fechamento de fé — sem pedir like/compartilhar.',
-    'IMPORTANTE: não enxugue demais. O leitor precisa entender a história completa do conteúdo original, reescrita com suas palavras.',
+    'ESTRUTURA: (1) lead com quem + fato; (2) desenvolvimento com dados principais + aspas reais; (3) fechamento de fé — sem pedir like/compartilhar.',
     nicho ? `Nicho/palavras-chave: ${nicho}` : null,
     emAlta ? 'Contexto: assunto em alta agora.' : null,
     redeSocial
       ? 'A fonte é post/vídeo de rede social. Transforme em minimatéria gospel: contextualize com suas palavras e DEIXE 1–3 falas literais curtas entre aspas ("…") da apuração.'
       : null,
     furoReportagem
-      ? 'PRIORIDADE: minimatéria com ângulo de furo + reescrita total. Não resuma em poucas linhas; reconstrua a narrativa com os fatos da apuração.'
+      ? 'PRIORIDADE: ângulo de furo + reescrita total. Fonte longa = condensar; fonte curta = completar com contexto real.'
       : null,
     tituloReferencia ? `Título de referência: ${tituloReferencia}` : null,
     resumoReferencia ? `Resumo de referência: ${resumoReferencia}` : null,
@@ -377,7 +383,13 @@ async function gerarMateriaNoticiaFacebook({
           { role: 'system', content: systemMsg },
           {
             role: 'user',
-            content: `Matéria CURTA (${qualidade.chars} caracteres). Expanda para ${faixa.min}–${faixa.max} caracteres SEM inventar fatos nem muletas de IA. Mantenha o mesmo ângulo.
+            content: `Matéria ABAIXO DO MÁXIMO Face/Insta (${qualidade.chars} caracteres; alvo ${faixa.min}–${faixa.max}).
+Amplie até perto de ${faixa.max} caracteres SEM inventar fatos nem muletas de IA.
+Use só contexto real da apuração (quem é, lugar, carreira/ministério, desdobramento, fechamento de fé).
+Mantenha o mesmo ângulo e as falas literais.
+
+APURAÇÃO (para embasar a expansão):
+${String(materialApuracao).slice(0, 5000)}
 
 MATÉRIA:
 ${JSON.stringify(artigo)}
@@ -401,7 +413,9 @@ Retorne JSON completo atualizado.`,
           { role: 'system', content: systemMsg },
           {
             role: 'user',
-            content: `Matéria LONGA (${qualidade.chars} caracteres). Enxugue para ${faixa.min}–${faixa.max} (máx ${MAX_MATERIA_CHARS}). Remova repetições. Mantenha o furo e os fatos.
+            content: `Matéria ACIMA DO MÁXIMO Face/Insta (${qualidade.chars} caracteres).
+CONDENSE para ${faixa.min}–${faixa.max} (máx ${MAX_MATERIA_CHARS}).
+Preserve os dados principais (nomes, números, datas, lugares, decisões e aspas). Remova só repetição/enrolação.
 
 MATÉRIA:
 ${JSON.stringify(artigo)}
@@ -960,7 +974,7 @@ Regras:
 - O título pode melhorar levemente (máx. 110 chars) se as novas infos mudarem o gancho; senão mantenha próximo do atual.
 - A matéria deve ficar mais forte e completa: use as infos extras (fatos, nomes, números, contexto) sem inventar o que não estiver no texto atual nem nas extras.
 - Português do Brasil, parágrafos curtos separados por linha em branco (\\n\\n).
-- Ideal 1100–1800 caracteres no corpo (minimatéria, sem hashtags).
+- Ideal 1700–2100 caracteres no corpo (máximo útil Face/Insta, sem hashtags).
 - 3 a 5 hashtags sem # no JSON.
 - Sem pedir like, sem clickbait mentiroso, sem Caps Lock excessivo.
 - Preserve o bloco "Fontes:" se já existir no texto atual.`,

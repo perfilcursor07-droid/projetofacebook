@@ -151,7 +151,7 @@
           </span>
           <textarea id="matter-materia" rows="14" <%= canEdit ? '' : 'readonly' %>
             class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm leading-relaxed text-slate-100 focus:border-emerald-500 focus:outline-none <%= canEdit ? '' : 'opacity-80' %>"><%= matter.materia || '' %></textarea>
-          <p class="mt-1.5 text-[11px] leading-snug text-slate-500">Separe parágrafos com linha em branco. Ideal: ~400–650 caracteres (melhor alcance no feed; “Ver mais” aparece perto de 480).</p>
+          <p class="mt-1.5 text-[11px] leading-snug text-slate-500">Separe parágrafos com linha em branco. Alvo da IA: ~1700–2100 caracteres (máximo útil Face/Insta). Fonte longa = condensar; fonte curta = completar.</p>
         </label>
 
         <% if (canEdit) { %>

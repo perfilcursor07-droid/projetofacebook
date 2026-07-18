@@ -1,13 +1,23 @@
 /**
- * Diretrizes editoriais para matérias de Página do Facebook.
- * Estilo: minimatéria (mais completa que um resumo curto) + crédito de fontes.
+ * Diretrizes editoriais para matérias de Página do Facebook / Instagram.
+ * Regra de tamanho: sempre mirar o TETO útil do feed (Face + Insta).
+ * - Fonte longa → condensar preservando os dados principais.
+ * - Fonte curta → ampliar com contexto real da apuração.
  */
 
 /**
- * Teto da minimatéria (corpo + créditos + hashtags).
- * Mais espaço para desenvolver o conteúdo original sem ficar “mutilado”.
+ * Teto do corpo + créditos + hashtags (limite prático Face/Insta).
+ * Instagram caption ≈ 2200; usamos isso como referência dura.
  */
-const MAX_MATERIA_CHARS = 2800;
+const MAX_MATERIA_CHARS = 2200;
+
+/** Alvo do corpo da minimatéria (sem hashtags/créditos). Sempre perto do máximo. */
+const FAIXA_CORPO_FB = Object.freeze({ min: 1700, max: 2100 });
+
+/** Abaixo disso a fonte é tratada como “texto pequeno” (precisa expandir). */
+const FONTE_CURTA_CHARS = 700;
+/** Acima disso a fonte é “texto grande” (precisa condensar). */
+const FONTE_LONGA_CHARS = 1800;
 
 const FRASES_PROIBIDAS_IA = [
   'é importante ressaltar', 'vale ressaltar', 'vale destacar', 'vale lembrar',
@@ -29,14 +39,41 @@ const FRASES_PROIBIDAS_IA = [
 ];
 
 function sortearFaixaChars() {
-  // Minimatéria: lead + desenvolvimento rico + aspas + fechamento de fé.
-  const faixas = [
-    { min: 1100, max: 1600 },
-    { min: 1200, max: 1800 },
-    { min: 1300, max: 2000 },
-    { min: 1150, max: 1700 },
-  ];
-  return faixas[Math.floor(Math.random() * faixas.length)];
+  // Sempre o mesmo alvo: tamanho máximo útil para Face/Insta.
+  return { min: FAIXA_CORPO_FB.min, max: FAIXA_CORPO_FB.max };
+}
+
+/**
+ * Classifica o volume da fonte para orientar condensar × expandir.
+ * @returns {'curta'|'media'|'longa'}
+ */
+function classificarVolumeFonte(textoFonte) {
+  const n = contarChars(textoFonte);
+  if (n <= FONTE_CURTA_CHARS) return 'curta';
+  if (n >= FONTE_LONGA_CHARS) return 'longa';
+  return 'media';
+}
+
+function blocoRegraTamanhoAdaptativo(faixa, volumeFonte) {
+  const alvo = `${faixa.min}–${faixa.max}`;
+  if (volumeFonte === 'longa') {
+    return `TAMANHO (fonte LONGA — CONDENSE):
+- A apuração é extensa. CONDENSE até ${alvo} caracteres (máx. Face/Insta).
+- Preserve TODOS os dados principais: nomes, números, datas, lugares, decisões e 1–3 falas literais.
+- Corte só repetição, enrolação e detalhes secundários — nunca o furo.
+- O texto final deve chegar PERTO do máximo (${faixa.max}), não ficar telegráfico.`;
+  }
+  if (volumeFonte === 'curta') {
+    return `TAMANHO (fonte CURTA — AMPLIE):
+- A apuração é curta. AMPLIE até ${alvo} caracteres (máx. Face/Insta).
+- Use só contexto REAL da apuração: quem é a pessoa, o que já se sabe dela, lugar, ministério/carreira, desdobramento e fechamento de fé.
+- NÃO invente fatos, números, cargos nem citações.
+- O texto final deve chegar PERTO do máximo (${faixa.max}) — matéria completa, não bilhete.`;
+  }
+  return `TAMANHO (fonte MÉDIA — COMPLETE):
+- Reescreva a narrativa e preencha até ${alvo} caracteres (máx. Face/Insta).
+- Preserve os dados principais e desenvolva com contexto real da apuração.
+- Meta: perto de ${faixa.max} caracteres no corpo.`;
 }
 
 function sortearEstiloLead() {
@@ -79,12 +116,13 @@ function blocoEstiloNewsGospel() {
   return `
 ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
 1) LEAD: apresente quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
-2) DESENVOLVIMENTO: escreva uma MINIMATÉRIA do conteúdo original — não um resumo seco. Amplie o fio narrativo com fatos concretos (obras, datas, lugares, decisões, contexto). Use 1 a 3 FALAS LITERAIS entre aspas ("…") quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
-3) FECHAMENTO DE FÉ: termine com reflexão espiritual, oração, gratidão ou esperança (ex.: "Que Deus console…", "Glória a Deus…"). NUNCA feche pedindo like, comentário ou compartilhamento.
-4) TOM: jornalístico + evangélico caloroso. Emocionante sem drama falso. Sem clickbait.
-5) FORMATO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML. Sem markdown (**negrito**). Emojis só no fechamento (máx. 1–2).
-6) PROIBIDO: colar a fonte/transcrição inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
-7) NÃO coloque bloco de "Fontes:" no JSON — o sistema anexa créditos da imagem e da origem automaticamente.`;
+2) DESENVOLVIMENTO: minimatéria do conteúdo original. Se a fonte for grande, condense preservando os dados principais; se for pequena, complete com contexto real da apuração — sempre no tamanho máximo Face/Insta.
+3) Use 1 a 3 FALAS LITERAIS entre aspas ("…") quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
+4) FECHAMENTO DE FÉ: reflexão espiritual, oração, gratidão ou esperança. NUNCA peça like/comentário/compartilhamento.
+5) TOM: jornalístico + evangélico caloroso. Sem clickbait.
+6) FORMATO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML/markdown. Emojis só no fechamento (máx. 1–2).
+7) PROIBIDO: colar a fonte inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
+8) NÃO coloque bloco de "Fontes:" no JSON — o sistema anexa créditos automaticamente.`;
 }
 
 function sortearTemperatura(investigativa = false) {
@@ -415,20 +453,22 @@ function atualizarCreditoImagemNaMateria(materia, imagemAutor) {
   return anexarCreditosFontes(cleanBody, { imagemAutor: credito });
 }
 
-function blocoRegrasFacebook(faixa) {
+function blocoRegrasFacebook(faixa, volumeFonte = 'media') {
   return `
-DIRETRIZES FACEBOOK / MINIMATÉRIA:
-- Texto para leitor de Página gospel: minimatéria completa do fato, não telegrama.
-- NÃO copie a fonte inteira; reescreva com estrutura própria, mas PRESERVE os detalhes importantes da apuração.
-- FALAS LITERAIS: quando a apuração trouxer fala/transcrição/legendas, DEIXE 1 a 3 trechos curtos e fortes entre aspas ("…") — fiéis ao que foi dito.
-- NÃO invente fatos, números, datas, igrejas, pastores nem declarações entre aspas que NÃO estejam nas fontes.
+DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
+- Meta de tamanho: SEMPRE o máximo útil do feed (${faixa.min}–${faixa.max} chars no corpo; teto ${MAX_MATERIA_CHARS} com créditos/hashtags).
+- Fonte longa → condensar preservando dados principais. Fonte curta → ampliar com contexto real. Nunca ficar muito abaixo do máximo.
+- NÃO copie a fonte inteira; reescreva com estrutura própria.
+- FALAS LITERAIS: 1 a 3 trechos curtos entre aspas ("…") quando houver na apuração.
+- NÃO invente fatos, números, datas, igrejas, pastores nem declarações.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
-- Formato OBRIGATÓRIO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Nunca um bloco único.
+- Formato: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n).
 - Gancho forte nos primeiros ~120 caracteres (quem + fato).
-- Extensão alvo desta geração: ${faixa.min}–${faixa.max} caracteres (máx absoluto ${MAX_MATERIA_CHARS}).
-- 3 a 5 hashtags no campo hashtags, SEM espaços internos (ex.: FeCrista), sem # no valor.
+- 3 a 5 hashtags no campo hashtags, SEM espaços internos, sem # no valor.
 - Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 22).map((f) => `"${f}"`).join(', ')}…
-- FECHAMENTO: reflexão de fé, oração ou gratidão ligada ao fato — nunca “como vimos” / “em suma” / CTA de engajamento.
+- FECHAMENTO: fé/oração/gratidão — nunca CTA de engajamento.
+
+${blocoRegraTamanhoAdaptativo(faixa, volumeFonte)}
 
 ${blocoEstiloNewsGospel()}`;
 }
@@ -445,8 +485,13 @@ function mensagemAvisoQualidade(avaliacao) {
 
 module.exports = {
   MAX_MATERIA_CHARS,
+  FAIXA_CORPO_FB,
+  FONTE_CURTA_CHARS,
+  FONTE_LONGA_CHARS,
   FRASES_PROIBIDAS_IA,
   sortearFaixaChars,
+  classificarVolumeFonte,
+  blocoRegraTamanhoAdaptativo,
   sortearEstiloLead,
   sortearEstiloTitulo,
   sortearVozRedator,
