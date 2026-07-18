@@ -42,6 +42,7 @@ app.listen(env.port, async () => {
       }
       try {
         await bibliotecaService.tickFontes();
+        await bibliotecaService.tickAutopilot();
       } catch (err) {
         console.error('[biblioteca tick]', err.message);
       }

@@ -14,5 +14,7 @@ router.post('/posts/:postId/gerar-video', controller.gerarVideo);
 router.get('/alertas', controller.listarAlertas);
 router.post('/alertas/:id/lido', controller.marcarAlertaLido);
 router.post('/alertas/lidos', controller.marcarTodosLidos);
+router.get('/autopilot', controller.getAutopilot);
+router.put('/autopilot', controller.putAutopilot);
 
 module.exports = router;

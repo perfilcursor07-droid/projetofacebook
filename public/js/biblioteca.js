@@ -3,6 +3,8 @@
   const msg = document.getElementById('bib-form-msg');
   const busy = document.getElementById('bib-busy');
   const busyText = document.getElementById('bib-busy-text');
+  const fonteApp = document.getElementById('biblioteca-fonte-app');
+  const fonteId = fonteApp?.dataset?.fonteId ? Number(fonteApp.dataset.fonteId) : null;
 
   function setBusy(on, text) {
     if (!busy) return;
@@ -56,67 +58,127 @@
     });
   }
 
+  const autoForm = document.getElementById('bib-auto-form');
+  const autoMsg = document.getElementById('bib-auto-msg');
+  if (autoForm) {
+    autoForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const ativo = Boolean(document.getElementById('bib-auto-ativo')?.checked);
+      const page = document.getElementById('bib-auto-page')?.value || '';
+      const posts = Number(document.getElementById('bib-auto-posts')?.value || 1);
+      const intervalo = Number(document.getElementById('bib-auto-intervalo')?.value || 30);
+      if (ativo && !page) {
+        if (autoMsg) {
+          autoMsg.textContent = 'Selecione a Página do Facebook para ativar o piloto.';
+          autoMsg.className = 'mt-2 text-sm text-rose-300 sm:col-span-2 lg:col-span-12';
+          autoMsg.classList.remove('hidden');
+        }
+        return;
+      }
+      try {
+        setBusy(true, 'Salvando piloto automático…');
+        await api('/api/biblioteca/autopilot', {
+          method: 'PUT',
+          body: JSON.stringify({
+            ativo,
+            facebook_page_id: page || null,
+            posts_por_ciclo: posts,
+            intervalo_minutos: intervalo,
+          }),
+        });
+        location.reload();
+      } catch (err) {
+        if (autoMsg) {
+          autoMsg.textContent = err.message;
+          autoMsg.className = 'mt-2 text-sm text-rose-300 sm:col-span-2 lg:col-span-12';
+          autoMsg.classList.remove('hidden');
+        } else {
+          alert(err.message);
+        }
+      } finally {
+        setBusy(false);
+      }
+    });
+  }
+
   document.getElementById('bib-fontes')?.addEventListener('click', async (e) => {
     const scan = e.target.closest('.bib-scan');
     const toggle = e.target.closest('.bib-toggle-mon');
     const del = e.target.closest('.bib-del');
-    const postsBtn = e.target.closest('.bib-posts-btn');
 
     try {
       if (scan) {
+        e.preventDefault();
         setBusy(true, 'Escaneando fonte…');
-        const data = await api(`/api/biblioteca/fontes/${scan.dataset.id}/escanear`, { method: 'POST', body: '{}' });
+        const data = await api(`/api/biblioteca/fontes/${scan.dataset.id}/escanear`, {
+          method: 'POST',
+          body: '{}',
+        });
         const n = data.novos?.length || 0;
         const t = data.itens || 0;
         alert(
           t
-            ? `Encontrados ${t} item(ns), ${n} novo(s) salvos. Abra “Ver posts” para gerar matéria.`
+            ? `Encontrados ${t} item(ns), ${n} novo(s) salvos. Abra a fonte para ver os posts.`
             : 'Nenhum item encontrado nesta fonte.'
         );
-        location.reload();
+        location.href = `/biblioteca/fontes/${scan.dataset.id}`;
+        return;
       }
       if (toggle) {
+        e.preventDefault();
         const on = toggle.dataset.on === '1';
         await api(`/api/biblioteca/fontes/${toggle.dataset.id}`, {
           method: 'PATCH',
           body: JSON.stringify({ monitorar: !on }),
         });
         location.reload();
+        return;
       }
       if (del) {
+        e.preventDefault();
         if (!confirm('Excluir esta fonte e seus posts/alertas?')) return;
         await api(`/api/biblioteca/fontes/${del.dataset.id}`, { method: 'DELETE' });
         location.reload();
-      }
-      if (postsBtn) {
-        const box = document.querySelector(`.bib-posts-box[data-fonte="${postsBtn.dataset.id}"]`);
-        if (!box) return;
-        if (!box.classList.contains('hidden') && box.dataset.loaded === '1') {
-          box.classList.add('hidden');
-          return;
-        }
-        setBusy(true, 'Carregando posts…');
-        const data = await api(`/api/biblioteca/fontes/${postsBtn.dataset.id}/posts`);
-        box.innerHTML = (data.posts || [])
-          .map(
-            (p) => `
-          <div class="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
-            <p class="text-sm text-slate-200">${escapeHtml(p.titulo || 'Sem título')}</p>
-            <div class="mt-2 flex flex-wrap gap-2">
-              <button type="button" class="bib-gen-texto rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300" data-id="${p.id}">Gerar texto</button>
-              <button type="button" class="bib-gen-video rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300" data-id="${p.id}">Gerar vídeo</button>
-              <a href="${escapeAttr(p.url)}" target="_blank" rel="noopener" class="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-400">Abrir</a>
-            </div>
-          </div>`
-          )
-          .join('') || '<p class="text-xs text-slate-500">Nenhum post nesta fonte.</p>';
-        box.dataset.loaded = '1';
-        box.classList.remove('hidden');
       }
     } catch (err) {
       alert(err.message);
     } finally {
       setBusy(false);
+    }
+  });
+
+  // Página da fonte
+  document.getElementById('bib-fonte-scan')?.addEventListener('click', async () => {
+    if (!fonteId) return;
+    try {
+      setBusy(true, 'Escaneando fonte…');
+      const data = await api(`/api/biblioteca/fontes/${fonteId}/escanear`, {
+        method: 'POST',
+        body: '{}',
+      });
+      const n = data.novos?.length || 0;
+      const t = data.itens || 0;
+      alert(t ? `Encontrados ${t} item(ns), ${n} novo(s) salvos.` : 'Nenhum item encontrado nesta fonte.');
+      location.reload();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  document.getElementById('bib-fonte-toggle-mon')?.addEventListener('click', async () => {
+    if (!fonteId) return;
+    const btn = document.getElementById('bib-fonte-toggle-mon');
+    try {
+      const on = btn?.dataset.on === '1';
+      await api(`/api/biblioteca/fontes/${fonteId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ monitorar: !on }),
+      });
+      location.reload();
+    } catch (err) {
+      alert(err.message);
     }
   });
 
@@ -168,18 +230,12 @@
     }
   });
 
-  document.getElementById('bib-btn-alertas')?.addEventListener('click', () => {
-    document.getElementById('bib-alertas')?.scrollIntoView({ behavior: 'smooth' });
+  document.querySelectorAll('a[href="#bib-secao-alertas"], #bib-btn-alertas').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      const target = document.getElementById('bib-secao-alertas');
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   });
-
-  function escapeHtml(s) {
-    return String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-  function escapeAttr(s) {
-    return escapeHtml(s).replace(/'/g, '&#39;');
-  }
 })();

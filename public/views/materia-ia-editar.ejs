@@ -99,16 +99,7 @@
         </div>
 
         <div id="matter-edit-atual">
-        <% if (matter.fonte_titulo) { %>
-          <p class="text-xs text-slate-500">
-            Com base em: <%= matter.fonte_titulo %>
-            <% if (matter.fonte_url) { %>
-              · <a href="<%= matter.fonte_url %>" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300">Abrir fonte →</a>
-            <% } %>
-          </p>
-        <% } %>
-
-        <label class="mt-4 block text-sm">
+        <label class="mt-0 block text-sm">
           <span class="text-slate-400">Título</span>
           <input id="matter-titulo" <%= canEdit ? '' : 'readonly' %> value="<%= matter.titulo || '' %>"
             class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base font-semibold text-white focus:border-emerald-500 focus:outline-none <%= canEdit ? '' : 'opacity-80' %>" />
@@ -179,6 +170,39 @@
           <div class="mt-4 hidden" id="matter-hashtags-wrap">
             <p class="text-xs uppercase tracking-wide text-slate-500">Hashtags sugeridas</p>
             <p id="matter-hashtags-line" class="mt-1.5 text-sm text-slate-400"></p>
+          </div>
+        <% } %>
+
+        <%
+          const fonteUrl = String(matter.fonte_url || '').trim();
+          const fonteTitulo = String(matter.fonte_titulo || '').trim();
+          let fonteHost = '';
+          if (fonteUrl) {
+            try { fonteHost = new URL(fonteUrl).hostname.replace(/^www\./i, ''); } catch (_) {}
+          }
+        %>
+        <% if (fonteUrl || fonteTitulo) { %>
+          <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-3" id="matter-fonte-wrap">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Fonte da matéria</p>
+            <% if (fonteTitulo) { %>
+              <p class="mt-1.5 text-sm text-slate-300" id="matter-fonte-titulo"><%= fonteTitulo %></p>
+            <% } %>
+            <% if (fonteUrl) { %>
+              <a id="matter-fonte-link" href="<%= fonteUrl %>" target="_blank" rel="noopener"
+                class="mt-1 inline-flex items-center gap-1 text-sm text-sky-400 hover:text-sky-300 break-all">
+                <%= fonteHost || 'Abrir fonte' %> →
+              </a>
+              <p class="mt-1 text-[11px] text-slate-600 break-all"><%= fonteUrl %></p>
+            <% } else { %>
+              <p class="mt-1.5 text-sm text-slate-500">Sem link da fonte salvo nesta matéria.</p>
+            <% } %>
+          </div>
+        <% } else { %>
+          <div class="mt-4 hidden rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-3" id="matter-fonte-wrap">
+            <p class="text-xs uppercase tracking-wide text-slate-500">Fonte da matéria</p>
+            <p class="mt-1.5 text-sm text-slate-300" id="matter-fonte-titulo"></p>
+            <a id="matter-fonte-link" href="#" target="_blank" rel="noopener"
+              class="mt-1 hidden inline-flex items-center gap-1 text-sm text-sky-400 hover:text-sky-300 break-all"></a>
           </div>
         <% } %>
 

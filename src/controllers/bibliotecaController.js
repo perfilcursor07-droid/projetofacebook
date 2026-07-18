@@ -25,6 +25,21 @@ async function listPage(req, res, next) {
   }
 }
 
+async function fontePage(req, res, next) {
+  try {
+    const data = await bibliotecaService.detalheFonte(req.session.userId, Number(req.params.id));
+    const pages = await pagesDoUsuario(req.session.userId);
+    return res.render('biblioteca-fonte', {
+      title: data.fonte.nome || 'Fonte',
+      ...data,
+      pages,
+    });
+  } catch (err) {
+    if (err.status === 404) return res.redirect('/biblioteca');
+    return next(err);
+  }
+}
+
 async function listar(req, res, next) {
   try {
     const data = await bibliotecaService.dashboardUsuario(req.session.userId);
@@ -157,8 +172,27 @@ async function marcarTodosLidos(req, res, next) {
   }
 }
 
+async function getAutopilot(req, res, next) {
+  try {
+    const autopilot = await bibliotecaService.obterAutopilot(req.session.userId);
+    res.json({ ok: true, autopilot });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function putAutopilot(req, res, next) {
+  try {
+    const autopilot = await bibliotecaService.salvarAutopilot(req.session.userId, req.body || {});
+    res.json({ ok: true, autopilot });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listPage,
+  fontePage,
   listar,
   criar,
   atualizar,
@@ -170,4 +204,6 @@ module.exports = {
   listarAlertas,
   marcarAlertaLido,
   marcarTodosLidos,
+  getAutopilot,
+  putAutopilot,
 };

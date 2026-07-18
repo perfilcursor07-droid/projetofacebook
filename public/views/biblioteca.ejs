@@ -1,147 +1,303 @@
 <%- include('partials/app-start') %>
+<%
+  const fontesList = fontes || [];
+  const alertasList = alertas || [];
+  const auto = autopilot || {};
+  const naoLidos = Number(alertasNaoLidos || 0);
+  const totalPosts = fontesList.reduce(function (acc, f) { return acc + Number(f.posts_count || 0); }, 0);
+  function platClass(p) {
+    const k = String(p || '').toLowerCase();
+    if (k === 'youtube') return 'bg-rose-500/15 text-rose-300 ring-rose-500/20';
+    if (k === 'facebook') return 'bg-sky-500/15 text-sky-300 ring-sky-500/20';
+    if (k === 'instagram') return 'bg-fuchsia-500/15 text-fuchsia-300 ring-fuchsia-500/20';
+    if (k === 'tiktok') return 'bg-slate-100/10 text-slate-200 ring-slate-500/30';
+    if (k === 'site') return 'bg-amber-500/15 text-amber-300 ring-amber-500/20';
+    return 'bg-slate-800 text-slate-300 ring-slate-700';
+  }
+  function fmtQuando(d) {
+    if (!d) return '';
+    try {
+      return new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch (_) {
+      return '';
+    }
+  }
+%>
 
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8" id="biblioteca-app"
-    data-alertas-nao-lidos="<%= Number(alertasNaoLidos || 0) %>">
-    <div class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-semibold text-white">Biblioteca de fontes</h1>
-        <p class="mt-2 max-w-2xl text-slate-400">
-          Salve perfis do YouTube, Facebook, Instagram ou o link de um site de notícias. A IA busca as últimas publicações, notifica e gera matéria em texto ou vídeo.
+    data-alertas-nao-lidos="<%= naoLidos %>">
+
+    <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800/80 pb-6">
+      <div class="min-w-0">
+        <h1 class="text-2xl font-semibold tracking-tight text-white">Biblioteca de fontes</h1>
+        <p class="mt-1.5 max-w-xl text-sm leading-relaxed text-slate-400">
+          Gerencie canais, perfis e sites. Clique numa fonte para ver os posts detectados. Os alertas abaixo reúnem todas as fontes.
         </p>
       </div>
-      <div class="flex items-center gap-3">
-        <button type="button" id="bib-btn-alertas"
-          class="relative rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">
+      <div class="flex flex-wrap items-center gap-2">
+        <a href="#bib-secao-alertas"
+          class="relative inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300">
           Alertas
-          <span id="bib-badge" class="<%= Number(alertasNaoLidos || 0) ? '' : 'hidden' %> ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-slate-950"><%= Number(alertasNaoLidos || 0) %></span>
-        </button>
-        <a href="/minhas-materias" class="text-sm text-emerald-400 hover:text-emerald-300">Minhas matérias →</a>
+          <span id="bib-badge" class="<%= naoLidos ? '' : 'hidden' %> inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-slate-950"><%= naoLidos %></span>
+        </a>
+        <a href="/minhas-materias" class="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 hover:text-white">
+          Minhas matérias →
+        </a>
       </div>
     </div>
 
-    <section class="mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Adicionar fonte</h2>
-      <form id="bib-form" class="mt-4 grid gap-3 md:grid-cols-2">
-        <label class="block md:col-span-2">
-          <span class="text-xs text-slate-500">URL do perfil / canal</span>
-          <input id="bib-url" name="url" required
-            placeholder="instagram.com/perfil · youtube.com/@canal · facebook.com/pagina · https://g1.globo.com"
-            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
-          <p class="mt-1 text-[11px] text-slate-500">Instagram/Facebook/YouTube: últimos posts. Site de notícias: até 10 matérias recentes (RSS + busca).</p>
+    <div class="mt-6 grid grid-cols-3 gap-3 sm:gap-4">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
+        <p class="text-[11px] uppercase tracking-wider text-slate-500">Fontes</p>
+        <p class="mt-1 text-2xl font-semibold tabular-nums text-white"><%= fontesList.length %></p>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
+        <p class="text-[11px] uppercase tracking-wider text-slate-500">Alertas novos</p>
+        <p class="mt-1 text-2xl font-semibold tabular-nums <%= naoLidos ? 'text-emerald-300' : 'text-white' %>"><%= naoLidos %></p>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
+        <p class="text-[11px] uppercase tracking-wider text-slate-500">Posts no total</p>
+        <p class="mt-1 text-2xl font-semibold tabular-nums text-white"><%= totalPosts %></p>
+      </div>
+    </div>
+
+    <!-- Piloto automático -->
+    <section id="bib-autopilot" class="mt-6 rounded-2xl border border-emerald-500/20 bg-slate-900/50 p-4 sm:p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h2 class="text-sm font-semibold text-white">Piloto automático</h2>
+            <% if (auto.ativo) { %>
+              <span class="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300 ring-1 ring-inset ring-emerald-500/30">
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                ativo
+              </span>
+            <% } else { %>
+              <span class="rounded-md bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">desligado</span>
+            <% } %>
+          </div>
+          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">
+            A IA analisa os posts de <strong class="font-medium text-slate-400">todas as fontes</strong>, escolhe o que tem mais chance de viralizar no Facebook, gera a matéria com o modelo da <a href="/minha-marca" class="text-emerald-400 hover:text-emerald-300">Minha marca</a> e publica sozinha. Você precisa habilitar.
+          </p>
+        </div>
+      </div>
+
+      <form id="bib-auto-form" class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
+        <label class="flex items-center gap-2 sm:col-span-2 lg:col-span-12">
+          <input id="bib-auto-ativo" type="checkbox" class="rounded border-slate-600 bg-slate-950 text-emerald-500" <%= auto.ativo ? 'checked' : '' %> />
+          <span class="text-sm text-slate-200">Ativar piloto automático</span>
         </label>
-        <label class="block">
+
+        <label class="block sm:col-span-2 lg:col-span-4">
+          <span class="text-xs text-slate-500">Página do Facebook</span>
+          <select id="bib-auto-page" required
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+            <option value="">— selecione —</option>
+            <% (pages || []).forEach(function (p) { %>
+              <option value="<%= p.id %>" <%= Number(auto.facebook_page_id) === Number(p.id) ? 'selected' : '' %>><%= p.page_name %></option>
+            <% }) %>
+          </select>
+        </label>
+
+        <label class="block lg:col-span-2">
+          <span class="text-xs text-slate-500">Matérias por ciclo</span>
+          <input id="bib-auto-posts" type="number" min="1" max="5" step="1" value="<%= Number(auto.posts_por_ciclo) || 1 %>"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none" />
+          <span class="mt-0.5 block text-[10px] text-slate-600">1 a 5</span>
+        </label>
+
+        <label class="block lg:col-span-3">
+          <span class="text-xs text-slate-500">Intervalo (minutos)</span>
+          <input id="bib-auto-intervalo" type="number" min="5" max="1440" step="1" value="<%= Number(auto.intervalo_minutos) || 30 %>"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none" />
+          <span class="mt-0.5 block text-[10px] text-slate-600">Ex.: 5 matérias / 30 min · 1 matéria / 5 min</span>
+        </label>
+
+        <div class="lg:col-span-3">
+          <button type="submit" class="w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+            Salvar piloto
+          </button>
+        </div>
+
+        <p id="bib-auto-msg" class="hidden text-sm sm:col-span-2 lg:col-span-12"></p>
+      </form>
+
+      <div class="mt-4 grid gap-2 border-t border-slate-800 pt-3 text-xs text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
+        <p>
+          <span class="text-slate-600">Último ciclo</span><br />
+          <span class="text-slate-300"><%= auto.ultimo_tick ? fmtQuando(auto.ultimo_tick) : '—' %></span>
+        </p>
+        <p>
+          <span class="text-slate-600">Próxima execução</span><br />
+          <span class="text-slate-300"><%= auto.ativo && auto.proxima_execucao ? fmtQuando(auto.proxima_execucao) : (auto.ativo ? 'em breve' : '—') %></span>
+        </p>
+        <p>
+          <span class="text-slate-600">Publicados pelo piloto</span><br />
+          <span class="text-slate-300 tabular-nums"><%= Number(auto.total_publicados || 0) %></span>
+        </p>
+        <p class="sm:col-span-2 lg:col-span-1">
+          <span class="text-slate-600">Último status</span><br />
+          <% if (auto.ultimo_erro) { %>
+            <span class="text-rose-300 line-clamp-2" title="<%= auto.ultimo_erro %>"><%= auto.ultimo_erro %></span>
+          <% } else if (auto.ativo) { %>
+            <span class="text-emerald-300/80">OK — aguardando ciclo</span>
+          <% } else { %>
+            <span class="text-slate-500">Desligado</span>
+          <% } %>
+        </p>
+      </div>
+    </section>
+
+    <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5">
+      <h2 class="text-sm font-semibold text-white">Adicionar fonte</h2>
+      <p class="mt-1 text-xs text-slate-500">Instagram, Facebook, YouTube ou URL de site de notícias.</p>
+      <form id="bib-form" class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
+        <label class="block sm:col-span-2 lg:col-span-5">
+          <span class="text-xs text-slate-500">URL do perfil / canal / site</span>
+          <input id="bib-url" name="url" required
+            placeholder="https://instagram.com/perfil · youtube.com/@canal · g1.globo.com"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+        </label>
+        <label class="block lg:col-span-2">
           <span class="text-xs text-slate-500">Nome (opcional)</span>
-          <input id="bib-nome" name="nome" maxlength="200" placeholder="Ex.: Canal Apocalipse"
+          <input id="bib-nome" name="nome" maxlength="200" placeholder="Apelido"
             class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none" />
         </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">Página FB para gerar (opcional)</span>
+        <label class="block lg:col-span-3">
+          <span class="text-xs text-slate-500">Página FB (opcional)</span>
           <select id="bib-page" name="facebook_page_id"
             class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
-            <option value="">— selecionar depois —</option>
+            <option value="">— depois —</option>
             <% (pages || []).forEach(function (p) { %>
               <option value="<%= p.id %>"><%= p.page_name %></option>
             <% }) %>
           </select>
         </label>
-        <label class="flex items-center gap-2 md:col-span-2">
-          <input id="bib-monitorar" type="checkbox" class="rounded border-slate-600 bg-slate-950 text-emerald-500" />
-          <span class="text-sm text-slate-300">Monitorar e notificar quando sair conteúdo novo</span>
-        </label>
-        <div class="md:col-span-2">
-          <button type="submit" class="rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
-            Salvar na biblioteca
+        <div class="flex flex-col gap-3 sm:col-span-2 lg:col-span-2">
+          <label class="flex items-center gap-2 pt-1 lg:pt-0">
+            <input id="bib-monitorar" type="checkbox" class="rounded border-slate-600 bg-slate-950 text-emerald-500" />
+            <span class="text-xs text-slate-300">Monitorar</span>
+          </label>
+          <button type="submit" class="w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+            Salvar
           </button>
-          <p id="bib-form-msg" class="mt-2 hidden text-sm"></p>
         </div>
+        <p id="bib-form-msg" class="hidden text-sm sm:col-span-2 lg:col-span-12"></p>
       </form>
     </section>
 
-    <div class="mt-8 grid gap-6 lg:grid-cols-[1fr_360px]">
+    <div class="mt-8 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+      <!-- Fontes -->
       <section>
-        <div class="mb-3 flex items-center justify-between">
-          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Suas fontes</h2>
-          <span class="text-xs text-slate-600"><%= (fontes || []).length %> salva(s)</span>
+        <div class="mb-3 flex items-baseline justify-between gap-3">
+          <h2 class="text-base font-semibold text-white">Suas fontes</h2>
+          <span class="text-xs text-slate-500"><%= fontesList.length %> salva(s)</span>
         </div>
-        <div id="bib-fontes" class="space-y-3">
-          <% if (!(fontes || []).length) { %>
-            <p class="rounded-xl border border-dashed border-slate-800 px-4 py-8 text-center text-sm text-slate-500">
-              Nenhuma fonte ainda. Cole o link de um canal ou perfil acima.
-            </p>
+
+        <div id="bib-fontes" class="space-y-2">
+          <% if (!fontesList.length) { %>
+            <div class="rounded-xl border border-dashed border-slate-800 px-4 py-12 text-center">
+              <p class="text-sm text-slate-400">Nenhuma fonte ainda.</p>
+              <p class="mt-1 text-xs text-slate-600">Cole o link de um canal, perfil ou site acima.</p>
+            </div>
           <% } %>
-          <% (fontes || []).forEach(function (f) { %>
-            <article class="bib-fonte rounded-xl border border-slate-800 bg-slate-900/40 p-4" data-id="<%= f.id %>" data-plataforma="<%= f.plataforma %>">
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div class="min-w-0 flex-1">
+
+          <% fontesList.forEach(function (f) { %>
+            <article class="bib-fonte group overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40 transition hover:border-slate-600" data-id="<%= f.id %>" data-plataforma="<%= f.plataforma %>">
+              <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <a href="/biblioteca/fontes/<%= f.id %>" class="min-w-0 flex-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50">
                   <div class="flex flex-wrap items-center gap-2">
-                    <span class="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300"><%= f.plataforma %></span>
+                    <span class="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset <%= platClass(f.plataforma) %>"><%= f.plataforma %></span>
                     <% if (f.monitorar) { %>
-                      <span class="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-300">monitorando</span>
+                      <span class="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300 ring-1 ring-inset ring-emerald-500/25">
+                        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                        monitorando
+                      </span>
                     <% } %>
+                    <span class="text-[11px] text-slate-500"><%= Number(f.posts_count || 0) %> post(s)</span>
                   </div>
-                  <h3 class="mt-1 truncate text-base font-medium text-white"><%= f.nome %></h3>
-                  <a href="<%= f.url %>" target="_blank" rel="noopener" class="mt-0.5 block truncate text-xs text-slate-500 hover:text-emerald-400"><%= f.url %></a>
+                  <h3 class="mt-1.5 truncate text-base font-medium text-white group-hover:text-emerald-300"><%= f.nome %></h3>
+                  <p class="mt-0.5 truncate text-xs text-slate-500"><%= f.url %></p>
                   <% if (f.ultimo_erro) { %>
                     <p class="mt-2 text-xs text-rose-300"><%= f.ultimo_erro %></p>
                   <% } else if (f.ultimo_scan) { %>
-                    <p class="mt-2 text-xs text-slate-600">Último scan: <%= new Date(f.ultimo_scan).toLocaleString('pt-BR') %></p>
+                    <p class="mt-2 text-xs text-slate-600">Último scan · <%= fmtQuando(f.ultimo_scan) %></p>
                   <% } %>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                  <button type="button" class="bib-scan rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:border-emerald-500 hover:text-emerald-300" data-id="<%= f.id %>">Escanear</button>
-                  <button type="button" class="bib-toggle-mon rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:border-sky-500 hover:text-sky-300" data-id="<%= f.id %>" data-on="<%= f.monitorar ? '1' : '0' %>">
+                  <p class="mt-2 text-xs font-medium text-emerald-400/90 sm:hidden">Abrir posts →</p>
+                </a>
+                <div class="flex flex-wrap gap-1.5 sm:justify-end sm:shrink-0">
+                  <a href="/biblioteca/fontes/<%= f.id %>" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20">
+                    Ver posts
+                  </a>
+                  <button type="button" class="bib-scan rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:border-emerald-500/60 hover:text-emerald-300" data-id="<%= f.id %>">Escanear</button>
+                  <button type="button" class="bib-toggle-mon rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:border-sky-500/60 hover:text-sky-300" data-id="<%= f.id %>" data-on="<%= f.monitorar ? '1' : '0' %>">
                     <%= f.monitorar ? 'Pausar' : 'Monitorar' %>
                   </button>
-                  <button type="button" class="bib-posts-btn rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:border-violet-500 hover:text-violet-300" data-id="<%= f.id %>">Ver posts</button>
-                  <button type="button" class="bib-del rounded-lg border border-rose-900/50 px-2.5 py-1.5 text-xs text-rose-300 hover:bg-rose-500/10" data-id="<%= f.id %>">Excluir</button>
+                  <button type="button" class="bib-del rounded-lg border border-rose-900/40 bg-slate-950/50 px-2.5 py-1.5 text-xs font-medium text-rose-300/90 hover:bg-rose-500/10" data-id="<%= f.id %>">Excluir</button>
                 </div>
               </div>
-              <div class="bib-posts-box mt-3 hidden space-y-2 border-t border-slate-800 pt-3" data-fonte="<%= f.id %>"></div>
             </article>
           <% }) %>
         </div>
       </section>
 
-      <aside class="space-y-4">
-        <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-          <div class="flex items-center justify-between">
-            <h2 class="text-sm font-semibold text-white">Alertas recentes</h2>
-            <button type="button" id="bib-mark-all" class="text-xs text-slate-500 hover:text-emerald-400">Marcar lidos</button>
+      <!-- Alertas globais -->
+      <section id="bib-secao-alertas" class="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/40 lg:sticky lg:top-4 lg:self-start">
+        <div class="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3.5">
+          <div class="min-w-0">
+            <h2 class="text-sm font-semibold text-white">Alertas de todas as fontes</h2>
+            <p class="mt-0.5 text-[11px] text-slate-500">YouTube, Instagram, Facebook, sites…</p>
           </div>
-          <div id="bib-alertas" class="mt-3 max-h-[28rem] space-y-2 overflow-y-auto">
-            <% if (!(alertas || []).length) { %>
-              <p class="text-sm text-slate-500">Nenhum alerta ainda.</p>
+          <div class="flex items-center gap-2 shrink-0">
+            <% if (naoLidos) { %>
+              <span class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300"><%= naoLidos %> novo<%= naoLidos === 1 ? '' : 's' %></span>
             <% } %>
-            <% (alertas || []).forEach(function (a) { %>
-              <div class="rounded-lg border <%= a.lido ? 'border-slate-800/80 opacity-60' : 'border-emerald-500/20 bg-emerald-500/5' %> p-3" data-alerta="<%= a.id %>">
-                <p class="text-sm font-medium text-white"><%= a.titulo %></p>
-                <% if (a.resumo) { %><p class="mt-1 text-xs leading-relaxed text-slate-400"><%= a.resumo %></p><% } %>
-                <p class="mt-1 text-[10px] text-slate-600"><%= a.created_at ? new Date(a.created_at).toLocaleString('pt-BR') : '' %></p>
-              </div>
-            <% }) %>
+            <button type="button" id="bib-mark-all" class="text-xs text-slate-500 hover:text-emerald-400 <%= alertasList.length ? '' : 'invisible' %>">
+              Marcar lidos
+            </button>
           </div>
-        </section>
+        </div>
 
-        <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-          <h2 class="text-sm font-semibold text-white">Posts detectados</h2>
-          <div id="bib-posts-lista" class="mt-3 max-h-[28rem] space-y-2 overflow-y-auto">
-            <% if (!(posts || []).length) { %>
-              <p class="text-sm text-slate-500">Nada detectado ainda. Escaneie uma fonte.</p>
-            <% } %>
-            <% (posts || []).forEach(function (p) { %>
-              <div class="rounded-lg border border-slate-800 p-3" data-post="<%= p.id %>">
-                <p class="text-sm text-white line-clamp-2"><%= p.titulo || 'Sem título' %></p>
-                <p class="mt-1 text-[10px] uppercase text-slate-600"><%= p.status %></p>
-                <div class="mt-2 flex flex-wrap gap-2">
-                  <button type="button" class="bib-gen-texto rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300" data-id="<%= p.id %>">Gerar texto</button>
-                  <button type="button" class="bib-gen-video rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-violet-500 hover:text-violet-300" data-id="<%= p.id %>">Gerar vídeo</button>
-                  <a href="<%= p.url %>" target="_blank" rel="noopener" class="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:text-white">Abrir</a>
-                </div>
+        <div id="bib-alertas" class="max-h-[36rem] divide-y divide-slate-800/80 overflow-y-auto">
+          <% if (!alertasList.length) { %>
+            <div class="px-4 py-10 text-center">
+              <p class="text-sm text-slate-500">Nenhum alerta ainda.</p>
+              <p class="mt-1 text-xs text-slate-600">Aparecem quando uma fonte monitorada publica algo novo.</p>
+            </div>
+          <% } %>
+
+          <% alertasList.forEach(function (a) { %>
+            <% const dest = a.fonte_id ? '/biblioteca/fontes/' + a.fonte_id : null; %>
+            <a
+              href="<%= dest || '#bib-secao-alertas' %>"
+              class="group flex gap-3 px-4 py-3.5 transition hover:bg-slate-800/30 <%= a.lido ? 'opacity-55' : '' %> <%= dest ? '' : 'pointer-events-none' %>"
+              data-alerta="<%= a.id %>">
+              <div class="mt-1.5 shrink-0">
+                <% if (a.lido) { %>
+                  <span class="block h-2 w-2 rounded-full bg-slate-700" title="Lido"></span>
+                <% } else { %>
+                  <span class="block h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.15)]" title="Não lido"></span>
+                <% } %>
               </div>
-            <% }) %>
-          </div>
-        </section>
-      </aside>
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <% if (a.fonte_plataforma) { %>
+                    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset <%= platClass(a.fonte_plataforma) %>"><%= a.fonte_plataforma %></span>
+                  <% } %>
+                  <% if (a.fonte_nome) { %>
+                    <span class="truncate text-[11px] text-slate-500"><%= a.fonte_nome %></span>
+                  <% } %>
+                  <time class="ml-auto shrink-0 text-[11px] tabular-nums text-slate-600"><%= fmtQuando(a.created_at) %></time>
+                </div>
+                <h3 class="mt-1 text-sm font-medium leading-snug text-white line-clamp-2 group-hover:text-emerald-300"><%= a.titulo %></h3>
+                <% if (a.resumo) { %>
+                  <p class="mt-1 text-xs leading-relaxed text-slate-400 line-clamp-2"><%= a.resumo %></p>
+                <% } %>
+              </div>
+            </a>
+          <% }) %>
+        </div>
+      </section>
     </div>
   </main>
 

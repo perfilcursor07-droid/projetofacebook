@@ -1,14 +1,31 @@
 const BibliotecaFontes = require('../models/BibliotecaFontes');
 const BibliotecaPosts = require('../models/BibliotecaPosts');
 const BibliotecaAlertas = require('../models/BibliotecaAlertas');
+const BibliotecaAutopilot = require('../models/BibliotecaAutopilot');
 const FacebookPages = require('../models/FacebookPages');
 const FacebookAccounts = require('../models/FacebookAccounts');
 const Videos = require('../models/Videos');
 const importService = require('./importService');
 const materiaIaService = require('./materiaIaService');
-const { resumirAlertaBiblioteca, assertDeepseek } = require('./deepseekService');
+const {
+  resumirAlertaBiblioteca,
+  ranquearPostsViralFacebook,
+  assertDeepseek,
+} = require('./deepseekService');
 const { env } = require('../config/env');
 const axios = require('axios');
+
+function clampAutopilotInterval(minutos) {
+  return Math.min(1440, Math.max(5, Number(minutos) || 30));
+}
+
+function clampAutopilotPosts(n) {
+  return Math.min(5, Math.max(1, Number(n) || 1));
+}
+
+function nextAutopilotRun(intervaloMinutos) {
+  return new Date(Date.now() + clampAutopilotInterval(intervaloMinutos) * 60 * 1000);
+}
 
 function normalizeUrl(raw) {
   const u = String(raw || '').trim();
@@ -1130,18 +1147,246 @@ async function tickFontes() {
 }
 
 async function dashboardUsuario(userId) {
-  const [fontes, posts, alertas, countRow] = await Promise.all([
+  const [fontes, postsPorFonte, alertas, countRow, autopilot] = await Promise.all([
     BibliotecaFontes.findByUser(userId),
-    BibliotecaPosts.findByUser(userId, { limit: 30 }),
-    BibliotecaAlertas.findByUser(userId, { limit: 30 }),
+    BibliotecaPosts.countsByUser(userId),
+    BibliotecaAlertas.findByUser(userId, { limit: 50 }),
     BibliotecaAlertas.countNaoLidos(userId),
+    obterAutopilot(userId),
   ]);
+  const fontesComContagem = (fontes || []).map((f) => ({
+    ...f,
+    posts_count: Number(postsPorFonte[Number(f.id)] || 0),
+  }));
   return {
-    fontes,
-    posts,
+    fontes: fontesComContagem,
     alertas,
     alertasNaoLidos: Number(countRow?.total || 0),
+    autopilot,
   };
+}
+
+async function detalheFonte(userId, fonteId) {
+  const fonte = await BibliotecaFontes.findById(fonteId);
+  if (!fonte || Number(fonte.user_id) !== Number(userId)) {
+    const err = new Error('Fonte não encontrada');
+    err.status = 404;
+    throw err;
+  }
+  const [posts, countRow] = await Promise.all([
+    BibliotecaPosts.findByFonte(fonte.id, 80),
+    BibliotecaPosts.countByFonte(fonte.id),
+  ]);
+  return {
+    fonte: { ...fonte, posts_count: Number(countRow?.total || 0) },
+    posts,
+  };
+}
+
+async function obterAutopilot(userId) {
+  let row = await BibliotecaAutopilot.findByUser(userId);
+  if (!row) {
+    const [id] = await BibliotecaAutopilot.create({
+      user_id: userId,
+      facebook_page_id: null,
+      ativo: false,
+      intervalo_minutos: 30,
+      posts_por_ciclo: 1,
+      tipo_publicacao: 'foto',
+      proxima_execucao: null,
+      total_publicados: 0,
+    });
+    row = await BibliotecaAutopilot.findById(id);
+  }
+  return row;
+}
+
+async function salvarAutopilot(userId, body = {}) {
+  const atual = await obterAutopilot(userId);
+  const ativo =
+    body.ativo === true || body.ativo === '1' || body.ativo === 'on' || body.ativo === 1;
+  const intervalo = clampAutopilotInterval(body.intervalo_minutos ?? body.intervaloMinutos ?? atual.intervalo_minutos);
+  const postsPorCiclo = clampAutopilotPosts(body.posts_por_ciclo ?? body.postsPorCiclo ?? atual.posts_por_ciclo);
+
+  let facebookPageId = body.facebook_page_id ?? body.facebookPageId;
+  if (facebookPageId === '' || facebookPageId === undefined) {
+    facebookPageId = atual.facebook_page_id;
+  } else if (facebookPageId == null) {
+    facebookPageId = null;
+  } else {
+    facebookPageId = Number(facebookPageId);
+  }
+
+  if (ativo) {
+    if (!facebookPageId) {
+      const err = new Error('Selecione uma Página do Facebook para ativar o piloto automático');
+      err.status = 400;
+      throw err;
+    }
+    const page = await resolvePage(userId, facebookPageId);
+    if (!page) {
+      const err = new Error('Página do Facebook inválida');
+      err.status = 400;
+      throw err;
+    }
+    facebookPageId = page.id;
+  }
+
+  const patch = {
+    ativo: Boolean(ativo),
+    facebook_page_id: facebookPageId || null,
+    intervalo_minutos: intervalo,
+    posts_por_ciclo: postsPorCiclo,
+    tipo_publicacao: 'foto',
+    ultimo_erro: null,
+  };
+
+  // Ao ativar (ou reativar), agenda o próximo ciclo em breve
+  if (ativo) {
+    const wasOff = !atual.ativo;
+    if (wasOff || !atual.proxima_execucao) {
+      patch.proxima_execucao = new Date(Date.now() + 60_000);
+    }
+  } else {
+    patch.proxima_execucao = null;
+  }
+
+  await BibliotecaAutopilot.update(atual.id, patch);
+  return obterAutopilot(userId);
+}
+
+/**
+ * Gera e publica uma matéria a partir de um post (piloto — foto + Minha marca).
+ */
+async function publicarPostAutopilot({ userId, post, facebookPageId }) {
+  const fonte = await BibliotecaFontes.findById(post.fonte_id);
+  const topico = {
+    titulo: post.titulo,
+    link: post.url,
+    resumo: post.resumo,
+    nicho: fonte?.nome || fonte?.plataforma || 'rede social',
+    fonte: fonte?.nome,
+    veiculo: fonte?.plataforma,
+    imagemFonte: post.thumbnail,
+    redeSocial: true,
+    tipoFonte: 'rede_social',
+  };
+
+  const gerado = await materiaIaService.gerarCompleto({
+    userId,
+    facebookPageId,
+    topico,
+    tipoPublicacao: 'foto',
+    status: 'publicado',
+  });
+
+  await BibliotecaPosts.update(post.id, {
+    status: 'gerado_texto',
+    matter_id: gerado.matter?.id || null,
+  });
+
+  const publicado = Boolean(gerado.publication || gerado.fbPostUrl || gerado.matter?.status === 'publicado');
+  return { gerado, publicado };
+}
+
+async function tickAutopilot() {
+  const due = await BibliotecaAutopilot.findDue();
+  for (const cfg of due) {
+    try {
+      if (!cfg.facebook_page_id) {
+        await BibliotecaAutopilot.update(cfg.id, {
+          ativo: false,
+          ultimo_erro: 'Piloto desativado: página do Facebook não configurada',
+          proxima_execucao: null,
+        });
+        continue;
+      }
+
+      const page = await resolvePage(cfg.user_id, cfg.facebook_page_id);
+      if (!page) {
+        await BibliotecaAutopilot.update(cfg.id, {
+          ativo: false,
+          ultimo_erro: 'Piloto desativado: página do Facebook inválida',
+          proxima_execucao: null,
+        });
+        continue;
+      }
+
+      assertDeepseek();
+
+      const candidatos = await BibliotecaPosts.findCandidatosAutopilot(cfg.user_id, 30);
+      const qtd = clampAutopilotPosts(cfg.posts_por_ciclo);
+      const proxima = nextAutopilotRun(cfg.intervalo_minutos);
+
+      if (!candidatos.length) {
+        await BibliotecaAutopilot.update(cfg.id, {
+          ultimo_tick: new Date(),
+          proxima_execucao: proxima,
+          ultimo_erro: null,
+        });
+        continue;
+      }
+
+      const ranking = await ranquearPostsViralFacebook(
+        candidatos.map((p) => ({
+          id: p.id,
+          titulo: p.titulo,
+          resumo: p.resumo,
+          fonte: p.fonte_nome,
+          plataforma: p.fonte_plataforma,
+        })),
+        qtd
+      );
+
+      const byId = new Map(candidatos.map((p) => [Number(p.id), p]));
+      let publicados = 0;
+      const erros = [];
+
+      // Ordem do ranking + fallback se algum falhar
+      const filaIds = ranking.map((r) => r.id);
+      for (const c of candidatos) {
+        if (!filaIds.includes(Number(c.id))) filaIds.push(Number(c.id));
+      }
+
+      for (const postId of filaIds) {
+        if (publicados >= qtd) break;
+        const post = byId.get(Number(postId));
+        if (!post) continue;
+        try {
+          const { publicado } = await publicarPostAutopilot({
+            userId: cfg.user_id,
+            post,
+            facebookPageId: page.id,
+          });
+          if (publicado) publicados += 1;
+          else {
+            // Gerou rascunho (ex.: sem arte) — não conta como publicado, mas post já marcado
+            erros.push(`#${post.id}: gerado sem publicação (verifique imagem/arte)`);
+          }
+        } catch (err) {
+          erros.push(`#${post.id}: ${err.message}`);
+          try {
+            await BibliotecaPosts.update(post.id, { status: 'visto' });
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+
+      await BibliotecaAutopilot.update(cfg.id, {
+        ultimo_tick: new Date(),
+        proxima_execucao: proxima,
+        total_publicados: Number(cfg.total_publicados || 0) + publicados,
+        ultimo_erro: erros.length ? erros.slice(0, 3).join(' | ').slice(0, 1000) : null,
+      });
+    } catch (err) {
+      console.error(`[biblioteca-autopilot] user #${cfg.user_id}:`, err.message);
+      await BibliotecaAutopilot.update(cfg.id, {
+        ultimo_erro: String(err.message || err).slice(0, 1000),
+        proxima_execucao: nextAutopilotRun(cfg.intervalo_minutos),
+      });
+    }
+  }
 }
 
 module.exports = {
@@ -1152,6 +1397,10 @@ module.exports = {
   gerarTextoDePost,
   gerarVideoDePost,
   tickFontes,
+  tickAutopilot,
   dashboardUsuario,
+  detalheFonte,
+  obterAutopilot,
+  salvarAutopilot,
   resolvePage,
 };

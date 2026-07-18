@@ -887,6 +887,90 @@ Responda APENAS JSON:
 }
 
 /**
+ * Ranqueia posts da Biblioteca pelo potencial de viralizar no Facebook.
+ * Respeita diretrizes: título chamativo ok, sem clickbait enganoso / conteúdo proibido.
+ * @param {Array<{id:number,titulo?:string,resumo?:string,fonte?:string,plataforma?:string}>} candidatos
+ * @param {number} topN
+ * @returns {Promise<Array<{id:number,score:number,motivo:string}>>}
+ */
+async function ranquearPostsViralFacebook(candidatos, topN = 3) {
+  assertDeepseek();
+  const lista = (Array.isArray(candidatos) ? candidatos : [])
+    .filter((c) => c && c.id != null)
+    .slice(0, 30)
+    .map((c) => ({
+      id: Number(c.id),
+      titulo: String(c.titulo || '').slice(0, 200),
+      resumo: String(c.resumo || '').slice(0, 400),
+      fonte: String(c.fonte || c.fonte_nome || '').slice(0, 120),
+      plataforma: String(c.plataforma || c.fonte_plataforma || '').slice(0, 40),
+    }));
+
+  const n = Math.min(Math.max(Number(topN) || 1, 1), 5);
+  if (!lista.length) return [];
+
+  if (lista.length <= n) {
+    return lista.map((c, i) => ({
+      id: c.id,
+      score: 80 - i,
+      motivo: 'Poucos candidatos — ordem por recência.',
+    }));
+  }
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é editor de uma página no Facebook (estilo notícia / engajamento).
+Escolha os posts com MAIOR potencial de viralizar no Facebook AGORA.
+Critérios: relevância, emoção/curiosidade legítima, clareza do assunto, atualidade, potencial de compartilhamento.
+PROIBIDO priorizar: clickbait enganoso, sensacionalismo falso, conteúdo que viole diretrizes do Facebook (ódio, violência gráfica, desinformação deliberada, spam, nudez, etc.).
+Título chamativo é bem-vindo se for honesto com o conteúdo.
+Responda APENAS JSON: {"ranking":[{"id":123,"score":0-100,"motivo":"frase curta"}]}.
+Ordene do melhor para o pior. Inclua no máximo ${n} itens. Use só IDs da lista.`,
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ topN: n, candidatos: lista }),
+      },
+    ],
+    { temperature: 0.35, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = null;
+  }
+
+  const idsValidos = new Set(lista.map((c) => c.id));
+  const ranking = Array.isArray(parsed?.ranking) ? parsed.ranking : [];
+  const out = [];
+  for (const item of ranking) {
+    const id = Number(item?.id);
+    if (!idsValidos.has(id) || out.some((x) => x.id === id)) continue;
+    out.push({
+      id,
+      score: Math.min(100, Math.max(0, Number(item.score) || 50)),
+      motivo: String(item.motivo || '').trim().slice(0, 200),
+    });
+    if (out.length >= n) break;
+  }
+
+  // Fallback: completa com os mais recentes se a IA devolveu pouco
+  if (out.length < n) {
+    for (const c of lista) {
+      if (out.some((x) => x.id === c.id)) continue;
+      out.push({ id: c.id, score: 40, motivo: 'Complemento por recência.' });
+      if (out.length >= n) break;
+    }
+  }
+
+  return out;
+}
+
+/**
  * Resumo curto para alerta da Biblioteca de fontes.
  */
 async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, snippet }) {
@@ -1296,6 +1380,7 @@ module.exports = {
   sugerirCortes,
   mapearPedidoParaCortes,
   resumirAlertaBiblioteca,
+  ranquearPostsViralFacebook,
   sugerirTituloMateria,
   reescreverMateriaComInfo,
   sugerirConsultasImagem,
