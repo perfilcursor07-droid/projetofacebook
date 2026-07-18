@@ -142,6 +142,20 @@ async function gerarVideo(req, res, next) {
   }
 }
 
+async function publicarDireto(req, res, next) {
+  try {
+    const body = req.body || {};
+    const result = await bibliotecaService.publicarPostDireto({
+      userId: req.session.userId,
+      postId: Number(req.params.postId),
+      facebookPageId: body.facebookPageId || body.facebook_page_id || null,
+    });
+    res.status(result.queued ? 202 : 200).json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listarAlertas(req, res, next) {
   try {
     const apenasNaoLidos = req.query.unread === '1' || req.query.naoLidos === '1';
@@ -227,6 +241,7 @@ module.exports = {
   postsDaFonte,
   gerarTexto,
   gerarVideo,
+  publicarDireto,
   listarAlertas,
   marcarAlertaLido,
   marcarTodosLidos,

@@ -46,6 +46,12 @@ app.listen(env.port, async () => {
     const bibliotecaService = require('./services/bibliotecaService');
     const tick = async () => {
       try {
+        const reelPublisher = require('./services/bibliotecaReelAutopilotService');
+        await reelPublisher.publicarPendentesManuais(3);
+      } catch (err) {
+        console.error('[biblioteca manual tick]', err.message);
+      }
+      try {
         await materiaIaService.tickMonitores();
         await materiaIaService.tickFilaJobs();
       } catch (err) {

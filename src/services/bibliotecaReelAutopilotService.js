@@ -4,6 +4,7 @@ const BibliotecaPosts = require('../models/BibliotecaPosts');
 const Publications = require('../models/Publications');
 const VideoClips = require('../models/VideoClips');
 const Videos = require('../models/Videos');
+const db = require('../config/db');
 
 const publishingMatters = new Set();
 
@@ -22,24 +23,30 @@ async function updatePost(meta, patch = {}) {
   await BibliotecaPosts.update(postId, patch);
 }
 
-/** Persiste a autorização do piloto antes de o pós-processamento terminar. */
-async function habilitarPublicacaoAutomatica({
+/** Persiste autorização explícita para publicar assim que o Reel ficar pronto. */
+async function habilitarPublicacaoQuandoPronto({
   videoId,
   matterId,
   bibliotecaPostId,
   facebookPageId,
+  origem = 'manual',
 }) {
   const video = await Videos.findById(videoId);
   if (!video) throw new Error('Vídeo do Reel não encontrado');
 
+  const publishOrigin = origem === 'autopilot' ? 'autopilot' : 'manual';
   const metadata = {
     ...metadataOf(video),
     pipeline: 'conteudo_reel',
     matter_id: Number(matterId) || null,
     biblioteca_post_id: Number(bibliotecaPostId) || null,
     facebook_page_id: Number(facebookPageId) || null,
-    autopilot_publish: true,
-    autopilot_requested_at: new Date().toISOString(),
+    publish_when_ready: true,
+    publish_origin: publishOrigin,
+    publish_requested_at: new Date().toISOString(),
+    autopilot_publish: publishOrigin === 'autopilot',
+    autopilot_requested_at:
+      publishOrigin === 'autopilot' ? new Date().toISOString() : null,
     autopilot_last_error: null,
   };
 
@@ -54,13 +61,19 @@ async function habilitarPublicacaoAutomatica({
   return Videos.findById(video.id);
 }
 
+function habilitarPublicacaoAutomatica(options) {
+  return habilitarPublicacaoQuandoPronto({ ...options, origem: 'autopilot' });
+}
+
 /** Publica somente quando vídeo, transcrição/matéria e capa estão prontos. */
 async function publicarSePronto({ videoId, clipId = null, matterId = null }) {
   const video = await Videos.findById(videoId);
   if (!video) return { published: false, reason: 'video_not_found' };
 
   const meta = metadataOf(video);
-  if (!meta.autopilot_publish) return { published: false, reason: 'not_authorized' };
+  if (!meta.publish_when_ready && !meta.autopilot_publish) {
+    return { published: false, reason: 'not_authorized' };
+  }
 
   const finalMatterId = Number(matterId || meta.matter_id || 0);
   if (!finalMatterId) return { published: false, reason: 'matter_not_linked' };
@@ -77,8 +90,12 @@ async function publicarSePronto({ videoId, clipId = null, matterId = null }) {
     await Videos.update(video.id, {
       metadata: {
         ...meta,
+        publish_when_ready: false,
         autopilot_publish: false,
-        autopilot_published_at: meta.autopilot_published_at || new Date().toISOString(),
+        publish_completed_at: meta.publish_completed_at || new Date().toISOString(),
+        autopilot_published_at: meta.autopilot_publish
+          ? meta.autopilot_published_at || new Date().toISOString()
+          : meta.autopilot_published_at || null,
         autopilot_last_error: null,
       },
     });
@@ -97,8 +114,12 @@ async function publicarSePronto({ videoId, clipId = null, matterId = null }) {
         await Videos.update(video.id, {
           metadata: {
             ...meta,
+            publish_when_ready: false,
             autopilot_publish: false,
-            autopilot_published_at: meta.autopilot_published_at || new Date().toISOString(),
+            publish_completed_at: meta.publish_completed_at || new Date().toISOString(),
+            autopilot_published_at: meta.autopilot_publish
+          ? meta.autopilot_published_at || new Date().toISOString()
+          : meta.autopilot_published_at || null,
             autopilot_last_error: null,
           },
         });
@@ -158,10 +179,16 @@ async function publicarSePronto({ videoId, clipId = null, matterId = null }) {
       matter_id: matter.id,
       video_id: video.id,
     });
-    await BibliotecaAutopilot.incrementPublishedByUser(matter.user_id);
+    const isAutopilot = meta.publish_origin
+      ? meta.publish_origin === 'autopilot'
+      : Boolean(meta.autopilot_publish);
+    if (isAutopilot) {
+      await BibliotecaAutopilot.incrementPublishedByUser(matter.user_id);
+    }
     await Videos.update(video.id, {
       metadata: {
         ...meta,
+        publish_when_ready: false,
         autopilot_publish: false,
         autopilot_published_at: new Date().toISOString(),
         autopilot_last_error: null,
@@ -169,7 +196,7 @@ async function publicarSePronto({ videoId, clipId = null, matterId = null }) {
     });
 
     console.log(
-      `[biblioteca-autopilot] Reel matter #${matter.id} publicado (${publication.fbPostUrl || 'sem URL'})`
+      `[biblioteca-${isAutopilot ? 'autopilot' : 'manual'}] Reel matter #${matter.id} publicado (${publication.fbPostUrl || 'sem URL'})`
     );
     return { published: true, matter, publication };
   } catch (err) {
@@ -209,8 +236,37 @@ async function publicarPendentesDoUsuario(userId, limit = 1) {
   return published;
 }
 
+async function publicarPendentesManuais(limit = 3) {
+  const budget = Math.min(5, Math.max(1, Number(limit) || 3));
+  const videos = await db('videos')
+    .whereIn('status', ['baixado', 'cortado'])
+    .orderBy('updated_at', 'asc')
+    .limit(100);
+  let processed = 0;
+  let published = 0;
+
+  for (const video of videos) {
+    if (processed >= budget) break;
+    const meta = metadataOf(video);
+    if (!meta.publish_when_ready || meta.publish_origin !== 'manual') continue;
+    processed += 1;
+    try {
+      const result = await publicarSePronto({
+        videoId: video.id,
+        matterId: meta.matter_id || null,
+      });
+      if (result.published && !result.alreadyPublished) published += 1;
+    } catch (err) {
+      console.warn(`[biblioteca-manual] retomada vídeo #${video.id}:`, err.message);
+    }
+  }
+  return { processed, published };
+}
+
 module.exports = {
+  habilitarPublicacaoQuandoPronto,
   habilitarPublicacaoAutomatica,
   publicarSePronto,
   publicarPendentesDoUsuario,
+  publicarPendentesManuais,
 };

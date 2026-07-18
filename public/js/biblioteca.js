@@ -222,10 +222,52 @@
     }
   }
 
+  async function publicarMelhor(id, mediaType) {
+    const destinationPage = recommendationPageId();
+    if (!destinationPage) {
+      alert('Selecione a Página do Facebook no topo de “Melhores para publicar”.');
+      document.getElementById('bib-melhores-page')?.focus();
+      return;
+    }
+
+    const isVideo = mediaType === 'video';
+    const confirmation = isVideo
+      ? 'Processar este Reel e publicar automaticamente quando vídeo, transcrição, matéria e capa estiverem prontos?'
+      : 'Gerar a matéria e a capa e publicar agora na Página do Facebook selecionada?';
+    if (!confirm(confirmation)) return;
+
+    try {
+      setBusy(
+        true,
+        isVideo
+          ? 'Preparando Reel para publicação automática…'
+          : 'IA gerando matéria, capa e publicando…'
+      );
+      const data = await api(`/api/biblioteca/posts/${id}/publicar`, {
+        method: 'POST',
+        body: JSON.stringify({ facebook_page_id: destinationPage }),
+      });
+      const warnings = Array.isArray(data.avisos) && data.avisos.length
+        ? `\n\nAvisos: ${data.avisos.join(' ')}`
+        : '';
+      alert(`${data.message || (data.published ? 'Publicado com sucesso.' : 'Processamento iniciado.')}${warnings}`);
+      location.reload();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   document.body.addEventListener('click', (e) => {
+    const publicar = e.target.closest('.bib-publicar-melhor');
     const preparar = e.target.closest('.bib-preparar-melhor');
     const t = e.target.closest('.bib-gen-texto');
     const v = e.target.closest('.bib-gen-video');
+    if (publicar) {
+      publicarMelhor(publicar.dataset.id, publicar.dataset.media);
+      return;
+    }
     if (preparar) {
       const id = preparar.dataset.id;
       const destinationPage = recommendationPageId();

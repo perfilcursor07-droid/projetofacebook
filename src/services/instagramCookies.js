@@ -222,11 +222,36 @@ function instagramFailureReason(data, status) {
   )
     .replace(/\s+/g, ' ')
     .slice(0, 160);
-  const normalized = message.toLowerCase();
-  if (normalized.includes('challenge') || data?.challenge) return 'checkpoint/challenge exigido';
-  if (normalized.includes('login') || normalized.includes('logged')) return 'login_required';
+  let raw = '';
+  try {
+    raw = typeof data === 'string' ? data : JSON.stringify(data || '');
+  } catch {
+    raw = '';
+  }
+  const normalized = `${message} ${raw.slice(0, 200000)}`.toLowerCase();
+  if (
+    normalized.includes('challenge_required') ||
+    normalized.includes('checkpoint_required') ||
+    normalized.includes('/challenge/') ||
+    normalized.includes('challenge') ||
+    data?.challenge
+  ) {
+    return 'checkpoint/challenge exigido';
+  }
+  if (
+    normalized.includes('login_required') ||
+    normalized.includes('/accounts/login') ||
+    normalized.includes('please wait a few minutes') ||
+    normalized.includes('logged')
+  ) {
+    return 'login_required';
+  }
   if (status === 429) return 'limite de requisições (HTTP 429)';
-  return message ? `${message} (HTTP ${status})` : `HTTP ${status}`;
+  if (message) return `${message} (HTTP ${status})`;
+  if (status >= 200 && status < 300 && typeof data === 'string') {
+    return 'resposta HTML sem dados da sessão (possível challenge)';
+  }
+  return `HTTP ${status}`;
 }
 
 /** Testa a sessão remotamente sem retornar usuário, IDs ou valores de cookies. */
@@ -269,11 +294,32 @@ async function validateInstagramSession(axiosClient, bootstrap = null) {
       );
       userId = account?.pk || account?.id || null;
     }
+    let lastSearch = search;
+    if (!userId) {
+      const mobileSearch = await axiosClient.get(
+        'https://i.instagram.com/api/v1/users/search/',
+        {
+          params: { q: 'instagram', count: 5 },
+          headers: mobileHeaders,
+          timeout: 20000,
+          maxRedirects: 5,
+          validateStatus: () => true,
+        }
+      );
+      lastSearch = mobileSearch;
+      if (mobileSearch.status >= 200 && mobileSearch.status < 300) {
+        const users = Array.isArray(mobileSearch.data?.users) ? mobileSearch.data.users : [];
+        const account = users.find(
+          (item) => String(item?.username || '').toLowerCase() === 'instagram'
+        );
+        userId = account?.pk || account?.id || null;
+      }
+    }
     if (!userId) {
       return {
         ok: false,
-        status: search.status,
-        reason: instagramFailureReason(search.data, search.status),
+        status: lastSearch.status,
+        reason: instagramFailureReason(lastSearch.data, lastSearch.status),
         homeStatus: boot?.homeStatus || null,
         hasClaim: Boolean(boot?.claim && boot.claim !== '0'),
       };

@@ -15,6 +15,8 @@ const {
 const { env } = require('../config/env');
 const axios = require('axios');
 
+const directPublishingPosts = new Set();
+
 function clampAutopilotInterval(minutos) {
   return Math.min(1440, Math.max(5, Number(minutos) || 30));
 }
@@ -1211,7 +1213,13 @@ async function escanearAgora(userId, fonteId) {
 /**
  * Gera matéria texto (ai_matters) a partir de um post da biblioteca.
  */
-async function gerarTextoDePost({ userId, postId, facebookPageId, tipoPublicacao = 'texto' }) {
+async function gerarTextoDePost({
+  userId,
+  postId,
+  facebookPageId,
+  tipoPublicacao = 'texto',
+  publicarAgora = false,
+}) {
   assertDeepseek();
   const post = await BibliotecaPosts.findById(postId);
   if (!post || Number(post.user_id) !== Number(userId)) {
@@ -1247,7 +1255,7 @@ async function gerarTextoDePost({ userId, postId, facebookPageId, tipoPublicacao
     facebookPageId: pageId || null,
     topico,
     tipoPublicacao,
-    status: 'rascunho',
+    status: publicarAgora ? 'publicado' : 'rascunho',
   });
 
   await BibliotecaPosts.update(post.id, {
@@ -1328,6 +1336,125 @@ async function gerarVideoDePost({ userId, postId, facebookPageId = null }) {
   await BibliotecaPosts.update(post.id, { status: 'gerado_video', video_id: id });
 
   return { video, created: true, queued: true };
+}
+
+/** Gera e publica imediatamente, ou autoriza o Reel a publicar assim que ficar pronto. */
+async function executarPublicacaoDireta({ userId, postId, facebookPageId }) {
+  const pageId = Number(facebookPageId || 0);
+  if (!pageId) {
+    const err = new Error('Selecione a Página do Facebook antes de publicar');
+    err.status = 400;
+    throw err;
+  }
+  const page = await resolvePage(userId, pageId);
+  if (!page) {
+    const err = new Error('Página do Facebook inválida');
+    err.status = 400;
+    throw err;
+  }
+
+  const post = await BibliotecaPosts.findById(postId);
+  if (!post || Number(post.user_id) !== Number(userId)) {
+    const err = new Error('Post não encontrado');
+    err.status = 404;
+    throw err;
+  }
+  const fonte = await BibliotecaFontes.findById(post.fonte_id);
+  const isInstagramVideo =
+    fonte?.plataforma === 'instagram' &&
+    (post.media_type === 'video' ||
+      /instagram\.com\/(reel|reels|tv)\//i.test(String(post.url || '')));
+
+  // Requisição repetida após publicação: responde sem criar matéria/publicação duplicada.
+  if (post.matter_id) {
+    const AiMatters = require('../models/AiMatters');
+    const existingMatter = await AiMatters.findById(post.matter_id);
+    if (existingMatter?.status === 'publicado') {
+      return {
+        modo: existingMatter.tipo_publicacao === 'reel' ? 'reel' : 'foto',
+        published: true,
+        alreadyPublished: true,
+        queued: false,
+        matterId: existingMatter.id,
+        message: 'Este conteúdo já foi publicado.',
+      };
+    }
+  }
+
+  if (isInstagramVideo) {
+    const result = await gerarVideoDePost({
+      userId,
+      postId: post.id,
+      facebookPageId: page.id,
+    });
+    if (!result.video?.id || !result.matter?.id) {
+      const err = new Error('Não foi possível vincular o vídeo e a matéria do Reel');
+      err.status = 422;
+      throw err;
+    }
+
+    const reelPublisher = require('./bibliotecaReelAutopilotService');
+    await reelPublisher.habilitarPublicacaoQuandoPronto({
+      videoId: result.video.id,
+      matterId: result.matter.id,
+      bibliotecaPostId: post.id,
+      facebookPageId: page.id,
+      origem: 'manual',
+    });
+    const ready = await reelPublisher.publicarSePronto({
+      videoId: result.video.id,
+      clipId: result.clip?.id || null,
+      matterId: result.matter.id,
+    });
+
+    return {
+      modo: 'reel',
+      published: Boolean(ready.published),
+      alreadyPublished: Boolean(ready.alreadyPublished),
+      queued: !ready.published,
+      matterId: result.matter.id,
+      message: ready.published
+        ? 'Reel publicado no Facebook.'
+        : 'Reel em processamento. Ele será publicado automaticamente quando a transcrição, a matéria e a capa ficarem prontas.',
+    };
+  }
+
+  const gerado = await gerarTextoDePost({
+    userId,
+    postId: post.id,
+    facebookPageId: page.id,
+    tipoPublicacao: 'foto',
+    publicarAgora: true,
+  });
+  const published = Boolean(
+    gerado.publication || gerado.fbPostUrl || gerado.matter?.status === 'publicado'
+  );
+  return {
+    modo: 'foto',
+    published,
+    queued: false,
+    matterId: gerado.matter?.id || null,
+    fbPostUrl: gerado.fbPostUrl || null,
+    avisos: gerado.avisos || [],
+    message: published
+      ? 'Conteúdo publicado no Facebook.'
+      : 'A matéria foi preparada, mas não foi publicada. Verifique os avisos da imagem/capa.',
+  };
+}
+
+async function publicarPostDireto(options) {
+  const key = `${Number(options?.userId || 0)}:${Number(options?.postId || 0)}`;
+  if (directPublishingPosts.has(key)) {
+    const err = new Error('Este conteúdo já está sendo preparado para publicação');
+    err.status = 409;
+    throw err;
+  }
+  directPublishingPosts.add(key);
+  try {
+    return await executarPublicacaoDireta(options);
+  } finally {
+    directPublishingPosts.delete(key);
+  }
 }
 
 async function tickFontes() {
@@ -1697,6 +1824,7 @@ module.exports = {
   escanearAgora,
   gerarTextoDePost,
   gerarVideoDePost,
+  publicarPostDireto,
   tickFontes,
   tickAutopilot,
   dashboardUsuario,

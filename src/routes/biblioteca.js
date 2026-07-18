@@ -11,6 +11,7 @@ router.post('/fontes/:id/escanear', controller.escanear);
 router.get('/fontes/:id/posts', controller.postsDaFonte);
 router.post('/posts/:postId/gerar-texto', controller.gerarTexto);
 router.post('/posts/:postId/gerar-video', controller.gerarVideo);
+router.post('/posts/:postId/publicar', controller.publicarDireto);
 router.get('/alertas', controller.listarAlertas);
 router.post('/alertas/:id/lido', controller.marcarAlertaLido);
 router.post('/alertas/lidos', controller.marcarTodosLidos);
