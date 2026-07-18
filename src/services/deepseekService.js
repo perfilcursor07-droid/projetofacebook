@@ -558,7 +558,7 @@ Escolha somente os melhores momentos que funcionem sozinhos, sem depender do tre
 Cada corte precisa começar no início natural de uma ideia, apresentar contexto suficiente e terminar depois da conclusão. Nunca comece com pronome ou resposta sem contexto, nem termine no meio de frase, raciocínio ou promessa.
 Priorize, nesta ordem: gancho claro, ideia completa, clímax/frase memorável e potencial de retenção. Qualidade vale mais que quantidade: retorne menos cortes se não houver momentos distintos e autossuficientes.
 Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos forte:
-{"cortes":[{"inicio":0,"fim":55,"legenda":"resumo curto do trecho","motivo":"gancho e por que o trecho é completo"}]}`;
+{"cortes":[{"inicio":0,"fim":55,"titulo":"manchete curta para capa do Reel (máx 80 chars)","legenda":"resumo curto do trecho","motivo":"gancho e por que o trecho é completo"}]}`;
 
   const user = [
     `Duração total do vídeo: ${total}s`,
@@ -573,6 +573,7 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
     `Não divida um mesmo raciocínio em vários cortes e evite sobreposição ou conteúdo repetido.`,
     `Descarte trechos que sejam apenas introdução, transição, pergunta sem resposta ou conclusão sem contexto.`,
     `No motivo, explique o gancho e confirme que o trecho tem começo, desenvolvimento e fechamento.`,
+    `Campo "titulo" = manchete curta e impactante para a capa do Reel (máx. 80 caracteres), sem colar a transcrição.`,
     `Se não houver fala útil, selecione pelo ritmo do vídeo, ainda respeitando duração e começo/fim naturais.`,
     '',
     'Fala / timeline:',
@@ -602,6 +603,26 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
       ? parsed.cortes
       : [];
 
+  return normalizeCortesList(list, {
+    total,
+    minClip,
+    maxClip,
+    preferredMin,
+    speechSegments,
+    titulo,
+    n,
+  });
+}
+
+function normalizeCortesList(list, {
+  total,
+  minClip,
+  maxClip,
+  preferredMin,
+  speechSegments = [],
+  titulo = null,
+  n = 3,
+}) {
   function speechStartAt(time) {
     const containing = speechSegments.find((segment) => segment.start <= time && segment.end > time);
     if (containing) return containing.start;
@@ -720,13 +741,22 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
 
     const legenda = String(item.legenda || item.caption || '').trim().slice(0, 500);
     const motivo = String(item.motivo || '').trim().slice(0, 280);
-    const description = normalizeDescription(legenda || motivo);
+    const tituloSugestao = String(item.titulo || item.title || legenda || titulo || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 90);
+    const description = normalizeDescription(legenda || motivo || tituloSugestao);
     if (
       description.length >= 20 &&
       descriptions.some((existing) => existing === description)
     ) continue;
 
-    cortes.push({ ...range, legenda, motivo });
+    cortes.push({
+      ...range,
+      titulo: tituloSugestao || `Trecho ${range.inicio}s–${range.fim}s`,
+      legenda,
+      motivo,
+    });
     descriptions.push(description);
     if (cortes.length >= n) break;
   }
@@ -737,6 +767,7 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
       cortes.push({
         inicio: 0,
         fim,
+        titulo: String(titulo || 'Confira este trecho').slice(0, 90),
         legenda: titulo || 'Confira este trecho',
         motivo: total <= preferredMin
           ? 'Vídeo curto mantido completo para preservar o contexto'
@@ -746,6 +777,113 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
   }
 
   return cortes;
+}
+
+/**
+ * Mapeia um pedido em texto livre do usuário para cortes no vídeo (usando a transcrição).
+ */
+async function mapearPedidoParaCortes({
+  duracao,
+  titulo,
+  pedido,
+  transcricao,
+  segmentos,
+  maxCortes = 3,
+  maxSegundos = 90,
+  minSegundos = 40,
+}) {
+  assertDeepseek();
+  const pedidoTxt = String(pedido || '').trim();
+  if (!pedidoTxt) {
+    const err = new Error('Descreva quais Reels você quer criar');
+    err.status = 400;
+    throw err;
+  }
+
+  const total = Math.max(0, Math.round(Number(duracao) || 0));
+  if (total < 3) return [];
+
+  const maxClip = Math.min(90, total, Math.max(10, Number(maxSegundos) || 90));
+  const minClip = Math.min(maxClip, total, Math.max(3, Number(minSegundos) || 40));
+  const preferredMin = Math.min(maxClip, total, Math.max(minClip, 45));
+
+  const speechSegments = (Array.isArray(segmentos) ? segmentos : [])
+    .map((segment) => ({
+      start: Math.max(0, Number(segment.start)),
+      end: Math.min(total, Number(segment.end)),
+      text: String(segment.text || '').trim(),
+    }))
+    .filter((segment) => (
+      segment.text &&
+      Number.isFinite(segment.start) &&
+      Number.isFinite(segment.end) &&
+      segment.end > segment.start
+    ))
+    .sort((a, b) => a.start - b.start);
+
+  let timeline = '';
+  if (speechSegments.length) {
+    timeline = speechSegments
+      .slice(0, 500)
+      .map((segment) => `[${segment.start.toFixed(1)}-${segment.end.toFixed(1)}] ${segment.text}`)
+      .join('\n')
+      .slice(0, 30000);
+  } else if (transcricao) {
+    timeline = String(transcricao).slice(0, 20000);
+  }
+
+  const n = Math.min(3, Math.max(1, Number(maxCortes) || 3));
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é editor de Reels. O usuário descreveu quais trechos quer.
+Com base na timeline/transcrição, escolha os trechos que atendem o pedido.
+Cada corte deve ser autossuficiente (começo, desenvolvimento, fim), ${minClip}–${maxClip}s.
+Responda APENAS JSON:
+{"cortes":[{"inicio":0,"fim":55,"titulo":"manchete curta (máx 80)","legenda":"resumo","motivo":"por que atende o pedido"}]}`,
+      },
+      {
+        role: 'user',
+        content: [
+          `Pedido do usuário: ${pedidoTxt}`,
+          `Duração total: ${total}s`,
+          `Título do vídeo: ${titulo || '—'}`,
+          `Máximo ${n} cortes. Prefira qualidade.`,
+          `0 <= inicio < fim <= ${total}.`,
+          '',
+          'Timeline / fala:',
+          timeline || '(sem transcrição — estime pelo título e pedido)',
+        ].join('\n'),
+      },
+    ],
+    { temperature: 0.3, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    const err = new Error('A IA não entendeu o pedido de Reels. Tente descrever de outro jeito.');
+    err.status = 502;
+    throw err;
+  }
+
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed.cortes)
+      ? parsed.cortes
+      : [];
+
+  return normalizeCortesList(list, {
+    total,
+    minClip,
+    maxClip,
+    preferredMin,
+    speechSegments,
+    titulo: pedidoTxt.slice(0, 90),
+    n,
+  });
 }
 
 /**
@@ -1156,6 +1294,7 @@ module.exports = {
   gerarMateriaImagem,
   gerarMateriaNoticiaFacebook,
   sugerirCortes,
+  mapearPedidoParaCortes,
   resumirAlertaBiblioteca,
   sugerirTituloMateria,
   reescreverMateriaComInfo,

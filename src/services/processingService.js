@@ -219,7 +219,8 @@ function queueVideoAnalyze(video, opts = {}) {
     ? opts.aspectRatio
     : '9:16';
   const maxCortes = Math.min(3, Math.max(1, Number(opts.maxCortes) || 3));
-  const gerar = opts.gerar !== false;
+  // Padrão: só analisa/sugere — o usuário escolhe antes de cortar
+  const gerar = opts.gerar === true || opts.gerar === 1 || opts.gerar === '1';
 
   try {
     enqueue(`analyze video ${video.id}`, async () => {
@@ -263,34 +264,18 @@ function queueVideoAnalyze(video, opts = {}) {
           analise_em: new Date().toISOString(),
           sugestoes_corte: sugestoes,
           transcricao_full: String(transcricao || '').slice(0, 20000),
+          segmentos_fala: segmentos.slice(0, 800).map((s) => ({
+            start: Number(s.start),
+            end: Number(s.end),
+            text: String(s.text || '').slice(0, 400),
+          })),
         });
         await Videos.update(video.id, { metadata: meta });
 
         if (!gerar || !sugestoes.length) return;
 
-        // 3) Gera apenas cortes novos; refazer a análise não duplica intervalos idênticos.
-        const fresh = await Videos.findById(video.id);
-        const existingClips = await VideoClips.findByVideo(video.id);
-        for (const s of sugestoes) {
-          const duplicate = existingClips.some((clip) => (
-            Math.abs(Number(clip.inicio_segundo) - Number(s.inicio)) <= 2 &&
-            Math.abs(Number(clip.fim_segundo) - Number(s.fim)) <= 2
-          ));
-          if (duplicate) continue;
-
-          // Matéria + capa nascem automaticamente quando o corte fica pronto.
-          const [clipId] = await VideoClips.create({
-            video_id: video.id,
-            inicio_segundo: s.inicio,
-            fim_segundo: s.fim,
-            aspect_ratio: aspectRatio,
-            legenda_sugerida: null,
-            status: 'processando',
-          });
-          const created = await VideoClips.findById(clipId);
-          existingClips.push(created);
-          queueClipGeneration(created, fresh || video);
-        }
+        // Modo legado: gerar=true cria os cortes na hora
+        await enqueueClipsFromCortes(video.id, sugestoes, { aspectRatio });
       } catch (err) {
         meta = mergeMetadata(meta, {
           analise_status: 'erro',
@@ -325,12 +310,80 @@ function mergeMetadata(current, patch) {
   return { ...base, ...patch };
 }
 
+/**
+ * Cria clips a partir de cortes escolhidos (ou mapeados pelo pedido) e enfileira
+ * ffmpeg → matéria → capa.
+ */
+async function enqueueClipsFromCortes(videoId, cortes, { aspectRatio = '9:16' } = {}) {
+  const video = await Videos.findById(videoId);
+  if (!video?.caminho_local) {
+    const err = new Error('Baixe o vídeo antes de criar Reels');
+    err.status = 422;
+    throw err;
+  }
+
+  const ratio = ['9:16', '1:1', 'original'].includes(aspectRatio) ? aspectRatio : '9:16';
+  const list = Array.isArray(cortes) ? cortes : [];
+  if (!list.length) {
+    const err = new Error('Nenhum trecho para criar');
+    err.status = 400;
+    throw err;
+  }
+
+  const existingClips = await VideoClips.findByVideo(video.id);
+  const created = [];
+
+  for (const s of list) {
+    const inicio = Math.round(Number(s.inicio));
+    const fim = Math.round(Number(s.fim));
+    if (!Number.isFinite(inicio) || !Number.isFinite(fim) || fim <= inicio) continue;
+
+    const duplicate = existingClips.some((clip) => (
+      Math.abs(Number(clip.inicio_segundo) - inicio) <= 2 &&
+      Math.abs(Number(clip.fim_segundo) - fim) <= 2
+    ));
+    if (duplicate) continue;
+
+    const tituloCapa = String(s.titulo || s.legenda || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 90) || null;
+
+    const [clipId] = await VideoClips.create({
+      video_id: video.id,
+      inicio_segundo: inicio,
+      fim_segundo: fim,
+      aspect_ratio: ratio,
+      legenda_sugerida: null,
+      capa_titulo: tituloCapa,
+      status: 'processando',
+      materia_status: 'pendente',
+      capa_status: 'pendente',
+    });
+    const clip = await VideoClips.findById(clipId);
+    existingClips.push(clip);
+    created.push(clip);
+    queueClipGeneration(clip, video);
+  }
+
+  if (!created.length) {
+    const err = new Error(
+      'Esses trechos já existem na fila ou os tempos são inválidos. Escolha outros momentos.'
+    );
+    err.status = 409;
+    throw err;
+  }
+
+  return created;
+}
+
 module.exports = {
   queueVideoDownload,
   queueImageDownload,
   queueClipGeneration,
   queueClipTranscription,
   queueVideoAnalyze,
+  enqueueClipsFromCortes,
   recoverStuckJobs,
   safeUnlink,
 };
