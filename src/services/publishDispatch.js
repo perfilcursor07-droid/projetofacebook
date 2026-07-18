@@ -143,8 +143,8 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
       filePath: localFile || null,
       imageUrl: localFile ? null : remoteUrl,
       publicationType,
-      // Em REELS o title sobrescreve a legenda no Facebook — só usar em POST
-      title: publicationType === 'REELS' ? null : titulo || null,
+      // O adapter só usa title como fallback quando content está vazio.
+      title: titulo || null,
       link: link || null,
       scheduleType: 'publish_now',
     });

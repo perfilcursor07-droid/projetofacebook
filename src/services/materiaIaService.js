@@ -431,8 +431,8 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       imagemPath: pubTipo === 'reel' ? null : matter.imagem_path || null,
       imageUrl: pubTipo === 'foto' && img ? img : null,
       texto: mensagem,
-      // PostSyncer: settings.title sobrescreve a legenda — não enviar em Reels
-      titulo: pubTipo === 'reel' ? null : overrides.titulo || matter.titulo || null,
+      // A legenda completa já contém o título. No PostSyncer, settings.title a substituiria.
+      titulo: null,
     });
 
     const postId = result.post_id || result.id;

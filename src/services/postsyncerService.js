@@ -309,8 +309,11 @@ async function publishToFacebook({
 
   // PostSyncer Facebook: campo correto é post_type (não "type")
   const settings = { post_type: fbType };
-  // title sobrescreve a legenda no FB — só em POST de feed, nunca em REELS
-  if (title && fbType !== 'REELS') settings.title = String(title).slice(0, 200);
+  // No Facebook/PostSyncer, settings.title substitui content.text. Só use como fallback
+  // quando não existe legenda; com texto, content[0].text é sempre autoritativo.
+  if (title && !String(content || '').trim() && fbType !== 'REELS') {
+    settings.title = String(title).slice(0, 200);
+  }
   if (link) settings.link = String(link);
 
   const contentItem = {
