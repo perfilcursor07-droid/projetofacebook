@@ -1,19 +1,13 @@
 /**
- * Diretrizes editoriais para matérias de Página do Facebook (texto curto).
- * Adaptado de site-gospel/editorialGuidelines.js — sem HTML longo.
- *
- * Alcance no Facebook (referência 2024–2026):
- * - Pico de engajamento: ~40–80 caracteres (posts curtíssimos).
- * - “Ver mais” no mobile: ~400–480 caracteres — texto acima disso some atrás do clique.
- * - Para Página de notícias com foto: 400–700 caracteres com gancho forte no início.
- * Fontes: Hootsuite/HubSpot (≤80 chars +66% engajamento), fold ~480 chars.
+ * Diretrizes editoriais para matérias de Página do Facebook.
+ * Estilo: minimatéria (mais completa que um resumo curto) + crédito de fontes.
  */
 
 /**
- * Teto para Página gospel (estilo News Gospel): matérias um pouco mais longas
- * que o fold do feed, com desenvolvimento + fechamento de fé.
+ * Teto da minimatéria (corpo + créditos + hashtags).
+ * Mais espaço para desenvolver o conteúdo original sem ficar “mutilado”.
  */
-const MAX_MATERIA_CHARS = 1200;
+const MAX_MATERIA_CHARS = 2800;
 
 const FRASES_PROIBIDAS_IA = [
   'é importante ressaltar', 'vale ressaltar', 'vale destacar', 'vale lembrar',
@@ -35,12 +29,12 @@ const FRASES_PROIBIDAS_IA = [
 ];
 
 function sortearFaixaChars() {
-  // News Gospel: desenvolvimento + aspas + fechamento de fé.
+  // Minimatéria: lead + desenvolvimento rico + aspas + fechamento de fé.
   const faixas = [
-    { min: 520, max: 720 },
-    { min: 580, max: 820 },
-    { min: 620, max: 900 },
-    { min: 550, max: 780 },
+    { min: 1100, max: 1600 },
+    { min: 1200, max: 1800 },
+    { min: 1300, max: 2000 },
+    { min: 1150, max: 1700 },
   ];
   return faixas[Math.floor(Math.random() * faixas.length)];
 }
@@ -83,13 +77,14 @@ function sortearVozRedator() {
  */
 function blocoEstiloNewsGospel() {
   return `
-ESTILO NEWS GOSPEL (obrigatório — imite a voz de Página gospel de notícias):
-1) LEAD: comece apresentando quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
-2) DESENVOLVIMENTO: conte a história com fatos concretos (obras, datas, lugares, decisões). Use 1 a 3 FALAS LITERAIS entre aspas ("…") quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
-3) FECHAMENTO DE FÉ: termine com reflexão espiritual, oração, gratidão ou esperança (ex.: "Que Deus console…", "Glória a Deus…", "Essa história nos lembra que…"). NUNCA feche pedindo like, comentário ou compartilhamento.
-4) TOM: jornalístico + evangélico caloroso. Emocionante sem drama falso. Sem clickbait. Sem sermão genérico desconectado do fato.
-5) FORMATO: 3 a 5 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML. Sem markdown (**negrito**). Emojis só se fizerem sentido no fechamento (no máximo 1–2), nunca no meio de cada frase.
-6) PROIBIDO: colar a fonte/transcrição inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".`;
+ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
+1) LEAD: apresente quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
+2) DESENVOLVIMENTO: escreva uma MINIMATÉRIA do conteúdo original — não um resumo seco. Amplie o fio narrativo com fatos concretos (obras, datas, lugares, decisões, contexto). Use 1 a 3 FALAS LITERAIS entre aspas ("…") quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
+3) FECHAMENTO DE FÉ: termine com reflexão espiritual, oração, gratidão ou esperança (ex.: "Que Deus console…", "Glória a Deus…"). NUNCA feche pedindo like, comentário ou compartilhamento.
+4) TOM: jornalístico + evangélico caloroso. Emocionante sem drama falso. Sem clickbait.
+5) FORMATO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML. Sem markdown (**negrito**). Emojis só no fechamento (máx. 1–2).
+6) PROIBIDO: colar a fonte/transcrição inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
+7) NÃO coloque bloco de "Fontes:" no JSON — o sistema anexa créditos da imagem e da origem automaticamente.`;
 }
 
 function sortearTemperatura(investigativa = false) {
@@ -280,15 +275,35 @@ function formatFacebookCaption({ titulo, materia, hashtags } = {}) {
   return parts.join('\n\n').trim();
 }
 
+/**
+ * Anexa bloco de créditos (origem do conteúdo + imagem) antes das hashtags.
+ */
+function anexarCreditosFontes(materia, { fonteNome, fonteUrl, imagemRotulo, imagemUrl } = {}) {
+  const { body, tags } = extrairHashtagsDoTexto(materia);
+  let cleanBody = String(body || '')
+    .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+$/i, '')
+    .trim();
+
+  const linhas = [];
+  const origem = [fonteNome, fonteUrl].filter(Boolean).join(' — ');
+  if (origem) linhas.push(`• Conteúdo: ${origem}`);
+  const img = [imagemRotulo, imagemUrl].filter(Boolean).join(' — ');
+  if (img) linhas.push(`• Imagem: ${img}`);
+  if (!linhas.length) return anexarHashtagsAoFinal(cleanBody, tags);
+
+  const bloco = `Fontes:\n${linhas.join('\n')}`;
+  return anexarHashtagsAoFinal(`${cleanBody}\n\n${bloco}`, tags);
+}
+
 function blocoRegrasFacebook(faixa) {
   return `
-DIRETRIZES FACEBOOK / PEOPLE-FIRST:
-- Texto para leitor de Página gospel, não para engajar de forma inautêntica.
-- NÃO copie a fonte inteira; reescreva a narrativa com estrutura própria.
-- FALAS LITERAIS: quando a apuração trouxer fala/transcrição/legendas, DEIXE 1 a 3 trechos curtos e fortes entre aspas ("…") — fiéis ao que foi dito. Introduza com "afirmou", "declarou", "contou".
+DIRETRIZES FACEBOOK / MINIMATÉRIA:
+- Texto para leitor de Página gospel: minimatéria completa do fato, não telegrama.
+- NÃO copie a fonte inteira; reescreva com estrutura própria, mas PRESERVE os detalhes importantes da apuração.
+- FALAS LITERAIS: quando a apuração trouxer fala/transcrição/legendas, DEIXE 1 a 3 trechos curtos e fortes entre aspas ("…") — fiéis ao que foi dito.
 - NÃO invente fatos, números, datas, igrejas, pastores nem declarações entre aspas que NÃO estejam nas fontes.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
-- Formato OBRIGATÓRIO: 3 a 5 parágrafos curtos separados por linha em branco (\\n\\n). Nunca um bloco único.
+- Formato OBRIGATÓRIO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Nunca um bloco único.
 - Gancho forte nos primeiros ~120 caracteres (quem + fato).
 - Extensão alvo desta geração: ${faixa.min}–${faixa.max} caracteres (máx absoluto ${MAX_MATERIA_CHARS}).
 - 3 a 5 hashtags no campo hashtags, SEM espaços internos (ex.: FeCrista), sem # no valor.
@@ -329,5 +344,6 @@ module.exports = {
   quebrarEmParagrafos,
   formatHashtagsLine,
   anexarHashtagsAoFinal,
+  anexarCreditosFontes,
   extrairHashtagsDoTexto,
 };

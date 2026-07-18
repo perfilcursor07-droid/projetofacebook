@@ -23,13 +23,30 @@ function tempPath(name) {
 function extractFrame(inputPath, outputPath, atSecond = 0.5) {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
-      .seekInput(atSecond)
+      .seekInput(Math.max(0, Number(atSecond) || 0))
       .frames(1)
       .outputOptions(['-q:v', '2'])
       .on('error', reject)
       .on('end', () => resolve(outputPath))
       .save(outputPath);
   });
+}
+
+/** Tenta vários pontos do vídeo se o seek falhar (clipes curtos / keyframes). */
+async function extractFrameRobust(inputPath, outputPath) {
+  const attempts = [0.5, 0.2, 0.05, 0];
+  let lastErr;
+  for (const at of attempts) {
+    try {
+      await extractFrame(inputPath, outputPath, at);
+      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 500) {
+        return outputPath;
+      }
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error('Não foi possível extrair um frame para a capa');
 }
 
 function even(n) {
@@ -193,7 +210,7 @@ async function addCoverToClip({ clip, user, titulo }) {
 
   try {
     writeSilentWav(silentWavPath, Math.max(COVER_SECONDS + 0.5, Number(data.format?.duration) || 60));
-    await extractFrame(clipAbs, framePath, 0.5);
+    await extractFrameRobust(clipAbs, framePath);
     const composed = await composeBrandOverlayOnImage({
       imagePath: framePath,
       outputPath: coverImagePath,
@@ -209,6 +226,9 @@ async function addCoverToClip({ clip, user, titulo }) {
       width,
       height,
     });
+    if (!fs.existsSync(coverVideoPath) || fs.statSync(coverVideoPath).size < 1000) {
+      throw new Error('Falha ao gerar o vídeo da capa (arquivo vazio)');
+    }
     await concatCoverAndClip({
       coverPath: coverVideoPath,
       clipPath: clipAbs,
@@ -218,6 +238,9 @@ async function addCoverToClip({ clip, user, titulo }) {
       height,
       hasAudio,
     });
+    if (!fs.existsSync(outAbs) || fs.statSync(outAbs).size < 1000) {
+      throw new Error('Falha ao costurar a capa no Reel (arquivo final vazio)');
+    }
     return {
       relativePath: outRelative,
       coverSeconds: COVER_SECONDS,

@@ -179,7 +179,7 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     '3) Fechamento de fé: oração, gratidão, esperança ou reflexão espiritual ligada ao fato — sem pedir like/compartilhar.',
     'Exemplo de aspas: Ele afirma: "Eu entendi que sem Deus eu não era nada".',
     'O campo "titulo" = MANCHETE CURTA (máx. 90 caracteres). NÃO cole a legenda/transcrição no título.',
-    'Separe parágrafos com linha em branco. Alvo: 550–900 caracteres.',
+    'Separe parágrafos com linha em branco. Alvo: 1100–1700 caracteres (minimatéria).',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
     titulo ? `Título/contexto do vídeo de origem: ${String(titulo).slice(0, 120)}` : null,
     idioma ? `Idioma detectado da fala: ${idioma}` : null,
@@ -237,7 +237,7 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
     autor ? `Autor da foto (crédito se fizer sentido no fechamento): ${autor}` : null,
     'ESTRUTURA: lead com o fato/tema → desenvolvimento com detalhes → fechamento de fé (oração, gratidão ou reflexão).',
     'Tom de portal gospel: caloroso, claro, sem clickbait e sem pedir like/compartilhar.',
-    'Parágrafos curtos com linha em branco. Alvo: 520–850 caracteres.',
+    'Parágrafos curtos com linha em branco. Alvo: 1100–1700 caracteres (minimatéria).',
     'Se fizer sentido, no último parágrafo pode citar crédito curto (ex.: Reprodução) — sem inventar @ de quem não foi informado.',
   ]
     .filter(Boolean)
@@ -261,14 +261,15 @@ Formato Facebook (obrigatório):
 - NÃO invente fatos, nomes, cargos, números ou citações que não estejam nas fontes de apuração.
 
 ${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização falsa.' : ''}
-${furoReportagem ? `MODO FURO DE REPORTAGEM (obrigatório):
-- A fonte é uma notícia/post/vídeo já publicado. Você NÃO resume nem parafraseia parágrafo a parágrafo.
+${furoReportagem ? `MODO FURO / MINIMATÉRIA (obrigatório):
+- A fonte é uma notícia/post/vídeo já publicado. Você NÃO faz resumo telegráfico.
+- Escreva uma MINIMATÉRIA: reconte o conteúdo original com desenvolvimento completo (contexto, detalhes, desdobramentos), em voz própria.
 - Encontre o FURO: o ângulo mais jornalístico e específico (detalhe, consequência, testemunho ou desdobramento).
-- Reescreva com estrutura News Gospel: lead (quem + fato) + desenvolvimento com aspas + fechamento de fé.
+- Estrutura: lead (quem + fato) + vários parágrafos de desenvolvimento com aspas + fechamento de fé.
 - OBRIGATÓRIO: preserve 1 a 3 falas literais curtas entre aspas ("…") quando houver declaração na apuração.
 - Título próprio — nunca copie a manchete da fonte.
 - Mantenha os fatos verificáveis; sem inventar exclusividade falsa (“revelamos”, “apuração exclusiva”).
-- Cite o veículo só de forma genérica se necessário (“segundo informações divulgadas”).` : ''}
+- Não inclua bloco "Fontes:" — o sistema anexa créditos da origem e da imagem.` : ''}
 
 Responda APENAS JSON válido: {"titulo":"...","materia":"...","hashtags":["..."],"termos_imagem":["..."]}`;
 }
@@ -309,7 +310,7 @@ async function gerarMateriaNoticiaFacebook({
             f.url ? `URL: ${f.url}` : null,
             f.titulo ? `Título: ${f.titulo}` : null,
             f.resumo ? `Resumo: ${f.resumo}` : null,
-            f.trecho ? `Trecho documentado: ${String(f.trecho).slice(0, 1200)}` : null,
+            f.trecho ? `Trecho documentado: ${String(f.trecho).slice(0, 2500)}` : null,
           ]
             .filter(Boolean)
             .join('\n');
@@ -327,30 +328,32 @@ async function gerarMateriaNoticiaFacebook({
     .join('\n');
 
   const userContent = [
-    'Crie uma matéria ORIGINAL estilo News Gospel para postar na Página do Facebook (foto + legenda).',
+    'Crie uma MINIMATÉRIA ORIGINAL estilo News Gospel para a Página do Facebook (foto + legenda).',
     `VOZ DO REDATOR (obrigatório): ${voz}`,
     `ESTILO DO LEAD: ${lead}`,
     `ESTILO DO TÍTULO: ${estiloTitulo}`,
-    `EXTENSÃO ALVO: ${faixa.min}–${faixa.max} caracteres.`,
-    'FORMATAÇÃO: 3 a 5 parágrafos curtos separados por linha em branco.',
-    'ESTRUTURA: (1) lead com quem + fato; (2) desenvolvimento com contexto e aspas reais; (3) fechamento de fé (oração, gratidão ou esperança) — sem pedir like/compartilhar.',
+    `EXTENSÃO ALVO: ${faixa.min}–${faixa.max} caracteres (corpo da minimatéria — sem hashtags).`,
+    'FORMATAÇÃO: 5 a 8 parágrafos curtos separados por linha em branco.',
+    'ESTRUTURA: (1) lead com quem + fato; (2) desenvolvimento AMPLO com contexto, detalhes da apuração e aspas reais; (3) fechamento de fé — sem pedir like/compartilhar.',
+    'IMPORTANTE: não enxugue demais. O leitor precisa entender a história completa do conteúdo original, reescrita com suas palavras.',
     nicho ? `Nicho/palavras-chave: ${nicho}` : null,
     emAlta ? 'Contexto: assunto em alta agora.' : null,
     redeSocial
-      ? 'A fonte é post/vídeo de rede social. Transforme em matéria gospel: contextualize com suas palavras e DEIXE 1–3 falas literais curtas entre aspas ("…") da apuração.'
+      ? 'A fonte é post/vídeo de rede social. Transforme em minimatéria gospel: contextualize com suas palavras e DEIXE 1–3 falas literais curtas entre aspas ("…") da apuração.'
       : null,
     furoReportagem
-      ? 'PRIORIDADE: ângulo de furo + reescrita total no estilo News Gospel. Não parafraseie a fonte; reconstrua a narrativa.'
+      ? 'PRIORIDADE: minimatéria com ângulo de furo + reescrita total. Não resuma em poucas linhas; reconstrua a narrativa com os fatos da apuração.'
       : null,
     tituloReferencia ? `Título de referência: ${tituloReferencia}` : null,
     resumoReferencia ? `Resumo de referência: ${resumoReferencia}` : null,
-    fonte ? `Fonte citada genericamente: ${fonte}` : null,
+    fonte ? `Veículo/origem: ${fonte}` : null,
     dataReferencia ? `Data da fonte: ${dataReferencia}` : null,
-    contextoApuracao ? `Contexto de apuração:\n${String(contextoApuracao).slice(0, 6000)}` : null,
+    contextoApuracao ? `Contexto de apuração:\n${String(contextoApuracao).slice(0, 8000)}` : null,
     fontesTxt ? `Fontes documentadas:\n${fontesTxt}` : null,
     'Se faltar detalhe factual, generalise com cuidado (ex.: “segundo informações divulgadas”) sem inventar.',
     'Quando houver fala documentada, use aspas em pelo menos uma frase literal no corpo.',
-    'MODELO DE TOM (inspire-se, não copie): "O ator X tem se dedicado ao chamado…", "Em meio à devastação… uma notícia trouxe esperança…", "Que Deus console… Seguimos em oração…", "Glória a Deus por essa segunda oportunidade…".',
+    'NÃO inclua créditos/Fontes no campo materia — o sistema anexa automaticamente.',
+    'MODELO DE TOM (inspire-se, não copie): "O ator X tem se dedicado ao chamado…", "Em meio à devastação… uma notícia trouxe esperança…", "Que Deus console… Seguimos em oração…".',
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -957,9 +960,10 @@ Regras:
 - O título pode melhorar levemente (máx. 110 chars) se as novas infos mudarem o gancho; senão mantenha próximo do atual.
 - A matéria deve ficar mais forte e completa: use as infos extras (fatos, nomes, números, contexto) sem inventar o que não estiver no texto atual nem nas extras.
 - Português do Brasil, parágrafos curtos separados por linha em branco (\\n\\n).
-- Ideal 400–650 caracteres no corpo (sem hashtags).
+- Ideal 1100–1800 caracteres no corpo (minimatéria, sem hashtags).
 - 3 a 5 hashtags sem # no JSON.
-- Sem pedir like, sem clickbait mentiroso, sem Caps Lock excessivo.`,
+- Sem pedir like, sem clickbait mentiroso, sem Caps Lock excessivo.
+- Preserve o bloco "Fontes:" se já existir no texto atual.`,
       },
       {
         role: 'user',

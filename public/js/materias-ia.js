@@ -259,6 +259,27 @@
     }
   });
 
+  function limparFormLink({ keepStatus = false } = {}) {
+    const urlEl = document.getElementById('mia-link-url');
+    const textoEl = document.getElementById('mia-link-texto');
+    const imagemEl = document.getElementById('mia-link-imagem');
+    const tipoEl = document.getElementById('mia-link-tipo');
+    const st = document.getElementById('mia-link-status');
+    const details = document.querySelector('#mia-link details');
+    if (urlEl) urlEl.value = '';
+    if (textoEl) textoEl.value = '';
+    if (imagemEl) imagemEl.value = '';
+    if (tipoEl) tipoEl.value = 'auto';
+    if (details) details.removeAttribute('open');
+    if (!keepStatus && st) st.textContent = '';
+    urlEl?.focus();
+  }
+
+  document.getElementById('mia-btn-link-limpar')?.addEventListener('click', () => {
+    limparFormLink();
+    setGenerating(false);
+  });
+
   document.getElementById('mia-btn-link')?.addEventListener('click', async () => {
     const st = document.getElementById('mia-link-status');
     const urlEl = document.getElementById('mia-link-url');
@@ -335,28 +356,38 @@
         throw new Error(data.error || 'Falha ao processar o link');
       }
 
-      if (data.modo === 'reel') {
-        const matterId = data.matter?.id;
-        st.textContent = data.aviso || 'Reel em processamento…';
-        if (generatingText) {
-          generatingText.textContent = matterId
-            ? 'Abrindo a matéria do Reel…'
-            : 'Reel enfileirado…';
-        }
-        setTimeout(() => {
-          window.location.href = data.redirect || (matterId ? '/materias-ia/' + matterId : '/minhas-materias');
-        }, 500);
-        return;
-      }
-
       const matterId = data.matter?.id;
-      if (!matterId) throw new Error('Matéria gerada, mas sem ID para abrir');
+      const editUrl =
+        data.redirect || (matterId ? '/materias-ia/' + matterId : null);
 
-      st.textContent = 'Abrindo matéria gerada…';
-      if (generatingText) {
-        generatingText.textContent = 'Matéria pronta! Abrindo a tela de edição…';
+      setGenerating(false);
+      limparFormLink({ keepStatus: true });
+
+      if (editUrl) {
+        window.open(editUrl, '_blank', 'noopener');
       }
-      window.location.href = '/materias-ia/' + matterId;
+
+      st.replaceChildren();
+      const msg = document.createElement('span');
+      if (data.modo === 'reel') {
+        msg.textContent = (data.aviso || 'Reel enfileirado.') + ' ';
+      } else {
+        if (!matterId) throw new Error('Matéria gerada, mas sem ID para abrir');
+        msg.textContent = 'Matéria pronta. ';
+      }
+      st.appendChild(msg);
+      if (editUrl) {
+        const a = document.createElement('a');
+        a.href = editUrl;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.className = 'text-emerald-400 underline hover:text-emerald-300';
+        a.textContent = 'Abrir matéria';
+        st.appendChild(a);
+        st.appendChild(document.createTextNode(' · formulário limpo — cole o próximo link.'));
+      } else {
+        st.appendChild(document.createTextNode('Formulário limpo — cole o próximo link.'));
+      }
     } catch (err) {
       setGenerating(false);
       st.textContent = err.message;

@@ -191,8 +191,23 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
 
   const semImagemFoto = tipoPublicacao === 'foto' && !imagemUrl;
 
+  const { anexarCreditosFontes } = require('./editorialGuidelinesFb');
+  const imagemCreditoUrl =
+    imagemOrigem?.tipo === 'fonte'
+      ? apurado.link || imagemUrl || apurado.imagemFonte || null
+      : imagemOrigem?.tipo === 'pexels'
+        ? null
+        : imagemUrl || null;
+  const materiaComFontes = anexarCreditosFontes(gerado.materia, {
+    fonteNome: apurado.fonte || apurado.veiculo || null,
+    fonteUrl: apurado.link || null,
+    imagemRotulo: imagemOrigem?.rotulo || (imagemUrl ? 'Reprodução' : null),
+    imagemUrl: imagemCreditoUrl,
+  });
+
   return {
     ...gerado,
+    materia: materiaComFontes,
     imagemUrl,
     imagemOrigem,
     topico: apurado,

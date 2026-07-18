@@ -144,12 +144,9 @@ async function gerarCapa(req, res, next) {
     if (clip.status !== 'pronto' && clip.status !== 'publicado') {
       throw httpError('O clipe precisa estar pronto antes de gerar a capa', 422);
     }
+    // Se ficou presa em "gerando" (restart/crash), libera e tenta de novo
     if (clip.capa_status === 'gerando') {
-      return res.status(202).json({
-        queued: true,
-        clipId: clip.id,
-        message: 'Capa já está sendo gerada — aguarde alguns segundos',
-      });
+      await VideoClips.update(clip.id, { capa_status: 'pendente', erro_mensagem: null });
     }
 
     const result = await queueClipCover({
