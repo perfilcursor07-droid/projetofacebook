@@ -118,9 +118,15 @@ function nextRun(intervaloMinutos) {
 
 const SCAN_LIMIT = 10;
 
+function dataPublicacaoValida(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function dedupeItens(itens) {
   const seen = new Set();
-  const out = [];
+  const unicos = [];
   for (const item of itens) {
     if (!item?.url) continue;
     const key = String(item.externalId || item.url)
@@ -128,10 +134,21 @@ function dedupeItens(itens) {
       .toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(item);
-    if (out.length >= SCAN_LIMIT) break;
+    unicos.push({
+      ...item,
+      publicadoEm: dataPublicacaoValida(item.publicadoEm),
+      ordemOriginal: unicos.length,
+    });
   }
-  return out;
+
+  return unicos
+    .sort((a, b) => {
+      const dataA = a.publicadoEm?.getTime() || 0;
+      const dataB = b.publicadoEm?.getTime() || 0;
+      return dataB - dataA || a.ordemOriginal - b.ordemOriginal;
+    })
+    .slice(0, SCAN_LIMIT)
+    .map(({ ordemOriginal, ...item }) => item);
 }
 
 function normalizarTipoMidia(item) {
@@ -161,23 +178,7 @@ async function coletarItensFonte(fonte) {
 
   if (plataforma === 'instagram') {
     const collected = [];
-    // 0) Bright Data — funciona de qualquer IP, sem cookies
-    try {
-      const brightdata = require('./brightdataInstagram');
-      if (brightdata.isConfigured()) {
-        const bdPosts = await brightdata.listarPostsPerfil(
-          fonte.handle || extrairHandle(url, 'instagram'),
-          SCAN_LIMIT
-        );
-        if (bdPosts.length) {
-          collected.push(...bdPosts);
-          console.log(`[biblioteca] brightdata-ig: ${bdPosts.length} post(s) de @${fonte.handle || extrairHandle(url, 'instagram')}`);
-        }
-      }
-    } catch (err) {
-      console.warn('[biblioteca] brightdata-ig:', err.message);
-    }
-    // 1) API do Instagram (cookies próprios quando configurados; pública como fallback)
+    // 1) API do Instagram (usada apenas quando Bright Data não está configurada)
     if (collected.length < 3) {
       try {
         collected.push(...(await coletarInstagramWebApi(fonte)));
@@ -1169,12 +1170,11 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
   return novos;
 }
 
-async function escanearFonte(fonte, { silentFirst = false } = {}) {
-  const itens = await coletarItensFonte(fonte);
+async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
   const jaTemPosts = (await BibliotecaPosts.findByFonte(fonte.id, 1)).length > 0;
-  const lote = itens.slice(0, SCAN_LIMIT);
+  const lote = dedupeItens(itens).slice(0, SCAN_LIMIT);
 
-  // primeira varredura automática (monitor): baseline sem flood de alertas
+  // Primeira varredura automática: cria uma base sem inundar os alertas.
   if (!jaTemPosts && silentFirst) {
     let salvos = 0;
     for (const item of lote) {
@@ -1220,6 +1220,118 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
     total_detectados: Number(fonte.total_detectados || 0) + novos.length,
   });
   return { novos, itens: lote.length };
+}
+
+const BRIGHTDATA_TRIGGER_STALE_MS = 5 * 60_000;
+const BRIGHTDATA_SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
+let brightDataTickRunning = false;
+
+function scrapeAgeMs(fonte) {
+  const requestedAt = fonte?.scrape_requested_at
+    ? new Date(fonte.scrape_requested_at).getTime()
+    : 0;
+  return requestedAt ? Math.max(0, Date.now() - requestedAt) : Infinity;
+}
+
+function scrapePendente(fonte) {
+  return ['triggering', 'pending'].includes(String(fonte?.scrape_status || ''));
+}
+
+async function iniciarBrightDataScan(fonte, { silentFirst = false } = {}) {
+  const brightdata = require('./brightdataInstagram');
+  let atual = await BibliotecaFontes.findById(fonte.id);
+
+  if (scrapePendente(atual)) {
+    const staleTrigger =
+      atual.scrape_status === 'triggering' &&
+      scrapeAgeMs(atual) > BRIGHTDATA_TRIGGER_STALE_MS;
+
+    if (!staleTrigger) {
+      // Um clique manual transforma uma baseline automática pendente em scan visível.
+      if (!silentFirst && atual.scrape_silent_first) {
+        await BibliotecaFontes.update(atual.id, { scrape_silent_first: false });
+      }
+      return {
+        pending: true,
+        itens: 0,
+        novos: [],
+        message: 'Escaneando em segundo plano. Os posts aparecerão automaticamente.',
+      };
+    }
+
+    await BibliotecaFontes.updateScrapeIfStatus(atual.id, 'triggering', {
+      scrape_snapshot_id: null,
+      scrape_status: 'failed',
+      scrape_error: 'Disparo Bright Data interrompido antes de salvar o snapshot',
+      scrape_silent_first: false,
+    });
+  }
+
+  const claimed = await BibliotecaFontes.tryStartScrape(fonte.id, { silentFirst });
+  if (!claimed) {
+    return {
+      pending: true,
+      itens: 0,
+      novos: [],
+      message: 'Já existe um escaneamento em segundo plano.',
+    };
+  }
+
+  try {
+    const handle = atual.handle || extrairHandle(atual.url, 'instagram');
+    const result = await brightdata.dispararColeta(handle, SCAN_LIMIT);
+
+    if (result.posts) {
+      const salvo = await salvarItensFonte(atual, result.posts, { silentFirst });
+      await BibliotecaFontes.updateScrapeIfStatus(atual.id, 'triggering', {
+        scrape_snapshot_id: null,
+        scrape_status: null,
+        scrape_requested_at: null,
+        scrape_error: null,
+        scrape_silent_first: false,
+      });
+      return { ...salvo, pending: false };
+    }
+
+    const snapshotSaved = await BibliotecaFontes.updateScrapeIfStatus(atual.id, 'triggering', {
+      scrape_snapshot_id: result.snapshotId,
+      scrape_status: 'pending',
+      scrape_error: null,
+      proxima_execucao: nextRun(atual.intervalo_minutos),
+    });
+    if (!snapshotSaved) {
+      throw new Error('O estado da fonte mudou durante o disparo Bright Data');
+    }
+    console.log(`[brightdata-ig] snapshot ${result.snapshotId} iniciado para @${handle}`);
+    return {
+      pending: true,
+      itens: 0,
+      novos: [],
+      message: 'Escaneando em segundo plano. Os posts aparecerão automaticamente.',
+    };
+  } catch (err) {
+    await BibliotecaFontes.updateScrapeIfStatus(atual.id, 'triggering', {
+      scrape_snapshot_id: null,
+      scrape_status: 'failed',
+      scrape_error: String(err.message || err).slice(0, 1000),
+      scrape_silent_first: false,
+      ultimo_erro: String(err.message || err).slice(0, 1000),
+      ultimo_scan: new Date(),
+      proxima_execucao: nextRun(atual.intervalo_minutos),
+    });
+    err.status = err.status || 502;
+    throw err;
+  }
+}
+
+async function escanearFonte(fonte, { silentFirst = false } = {}) {
+  const brightdata = require('./brightdataInstagram');
+  if (fonte.plataforma === 'instagram' && brightdata.isConfigured()) {
+    return iniciarBrightDataScan(fonte, { silentFirst });
+  }
+
+  const itens = await coletarItensFonte(fonte);
+  return salvarItensFonte(fonte, itens, { silentFirst });
 }
 
 async function escanearAgora(userId, fonteId) {
@@ -1486,6 +1598,98 @@ async function publicarPostDireto(options) {
     return await executarPublicacaoDireta(options);
   } finally {
     directPublishingPosts.delete(key);
+  }
+}
+
+async function tickBrightDataSnapshots() {
+  if (brightDataTickRunning) return;
+  brightDataTickRunning = true;
+
+  try {
+    const brightdata = require('./brightdataInstagram');
+    if (!brightdata.isConfigured()) return;
+
+    const fontes = await BibliotecaFontes.findPendingScrapes(20);
+    for (const fonte of fontes) {
+      const age = scrapeAgeMs(fonte);
+      const staleTrigger =
+        fonte.scrape_status === 'triggering' && age > BRIGHTDATA_TRIGGER_STALE_MS;
+
+      if (staleTrigger) {
+        const message = 'Disparo Bright Data interrompido antes de salvar o snapshot';
+        await BibliotecaFontes.updateScrapeIfStatus(fonte.id, 'triggering', {
+          scrape_snapshot_id: null,
+          scrape_status: 'failed',
+          scrape_error: message,
+          scrape_silent_first: false,
+          ultimo_erro: message,
+          ultimo_scan: new Date(),
+          proxima_execucao: nextRun(fonte.intervalo_minutos),
+        });
+        continue;
+      }
+
+      if (fonte.scrape_status !== 'pending' || !fonte.scrape_snapshot_id) continue;
+      const snapshotId = fonte.scrape_snapshot_id;
+
+      try {
+        const handle = fonte.handle || extrairHandle(fonte.url, 'instagram');
+        // Faz uma consulta final antes de expirar, evitando abandonar resultado tardio.
+        const result = await brightdata.obterResultado(snapshotId, handle);
+        if (result.status === 'pending') {
+          if (age > BRIGHTDATA_SNAPSHOT_MAX_AGE_MS) {
+            const message = 'Snapshot Bright Data não concluiu em 30 minutos';
+            await BibliotecaFontes.updateScrapeIfCurrent(fonte.id, snapshotId, {
+              scrape_snapshot_id: null,
+              scrape_status: 'failed',
+              scrape_error: message,
+              scrape_silent_first: false,
+              ultimo_erro: message,
+              ultimo_scan: new Date(),
+              proxima_execucao: nextRun(fonte.intervalo_minutos),
+            });
+          } else if (result.error) {
+            await BibliotecaFontes.updateScrapeIfCurrent(fonte.id, snapshotId, {
+              scrape_error: String(result.error).slice(0, 1000),
+            });
+          }
+          continue;
+        }
+
+        if (result.status === 'failed') {
+          throw new Error(`Snapshot Bright Data falhou: ${result.error}`);
+        }
+
+        const salvo = await salvarItensFonte(fonte, result.posts, {
+          silentFirst: Boolean(fonte.scrape_silent_first),
+        });
+        const completed = await BibliotecaFontes.updateScrapeIfCurrent(fonte.id, snapshotId, {
+          scrape_snapshot_id: null,
+          scrape_status: null,
+          scrape_requested_at: null,
+          scrape_error: null,
+          scrape_silent_first: false,
+        });
+        if (completed) {
+          console.log(
+            `[brightdata-ig] @${handle}: ${salvo.itens} post(s), ${salvo.novos?.length || salvo.salvos || 0} novo(s) salvos`
+          );
+        }
+      } catch (err) {
+        console.error(`[brightdata-ig] fonte #${fonte.id}:`, err.message);
+        await BibliotecaFontes.updateScrapeIfCurrent(fonte.id, snapshotId, {
+          scrape_snapshot_id: null,
+          scrape_status: 'failed',
+          scrape_error: String(err.message || err).slice(0, 1000),
+          scrape_silent_first: false,
+          ultimo_erro: String(err.message || err).slice(0, 1000),
+          ultimo_scan: new Date(),
+          proxima_execucao: nextRun(fonte.intervalo_minutos),
+        });
+      }
+    }
+  } finally {
+    brightDataTickRunning = false;
   }
 }
 
@@ -1857,6 +2061,7 @@ module.exports = {
   gerarTextoDePost,
   gerarVideoDePost,
   publicarPostDireto,
+  tickBrightDataSnapshots,
   tickFontes,
   tickAutopilot,
   dashboardUsuario,

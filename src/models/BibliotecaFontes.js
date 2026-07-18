@@ -19,6 +19,30 @@ const BibliotecaFontes = {
       });
   },
 
+  findPendingScrapes(limit = 20) {
+    return db(this.table)
+      .where({ plataforma: 'instagram' })
+      .whereIn('scrape_status', ['triggering', 'pending'])
+      .orderBy('scrape_requested_at', 'asc')
+      .limit(Math.min(100, Math.max(1, Number(limit) || 20)));
+  },
+
+  tryStartScrape(id, { silentFirst = false } = {}) {
+    return db(this.table)
+      .where({ id })
+      .andWhere((qb) => {
+        qb.whereNull('scrape_status').orWhereNotIn('scrape_status', ['triggering', 'pending']);
+      })
+      .update({
+        scrape_snapshot_id: null,
+        scrape_status: 'triggering',
+        scrape_requested_at: db.fn.now(),
+        scrape_error: null,
+        scrape_silent_first: Boolean(silentFirst),
+        updated_at: db.fn.now(),
+      });
+  },
+
   create(data) {
     return db(this.table).insert(data);
   },

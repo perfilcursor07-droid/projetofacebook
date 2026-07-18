@@ -29,6 +29,77 @@
     return data;
   }
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  function scanFalhou(button, message) {
+    button.textContent = 'Falhou';
+    button.disabled = false;
+    button.title = message || 'Não foi possível concluir o escaneamento';
+    button.classList.remove('opacity-50', 'pointer-events-none', 'text-amber-300');
+    button.classList.add('text-rose-300');
+    setTimeout(() => {
+      button.textContent = 'Escanear agora';
+      button.classList.remove('text-rose-300');
+    }, 4000);
+  }
+
+  async function acompanharScan(button, id, onDone) {
+    // O servidor consulta a Bright Data a cada minuto; a UI só acompanha o estado persistido.
+    for (let tentativa = 0; tentativa < 36; tentativa += 1) {
+      await sleep(10_000);
+      try {
+        const status = await api(`/api/biblioteca/fontes/${id}/posts`);
+        if (status.pending) continue;
+        if (status.scrape_error) throw new Error(status.scrape_error);
+
+        button.textContent = 'Scan concluído';
+        button.classList.remove('opacity-50', 'text-amber-300');
+        button.classList.add('text-emerald-300');
+        setTimeout(onDone, 1000);
+        return;
+      } catch (err) {
+        scanFalhou(button, err.message);
+        return;
+      }
+    }
+
+    // A coleta continua no servidor mesmo que o acompanhamento do navegador termine.
+    button.textContent = 'Escaneando em segundo plano…';
+    button.classList.remove('opacity-50');
+    button.classList.add('text-amber-300');
+  }
+
+  async function iniciarScanNoBotao(button, id, onDone) {
+    button.disabled = true;
+    button.textContent = 'Iniciando scan…';
+    button.classList.add('opacity-50', 'pointer-events-none');
+    button.classList.remove('text-rose-300', 'text-emerald-300');
+
+    try {
+      const data = await api(`/api/biblioteca/fontes/${id}/escanear`, {
+        method: 'POST',
+        body: '{}',
+      });
+
+      if (data.pending) {
+        button.textContent = 'Escaneando em segundo plano…';
+        button.classList.remove('opacity-50');
+        button.classList.add('text-amber-300');
+        await acompanharScan(button, id, onDone);
+        return;
+      }
+
+      const novos = data.novos?.length || data.salvos || 0;
+      const itens = data.itens || 0;
+      button.textContent = itens ? `${novos} novo(s) de ${itens}` : 'Nenhum item';
+      button.classList.remove('opacity-50');
+      button.classList.add('text-emerald-300');
+      setTimeout(onDone, 1000);
+    } catch (err) {
+      scanFalhou(button, err.message);
+    }
+  }
+
   function pageId() {
     const el = document.getElementById('bib-page');
     return el && el.value ? Number(el.value) : null;
@@ -114,29 +185,8 @@
     try {
       if (scan) {
         e.preventDefault();
-        scan.disabled = true;
-        scan.textContent = 'Escaneando…';
-        scan.classList.add('opacity-50', 'pointer-events-none');
-        api(`/api/biblioteca/fontes/${scan.dataset.id}/escanear`, {
-          method: 'POST',
-          body: '{}',
-        }).then((data) => {
-          const n = data.novos?.length || 0;
-          const t = data.itens || 0;
-          scan.textContent = t ? `${n} novo(s) de ${t}` : 'Nenhum item';
-          scan.classList.remove('opacity-50');
-          scan.classList.add('text-emerald-300');
-          setTimeout(() => { location.href = `/biblioteca/fontes/${scan.dataset.id}`; }, 1500);
-        }).catch((err) => {
-          scan.textContent = 'Falhou';
-          scan.classList.remove('opacity-50', 'pointer-events-none');
-          scan.classList.add('text-rose-300');
-          scan.title = err.message;
-          setTimeout(() => {
-            scan.textContent = 'Escanear agora';
-            scan.disabled = false;
-            scan.classList.remove('text-rose-300');
-          }, 4000);
+        iniciarScanNoBotao(scan, scan.dataset.id, () => {
+          location.href = `/biblioteca/fontes/${scan.dataset.id}`;
         });
         return;
       }
@@ -164,23 +214,10 @@
   });
 
   // Página da fonte
-  document.getElementById('bib-fonte-scan')?.addEventListener('click', async () => {
+  document.getElementById('bib-fonte-scan')?.addEventListener('click', () => {
     if (!fonteId) return;
-    try {
-      setBusy(true, 'Escaneando fonte…');
-      const data = await api(`/api/biblioteca/fontes/${fonteId}/escanear`, {
-        method: 'POST',
-        body: '{}',
-      });
-      const n = data.novos?.length || 0;
-      const t = data.itens || 0;
-      alert(t ? `Encontrados ${t} item(ns), ${n} novo(s) salvos.` : 'Nenhum item encontrado nesta fonte.');
-      location.reload();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setBusy(false);
-    }
+    const button = document.getElementById('bib-fonte-scan');
+    iniciarScanNoBotao(button, fonteId, () => location.reload());
   });
 
   document.getElementById('bib-fonte-toggle-mon')?.addEventListener('click', async () => {

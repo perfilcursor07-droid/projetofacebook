@@ -58,6 +58,11 @@ app.listen(env.port, async () => {
         console.error('[materias-ia tick]', err.message);
       }
       try {
+        await bibliotecaService.tickBrightDataSnapshots();
+      } catch (err) {
+        console.error('[biblioteca brightdata tick]', err.message);
+      }
+      try {
         await bibliotecaService.tickFontes();
         await bibliotecaService.tickAutopilot();
       } catch (err) {

@@ -8,7 +8,11 @@ const BibliotecaPosts = {
   },
 
   findByFonte(fonteId, limit = 30) {
-    return db(this.table).where({ fonte_id: fonteId }).orderBy('created_at', 'desc').limit(limit);
+    return db(this.table)
+      .where({ fonte_id: fonteId })
+      .orderByRaw('COALESCE(publicado_em, created_at) DESC')
+      .orderBy('id', 'desc')
+      .limit(limit);
   },
 
   countByFonte(fonteId) {

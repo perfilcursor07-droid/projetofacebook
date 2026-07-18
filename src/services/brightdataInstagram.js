@@ -1,17 +1,12 @@
 /**
- * Bright Data Instagram Scraper API — coleta posts/reels de um perfil público.
- * https://docs.brightdata.com/datasets/scrapers/instagram/send-first-request
- *
- * Não requer cookies; funciona de qualquer IP.
- * A API é assíncrona — dispara uma requisição que retorna um snapshot_id,
- * e o resultado fica pronto em 30s-3min. O módulo gerencia o ciclo:
- * 1. dispararColeta(handle) → snapshot_id (persistido no banco)
- * 2. obterResultado(snapshotId) → posts ou null se ainda não estiver pronto
+ * Bright Data Instagram Scraper API — coleta assíncrona de posts/reels.
+ * O /trigger responde com snapshot_id; o resultado é consultado depois pelo tick.
  */
 const axios = require('axios');
 const { env } = require('../config/env');
 
-const BASE_URL = 'https://api.brightdata.com/datasets/v3/scrape';
+const TRIGGER_URL = 'https://api.brightdata.com/datasets/v3/trigger';
+const SNAPSHOT_URL = 'https://api.brightdata.com/datasets/v3/snapshot';
 const POSTS_DATASET = 'gd_lk5ns7kz21pck8jpis';
 
 function isConfigured() {
@@ -26,132 +21,83 @@ function headers() {
 }
 
 /**
- * Dispara a coleta de posts de um perfil. Retorna snapshot_id (não bloqueia).
- * @returns {Promise<string|null>} snapshot_id ou null se falhar
+ * Dispara a coleta sem aguardar o scraping.
+ * @returns {Promise<{snapshotId: string}|{posts: Array}>}
  */
 async function dispararColeta(username, limit = 10) {
-  if (!isConfigured()) return null;
+  if (!isConfigured()) throw new Error('BRIGHTDATA_API_TOKEN não configurado');
 
   const handle = String(username || '').replace(/^@/, '').trim();
-  if (!handle) return null;
+  if (!handle) throw new Error('Perfil do Instagram inválido');
 
   const profileUrl = `https://www.instagram.com/${handle}`;
   const maxPosts = Math.min(50, Math.max(1, Number(limit) || 10));
-
-  try {
-    const response = await axios.post(
-      BASE_URL,
-      [{ url: profileUrl, num_of_posts: maxPosts }],
-      {
-        params: {
-          dataset_id: POSTS_DATASET,
-          type: 'discover_new',
-          discover_by: 'url',
-          format: 'json',
-          include_errors: true,
-        },
-        headers: headers(),
-        timeout: 90000,
-        validateStatus: () => true,
-      }
-    );
-
-    if (response.status >= 400) {
-      const msg = response.data?.message || response.data?.error || `HTTP ${response.status}`;
-      console.warn('[brightdata-ig] disparo falhou:', msg);
-      return null;
+  const response = await axios.post(
+    TRIGGER_URL,
+    [{ url: profileUrl, num_of_posts: maxPosts }],
+    {
+      params: {
+        dataset_id: POSTS_DATASET,
+        type: 'discover_new',
+        discover_by: 'url',
+        include_errors: true,
+      },
+      headers: headers(),
+      timeout: 30000,
+      validateStatus: () => true,
     }
+  );
 
-    // Pode retornar o snapshot_id diretamente
-    if (response.data?.snapshot_id) {
-      return response.data.snapshot_id;
-    }
-
-    // Pode retornar dados síncronos (raro, para perfis em cache)
-    if (Array.isArray(response.data) && response.data.length) {
-      return { immediate: true, posts: normalizarPosts(response.data, handle) };
-    }
-
-    console.warn('[brightdata-ig] resposta inesperada no disparo');
-    return null;
-  } catch (err) {
-    console.warn('[brightdata-ig] erro disparo:', err.message);
-    return null;
+  if (response.status >= 400) {
+    const message = response.data?.message || response.data?.error || `HTTP ${response.status}`;
+    throw new Error(`Bright Data não iniciou a coleta: ${message}`);
   }
+
+  if (response.data?.snapshot_id) {
+    return { snapshotId: String(response.data.snapshot_id) };
+  }
+
+  // Mantém compatibilidade caso a API devolva cache imediatamente.
+  if (Array.isArray(response.data)) {
+    return { posts: normalizarPosts(response.data, handle) };
+  }
+
+  throw new Error('Bright Data respondeu sem snapshot_id');
 }
 
 /**
- * Busca o resultado de um snapshot. Retorna posts normalizados ou null se ainda processando.
- * @returns {Promise<Array|null>}
+ * Consulta um snapshot sem fazer espera ativa.
+ * @returns {Promise<{status: 'ready', posts: Array}|{status: 'pending', error?: string}|{status: 'failed', error: string}>}
  */
 async function obterResultado(snapshotId, handle = '') {
-  if (!snapshotId || !isConfigured()) return null;
+  if (!snapshotId || !isConfigured()) {
+    return { status: 'failed', error: 'Snapshot ou token Bright Data ausente' };
+  }
 
   try {
-    const response = await axios.get(
-      `https://api.brightdata.com/datasets/v3/snapshot/${encodeURIComponent(snapshotId)}`,
-      {
-        params: { format: 'json' },
-        headers: headers(),
-        timeout: 60000,
-        validateStatus: () => true,
-      }
-    );
+    const response = await axios.get(`${SNAPSHOT_URL}/${encodeURIComponent(snapshotId)}`, {
+      params: { format: 'json' },
+      headers: headers(),
+      timeout: 30000,
+      validateStatus: () => true,
+    });
 
     if (response.status === 200 && Array.isArray(response.data)) {
-      return normalizarPosts(response.data, handle);
+      return { status: 'ready', posts: normalizarPosts(response.data, handle) };
     }
 
-    // 202 = still processing
-    if (response.status === 202) return null;
+    if (response.status === 202) return { status: 'pending' };
 
-    if (response.status >= 400) {
-      console.warn(`[brightdata-ig] snapshot ${snapshotId}: HTTP ${response.status}`);
-      return null;
+    const message = response.data?.message || response.data?.error || `HTTP ${response.status}`;
+    if (response.status === 429 || response.status >= 500) {
+      return { status: 'pending', error: message };
     }
 
-    return null;
+    return { status: 'failed', error: message };
   } catch (err) {
-    console.warn(`[brightdata-ig] snapshot ${snapshotId}:`, err.message);
-    return null;
+    // Falha de rede não invalida um snapshot que ainda pode terminar no provedor.
+    return { status: 'pending', error: err.message };
   }
-}
-
-/**
- * Coleta síncrona com espera ativa — para uso no scan manual (botão Escanear).
- * Dispara e aguarda até 3 minutos. Em ticks automáticos, use dispararColeta + obterResultado.
- */
-async function listarPostsPerfil(username, limit = 10) {
-  if (!isConfigured()) return [];
-
-  const handle = String(username || '').replace(/^@/, '').trim();
-  if (!handle) return [];
-
-  const result = await dispararColeta(handle, limit);
-  if (!result) return [];
-
-  // Resultado imediato (cache)
-  if (result.immediate) return result.posts;
-
-  // Aguarda o snapshot ficar pronto
-  const snapshotId = result;
-  console.log(`[brightdata-ig] aguardando snapshot ${snapshotId} para @${handle}…`);
-
-  const maxWait = 180000; // 3 min
-  const interval = 8000;
-  const start = Date.now();
-
-  while (Date.now() - start < maxWait) {
-    await new Promise((r) => setTimeout(r, interval));
-    const posts = await obterResultado(snapshotId, handle);
-    if (posts) {
-      console.log(`[brightdata-ig] @${handle}: ${posts.length} post(s) em ${Math.round((Date.now() - start) / 1000)}s`);
-      return posts;
-    }
-  }
-
-  console.warn(`[brightdata-ig] @${handle}: timeout após ${Math.round(maxWait / 1000)}s (snapshot=${snapshotId})`);
-  return [];
 }
 
 function normalizarPosts(posts, handle) {
@@ -169,9 +115,7 @@ function normalizarPosts(posts, handle) {
         /\/(reel|reels|tv)\//i.test(String(p.url || ''));
 
       const caption = p.description || p.caption || p.title || null;
-      const url =
-        p.url ||
-        `https://www.instagram.com/${isVideo ? 'reel' : 'p'}/${shortcode}/`;
+      const url = p.url || `https://www.instagram.com/${isVideo ? 'reel' : 'p'}/${shortcode}/`;
 
       return {
         externalId: String(shortcode),
@@ -200,5 +144,4 @@ module.exports = {
   isConfigured,
   dispararColeta,
   obterResultado,
-  listarPostsPerfil,
 };

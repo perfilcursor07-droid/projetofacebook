@@ -89,7 +89,7 @@ async function remover(req, res, next) {
 async function escanear(req, res, next) {
   try {
     const result = await bibliotecaService.escanearAgora(req.session.userId, Number(req.params.id));
-    res.json({ ok: true, ...result });
+    res.status(result.pending ? 202 : 200).json({ ok: true, ...result });
   } catch (err) {
     next(err);
   }
@@ -102,7 +102,14 @@ async function postsDaFonte(req, res, next) {
       return res.status(404).json({ error: 'Fonte não encontrada' });
     }
     const posts = await BibliotecaPosts.findByFonte(fonte.id, 40);
-    res.json({ ok: true, posts });
+    const pending = ['triggering', 'pending'].includes(String(fonte.scrape_status || ''));
+    res.json({
+      ok: true,
+      posts,
+      pending,
+      scrape_status: fonte.scrape_status || null,
+      scrape_error: pending ? null : fonte.scrape_error || null,
+    });
   } catch (err) {
     next(err);
   }
