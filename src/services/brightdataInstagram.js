@@ -51,7 +51,7 @@ async function dispararColeta(username, limit = 10) {
           include_errors: true,
         },
         headers: headers(),
-        timeout: 30000,
+        timeout: 90000,
         validateStatus: () => true,
       }
     );
@@ -93,7 +93,7 @@ async function obterResultado(snapshotId, handle = '') {
       {
         params: { format: 'json' },
         headers: headers(),
-        timeout: 30000,
+        timeout: 60000,
         validateStatus: () => true,
       }
     );
