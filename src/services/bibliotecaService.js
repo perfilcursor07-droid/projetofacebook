@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const BibliotecaFontes = require('../models/BibliotecaFontes');
 const BibliotecaPosts = require('../models/BibliotecaPosts');
 const BibliotecaAlertas = require('../models/BibliotecaAlertas');
@@ -14,6 +15,14 @@ const {
 } = require('./deepseekService');
 const { env } = require('../config/env');
 const axios = require('axios');
+
+/** external_id é VARCHAR(191); URLs do Google News passam disso → hash estável. */
+function stableExternalId(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (s.length <= 180) return s;
+  return `h:${crypto.createHash('sha256').update(s).digest('hex')}`;
+}
 
 const directPublishingPosts = new Set();
 
@@ -1103,22 +1112,24 @@ async function atualizarFonte(userId, fonteId, patch = {}) {
 async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) {
   const novos = [];
   for (const item of itens) {
-    const externalId = String(item.externalId || item.url).slice(0, 300);
+    const url = String(item.url || '').trim();
+    if (!url) continue;
+    const externalId = stableExternalId(item.externalId || url);
     const exists = await BibliotecaPosts.findByExternal(fonte.id, externalId);
     if (exists) continue;
 
     // também evita URL duplicada sem external_id estável
     const byUrl = await BibliotecaPosts.findByFonte(fonte.id, 50);
-    if (byUrl.some((p) => p.url === item.url)) continue;
+    if (byUrl.some((p) => p.url === url)) continue;
 
     const [postId] = await BibliotecaPosts.create({
       fonte_id: fonte.id,
       user_id: fonte.user_id,
       external_id: externalId,
       titulo: String(item.titulo || 'Sem título').slice(0, 500),
-      url: item.url,
+      url,
       resumo: item.resumo ? String(item.resumo).slice(0, 2000) : null,
-      thumbnail: item.thumbnail || null,
+      thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
       media_type: normalizarTipoMidia(item),
       publicado_em: item.publicadoEm || null,
       status: 'novo',
@@ -1167,7 +1178,9 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
   if (!jaTemPosts && silentFirst) {
     let salvos = 0;
     for (const item of lote) {
-      const externalId = String(item.externalId || item.url).slice(0, 300);
+      const url = String(item.url || '').trim();
+      if (!url) continue;
+      const externalId = stableExternalId(item.externalId || url);
       const exists = await BibliotecaPosts.findByExternal(fonte.id, externalId);
       if (exists) continue;
       await BibliotecaPosts.create({
@@ -1175,9 +1188,10 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
         user_id: fonte.user_id,
         external_id: externalId,
         titulo: String(item.titulo || 'Sem título').slice(0, 500),
-        url: item.url,
+        url,
         resumo: item.resumo ? String(item.resumo).slice(0, 2000) : null,
-        thumbnail: item.thumbnail || null,
+        thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
+        media_type: normalizarTipoMidia(item),
         publicado_em: item.publicadoEm || null,
         status: 'visto',
       });
@@ -1188,7 +1202,7 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
       proxima_execucao: nextRun(fonte.intervalo_minutos),
       ultimo_erro: null,
       ultimo_external_id: lote[0]
-        ? String(lote[0].externalId || lote[0].url).slice(0, 300)
+        ? stableExternalId(lote[0].externalId || lote[0].url)
         : fonte.ultimo_external_id,
       total_detectados: Number(fonte.total_detectados || 0) + salvos,
     });
@@ -1201,7 +1215,7 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
     proxima_execucao: nextRun(fonte.intervalo_minutos),
     ultimo_erro: null,
     ultimo_external_id: lote[0]
-      ? String(lote[0].externalId || lote[0].url).slice(0, 300)
+      ? stableExternalId(lote[0].externalId || lote[0].url)
       : fonte.ultimo_external_id,
     total_detectados: Number(fonte.total_detectados || 0) + novos.length,
   });

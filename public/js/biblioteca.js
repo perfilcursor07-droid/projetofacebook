@@ -114,19 +114,30 @@
     try {
       if (scan) {
         e.preventDefault();
-        setBusy(true, 'Escaneando fonte…');
-        const data = await api(`/api/biblioteca/fontes/${scan.dataset.id}/escanear`, {
+        scan.disabled = true;
+        scan.textContent = 'Escaneando…';
+        scan.classList.add('opacity-50', 'pointer-events-none');
+        api(`/api/biblioteca/fontes/${scan.dataset.id}/escanear`, {
           method: 'POST',
           body: '{}',
+        }).then((data) => {
+          const n = data.novos?.length || 0;
+          const t = data.itens || 0;
+          scan.textContent = t ? `${n} novo(s) de ${t}` : 'Nenhum item';
+          scan.classList.remove('opacity-50');
+          scan.classList.add('text-emerald-300');
+          setTimeout(() => { location.href = `/biblioteca/fontes/${scan.dataset.id}`; }, 1500);
+        }).catch((err) => {
+          scan.textContent = 'Falhou';
+          scan.classList.remove('opacity-50', 'pointer-events-none');
+          scan.classList.add('text-rose-300');
+          scan.title = err.message;
+          setTimeout(() => {
+            scan.textContent = 'Escanear agora';
+            scan.disabled = false;
+            scan.classList.remove('text-rose-300');
+          }, 4000);
         });
-        const n = data.novos?.length || 0;
-        const t = data.itens || 0;
-        alert(
-          t
-            ? `Encontrados ${t} item(ns), ${n} novo(s) salvos. Abra a fonte para ver os posts.`
-            : 'Nenhum item encontrado nesta fonte.'
-        );
-        location.href = `/biblioteca/fontes/${scan.dataset.id}`;
         return;
       }
       if (toggle) {
