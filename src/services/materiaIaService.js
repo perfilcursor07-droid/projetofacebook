@@ -84,15 +84,25 @@ function pautaTemPessoaNomeada(topico, gerado) {
   return /\b[\p{Lu}][\p{L}'’-]{2,}(?:\s+(?:da|das|de|do|dos)?\s*[\p{Lu}][\p{L}'’-]{2,})+/u.test(texto);
 }
 
+/**
+ * Escolhe URL da capa + metadados para crédito do autor da imagem.
+ * @returns {Promise<{ url: string|null, autor?: string|null, fonte?: string|null, titulo?: string|null, origem?: string|null }>}
+ */
 async function escolherImagemCapa(topico, gerado) {
   if (topico?.imagemFonte && /^https?:\/\//i.test(topico.imagemFonte)) {
-    return topico.imagemFonte;
+    return {
+      url: topico.imagemFonte,
+      autor: null,
+      fonte: topico.fonte || topico.veiculo || null,
+      titulo: topico.titulo || null,
+      origem: 'fonte',
+    };
   }
 
   // A Pexels não é uma fonte editorial de pessoas públicas. Se a fonte original não
   // forneceu foto, não substitui Malafaia/Flávio Bolsonaro por igreja ou política genérica.
-  if (pautaTemPessoaNomeada(topico, gerado)) return null;
-  if (!env.pexelsApiKey) return null;
+  if (pautaTemPessoaNomeada(topico, gerado)) return { url: null };
+  if (!env.pexelsApiKey) return { url: null };
 
   try {
     const termo =
@@ -102,10 +112,18 @@ async function escolherImagemCapa(topico, gerado) {
       String(gerado.titulo || topico?.titulo || 'news').split(/\s+/).slice(0, 3).join(' ');
     const photos = await pexelsService.searchPhotos(termo, { perPage: 5 });
     const first = photos?.photos?.[0];
-    return first?.urlOriginal || first?.thumbnail || null;
+    const url = first?.urlOriginal || first?.thumbnail || null;
+    if (!url) return { url: null };
+    return {
+      url,
+      autor: first.autor || null,
+      fonte: first.autor ? `Pexels · ${first.autor}` : 'Pexels',
+      titulo: first.alt || termo,
+      origem: 'pexels',
+    };
   } catch (err) {
     console.warn('escolherImagemCapa:', err.message);
-    return null;
+    return { url: null };
   }
 }
 
@@ -157,7 +175,8 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
     furoReportagem,
   });
 
-  const imagemUrl = await escolherImagemCapa(apurado, gerado);
+  const capa = await escolherImagemCapa(apurado, gerado);
+  const imagemUrl = capa?.url || null;
   const imagemOrigem = imagemUrl
     ? imagemUrl === apurado.imagemFonte
       ? {
@@ -171,6 +190,23 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
           consulta: gerado.termos_imagem?.[0] || gerado.hashtags?.[0] || apurado.nicho || null,
         }
     : null;
+
+  const { identificarAutorImagem } = require('./deepseekService');
+  const {
+    anexarCreditosFontes,
+    CREDITO_IMAGEM_FALLBACK,
+  } = require('./editorialGuidelinesFb');
+  let imagemAutor = CREDITO_IMAGEM_FALLBACK;
+  if (imagemUrl) {
+    const identificado = await identificarAutorImagem({
+      autor: capa.autor || null,
+      fonte: capa.fonte || null,
+      titulo: capa.titulo || apurado.titulo || null,
+      origem: capa.origem || imagemOrigem?.tipo || null,
+    });
+    imagemAutor = identificado || CREDITO_IMAGEM_FALLBACK;
+  }
+
   const avisosDuplicidade = userId
     ? await checarDuplicidade({
         userId,
@@ -191,18 +227,10 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
 
   const semImagemFoto = tipoPublicacao === 'foto' && !imagemUrl;
 
-  const { anexarCreditosFontes } = require('./editorialGuidelinesFb');
-  const imagemCreditoUrl =
-    imagemOrigem?.tipo === 'fonte'
-      ? apurado.link || imagemUrl || apurado.imagemFonte || null
-      : imagemOrigem?.tipo === 'pexels'
-        ? null
-        : imagemUrl || null;
   const materiaComFontes = anexarCreditosFontes(gerado.materia, {
     fonteNome: apurado.fonte || apurado.veiculo || null,
-    fonteUrl: apurado.link || null,
-    imagemRotulo: imagemOrigem?.rotulo || (imagemUrl ? 'Reprodução' : null),
-    imagemUrl: imagemCreditoUrl,
+    fonteUrl: apurado.link || null, // só para derivar o nome do site se faltar
+    imagemAutor,
   });
 
   return {
@@ -210,6 +238,7 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
     materia: materiaComFontes,
     imagemUrl,
     imagemOrigem,
+    imagemAutor,
     topico: apurado,
     avisos,
     forcarRascunho: semImagemFoto,

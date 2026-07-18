@@ -786,11 +786,38 @@ async function aplicarImagemUrl(req, res, next) {
       force: true,
     });
 
+    // Crédito da imagem: autor dos metadados internos, senão Reprodução/Internet
+    const deepseekService = require('../services/deepseekService');
+    const {
+      atualizarCreditoImagemNaMateria,
+      CREDITO_IMAGEM_FALLBACK,
+    } = require('../services/editorialGuidelinesFb');
+    let imagemAutor = CREDITO_IMAGEM_FALLBACK;
+    try {
+      const identificado = await deepseekService.identificarAutorImagem({
+        autor: req.body?.autor || null,
+        fonte: req.body?.fonte || null,
+        titulo: req.body?.imagemTitulo || req.body?.title || null,
+        origem: req.body?.origem || null,
+      });
+      imagemAutor = identificado || CREDITO_IMAGEM_FALLBACK;
+    } catch {
+      imagemAutor = CREDITO_IMAGEM_FALLBACK;
+    }
+
+    const materiaAtual = artwork.matter?.materia || matter.materia;
+    const materiaComCredito = atualizarCreditoImagemNaMateria(materiaAtual, imagemAutor);
+    if (materiaComCredito && materiaComCredito !== materiaAtual) {
+      await AiMatters.update(matterId, { materia: materiaComCredito });
+      artwork.matter = await AiMatters.findById(matterId);
+    }
+
     return res.json({
       ok: true,
       matter: artwork.matter,
       imagemUrl: artwork.publicUrl,
       hasLogo: artwork.hasLogo,
+      imagemAutor,
     });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });

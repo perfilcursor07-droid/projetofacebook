@@ -1079,6 +1079,64 @@ Regras:
   };
 }
 
+/**
+ * Identifica o nome do autor/fotógrafo a partir dos metadados da imagem interna.
+ * Se não houver autor claro, retorna null (o sistema usa Reprodução/Internet).
+ */
+async function identificarAutorImagem({ autor, fonte, titulo, origem } = {}) {
+  const { extrairAutorImagemHeuristico } = require('./editorialGuidelinesFb');
+  const heuristico = extrairAutorImagemHeuristico({ autor, fonte, titulo });
+  if (heuristico) return heuristico;
+
+  const temSinal = [autor, fonte, titulo].some((x) => String(x || '').trim().length >= 3);
+  if (!temSinal) return null;
+
+  try {
+    assertDeepseek();
+    const raw = await chatCompletion(
+      [
+        {
+          role: 'system',
+          content: `Você identifica o AUTOR/FOTÓGRAFO de uma imagem a partir dos metadados internos da busca.
+Responda APENAS JSON: {"autor":"Nome Completo"} ou {"autor":null}.
+Regras:
+- Só retorne nome se for claramente pessoa ou crédito fotográfico (ex.: "João Silva", "Agência Brasil", "Ricardo Stuckert").
+- Se for só site/rede (G1, Instagram, Facebook, UOL, YouTube, domínio .com) → autor null.
+- Se for genérico (Pexels, Unsplash, Stock, Internet) sem nome de pessoa → autor null.
+- NÃO invente nomes. Na dúvida, null.`,
+        },
+        {
+          role: 'user',
+          content: [
+            autor ? `Campo autor: ${String(autor).slice(0, 120)}` : null,
+            fonte ? `Campo fonte: ${String(fonte).slice(0, 160)}` : null,
+            titulo ? `Título/alt da imagem: ${String(titulo).slice(0, 220)}` : null,
+            origem ? `Origem da busca: ${origem}` : null,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
+      ],
+      { temperature: 0.1, json: true }
+    );
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = {};
+    }
+    const nome = String(parsed.autor || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80);
+    if (!nome || /null|undefined|n\/a|nenhum/i.test(nome)) return null;
+    return extrairAutorImagemHeuristico({ autor: nome }) || nome;
+  } catch (err) {
+    console.warn('identificarAutorImagem:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   gerarMateriaVideo,
   gerarMateriaImagem,
@@ -1088,6 +1146,7 @@ module.exports = {
   sugerirTituloMateria,
   reescreverMateriaComInfo,
   sugerirConsultasImagem,
+  identificarAutorImagem,
   TITULO_TOMES,
   assertDeepseek,
   MAX_MATERIA_CHARS,

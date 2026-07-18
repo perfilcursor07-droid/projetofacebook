@@ -561,6 +561,10 @@
         body: JSON.stringify({
           imageUrl: chosen.url,
           titulo: tituloEl?.value || '',
+          autor: chosen.autor || null,
+          fonte: chosen.fonte || null,
+          imagemTitulo: chosen.titulo || null,
+          origem: chosen.origem || null,
         }),
       });
       const j = await r.json().catch(() => ({}));
@@ -568,6 +572,10 @@
       if (j.imagemUrl && imgEl) {
         setArtImage(j.imagemUrl);
         imgWrap?.classList.remove('hidden');
+      }
+      const materiaEl = document.getElementById('matter-materia');
+      if (materiaEl && j.matter?.materia) {
+        materiaEl.value = j.matter.materia;
       }
       // Marca a miniatura escolhida como "Atual" sem buscar de novo na API
       const list = window.__IMG_SUGESTOES__ || [];

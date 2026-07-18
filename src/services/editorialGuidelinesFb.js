@@ -275,24 +275,144 @@ function formatFacebookCaption({ titulo, materia, hashtags } = {}) {
   return parts.join('\n\n').trim();
 }
 
+/** Crédito padrão quando a imagem interna não traz autor identificável. */
+const CREDITO_IMAGEM_FALLBACK = 'Reprodução/Internet';
+
 /**
- * Anexa bloco de créditos (origem do conteúdo + imagem) antes das hashtags.
+ * Extrai nome de autor/fotógrafo dos metadados da imagem interna (heurística).
+ * Retorna null se não houver nome claro (aí cai no fallback ou na IA).
  */
-function anexarCreditosFontes(materia, { fonteNome, fonteUrl, imagemRotulo, imagemUrl } = {}) {
+function extrairAutorImagemHeuristico({ autor, fonte, titulo } = {}) {
+  const limpar = (s) =>
+    String(s || '')
+      .replace(/\s+/g, ' ')
+      .replace(/^["'“”]+|["'“”]+$/g, '')
+      .trim()
+      .slice(0, 80);
+
+  const pareceAutor = (s) => {
+    const v = limpar(s);
+    if (!v || v.length < 2 || v.length > 80) return false;
+    if (/^(pexels|unsplash|getty|shutterstock|google|internet|reprodu[cç][aã]o|reprodu[cç][aã]o\/internet|stock|foto|image|imagem)$/i.test(v)) {
+      return false;
+    }
+    if (/^(instagram|facebook|twitter|x|tiktok|youtube|g1|uol|globo|bbc|cnn|reuters)$/i.test(v)) {
+      return false;
+    }
+    if (/\.(com|br|net|org|io)\b/i.test(v)) return false;
+    return true;
+  };
+
+  const a = limpar(autor);
+  if (pareceAutor(a)) return a;
+
+  const f = limpar(fonte);
+  const pexels = f.match(/^Pexels\s*[·\-–|]\s*(.+)$/i);
+  if (pexels && pareceAutor(pexels[1])) return limpar(pexels[1]);
+  if (pareceAutor(f) && /\b[\p{Lu}][\p{L}'’.-]{1,}(?:\s+[\p{Lu}][\p{L}'’.-]{1,})+/u.test(f)) {
+    return f;
+  }
+
+  const t = String(titulo || '');
+  const tm =
+    t.match(
+      /(?:foto|fotografia|cr[eé]dito|photographer|photo\s*by|by|por)\s*[:：\-–]\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.\- ]{1,60})/i
+    ) || t.match(/©\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.\- ]{1,60})/i);
+  if (tm && pareceAutor(tm[1])) {
+    return limpar(tm[1].replace(/\s*[|/·].*$/, ''));
+  }
+
+  return null;
+}
+
+/** Nome amigável do site a partir da URL (sem link). */
+function nomeSiteDeUrl(url) {
+  try {
+    const host = new URL(String(url || '').trim()).hostname.replace(/^www\./i, '');
+    if (!host) return null;
+    const base = host.split('.')[0] || host;
+    const conhecidos = {
+      g1: 'G1',
+      uol: 'UOL',
+      globo: 'Globo',
+      folha: 'Folha',
+      estadao: 'Estadão',
+      cnn: 'CNN',
+      bbc: 'BBC',
+      youtube: 'YouTube',
+      instagram: 'Instagram',
+      facebook: 'Facebook',
+      tiktok: 'TikTok',
+      twitter: 'X',
+      x: 'X',
+    };
+    if (conhecidos[base.toLowerCase()]) return conhecidos[base.toLowerCase()];
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Anexa bloco de créditos (origem do conteúdo + crédito da imagem) antes das hashtags.
+ * Conteúdo: somente o nome do site (sem URL).
+ * Imagem: só o nome do autor, ou "Reprodução/Internet" se não houver.
+ */
+function anexarCreditosFontes(materia, { fonteNome, fonteUrl, imagemAutor } = {}) {
   const { body, tags } = extrairHashtagsDoTexto(materia);
   let cleanBody = String(body || '')
     .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+$/i, '')
     .trim();
 
   const linhas = [];
-  const origem = [fonteNome, fonteUrl].filter(Boolean).join(' — ');
-  if (origem) linhas.push(`• Conteúdo: ${origem}`);
-  const img = [imagemRotulo, imagemUrl].filter(Boolean).join(' — ');
-  if (img) linhas.push(`• Imagem: ${img}`);
-  if (!linhas.length) return anexarHashtagsAoFinal(cleanBody, tags);
+  let site = String(fonteNome || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  // Se veio URL no nome, ou nome vazio, usa o host amigável
+  if (!site || /^https?:\/\//i.test(site)) {
+    site = nomeSiteDeUrl(fonteUrl || site) || '';
+  } else if (/^https?:\/\//i.test(String(fonteUrl || ''))) {
+    // Nome genérico demais → prefere host
+    if (/^(site|fonte|not[ií]cia|post|link)$/i.test(site)) {
+      site = nomeSiteDeUrl(fonteUrl) || site;
+    }
+  }
+  if (site) linhas.push(`• Conteúdo: ${site}`);
+
+  const creditoImg = limparCreditoAutor(imagemAutor);
+  linhas.push(`• Imagem: ${creditoImg}`);
 
   const bloco = `Fontes:\n${linhas.join('\n')}`;
   return anexarHashtagsAoFinal(`${cleanBody}\n\n${bloco}`, tags);
+}
+
+function limparCreditoAutor(value) {
+  const v = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!v || /^reprodu[cç][aã]o(\/internet)?$/i.test(v) || /^internet$/i.test(v)) {
+    return CREDITO_IMAGEM_FALLBACK;
+  }
+  return v.slice(0, 80);
+}
+
+/** Atualiza só a linha de crédito da imagem no bloco Fontes (mantém Conteúdo e hashtags). */
+function atualizarCreditoImagemNaMateria(materia, imagemAutor) {
+  const credito = limparCreditoAutor(imagemAutor);
+  const { body, tags } = extrairHashtagsDoTexto(materia);
+  let cleanBody = String(body || '').trim();
+
+  if (/Fontes:\s*\n(?:[•\-*].+\n?)+$/i.test(cleanBody)) {
+    if (/[•\*]\s*Imagem\s*:/i.test(cleanBody)) {
+      cleanBody = cleanBody.replace(/([•\*]\s*Imagem\s*:\s*)([^\n]+)/i, `$1${credito}`);
+    } else {
+      cleanBody = cleanBody.replace(/(Fontes:\s*\n(?:[•\*].+\n?)*)/i, (m) => `${m.trimEnd()}\n• Imagem: ${credito}\n`);
+    }
+    return anexarHashtagsAoFinal(cleanBody, tags);
+  }
+
+  return anexarCreditosFontes(cleanBody, { imagemAutor: credito });
 }
 
 function blocoRegrasFacebook(faixa) {
@@ -345,5 +465,9 @@ module.exports = {
   formatHashtagsLine,
   anexarHashtagsAoFinal,
   anexarCreditosFontes,
+  atualizarCreditoImagemNaMateria,
+  extrairAutorImagemHeuristico,
+  limparCreditoAutor,
+  CREDITO_IMAGEM_FALLBACK,
   extrairHashtagsDoTexto,
 };
