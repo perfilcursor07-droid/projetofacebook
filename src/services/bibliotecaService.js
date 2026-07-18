@@ -178,7 +178,7 @@ async function coletarItensFonte(fonte) {
 
   if (plataforma === 'instagram') {
     const collected = [];
-    // 1) API do Instagram (usada apenas quando Bright Data não está configurada)
+    // 1) API/HTML/cookies são usados apenas se ScrapeCreators não estiver configurada
     if (collected.length < 3) {
       try {
         collected.push(...(await coletarInstagramWebApi(fonte)));
@@ -1325,9 +1325,20 @@ async function iniciarBrightDataScan(fonte, { silentFirst = false } = {}) {
 }
 
 async function escanearFonte(fonte, { silentFirst = false } = {}) {
-  const brightdata = require('./brightdataInstagram');
-  if (fonte.plataforma === 'instagram' && brightdata.isConfigured()) {
-    return iniciarBrightDataScan(fonte, { silentFirst });
+  const scrapeCreators = require('./scrapeCreatorsInstagram');
+  if (fonte.plataforma === 'instagram' && scrapeCreators.isConfigured()) {
+    // Descarta qualquer estado legado da Bright Data antes da coleta direta.
+    await BibliotecaFontes.update(fonte.id, {
+      scrape_snapshot_id: null,
+      scrape_status: null,
+      scrape_requested_at: null,
+      scrape_error: null,
+      scrape_silent_first: false,
+    });
+    const handle = fonte.handle || extrairHandle(fonte.url, 'instagram');
+    const itens = await scrapeCreators.listarPostsPerfil(handle, SCAN_LIMIT);
+    console.log(`[scrapecreators-ig] @${handle}: ${itens.length} post(s)`);
+    return salvarItensFonte(fonte, itens, { silentFirst });
   }
 
   const itens = await coletarItensFonte(fonte);
