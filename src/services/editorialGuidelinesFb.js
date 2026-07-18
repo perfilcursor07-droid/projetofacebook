@@ -289,9 +289,10 @@ function quebrarEmParagrafos(texto) {
 }
 
 /**
- * Monta a legenda final do post: título + corpo em parágrafos + hashtags, com espaços.
+ * Monta a legenda final do post: título opcional + corpo em parágrafos + hashtags.
+ * O título ainda é usado para removê-lo do início do corpo quando incluirTitulo=false.
  */
-function formatFacebookCaption({ titulo, materia, hashtags } = {}) {
+function formatFacebookCaption({ titulo, materia, hashtags, incluirTitulo = true } = {}) {
   const title = String(titulo || '').replace(/\s+/g, ' ').trim();
   const extracted = extrairHashtagsDoTexto(materia);
   let body = extracted.body;
@@ -307,7 +308,7 @@ function formatFacebookCaption({ titulo, materia, hashtags } = {}) {
   );
 
   const parts = [];
-  if (title) parts.push(title);
+  if (title && incluirTitulo) parts.push(title);
   if (body) parts.push(body);
   if (tagsLine) parts.push(tagsLine);
   return parts.join('\n\n').trim();

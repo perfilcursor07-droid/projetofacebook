@@ -33,11 +33,12 @@ function parseHashtagsField(raw) {
 }
 
 /** Legenda formatada para o Facebook (espaços, parágrafos, hashtags). */
-function montarMensagem({ titulo, materia, hashtags }) {
+function montarMensagem({ titulo, materia, hashtags, incluirTitulo = true }) {
   return formatFacebookCaption({
     titulo,
     materia,
     hashtags: parseHashtagsField(hashtags),
+    incluirTitulo,
   });
 }
 
@@ -299,6 +300,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     titulo: overrides.titulo || matter.titulo,
     materia: overrides.materia || matter.materia,
     hashtags: overrides.hashtags || matter.hashtags,
+    incluirTitulo: tipo !== 'foto',
   });
 
   if (!mensagem.trim() || String(mensagem).startsWith('⏳')) {

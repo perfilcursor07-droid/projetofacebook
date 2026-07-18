@@ -43,6 +43,18 @@ const BibliotecaFontes = {
       });
   },
 
+  updateScrapeIfStatus(id, status, data) {
+    return db(this.table)
+      .where({ id, scrape_status: status })
+      .update({ ...data, updated_at: db.fn.now() });
+  },
+
+  updateScrapeIfCurrent(id, snapshotId, data) {
+    return db(this.table)
+      .where({ id, scrape_status: 'pending', scrape_snapshot_id: snapshotId })
+      .update({ ...data, updated_at: db.fn.now() });
+  },
+
   create(data) {
     return db(this.table).insert(data);
   },
