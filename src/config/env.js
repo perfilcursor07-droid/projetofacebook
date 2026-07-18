@@ -46,6 +46,7 @@ const env = {
   },
   /** URL pública do app (opcional; útil para mídia https) */
   appPublicUrl: String(process.env.APP_PUBLIC_URL || '').replace(/\/$/, ''),
+  brightdataApiToken: process.env.BRIGHTDATA_API_TOKEN || '',
   ffmpegPath: process.env.FFMPEG_PATH || '',
   pythonPath: process.env.PYTHON_PATH || '',
   storagePath: process.env.STORAGE_PATH || './storage',

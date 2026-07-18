@@ -152,12 +152,30 @@ async function coletarItensFonte(fonte) {
 
   if (plataforma === 'instagram') {
     const collected = [];
-    // 1) API do Instagram (cookies próprios quando configurados; pública como fallback)
+    // 0) Bright Data — funciona de qualquer IP, sem cookies
     try {
-      collected.push(...(await coletarInstagramWebApi(fonte)));
+      const brightdata = require('./brightdataInstagram');
+      if (brightdata.isConfigured()) {
+        const bdPosts = await brightdata.listarPostsPerfil(
+          fonte.handle || extrairHandle(url, 'instagram'),
+          SCAN_LIMIT
+        );
+        if (bdPosts.length) {
+          collected.push(...bdPosts);
+          console.log(`[biblioteca] brightdata-ig: ${bdPosts.length} post(s) de @${fonte.handle || extrairHandle(url, 'instagram')}`);
+        }
+      }
     } catch (err) {
-      console.warn('[biblioteca] ig api:', err.message);
-      erros.push(`api: ${err.message}`);
+      console.warn('[biblioteca] brightdata-ig:', err.message);
+    }
+    // 1) API do Instagram (cookies próprios quando configurados; pública como fallback)
+    if (collected.length < 3) {
+      try {
+        collected.push(...(await coletarInstagramWebApi(fonte)));
+      } catch (err) {
+        console.warn('[biblioteca] ig api:', err.message);
+        erros.push(`api: ${err.message}`);
+      }
     }
     // 2) HTML / espelhos
     if (collected.length < 3) {
