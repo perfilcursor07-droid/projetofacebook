@@ -332,7 +332,7 @@
       setBusy(true, 'IA analisando conteúdos de todas as fontes…');
       const data = await api('/api/biblioteca/melhores/analisar', {
         method: 'POST',
-        body: JSON.stringify({ limit: 5 }),
+        body: JSON.stringify({ limit: 30 }),
       });
       if (!data.melhores?.length) {
         alert('Nenhum conteúdo pendente encontrado. Escaneie suas fontes primeiro.');

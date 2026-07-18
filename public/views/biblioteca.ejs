@@ -115,7 +115,7 @@
                 <h2 class="text-sm font-semibold text-white">Melhores para publicar</h2>
                 <span class="rounded-md bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">modo manual</span>
               </div>
-              <p class="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">A IA compara os conteúdos de todas as fontes e indica os que têm maior potencial no Facebook. Você escolhe o que preparar; nada é publicado automaticamente.</p>
+              <p class="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">A IA compara os conteúdos de todas as fontes e mostra todas as sugestões com pontuação 50/100 ou maior. Você escolhe o que preparar; nada é publicado automaticamente.</p>
             </div>
           </div>
           <div class="flex flex-col gap-2 sm:min-w-[14rem] sm:flex-row sm:items-end">
@@ -139,10 +139,10 @@
         <% if (!melhoresList.length) { %>
           <div class="px-5 py-10 text-center">
             <p class="text-sm font-medium text-slate-300">Nenhuma análise manual disponível</p>
-            <p class="mx-auto mt-1 max-w-lg text-xs leading-relaxed text-slate-500">Escaneie suas fontes e clique em <strong class="font-medium text-slate-400">Analisar agora</strong>. A IA selecionará até cinco pautas sem iniciar nenhuma publicação.</p>
+            <p class="mx-auto mt-1 max-w-lg text-xs leading-relaxed text-slate-500">Escaneie suas fontes e clique em <strong class="font-medium text-slate-400">Analisar agora</strong>. A IA mostrará as pautas com pontuação 50/100 ou maior, sem iniciar nenhuma publicação.</p>
           </div>
         <% } else { %>
-          <div class="grid gap-px bg-slate-800 lg:grid-cols-2 xl:grid-cols-5">
+          <div class="grid gap-px bg-slate-800 lg:grid-cols-2 2xl:grid-cols-3">
             <% melhoresList.forEach(function (p, index) { %>
               <% const isVideo = p.media_type === 'video' || /instagram\.com\/(reel|reels|tv)\//i.test(String(p.url || '')); %>
               <article class="flex min-w-0 flex-col bg-slate-950/70 p-4" data-melhor-post="<%= p.id %>">
@@ -178,7 +178,7 @@
             <% }) %>
           </div>
           <div class="border-t border-slate-800 px-4 py-3 text-[11px] text-slate-600 sm:px-5">
-            Análise atualizada em <%= fmtQuando(melhoresList[0].viral_analyzed_at) %>. A pontuação é uma recomendação editorial, não garantia de alcance.
+            Análise atualizada em <%= fmtQuando(melhoresList[0].viral_analyzed_at) %>. Exibindo sugestões com 50/100 ou mais; a pontuação é uma recomendação editorial, não garantia de alcance.
           </div>
         <% } %>
       </section>

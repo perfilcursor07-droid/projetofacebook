@@ -1721,12 +1721,13 @@ async function salvarRankingViral(userId, ranking) {
   }
 }
 
-async function listarMelhoresParaPublicar(userId, limit = 5) {
-  return BibliotecaPosts.findMelhoresPublicacao(userId, limit);
+async function listarMelhoresParaPublicar(userId, limit = 30) {
+  return BibliotecaPosts.findMelhoresPublicacao(userId, limit, 50);
 }
 
-async function analisarMelhoresParaPublicar(userId, limit = 5) {
+async function analisarMelhoresParaPublicar(userId, limit = 30) {
   assertDeepseek();
+  const quantidade = Math.min(30, Math.max(1, Number(limit) || 30));
   const candidatos = await BibliotecaPosts.findCandidatosAutopilot(userId, 30);
   if (!candidatos.length) {
     await BibliotecaPosts.clearViralRanking(userId);
@@ -1742,10 +1743,10 @@ async function analisarMelhoresParaPublicar(userId, limit = 5) {
       plataforma: post.fonte_plataforma,
       tipo_midia: post.media_type,
     })),
-    Math.min(5, Math.max(1, Number(limit) || 5))
+    quantidade
   );
   await salvarRankingViral(userId, ranking);
-  return listarMelhoresParaPublicar(userId, limit);
+  return listarMelhoresParaPublicar(userId, quantidade);
 }
 
 async function dashboardUsuario(userId) {
@@ -1756,7 +1757,7 @@ async function dashboardUsuario(userId) {
     BibliotecaAlertas.findByUser(userId, { limit: 50 }),
     BibliotecaAlertas.countNaoLidos(userId),
     obterAutopilot(userId),
-    listarMelhoresParaPublicar(userId, 5),
+    listarMelhoresParaPublicar(userId, 30),
   ]);
   const fontesComContagem = (fontes || []).map((f) => ({
     ...f,

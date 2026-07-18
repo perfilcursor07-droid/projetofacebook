@@ -199,7 +199,7 @@ async function listarMelhores(req, res, next) {
   try {
     const melhores = await bibliotecaService.listarMelhoresParaPublicar(
       req.session.userId,
-      Number(req.query.limit) || 5
+      Number(req.query.limit) || 30
     );
     res.json({ ok: true, melhores });
   } catch (err) {
@@ -211,7 +211,7 @@ async function analisarMelhores(req, res, next) {
   try {
     const melhores = await bibliotecaService.analisarMelhoresParaPublicar(
       req.session.userId,
-      Number(req.body?.limit) || 5
+      Number(req.body?.limit) || 30
     );
     res.json({ ok: true, melhores });
   } catch (err) {

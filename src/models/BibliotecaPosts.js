@@ -86,16 +86,17 @@ const BibliotecaPosts = {
     });
   },
 
-  findMelhoresPublicacao(userId, limit = 5) {
+  findMelhoresPublicacao(userId, limit = 30, minScore = 50) {
+    const scoreMinimo = Math.min(100, Math.max(0, Number(minScore) || 50));
     return db(`${this.table} as p`)
       .leftJoin('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
       .where('p.user_id', userId)
       .whereIn('p.status', ['novo', 'visto'])
       .whereNull('p.matter_id')
-      .whereNotNull('p.viral_score')
+      .where('p.viral_score', '>=', scoreMinimo)
       .orderBy('p.viral_score', 'desc')
       .orderBy('p.viral_analyzed_at', 'desc')
-      .limit(Math.min(10, Math.max(1, Number(limit) || 5)))
+      .limit(Math.min(30, Math.max(1, Number(limit) || 30)))
       .select(
         'p.id',
         'p.fonte_id',

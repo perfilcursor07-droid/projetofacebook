@@ -907,16 +907,8 @@ async function ranquearPostsViralFacebook(candidatos, topN = 3) {
       tipo_midia: String(c.tipo_midia || c.media_type || 'post').slice(0, 20),
     }));
 
-  const n = Math.min(Math.max(Number(topN) || 1, 1), 5);
+  const n = Math.min(Math.max(Number(topN) || 1, 1), 30);
   if (!lista.length) return [];
-
-  if (lista.length <= n) {
-    return lista.map((c, i) => ({
-      id: c.id,
-      score: 80 - i,
-      motivo: 'Poucos candidatos — ordem por recência.',
-    }));
-  }
 
   const raw = await chatCompletion(
     [
@@ -928,6 +920,7 @@ Critérios: relevância, emoção/curiosidade legítima, clareza do assunto, atu
 Vídeos/Reels podem ser escolhidos quando o assunto e a narrativa tiverem potencial real; não priorize o formato sozinho.
 PROIBIDO priorizar: clickbait enganoso, sensacionalismo falso, conteúdo que viole diretrizes do Facebook (ódio, violência gráfica, desinformação deliberada, spam, nudez, etc.).
 Título chamativo é bem-vindo se for honesto com o conteúdo.
+Avalie todos os candidatos. Inclua todos os que merecerem score 50 ou maior, respeitando o limite; omita os que ficarem abaixo de 50.
 Responda APENAS JSON: {"ranking":[{"id":123,"score":0-100,"motivo":"frase curta"}]}.
 Ordene do melhor para o pior. Inclua no máximo ${n} itens. Use só IDs da lista.`,
       },
