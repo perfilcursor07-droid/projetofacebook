@@ -19,7 +19,8 @@ const {
 } = require('./editorialGuidelinesFb');
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
-const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+/** Preferir deepseek-v4-flash; deepseek-chat ainda funciona até a depreciação (2026-07-24). */
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || env.deepseekModel || 'deepseek-v4-flash';
 
 function assertDeepseek() {
   if (!env.deepseekApiKey) {
@@ -29,24 +30,26 @@ function assertDeepseek() {
   }
 }
 
-async function chatCompletion(messages, { temperature = 0.78, json = true } = {}) {
+async function chatCompletion(messages, { temperature = 0.78, json = true, thinking = false } = {}) {
   assertDeepseek();
-  const { data } = await axios.post(
-    DEEPSEEK_URL,
-    {
-      model: DEEPSEEK_MODEL,
-      temperature,
-      response_format: json ? { type: 'json_object' } : undefined,
-      messages,
+  const body = {
+    model: DEEPSEEK_MODEL,
+    temperature,
+    response_format: json ? { type: 'json_object' } : undefined,
+    messages,
+  };
+  // V4: thinking opcional (matérias) — desligado por padrão para custo/latência
+  if (String(DEEPSEEK_MODEL).includes('v4')) {
+    body.thinking = { type: thinking ? 'enabled' : 'disabled' };
+    if (thinking) body.reasoning_effort = 'high';
+  }
+  const { data } = await axios.post(DEEPSEEK_URL, body, {
+    headers: {
+      Authorization: `Bearer ${env.deepseekApiKey}`,
+      'Content-Type': 'application/json',
     },
-    {
-      headers: {
-        Authorization: `Bearer ${env.deepseekApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 90_000,
-    }
-  );
+    timeout: 120_000,
+  });
 
   const raw = data?.choices?.[0]?.message?.content || '';
   if (!raw) {
@@ -262,6 +265,8 @@ Formato Facebook/Instagram (obrigatório):
   - Não troque pessoas citadas por conceitos genéricos como "church", "politics" ou "gospel".
   - Use termos de stock em inglês somente quando a pauta não citar pessoa, organização ou lugar específico.
 - NÃO invente fatos, nomes, cargos, números ou citações que não estejam nas fontes de apuração.
+- Se houver fontes da internet na apuração, use-as para complementar o fato; se não houver, não preencha lacunas com especulação.
+- Reescreva sempre com voz própria (anti-plágio): estrutura e frases novas.
 
 ${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização falsa.' : ''}
 ${furoReportagem ? `MODO FURO / MINIMATÉRIA (obrigatório):
@@ -348,15 +353,18 @@ async function gerarMateriaNoticiaFacebook({
       ? 'A fonte é post/vídeo de rede social. Transforme em minimatéria gospel: contextualize com suas palavras e DEIXE 1–3 falas literais curtas entre aspas ("…") da apuração.'
       : null,
     furoReportagem
-      ? 'PRIORIDADE: ângulo de furo + reescrita total. Fonte longa = condensar; fonte curta = completar com contexto real.'
+      ? 'PRIORIDADE: ângulo de furo + reescrita total. Fonte longa = condensar; fonte curta = completar SOMENTE com fatos das fontes documentadas / busca na internet abaixo.'
       : null,
     tituloReferencia ? `Título de referência: ${tituloReferencia}` : null,
     resumoReferencia ? `Resumo de referência: ${resumoReferencia}` : null,
     fonte ? `Veículo/origem: ${fonte}` : null,
     dataReferencia ? `Data da fonte: ${dataReferencia}` : null,
     contextoApuracao ? `Contexto de apuração:\n${String(contextoApuracao).slice(0, 8000)}` : null,
-    fontesTxt ? `Fontes documentadas:\n${fontesTxt}` : null,
-    'Se faltar detalhe factual, generalise com cuidado (ex.: “segundo informações divulgadas”) sem inventar.',
+    fontesTxt
+      ? `FONTES DOCUMENTADAS (única base factual — não invente fora delas):\n${fontesTxt}`
+      : 'ATENÇÃO: sem fontes web extras. Use só o material de apuração acima; se faltar fato, generalize sem inventar.',
+    'ANTI-PLÁGIO: reescreva com palavras próprias; não copie parágrafos das fontes.',
+    'Se faltar detalhe factual nas fontes, generalise (“segundo informações divulgadas”) ou omita — NUNCA invente nome, número, data ou citação.',
     'Quando houver fala documentada, use aspas em pelo menos uma frase literal no corpo.',
     'NÃO inclua créditos/Fontes no campo materia — o sistema anexa automaticamente.',
     'MODELO DE TOM (inspire-se, não copie): "O ator X tem se dedicado ao chamado…", "Em meio à devastação… uma notícia trouxe esperança…", "Que Deus console… Seguimos em oração…".',
@@ -370,7 +378,7 @@ async function gerarMateriaNoticiaFacebook({
         { role: 'system', content: systemMsg },
         { role: 'user', content: userContent },
       ],
-      { temperature, json: true }
+      { temperature, json: true, thinking: true }
     )
   );
 

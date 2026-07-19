@@ -14,6 +14,8 @@ const env = {
   databaseUrl: process.env.DATABASE_URL || 'mysql://root:@localhost:3306/clipador',
   sessionSecret: process.env.SESSION_SECRET || 'dev-session-secret-change-me',
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
+  /** deepseek-v4-flash | deepseek-v4-pro | deepseek-chat (legado) */
+  deepseekModel: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
   pexelsApiKey: process.env.PEXELS_API_KEY || '',
   braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   serperApiKey: process.env.SERPER_API_KEY || '',

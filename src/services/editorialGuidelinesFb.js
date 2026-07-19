@@ -458,10 +458,11 @@ function blocoRegrasFacebook(faixa, volumeFonte = 'media') {
   return `
 DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
 - Meta de tamanho: SEMPRE o máximo útil do feed (${faixa.min}–${faixa.max} chars no corpo; teto ${MAX_MATERIA_CHARS} com créditos/hashtags).
-- Fonte longa → condensar preservando dados principais. Fonte curta → ampliar com contexto real. Nunca ficar muito abaixo do máximo.
-- NÃO copie a fonte inteira; reescreva com estrutura própria.
-- FALAS LITERAIS: 1 a 3 trechos curtos entre aspas ("…") quando houver na apuração.
-- NÃO invente fatos, números, datas, igrejas, pastores nem declarações.
+- Fonte longa → condensar preservando dados principais. Fonte curta → ampliar SÓ com fatos das fontes de apuração / internet documentadas.
+- NÃO copie a fonte inteira nem frases longas: reescreva com estrutura e palavras próprias (anti-plágio).
+- FALAS LITERAIS: 1 a 3 trechos curtos entre aspas ("…") SOMENTE se estiverem documentados na apuração.
+- NÃO invente fatos, números, datas, igrejas, pastores, locais, cargos nem declarações.
+- Se um detalhe NÃO estiver nas fontes documentadas: omita ou generalize (“segundo informações divulgadas”) — nunca preencha com “conhecimento geral” duvidoso.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
 - Formato: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n).
 - Gancho forte nos primeiros ~120 caracteres (quem + fato).
