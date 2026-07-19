@@ -297,6 +297,7 @@ async function gerarMateriaNoticiaFacebook({
   redeSocial,
   investigativa = false,
   furoReportagem = false,
+  contextoAprendizado = null,
 }) {
   assertDeepseek();
 
@@ -337,8 +338,19 @@ async function gerarMateriaNoticiaFacebook({
   const volumeFonte = classificarVolumeFonte(materialApuracao);
   const systemMsg = systemPromptNoticia(faixa, investigativa, furoReportagem, volumeFonte);
 
+  let blocoAprendizado = null;
+  if (contextoAprendizado) {
+    try {
+      const { formatarContextoAprendizadoParaPrompt } = require('./editorialLearningService');
+      blocoAprendizado = formatarContextoAprendizadoParaPrompt(contextoAprendizado);
+    } catch {
+      blocoAprendizado = null;
+    }
+  }
+
   const userContent = [
     'Crie uma MINIMATÉRIA ORIGINAL estilo News Gospel para Facebook/Instagram (foto + legenda).',
+    blocoAprendizado,
     `VOZ DO REDATOR (obrigatório): ${voz}`,
     `ESTILO DO LEAD: ${lead}`,
     `ESTILO DO TÍTULO: ${estiloTitulo}`,

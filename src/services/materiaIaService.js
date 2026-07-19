@@ -162,6 +162,17 @@ async function marcarJaPublicados(userId, facebookPageId, topicos) {
 async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublicacao = 'texto', investigativa = false, furoReportagem = false } = {}) {
   assertDeepseek();
   const apurado = await apurarTopico(topico || {});
+
+  let contextoAprendizado = null;
+  if (userId) {
+    try {
+      const learning = require('./editorialLearningService');
+      contextoAprendizado = await learning.obterContextoAprendizado(userId);
+    } catch (err) {
+      console.warn('[editorial-learning] carregar:', err.message);
+    }
+  }
+
   const gerado = await gerarMateriaNoticiaFacebook({
     tituloReferencia: apurado.titulo,
     resumoReferencia: apurado.resumo,
@@ -174,6 +185,7 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
     redeSocial: Boolean(apurado.redeSocial || apurado.tipoFonte === 'rede_social'),
     investigativa,
     furoReportagem,
+    contextoAprendizado,
   });
 
   const capa = await escolherImagemCapa(apurado, gerado);
@@ -260,6 +272,8 @@ async function salvarMateria({ userId, facebookPageId, gerado, topico, tipoPubli
     facebook_page_id: facebookPageId || null,
     titulo: gerado.titulo || topico?.titulo || null,
     materia: gerado.materia,
+    titulo_ia: gerado.titulo || topico?.titulo || null,
+    materia_ia: gerado.materia || null,
     hashtags: JSON.stringify(gerado.hashtags || []),
     fonte_titulo: topico?.titulo || null,
     fonte_url: topico?.link || null,

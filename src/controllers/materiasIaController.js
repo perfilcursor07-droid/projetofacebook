@@ -365,6 +365,25 @@ async function atualizarMateria(req, res, next) {
     await AiMatters.update(matterId, patch);
     const updated = await AiMatters.findById(matterId);
 
+    // Aprende com edições humanas vs snapshot da IA (silencioso)
+    if (body.titulo != null || body.materia != null) {
+      try {
+        const { registrarAprendizado } = require('../services/editorialLearningService');
+        const tituloAntes = matter.titulo_ia != null ? matter.titulo_ia : matter.titulo;
+        const materiaAntes = matter.materia_ia != null ? matter.materia_ia : matter.materia;
+        await registrarAprendizado({
+          userId: req.session.userId,
+          matterId,
+          tituloAntes: body.titulo != null ? tituloAntes : null,
+          tituloDepois: body.titulo != null ? updated.titulo : null,
+          materiaAntes: body.materia != null ? materiaAntes : null,
+          materiaDepois: body.materia != null ? updated.materia : null,
+        });
+      } catch (err) {
+        console.warn('[editorial-learning] salvar:', err.message);
+      }
+    }
+
     const titleChanged =
       body.titulo != null && String(body.titulo).trim() !== String(matter.titulo || '').trim();
     const sourceUrl =
@@ -587,6 +606,7 @@ async function sugerirTitulo(req, res, next) {
 
     const patch = {
       titulo: sugerido.titulo,
+      titulo_ia: sugerido.titulo,
       error_message: null,
     };
     if (matter.status !== 'agendado') patch.status = 'rascunho';
@@ -872,6 +892,8 @@ async function reescreverComInfo(req, res, next) {
     const patch = {
       titulo: reescrito.titulo,
       materia: reescrito.materia,
+      titulo_ia: reescrito.titulo,
+      materia_ia: reescrito.materia,
       hashtags: JSON.stringify(reescrito.hashtags || []),
       error_message: null,
     };
