@@ -356,11 +356,11 @@
     if (preparar) {
       const id = preparar.dataset.id;
       const destinationPage = recommendationPageId();
-      if (preparar.dataset.media === 'video') {
-        gerarVideo(id, destinationPage, { openInNewTab: true });
-      } else {
-        gerarTexto(id, { tipo: 'foto', facebookPageId: destinationPage, openInNewTab: true });
-      }
+      const media = preparar.dataset.media === 'video' ? 'video' : 'post';
+      const qs = new URLSearchParams({ media });
+      if (destinationPage) qs.set('facebook_page_id', String(destinationPage));
+      // Abre na hora em nova aba — sem modal na Biblioteca
+      window.open(`/biblioteca/preparar/${id}?${qs.toString()}`, '_blank', 'noopener,noreferrer');
       return;
     }
     if (t) gerarTexto(t.dataset.id);

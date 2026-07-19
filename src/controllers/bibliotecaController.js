@@ -40,6 +40,29 @@ async function fontePage(req, res, next) {
   }
 }
 
+async function prepararPage(req, res, next) {
+  try {
+    const postId = Number(req.params.postId);
+    if (!Number.isInteger(postId) || postId < 1) {
+      return res.redirect('/biblioteca');
+    }
+    const post = await BibliotecaPosts.findById(postId);
+    if (!post || Number(post.user_id) !== Number(req.session.userId)) {
+      return res.redirect('/biblioteca');
+    }
+    const media = String(req.query.media || '').toLowerCase() === 'video' ? 'video' : 'post';
+    const facebookPageId = req.query.facebook_page_id || req.query.page || null;
+    return res.render('biblioteca-preparar', {
+      title: media === 'video' ? 'Preparando Reel…' : 'Preparando matéria…',
+      postId,
+      media,
+      facebookPageId,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function listar(req, res, next) {
   try {
     const data = await bibliotecaService.dashboardUsuario(req.session.userId);
@@ -252,6 +275,7 @@ async function putAutopilot(req, res, next) {
 module.exports = {
   listPage,
   fontePage,
+  prepararPage,
   listar,
   criar,
   atualizar,
