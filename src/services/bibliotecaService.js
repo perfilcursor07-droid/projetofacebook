@@ -1150,7 +1150,10 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
         });
         alertaTitulo = ia.titulo.slice(0, 300);
         alertaResumo = ia.resumo || alertaResumo;
-        await BibliotecaPosts.update(postId, { resumo: alertaResumo });
+        await BibliotecaPosts.update(postId, {
+          titulo: String(ia.titulo || item.titulo || 'Sem título').slice(0, 500),
+          resumo: alertaResumo,
+        });
       } catch (err) {
         console.warn('[biblioteca] resumo IA:', err.message);
       }
@@ -1728,12 +1731,24 @@ async function salvarRankingViral(userId, ranking) {
       score: item.score,
       reason: item.motivo,
       analyzedAt,
+      tituloPt: item.titulo_pt || null,
     });
   }
 }
 
 async function listarMelhoresParaPublicar(userId, limit = 30) {
   return BibliotecaPosts.findMelhoresPublicacao(userId, limit, 50);
+}
+
+async function ocultarMelhorParaPublicar(userId, postId) {
+  const post = await BibliotecaPosts.findById(postId);
+  if (!post || Number(post.user_id) !== Number(userId)) {
+    const err = new Error('Sugestão não encontrada');
+    err.status = 404;
+    throw err;
+  }
+  await BibliotecaPosts.clearViralRankingPost(userId, postId);
+  return listarMelhoresParaPublicar(userId, 30);
 }
 
 async function analisarMelhoresParaPublicar(userId, limit = 30) {
@@ -1748,6 +1763,7 @@ async function analisarMelhoresParaPublicar(userId, limit = 30) {
   const ranking = await ranquearPostsViralFacebook(
     candidatos.map((post) => ({
       id: post.id,
+      fonte_id: post.fonte_id,
       titulo: post.titulo,
       resumo: post.resumo,
       fonte: post.fonte_nome,
@@ -1996,6 +2012,7 @@ async function tickAutopilot() {
       const ranking = await ranquearPostsViralFacebook(
         candidatos.map((p) => ({
           id: p.id,
+          fonte_id: p.fonte_id,
           titulo: p.titulo,
           resumo: p.resumo,
           fonte: p.fonte_nome,
@@ -2080,6 +2097,7 @@ module.exports = {
   detalheFonte,
   listarMelhoresParaPublicar,
   analisarMelhoresParaPublicar,
+  ocultarMelhorParaPublicar,
   obterAutopilot,
   salvarAutopilot,
   resolvePage,

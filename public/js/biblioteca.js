@@ -235,7 +235,7 @@
     }
   });
 
-  async function gerarTexto(id, { tipo = 'texto', facebookPageId = pageId() } = {}) {
+  async function gerarTexto(id, { tipo = 'texto', facebookPageId = pageId(), openInNewTab = false } = {}) {
     setBusy(true, tipo === 'foto' ? 'IA preparando matéria e capa…' : 'IA gerando texto…');
     try {
       const data = await api(`/api/biblioteca/posts/${id}/gerar-texto`, {
@@ -245,8 +245,12 @@
           tipoPublicacao: tipo,
         }),
       });
-      if (data.redirect) location.href = data.redirect;
-      else location.href = '/minhas-materias';
+      const dest = data.redirect || '/minhas-materias';
+      if (openInNewTab) {
+        window.open(dest, '_blank', 'noopener,noreferrer');
+      } else {
+        location.href = dest;
+      }
     } catch (err) {
       alert(err.message);
     } finally {
@@ -254,15 +258,19 @@
     }
   }
 
-  async function gerarVideo(id, facebookPageId = recommendationPageId() || pageId()) {
+  async function gerarVideo(id, facebookPageId = recommendationPageId() || pageId(), { openInNewTab = false } = {}) {
     setBusy(true, 'Baixando e preparando o Reel…');
     try {
       const data = await api(`/api/biblioteca/posts/${id}/gerar-video`, {
         method: 'POST',
         body: JSON.stringify({ facebook_page_id: facebookPageId }),
       });
-      if (data.redirect) location.href = data.redirect;
-      else location.href = '/fila';
+      const dest = data.redirect || '/fila';
+      if (openInNewTab) {
+        window.open(dest, '_blank', 'noopener,noreferrer');
+      } else {
+        location.href = dest;
+      }
     } catch (err) {
       alert(err.message);
     } finally {
@@ -307,11 +315,40 @@
     }
   }
 
+  function renumerarMelhores() {
+    document.querySelectorAll('#bib-melhores-track [data-melhor-post]').forEach((card, i) => {
+      const rank = card.querySelector('.bib-melhor-rank');
+      if (rank) rank.textContent = String(i + 1);
+    });
+  }
+
+  async function ocultarMelhor(id, cardEl) {
+    try {
+      cardEl?.classList.add('opacity-40', 'pointer-events-none');
+      await api(`/api/biblioteca/melhores/${id}`, { method: 'DELETE' });
+      cardEl?.remove();
+      renumerarMelhores();
+      const track = document.getElementById('bib-melhores-track');
+      if (track && !track.querySelector('[data-melhor-post]')) {
+        location.reload();
+      }
+    } catch (err) {
+      cardEl?.classList.remove('opacity-40', 'pointer-events-none');
+      alert(err.message);
+    }
+  }
+
   document.body.addEventListener('click', (e) => {
+    const ocultar = e.target.closest('.bib-ocultar-melhor');
     const publicar = e.target.closest('.bib-publicar-melhor');
     const preparar = e.target.closest('.bib-preparar-melhor');
     const t = e.target.closest('.bib-gen-texto');
     const v = e.target.closest('.bib-gen-video');
+    if (ocultar) {
+      const card = ocultar.closest('[data-melhor-post]');
+      ocultarMelhor(ocultar.dataset.id, card);
+      return;
+    }
     if (publicar) {
       publicarMelhor(publicar.dataset.id, publicar.dataset.media);
       return;
@@ -319,8 +356,11 @@
     if (preparar) {
       const id = preparar.dataset.id;
       const destinationPage = recommendationPageId();
-      if (preparar.dataset.media === 'video') gerarVideo(id, destinationPage);
-      else gerarTexto(id, { tipo: 'foto', facebookPageId: destinationPage });
+      if (preparar.dataset.media === 'video') {
+        gerarVideo(id, destinationPage, { openInNewTab: true });
+      } else {
+        gerarTexto(id, { tipo: 'foto', facebookPageId: destinationPage, openInNewTab: true });
+      }
       return;
     }
     if (t) gerarTexto(t.dataset.id);

@@ -907,19 +907,43 @@ Responda APENAS JSON:
 }
 
 /**
+ * Limita quantos itens por fonte aparecem no ranking (evita lista monopolizada por 1 site).
+ */
+function diversificarRankingPorFonte(itens, candidatos, maxPorFonte = 2) {
+  const fontePorId = new Map();
+  for (const c of candidatos || []) {
+    if (c?.id == null) continue;
+    const chave = String(c.fonte_id || c.fonte || c.fonte_nome || c.plataforma || 'x');
+    fontePorId.set(Number(c.id), chave);
+  }
+  const contagem = new Map();
+  const out = [];
+  for (const item of itens || []) {
+    const chave = fontePorId.get(Number(item.id)) || `id:${item.id}`;
+    const n = contagem.get(chave) || 0;
+    if (n >= maxPorFonte) continue;
+    contagem.set(chave, n + 1);
+    out.push(item);
+  }
+  return out;
+}
+
+/**
  * Ranqueia posts da Biblioteca pelo potencial de viralizar no Facebook.
  * Respeita diretrizes: título chamativo ok, sem clickbait enganoso / conteúdo proibido.
- * @param {Array<{id:number,titulo?:string,resumo?:string,fonte?:string,plataforma?:string}>} candidatos
+ * Diversifica fontes (máx. 2 por site) e pede títulos/motivos em português.
+ * @param {Array<{id:number,titulo?:string,resumo?:string,fonte?:string,plataforma?:string,fonte_id?:number}>} candidatos
  * @param {number} topN
- * @returns {Promise<Array<{id:number,score:number,motivo:string}>>}
+ * @returns {Promise<Array<{id:number,score:number,motivo:string,titulo_pt?:string|null}>>}
  */
 async function ranquearPostsViralFacebook(candidatos, topN = 3) {
   assertDeepseek();
   const lista = (Array.isArray(candidatos) ? candidatos : [])
     .filter((c) => c && c.id != null)
-    .slice(0, 30)
+    .slice(0, 40)
     .map((c) => ({
       id: Number(c.id),
+      fonte_id: c.fonte_id != null ? Number(c.fonte_id) : null,
       titulo: String(c.titulo || '').slice(0, 200),
       resumo: String(c.resumo || '').slice(0, 400),
       fonte: String(c.fonte || c.fonte_nome || '').slice(0, 120),
@@ -938,15 +962,17 @@ async function ranquearPostsViralFacebook(candidatos, topN = 3) {
 Escolha os posts com MAIOR potencial de viralizar no Facebook AGORA.
 Critérios: relevância, emoção/curiosidade legítima, clareza do assunto, atualidade, potencial de compartilhamento e adequação ao formato indicado em tipo_midia.
 Vídeos/Reels podem ser escolhidos quando o assunto e a narrativa tiverem potencial real; não priorize o formato sozinho.
+DIVERSIDADE OBRIGATÓRIA: não concentre o ranking em uma única fonte/site. No máximo 2 itens da mesma fonte (mesmo fonte_id ou mesmo nome de fonte). Prefira misturar fontes diferentes.
+Se o título/resumo estiver em idioma estrangeiro, traduza para português brasileiro em titulo_pt e escreva o motivo em português.
 PROIBIDO priorizar: clickbait enganoso, sensacionalismo falso, conteúdo que viole diretrizes do Facebook (ódio, violência gráfica, desinformação deliberada, spam, nudez, etc.).
 Título chamativo é bem-vindo se for honesto com o conteúdo.
-Avalie todos os candidatos. Inclua todos os que merecerem score 50 ou maior, respeitando o limite; omita os que ficarem abaixo de 50.
-Responda APENAS JSON: {"ranking":[{"id":123,"score":0-100,"motivo":"frase curta"}]}.
+Avalie todos os candidatos. Inclua todos os que merecerem score 50 ou maior, respeitando o limite e a diversidade de fontes; omita os que ficarem abaixo de 50.
+Responda APENAS JSON: {"ranking":[{"id":123,"score":0-100,"motivo":"frase curta em português","titulo_pt":"título em português se o original for estrangeiro, senão null"}]}.
 Ordene do melhor para o pior. Inclua no máximo ${n} itens. Use só IDs da lista.`,
       },
       {
         role: 'user',
-        content: JSON.stringify({ topN: n, candidatos: lista }),
+        content: JSON.stringify({ topN: n, maxPorFonte: 2, candidatos: lista }),
       },
     ],
     { temperature: 0.35, json: true }
@@ -965,24 +991,36 @@ Ordene do melhor para o pior. Inclua no máximo ${n} itens. Use só IDs da lista
   for (const item of ranking) {
     const id = Number(item?.id);
     if (!idsValidos.has(id) || out.some((x) => x.id === id)) continue;
+    const tituloPt = String(item.titulo_pt || '').trim();
     out.push({
       id,
       score: Math.min(100, Math.max(0, Number(item.score) || 50)),
       motivo: String(item.motivo || '').trim().slice(0, 200),
+      titulo_pt: tituloPt ? tituloPt.slice(0, 500) : null,
     });
-    if (out.length >= n) break;
   }
 
-  // Fallback: completa com os mais recentes se a IA devolveu pouco
-  if (out.length < n) {
+  const diversificado = diversificarRankingPorFonte(out, lista, 2).slice(0, n);
+
+  // Fallback: completa com os mais recentes se a IA devolveu pouco (também diversificado)
+  if (diversificado.length < Math.min(n, lista.length)) {
+    const extras = [];
     for (const c of lista) {
-      if (out.some((x) => x.id === c.id)) continue;
-      out.push({ id: c.id, score: 40, motivo: 'Complemento por recência.' });
-      if (out.length >= n) break;
+      if (diversificado.some((x) => x.id === c.id) || extras.some((x) => x.id === c.id)) continue;
+      extras.push({ id: c.id, score: 40, motivo: 'Complemento por recência.', titulo_pt: null });
+    }
+    for (const item of diversificarRankingPorFonte(
+      [...diversificado, ...extras],
+      lista,
+      2
+    )) {
+      if (diversificado.some((x) => x.id === item.id)) continue;
+      diversificado.push(item);
+      if (diversificado.length >= n) break;
     }
   }
 
-  return out;
+  return diversificado.slice(0, n);
 }
 
 /**
@@ -995,7 +1033,7 @@ async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, sni
       {
         role: 'system',
         content:
-          'Você resume conteúdos novos de perfis/canais monitorados. Responda APENAS JSON: {"titulo":"...","resumo":"..."}. Título ≤ 90 chars. Resumo em 1–2 frases em português, factual, sem inventar.',
+          'Você resume conteúdos novos de perfis/canais/sites monitorados. Responda APENAS JSON: {"titulo":"...","resumo":"..."}. Título ≤ 90 chars. Resumo em 1–2 frases. SEMPRE em português brasileiro — se o original estiver em inglês ou outro idioma, TRADUZA título e resumo. Seja factual, sem inventar.',
       },
       {
         role: 'user',
@@ -1005,6 +1043,7 @@ async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, sni
           titulo: titulo || null,
           url: url || null,
           snippet: snippet || null,
+          idiomaSaida: 'pt-BR',
         }),
       },
     ],

@@ -219,6 +219,18 @@ async function analisarMelhores(req, res, next) {
   }
 }
 
+async function ocultarMelhor(req, res, next) {
+  try {
+    const melhores = await bibliotecaService.ocultarMelhorParaPublicar(
+      req.session.userId,
+      Number(req.params.postId)
+    );
+    res.json({ ok: true, melhores });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getAutopilot(req, res, next) {
   try {
     const autopilot = await bibliotecaService.obterAutopilot(req.session.userId);
@@ -254,6 +266,7 @@ module.exports = {
   marcarTodosLidos,
   listarMelhores,
   analisarMelhores,
+  ocultarMelhor,
   getAutopilot,
   putAutopilot,
 };

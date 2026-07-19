@@ -17,6 +17,7 @@ router.post('/alertas/:id/lido', controller.marcarAlertaLido);
 router.post('/alertas/lidos', controller.marcarTodosLidos);
 router.get('/melhores', controller.listarMelhores);
 router.post('/melhores/analisar', controller.analisarMelhores);
+router.delete('/melhores/:postId', controller.ocultarMelhor);
 router.get('/autopilot', controller.getAutopilot);
 router.put('/autopilot', controller.putAutopilot);
 

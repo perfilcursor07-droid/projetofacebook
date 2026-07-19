@@ -115,7 +115,7 @@
                 <h2 class="text-sm font-semibold text-white">Melhores para publicar</h2>
                 <span class="rounded-md bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">modo manual</span>
               </div>
-              <p class="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">A IA compara os conteúdos de todas as fontes e mostra todas as sugestões com pontuação 50/100 ou maior. Você escolhe o que preparar; nada é publicado automaticamente.</p>
+              <p class="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">A IA compara conteúdos de todas as fontes (no máximo 2 por site), traduz textos estrangeiros e mostra sugestões com pontuação 50/100 ou maior. Você escolhe o que preparar; nada é publicado automaticamente.</p>
             </div>
           </div>
           <div class="flex flex-col gap-2 sm:min-w-[14rem] sm:flex-row sm:items-end">
@@ -154,10 +154,15 @@
                   data-melhor-post="<%= p.id %>">
                   <div class="flex items-center justify-between gap-2">
                     <div class="flex min-w-0 items-center gap-2">
-                      <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-[11px] font-bold text-violet-200"><%= index + 1 %></span>
+                      <span class="bib-melhor-rank flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-[11px] font-bold text-violet-200"><%= index + 1 %></span>
                       <span class="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500"><%= p.fonte_nome || p.fonte_plataforma %></span>
                     </div>
-                    <span class="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-emerald-300"><%= Number(p.viral_score || 0) %>/100</span>
+                    <div class="flex shrink-0 items-center gap-1.5">
+                      <span class="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-emerald-300"><%= Number(p.viral_score || 0) %>/100</span>
+                      <button type="button" class="bib-ocultar-melhor rounded-md p-1 text-slate-600 transition hover:bg-slate-800 hover:text-rose-300" data-id="<%= p.id %>" title="Remover desta lista" aria-label="Remover desta lista">
+                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                      </button>
+                    </div>
                   </div>
                   <% if (p.thumbnail) { %>
                     <div class="relative mt-3 aspect-video overflow-hidden rounded-lg bg-slate-900">

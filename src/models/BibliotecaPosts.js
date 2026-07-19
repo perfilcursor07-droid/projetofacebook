@@ -39,15 +39,16 @@ const BibliotecaPosts = {
     return q;
   },
 
-  /** Candidatos ao piloto: posts ainda sem matéria gerada. */
-  findCandidatosAutopilot(userId, limit = 30) {
-    return db(`${this.table} as p`)
+  /** Candidatos ao piloto/análise: posts ainda sem matéria, com diversidade entre fontes. */
+  async findCandidatosAutopilot(userId, limit = 30) {
+    const alvo = Math.min(40, Math.max(1, Number(limit) || 30));
+    const pool = await db(`${this.table} as p`)
       .leftJoin('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
       .where('p.user_id', userId)
       .whereIn('p.status', ['novo', 'visto'])
       .whereNull('p.matter_id')
       .orderBy('p.created_at', 'desc')
-      .limit(limit)
+      .limit(Math.max(alvo * 4, 60))
       .select(
         'p.id',
         'p.fonte_id',
@@ -62,6 +63,23 @@ const BibliotecaPosts = {
         'f.nome as fonte_nome',
         'f.plataforma as fonte_plataforma'
       );
+
+    // Round-robin por fonte para não mandar só 1 site à IA
+    const porFonte = new Map();
+    for (const post of pool) {
+      const key = String(post.fonte_id || 'x');
+      if (!porFonte.has(key)) porFonte.set(key, []);
+      porFonte.get(key).push(post);
+    }
+    const filas = [...porFonte.values()];
+    const diversificados = [];
+    let i = 0;
+    while (diversificados.length < alvo && filas.some((f) => f.length)) {
+      const fila = filas[i % filas.length];
+      if (fila.length) diversificados.push(fila.shift());
+      i += 1;
+    }
+    return diversificados;
   },
 
   clearViralRanking(userId) {
@@ -77,13 +95,29 @@ const BibliotecaPosts = {
       });
   },
 
-  saveViralRanking(id, { score, reason, analyzedAt = new Date() }) {
-    return db(this.table).where({ id }).update({
+  /** Remove um item da lista “Melhores para publicar” (só o ranking, não apaga o post). */
+  clearViralRankingPost(userId, postId) {
+    return db(this.table)
+      .where({ id: postId, user_id: userId })
+      .update({
+        viral_score: null,
+        viral_reason: null,
+        viral_analyzed_at: null,
+        updated_at: db.fn.now(),
+      });
+  },
+
+  saveViralRanking(id, { score, reason, analyzedAt = new Date(), tituloPt = null }) {
+    const patch = {
       viral_score: Math.min(100, Math.max(0, Number(score) || 0)),
       viral_reason: String(reason || '').slice(0, 500) || null,
       viral_analyzed_at: analyzedAt,
       updated_at: db.fn.now(),
-    });
+    };
+    if (tituloPt) {
+      patch.titulo = String(tituloPt).replace(/\s+/g, ' ').trim().slice(0, 500);
+    }
+    return db(this.table).where({ id }).update(patch);
   },
 
   findMelhoresPublicacao(userId, limit = 30, minScore = 50) {
