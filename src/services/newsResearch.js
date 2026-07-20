@@ -222,46 +222,87 @@ async function buscarBraveNews(termo, dias = 1) {
       emAlta: false,
     }));
   } catch (err) {
-    console.warn('Brave News:', err.message);
+    // Plano free / params inválidos → tenta sem freshness
+    if (err.response?.status === 422) {
+      try {
+        const { data } = await axios.get('https://api.search.brave.com/res/v1/news/search', {
+          params: { q: termo, count: 10, country: 'BR', search_lang: 'pt' },
+          headers: {
+            Accept: 'application/json',
+            'X-Subscription-Token': env.braveSearchApiKey,
+          },
+          timeout: 15000,
+        });
+        return (data?.results || []).map((r) => ({
+          id: slugId(r.title, r.url),
+          titulo: limparTitulo(r.title),
+          link: r.url,
+          resumo: limparResumo(r.description),
+          data: r.age || r.page_age || null,
+          dataTimestamp: 0,
+          nicho: termo,
+          fonte: 'Brave News',
+          veiculo: r.meta_url?.hostname || 'Brave',
+          tipoFonte: 'noticia',
+          recente: true,
+          emAlta: false,
+        }));
+      } catch (err2) {
+        console.warn('Brave News:', err2.response?.data?.message || err2.message);
+        return [];
+      }
+    }
+    console.warn('Brave News:', err.response?.data?.message || err.message);
     return [];
   }
 }
 
 async function buscarSerperRedes(termo) {
   if (!env.serperApiKey) return [];
-  try {
-    const { data } = await axios.post(
-      'https://google.serper.dev/search',
-      { q: `${termo} site:instagram.com OR site:facebook.com OR site:x.com OR site:tiktok.com OR site:youtube.com`, num: 15, gl: 'br', hl: 'pt-br' },
-      {
-        headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
-        timeout: 15000,
-      }
-    );
-    return (data?.organic || []).map((r) => ({
-      id: slugId(r.title, r.link),
-      titulo: limparTitulo(r.title),
-      link: r.link,
-      resumo: limparResumo(r.snippet),
-      data: r.date || null,
-      dataTimestamp: parsearDataPub(r.date),
-      nicho: termo,
-      fonte: 'Serper redes',
-      veiculo: (() => {
-        try {
-          return new URL(r.link).hostname.replace(/^www\./, '');
-        } catch {
-          return 'Rede social';
+  // Plano free rejeita queries com vários OR site: — busca por rede em chamadas simples
+  const redes = [
+    'site:instagram.com',
+    'site:facebook.com',
+    'site:youtube.com',
+  ];
+  const out = [];
+  for (const site of redes) {
+    try {
+      const { data } = await axios.post(
+        'https://google.serper.dev/search',
+        { q: `${termo} ${site}`.slice(0, 200), num: 5, gl: 'br', hl: 'pt-br' },
+        {
+          headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
+          timeout: 15000,
         }
-      })(),
-      tipoFonte: 'rede_social',
-      recente: true,
-      redeSocial: true,
-    }));
-  } catch (err) {
-    console.warn('Serper redes:', err.message);
-    return [];
+      );
+      for (const r of data?.organic || []) {
+        out.push({
+          id: slugId(r.title, r.link),
+          titulo: limparTitulo(r.title),
+          link: r.link,
+          resumo: limparResumo(r.snippet),
+          data: r.date || null,
+          dataTimestamp: parsearDataPub(r.date),
+          nicho: termo,
+          fonte: 'Serper redes',
+          veiculo: (() => {
+            try {
+              return new URL(r.link).hostname.replace(/^www\./, '');
+            } catch {
+              return 'Rede social';
+            }
+          })(),
+          tipoFonte: 'rede_social',
+          recente: true,
+          redeSocial: true,
+        });
+      }
+    } catch (err) {
+      console.warn('Serper redes:', err.response?.data?.message || err.message);
+    }
   }
+  return out;
 }
 
 /**

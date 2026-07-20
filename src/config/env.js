@@ -14,6 +14,8 @@ const env = {
   databaseUrl: process.env.DATABASE_URL || 'mysql://root:@localhost:3306/clipador',
   sessionSecret: process.env.SESSION_SECRET || 'dev-session-secret-change-me',
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
+  /** deepseek-v4-flash | deepseek-v4-pro | deepseek-chat (legado) */
+  deepseekModel: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
   pexelsApiKey: process.env.PEXELS_API_KEY || '',
   braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   serperApiKey: process.env.SERPER_API_KEY || '',
@@ -46,6 +48,8 @@ const env = {
   },
   /** URL pública do app (opcional; útil para mídia https) */
   appPublicUrl: String(process.env.APP_PUBLIC_URL || '').replace(/\/$/, ''),
+  brightdataApiToken: process.env.BRIGHTDATA_API_TOKEN || '',
+  scrapeCreatorsApiKey: process.env.SCRAPECREATORS_API_KEY || '',
   ffmpegPath: process.env.FFMPEG_PATH || '',
   pythonPath: process.env.PYTHON_PATH || '',
   storagePath: process.env.STORAGE_PATH || './storage',

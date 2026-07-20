@@ -929,12 +929,24 @@ async function extrairViaMbasic(url) {
 function mesclarExtracao(melhor, extra) {
   if (!extra) return melhor;
   const out = { ...melhor };
-  if (extra.texto && (!out.texto || extra.texto.length > out.texto.length)) {
+  const textoAtualConfiavel = ['scrapecreators', 'manual'].includes(out.textoMetodo);
+  const textoNovoConfiavel = ['scrapecreators', 'manual'].includes(extra.metodo);
+  if (
+    extra.texto &&
+    (!out.texto ||
+      (!textoAtualConfiavel &&
+        (textoNovoConfiavel || extra.texto.length > out.texto.length)))
+  ) {
     out.texto = extra.texto;
+    out.textoMetodo = extra.metodo || null;
   }
   if (!out.imagem && extra.imagem) out.imagem = extra.imagem;
   if (!out.titulo && extra.titulo) out.titulo = extra.titulo;
   if (!out.veiculo && extra.veiculo) out.veiculo = extra.veiculo;
+  if (!out.videoUrl && extra.videoUrl) out.videoUrl = extra.videoUrl;
+  if (out.isVideo == null && extra.isVideo != null) out.isVideo = extra.isVideo;
+  if (!out.publicadoEm && extra.publicadoEm) out.publicadoEm = extra.publicadoEm;
+  if (!out.autorUrl && extra.autorUrl) out.autorUrl = extra.autorUrl;
   if (extra.url && !/\/login/i.test(extra.url)) out.url = extra.url;
   if (extra.metodo) {
     out.metodo = out.metodo ? `${out.metodo}+${extra.metodo}` : extra.metodo;
@@ -967,35 +979,56 @@ async function extrairPostSocial(url, opts = {}) {
     veiculo: null,
     metodo: null,
     plataforma,
+    isVideo: null,
+    videoUrl: null,
+    publicadoEm: null,
+    autorUrl: null,
   };
 
-  // 1) Open Graph (com cookies IG se configurados)
-  try {
-    melhor = mesclarExtracao(melhor, await extrairViaOg(link));
-  } catch (err) {
-    console.warn('[socialPost] og:', err.message);
+  const scrapeCreators = require('./scrapeCreatorsSocial');
+  let scrapeCreatorsFalhou = false;
+
+  // 1) ScrapeCreators — provedor principal para posts individuais IG/FB.
+  if (scrapeCreators.isConfigured()) {
+    try {
+      melhor = mesclarExtracao(melhor, await scrapeCreators.extrairPost(link, plataforma));
+    } catch (err) {
+      scrapeCreatorsFalhou = true;
+      console.warn('[socialPost] scrapecreators:', err.message);
+    }
   }
 
-  // 1a) API Instagram autenticada (prioridade no servidor — fotos /p/)
-  if (plataforma === 'instagram' && (textoGenericoSocial(melhor.texto) || !melhor.imagem)) {
+  // Legendas curtas vindas da API são confiáveis; nos demais métodos, texto curto pode ser ruído.
+  const precisaTexto = () =>
+    !melhor.texto ||
+    (textoGenericoSocial(melhor.texto) &&
+      !['scrapecreators', 'manual'].includes(melhor.textoMetodo));
+
+  // 2) Open Graph e métodos legados complementam somente campos ausentes/incompletos.
+  if (precisaTexto() || !melhor.imagem) {
+    try {
+      melhor = mesclarExtracao(melhor, await extrairViaOg(link));
+    } catch (err) {
+      console.warn('[socialPost] og:', err.message);
+    }
+  }
+
+  if (plataforma === 'instagram' && (precisaTexto() || !melhor.imagem)) {
     melhor = mesclarExtracao(melhor, await extrairViaInstagramApi(link));
   }
 
-  // 1b) Embed / mirror Instagram
-  if (plataforma === 'instagram' && (textoGenericoSocial(melhor.texto) || !melhor.imagem)) {
+  if (plataforma === 'instagram' && (precisaTexto() || !melhor.imagem)) {
     melhor = mesclarExtracao(melhor, await extrairViaInstagramEmbed(link));
   }
-  if (plataforma === 'instagram' && textoGenericoSocial(melhor.texto)) {
+  if (plataforma === 'instagram' && precisaTexto()) {
     melhor = mesclarExtracao(melhor, await extrairViaInstagramMirror(link));
   }
 
-  // 2) oEmbed — só Facebook (Instagram Meta oEmbed exige review #10 e só atrasa)
-  if (plataforma === 'facebook' && (textoGenericoSocial(melhor.texto) || !melhor.imagem)) {
+  if (plataforma === 'facebook' && (precisaTexto() || !melhor.imagem)) {
     melhor = mesclarExtracao(melhor, await extrairViaOembed(link));
   }
 
-  // 3) Jina
-  if (textoGenericoSocial(melhor.texto) || !melhor.imagem) {
+  if (precisaTexto() || !melhor.imagem) {
     try {
       melhor = mesclarExtracao(melhor, await extrairViaJina(link));
     } catch (err) {
@@ -1003,47 +1036,56 @@ async function extrairPostSocial(url, opts = {}) {
     }
   }
 
-  // 4) mbasic
-  if (plataforma === 'facebook' && (textoGenericoSocial(melhor.texto) || !melhor.imagem)) {
+  if (plataforma === 'facebook' && (precisaTexto() || !melhor.imagem)) {
     melhor = mesclarExtracao(melhor, await extrairViaMbasic(link));
   }
 
-  // 5) yt-dlp — Instagram /p/ (foto) costuma HTTP 400; só tenta reel/tv
+  // yt-dlp — Instagram /p/ (foto) costuma HTTP 400; só tenta reel/tv.
   const igEhVideo = /instagram\.com\/(reel|reels|tv)\//i.test(link);
-  if (
-    (textoGenericoSocial(melhor.texto) || !melhor.imagem) &&
-    (plataforma !== 'instagram' || igEhVideo)
-  ) {
+  if ((precisaTexto() || !melhor.imagem) && (plataforma !== 'instagram' || igEhVideo)) {
     melhor = mesclarExtracao(melhor, await extrairViaYtDlp(link));
-  } else if (plataforma === 'instagram' && !igEhVideo && textoGenericoSocial(melhor.texto)) {
-    console.warn('[socialPost] yt-dlp: pulado (post foto /p/ — use ig-api + cookies)');
+  } else if (plataforma === 'instagram' && !igEhVideo && precisaTexto()) {
+    console.warn('[socialPost] yt-dlp: pulado (post foto /p/ — use API ou cookies)');
   }
 
-  // Fallback manual (usuário colou a legenda / URL da imagem)
+  // Override final: o que o usuário colou sempre prevalece sobre qualquer provedor.
   if (textoManual.length >= 40) {
     melhor.texto = textoManual;
+    melhor.textoMetodo = 'manual';
     melhor.metodo = melhor.metodo ? `${melhor.metodo}+manual` : 'manual';
   }
   if (/^https?:\/\//i.test(imagemManual)) {
     melhor.imagem = imagemManual;
+    if (!String(melhor.metodo || '').includes('manual')) {
+      melhor.metodo = melhor.metodo ? `${melhor.metodo}+manual` : 'manual';
+    }
   }
 
-  if (textoGenericoSocial(melhor.texto)) {
+  if (precisaTexto()) {
     const { diagnoseInstagramCookies } = require('./instagramCookies');
     const igDiag = plataforma === 'instagram' ? diagnoseInstagramCookies() : null;
-    const err = new Error(
-      plataforma === 'instagram'
-        ? igDiag?.ok
-          ? 'O Instagram bloqueou a leitura automática (sessão expirada, checkpoint ou post restrito). Atualize os cookies em YTDLP_IG_COOKIES_FILE ou cole a legenda em “Texto da postagem”.'
-          : `Cookies do Instagram inválidos (${igDiag?.reason || 'ausentes'}). Exporte de novo para /home/viralizeai/secrets/instagram-cookies.txt ou cole a legenda em “Texto da postagem”.`
-        : 'O Facebook bloqueou a leitura automática deste post (pede login no servidor). Cole a legenda do post no campo “Texto da postagem” (e, se puder, a URL da imagem) e gere de novo.'
-    );
+    let mensagem;
+    if (scrapeCreators.isConfigured()) {
+      mensagem =
+        plataforma === 'instagram'
+          ? 'Não foi possível obter a legenda deste post pelo provedor automático nem pelos métodos alternativos. O post pode estar privado, restrito ou indisponível. Cole a legenda em “Texto da postagem”.'
+          : 'Não foi possível obter a legenda deste post do Facebook pelo provedor automático nem pelos métodos alternativos. O post pode estar privado ou exigir login. Cole a legenda em “Texto da postagem” e, se puder, a URL da imagem.';
+    } else {
+      mensagem =
+        plataforma === 'instagram'
+          ? igDiag?.ok
+            ? 'O Instagram bloqueou a leitura automática (sessão expirada, checkpoint ou post restrito). Atualize os cookies em YTDLP_IG_COOKIES_FILE ou cole a legenda em “Texto da postagem”.'
+            : `Cookies do Instagram inválidos (${igDiag?.reason || 'ausentes'}). Exporte de novo para /home/viralizeai/secrets/instagram-cookies.txt ou cole a legenda em “Texto da postagem”.`
+          : 'O Facebook bloqueou a leitura automática deste post (pede login no servidor). Cole a legenda do post no campo “Texto da postagem” (e, se puder, a URL da imagem) e gere de novo.';
+    }
+    const err = new Error(mensagem);
     err.status = 422;
     err.code = 'SOCIAL_EXTRACT_BLOCKED';
+    err.providerFailed = scrapeCreatorsFalhou;
     throw err;
   }
 
-  // Preferir manchete a partir do texto (og:title costuma ser só o nome da Página)
+  // Preferir manchete a partir do texto (og:title costuma ser só o nome da Página).
   const firstSentence = String(melhor.texto || '')
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())

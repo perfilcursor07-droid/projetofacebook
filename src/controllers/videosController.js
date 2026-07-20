@@ -272,16 +272,115 @@ async function analyze(req, res, next) {
       });
     }
 
+    // Padrão: só analisa (transcreve + sugere). Cortes só após o usuário escolher.
+    const gerar =
+      req.body.gerar === true || req.body.gerar === 1 || req.body.gerar === '1';
+
     processingService.queueVideoAnalyze(video, {
       aspectRatio: req.body.aspect_ratio,
       maxCortes: req.body.max_cortes || req.body.maxCortes || 3,
-      gerar: req.body.gerar !== false && req.body.gerar !== 0 && req.body.gerar !== '0',
+      gerar,
     });
 
     res.status(202).json({
       queued: true,
-      message:
-        'IA analisando a fala para criar momentos completos de 40–90s. Os melhores cortes aparecerão na fila em instantes.',
+      message: gerar
+        ? 'IA analisando e gerando cortes…'
+        : 'Transcrevendo o vídeo e sugerindo Reels com título. Em instantes você escolhe quais criar.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Cria Reels a partir de sugestões marcadas e/ou pedido em texto livre.
+ * Body: { aspect_ratio?, selecionados?: [{inicio,fim,titulo}], pedido?: string }
+ */
+async function criarReels(req, res, next) {
+  try {
+    const video = await Videos.findById(req.params.id);
+    if (!video || video.user_id !== req.session.userId) {
+      const err = new Error('Vídeo não encontrado');
+      err.status = 404;
+      throw err;
+    }
+    if (!video.caminho_local) {
+      const err = new Error('Baixe o vídeo antes de criar Reels');
+      err.status = 422;
+      throw err;
+    }
+
+    const aspectRatio = ['9:16', '1:1', 'original'].includes(req.body.aspect_ratio)
+      ? req.body.aspect_ratio
+      : '9:16';
+
+    const selecionados = Array.isArray(req.body.selecionados)
+      ? req.body.selecionados
+      : Array.isArray(req.body.cortes)
+        ? req.body.cortes
+        : [];
+    const pedido = String(req.body.pedido || req.body.prompt || '').trim();
+
+    if (!selecionados.length && !pedido) {
+      const err = new Error(
+        'Marque pelo menos uma sugestão ou digite quais Reels você quer criar.'
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    const meta = typeof video.metadata === 'string'
+      ? (() => { try { return JSON.parse(video.metadata); } catch { return {}; } })()
+      : (video.metadata || {});
+
+    let cortes = selecionados
+      .map((s) => ({
+        inicio: Number(s.inicio),
+        fim: Number(s.fim),
+        titulo: String(s.titulo || s.legenda || '').trim().slice(0, 90) || null,
+        legenda: String(s.legenda || '').trim().slice(0, 500) || null,
+        motivo: String(s.motivo || '').trim().slice(0, 280) || null,
+      }))
+      .filter((s) => Number.isFinite(s.inicio) && Number.isFinite(s.fim) && s.fim > s.inicio);
+
+    if (pedido) {
+      deepseekService.assertDeepseek();
+      const mapeados = await deepseekService.mapearPedidoParaCortes({
+        duracao: video.duracao,
+        titulo: video.titulo,
+        pedido,
+        transcricao: meta.transcricao_full || '',
+        segmentos: meta.segmentos_fala || [],
+        maxCortes: 3,
+        maxSegundos: MAX_CLIP_SECONDS,
+        minSegundos: Math.max(MIN_CLIP_SECONDS, 40),
+      });
+      for (const m of mapeados) {
+        const dup = cortes.some(
+          (c) => Math.abs(c.inicio - m.inicio) <= 2 && Math.abs(c.fim - m.fim) <= 2
+        );
+        if (!dup) cortes.push(m);
+      }
+    }
+
+    if (!cortes.length) {
+      const err = new Error(
+        'Não foi possível localizar trechos para o seu pedido. Tente descrever de outro jeito ou marque uma sugestão.'
+      );
+      err.status = 422;
+      throw err;
+    }
+
+    const created = await processingService.enqueueClipsFromCortes(video.id, cortes, {
+      aspectRatio,
+    });
+
+    res.status(202).json({
+      queued: true,
+      clips: created,
+      total: created.length,
+      message: `${created.length} Reel(s) enfileirado(s): cortando → legenda → capa.`,
     });
   } catch (err) {
     next(err);
@@ -510,6 +609,7 @@ module.exports = {
   clip,
   clipAuto,
   analyze,
+  criarReels,
   upload,
   importLink,
   removeVideo,

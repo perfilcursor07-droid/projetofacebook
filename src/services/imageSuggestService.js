@@ -147,6 +147,7 @@ async function buscarPexelsImagens(consulta, { perPage = 6 } = {}) {
       thumbnail: p.thumbnail,
       titulo: p.alt || consulta,
       fonte: p.autor ? `Pexels · ${p.autor}` : 'Pexels',
+      autor: p.autor || null,
       link: p.url,
       largura: p.largura,
       altura: p.altura,

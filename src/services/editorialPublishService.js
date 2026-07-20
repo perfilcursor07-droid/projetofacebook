@@ -5,7 +5,13 @@ const { resolveArtworkPath } = require('./matterArtworkService');
 const { formatFacebookCaption } = require('./editorialGuidelinesFb');
 
 function buildMessage(title, body, hashtags, fonteCredito) {
-  return formatFacebookCaption({ titulo: title, materia: body, hashtags, fonteCredito });
+  return formatFacebookCaption({
+    titulo: title,
+    materia: body,
+    hashtags,
+    fonteCredito,
+    incluirTitulo: false,
+  });
 }
 
 async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, body }) {

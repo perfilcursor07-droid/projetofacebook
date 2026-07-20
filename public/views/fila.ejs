@@ -6,15 +6,15 @@
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 class="text-xl font-semibold text-white">Produção</h1>
-        <p class="mt-0.5 text-sm text-slate-400">Baixe · corte · revise · publique</p>
+        <p class="mt-0.5 text-sm text-slate-400">Baixe · analise · escolha Reels · publique</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <ol class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
           <li class="rounded-md bg-slate-800/80 px-2 py-1 text-emerald-300">1 Baixar</li>
           <li class="text-slate-600">→</li>
-          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-violet-300">2 Cortar</li>
+          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-fuchsia-300">2 Analisar</li>
           <li class="text-slate-600">→</li>
-          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-sky-300">3 Revisar</li>
+          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-violet-300">3 Criar Reels</li>
           <li class="text-slate-600">→</li>
           <li class="rounded-md bg-[#1877F2]/15 px-2 py-1 text-[#1877F2]">4 Publicar</li>
         </ol>
@@ -493,7 +493,7 @@
               <button type="button"
                 class="action-btn flex-1 min-w-[160px] rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 py-2.5 text-sm font-bold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
                 data-action="analyze-video" data-id="${v.id}">
-                Gerar melhores cortes
+                Analisar vídeo
               </button>
               <details class="relative flex-1 min-w-[140px]">
                 <summary class="cursor-pointer list-none rounded-xl border border-slate-600 bg-slate-900 px-4 py-2.5 text-center text-sm font-semibold text-slate-200 hover:border-violet-500 hover:text-white">
@@ -529,19 +529,99 @@
       return '';
     }
 
+    function formatMmSs(sec) {
+      const s = Math.max(0, Math.round(Number(sec) || 0));
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0');
+    }
+
+    function attrEscape(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/\n/g, ' ');
+    }
+
+    function sugestoesHtml(videoId, sugestoes) {
+      const list = Array.isArray(sugestoes) ? sugestoes : [];
+      const cards = list.map((s, i) => {
+        const titulo = escapeHtml(s.titulo || s.legenda || `Sugestão ${i + 1}`);
+        const motivo = escapeHtml(s.motivo || '');
+        const tempo = formatMmSs(s.inicio) + '–' + formatMmSs(s.fim);
+        return `
+          <label class="flex cursor-pointer gap-3 rounded-xl border border-slate-700 bg-slate-950/70 p-3 transition hover:border-violet-500/50">
+            <input type="checkbox" name="sugestao" value="${i}" checked
+              class="mt-1 rounded border-slate-600 bg-slate-900 text-violet-500 focus:ring-violet-500"
+              data-inicio="${Number(s.inicio)}" data-fim="${Number(s.fim)}"
+              data-titulo="${attrEscape(s.titulo || s.legenda || '')}"
+              data-legenda="${attrEscape(s.legenda || '')}"
+              data-motivo="${attrEscape(s.motivo || '')}" />
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-semibold text-white">${titulo}</span>
+              <span class="mt-0.5 block text-[11px] font-medium text-violet-300">${tempo}</span>
+              ${motivo ? `<span class="mt-1 block text-[11px] leading-snug text-slate-500">${motivo}</span>` : ''}
+            </span>
+          </label>`;
+      }).join('');
+
+      return `
+        <div class="sugestoes-reels space-y-3 rounded-xl border border-violet-500/25 bg-violet-500/5 p-3 sm:p-4" data-video-sugestoes="${videoId}">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-violet-300">Sugestões de Reels</p>
+            <p class="mt-1 text-[11px] text-slate-500">Marque os trechos ou digite o que quer — a IA corta no tempo certo, escreve a legenda e cria a capa.</p>
+          </div>
+          ${cards
+            ? `<div class="space-y-2">${cards}</div>`
+            : `<p class="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">Nenhuma sugestão automática. Digite abaixo o que quer no Reel ou use Manual.</p>`}
+          <label class="block text-sm">
+            <span class="text-slate-400">Ou digite quais Reels quer</span>
+            <textarea name="pedido-reels" rows="2"
+              placeholder="Ex.: o momento da oração final; quando ele fala de perdão…"
+              class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-violet-500 focus:outline-none"></textarea>
+          </label>
+          <div class="flex flex-wrap items-center gap-2">
+            <select name="aspect_ratio_reels" class="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-100">
+              <option value="9:16" selected>9:16 · vertical</option>
+              <option value="1:1">1:1 · quadrado</option>
+              <option value="original">Original</option>
+            </select>
+            <button type="button"
+              class="action-btn flex-1 min-w-[180px] rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400 disabled:cursor-wait disabled:opacity-60"
+              data-action="criar-reels" data-id="${videoId}">
+              Criar Reels selecionados
+            </button>
+            <button type="button"
+              class="action-btn rounded-xl border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-violet-400 hover:text-white"
+              data-action="analyze-video" data-id="${videoId}">
+              Reanalisar
+            </button>
+          </div>
+        </div>`;
+    }
+
     function parseVideoMeta(v) {
       if (!v?.metadata) return {};
       if (typeof v.metadata === 'object') return v.metadata;
       try { return JSON.parse(v.metadata); } catch { return {}; }
     }
 
-    function videoNextStep(v, clips, analise) {
+    function videoNextStep(v, clips, analise, sugestoes) {
       if (v.status === 'pendente' || v.status === 'erro') return 'Próximo: baixar o vídeo';
-      if (analise === 'processando') return 'IA analisando a fala…';
-      if (!clips.length && (v.status === 'baixado' || v.status === 'cortado')) return 'Gere os cortes com os botões abaixo';
+      if (analise === 'processando') return 'Transcrevendo e sugerindo Reels…';
+      if (analise === 'pronta' && sugestoes.length && !clips.length) {
+        return 'Escolha os Reels abaixo (ou digite o que quer) e clique em Criar';
+      }
+      if (analise === 'pronta' && sugestoes.length) {
+        return 'Pode criar mais Reels pelas sugestões ou revisar os cortes prontos';
+      }
+      if (!clips.length && (v.status === 'baixado' || v.status === 'cortado')) {
+        return 'Próximo: analisar o vídeo para sugerir Reels';
+      }
       const ready = clips.filter((c) => (c.status === 'pronto' || c.status === 'publicado') && c.materia_status === 'pronta');
       if (ready.length) return `${ready.length} pronto(s) — abra Revisar e publicar`;
-      if (clips.length) return 'Cortes em andamento';
+      if (clips.length) return 'Cortando · legenda · capa…';
       return '';
     }
 
@@ -553,7 +633,8 @@
       const meta = parseVideoMeta(v);
       const analise = meta.analise_status || '';
       const sugestoes = Array.isArray(meta.sugestoes_corte) ? meta.sugestoes_corte : [];
-      const nextStep = videoNextStep(v, clips, analise);
+      const nextStep = videoNextStep(v, clips, analise, sugestoes);
+      const painelSugestoes = analise === 'pronta' ? sugestoesHtml(v.id, sugestoes) : '';
 
       return `
         <article class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50 shadow-lg shadow-black/10" data-video-card="${v.id}">
@@ -567,7 +648,8 @@
                   <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-1.5">
                       ${badge(v.status)}
-                      ${analise === 'processando' ? badge('processando', 'IA analisando…') : ''}
+                      ${analise === 'processando' ? badge('processando', 'Analisando…') : ''}
+                      ${analise === 'pronta' && sugestoes.length ? `<span class="rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-[11px] font-medium text-fuchsia-300">${sugestoes.length} sugestão(ões)</span>` : ''}
                       <span class="text-xs text-slate-500">${escapeHtml(v.origem || 'pexels')} · ${durMin}</span>
                       ${clips.length ? `<span class="rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-300">${clips.length} corte(s)</span>` : ''}
                       ${v.caminho_local ? `<a href="/media/${escapeHtml(v.caminho_local)}" target="_blank" class="rounded-full border border-emerald-500/20 px-2 py-0.5 text-[11px] text-emerald-400 hover:bg-emerald-500/10">Ver original</a>` : ''}
@@ -586,16 +668,15 @@
                   </div>
                 </div>
                 ${v.erro_mensagem ? `<p class="mt-2 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">${escapeHtml(v.erro_mensagem)}</p>` : ''}
-                ${analise === 'processando' ? `<div class="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200"><span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>Ouvindo a fala e montando cortes…</div>` : ''}
+                ${analise === 'processando' ? `<div class="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200"><span class="h-3.5 w-3.5 animate-spin rounded-full border border-amber-300/30 border-t-amber-300"></span>Transcrevendo a fala e sugerindo Reels com título…</div>` : ''}
+                ${analise === 'erro' ? `<p class="mt-2 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">Análise falhou${meta.analise_erro ? ': ' + escapeHtml(meta.analise_erro) : ''}. Tente Analisar de novo.</p>` : ''}
               </div>
             </div>
-
-            ${analise === 'pronta' && sugestoes.length ? `
-            <p class="mt-3 text-xs text-fuchsia-200/80">IA encontrou ${sugestoes.length} momento(s) · cortes abaixo</p>` : ''}
           </div>
 
           <div class="video-body space-y-3 border-t border-slate-800 bg-slate-950/20 p-3 sm:p-4 ${cardCollapsed ? 'hidden' : ''}">
             ${formHtml ? `<div>${formHtml}</div>` : ''}
+            ${painelSugestoes}
 
             ${clips.length ? `
             <div class="space-y-2">
@@ -910,23 +991,62 @@
         }
 
         if (action === 'analyze-video') {
-          btn.textContent = 'IA analisando…';
-          const aspectSelect = btn.closest('article')?.querySelector('.clip-form select[name="aspect_ratio"]');
+          btn.textContent = 'Transcrevendo…';
+          const aspectSelect = btn.closest('article')?.querySelector('.clip-form select[name="aspect_ratio"]')
+            || btn.closest('article')?.querySelector('select[name="aspect_ratio_reels"]');
           const res = await fetch('/api/videos/' + id + '/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               aspect_ratio: aspectSelect?.value || '9:16',
               max_cortes: 3,
-              gerar: true,
+              gerar: false,
             }),
           });
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Falha ao analisar cortes com IA');
+          if (!res.ok) throw new Error(data.error || 'Falha ao analisar o vídeo');
           setCollapsed('video', id, false);
           setCollapsed('clips', id, false);
           setTimeout(loadFila, 2000);
-          setTimeout(loadFila, 15000);
+          setTimeout(loadFila, 10000);
+          setTimeout(loadFila, 25000);
+          return;
+        }
+
+        if (action === 'criar-reels') {
+          const panel = btn.closest('[data-video-sugestoes]');
+          const checks = panel
+            ? [...panel.querySelectorAll('input[name="sugestao"]:checked')]
+            : [];
+          const selecionados = checks.map((el) => ({
+            inicio: Number(el.dataset.inicio),
+            fim: Number(el.dataset.fim),
+            titulo: el.dataset.titulo || '',
+            legenda: el.dataset.legenda || '',
+            motivo: el.dataset.motivo || '',
+          }));
+          const pedido = String(panel?.querySelector('textarea[name="pedido-reels"]')?.value || '').trim();
+          if (!selecionados.length && !pedido) {
+            alert('Marque pelo menos uma sugestão ou digite quais Reels você quer.');
+            btn.disabled = false;
+            return;
+          }
+          btn.textContent = pedido && !selecionados.length ? 'Localizando trechos…' : 'Criando Reels…';
+          const aspect = panel?.querySelector('select[name="aspect_ratio_reels"]')?.value || '9:16';
+          const res = await fetch('/api/videos/' + id + '/criar-reels', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              aspect_ratio: aspect,
+              selecionados,
+              pedido: pedido || undefined,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha ao criar Reels');
+          setCollapsed('video', id, false);
+          setTimeout(loadFila, 1500);
+          setTimeout(loadFila, 8000);
           return;
         }
 

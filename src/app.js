@@ -86,6 +86,8 @@ app.get('/conteudo/lote', requireAuth, require('./controllers/materiasIaControll
 app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Vídeo e imagem'));
 app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController').listPage);
 app.get('/biblioteca', requireAuth, require('./controllers/bibliotecaController').listPage);
+app.get('/biblioteca/fontes/:id', requireAuth, require('./controllers/bibliotecaController').fontePage);
+app.get('/biblioteca/preparar/:postId', requireAuth, require('./controllers/bibliotecaController').prepararPage);
 app.get('/minhas-materias', requireAuth, require('./controllers/materiasIaController').listMinhasMaterias);
 app.get('/materias-ia/:id', requireAuth, require('./controllers/materiasIaController').showMatter);
 app.get('/fila', requireAuth, (_req, res) => renderPage(res, 'fila', 'Produção'));

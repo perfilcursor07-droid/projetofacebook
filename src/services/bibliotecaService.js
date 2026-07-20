@@ -1,14 +1,209 @@
+const crypto = require('crypto');
 const BibliotecaFontes = require('../models/BibliotecaFontes');
 const BibliotecaPosts = require('../models/BibliotecaPosts');
 const BibliotecaAlertas = require('../models/BibliotecaAlertas');
+const BibliotecaAutopilot = require('../models/BibliotecaAutopilot');
 const FacebookPages = require('../models/FacebookPages');
 const FacebookAccounts = require('../models/FacebookAccounts');
 const Videos = require('../models/Videos');
 const importService = require('./importService');
 const materiaIaService = require('./materiaIaService');
-const { resumirAlertaBiblioteca, assertDeepseek } = require('./deepseekService');
+const {
+  resumirAlertaBiblioteca,
+  ranquearPostsViralFacebook,
+  assertDeepseek,
+} = require('./deepseekService');
 const { env } = require('../config/env');
 const axios = require('axios');
+const { titulosParecidos } = require('./editorialGuidelinesFb');
+
+/** external_id é VARCHAR(191); URLs do Google News passam disso → hash estável. */
+function stableExternalId(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (s.length <= 180) return s;
+  return `h:${crypto.createHash('sha256').update(s).digest('hex')}`;
+}
+
+function normalizarUrlBiblioteca(url) {
+  try {
+    const u = new URL(String(url || '').trim());
+    u.hash = '';
+    return u.href.replace(/\/$/, '').toLowerCase();
+  } catch {
+    return String(url || '')
+      .split(/[?#]/)[0]
+      .replace(/\/$/, '')
+      .toLowerCase();
+  }
+}
+
+/** Heurística simples: texto parece inglês/outro idioma (não PT). */
+function pareceTextoEstrangeiro(texto) {
+  const t = String(texto || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#\d+;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (t.length < 18) return false;
+
+  const temAcentoPt = /[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/.test(t);
+  const marcadoresPt =
+    (t.match(/\b(não|você|está|também|após|sobre|igreja|pastor|segundo|durante|pela|pelos|pela|uma|umas|aos)\b/gi) || [])
+      .length;
+  if (temAcentoPt && marcadoresPt >= 1) return false;
+  if (marcadoresPt >= 3) return false;
+
+  const marcadoresEn =
+    (t.match(
+      /\b(the|and|of|to|in|for|with|from|that|this|are|was|were|have|has|will|should|church|after|before|their|they|said|about|into|over|under|christian|gospel|pastor|how|what|when|why|should)\b/gi
+    ) || []).length;
+  const palavras = t.split(/\s+/).filter(Boolean).length;
+  if (marcadoresEn >= 3) return true;
+  if (palavras >= 8 && marcadoresEn / palavras >= 0.12) return true;
+  // Sem acento PT e muitas palavras latinas típicas de inglês
+  if (!temAcentoPt && marcadoresEn >= 2 && palavras >= 6) return true;
+  return false;
+}
+
+/**
+ * Traduz título/resumo para PT-BR quando o original estiver em outro idioma.
+ * Grava no post e devolve o registro atualizado.
+ */
+async function garantirPostEmPortugues(fonte, post) {
+  if (!post || !env.deepseekApiKey) return post;
+  const precisa =
+    pareceTextoEstrangeiro(post.titulo) || pareceTextoEstrangeiro(post.resumo);
+  if (!precisa) return post;
+
+  try {
+    const ia = await resumirAlertaBiblioteca({
+      plataforma: fonte?.plataforma || 'site',
+      nomeFonte: fonte?.nome || '',
+      titulo: post.titulo,
+      url: post.url,
+      snippet: post.resumo,
+    });
+    const titulo = String(ia.titulo || post.titulo || 'Sem título').slice(0, 500);
+    const resumo = String(ia.resumo || post.resumo || '').slice(0, 2000) || null;
+    await BibliotecaPosts.update(post.id, { titulo, resumo });
+    return { ...post, titulo, resumo };
+  } catch (err) {
+    console.warn('[biblioteca] traduzir post:', err.message);
+    return post;
+  }
+}
+
+async function traduzirItemBrutoSeEstrangeiro(fonte, item) {
+  const titulo = item?.titulo || '';
+  const resumo = item?.resumo || '';
+  if (!env.deepseekApiKey) return { titulo, resumo };
+  if (!pareceTextoEstrangeiro(titulo) && !pareceTextoEstrangeiro(resumo)) {
+    return { titulo, resumo };
+  }
+  try {
+    const ia = await resumirAlertaBiblioteca({
+      plataforma: fonte?.plataforma || 'site',
+      nomeFonte: fonte?.nome || '',
+      titulo,
+      url: item?.url,
+      snippet: resumo,
+    });
+    return {
+      titulo: String(ia.titulo || titulo).slice(0, 500),
+      resumo: String(ia.resumo || resumo).slice(0, 2000) || null,
+    };
+  } catch (err) {
+    console.warn('[biblioteca] traduzir item:', err.message);
+    return { titulo, resumo };
+  }
+}
+
+/**
+ * Índice de matérias já publicadas do usuário (URL + títulos).
+ * Usado para não recomendar nem republicar a mesma pauta.
+ */
+async function carregarIndiceJaPublicados(userId) {
+  const AiMatters = require('../models/AiMatters');
+  const matters = await AiMatters.findByUser(userId, 200);
+  const urls = new Set();
+  const titulos = [];
+  for (const m of matters || []) {
+    if (m.status !== 'publicado' && !m.publication_id) continue;
+    if (m.fonte_url) urls.add(normalizarUrlBiblioteca(m.fonte_url));
+    if (m.fonte_titulo) titulos.push(String(m.fonte_titulo));
+    if (m.titulo) titulos.push(String(m.titulo));
+  }
+  return { urls, titulos };
+}
+
+function postJaFoiPublicado(post, indice) {
+  if (!post || !indice) return false;
+  const url = normalizarUrlBiblioteca(post.url);
+  if (url && indice.urls.has(url)) return true;
+  const titulo = String(post.titulo || '').trim();
+  if (titulo && indice.titulos.some((t) => titulosParecidos(titulo, t))) return true;
+  return false;
+}
+
+async function assertPostNaoPublicado(userId, post) {
+  if (post.matter_id) {
+    const AiMatters = require('../models/AiMatters');
+    const existing = await AiMatters.findById(post.matter_id);
+    if (existing?.status === 'publicado' || existing?.publication_id) {
+      const err = new Error('Esta matéria já foi publicada. Escolha outra pauta.');
+      err.status = 409;
+      throw err;
+    }
+  }
+  const indice = await carregarIndiceJaPublicados(userId);
+  if (postJaFoiPublicado(post, indice)) {
+    await BibliotecaPosts.update(post.id, {
+      status: 'ignorado',
+      viral_score: null,
+      viral_reason: null,
+      viral_analyzed_at: null,
+    }).catch(() => null);
+    const err = new Error('Esta matéria já foi publicada. Escolha outra pauta.');
+    err.status = 409;
+    throw err;
+  }
+}
+
+/** Remove da lista candidatos já publicados e marca-os como ignorados. */
+async function filtrarPostsNaoPublicados(userId, posts) {
+  const lista = Array.isArray(posts) ? posts : [];
+  if (!lista.length) return [];
+  const indice = await carregarIndiceJaPublicados(userId);
+  const livres = [];
+  for (const post of lista) {
+    if (postJaFoiPublicado(post, indice)) {
+      await BibliotecaPosts.update(post.id, {
+        status: 'ignorado',
+        viral_score: null,
+        viral_reason: null,
+        viral_analyzed_at: null,
+      }).catch(() => null);
+      continue;
+    }
+    livres.push(post);
+  }
+  return livres;
+}
+
+const directPublishingPosts = new Set();
+
+function clampAutopilotInterval(minutos) {
+  return Math.min(1440, Math.max(5, Number(minutos) || 30));
+}
+
+function clampAutopilotPosts(n) {
+  return Math.min(5, Math.max(1, Number(n) || 1));
+}
+
+function nextAutopilotRun(intervaloMinutos) {
+  return new Date(Date.now() + clampAutopilotInterval(intervaloMinutos) * 60 * 1000);
+}
 
 function normalizeUrl(raw) {
   const u = String(raw || '').trim();
@@ -89,10 +284,18 @@ function nextRun(intervaloMinutos) {
 }
 
 const SCAN_LIMIT = 10;
+const SCAN_LIMIT_SITE = 20;
 
-function dedupeItens(itens) {
+function dataPublicacaoValida(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dedupeItens(itens, limite = SCAN_LIMIT) {
   const seen = new Set();
-  const out = [];
+  const unicos = [];
+  const max = Math.min(40, Math.max(1, Number(limite) || SCAN_LIMIT));
   for (const item of itens) {
     if (!item?.url) continue;
     const key = String(item.externalId || item.url)
@@ -100,10 +303,29 @@ function dedupeItens(itens) {
       .toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(item);
-    if (out.length >= SCAN_LIMIT) break;
+    unicos.push({
+      ...item,
+      publicadoEm: dataPublicacaoValida(item.publicadoEm),
+      ordemOriginal: unicos.length,
+    });
   }
-  return out;
+
+  return unicos
+    .sort((a, b) => {
+      const dataA = a.publicadoEm?.getTime() || 0;
+      const dataB = b.publicadoEm?.getTime() || 0;
+      return dataB - dataA || a.ordemOriginal - b.ordemOriginal;
+    })
+    .slice(0, max)
+    .map(({ ordemOriginal, ...item }) => item);
+}
+
+function normalizarTipoMidia(item) {
+  const explicit = String(item?.mediaType || item?.media_type || '').toLowerCase();
+  if (['video', 'reel'].includes(explicit)) return 'video';
+  if (explicit === 'image') return 'image';
+  if (/instagram\.com\/(reel|reels|tv)\//i.test(String(item?.url || ''))) return 'video';
+  return 'post';
 }
 
 /**
@@ -125,12 +347,14 @@ async function coletarItensFonte(fonte) {
 
   if (plataforma === 'instagram') {
     const collected = [];
-    // 1) API web pública (sem Serper / sem cookies YT)
-    try {
-      collected.push(...(await coletarInstagramWebApi(fonte)));
-    } catch (err) {
-      console.warn('[biblioteca] ig api:', err.message);
-      erros.push(`api: ${err.message}`);
+    // 1) API/HTML/cookies são usados apenas se ScrapeCreators não estiver configurada
+    if (collected.length < 3) {
+      try {
+        collected.push(...(await coletarInstagramWebApi(fonte)));
+      } catch (err) {
+        console.warn('[biblioteca] ig api:', err.message);
+        erros.push(`api: ${err.message}`);
+      }
     }
     // 2) HTML / espelhos
     if (collected.length < 3) {
@@ -163,7 +387,7 @@ async function coletarItensFonte(fonte) {
         [
           'Não foi possível listar posts do Instagram.',
           erros[0] || '',
-          'Dica: exporte cookies do Instagram (Netscape) para YTDLP_IG_COOKIES_FILE, ou recarregue créditos do Serper.',
+          'Valide a sessão no servidor com: node scripts/test-ig-cookies.js. Se aparecer login_required ou challenge, reexporte os cookies Netscape de uma sessão ativa do Instagram.',
         ]
           .filter(Boolean)
           .join(' ')
@@ -256,6 +480,11 @@ async function coletarViaYtDlp(profileUrl, plataforma) {
       if (!link) return null;
       return {
         externalId: String(id || link),
+        mediaType:
+          plataforma === 'instagram' &&
+          ((e.vcodec && e.vcodec !== 'none') || /instagram\.com\/(reel|reels|tv)\//i.test(String(link)))
+            ? 'video'
+            : 'post',
         titulo: e.title || e.description?.slice(0, 80) || 'Publicação',
         url: link,
         resumo: e.description ? String(e.description).slice(0, 400) : null,
@@ -279,12 +508,14 @@ async function coletarViaSerper(fonte) {
     .trim();
   let q;
   if (fonte.plataforma === 'instagram' && handle) {
-    q = `site:instagram.com/${handle} (inurl:/p/ OR inurl:/reel/)`;
+    // Conta free do Serper rejeita padrões com OR / when:
+    q = `site:instagram.com/${handle}`;
   } else if (fonte.plataforma === 'facebook' && handle) {
     q = `site:facebook.com/${handle}`;
   } else if (fonte.plataforma === 'site') {
     try {
       const host = new URL(fonte.url).hostname.replace(/^www\./, '');
+      // Sem when:/tbs — plano free do Serper bloqueia esses padrões
       q = `site:${host}`;
     } catch {
       return [];
@@ -293,10 +524,13 @@ async function coletarViaSerper(fonte) {
     q = fonte.nome ? String(fonte.nome) : fonte.url;
   }
 
+  // Free tier costuma limitar num; 10 é seguro
+  const num = Math.min(10, Number(SCAN_LIMIT) || 10);
+
   try {
     const { data } = await axios.post(
       'https://google.serper.dev/search',
-      { q, num: SCAN_LIMIT, gl: 'br', hl: 'pt-br' },
+      { q, num, gl: 'br', hl: 'pt-br' },
       {
         headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
         timeout: 15_000,
@@ -365,12 +599,177 @@ async function coletarViaBraveWeb(fonte) {
   }
 }
 
-/** API web do Instagram (perfis públicos) — sem Serper. */
+/** API autenticada do Instagram: resolve o usuário e lista o feed recente. */
+async function coletarInstagramAuthenticatedApi(handle) {
+  const {
+    buildInstagramCookieHeader,
+    bootstrapInstagramSession,
+    instagramApiHeaders,
+    instagramFailureReason,
+    validateInstagramSession,
+  } = require('./instagramCookies');
+
+  const configuredCookies = buildInstagramCookieHeader();
+  if (!configuredCookies) return [];
+
+  const boot = await bootstrapInstagramSession(axios);
+  const cookieHeader = boot?.cookieHeader || configuredCookies;
+  const webHeaders = instagramApiHeaders(cookieHeader, {
+    mobile: false,
+    wwwClaim: boot?.claim || '0',
+  });
+  const mobileHeaders = instagramApiHeaders(cookieHeader, {
+    mobile: true,
+    wwwClaim: boot?.claim || '0',
+  });
+  const attempts = [];
+  let user = null;
+
+  const searchAttempts = [
+    {
+      label: 'topsearch-web',
+      url: 'https://www.instagram.com/web/search/topsearch/',
+      params: { query: handle },
+      headers: webHeaders,
+      users(data) {
+        return (Array.isArray(data?.users) ? data.users : []).map((entry) => entry?.user || entry);
+      },
+    },
+    {
+      label: 'users-search-web',
+      url: 'https://www.instagram.com/api/v1/users/search/',
+      params: { q: handle, count: 10 },
+      headers: webHeaders,
+      users(data) {
+        return Array.isArray(data?.users) ? data.users : [];
+      },
+    },
+    {
+      label: 'users-search-mobile',
+      url: 'https://i.instagram.com/api/v1/users/search/',
+      params: { q: handle, count: 10 },
+      headers: mobileHeaders,
+      users(data) {
+        return Array.isArray(data?.users) ? data.users : [];
+      },
+    },
+  ];
+
+  for (const attempt of searchAttempts) {
+    try {
+      const response = await axios.get(attempt.url, {
+        params: attempt.params,
+        headers: attempt.headers,
+        timeout: 20000,
+        validateStatus: () => true,
+      });
+      if (response.status >= 400) {
+        attempts.push(`${attempt.label}: ${instagramFailureReason(response.data, response.status)}`);
+        continue;
+      }
+      const users = attempt.users(response.data);
+      user = users.find(
+        (item) => String(item?.username || '').toLowerCase() === handle.toLowerCase()
+      );
+      if (user?.pk || user?.id) break;
+      attempts.push(`${attempt.label}: usuário não retornado`);
+    } catch (err) {
+      attempts.push(`${attempt.label}: ${instagramFailureReason(err.response?.data, err.response?.status || 0)}`);
+    }
+  }
+
+  const userId = user?.pk || user?.id;
+  if (!userId) {
+    const session = await validateInstagramSession(axios, boot);
+    if (!session.ok) {
+      throw new Error(`sessão do Instagram rejeitada: ${session.reason}`);
+    }
+    throw new Error(`usuário @${handle} não encontrado (${attempts.slice(0, 2).join('; ')})`);
+  }
+
+  const feedAttempts = [
+    {
+      label: 'feed-web',
+      url: `https://www.instagram.com/api/v1/feed/user/${encodeURIComponent(String(userId))}/`,
+      headers: webHeaders,
+    },
+    {
+      label: 'feed-mobile',
+      url: `https://i.instagram.com/api/v1/feed/user/${encodeURIComponent(String(userId))}/`,
+      headers: mobileHeaders,
+    },
+  ];
+  let items = [];
+  for (const attempt of feedAttempts) {
+    try {
+      const response = await axios.get(attempt.url, {
+        params: { count: SCAN_LIMIT },
+        headers: {
+          ...attempt.headers,
+          Referer: `https://www.instagram.com/${handle}/`,
+        },
+        timeout: 20000,
+        validateStatus: () => true,
+      });
+      if (response.status >= 400) {
+        attempts.push(`${attempt.label}: ${instagramFailureReason(response.data, response.status)}`);
+        continue;
+      }
+      items = Array.isArray(response.data?.items) ? response.data.items : [];
+      if (items.length) break;
+      attempts.push(`${attempt.label}: feed vazio`);
+    } catch (err) {
+      attempts.push(`${attempt.label}: ${instagramFailureReason(err.response?.data, err.response?.status || 0)}`);
+    }
+  }
+
+  if (!items.length) {
+    const session = await validateInstagramSession(axios, boot);
+    if (!session.ok) {
+      throw new Error(`sessão do Instagram rejeitada: ${session.reason}`);
+    }
+    throw new Error(`feed autenticado indisponível (${attempts.slice(-2).join('; ')})`);
+  }
+
+  return items
+    .map((item) => {
+      const shortcode = item?.code;
+      if (!shortcode) return null;
+      const caption = item.caption?.text || null;
+      const isReel = item.product_type === 'clips' || Number(item.media_type) === 2;
+      const thumbnail =
+        item.image_versions2?.candidates?.[0]?.url ||
+        item.carousel_media?.[0]?.image_versions2?.candidates?.[0]?.url ||
+        null;
+      return {
+        externalId: String(shortcode),
+        mediaType: isReel ? 'video' : 'image',
+        titulo: String(caption || `Post @${handle}`).slice(0, 120),
+        url: `https://www.instagram.com/${isReel ? 'reel' : 'p'}/${shortcode}/`,
+        resumo: caption ? String(caption).slice(0, 400) : null,
+        thumbnail,
+        publicadoEm: item.taken_at ? new Date(Number(item.taken_at) * 1000) : null,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, SCAN_LIMIT);
+}
+
+/** API do Instagram (sessão autenticada quando disponível, pública como fallback). */
 async function coletarInstagramWebApi(fonte) {
   const handle = String(fonte.handle || extrairHandle(fonte.url, 'instagram') || '')
     .replace(/^@/, '')
     .trim();
   if (!handle) return [];
+
+  let authenticatedError = null;
+  try {
+    const authenticatedItems = await coletarInstagramAuthenticatedApi(handle);
+    if (authenticatedItems.length) return authenticatedItems;
+  } catch (err) {
+    authenticatedError = err;
+    console.warn('[biblioteca] ig api autenticada:', err.message);
+  }
 
   const headers = {
     'User-Agent':
@@ -384,7 +783,6 @@ async function coletarInstagramWebApi(fonte) {
     Origin: 'https://www.instagram.com',
   };
 
-  // cookies IG opcionais (Netscape → cookie header simples sessionid/csrftoken se houver)
   const cookieHeader = await buildInstagramCookieHeader();
   if (cookieHeader) headers.Cookie = cookieHeader;
 
@@ -416,7 +814,8 @@ async function coletarInstagramWebApi(fonte) {
     }
   }
   if (!user) {
-    if (lastErr) throw lastErr;
+    const details = [authenticatedError?.message, lastErr?.message].filter(Boolean);
+    if (details.length) throw new Error(details.join('; '));
     return [];
   }
 
@@ -439,6 +838,7 @@ async function coletarInstagramWebApi(fonte) {
       null;
     items.push({
       externalId: String(shortcode),
+      mediaType: isReel ? 'video' : 'image',
       titulo: String(caption || `Post @${handle}`).slice(0, 120),
       url: `https://www.instagram.com/${pathPart}/${shortcode}/`,
       resumo: caption ? String(caption).slice(0, 400) : null,
@@ -559,6 +959,7 @@ async function coletarInstagramHtml(fonte) {
 async function coletarViaSite(fonte) {
   const collected = [];
   const erros = [];
+  const limite = SCAN_LIMIT_SITE;
 
   try {
     collected.push(...(await coletarViaRss(fonte.url)));
@@ -566,15 +967,15 @@ async function coletarViaSite(fonte) {
     erros.push(`rss: ${err.message}`);
   }
 
-  if (collected.length < SCAN_LIMIT) {
+  if (collected.length < limite) {
     try {
-      collected.push(...(await coletarSiteGoogleNews(fonte.url)));
+      collected.push(...(await coletarSiteGoogleNews(fonte.url, '7d')));
     } catch (err) {
       erros.push(`gnews: ${err.message}`);
     }
   }
 
-  if (collected.length < SCAN_LIMIT) {
+  if (collected.length < limite) {
     collected.push(...(await coletarViaSerper({ ...fonte, plataforma: 'site' })));
   }
 
@@ -590,7 +991,7 @@ async function coletarViaSite(fonte) {
     }
   }
 
-  const itens = dedupeItens(collected);
+  const itens = dedupeItens(collected, limite);
   if (!itens.length) {
     const err = new Error(
       `Não encontrei notícias neste site. ${erros[0] || 'Tente a URL da home ou do feed RSS.'}`
@@ -693,14 +1094,15 @@ async function descobrirFeedsRss(pageUrl) {
   return [...feeds];
 }
 
-async function coletarSiteGoogleNews(pageUrl) {
+async function coletarSiteGoogleNews(pageUrl, janela = '7d') {
   let host;
   try {
     host = new URL(pageUrl).hostname.replace(/^www\./, '');
   } catch {
     return [];
   }
-  const q = encodeURIComponent(`site:${host} when:1d`);
+  const when = ['1d', '7d'].includes(String(janela)) ? String(janela) : '7d';
+  const q = encodeURIComponent(`site:${host} when:${when}`);
   const rssUrl = `https://news.google.com/rss/search?q=${q}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
   const { data } = await axios.get(rssUrl, {
     timeout: 15000,
@@ -708,7 +1110,7 @@ async function coletarSiteGoogleNews(pageUrl) {
   });
   const xml = String(data || '');
   const blocks = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
-  return blocks.slice(0, SCAN_LIMIT).map((block) => {
+  return blocks.slice(0, SCAN_LIMIT_SITE).map((block) => {
     const titulo = (block.match(/<title[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/title>/i) ||
       block.match(/<title[^>]*>([\s\S]*?)<\/title>/i) ||
       [])[1];
@@ -887,30 +1289,23 @@ async function atualizarFonte(userId, fonteId, patch = {}) {
 async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) {
   const novos = [];
   for (const item of itens) {
-    const externalId = String(item.externalId || item.url).slice(0, 300);
+    const url = String(item.url || '').trim();
+    if (!url) continue;
+    const externalId = stableExternalId(item.externalId || url);
     const exists = await BibliotecaPosts.findByExternal(fonte.id, externalId);
     if (exists) continue;
 
     // também evita URL duplicada sem external_id estável
     const byUrl = await BibliotecaPosts.findByFonte(fonte.id, 50);
-    if (byUrl.some((p) => p.url === item.url)) continue;
+    if (byUrl.some((p) => p.url === url)) continue;
 
-    const [postId] = await BibliotecaPosts.create({
-      fonte_id: fonte.id,
-      user_id: fonte.user_id,
-      external_id: externalId,
-      titulo: String(item.titulo || 'Sem título').slice(0, 500),
-      url: item.url,
-      resumo: item.resumo ? String(item.resumo).slice(0, 2000) : null,
-      thumbnail: item.thumbnail || null,
-      publicado_em: item.publicadoEm || null,
-      status: 'novo',
-    });
+    const estrangeiro =
+      pareceTextoEstrangeiro(item.titulo) || pareceTextoEstrangeiro(item.resumo);
+    // Sempre traduz/resume em PT quando for língua estrangeira; senão só se gerarResumoIa
+    let tituloFinal = String(item.titulo || 'Sem título').slice(0, 500);
+    let resumoFinal = item.resumo ? String(item.resumo).slice(0, 2000) : null;
 
-    let alertaTitulo = `${fonte.nome}: ${item.titulo || 'novo conteúdo'}`.slice(0, 300);
-    let alertaResumo = item.resumo || `Novo conteúdo em ${fonte.plataforma}: ${item.url}`;
-
-    if (gerarResumoIa && env.deepseekApiKey) {
+    if ((gerarResumoIa || estrangeiro) && env.deepseekApiKey) {
       try {
         const ia = await resumirAlertaBiblioteca({
           plataforma: fonte.plataforma,
@@ -919,20 +1314,35 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
           url: item.url,
           snippet: item.resumo,
         });
-        alertaTitulo = ia.titulo.slice(0, 300);
-        alertaResumo = ia.resumo || alertaResumo;
-        await BibliotecaPosts.update(postId, { resumo: alertaResumo });
+        tituloFinal = String(ia.titulo || tituloFinal).slice(0, 500);
+        resumoFinal = String(ia.resumo || resumoFinal || '').slice(0, 2000) || null;
       } catch (err) {
-        console.warn('[biblioteca] resumo IA:', err.message);
+        console.warn('[biblioteca] resumo/tradução IA:', err.message);
+        const fallback = await traduzirItemBrutoSeEstrangeiro(fonte, item);
+        tituloFinal = String(fallback.titulo || tituloFinal).slice(0, 500);
+        resumoFinal = fallback.resumo ? String(fallback.resumo).slice(0, 2000) : resumoFinal;
       }
     }
+
+    const [postId] = await BibliotecaPosts.create({
+      fonte_id: fonte.id,
+      user_id: fonte.user_id,
+      external_id: externalId,
+      titulo: tituloFinal,
+      url,
+      resumo: resumoFinal,
+      thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
+      media_type: normalizarTipoMidia(item),
+      publicado_em: item.publicadoEm || null,
+      status: 'novo',
+    });
 
     await BibliotecaAlertas.create({
       user_id: fonte.user_id,
       fonte_id: fonte.id,
       post_id: postId,
-      titulo: alertaTitulo,
-      resumo: alertaResumo,
+      titulo: `${fonte.nome}: ${tituloFinal}`.slice(0, 300),
+      resumo: resumoFinal || `Novo conteúdo em ${fonte.plataforma}: ${item.url}`,
       lido: false,
     });
 
@@ -941,26 +1351,35 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
   return novos;
 }
 
-async function escanearFonte(fonte, { silentFirst = false } = {}) {
-  const itens = await coletarItensFonte(fonte);
+async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
   const jaTemPosts = (await BibliotecaPosts.findByFonte(fonte.id, 1)).length > 0;
-  const lote = itens.slice(0, SCAN_LIMIT);
+  const limite = fonte.plataforma === 'site' ? SCAN_LIMIT_SITE : SCAN_LIMIT;
+  const lote = dedupeItens(itens, limite);
 
-  // primeira varredura automática (monitor): baseline sem flood de alertas
+  // Primeira varredura automática: cria uma base sem inundar os alertas.
   if (!jaTemPosts && silentFirst) {
     let salvos = 0;
     for (const item of lote) {
-      const externalId = String(item.externalId || item.url).slice(0, 300);
+      const url = String(item.url || '').trim();
+      if (!url) continue;
+      const externalId = stableExternalId(item.externalId || url);
       const exists = await BibliotecaPosts.findByExternal(fonte.id, externalId);
       if (exists) continue;
+      // Mesmo na baseline: traduz título/resumo estrangeiro para PT
+      const traduzido = await traduzirItemBrutoSeEstrangeiro(fonte, item);
       await BibliotecaPosts.create({
         fonte_id: fonte.id,
         user_id: fonte.user_id,
         external_id: externalId,
-        titulo: String(item.titulo || 'Sem título').slice(0, 500),
-        url: item.url,
-        resumo: item.resumo ? String(item.resumo).slice(0, 2000) : null,
-        thumbnail: item.thumbnail || null,
+        titulo: String(traduzido.titulo || item.titulo || 'Sem título').slice(0, 500),
+        url,
+        resumo: traduzido.resumo
+          ? String(traduzido.resumo).slice(0, 2000)
+          : item.resumo
+            ? String(item.resumo).slice(0, 2000)
+            : null,
+        thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
+        media_type: normalizarTipoMidia(item),
         publicado_em: item.publicadoEm || null,
         status: 'visto',
       });
@@ -971,7 +1390,7 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
       proxima_execucao: nextRun(fonte.intervalo_minutos),
       ultimo_erro: null,
       ultimo_external_id: lote[0]
-        ? String(lote[0].externalId || lote[0].url).slice(0, 300)
+        ? stableExternalId(lote[0].externalId || lote[0].url)
         : fonte.ultimo_external_id,
       total_detectados: Number(fonte.total_detectados || 0) + salvos,
     });
@@ -984,11 +1403,156 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
     proxima_execucao: nextRun(fonte.intervalo_minutos),
     ultimo_erro: null,
     ultimo_external_id: lote[0]
-      ? String(lote[0].externalId || lote[0].url).slice(0, 300)
+      ? stableExternalId(lote[0].externalId || lote[0].url)
       : fonte.ultimo_external_id,
     total_detectados: Number(fonte.total_detectados || 0) + novos.length,
   });
   return { novos, itens: lote.length };
+}
+
+const BRIGHTDATA_TRIGGER_STALE_MS = 5 * 60_000;
+const BRIGHTDATA_SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
+let brightDataTickRunning = false;
+
+function scrapeAgeMs(fonte) {
+  const requestedAt = fonte?.scrape_requested_at
+    ? new Date(fonte.scrape_requested_at).getTime()
+    : 0;
+  return requestedAt ? Math.max(0, Date.now() - requestedAt) : Infinity;
+}
+
+function scrapePendente(fonte) {
+  return ['triggering', 'pending'].includes(String(fonte?.scrape_status || ''));
+}
+
+async function iniciarBrightDataScan(fonte, { silentFirst = false } = {}) {
+  const brightdata = require('./brightdataInstagram');
+  let atual = await BibliotecaFontes.findById(fonte.id);
+
+  if (scrapePendente(atual)) {
+    const staleTrigger =
+      atual.scrape_status === 'triggering' &&
+      scrapeAgeMs(atual) > BRIGHTDATA_TRIGGER_STALE_MS;
+
+    if (!staleTrigger) {
+      // Um clique manual transforma uma baseline automática pendente em scan visível.
+      if (!silentFirst && atual.scrape_silent_first) {
+        await BibliotecaFontes.update(atual.id, { scrape_silent_first: false });
+      }
+      return {
+        pending: true,
+        itens: 0,
+        novos: [],
+        message: 'Escaneando em segundo plano. Os posts aparecerão automaticamente.',
+      };
+    }
+
+    await BibliotecaFontes.updateScrapeIfStatus(atual.id, 'triggering', {
+      scrape_snapshot_id: null,
+      scrape_status: 'failed',
+      scrape_error: 'Disparo Bright Data interrompido antes de salvar o snapshot',
+      scrape_silent_first: false,
+    });
+  }
+
+  const claimed = await BibliotecaFontes.tryStartScrape(fonte.id, { silentFirst });
+  if (!claimed) {
+    return {
+      pending: true,
+      itens: 0,
+      novos: [],
+      message: 'Já existe um escaneamento em segundo plano.',
+    };
+  }
+
+  try {
+    const handle = atual.handle || extrairHandle(atual.url, 'instagram');
+    const result = await brightdata.dispararColeta(handle, SCAN_LIMIT);
+
+    if (result.posts) {
+      const salvo = await salvarItensFonte(atual, result.posts, { silentFirst });
+      await BibliotecaFontes.updateScrapeIfStatus(atual.id, 'triggering', {
+        scrape_snapshot_id: null,
+        scrape_status: null,
+        scrape_requested_at: null,
+        scrape_error: null,
+        scrape_silent_first: false,
+      });
+      return { ...salvo, pending: false };
+    }
+
+    const snapshotSaved = await BibliotecaFontes.updateScrapeIfStatus(atual.id, 'triggering', {
+      scrape_snapshot_id: result.snapshotId,
+      scrape_status: 'pending',
+      scrape_error: null,
+      proxima_execucao: nextRun(atual.intervalo_minutos),
+    });
+    if (!snapshotSaved) {
+      throw new Error('O estado da fonte mudou durante o disparo Bright Data');
+    }
+    console.log(`[brightdata-ig] snapshot ${result.snapshotId} iniciado para @${handle}`);
+    return {
+      pending: true,
+      itens: 0,
+      novos: [],
+      message: 'Escaneando em segundo plano. Os posts aparecerão automaticamente.',
+    };
+  } catch (err) {
+    await BibliotecaFontes.updateScrapeIfStatus(atual.id, 'triggering', {
+      scrape_snapshot_id: null,
+      scrape_status: 'failed',
+      scrape_error: String(err.message || err).slice(0, 1000),
+      scrape_silent_first: false,
+      ultimo_erro: String(err.message || err).slice(0, 1000),
+      ultimo_scan: new Date(),
+      proxima_execucao: nextRun(atual.intervalo_minutos),
+    });
+    err.status = err.status || 502;
+    throw err;
+  }
+}
+
+async function escanearFonte(fonte, { silentFirst = false } = {}) {
+  const scrapeCreators = require('./scrapeCreatorsInstagram');
+  let resultado;
+  if (fonte.plataforma === 'instagram' && scrapeCreators.isConfigured()) {
+    // Descarta qualquer estado legado da Bright Data antes da coleta direta.
+    await BibliotecaFontes.update(fonte.id, {
+      scrape_snapshot_id: null,
+      scrape_status: null,
+      scrape_requested_at: null,
+      scrape_error: null,
+      scrape_silent_first: false,
+    });
+    const handle = fonte.handle || extrairHandle(fonte.url, 'instagram');
+    const itens = await scrapeCreators.listarPostsPerfil(handle, SCAN_LIMIT);
+    console.log(`[scrapecreators-ig] @${handle}: ${itens.length} post(s)`);
+    resultado = await salvarItensFonte(fonte, itens, { silentFirst });
+  } else {
+    const itens = await coletarItensFonte(fonte);
+    resultado = await salvarItensFonte(fonte, itens, { silentFirst });
+  }
+
+  // Traduz posts antigos ainda em inglês/outro idioma (para a lista e a matéria)
+  try {
+    await traduzirPostsPendentesDaFonte(fonte, 12);
+  } catch (err) {
+    console.warn('[biblioteca] traduzir pendentes:', err.message);
+  }
+  return resultado;
+}
+
+async function traduzirPostsPendentesDaFonte(fonte, limit = 12) {
+  if (!env.deepseekApiKey) return 0;
+  const posts = await BibliotecaPosts.findByFonte(fonte.id, Math.min(30, Math.max(1, limit)));
+  let n = 0;
+  for (const post of posts) {
+    if (post.matter_id) continue;
+    if (!pareceTextoEstrangeiro(post.titulo) && !pareceTextoEstrangeiro(post.resumo)) continue;
+    await garantirPostEmPortugues(fonte, post);
+    n += 1;
+  }
+  return n;
 }
 
 async function escanearAgora(userId, fonteId) {
@@ -1014,7 +1578,13 @@ async function escanearAgora(userId, fonteId) {
 /**
  * Gera matéria texto (ai_matters) a partir de um post da biblioteca.
  */
-async function gerarTextoDePost({ userId, postId, facebookPageId, tipoPublicacao = 'texto' }) {
+async function gerarTextoDePost({
+  userId,
+  postId,
+  facebookPageId,
+  tipoPublicacao = 'texto',
+  publicarAgora = false,
+}) {
   assertDeepseek();
   const post = await BibliotecaPosts.findById(postId);
   if (!post || Number(post.user_id) !== Number(userId)) {
@@ -1022,7 +1592,10 @@ async function gerarTextoDePost({ userId, postId, facebookPageId, tipoPublicacao
     err.status = 404;
     throw err;
   }
+  await assertPostNaoPublicado(userId, post);
   const fonte = await BibliotecaFontes.findById(post.fonte_id);
+  // Fonte em inglês/outro idioma → traduz título/resumo antes de gerar a matéria
+  const postPt = await garantirPostEmPortugues(fonte, post);
   const pageId = facebookPageId || fonte?.facebook_page_id;
   if (pageId) {
     const page = await resolvePage(userId, pageId);
@@ -1034,15 +1607,18 @@ async function gerarTextoDePost({ userId, postId, facebookPageId, tipoPublicacao
   }
 
   const topico = {
-    titulo: post.titulo,
-    link: post.url,
-    resumo: post.resumo,
+    titulo: postPt.titulo,
+    link: postPt.url,
+    resumo: postPt.resumo,
     nicho: fonte?.nome || fonte?.plataforma || 'rede social',
     fonte: fonte?.nome,
     veiculo: fonte?.plataforma,
-    imagemFonte: post.thumbnail,
+    imagemFonte: postPt.thumbnail,
     redeSocial: true,
     tipoFonte: 'rede_social',
+    // Garante matéria em PT mesmo se a apuração puxar trechos em inglês
+    idiomaObrigatorio: 'pt-BR',
+    traduzirFonte: true,
   };
 
   const gerado = await materiaIaService.gerarCompleto({
@@ -1050,31 +1626,54 @@ async function gerarTextoDePost({ userId, postId, facebookPageId, tipoPublicacao
     facebookPageId: pageId || null,
     topico,
     tipoPublicacao,
-    status: 'rascunho',
+    status: publicarAgora ? 'publicado' : 'rascunho',
   });
 
   await BibliotecaPosts.update(post.id, {
     status: 'gerado_texto',
     matter_id: gerado.matter?.id || null,
+    titulo: postPt.titulo,
+    resumo: postPt.resumo,
   });
 
   return gerado;
 }
 
 /**
- * Enfileira importação de vídeo do post (YouTube/TikTok) na Fila.
+ * Enfileira importação de vídeo do post na Fila ou no pipeline de Reel.
  */
-async function gerarVideoDePost({ userId, postId }) {
+async function gerarVideoDePost({ userId, postId, facebookPageId = null }) {
   const post = await BibliotecaPosts.findById(postId);
   if (!post || Number(post.user_id) !== Number(userId)) {
     const err = new Error('Post não encontrado');
     err.status = 404;
     throw err;
   }
+  await assertPostNaoPublicado(userId, post);
 
   const fonte = await BibliotecaFontes.findById(post.fonte_id);
+  const instagramVideo =
+    fonte?.plataforma === 'instagram' &&
+    (post.media_type === 'video' || /instagram\.com\/(reel|reels|tv)\//i.test(String(post.url)));
+
+  if (instagramVideo) {
+    const result = await materiaIaService.gerarDeLink({
+      userId,
+      url: post.url,
+      facebookPageId: facebookPageId || fonte?.facebook_page_id || null,
+      tipoPublicacao: 'reel',
+      status: 'rascunho',
+    });
+    await BibliotecaPosts.update(post.id, {
+      status: 'gerado_video',
+      matter_id: result.matter?.id || null,
+      video_id: result.video?.id || null,
+    });
+    return result;
+  }
+
   if (fonte && !['youtube', 'tiktok'].includes(fonte.plataforma)) {
-    const err = new Error('Importação de vídeo automática só para YouTube e TikTok. Use upload manual para Instagram/Facebook.');
+    const err = new Error('Este item não foi identificado como vídeo. Escaneie a fonte novamente e tente em um Reel.');
     err.status = 422;
     throw err;
   }
@@ -1113,6 +1712,234 @@ async function gerarVideoDePost({ userId, postId }) {
   return { video, created: true, queued: true };
 }
 
+/** Gera e publica imediatamente, ou autoriza o Reel a publicar assim que ficar pronto. */
+async function executarPublicacaoDireta({ userId, postId, facebookPageId }) {
+  const pageId = Number(facebookPageId || 0);
+  if (!pageId) {
+    const err = new Error('Selecione a Página do Facebook antes de publicar');
+    err.status = 400;
+    throw err;
+  }
+  const page = await resolvePage(userId, pageId);
+  if (!page) {
+    const err = new Error('Página do Facebook inválida');
+    err.status = 400;
+    throw err;
+  }
+
+  const post = await BibliotecaPosts.findById(postId);
+  if (!post || Number(post.user_id) !== Number(userId)) {
+    const err = new Error('Post não encontrado');
+    err.status = 404;
+    throw err;
+  }
+  const fonte = await BibliotecaFontes.findById(post.fonte_id);
+  const isInstagramVideo =
+    fonte?.plataforma === 'instagram' &&
+    (post.media_type === 'video' ||
+      /instagram\.com\/(reel|reels|tv)\//i.test(String(post.url || '')));
+
+  // Requisição repetida após publicação: responde sem criar matéria/publicação duplicada.
+  if (post.matter_id) {
+    const AiMatters = require('../models/AiMatters');
+    const existingMatter = await AiMatters.findById(post.matter_id);
+    if (existingMatter?.status === 'publicado') {
+      return {
+        modo: existingMatter.tipo_publicacao === 'reel' ? 'reel' : 'foto',
+        published: true,
+        alreadyPublished: true,
+        queued: false,
+        matterId: existingMatter.id,
+        message: 'Este conteúdo já foi publicado.',
+      };
+    }
+  }
+
+  // Também bloqueia se a mesma URL/título já saiu em outra matéria publicada
+  try {
+    await assertPostNaoPublicado(userId, post);
+  } catch (err) {
+    if (err.status === 409) {
+      return {
+        modo: 'foto',
+        published: true,
+        alreadyPublished: true,
+        queued: false,
+        matterId: post.matter_id || null,
+        message: err.message,
+      };
+    }
+    throw err;
+  }
+
+  if (isInstagramVideo) {
+    const result = await gerarVideoDePost({
+      userId,
+      postId: post.id,
+      facebookPageId: page.id,
+    });
+    if (!result.video?.id || !result.matter?.id) {
+      const err = new Error('Não foi possível vincular o vídeo e a matéria do Reel');
+      err.status = 422;
+      throw err;
+    }
+
+    const reelPublisher = require('./bibliotecaReelAutopilotService');
+    await reelPublisher.habilitarPublicacaoQuandoPronto({
+      videoId: result.video.id,
+      matterId: result.matter.id,
+      bibliotecaPostId: post.id,
+      facebookPageId: page.id,
+      origem: 'manual',
+    });
+    const ready = await reelPublisher.publicarSePronto({
+      videoId: result.video.id,
+      clipId: result.clip?.id || null,
+      matterId: result.matter.id,
+    });
+
+    return {
+      modo: 'reel',
+      published: Boolean(ready.published),
+      alreadyPublished: Boolean(ready.alreadyPublished),
+      queued: !ready.published,
+      matterId: result.matter.id,
+      message: ready.published
+        ? 'Reel publicado no Facebook.'
+        : 'Reel em processamento. Ele será publicado automaticamente quando a transcrição, a matéria e a capa ficarem prontas.',
+    };
+  }
+
+  const gerado = await gerarTextoDePost({
+    userId,
+    postId: post.id,
+    facebookPageId: page.id,
+    tipoPublicacao: 'foto',
+    publicarAgora: true,
+  });
+  const published = Boolean(
+    gerado.publication || gerado.fbPostUrl || gerado.matter?.status === 'publicado'
+  );
+  return {
+    modo: 'foto',
+    published,
+    queued: false,
+    matterId: gerado.matter?.id || null,
+    fbPostUrl: gerado.fbPostUrl || null,
+    avisos: gerado.avisos || [],
+    message: published
+      ? 'Conteúdo publicado no Facebook.'
+      : 'A matéria foi preparada, mas não foi publicada. Verifique os avisos da imagem/capa.',
+  };
+}
+
+async function publicarPostDireto(options) {
+  const key = `${Number(options?.userId || 0)}:${Number(options?.postId || 0)}`;
+  if (directPublishingPosts.has(key)) {
+    const err = new Error('Este conteúdo já está sendo preparado para publicação');
+    err.status = 409;
+    throw err;
+  }
+  directPublishingPosts.add(key);
+  try {
+    return await executarPublicacaoDireta(options);
+  } finally {
+    directPublishingPosts.delete(key);
+  }
+}
+
+async function tickBrightDataSnapshots() {
+  if (brightDataTickRunning) return;
+  brightDataTickRunning = true;
+
+  try {
+    const brightdata = require('./brightdataInstagram');
+    if (!brightdata.isConfigured()) return;
+
+    const fontes = await BibliotecaFontes.findPendingScrapes(20);
+    for (const fonte of fontes) {
+      const age = scrapeAgeMs(fonte);
+      const staleTrigger =
+        fonte.scrape_status === 'triggering' && age > BRIGHTDATA_TRIGGER_STALE_MS;
+
+      if (staleTrigger) {
+        const message = 'Disparo Bright Data interrompido antes de salvar o snapshot';
+        await BibliotecaFontes.updateScrapeIfStatus(fonte.id, 'triggering', {
+          scrape_snapshot_id: null,
+          scrape_status: 'failed',
+          scrape_error: message,
+          scrape_silent_first: false,
+          ultimo_erro: message,
+          ultimo_scan: new Date(),
+          proxima_execucao: nextRun(fonte.intervalo_minutos),
+        });
+        continue;
+      }
+
+      if (fonte.scrape_status !== 'pending' || !fonte.scrape_snapshot_id) continue;
+      const snapshotId = fonte.scrape_snapshot_id;
+
+      try {
+        const handle = fonte.handle || extrairHandle(fonte.url, 'instagram');
+        // Faz uma consulta final antes de expirar, evitando abandonar resultado tardio.
+        const result = await brightdata.obterResultado(snapshotId, handle);
+        if (result.status === 'pending') {
+          if (age > BRIGHTDATA_SNAPSHOT_MAX_AGE_MS) {
+            const message = 'Snapshot Bright Data não concluiu em 30 minutos';
+            await BibliotecaFontes.updateScrapeIfCurrent(fonte.id, snapshotId, {
+              scrape_snapshot_id: null,
+              scrape_status: 'failed',
+              scrape_error: message,
+              scrape_silent_first: false,
+              ultimo_erro: message,
+              ultimo_scan: new Date(),
+              proxima_execucao: nextRun(fonte.intervalo_minutos),
+            });
+          } else if (result.error) {
+            await BibliotecaFontes.updateScrapeIfCurrent(fonte.id, snapshotId, {
+              scrape_error: String(result.error).slice(0, 1000),
+            });
+          }
+          continue;
+        }
+
+        if (result.status === 'failed') {
+          throw new Error(`Snapshot Bright Data falhou: ${result.error}`);
+        }
+
+        const salvo = await salvarItensFonte(fonte, result.posts, {
+          silentFirst: Boolean(fonte.scrape_silent_first),
+        });
+        const completed = await BibliotecaFontes.updateScrapeIfCurrent(fonte.id, snapshotId, {
+          scrape_snapshot_id: null,
+          scrape_status: null,
+          scrape_requested_at: null,
+          scrape_error: null,
+          scrape_silent_first: false,
+        });
+        if (completed) {
+          console.log(
+            `[brightdata-ig] @${handle}: ${salvo.itens} post(s), ${salvo.novos?.length || salvo.salvos || 0} novo(s) salvos`
+          );
+        }
+      } catch (err) {
+        console.error(`[brightdata-ig] fonte #${fonte.id}:`, err.message);
+        await BibliotecaFontes.updateScrapeIfCurrent(fonte.id, snapshotId, {
+          scrape_snapshot_id: null,
+          scrape_status: 'failed',
+          scrape_error: String(err.message || err).slice(0, 1000),
+          scrape_silent_first: false,
+          ultimo_erro: String(err.message || err).slice(0, 1000),
+          ultimo_scan: new Date(),
+          proxima_execucao: nextRun(fonte.intervalo_minutos),
+        });
+      }
+    }
+  } finally {
+    brightDataTickRunning = false;
+  }
+}
+
 async function tickFontes() {
   const due = await BibliotecaFontes.findDue();
   for (const fonte of due) {
@@ -1129,19 +1956,420 @@ async function tickFontes() {
   }
 }
 
+async function salvarRankingViral(userId, ranking) {
+  await BibliotecaPosts.clearViralRanking(userId);
+  const analyzedAt = new Date();
+  for (const item of ranking || []) {
+    await BibliotecaPosts.saveViralRanking(item.id, {
+      score: item.score,
+      reason: item.motivo,
+      analyzedAt,
+      tituloPt: item.titulo_pt || null,
+    });
+  }
+}
+
+async function listarMelhoresParaPublicar(userId, limit = 30) {
+  const lista = await BibliotecaPosts.findMelhoresPublicacao(userId, limit, 50);
+  return filtrarPostsNaoPublicados(userId, lista);
+}
+
+async function ocultarMelhorParaPublicar(userId, postId) {
+  const post = await BibliotecaPosts.findById(postId);
+  if (!post || Number(post.user_id) !== Number(userId)) {
+    const err = new Error('Sugestão não encontrada');
+    err.status = 404;
+    throw err;
+  }
+  await BibliotecaPosts.clearViralRankingPost(userId, postId);
+  return listarMelhoresParaPublicar(userId, 30);
+}
+
+async function escanearFontesDoUsuario(userId, { silentFirst = false, concorrencia = 3 } = {}) {
+  const fontes = await BibliotecaFontes.findByUser(userId);
+  const ativas = (fontes || []).filter((f) => f.monitorar !== false && f.monitorar !== 0);
+  const resultado = {
+    fontes: ativas.length,
+    escaneadas: 0,
+    novas: 0,
+    pendentes: 0,
+    erros: [],
+  };
+  if (!ativas.length) return resultado;
+
+  const fila = [...ativas];
+  const workers = Math.min(Math.max(1, Number(concorrencia) || 3), fila.length);
+
+  async function worker() {
+    while (fila.length) {
+      const fonte = fila.shift();
+      if (!fonte) break;
+      try {
+        const r = await escanearFonte(fonte, { silentFirst });
+        resultado.escaneadas += 1;
+        if (r?.pending) {
+          resultado.pendentes += 1;
+        } else {
+          resultado.novas += Array.isArray(r?.novos) ? r.novos.length : Number(r?.salvos || 0);
+        }
+      } catch (err) {
+        resultado.erros.push(`${fonte.nome || fonte.url}: ${err.message || err}`);
+        await BibliotecaFontes.update(fonte.id, {
+          ultimo_erro: String(err.message || err).slice(0, 1000),
+          proxima_execucao: nextRun(fonte.intervalo_minutos),
+          ultimo_scan: new Date(),
+        }).catch(() => null);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return resultado;
+}
+
+async function analisarMelhoresParaPublicar(userId, limit = 30) {
+  assertDeepseek();
+  const quantidade = Math.min(30, Math.max(1, Number(limit) || 30));
+
+  // Sempre varre as fontes antes de remontar a lista
+  const scan = await escanearFontesDoUsuario(userId, { silentFirst: false, concorrencia: 3 });
+
+  let candidatos = await BibliotecaPosts.findCandidatosAutopilot(userId, 40);
+  candidatos = await filtrarPostsNaoPublicados(userId, candidatos);
+  if (!candidatos.length) {
+    await BibliotecaPosts.clearViralRanking(userId);
+    return { melhores: [], scan };
+  }
+
+  const ranking = await ranquearPostsViralFacebook(
+    candidatos.map((post) => ({
+      id: post.id,
+      fonte_id: post.fonte_id,
+      titulo: post.titulo,
+      resumo: post.resumo,
+      fonte: post.fonte_nome,
+      plataforma: post.fonte_plataforma,
+      tipo_midia: post.media_type,
+      status: post.status,
+      publicado_em: post.publicado_em,
+      created_at: post.created_at,
+    })),
+    quantidade
+  );
+  await salvarRankingViral(userId, ranking);
+  const melhores = await listarMelhoresParaPublicar(userId, quantidade);
+  return { melhores, scan };
+}
+
 async function dashboardUsuario(userId) {
-  const [fontes, posts, alertas, countRow] = await Promise.all([
+  await BibliotecaAlertas.limparOrfaos(userId).catch(() => 0);
+  const [fontes, postsPorFonte, alertas, countRow, autopilot, melhores] = await Promise.all([
     BibliotecaFontes.findByUser(userId),
-    BibliotecaPosts.findByUser(userId, { limit: 30 }),
-    BibliotecaAlertas.findByUser(userId, { limit: 30 }),
+    BibliotecaPosts.countsByUser(userId),
+    BibliotecaAlertas.findByUser(userId, { limit: 50 }),
     BibliotecaAlertas.countNaoLidos(userId),
+    obterAutopilot(userId),
+    listarMelhoresParaPublicar(userId, 30),
   ]);
+  const fontesComContagem = (fontes || []).map((f) => ({
+    ...f,
+    posts_count: Number(postsPorFonte[Number(f.id)] || 0),
+  }));
   return {
-    fontes,
-    posts,
+    fontes: fontesComContagem,
     alertas,
     alertasNaoLidos: Number(countRow?.total || 0),
+    autopilot,
+    melhores,
   };
+}
+
+async function detalheFonte(userId, fonteId) {
+  const fonte = await BibliotecaFontes.findById(fonteId);
+  if (!fonte || Number(fonte.user_id) !== Number(userId)) {
+    const err = new Error('Fonte não encontrada');
+    err.status = 404;
+    throw err;
+  }
+  const [posts, countRow] = await Promise.all([
+    BibliotecaPosts.findByFonte(fonte.id, 80),
+    BibliotecaPosts.countByFonte(fonte.id),
+  ]);
+  return {
+    fonte: { ...fonte, posts_count: Number(countRow?.total || 0) },
+    posts,
+  };
+}
+
+async function obterAutopilot(userId) {
+  let row = await BibliotecaAutopilot.findByUser(userId);
+  if (!row) {
+    const [id] = await BibliotecaAutopilot.create({
+      user_id: userId,
+      facebook_page_id: null,
+      ativo: false,
+      intervalo_minutos: 30,
+      posts_por_ciclo: 1,
+      tipo_publicacao: 'foto',
+      proxima_execucao: null,
+      total_publicados: 0,
+    });
+    row = await BibliotecaAutopilot.findById(id);
+  }
+  return row;
+}
+
+async function salvarAutopilot(userId, body = {}) {
+  const atual = await obterAutopilot(userId);
+  const ativo =
+    body.ativo === true || body.ativo === '1' || body.ativo === 'on' || body.ativo === 1;
+  const intervalo = clampAutopilotInterval(body.intervalo_minutos ?? body.intervaloMinutos ?? atual.intervalo_minutos);
+  const postsPorCiclo = clampAutopilotPosts(body.posts_por_ciclo ?? body.postsPorCiclo ?? atual.posts_por_ciclo);
+
+  let facebookPageId = body.facebook_page_id ?? body.facebookPageId;
+  if (facebookPageId === '' || facebookPageId === undefined) {
+    facebookPageId = atual.facebook_page_id;
+  } else if (facebookPageId == null) {
+    facebookPageId = null;
+  } else {
+    facebookPageId = Number(facebookPageId);
+  }
+
+  if (ativo) {
+    if (!facebookPageId) {
+      const err = new Error('Selecione uma Página do Facebook para ativar o piloto automático');
+      err.status = 400;
+      throw err;
+    }
+    const page = await resolvePage(userId, facebookPageId);
+    if (!page) {
+      const err = new Error('Página do Facebook inválida');
+      err.status = 400;
+      throw err;
+    }
+    facebookPageId = page.id;
+  }
+
+  const patch = {
+    ativo: Boolean(ativo),
+    facebook_page_id: facebookPageId || null,
+    intervalo_minutos: intervalo,
+    posts_por_ciclo: postsPorCiclo,
+    tipo_publicacao: 'foto',
+    ultimo_erro: null,
+  };
+
+  // Ao ativar (ou reativar), agenda o próximo ciclo em breve
+  if (ativo) {
+    const wasOff = !atual.ativo;
+    if (wasOff || !atual.proxima_execucao) {
+      patch.proxima_execucao = new Date(Date.now() + 60_000);
+    }
+  } else {
+    patch.proxima_execucao = null;
+  }
+
+  await BibliotecaAutopilot.update(atual.id, patch);
+  return obterAutopilot(userId);
+}
+
+/**
+ * Gera e publica uma matéria a partir de um post (piloto — foto + Minha marca).
+ */
+async function publicarPostAutopilot({ userId, post, facebookPageId }) {
+  const fonte = await BibliotecaFontes.findById(post.fonte_id);
+  const instagramVideo =
+    fonte?.plataforma === 'instagram' &&
+    (post.media_type === 'video' || /instagram\.com\/(reel|reels|tv)\//i.test(String(post.url)));
+
+  if (instagramVideo) {
+    const reel = await materiaIaService.gerarDeLink({
+      userId,
+      url: post.url,
+      facebookPageId,
+      tipoPublicacao: 'reel',
+      status: 'rascunho',
+    });
+    if (!reel.video?.id || !reel.matter?.id) {
+      throw new Error('O pipeline do Reel não retornou vídeo e matéria vinculados');
+    }
+
+    const reelAutopilot = require('./bibliotecaReelAutopilotService');
+    await reelAutopilot.habilitarPublicacaoAutomatica({
+      videoId: reel.video.id,
+      matterId: reel.matter.id,
+      bibliotecaPostId: post.id,
+      facebookPageId,
+    });
+    const ready = await reelAutopilot.publicarSePronto({
+      videoId: reel.video.id,
+      clipId: reel.clip?.id || null,
+      matterId: reel.matter.id,
+    });
+    return {
+      gerado: reel,
+      publicado: Boolean(ready.published),
+      enfileirado: !ready.published,
+      contabilizado: Boolean(ready.published),
+    };
+  }
+
+  const topico = {
+    titulo: post.titulo,
+    link: post.url,
+    resumo: post.resumo,
+    nicho: fonte?.nome || fonte?.plataforma || 'rede social',
+    fonte: fonte?.nome,
+    veiculo: fonte?.plataforma,
+    imagemFonte: post.thumbnail,
+    redeSocial: true,
+    tipoFonte: 'rede_social',
+  };
+
+  const gerado = await materiaIaService.gerarCompleto({
+    userId,
+    facebookPageId,
+    topico,
+    tipoPublicacao: 'foto',
+    status: 'publicado',
+  });
+
+  await BibliotecaPosts.update(post.id, {
+    status: 'gerado_texto',
+    matter_id: gerado.matter?.id || null,
+  });
+
+  const publicado = Boolean(gerado.publication || gerado.fbPostUrl || gerado.matter?.status === 'publicado');
+  return { gerado, publicado, enfileirado: false };
+}
+
+async function tickAutopilot() {
+  const due = await BibliotecaAutopilot.findDue();
+  for (const cfg of due) {
+    try {
+      if (!cfg.facebook_page_id) {
+        await BibliotecaAutopilot.update(cfg.id, {
+          ativo: false,
+          ultimo_erro: 'Piloto desativado: página do Facebook não configurada',
+          proxima_execucao: null,
+        });
+        continue;
+      }
+
+      const page = await resolvePage(cfg.user_id, cfg.facebook_page_id);
+      if (!page) {
+        await BibliotecaAutopilot.update(cfg.id, {
+          ativo: false,
+          ultimo_erro: 'Piloto desativado: página do Facebook inválida',
+          proxima_execucao: null,
+        });
+        continue;
+      }
+
+      // Retoma Reels cujo processamento terminou após um reinício ou entre ciclos.
+      const qtd = clampAutopilotPosts(cfg.posts_por_ciclo);
+      const proxima = nextAutopilotRun(cfg.intervalo_minutos);
+      const reelAutopilot = require('./bibliotecaReelAutopilotService');
+      const retomados = await reelAutopilot.publicarPendentesDoUsuario(cfg.user_id, qtd);
+
+      if (retomados >= qtd) {
+        await BibliotecaAutopilot.update(cfg.id, {
+          ultimo_tick: new Date(),
+          proxima_execucao: proxima,
+          ultimo_erro: null,
+        });
+        continue;
+      }
+
+      assertDeepseek();
+
+      const candidatosBrutos = await BibliotecaPosts.findCandidatosAutopilot(cfg.user_id, 30);
+      const candidatos = await filtrarPostsNaoPublicados(cfg.user_id, candidatosBrutos);
+
+      if (!candidatos.length) {
+        await BibliotecaAutopilot.update(cfg.id, {
+          ultimo_tick: new Date(),
+          proxima_execucao: proxima,
+          ultimo_erro: null,
+        });
+        continue;
+      }
+
+      const ranking = await ranquearPostsViralFacebook(
+        candidatos.map((p) => ({
+          id: p.id,
+          fonte_id: p.fonte_id,
+          titulo: p.titulo,
+          resumo: p.resumo,
+          fonte: p.fonte_nome,
+          plataforma: p.fonte_plataforma,
+          tipo_midia: p.media_type,
+          status: p.status,
+          publicado_em: p.publicado_em,
+          created_at: p.created_at,
+        })),
+        qtd
+      );
+      // Não sobrescreve a lista manual "Melhores para publicar" do usuário.
+      // O ranking do autopilot fica só em memória para decidir o que publicar.
+
+      const byId = new Map(candidatos.map((p) => [Number(p.id), p]));
+      let processados = retomados;
+      let publicadosNaoContabilizados = 0;
+      const erros = [];
+
+      // Ordem do ranking + fallback se algum candidato falhar.
+      const filaIds = ranking.map((r) => r.id);
+      for (const c of candidatos) {
+        if (!filaIds.includes(Number(c.id))) filaIds.push(Number(c.id));
+      }
+
+      for (const postId of filaIds) {
+        if (processados >= qtd) break;
+        const post = byId.get(Number(postId));
+        if (!post) continue;
+        try {
+          const result = await publicarPostAutopilot({
+            userId: cfg.user_id,
+            post,
+            facebookPageId: page.id,
+          });
+          processados += 1;
+          if (result.publicado && !result.contabilizado) {
+            publicadosNaoContabilizados += 1;
+          } else if (!result.publicado && !result.enfileirado) {
+            // Gerou rascunho (ex.: sem arte); ocupa a vaga, mas exige revisão.
+            erros.push(`#${post.id}: gerado sem publicação (verifique imagem/arte)`);
+          }
+        } catch (err) {
+          erros.push(`#${post.id}: ${err.message}`);
+          try {
+            await BibliotecaPosts.update(post.id, { status: 'visto' });
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+
+      if (publicadosNaoContabilizados) {
+        await BibliotecaAutopilot.incrementPublishedByUser(
+          cfg.user_id,
+          publicadosNaoContabilizados
+        );
+      }
+      await BibliotecaAutopilot.update(cfg.id, {
+        ultimo_tick: new Date(),
+        proxima_execucao: proxima,
+        ultimo_erro: erros.length ? erros.slice(0, 3).join(' | ').slice(0, 1000) : null,
+      });
+    } catch (err) {
+      console.error(`[biblioteca-autopilot] user #${cfg.user_id}:`, err.message);
+      await BibliotecaAutopilot.update(cfg.id, {
+        ultimo_erro: String(err.message || err).slice(0, 1000),
+        proxima_execucao: nextAutopilotRun(cfg.intervalo_minutos),
+      });
+    }
+  }
 }
 
 module.exports = {
@@ -1151,7 +2379,17 @@ module.exports = {
   escanearAgora,
   gerarTextoDePost,
   gerarVideoDePost,
+  publicarPostDireto,
+  tickBrightDataSnapshots,
   tickFontes,
+  tickAutopilot,
   dashboardUsuario,
+  detalheFonte,
+  listarMelhoresParaPublicar,
+  analisarMelhoresParaPublicar,
+  escanearFontesDoUsuario,
+  ocultarMelhorParaPublicar,
+  obterAutopilot,
+  salvarAutopilot,
   resolvePage,
 };

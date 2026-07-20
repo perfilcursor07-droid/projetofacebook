@@ -3,6 +3,8 @@
   const msg = document.getElementById('bib-form-msg');
   const busy = document.getElementById('bib-busy');
   const busyText = document.getElementById('bib-busy-text');
+  const fonteApp = document.getElementById('biblioteca-fonte-app');
+  const fonteId = fonteApp?.dataset?.fonteId ? Number(fonteApp.dataset.fonteId) : null;
 
   function setBusy(on, text) {
     if (!busy) return;
@@ -27,8 +29,84 @@
     return data;
   }
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  function scanFalhou(button, message) {
+    button.textContent = 'Falhou';
+    button.disabled = false;
+    button.title = message || 'Não foi possível concluir o escaneamento';
+    button.classList.remove('opacity-50', 'pointer-events-none', 'text-amber-300');
+    button.classList.add('text-rose-300');
+    setTimeout(() => {
+      button.textContent = 'Escanear agora';
+      button.classList.remove('text-rose-300');
+    }, 4000);
+  }
+
+  async function acompanharScan(button, id, onDone) {
+    // O servidor consulta a Bright Data a cada minuto; a UI só acompanha o estado persistido.
+    for (let tentativa = 0; tentativa < 36; tentativa += 1) {
+      await sleep(10_000);
+      try {
+        const status = await api(`/api/biblioteca/fontes/${id}/posts`);
+        if (status.pending) continue;
+        if (status.scrape_error) throw new Error(status.scrape_error);
+
+        button.textContent = 'Scan concluído';
+        button.classList.remove('opacity-50', 'text-amber-300');
+        button.classList.add('text-emerald-300');
+        setTimeout(onDone, 1000);
+        return;
+      } catch (err) {
+        scanFalhou(button, err.message);
+        return;
+      }
+    }
+
+    // A coleta continua no servidor mesmo que o acompanhamento do navegador termine.
+    button.textContent = 'Escaneando em segundo plano…';
+    button.classList.remove('opacity-50');
+    button.classList.add('text-amber-300');
+  }
+
+  async function iniciarScanNoBotao(button, id, onDone) {
+    button.disabled = true;
+    button.textContent = 'Iniciando scan…';
+    button.classList.add('opacity-50', 'pointer-events-none');
+    button.classList.remove('text-rose-300', 'text-emerald-300');
+
+    try {
+      const data = await api(`/api/biblioteca/fontes/${id}/escanear`, {
+        method: 'POST',
+        body: '{}',
+      });
+
+      if (data.pending) {
+        button.textContent = 'Escaneando em segundo plano…';
+        button.classList.remove('opacity-50');
+        button.classList.add('text-amber-300');
+        await acompanharScan(button, id, onDone);
+        return;
+      }
+
+      const novos = data.novos?.length || data.salvos || 0;
+      const itens = data.itens || 0;
+      button.textContent = itens ? `${novos} novo(s) de ${itens}` : 'Nenhum item';
+      button.classList.remove('opacity-50');
+      button.classList.add('text-emerald-300');
+      setTimeout(onDone, 1000);
+    } catch (err) {
+      scanFalhou(button, err.message);
+    }
+  }
+
   function pageId() {
     const el = document.getElementById('bib-page');
+    return el && el.value ? Number(el.value) : null;
+  }
+
+  function recommendationPageId() {
+    const el = document.getElementById('bib-melhores-page');
     return el && el.value ? Number(el.value) : null;
   }
 
@@ -56,62 +134,77 @@
     });
   }
 
+  const autoForm = document.getElementById('bib-auto-form');
+  const autoMsg = document.getElementById('bib-auto-msg');
+  if (autoForm) {
+    autoForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const ativo = Boolean(document.getElementById('bib-auto-ativo')?.checked);
+      const page = document.getElementById('bib-auto-page')?.value || '';
+      const posts = Number(document.getElementById('bib-auto-posts')?.value || 1);
+      const intervalo = Number(document.getElementById('bib-auto-intervalo')?.value || 30);
+      if (ativo && !page) {
+        if (autoMsg) {
+          autoMsg.textContent = 'Selecione a Página do Facebook para ativar o piloto.';
+          autoMsg.className = 'mt-2 text-sm text-rose-300 sm:col-span-2 lg:col-span-12';
+          autoMsg.classList.remove('hidden');
+        }
+        return;
+      }
+      try {
+        setBusy(true, 'Salvando piloto automático…');
+        await api('/api/biblioteca/autopilot', {
+          method: 'PUT',
+          body: JSON.stringify({
+            ativo,
+            facebook_page_id: page || null,
+            posts_por_ciclo: posts,
+            intervalo_minutos: intervalo,
+          }),
+        });
+        location.reload();
+      } catch (err) {
+        if (autoMsg) {
+          autoMsg.textContent = err.message;
+          autoMsg.className = 'mt-2 text-sm text-rose-300 sm:col-span-2 lg:col-span-12';
+          autoMsg.classList.remove('hidden');
+        } else {
+          alert(err.message);
+        }
+      } finally {
+        setBusy(false);
+      }
+    });
+  }
+
   document.getElementById('bib-fontes')?.addEventListener('click', async (e) => {
     const scan = e.target.closest('.bib-scan');
     const toggle = e.target.closest('.bib-toggle-mon');
     const del = e.target.closest('.bib-del');
-    const postsBtn = e.target.closest('.bib-posts-btn');
 
     try {
       if (scan) {
-        setBusy(true, 'Escaneando fonte…');
-        const data = await api(`/api/biblioteca/fontes/${scan.dataset.id}/escanear`, { method: 'POST', body: '{}' });
-        const n = data.novos?.length || 0;
-        const t = data.itens || 0;
-        alert(
-          t
-            ? `Encontrados ${t} item(ns), ${n} novo(s) salvos. Abra “Ver posts” para gerar matéria.`
-            : 'Nenhum item encontrado nesta fonte.'
-        );
-        location.reload();
+        e.preventDefault();
+        iniciarScanNoBotao(scan, scan.dataset.id, () => {
+          location.href = `/biblioteca/fontes/${scan.dataset.id}`;
+        });
+        return;
       }
       if (toggle) {
+        e.preventDefault();
         const on = toggle.dataset.on === '1';
         await api(`/api/biblioteca/fontes/${toggle.dataset.id}`, {
           method: 'PATCH',
           body: JSON.stringify({ monitorar: !on }),
         });
         location.reload();
+        return;
       }
       if (del) {
+        e.preventDefault();
         if (!confirm('Excluir esta fonte e seus posts/alertas?')) return;
         await api(`/api/biblioteca/fontes/${del.dataset.id}`, { method: 'DELETE' });
         location.reload();
-      }
-      if (postsBtn) {
-        const box = document.querySelector(`.bib-posts-box[data-fonte="${postsBtn.dataset.id}"]`);
-        if (!box) return;
-        if (!box.classList.contains('hidden') && box.dataset.loaded === '1') {
-          box.classList.add('hidden');
-          return;
-        }
-        setBusy(true, 'Carregando posts…');
-        const data = await api(`/api/biblioteca/fontes/${postsBtn.dataset.id}/posts`);
-        box.innerHTML = (data.posts || [])
-          .map(
-            (p) => `
-          <div class="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
-            <p class="text-sm text-slate-200">${escapeHtml(p.titulo || 'Sem título')}</p>
-            <div class="mt-2 flex flex-wrap gap-2">
-              <button type="button" class="bib-gen-texto rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300" data-id="${p.id}">Gerar texto</button>
-              <button type="button" class="bib-gen-video rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300" data-id="${p.id}">Gerar vídeo</button>
-              <a href="${escapeAttr(p.url)}" target="_blank" rel="noopener" class="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-400">Abrir</a>
-            </div>
-          </div>`
-          )
-          .join('') || '<p class="text-xs text-slate-500">Nenhum post nesta fonte.</p>';
-        box.dataset.loaded = '1';
-        box.classList.remove('hidden');
       }
     } catch (err) {
       alert(err.message);
@@ -120,15 +213,44 @@
     }
   });
 
-  async function gerarTexto(id) {
-    setBusy(true, 'IA gerando texto…');
+  // Página da fonte
+  document.getElementById('bib-fonte-scan')?.addEventListener('click', () => {
+    if (!fonteId) return;
+    const button = document.getElementById('bib-fonte-scan');
+    iniciarScanNoBotao(button, fonteId, () => location.reload());
+  });
+
+  document.getElementById('bib-fonte-toggle-mon')?.addEventListener('click', async () => {
+    if (!fonteId) return;
+    const btn = document.getElementById('bib-fonte-toggle-mon');
+    try {
+      const on = btn?.dataset.on === '1';
+      await api(`/api/biblioteca/fontes/${fonteId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ monitorar: !on }),
+      });
+      location.reload();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  async function gerarTexto(id, { tipo = 'texto', facebookPageId = pageId(), openInNewTab = false } = {}) {
+    setBusy(true, tipo === 'foto' ? 'IA preparando matéria e capa…' : 'IA gerando texto…');
     try {
       const data = await api(`/api/biblioteca/posts/${id}/gerar-texto`, {
         method: 'POST',
-        body: JSON.stringify({ facebook_page_id: pageId(), tipoPublicacao: 'texto' }),
+        body: JSON.stringify({
+          facebook_page_id: facebookPageId,
+          tipoPublicacao: tipo,
+        }),
       });
-      if (data.redirect) location.href = data.redirect;
-      else location.href = '/minhas-materias';
+      const dest = data.redirect || '/minhas-materias';
+      if (openInNewTab) {
+        window.open(dest, '_blank', 'noopener,noreferrer');
+      } else {
+        location.href = dest;
+      }
     } catch (err) {
       alert(err.message);
     } finally {
@@ -136,27 +258,136 @@
     }
   }
 
-  async function gerarVideo(id) {
-    setBusy(true, 'Enfileirando vídeo…');
+  async function gerarVideo(id, facebookPageId = recommendationPageId() || pageId(), { openInNewTab = false } = {}) {
+    setBusy(true, 'Baixando e preparando o Reel…');
     try {
       const data = await api(`/api/biblioteca/posts/${id}/gerar-video`, {
         method: 'POST',
-        body: '{}',
+        body: JSON.stringify({ facebook_page_id: facebookPageId }),
       });
-      if (data.redirect) location.href = data.redirect;
-      else location.href = '/fila';
+      const dest = data.redirect || '/fila';
+      if (openInNewTab) {
+        window.open(dest, '_blank', 'noopener,noreferrer');
+      } else {
+        location.href = dest;
+      }
     } catch (err) {
       alert(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function publicarMelhor(id, mediaType) {
+    const destinationPage = recommendationPageId();
+    if (!destinationPage) {
+      alert('Selecione a Página do Facebook no topo de “Melhores para publicar”.');
+      document.getElementById('bib-melhores-page')?.focus();
+      return;
+    }
+
+    const isVideo = mediaType === 'video';
+    const confirmation = isVideo
+      ? 'Processar este Reel e publicar automaticamente quando vídeo, transcrição, matéria e capa estiverem prontos?'
+      : 'Gerar a matéria e a capa e publicar agora na Página do Facebook selecionada?';
+    if (!confirm(confirmation)) return;
+
+    try {
+      setBusy(
+        true,
+        isVideo
+          ? 'Preparando Reel para publicação automática…'
+          : 'IA gerando matéria, capa e publicando…'
+      );
+      const data = await api(`/api/biblioteca/posts/${id}/publicar`, {
+        method: 'POST',
+        body: JSON.stringify({ facebook_page_id: destinationPage }),
+      });
+      const warnings = Array.isArray(data.avisos) && data.avisos.length
+        ? `\n\nAvisos: ${data.avisos.join(' ')}`
+        : '';
+      alert(`${data.message || (data.published ? 'Publicado com sucesso.' : 'Processamento iniciado.')}${warnings}`);
+      location.reload();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function renumerarMelhores() {
+    document.querySelectorAll('#bib-melhores-track [data-melhor-post]').forEach((card, i) => {
+      const rank = card.querySelector('.bib-melhor-rank');
+      if (rank) rank.textContent = String(i + 1);
+    });
+  }
+
+  async function ocultarMelhor(id, cardEl) {
+    try {
+      cardEl?.classList.add('opacity-40', 'pointer-events-none');
+      await api(`/api/biblioteca/melhores/${id}`, { method: 'DELETE' });
+      cardEl?.remove();
+      renumerarMelhores();
+      const track = document.getElementById('bib-melhores-track');
+      if (track && !track.querySelector('[data-melhor-post]')) {
+        location.reload();
+      }
+    } catch (err) {
+      cardEl?.classList.remove('opacity-40', 'pointer-events-none');
+      alert(err.message);
     }
   }
 
   document.body.addEventListener('click', (e) => {
+    const ocultar = e.target.closest('.bib-ocultar-melhor');
+    const publicar = e.target.closest('.bib-publicar-melhor');
+    const preparar = e.target.closest('.bib-preparar-melhor');
     const t = e.target.closest('.bib-gen-texto');
     const v = e.target.closest('.bib-gen-video');
+    if (ocultar) {
+      const card = ocultar.closest('[data-melhor-post]');
+      ocultarMelhor(ocultar.dataset.id, card);
+      return;
+    }
+    if (publicar) {
+      publicarMelhor(publicar.dataset.id, publicar.dataset.media);
+      return;
+    }
+    if (preparar) {
+      const id = preparar.dataset.id;
+      const destinationPage = recommendationPageId();
+      const media = preparar.dataset.media === 'video' ? 'video' : 'post';
+      const qs = new URLSearchParams({ media });
+      if (destinationPage) qs.set('facebook_page_id', String(destinationPage));
+      // Abre na hora em nova aba — sem modal na Biblioteca
+      window.open(`/biblioteca/preparar/${id}?${qs.toString()}`, '_blank', 'noopener,noreferrer');
+      return;
+    }
     if (t) gerarTexto(t.dataset.id);
     if (v) gerarVideo(v.dataset.id);
+  });
+
+  document.getElementById('bib-analisar-melhores')?.addEventListener('click', async () => {
+    try {
+      setBusy(true, 'Escaneando fontes e atualizando análise…');
+      const data = await api('/api/biblioteca/melhores/analisar', {
+        method: 'POST',
+        body: JSON.stringify({ limit: 30 }),
+      });
+      if (!data.melhores?.length) {
+        const novas = data.scan?.novas || 0;
+        alert(
+          novas
+            ? 'Fontes escaneadas, mas nenhum conteúdo com pontuação 50+ ainda. Tente de novo em instantes.'
+            : 'Nenhum conteúdo pendente encontrado nas fontes. Confira se as fontes estão ativas.'
+        );
+      }
+      location.reload();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setBusy(false);
+    }
   });
 
   document.getElementById('bib-mark-all')?.addEventListener('click', async () => {
@@ -168,18 +399,12 @@
     }
   });
 
-  document.getElementById('bib-btn-alertas')?.addEventListener('click', () => {
-    document.getElementById('bib-alertas')?.scrollIntoView({ behavior: 'smooth' });
+  document.querySelectorAll('a[href="#bib-secao-alertas"], #bib-btn-alertas').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      const target = document.getElementById('bib-secao-alertas');
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   });
-
-  function escapeHtml(s) {
-    return String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-  function escapeAttr(s) {
-    return escapeHtml(s).replace(/'/g, '&#39;');
-  }
 })();

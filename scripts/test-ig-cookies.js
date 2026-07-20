@@ -17,10 +17,14 @@ const {
   instagramApiHeaders,
   loadInstagramCookies,
   bootstrapInstagramSession,
+  validateInstagramSession,
 } = require('../src/services/instagramCookies');
 const { extrairPostSocial, normalizarUrlSocial } = require('../src/services/socialPostExtract');
 
 const DEFAULT_URL = 'https://www.instagram.com/p/Da3iImZFWdl/';
+const PROFILE_USERNAME = String(process.argv[3] || process.env.IG_TEST_USERNAME || 'instagram')
+  .replace(/^@/, '')
+  .trim();
 
 async function probeEndpoint(label, url, headers) {
   try {
@@ -35,6 +39,7 @@ async function probeEndpoint(label, url, headers) {
       status: res.status,
       len: body.length,
       hasItems: /"items"\s*:/.test(body),
+      hasUsers: /"users"\s*:/.test(body),
       hasCaption: /"caption"\s*:\s*\{/.test(body) || /"text"\s*:\s*"/.test(body),
       hasOg: /og:description/i.test(body),
       hasEmbedCaption: /class="Caption"/i.test(body),
@@ -79,6 +84,8 @@ async function probeEndpoint(label, url, headers) {
     homeLen: boot?.homeLen,
     error: boot?.error || null,
   });
+  const remoteSession = await validateInstagramSession(axios, boot);
+  console.log('Sessão remota:', remoteSession);
 
   const code = String(url).match(/\/(p|reel|reels|tv)\/([^/?#]+)/i)?.[2];
   const mediaId = shortcodeToMediaId(code);
@@ -125,8 +132,18 @@ async function probeEndpoint(label, url, headers) {
     }
   );
   await probeEndpoint(
+    'topsearch-web',
+    `https://www.instagram.com/web/search/topsearch/?query=${encodeURIComponent(PROFILE_USERNAME)}`,
+    headers
+  );
+  await probeEndpoint(
+    'users-search-mobile',
+    `https://i.instagram.com/api/v1/users/search/?q=${encodeURIComponent(PROFILE_USERNAME)}&count=10`,
+    instagramApiHeaders(cookieHeader, { mobile: true, wwwClaim: boot?.claim || '0' })
+  );
+  await probeEndpoint(
     'web-profile',
-    'https://www.instagram.com/api/v1/users/web_profile_info/?username=instagram',
+    `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(PROFILE_USERNAME)}`,
     headers
   );
 
@@ -141,7 +158,7 @@ async function probeEndpoint(label, url, headers) {
       textoPreview: String(r.texto || '').slice(0, 80),
       hasImagem: Boolean(r.imagem),
     });
-    process.exit(0);
+    process.exit(remoteSession.ok ? 0 : 3);
   } catch (err) {
     console.log({ ok: false, error: err.message, code: err.code });
     process.exit(1);

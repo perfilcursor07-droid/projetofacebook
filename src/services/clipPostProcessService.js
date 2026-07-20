@@ -260,13 +260,22 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
       const current = await VideoClips.findById(clip.id);
       if (!current || !current.caminho_arquivo) return;
       if (!force && current.materia_status === 'pronta' && current.legenda_sugerida) {
-        // Já tem matéria — só garante a capa se ainda não tiver
-        if (current.capa_status !== 'pronta' && current.capa_status !== 'gerando') {
-          await queueClipCover({
-            clipId: current.id,
-            userId: uid,
-            titulo: current.capa_titulo || null,
-          });
+        // Já tem matéria — garante a capa (refaz se ficou presa em gerando/erro)
+        const capaOk =
+          current.capa_status === 'pronta' &&
+          current.caminho_arquivo &&
+          /_capa_/i.test(String(current.caminho_arquivo));
+        if (!capaOk) {
+          try {
+            await applyCoverToClipNow({
+              clipId: current.id,
+              userId: uid,
+              titulo: current.capa_titulo || null,
+              force: current.capa_status === 'gerando' || current.capa_status === 'erro',
+            });
+          } catch (capaErr) {
+            console.error(`[capa] auto clip ${current.id}:`, capaErr.message || capaErr);
+          }
         }
         return;
       }
@@ -380,7 +389,12 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
           erro_mensagem: `Matéria falhou: ${String(aiErr.message || aiErr).slice(0, 400)}`,
         });
         try {
-          await queueClipCover({ clipId: clip.id, userId: uid, titulo: tituloCapa });
+          await applyCoverToClipNow({
+            clipId: clip.id,
+            userId: uid,
+            titulo: tituloCapa,
+            force: true,
+          });
         } catch (capaErr) {
           console.error(`[capa] auto clip ${clip.id}:`, capaErr.message || capaErr);
         }
@@ -418,11 +432,13 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
         erro_mensagem: null,
       });
 
+      // Aplica a capa no mesmo job (evita fila aninhada e status "gerando" preso)
       try {
-        await queueClipCover({
+        await applyCoverToClipNow({
           clipId: clip.id,
           userId: uid,
           titulo: tituloCapa,
+          force: true,
         });
       } catch (capaErr) {
         console.error(`[capa] auto clip ${clip.id}:`, capaErr.message || capaErr);
@@ -457,6 +473,17 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
       } catch (syncErr) {
         console.warn(`[conteudo-reel] sync matter clip ${clip.id}:`, syncErr.message);
       }
+
+      // Se o Reel veio do piloto da Biblioteca, publica somente após matéria e capa prontas.
+      try {
+        const reelAutopilot = require('./bibliotecaReelAutopilotService');
+        await reelAutopilot.publicarSePronto({
+          videoId: video.id,
+          clipId: clip.id,
+        });
+      } catch (publishErr) {
+        console.warn(`[biblioteca-autopilot] publicação Reel clip #${clip.id}:`, publishErr.message);
+      }
     } catch (err) {
       console.error(`[materia] clip ${clip.id} falhou:`, err.message || err);
       await VideoClips.update(clip.id, {
@@ -468,7 +495,12 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
         const tituloCapa = resolveCapaTitulo({
           videoTitulo: video?.titulo || video?.termo_busca,
         });
-        await queueClipCover({ clipId: clip.id, userId: uid, titulo: tituloCapa });
+        await applyCoverToClipNow({
+          clipId: clip.id,
+          userId: uid,
+          titulo: tituloCapa,
+          force: true,
+        });
       } catch (capaErr) {
         console.warn(`[capa] após erro matéria clip ${clip.id}:`, capaErr.message);
       }

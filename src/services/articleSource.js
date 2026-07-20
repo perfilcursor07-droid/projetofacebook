@@ -288,12 +288,20 @@ function ordenarFontesPorTitulo(titulo, candidates) {
 
 async function buscarFontesPorTitulo(titulo) {
   const { env } = require('../config/env');
+  // Serper free: evita caracteres estranhos e queries muito longas
+  const q = String(titulo || '')
+    .replace(/[^\p{L}\p{N}\s\-.:]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  if (q.length < 10) return [];
+
   let candidates = [];
 
   if (env.braveSearchApiKey) {
     try {
       const { data } = await axios.get('https://api.search.brave.com/res/v1/news/search', {
-        params: { q: titulo, count: 8 },
+        params: { q, count: 8, country: 'BR', search_lang: 'pt' },
         headers: {
           Accept: 'application/json',
           'X-Subscription-Token': env.braveSearchApiKey,
@@ -303,18 +311,26 @@ async function buscarFontesPorTitulo(titulo) {
       candidates = (data?.results || []).map((item) => ({
         titulo: item.title,
         url: item.url,
+        snippet: item.description || '',
       }));
     } catch (err) {
-      console.warn('buscarFontesPorTitulo Brave:', err.message);
+      console.warn('buscarFontesPorTitulo Brave:', err.response?.data?.message || err.message);
     }
   }
 
   let ranked = ordenarFontesPorTitulo(titulo, candidates);
-  if (!ranked.length && env.serperApiKey) {
+
+  // Evita spam de 400 no Serper free (rate limit / query rejeitada)
+  if (!buscarFontesPorTitulo._serperCooldownUntil) {
+    buscarFontesPorTitulo._serperCooldownUntil = 0;
+  }
+  const serperOk = Date.now() >= buscarFontesPorTitulo._serperCooldownUntil;
+
+  if (!ranked.length && env.serperApiKey && serperOk) {
     try {
       const { data } = await axios.post(
         'https://google.serper.dev/search',
-        { q: titulo, num: 8, gl: 'br', hl: 'pt-br' },
+        { q, num: 8, gl: 'br', hl: 'pt-br' },
         {
           headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
           timeout: 15000,
@@ -323,29 +339,185 @@ async function buscarFontesPorTitulo(titulo) {
       candidates = (data?.organic || []).map((item) => ({
         titulo: item.title,
         url: item.link,
+        snippet: item.snippet || '',
       }));
       ranked = ordenarFontesPorTitulo(titulo, candidates);
     } catch (err) {
-      console.warn('buscarFontesPorTitulo Serper:', err.message);
+      const status = err.response?.status;
+      if (status === 400 || status === 429 || status === 402) {
+        buscarFontesPorTitulo._serperCooldownUntil = Date.now() + 60_000;
+      }
+      console.warn(
+        'buscarFontesPorTitulo Serper:',
+        err.response?.data?.message || err.message
+      );
     }
   }
 
   return ranked;
 }
 
+function normalizarUrlChave(url) {
+  try {
+    const u = new URL(String(url || '').trim());
+    u.hash = '';
+    return u.href.replace(/\/$/, '').toLowerCase();
+  } catch {
+    return String(url || '')
+      .split(/[?#]/)[0]
+      .replace(/\/$/, '')
+      .toLowerCase();
+  }
+}
+
+function hostDaUrl(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 /**
- * Enriquece um tópico com corpo da fonte.
+ * Busca na internet (Brave/Serper) e extrai trechos reais de 1–3 páginas
+ * relacionadas ao fato — para complementar a matéria sem inventar.
+ */
+async function coletarFontesComplementares({ titulo, resumo, linkExcluir = null, max = 3 } = {}) {
+  const queryBase = String(titulo || '').trim();
+  const queryExtra = String(resumo || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
+  const query = queryBase || queryExtra;
+  if (!query || query.length < 12) return [];
+
+  let ranked = await buscarFontesPorTitulo(query);
+  if (!ranked.length && queryExtra && queryExtra !== queryBase) {
+    const again = await buscarFontesPorTitulo(`${queryBase} ${queryExtra}`.trim().slice(0, 180));
+    ranked = again;
+  }
+
+  const excluirUrls = new Set();
+  const excluirHosts = new Set();
+  if (linkExcluir) {
+    excluirUrls.add(normalizarUrlChave(linkExcluir));
+    const h = hostDaUrl(linkExcluir);
+    if (h) excluirHosts.add(h);
+  }
+
+  const out = [];
+  const vistos = new Set();
+
+  for (const fonte of ranked) {
+    if (out.length >= max) break;
+    const urlKey = normalizarUrlChave(fonte.url);
+    if (!urlKey || vistos.has(urlKey) || excluirUrls.has(urlKey)) continue;
+
+    const host = hostDaUrl(fonte.url);
+    if (
+      /instagram\.com|facebook\.com|fb\.com|tiktok\.com|twitter\.com|x\.com|youtube\.com|youtu\.be/i.test(
+        host
+      )
+    ) {
+      continue;
+    }
+    // Evita o mesmo site da fonte original (queremos ângulo complementar)
+    if (excluirHosts.has(host) && excluirUrls.size) {
+      /* ainda permite se for o único candidato bom — não pula aqui */
+    }
+
+    vistos.add(urlKey);
+    let meta = null;
+    try {
+      meta = await extrairMetadadosArtigo(fonte.url);
+    } catch (err) {
+      console.warn('coletarFontesComplementares:', err.message);
+    }
+
+    const trecho = String(meta?.trecho || '').trim();
+    const resumoMeta = String(meta?.resumo || fonte.snippet || '').trim();
+    if (!trecho && resumoMeta.length < 40) continue;
+
+    out.push({
+      veiculo: meta?.veiculo || host || 'Web',
+      url: meta?.url || fonte.url,
+      titulo: meta?.titulo || fonte.titulo || query,
+      resumo: resumoMeta.slice(0, 500),
+      trecho: trecho.slice(0, 2500) || resumoMeta.slice(0, 800),
+      origemBusca: true,
+      score: fonte.score || 0,
+    });
+  }
+
+  return out;
+}
+
+function mesclarFontesApuracao(existentes, novas) {
+  const out = [];
+  const vistos = new Set();
+  for (const f of [...(existentes || []), ...(novas || [])]) {
+    if (!f) continue;
+    const key = normalizarUrlChave(f.url) || `${f.veiculo}|${f.titulo}`.toLowerCase();
+    if (vistos.has(key)) continue;
+    vistos.add(key);
+    out.push(f);
+  }
+  return out.slice(0, 6);
+}
+
+/**
+ * Enriquece um tópico com corpo da fonte + busca web complementar.
  */
 async function apurarTopico(topico) {
   const base = { ...topico };
   const linkOriginal = base.link || null;
+  const ehRedeSocial = Boolean(base.redeSocial || base.tipoFonte === 'rede_social');
   const jaSocial =
-    Boolean(base.redeSocial || base.tipoFonte === 'rede_social') &&
-    String(base.contextoApuracao || '').length > 80;
+    ehRedeSocial && String(base.contextoApuracao || base.resumo || '').length > 40;
 
-  // Post FB/IG já extraído (texto + imagem) — não re-raspar a página (403/login)
-  // nem sobrescrever o contexto original.
+  // Post FB/IG já extraído: mantém o texto original e COMPLEMENTA com busca na web.
   if (jaSocial) {
+    let fontes = Array.isArray(base.fontesApuracao) ? [...base.fontesApuracao] : [];
+    if (!fontes.length && (base.contextoApuracao || base.resumo)) {
+      fontes.push({
+        veiculo: base.fonte || base.veiculo || 'Rede social',
+        url: linkOriginal,
+        titulo: base.titulo,
+        resumo: base.resumo || '',
+        trecho: String(base.contextoApuracao || base.resumo || '').slice(0, 3500),
+        ehRedeSocial: true,
+      });
+    }
+
+    try {
+      const complementares = await coletarFontesComplementares({
+        titulo: base.titulo,
+        resumo: base.resumo || String(base.contextoApuracao || '').slice(0, 160),
+        linkExcluir: linkOriginal,
+        max: 3,
+      });
+      fontes = mesclarFontesApuracao(fontes, complementares);
+    } catch (err) {
+      console.warn('apurarTopico (social) busca web:', err.message);
+    }
+
+    const blocoWeb = fontes
+      .filter((f) => f.origemBusca)
+      .map(
+        (f, i) =>
+          `Fonte web ${i + 1} (${f.veiculo}): ${f.titulo || ''}\n${String(f.trecho || f.resumo || '').slice(0, 1200)}`
+      )
+      .join('\n\n');
+
+    const contexto = [
+      String(base.contextoApuracao || '').trim(),
+      blocoWeb
+        ? `Complemento factual encontrado na internet (use só o que estiver documentado abaixo):\n${blocoWeb}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
     return {
       ...base,
       linkOriginal,
@@ -353,8 +525,8 @@ async function apurarTopico(topico) {
       titulo: base.titulo || null,
       resumo: base.resumo || null,
       imagemFonte: base.imagemFonte || null,
-      contextoApuracao: base.contextoApuracao,
-      fontesApuracao: Array.isArray(base.fontesApuracao) ? base.fontesApuracao : [],
+      contextoApuracao: contexto || base.contextoApuracao,
+      fontesApuracao: fontes,
       dataReferencia: base.data || null,
       veiculo: base.veiculo || base.fonte || null,
       redeSocial: true,
@@ -371,8 +543,6 @@ async function apurarTopico(topico) {
     } else if (base.titulo) {
       const fontes = await buscarFontesPorTitulo(base.titulo);
       const melhorScore = fontes[0]?.score || 0;
-      // Só considera alternativas quase tão aderentes quanto o melhor resultado;
-      // uma imagem disponível não pode compensar uma notícia de outro assunto.
       for (const fonte of fontes.filter((item) => item.score >= melhorScore - 0.15)) {
         const candidate = await extrairMetadadosArtigo(fonte.url);
         if (!meta) meta = candidate;
@@ -398,19 +568,59 @@ async function apurarTopico(topico) {
     });
   }
 
+  // Complementa com outras reportagens sobre o mesmo fato
+  try {
+    const complementares = await coletarFontesComplementares({
+      titulo: meta?.titulo || base.titulo,
+      resumo: meta?.resumo || base.resumo,
+      linkExcluir: meta?.url || linkOriginal,
+      max: fontesApuracao.length ? 2 : 3,
+    });
+    for (const f of complementares) {
+      fontesApuracao.push(f);
+    }
+  } catch (err) {
+    console.warn('apurarTopico busca web:', err.message);
+  }
+
+  // Sem link: ainda tenta montar apuração só com busca
+  if (!fontesApuracao.length && base.titulo) {
+    try {
+      const soBusca = await coletarFontesComplementares({
+        titulo: base.titulo,
+        resumo: base.resumo,
+        max: 3,
+      });
+      fontesApuracao.push(...soBusca);
+    } catch (err) {
+      console.warn('apurarTopico busca sem link:', err.message);
+    }
+  }
+
+  const blocoComplementar = fontesApuracao
+    .filter((f) => f.origemBusca)
+    .map(
+      (f, i) =>
+        `Fonte complementar ${i + 1} (${f.veiculo}): ${f.titulo || ''}\n${String(f.trecho || f.resumo || '').slice(0, 1200)}`
+    )
+    .join('\n\n');
+
   const contextoNovo = [
-    `Assunto: ${base.titulo || ''}`,
+    `Assunto: ${base.titulo || meta?.titulo || ''}`,
     base.resumo ? `Resumo inicial: ${base.resumo}` : null,
-    meta?.trecho ? `Trechos documentados da fonte:\n${meta.trecho.slice(0, 3500)}` : null,
+    meta?.trecho ? `Trechos documentados da fonte principal:\n${meta.trecho.slice(0, 3500)}` : null,
     meta?.veiculo ? `Veículo: ${meta.veiculo}` : null,
     meta?.url ? `URL: ${meta.url}` : null,
+    blocoComplementar
+      ? `Outras fontes na internet (só use fatos documentados):\n${blocoComplementar}`
+      : null,
   ]
     .filter(Boolean)
     .join('\n\n');
 
   const contextoBase = String(base.contextoApuracao || '');
   const fontesFinais = fontesApuracao.length
-    ? fontesApuracao
+    ? mesclarFontesApuracao(fontesApuracao, base.fontesApuracao)
     : Array.isArray(base.fontesApuracao)
       ? base.fontesApuracao
       : [];
@@ -435,4 +645,6 @@ module.exports = {
   extrairMetadadosArtigo,
   extrairImagemCapa,
   resolverUrlNoticia,
+  buscarFontesPorTitulo,
+  coletarFontesComplementares,
 };

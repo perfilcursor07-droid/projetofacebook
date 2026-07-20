@@ -19,7 +19,7 @@ class KnexSessionStore extends session.Store {
         const exists = await db.schema.hasTable(TABLE);
         if (exists) return;
         await db.schema.createTable(TABLE, (t) => {
-          t.string('session_id', 255).primary();
+          t.string('session_id', 191).primary();
           t.text('data').notNullable();
           t.timestamp('expires').notNullable().index();
         });

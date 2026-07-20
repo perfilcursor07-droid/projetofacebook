@@ -25,6 +25,44 @@ async function listPage(req, res, next) {
   }
 }
 
+async function fontePage(req, res, next) {
+  try {
+    const data = await bibliotecaService.detalheFonte(req.session.userId, Number(req.params.id));
+    const pages = await pagesDoUsuario(req.session.userId);
+    return res.render('biblioteca-fonte', {
+      title: data.fonte.nome || 'Fonte',
+      ...data,
+      pages,
+    });
+  } catch (err) {
+    if (err.status === 404) return res.redirect('/biblioteca');
+    return next(err);
+  }
+}
+
+async function prepararPage(req, res, next) {
+  try {
+    const postId = Number(req.params.postId);
+    if (!Number.isInteger(postId) || postId < 1) {
+      return res.redirect('/biblioteca');
+    }
+    const post = await BibliotecaPosts.findById(postId);
+    if (!post || Number(post.user_id) !== Number(req.session.userId)) {
+      return res.redirect('/biblioteca');
+    }
+    const media = String(req.query.media || '').toLowerCase() === 'video' ? 'video' : 'post';
+    const facebookPageId = req.query.facebook_page_id || req.query.page || null;
+    return res.render('biblioteca-preparar', {
+      title: media === 'video' ? 'Preparando Reel…' : 'Preparando matéria…',
+      postId,
+      media,
+      facebookPageId,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function listar(req, res, next) {
   try {
     const data = await bibliotecaService.dashboardUsuario(req.session.userId);
@@ -74,7 +112,7 @@ async function remover(req, res, next) {
 async function escanear(req, res, next) {
   try {
     const result = await bibliotecaService.escanearAgora(req.session.userId, Number(req.params.id));
-    res.json({ ok: true, ...result });
+    res.status(result.pending ? 202 : 200).json({ ok: true, ...result });
   } catch (err) {
     next(err);
   }
@@ -87,7 +125,14 @@ async function postsDaFonte(req, res, next) {
       return res.status(404).json({ error: 'Fonte não encontrada' });
     }
     const posts = await BibliotecaPosts.findByFonte(fonte.id, 40);
-    res.json({ ok: true, posts });
+    const pending = ['triggering', 'pending'].includes(String(fonte.scrape_status || ''));
+    res.json({
+      ok: true,
+      posts,
+      pending,
+      scrape_status: fonte.scrape_status || null,
+      scrape_error: pending ? null : fonte.scrape_error || null,
+    });
   } catch (err) {
     next(err);
   }
@@ -115,11 +160,27 @@ async function gerarTexto(req, res, next) {
 
 async function gerarVideo(req, res, next) {
   try {
+    const body = req.body || {};
     const result = await bibliotecaService.gerarVideoDePost({
       userId: req.session.userId,
       postId: Number(req.params.postId),
+      facebookPageId: body.facebookPageId || body.facebook_page_id || null,
     });
-    res.status(202).json({ ok: true, ...result, redirect: '/fila' });
+    res.status(202).json({ ok: true, ...result, redirect: result.redirect || '/fila' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function publicarDireto(req, res, next) {
+  try {
+    const body = req.body || {};
+    const result = await bibliotecaService.publicarPostDireto({
+      userId: req.session.userId,
+      postId: Number(req.params.postId),
+      facebookPageId: body.facebookPageId || body.facebook_page_id || null,
+    });
+    res.status(result.queued ? 202 : 200).json({ ok: true, ...result });
   } catch (err) {
     next(err);
   }
@@ -157,8 +218,66 @@ async function marcarTodosLidos(req, res, next) {
   }
 }
 
+async function listarMelhores(req, res, next) {
+  try {
+    const melhores = await bibliotecaService.listarMelhoresParaPublicar(
+      req.session.userId,
+      Number(req.query.limit) || 30
+    );
+    res.json({ ok: true, melhores });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function analisarMelhores(req, res, next) {
+  try {
+    const result = await bibliotecaService.analisarMelhoresParaPublicar(
+      req.session.userId,
+      Number(req.body?.limit) || 30
+    );
+    const melhores = Array.isArray(result) ? result : result?.melhores || [];
+    const scan = Array.isArray(result) ? null : result?.scan || null;
+    res.json({ ok: true, melhores, scan });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function ocultarMelhor(req, res, next) {
+  try {
+    const melhores = await bibliotecaService.ocultarMelhorParaPublicar(
+      req.session.userId,
+      Number(req.params.postId)
+    );
+    res.json({ ok: true, melhores });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getAutopilot(req, res, next) {
+  try {
+    const autopilot = await bibliotecaService.obterAutopilot(req.session.userId);
+    res.json({ ok: true, autopilot });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function putAutopilot(req, res, next) {
+  try {
+    const autopilot = await bibliotecaService.salvarAutopilot(req.session.userId, req.body || {});
+    res.json({ ok: true, autopilot });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listPage,
+  fontePage,
+  prepararPage,
   listar,
   criar,
   atualizar,
@@ -167,7 +286,13 @@ module.exports = {
   postsDaFonte,
   gerarTexto,
   gerarVideo,
+  publicarDireto,
   listarAlertas,
   marcarAlertaLido,
   marcarTodosLidos,
+  listarMelhores,
+  analisarMelhores,
+  ocultarMelhor,
+  getAutopilot,
+  putAutopilot,
 };

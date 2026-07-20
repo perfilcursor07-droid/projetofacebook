@@ -33,12 +33,13 @@ function parseHashtagsField(raw) {
 }
 
 /** Legenda formatada para o Facebook (espaços, parágrafos, crédito, hashtags). */
-function montarMensagem({ titulo, materia, hashtags, fonteCredito }) {
+function montarMensagem({ titulo, materia, hashtags, fonteCredito, incluirTitulo = true }) {
   return formatFacebookCaption({
     titulo,
     materia,
     hashtags: parseHashtagsField(hashtags),
     fonteCredito,
+    incluirTitulo,
   });
 }
 
@@ -95,15 +96,25 @@ function pautaTemPessoaNomeada(topico, gerado) {
   return /\b[\p{Lu}][\p{L}'’-]{2,}(?:\s+(?:da|das|de|do|dos)?\s*[\p{Lu}][\p{L}'’-]{2,})+/u.test(texto);
 }
 
+/**
+ * Escolhe URL da capa + metadados para crédito do autor da imagem.
+ * @returns {Promise<{ url: string|null, autor?: string|null, fonte?: string|null, titulo?: string|null, origem?: string|null }>}
+ */
 async function escolherImagemCapa(topico, gerado) {
   if (topico?.imagemFonte && /^https?:\/\//i.test(topico.imagemFonte)) {
-    return topico.imagemFonte;
+    return {
+      url: topico.imagemFonte,
+      autor: null,
+      fonte: topico.fonte || topico.veiculo || null,
+      titulo: topico.titulo || null,
+      origem: 'fonte',
+    };
   }
 
   // A Pexels não é uma fonte editorial de pessoas públicas. Se a fonte original não
   // forneceu foto, não substitui Malafaia/Flávio Bolsonaro por igreja ou política genérica.
-  if (pautaTemPessoaNomeada(topico, gerado)) return null;
-  if (!env.pexelsApiKey) return null;
+  if (pautaTemPessoaNomeada(topico, gerado)) return { url: null };
+  if (!env.pexelsApiKey) return { url: null };
 
   try {
     const termo =
@@ -113,10 +124,18 @@ async function escolherImagemCapa(topico, gerado) {
       String(gerado.titulo || topico?.titulo || 'news').split(/\s+/).slice(0, 3).join(' ');
     const photos = await pexelsService.searchPhotos(termo, { perPage: 5 });
     const first = photos?.photos?.[0];
-    return first?.urlOriginal || first?.thumbnail || null;
+    const url = first?.urlOriginal || first?.thumbnail || null;
+    if (!url) return { url: null };
+    return {
+      url,
+      autor: first.autor || null,
+      fonte: first.autor ? `Pexels · ${first.autor}` : 'Pexels',
+      titulo: first.alt || termo,
+      origem: 'pexels',
+    };
   } catch (err) {
     console.warn('escolherImagemCapa:', err.message);
-    return null;
+    return { url: null };
   }
 }
 
@@ -154,6 +173,17 @@ async function marcarJaPublicados(userId, facebookPageId, topicos) {
 async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublicacao = 'texto', investigativa = false, furoReportagem = false } = {}) {
   assertDeepseek();
   const apurado = await apurarTopico(topico || {});
+
+  let contextoAprendizado = null;
+  if (userId) {
+    try {
+      const learning = require('./editorialLearningService');
+      contextoAprendizado = await learning.obterContextoAprendizado(userId);
+    } catch (err) {
+      console.warn('[editorial-learning] carregar:', err.message);
+    }
+  }
+
   const gerado = await gerarMateriaNoticiaFacebook({
     tituloReferencia: apurado.titulo,
     resumoReferencia: apurado.resumo,
@@ -166,9 +196,18 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
     redeSocial: Boolean(apurado.redeSocial || apurado.tipoFonte === 'rede_social'),
     investigativa,
     furoReportagem,
+    contextoAprendizado,
+    traduzirFonte: Boolean(
+      topico?.traduzirFonte ||
+        topico?.idiomaObrigatorio === 'pt-BR' ||
+        /\b(the|and|church|christian|should|about|after|before)\b/i.test(
+          `${apurado.titulo || ''} ${apurado.resumo || ''}`
+        )
+    ),
   });
 
-  const imagemUrl = await escolherImagemCapa(apurado, gerado);
+  const capa = await escolherImagemCapa(apurado, gerado);
+  const imagemUrl = capa?.url || null;
   const imagemOrigem = imagemUrl
     ? imagemUrl === apurado.imagemFonte
       ? {
@@ -182,6 +221,23 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
           consulta: gerado.termos_imagem?.[0] || gerado.hashtags?.[0] || apurado.nicho || null,
         }
     : null;
+
+  const { identificarAutorImagem } = require('./deepseekService');
+  const {
+    anexarCreditosFontes,
+    CREDITO_IMAGEM_FALLBACK,
+  } = require('./editorialGuidelinesFb');
+  let imagemAutor = CREDITO_IMAGEM_FALLBACK;
+  if (imagemUrl) {
+    const identificado = await identificarAutorImagem({
+      autor: capa.autor || null,
+      fonte: capa.fonte || null,
+      titulo: capa.titulo || apurado.titulo || null,
+      origem: capa.origem || imagemOrigem?.tipo || null,
+    });
+    imagemAutor = identificado || CREDITO_IMAGEM_FALLBACK;
+  }
+
   const avisosDuplicidade = userId
     ? await checarDuplicidade({
         userId,
@@ -202,10 +258,18 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
 
   const semImagemFoto = tipoPublicacao === 'foto' && !imagemUrl;
 
+  const materiaComFontes = anexarCreditosFontes(gerado.materia, {
+    fonteNome: apurado.fonte || apurado.veiculo || null,
+    fonteUrl: apurado.link || null, // só para derivar o nome do site se faltar
+    imagemAutor,
+  });
+
   return {
     ...gerado,
+    materia: materiaComFontes,
     imagemUrl,
     imagemOrigem,
+    imagemAutor,
     topico: apurado,
     avisos,
     forcarRascunho: semImagemFoto,
@@ -226,6 +290,8 @@ async function salvarMateria({ userId, facebookPageId, gerado, topico, tipoPubli
     facebook_page_id: facebookPageId || null,
     titulo: gerado.titulo || topico?.titulo || null,
     materia: gerado.materia,
+    titulo_ia: gerado.titulo || topico?.titulo || null,
+    materia_ia: gerado.materia || null,
     hashtags: JSON.stringify(gerado.hashtags || []),
     fonte_titulo: topico?.titulo || null,
     fonte_url: topico?.link || null,
@@ -271,6 +337,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     materia: overrides.materia || matter.materia,
     hashtags: overrides.hashtags || matter.hashtags,
     fonteCredito: overrides.fonte_credito != null ? overrides.fonte_credito : matter.fonte_credito,
+    incluirTitulo: tipo !== 'foto',
   });
 
   if (!mensagem.trim() || String(mensagem).startsWith('⏳')) {
@@ -403,8 +470,8 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       imagemPath: pubTipo === 'reel' ? null : matter.imagem_path || null,
       imageUrl: pubTipo === 'foto' && img ? img : null,
       texto: mensagem,
-      // PostSyncer: settings.title sobrescreve a legenda — não enviar em Reels
-      titulo: pubTipo === 'reel' ? null : overrides.titulo || matter.titulo || null,
+      // A legenda completa já contém o título. No PostSyncer, settings.title a substituiria.
+      titulo: null,
     });
 
     const postId = result.post_id || result.id;
@@ -912,18 +979,50 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
   const VideoClips = require('../models/VideoClips');
   const importService = require('./importService');
   const { detectarPlataformaSocial } = require('./socialPostExtract');
+  const scrapeCreators = require('./scrapeCreatorsSocial');
 
   const link = String(url || '').trim();
   const plataforma = detectarPlataformaSocial(link) || 'rede';
 
-  let meta = {};
+  let socialMeta = null;
+  if (scrapeCreators.isConfigured() && (plataforma === 'instagram' || plataforma === 'facebook')) {
+    try {
+      socialMeta = await scrapeCreators.extrairPost(link, plataforma);
+    } catch (socialErr) {
+      console.warn('[conteudo-reel] scrapecreators:', socialErr.message);
+    }
+  }
+
+  let meta = {
+    titulo: null,
+    thumbnail: null,
+    extractor: null,
+    autor: null,
+    autorUrl: null,
+    duracao: null,
+  };
   let metaWarning = null;
-  try {
-    meta = await importService.fetchLinkMetadata(link);
-  } catch (metaErr) {
-    metaWarning = importService.humanizeYtDlpError(metaErr);
-    console.warn('[conteudo-reel] metadata:', metaWarning);
-    meta = { titulo: null, thumbnail: null, extractor: null, autor: null, autorUrl: null, duracao: null };
+  // Quando a ScrapeCreators já entregou a mídia, evita uma chamada yt-dlp que costuma
+  // falhar com HTTP 400 no Instagram. A duração será obtida pelo ffprobe após o download.
+  if (!socialMeta?.videoUrl) {
+    try {
+      meta = await importService.fetchLinkMetadata(link);
+    } catch (metaErr) {
+      metaWarning = importService.humanizeYtDlpError(metaErr);
+      console.warn('[conteudo-reel] metadata:', metaWarning);
+    }
+  }
+
+  if (socialMeta) {
+    meta = {
+      ...meta,
+      description: socialMeta.texto || meta.description || null,
+      titulo: socialMeta.titulo || meta.titulo || null,
+      thumbnail: socialMeta.imagem || meta.thumbnail || null,
+      autor: socialMeta.veiculo || meta.autor || null,
+      autorUrl: socialMeta.autorUrl || meta.autorUrl || null,
+      extractor: [socialMeta.metodo, meta.extractor].filter(Boolean).join('+') || null,
+    };
   }
 
   const tituloBruto = meta.description || meta.titulo || `Reel — ${plataforma}`;
@@ -963,20 +1062,28 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     });
     video = await Videos.findById(vid);
     createdVideo = true;
-  } else if (/reaction|shares?/i.test(String(video.titulo || '')) || String(video.titulo || '').length > 120) {
-    // Corrige título antigo longo/sujo sem recriar o vídeo
+  } else {
     const metaBase =
       video.metadata && typeof video.metadata === 'object' ? video.metadata : {};
-    await Videos.update(video.id, {
-      titulo,
+    const tituloSujo =
+      /reaction|shares?/i.test(String(video.titulo || '')) ||
+      String(video.titulo || '').length > 120;
+    const patchVideo = {
       metadata: {
         ...metaBase,
+        extractor: meta.extractor || metaBase.extractor || null,
         titulo_completo:
-          metaBase.titulo_completo ||
           textoLimpo.slice(0, 2000) ||
+          metaBase.titulo_completo ||
           String(tituloBruto).slice(0, 2000),
       },
-    });
+    };
+    if (socialMeta || tituloSujo) patchVideo.titulo = titulo;
+    if (socialMeta?.imagem) patchVideo.thumbnail = socialMeta.imagem;
+    if (socialMeta?.veiculo) patchVideo.autor = String(socialMeta.veiculo).slice(0, 255);
+    if (socialMeta?.autorUrl) patchVideo.autor_url = String(socialMeta.autorUrl).slice(0, 500);
+
+    await Videos.update(video.id, patchVideo);
     video = await Videos.findById(video.id);
   }
 
@@ -1017,10 +1124,12 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     });
     matter = await AiMatters.findById(matterId);
   } else {
-    // Sempre normaliza título curto + limpa lixo de tentativas anteriores
+    // Sempre normaliza os metadados da fonte e limpa lixo de tentativas anteriores.
     const patchLimpeza = {
       titulo,
       fonte_titulo: titulo,
+      fonte_resumo: textoLimpo.slice(0, 1500) || matter.fonte_resumo || null,
+      imagem_url: meta.thumbnail || matter.imagem_url || null,
     };
     if (
       /reaction|shares?/i.test(String(matter.materia || '')) ||
@@ -1120,6 +1229,8 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
       matter_id: matter.id,
       facebook_page_id: facebookPageId || metaBase.facebook_page_id || null,
       plataforma,
+      scrapecreators_video_url:
+        socialMeta?.videoUrl || metaBase.scrapecreators_video_url || null,
       titulo_completo: metaBase.titulo_completo || String(tituloBruto).slice(0, 2000),
     },
   });
@@ -1196,10 +1307,11 @@ async function gerarDeLink({
       hasImage: Boolean(social.imagem),
     });
 
-    // Nunca gerar matéria social sem legenda real (evita alucinação)
-    if (String(social.texto || '').trim().length < 60) {
+    // Nunca gerar matéria social sem legenda suficiente (evita alucinação).
+    // O extrator manual já exige 40 caracteres; mantenha o mesmo limite aqui.
+    if (String(social.texto || '').trim().length < 40) {
       const err = new Error(
-        'Não foi possível ler a legenda deste post. Cole o texto da postagem no campo auxiliar e tente de novo.'
+        'A legenda deste post está vazia ou é muito curta para gerar uma matéria sem inventar informações. Cole o texto completo da postagem no campo auxiliar e tente de novo.'
       );
       err.status = 422;
       throw err;

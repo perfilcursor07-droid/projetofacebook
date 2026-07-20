@@ -3,6 +3,8 @@ const { env } = require('../config/env');
 const {
   MAX_MATERIA_CHARS,
   sortearFaixaChars,
+  classificarVolumeFonte,
+  blocoRegraTamanhoAdaptativo,
   sortearEstiloLead,
   sortearEstiloTitulo,
   sortearVozRedator,
@@ -17,7 +19,8 @@ const {
 } = require('./editorialGuidelinesFb');
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
-const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+/** Preferir deepseek-v4-flash; deepseek-chat ainda funciona até a depreciação (2026-07-24). */
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || env.deepseekModel || 'deepseek-v4-flash';
 
 function assertDeepseek() {
   if (!env.deepseekApiKey) {
@@ -27,24 +30,26 @@ function assertDeepseek() {
   }
 }
 
-async function chatCompletion(messages, { temperature = 0.78, json = true } = {}) {
+async function chatCompletion(messages, { temperature = 0.78, json = true, thinking = false } = {}) {
   assertDeepseek();
-  const { data } = await axios.post(
-    DEEPSEEK_URL,
-    {
-      model: DEEPSEEK_MODEL,
-      temperature,
-      response_format: json ? { type: 'json_object' } : undefined,
-      messages,
+  const body = {
+    model: DEEPSEEK_MODEL,
+    temperature,
+    response_format: json ? { type: 'json_object' } : undefined,
+    messages,
+  };
+  // V4: thinking opcional (matérias) — desligado por padrão para custo/latência
+  if (String(DEEPSEEK_MODEL).includes('v4')) {
+    body.thinking = { type: thinking ? 'enabled' : 'disabled' };
+    if (thinking) body.reasoning_effort = 'high';
+  }
+  const { data } = await axios.post(DEEPSEEK_URL, body, {
+    headers: {
+      Authorization: `Bearer ${env.deepseekApiKey}`,
+      'Content-Type': 'application/json',
     },
-    {
-      headers: {
-        Authorization: `Bearer ${env.deepseekApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 90_000,
-    }
-  );
+    timeout: 120_000,
+  });
 
   const raw = data?.choices?.[0]?.message?.content || '';
   if (!raw) {
@@ -179,7 +184,8 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     '3) Fechamento de fé: oração, gratidão, esperança ou reflexão espiritual ligada ao fato — sem pedir like/compartilhar.',
     'Exemplo de aspas: Ele afirma: "Eu entendi que sem Deus eu não era nada".',
     'O campo "titulo" = MANCHETE CURTA (máx. 90 caracteres). NÃO cole a legenda/transcrição no título.',
-    'Separe parágrafos com linha em branco. Alvo: 550–900 caracteres.',
+    'Separe parágrafos com linha em branco. Alvo: 1700–2100 caracteres (máximo útil Face/Insta).',
+    'Se a base for longa, condense preservando os dados principais; se for curta, complete com contexto real até o máximo.',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
     titulo ? `Título/contexto do vídeo de origem: ${String(titulo).slice(0, 120)}` : null,
     idioma ? `Idioma detectado da fala: ${idioma}` : null,
@@ -237,7 +243,7 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
     autor ? `Autor da foto (crédito se fizer sentido no fechamento): ${autor}` : null,
     'ESTRUTURA: lead com o fato/tema → desenvolvimento com detalhes → fechamento de fé (oração, gratidão ou reflexão).',
     'Tom de portal gospel: caloroso, claro, sem clickbait e sem pedir like/compartilhar.',
-    'Parágrafos curtos com linha em branco. Alvo: 520–850 caracteres.',
+    'Parágrafos curtos com linha em branco. Alvo: 1700–2100 caracteres (máximo útil Face/Insta).',
     'Se fizer sentido, no último parágrafo pode citar crédito curto (ex.: Reprodução) — sem inventar @ de quem não foi informado.',
   ]
     .filter(Boolean)
@@ -246,12 +252,12 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
   return chatJson(userContent, sortearTemperatura(false));
 }
 
-function systemPromptNoticia(faixa, investigativa, furoReportagem = false) {
-  return `Você é redator de Página gospel no Facebook (estilo News Gospel). Escreva matérias ORIGINAIS em português brasileiro.
+function systemPromptNoticia(faixa, investigativa, furoReportagem = false, volumeFonte = 'media') {
+  return `Você é redator de Página gospel no Facebook e Instagram (estilo News Gospel). Escreva matérias ORIGINAIS em português brasileiro.
 
-${blocoRegrasFacebook(faixa)}
+${blocoRegrasFacebook(faixa, volumeFonte)}
 
-Formato Facebook (obrigatório):
+Formato Facebook/Instagram (obrigatório):
 - Campo "materia" = texto puro da legenda/matéria (SEM HTML, SEM markdown, SEM meta description).
 - Campo "hashtags" = 3 a 5 termos sem #.
 - Campo "termos_imagem" = 2 a 4 consultas específicas para encontrar uma foto realmente relacionada.
@@ -259,16 +265,19 @@ Formato Facebook (obrigatório):
   - Não troque pessoas citadas por conceitos genéricos como "church", "politics" ou "gospel".
   - Use termos de stock em inglês somente quando a pauta não citar pessoa, organização ou lugar específico.
 - NÃO invente fatos, nomes, cargos, números ou citações que não estejam nas fontes de apuração.
+- Se houver fontes da internet na apuração, use-as para complementar o fato; se não houver, não preencha lacunas com especulação.
+- Reescreva sempre com voz própria (anti-plágio): estrutura e frases novas.
 
 ${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização falsa.' : ''}
-${furoReportagem ? `MODO FURO DE REPORTAGEM (obrigatório):
-- A fonte é uma notícia/post/vídeo já publicado. Você NÃO resume nem parafraseia parágrafo a parágrafo.
-- Encontre o FURO: o ângulo mais jornalístico e específico (detalhe, consequência, testemunho ou desdobramento).
-- Reescreva com estrutura News Gospel: lead (quem + fato) + desenvolvimento com aspas + fechamento de fé.
+${furoReportagem ? `MODO FURO / MINIMATÉRIA (obrigatório):
+- A fonte é uma notícia/post/vídeo já publicado.
+- Se a fonte for LONGA: condense no tamanho máximo Face/Insta, preservando os dados principais.
+- Se a fonte for CURTA: amplie com contexto real da apuração até o tamanho máximo — sem inventar.
+- Encontre o FURO: o ângulo mais jornalístico e específico.
+- Estrutura: lead (quem + fato) + desenvolvimento com aspas + fechamento de fé.
 - OBRIGATÓRIO: preserve 1 a 3 falas literais curtas entre aspas ("…") quando houver declaração na apuração.
 - Título próprio — nunca copie a manchete da fonte.
-- Mantenha os fatos verificáveis; sem inventar exclusividade falsa (“revelamos”, “apuração exclusiva”).
-- Cite o veículo só de forma genérica se necessário (“segundo informações divulgadas”).` : ''}
+- Não inclua bloco "Fontes:" — o sistema anexa créditos da origem e da imagem.` : ''}
 
 Responda APENAS JSON válido: {"titulo":"...","materia":"...","hashtags":["..."],"termos_imagem":["..."]}`;
 }
@@ -288,6 +297,8 @@ async function gerarMateriaNoticiaFacebook({
   redeSocial,
   investigativa = false,
   furoReportagem = false,
+  contextoAprendizado = null,
+  traduzirFonte = false,
 }) {
   assertDeepseek();
 
@@ -298,7 +309,6 @@ async function gerarMateriaNoticiaFacebook({
   const temperature = furoReportagem
     ? 0.72 + Math.random() * 0.08
     : sortearTemperatura(investigativa);
-  const systemMsg = systemPromptNoticia(faixa, investigativa, furoReportagem);
 
   const fontesTxt = Array.isArray(fontesApuracao) && fontesApuracao.length
     ? fontesApuracao
@@ -309,7 +319,7 @@ async function gerarMateriaNoticiaFacebook({
             f.url ? `URL: ${f.url}` : null,
             f.titulo ? `Título: ${f.titulo}` : null,
             f.resumo ? `Resumo: ${f.resumo}` : null,
-            f.trecho ? `Trecho documentado: ${String(f.trecho).slice(0, 1200)}` : null,
+            f.trecho ? `Trecho documentado: ${String(f.trecho).slice(0, 2500)}` : null,
           ]
             .filter(Boolean)
             .join('\n');
@@ -326,31 +336,54 @@ async function gerarMateriaNoticiaFacebook({
     .filter(Boolean)
     .join('\n');
 
+  const volumeFonte = classificarVolumeFonte(materialApuracao);
+  const systemMsg = systemPromptNoticia(faixa, investigativa, furoReportagem, volumeFonte);
+
+  let blocoAprendizado = null;
+  if (contextoAprendizado) {
+    try {
+      const { formatarContextoAprendizadoParaPrompt } = require('./editorialLearningService');
+      blocoAprendizado = formatarContextoAprendizadoParaPrompt(contextoAprendizado);
+    } catch {
+      blocoAprendizado = null;
+    }
+  }
+
   const userContent = [
-    'Crie uma matéria ORIGINAL estilo News Gospel para postar na Página do Facebook (foto + legenda).',
+    'Crie uma MINIMATÉRIA ORIGINAL estilo News Gospel para Facebook/Instagram (foto + legenda).',
+    blocoAprendizado,
     `VOZ DO REDATOR (obrigatório): ${voz}`,
     `ESTILO DO LEAD: ${lead}`,
     `ESTILO DO TÍTULO: ${estiloTitulo}`,
-    `EXTENSÃO ALVO: ${faixa.min}–${faixa.max} caracteres.`,
-    'FORMATAÇÃO: 3 a 5 parágrafos curtos separados por linha em branco.',
-    'ESTRUTURA: (1) lead com quem + fato; (2) desenvolvimento com contexto e aspas reais; (3) fechamento de fé (oração, gratidão ou esperança) — sem pedir like/compartilhar.',
+    `VOLUME DA FONTE: ${volumeFonte.toUpperCase()}.`,
+    blocoRegraTamanhoAdaptativo(faixa, volumeFonte),
+    `EXTENSÃO OBRIGATÓRIA DO CORPO: ${faixa.min}–${faixa.max} caracteres (sem hashtags). Meta: perto de ${faixa.max}.`,
+    'FORMATAÇÃO: 5 a 8 parágrafos curtos separados por linha em branco.',
+    'ESTRUTURA: (1) lead com quem + fato; (2) desenvolvimento com dados principais + aspas reais; (3) fechamento de fé — sem pedir like/compartilhar.',
     nicho ? `Nicho/palavras-chave: ${nicho}` : null,
     emAlta ? 'Contexto: assunto em alta agora.' : null,
     redeSocial
-      ? 'A fonte é post/vídeo de rede social. Transforme em matéria gospel: contextualize com suas palavras e DEIXE 1–3 falas literais curtas entre aspas ("…") da apuração.'
+      ? 'A fonte é post/vídeo de rede social. Transforme em minimatéria gospel: contextualize com suas palavras e DEIXE 1–3 falas literais curtas entre aspas ("…") da apuração.'
       : null,
     furoReportagem
-      ? 'PRIORIDADE: ângulo de furo + reescrita total no estilo News Gospel. Não parafraseie a fonte; reconstrua a narrativa.'
+      ? 'PRIORIDADE: ângulo de furo + reescrita total. Fonte longa = condensar; fonte curta = completar SOMENTE com fatos das fontes documentadas / busca na internet abaixo.'
+      : null,
+    traduzirFonte
+      ? 'FONTE EM IDIOMA ESTRANGEIRO: a matéria FINAL deve estar 100% em português brasileiro. Traduza fatos e citações com fidelidade; se usar aspas literais em inglês, acrescente a tradução em seguida entre parênteses.'
       : null,
     tituloReferencia ? `Título de referência: ${tituloReferencia}` : null,
     resumoReferencia ? `Resumo de referência: ${resumoReferencia}` : null,
-    fonte ? `Fonte citada genericamente: ${fonte}` : null,
+    fonte ? `Veículo/origem: ${fonte}` : null,
     dataReferencia ? `Data da fonte: ${dataReferencia}` : null,
-    contextoApuracao ? `Contexto de apuração:\n${String(contextoApuracao).slice(0, 6000)}` : null,
-    fontesTxt ? `Fontes documentadas:\n${fontesTxt}` : null,
-    'Se faltar detalhe factual, generalise com cuidado (ex.: “segundo informações divulgadas”) sem inventar.',
+    contextoApuracao ? `Contexto de apuração:\n${String(contextoApuracao).slice(0, 8000)}` : null,
+    fontesTxt
+      ? `FONTES DOCUMENTADAS (única base factual — não invente fora delas):\n${fontesTxt}`
+      : 'ATENÇÃO: sem fontes web extras. Use só o material de apuração acima; se faltar fato, generalize sem inventar.',
+    'ANTI-PLÁGIO: reescreva com palavras próprias; não copie parágrafos das fontes.',
+    'Se faltar detalhe factual nas fontes, generalise (“segundo informações divulgadas”) ou omita — NUNCA invente nome, número, data ou citação.',
     'Quando houver fala documentada, use aspas em pelo menos uma frase literal no corpo.',
-    'MODELO DE TOM (inspire-se, não copie): "O ator X tem se dedicado ao chamado…", "Em meio à devastação… uma notícia trouxe esperança…", "Que Deus console… Seguimos em oração…", "Glória a Deus por essa segunda oportunidade…".',
+    'NÃO inclua créditos/Fontes no campo materia — o sistema anexa automaticamente.',
+    'MODELO DE TOM (inspire-se, não copie): "O ator X tem se dedicado ao chamado…", "Em meio à devastação… uma notícia trouxe esperança…", "Que Deus console… Seguimos em oração…".',
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -361,7 +394,7 @@ async function gerarMateriaNoticiaFacebook({
         { role: 'system', content: systemMsg },
         { role: 'user', content: userContent },
       ],
-      { temperature, json: true }
+      { temperature, json: true, thinking: true }
     )
   );
 
@@ -374,7 +407,13 @@ async function gerarMateriaNoticiaFacebook({
           { role: 'system', content: systemMsg },
           {
             role: 'user',
-            content: `Matéria CURTA (${qualidade.chars} caracteres). Expanda para ${faixa.min}–${faixa.max} caracteres SEM inventar fatos nem muletas de IA. Mantenha o mesmo ângulo.
+            content: `Matéria ABAIXO DO MÁXIMO Face/Insta (${qualidade.chars} caracteres; alvo ${faixa.min}–${faixa.max}).
+Amplie até perto de ${faixa.max} caracteres SEM inventar fatos nem muletas de IA.
+Use só contexto real da apuração (quem é, lugar, carreira/ministério, desdobramento, fechamento de fé).
+Mantenha o mesmo ângulo e as falas literais.
+
+APURAÇÃO (para embasar a expansão):
+${String(materialApuracao).slice(0, 5000)}
 
 MATÉRIA:
 ${JSON.stringify(artigo)}
@@ -398,7 +437,9 @@ Retorne JSON completo atualizado.`,
           { role: 'system', content: systemMsg },
           {
             role: 'user',
-            content: `Matéria LONGA (${qualidade.chars} caracteres). Enxugue para ${faixa.min}–${faixa.max} (máx ${MAX_MATERIA_CHARS}). Remova repetições. Mantenha o furo e os fatos.
+            content: `Matéria ACIMA DO MÁXIMO Face/Insta (${qualidade.chars} caracteres).
+CONDENSE para ${faixa.min}–${faixa.max} (máx ${MAX_MATERIA_CHARS}).
+Preserve os dados principais (nomes, números, datas, lugares, decisões e aspas). Remova só repetição/enrolação.
 
 MATÉRIA:
 ${JSON.stringify(artigo)}
@@ -541,7 +582,7 @@ Escolha somente os melhores momentos que funcionem sozinhos, sem depender do tre
 Cada corte precisa começar no início natural de uma ideia, apresentar contexto suficiente e terminar depois da conclusão. Nunca comece com pronome ou resposta sem contexto, nem termine no meio de frase, raciocínio ou promessa.
 Priorize, nesta ordem: gancho claro, ideia completa, clímax/frase memorável e potencial de retenção. Qualidade vale mais que quantidade: retorne menos cortes se não houver momentos distintos e autossuficientes.
 Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos forte:
-{"cortes":[{"inicio":0,"fim":55,"legenda":"resumo curto do trecho","motivo":"gancho e por que o trecho é completo"}]}`;
+{"cortes":[{"inicio":0,"fim":55,"titulo":"manchete curta para capa do Reel (máx 80 chars)","legenda":"resumo curto do trecho","motivo":"gancho e por que o trecho é completo"}]}`;
 
   const user = [
     `Duração total do vídeo: ${total}s`,
@@ -556,6 +597,7 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
     `Não divida um mesmo raciocínio em vários cortes e evite sobreposição ou conteúdo repetido.`,
     `Descarte trechos que sejam apenas introdução, transição, pergunta sem resposta ou conclusão sem contexto.`,
     `No motivo, explique o gancho e confirme que o trecho tem começo, desenvolvimento e fechamento.`,
+    `Campo "titulo" = manchete curta e impactante para a capa do Reel (máx. 80 caracteres), sem colar a transcrição.`,
     `Se não houver fala útil, selecione pelo ritmo do vídeo, ainda respeitando duração e começo/fim naturais.`,
     '',
     'Fala / timeline:',
@@ -585,6 +627,26 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
       ? parsed.cortes
       : [];
 
+  return normalizeCortesList(list, {
+    total,
+    minClip,
+    maxClip,
+    preferredMin,
+    speechSegments,
+    titulo,
+    n,
+  });
+}
+
+function normalizeCortesList(list, {
+  total,
+  minClip,
+  maxClip,
+  preferredMin,
+  speechSegments = [],
+  titulo = null,
+  n = 3,
+}) {
   function speechStartAt(time) {
     const containing = speechSegments.find((segment) => segment.start <= time && segment.end > time);
     if (containing) return containing.start;
@@ -703,13 +765,22 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
 
     const legenda = String(item.legenda || item.caption || '').trim().slice(0, 500);
     const motivo = String(item.motivo || '').trim().slice(0, 280);
-    const description = normalizeDescription(legenda || motivo);
+    const tituloSugestao = String(item.titulo || item.title || legenda || titulo || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 90);
+    const description = normalizeDescription(legenda || motivo || tituloSugestao);
     if (
       description.length >= 20 &&
       descriptions.some((existing) => existing === description)
     ) continue;
 
-    cortes.push({ ...range, legenda, motivo });
+    cortes.push({
+      ...range,
+      titulo: tituloSugestao || `Trecho ${range.inicio}s–${range.fim}s`,
+      legenda,
+      motivo,
+    });
     descriptions.push(description);
     if (cortes.length >= n) break;
   }
@@ -720,6 +791,7 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
       cortes.push({
         inicio: 0,
         fim,
+        titulo: String(titulo || 'Confira este trecho').slice(0, 90),
         legenda: titulo || 'Confira este trecho',
         motivo: total <= preferredMin
           ? 'Vídeo curto mantido completo para preservar o contexto'
@@ -732,6 +804,258 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
 }
 
 /**
+ * Mapeia um pedido em texto livre do usuário para cortes no vídeo (usando a transcrição).
+ */
+async function mapearPedidoParaCortes({
+  duracao,
+  titulo,
+  pedido,
+  transcricao,
+  segmentos,
+  maxCortes = 3,
+  maxSegundos = 90,
+  minSegundos = 40,
+}) {
+  assertDeepseek();
+  const pedidoTxt = String(pedido || '').trim();
+  if (!pedidoTxt) {
+    const err = new Error('Descreva quais Reels você quer criar');
+    err.status = 400;
+    throw err;
+  }
+
+  const total = Math.max(0, Math.round(Number(duracao) || 0));
+  if (total < 3) return [];
+
+  const maxClip = Math.min(90, total, Math.max(10, Number(maxSegundos) || 90));
+  const minClip = Math.min(maxClip, total, Math.max(3, Number(minSegundos) || 40));
+  const preferredMin = Math.min(maxClip, total, Math.max(minClip, 45));
+
+  const speechSegments = (Array.isArray(segmentos) ? segmentos : [])
+    .map((segment) => ({
+      start: Math.max(0, Number(segment.start)),
+      end: Math.min(total, Number(segment.end)),
+      text: String(segment.text || '').trim(),
+    }))
+    .filter((segment) => (
+      segment.text &&
+      Number.isFinite(segment.start) &&
+      Number.isFinite(segment.end) &&
+      segment.end > segment.start
+    ))
+    .sort((a, b) => a.start - b.start);
+
+  let timeline = '';
+  if (speechSegments.length) {
+    timeline = speechSegments
+      .slice(0, 500)
+      .map((segment) => `[${segment.start.toFixed(1)}-${segment.end.toFixed(1)}] ${segment.text}`)
+      .join('\n')
+      .slice(0, 30000);
+  } else if (transcricao) {
+    timeline = String(transcricao).slice(0, 20000);
+  }
+
+  const n = Math.min(3, Math.max(1, Number(maxCortes) || 3));
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é editor de Reels. O usuário descreveu quais trechos quer.
+Com base na timeline/transcrição, escolha os trechos que atendem o pedido.
+Cada corte deve ser autossuficiente (começo, desenvolvimento, fim), ${minClip}–${maxClip}s.
+Responda APENAS JSON:
+{"cortes":[{"inicio":0,"fim":55,"titulo":"manchete curta (máx 80)","legenda":"resumo","motivo":"por que atende o pedido"}]}`,
+      },
+      {
+        role: 'user',
+        content: [
+          `Pedido do usuário: ${pedidoTxt}`,
+          `Duração total: ${total}s`,
+          `Título do vídeo: ${titulo || '—'}`,
+          `Máximo ${n} cortes. Prefira qualidade.`,
+          `0 <= inicio < fim <= ${total}.`,
+          '',
+          'Timeline / fala:',
+          timeline || '(sem transcrição — estime pelo título e pedido)',
+        ].join('\n'),
+      },
+    ],
+    { temperature: 0.3, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    const err = new Error('A IA não entendeu o pedido de Reels. Tente descrever de outro jeito.');
+    err.status = 502;
+    throw err;
+  }
+
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed.cortes)
+      ? parsed.cortes
+      : [];
+
+  return normalizeCortesList(list, {
+    total,
+    minClip,
+    maxClip,
+    preferredMin,
+    speechSegments,
+    titulo: pedidoTxt.slice(0, 90),
+    n,
+  });
+}
+
+/**
+ * Limita quantos itens por fonte aparecem no ranking (evita lista monopolizada por 1 site).
+ */
+function diversificarRankingPorFonte(itens, candidatos, maxPorFonte = 2) {
+  const fontePorId = new Map();
+  for (const c of candidatos || []) {
+    if (c?.id == null) continue;
+    const chave = String(c.fonte_id || c.fonte || c.fonte_nome || c.plataforma || 'x');
+    fontePorId.set(Number(c.id), chave);
+  }
+  const contagem = new Map();
+  const out = [];
+  for (const item of itens || []) {
+    const chave = fontePorId.get(Number(item.id)) || `id:${item.id}`;
+    const n = contagem.get(chave) || 0;
+    if (n >= maxPorFonte) continue;
+    contagem.set(chave, n + 1);
+    out.push(item);
+  }
+  return out;
+}
+
+/**
+ * Ranqueia posts da Biblioteca pelo potencial de viralizar no Facebook.
+ * Respeita diretrizes: título chamativo ok, sem clickbait enganoso / conteúdo proibido.
+ * Diversifica fontes (máx. 2 por site) e pede títulos/motivos em português.
+ * @param {Array<{id:number,titulo?:string,resumo?:string,fonte?:string,plataforma?:string,fonte_id?:number}>} candidatos
+ * @param {number} topN
+ * @returns {Promise<Array<{id:number,score:number,motivo:string,titulo_pt?:string|null}>>}
+ */
+async function ranquearPostsViralFacebook(candidatos, topN = 3) {
+  assertDeepseek();
+  const agora = Date.now();
+  const lista = (Array.isArray(candidatos) ? candidatos : [])
+    .filter((c) => c && c.id != null)
+    .slice(0, 40)
+    .map((c) => {
+      const pub = c.publicado_em || c.publicadoEm || c.created_at || c.createdAt || null;
+      const ts = pub ? new Date(pub).getTime() : NaN;
+      const idadeHoras = Number.isFinite(ts) ? Math.max(0, Math.round((agora - ts) / 3_600_000)) : null;
+      return {
+        id: Number(c.id),
+        fonte_id: c.fonte_id != null ? Number(c.fonte_id) : null,
+        titulo: String(c.titulo || '').slice(0, 200),
+        resumo: String(c.resumo || '').slice(0, 400),
+        fonte: String(c.fonte || c.fonte_nome || '').slice(0, 120),
+        plataforma: String(c.plataforma || c.fonte_plataforma || '').slice(0, 40),
+        tipo_midia: String(c.tipo_midia || c.media_type || 'post').slice(0, 20),
+        status: String(c.status || '').slice(0, 20) || null,
+        idade_horas: idadeHoras,
+        publicado_em: Number.isFinite(ts) ? new Date(ts).toISOString() : null,
+        prioridade_novo: c.status === 'novo' || idadeHoras == null ? true : idadeHoras <= 72,
+      };
+    });
+
+  const n = Math.min(Math.max(Number(topN) || 1, 1), 30);
+  if (!lista.length) return [];
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é editor de uma página no Facebook (estilo notícia / engajamento).
+Escolha os posts com MAIOR potencial de viralizar no Facebook AGORA.
+Critérios: relevância, emoção/curiosidade legítima, clareza do assunto, ATUALIDADE, potencial de compartilhamento e adequação ao formato indicado em tipo_midia.
+PRIORIDADE DE FRESHNESS (obrigatório):
+- Prefira fortemente itens com status "novo" e idade_horas baixa (últimas 72h).
+- Itens com mais de 7 dias (idade_horas > 168) só entram se forem excepcionais; na dúvida, omita.
+- Não repita pautas antigas já conhecidas se houver material mais recente na lista.
+Vídeos/Reels podem ser escolhidos quando o assunto e a narrativa tiverem potencial real; não priorize o formato sozinho.
+DIVERSIDADE OBRIGATÓRIA: não concentre o ranking em uma única fonte/site. No máximo 2 itens da mesma fonte (mesmo fonte_id ou mesmo nome de fonte). Prefira misturar fontes diferentes.
+Se o título/resumo estiver em idioma estrangeiro, traduza para português brasileiro em titulo_pt e escreva o motivo em português.
+PROIBIDO priorizar: clickbait enganoso, sensacionalismo falso, conteúdo que viole diretrizes do Facebook (ódio, violência gráfica, desinformação deliberada, spam, nudez, etc.).
+Título chamativo é bem-vindo se for honesto com o conteúdo.
+Avalie todos os candidatos. Inclua todos os que merecerem score 50 ou maior, respeitando o limite e a diversidade de fontes; omita os que ficarem abaixo de 50.
+Responda APENAS JSON: {"ranking":[{"id":123,"score":0-100,"motivo":"frase curta em português","titulo_pt":"título em português se o original for estrangeiro, senão null"}]}.
+Ordene do melhor para o pior. Inclua no máximo ${n} itens. Use só IDs da lista.`,
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ topN: n, maxPorFonte: 2, candidatos: lista }),
+      },
+    ],
+    { temperature: 0.35, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = null;
+  }
+
+  const idsValidos = new Set(lista.map((c) => c.id));
+  const ranking = Array.isArray(parsed?.ranking) ? parsed.ranking : [];
+  const out = [];
+  for (const item of ranking) {
+    const id = Number(item?.id);
+    if (!idsValidos.has(id) || out.some((x) => x.id === id)) continue;
+    const tituloPt = String(item.titulo_pt || '').trim();
+    out.push({
+      id,
+      score: Math.min(100, Math.max(0, Number(item.score) || 50)),
+      motivo: String(item.motivo || '').trim().slice(0, 200),
+      titulo_pt: tituloPt ? tituloPt.slice(0, 500) : null,
+    });
+  }
+
+  const diversificado = diversificarRankingPorFonte(out, lista, 2)
+    .map((item) => {
+      const cand = lista.find((c) => c.id === item.id);
+      // Penaliza conteúdo antigo que a IA ainda assim priorizou (>7 dias)
+      if (cand?.idade_horas != null && cand.idade_horas > 168 && item.score >= 50) {
+        return { ...item, score: Math.min(item.score, 49) };
+      }
+      return item;
+    })
+    .filter((item) => item.score >= 50)
+    .slice(0, n);
+
+  // Fallback: completa com os mais recentes se a IA devolveu pouco (também diversificado)
+  if (diversificado.length < Math.min(n, lista.length)) {
+    const extras = [];
+    const porIdade = [...lista].sort((a, b) => (a.idade_horas ?? 99999) - (b.idade_horas ?? 99999));
+    for (const c of porIdade) {
+      if (diversificado.some((x) => x.id === c.id) || extras.some((x) => x.id === c.id)) continue;
+      if (c.idade_horas != null && c.idade_horas > 168) continue;
+      extras.push({
+        id: c.id,
+        score: c.status === 'novo' ? 55 : 45,
+        motivo: c.status === 'novo' ? 'Conteúdo novo da fonte.' : 'Complemento por recência.',
+        titulo_pt: null,
+      });
+    }
+    for (const item of diversificarRankingPorFonte([...diversificado, ...extras], lista, 2)) {
+      if (diversificado.some((x) => x.id === item.id)) continue;
+      if (item.score < 50) continue;
+      diversificado.push(item);
+      if (diversificado.length >= n) break;
+    }
+  }
+
+  return diversificado.slice(0, n);
+}
+
+/**
  * Resumo curto para alerta da Biblioteca de fontes.
  */
 async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, snippet }) {
@@ -741,7 +1065,7 @@ async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, sni
       {
         role: 'system',
         content:
-          'Você resume conteúdos novos de perfis/canais monitorados. Responda APENAS JSON: {"titulo":"...","resumo":"..."}. Título ≤ 90 chars. Resumo em 1–2 frases em português, factual, sem inventar.',
+          'Você resume conteúdos novos de perfis/canais/sites monitorados. Responda APENAS JSON: {"titulo":"...","resumo":"..."}. Título ≤ 90 chars. Resumo em 1–2 frases. SEMPRE em português brasileiro — se o original estiver em inglês ou outro idioma, TRADUZA título e resumo. Seja factual, sem inventar.',
       },
       {
         role: 'user',
@@ -751,6 +1075,7 @@ async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, sni
           titulo: titulo || null,
           url: url || null,
           snippet: snippet || null,
+          idiomaSaida: 'pt-BR',
         }),
       },
     ],
@@ -957,9 +1282,10 @@ Regras:
 - O título pode melhorar levemente (máx. 110 chars) se as novas infos mudarem o gancho; senão mantenha próximo do atual.
 - A matéria deve ficar mais forte e completa: use as infos extras (fatos, nomes, números, contexto) sem inventar o que não estiver no texto atual nem nas extras.
 - Português do Brasil, parágrafos curtos separados por linha em branco (\\n\\n).
-- Ideal 400–650 caracteres no corpo (sem hashtags).
+- Ideal 1700–2100 caracteres no corpo (máximo útil Face/Insta, sem hashtags).
 - 3 a 5 hashtags sem # no JSON.
-- Sem pedir like, sem clickbait mentiroso, sem Caps Lock excessivo.`,
+- Sem pedir like, sem clickbait mentiroso, sem Caps Lock excessivo.
+- Preserve o bloco "Fontes:" se já existir no texto atual.`,
       },
       {
         role: 'user',
@@ -1075,15 +1401,76 @@ Regras:
   };
 }
 
+/**
+ * Identifica o nome do autor/fotógrafo a partir dos metadados da imagem interna.
+ * Se não houver autor claro, retorna null (o sistema usa Reprodução/Internet).
+ */
+async function identificarAutorImagem({ autor, fonte, titulo, origem } = {}) {
+  const { extrairAutorImagemHeuristico } = require('./editorialGuidelinesFb');
+  const heuristico = extrairAutorImagemHeuristico({ autor, fonte, titulo });
+  if (heuristico) return heuristico;
+
+  const temSinal = [autor, fonte, titulo].some((x) => String(x || '').trim().length >= 3);
+  if (!temSinal) return null;
+
+  try {
+    assertDeepseek();
+    const raw = await chatCompletion(
+      [
+        {
+          role: 'system',
+          content: `Você identifica o AUTOR/FOTÓGRAFO de uma imagem a partir dos metadados internos da busca.
+Responda APENAS JSON: {"autor":"Nome Completo"} ou {"autor":null}.
+Regras:
+- Só retorne nome se for claramente pessoa ou crédito fotográfico (ex.: "João Silva", "Agência Brasil", "Ricardo Stuckert").
+- Se for só site/rede (G1, Instagram, Facebook, UOL, YouTube, domínio .com) → autor null.
+- Se for genérico (Pexels, Unsplash, Stock, Internet) sem nome de pessoa → autor null.
+- NÃO invente nomes. Na dúvida, null.`,
+        },
+        {
+          role: 'user',
+          content: [
+            autor ? `Campo autor: ${String(autor).slice(0, 120)}` : null,
+            fonte ? `Campo fonte: ${String(fonte).slice(0, 160)}` : null,
+            titulo ? `Título/alt da imagem: ${String(titulo).slice(0, 220)}` : null,
+            origem ? `Origem da busca: ${origem}` : null,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
+      ],
+      { temperature: 0.1, json: true }
+    );
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = {};
+    }
+    const nome = String(parsed.autor || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80);
+    if (!nome || /null|undefined|n\/a|nenhum/i.test(nome)) return null;
+    return extrairAutorImagemHeuristico({ autor: nome }) || nome;
+  } catch (err) {
+    console.warn('identificarAutorImagem:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   gerarMateriaVideo,
   gerarMateriaImagem,
   gerarMateriaNoticiaFacebook,
   sugerirCortes,
+  mapearPedidoParaCortes,
   resumirAlertaBiblioteca,
+  ranquearPostsViralFacebook,
   sugerirTituloMateria,
   reescreverMateriaComInfo,
   sugerirConsultasImagem,
+  identificarAutorImagem,
   TITULO_TOMES,
   assertDeepseek,
   MAX_MATERIA_CHARS,

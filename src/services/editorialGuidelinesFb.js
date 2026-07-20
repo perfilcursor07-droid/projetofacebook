@@ -1,19 +1,23 @@
 /**
- * Diretrizes editoriais para matérias de Página do Facebook (texto curto).
- * Adaptado de site-gospel/editorialGuidelines.js — sem HTML longo.
- *
- * Alcance no Facebook (referência 2024–2026):
- * - Pico de engajamento: ~40–80 caracteres (posts curtíssimos).
- * - “Ver mais” no mobile: ~400–480 caracteres — texto acima disso some atrás do clique.
- * - Para Página de notícias com foto: 400–700 caracteres com gancho forte no início.
- * Fontes: Hootsuite/HubSpot (≤80 chars +66% engajamento), fold ~480 chars.
+ * Diretrizes editoriais para matérias de Página do Facebook / Instagram.
+ * Regra de tamanho: sempre mirar o TETO útil do feed (Face + Insta).
+ * - Fonte longa → condensar preservando os dados principais.
+ * - Fonte curta → ampliar com contexto real da apuração.
  */
 
 /**
- * Teto para Página gospel (estilo News Gospel): matérias um pouco mais longas
- * que o fold do feed, com desenvolvimento + fechamento de fé.
+ * Teto do corpo + créditos + hashtags (limite prático Face/Insta).
+ * Instagram caption ≈ 2200; usamos isso como referência dura.
  */
-const MAX_MATERIA_CHARS = 1200;
+const MAX_MATERIA_CHARS = 2200;
+
+/** Alvo do corpo da minimatéria (sem hashtags/créditos). Sempre perto do máximo. */
+const FAIXA_CORPO_FB = Object.freeze({ min: 1700, max: 2100 });
+
+/** Abaixo disso a fonte é tratada como “texto pequeno” (precisa expandir). */
+const FONTE_CURTA_CHARS = 700;
+/** Acima disso a fonte é “texto grande” (precisa condensar). */
+const FONTE_LONGA_CHARS = 1800;
 
 const FRASES_PROIBIDAS_IA = [
   'é importante ressaltar', 'vale ressaltar', 'vale destacar', 'vale lembrar',
@@ -35,14 +39,41 @@ const FRASES_PROIBIDAS_IA = [
 ];
 
 function sortearFaixaChars() {
-  // News Gospel: desenvolvimento + aspas + fechamento de fé.
-  const faixas = [
-    { min: 520, max: 720 },
-    { min: 580, max: 820 },
-    { min: 620, max: 900 },
-    { min: 550, max: 780 },
-  ];
-  return faixas[Math.floor(Math.random() * faixas.length)];
+  // Sempre o mesmo alvo: tamanho máximo útil para Face/Insta.
+  return { min: FAIXA_CORPO_FB.min, max: FAIXA_CORPO_FB.max };
+}
+
+/**
+ * Classifica o volume da fonte para orientar condensar × expandir.
+ * @returns {'curta'|'media'|'longa'}
+ */
+function classificarVolumeFonte(textoFonte) {
+  const n = contarChars(textoFonte);
+  if (n <= FONTE_CURTA_CHARS) return 'curta';
+  if (n >= FONTE_LONGA_CHARS) return 'longa';
+  return 'media';
+}
+
+function blocoRegraTamanhoAdaptativo(faixa, volumeFonte) {
+  const alvo = `${faixa.min}–${faixa.max}`;
+  if (volumeFonte === 'longa') {
+    return `TAMANHO (fonte LONGA — CONDENSE):
+- A apuração é extensa. CONDENSE até ${alvo} caracteres (máx. Face/Insta).
+- Preserve TODOS os dados principais: nomes, números, datas, lugares, decisões e 1–3 falas literais.
+- Corte só repetição, enrolação e detalhes secundários — nunca o furo.
+- O texto final deve chegar PERTO do máximo (${faixa.max}), não ficar telegráfico.`;
+  }
+  if (volumeFonte === 'curta') {
+    return `TAMANHO (fonte CURTA — AMPLIE):
+- A apuração é curta. AMPLIE até ${alvo} caracteres (máx. Face/Insta).
+- Use só contexto REAL da apuração: quem é a pessoa, o que já se sabe dela, lugar, ministério/carreira, desdobramento e fechamento de fé.
+- NÃO invente fatos, números, cargos nem citações.
+- O texto final deve chegar PERTO do máximo (${faixa.max}) — matéria completa, não bilhete.`;
+  }
+  return `TAMANHO (fonte MÉDIA — COMPLETE):
+- Reescreva a narrativa e preencha até ${alvo} caracteres (máx. Face/Insta).
+- Preserve os dados principais e desenvolva com contexto real da apuração.
+- Meta: perto de ${faixa.max} caracteres no corpo.`;
 }
 
 function sortearEstiloLead() {
@@ -83,13 +114,15 @@ function sortearVozRedator() {
  */
 function blocoEstiloNewsGospel() {
   return `
-ESTILO NEWS GOSPEL (obrigatório — imite a voz de Página gospel de notícias):
-1) LEAD: comece apresentando quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
-2) DESENVOLVIMENTO: conte a história com fatos concretos (obras, datas, lugares, decisões). Use 1 a 3 FALAS LITERAIS entre aspas ("…") quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
-3) FECHAMENTO DE FÉ: termine com reflexão espiritual, oração, gratidão ou esperança (ex.: "Que Deus console…", "Glória a Deus…", "Essa história nos lembra que…"). NUNCA feche pedindo like, comentário ou compartilhamento.
-4) TOM: jornalístico + evangélico caloroso. Emocionante sem drama falso. Sem clickbait. Sem sermão genérico desconectado do fato.
-5) FORMATO: 3 a 5 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML. Sem markdown (**negrito**). Emojis só se fizerem sentido no fechamento (no máximo 1–2), nunca no meio de cada frase.
-6) PROIBIDO: colar a fonte/transcrição inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".`;
+ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
+1) LEAD: apresente quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
+2) DESENVOLVIMENTO: minimatéria do conteúdo original. Se a fonte for grande, condense preservando os dados principais; se for pequena, complete com contexto real da apuração — sempre no tamanho máximo Face/Insta.
+3) Use 1 a 3 FALAS LITERAIS entre aspas ("…") quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
+4) FECHAMENTO DE FÉ: reflexão espiritual, oração, gratidão ou esperança. NUNCA peça like/comentário/compartilhamento.
+5) TOM: jornalístico + evangélico caloroso. Sem clickbait.
+6) FORMATO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML/markdown. Emojis só no fechamento (máx. 1–2).
+7) PROIBIDO: colar a fonte inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
+8) NÃO coloque bloco de "Fontes:" no JSON — o sistema anexa créditos automaticamente.`;
 }
 
 function sortearTemperatura(investigativa = false) {
@@ -256,9 +289,10 @@ function quebrarEmParagrafos(texto) {
 }
 
 /**
- * Monta a legenda final do post: título + corpo + crédito/fonte + hashtags.
+ * Monta a legenda final do post: título opcional + corpo + crédito/fonte + hashtags.
+ * O título ainda é usado para removê-lo do início do corpo quando incluirTitulo=false.
  */
-function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito } = {}) {
+function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, incluirTitulo = true } = {}) {
   const title = String(titulo || '').replace(/\s+/g, ' ').trim();
   const extracted = extrairHashtagsDoTexto(materia);
   let body = extracted.body;
@@ -269,20 +303,24 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito } = {})
 
   body = quebrarEmParagrafos(body);
 
-  const credit = String(fonteCredito || '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
-    .join('\n')
-    .trim();
+  // Evita duplicar se o corpo já tem o bloco "Fontes:" (produção).
+  const temFontesNoCorpo = /Fontes:\s*\n/i.test(body);
+  const credit = temFontesNoCorpo
+    ? ''
+    : String(fonteCredito || '')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n')
+      .trim();
 
   const tagsLine = formatHashtagsLine(
     Array.isArray(hashtags) && hashtags.length ? hashtags : extracted.tags
   );
 
   const parts = [];
-  if (title) parts.push(title);
+  if (title && incluirTitulo) parts.push(title);
   if (body) parts.push(body);
   if (credit) parts.push(credit);
   if (tagsLine) parts.push(tagsLine);
@@ -322,20 +360,163 @@ function montarFonteCredito({ veiculo, fonte, host, tipoPublicacao, imagemOrigem
   return lines.join('\n').slice(0, 400) || null;
 }
 
-function blocoRegrasFacebook(faixa) {
+/** Crédito padrão quando a imagem interna não traz autor identificável. */
+const CREDITO_IMAGEM_FALLBACK = 'Reprodução/Internet';
+
+/**
+ * Extrai nome de autor/fotógrafo dos metadados da imagem interna (heurística).
+ * Retorna null se não houver nome claro (aí cai no fallback ou na IA).
+ */
+function extrairAutorImagemHeuristico({ autor, fonte, titulo } = {}) {
+  const limpar = (s) =>
+    String(s || '')
+      .replace(/\s+/g, ' ')
+      .replace(/^["'“”]+|["'“”]+$/g, '')
+      .trim()
+      .slice(0, 80);
+
+  const pareceAutor = (s) => {
+    const v = limpar(s);
+    if (!v || v.length < 2 || v.length > 80) return false;
+    if (/^(pexels|unsplash|getty|shutterstock|google|internet|reprodu[cç][aã]o|reprodu[cç][aã]o\/internet|stock|foto|image|imagem)$/i.test(v)) {
+      return false;
+    }
+    if (/^(instagram|facebook|twitter|x|tiktok|youtube|g1|uol|globo|bbc|cnn|reuters)$/i.test(v)) {
+      return false;
+    }
+    if (/\.(com|br|net|org|io)\b/i.test(v)) return false;
+    return true;
+  };
+
+  const a = limpar(autor);
+  if (pareceAutor(a)) return a;
+
+  const f = limpar(fonte);
+  const pexels = f.match(/^Pexels\s*[·\-–|]\s*(.+)$/i);
+  if (pexels && pareceAutor(pexels[1])) return limpar(pexels[1]);
+  if (pareceAutor(f) && /\b[\p{Lu}][\p{L}'’.-]{1,}(?:\s+[\p{Lu}][\p{L}'’.-]{1,})+/u.test(f)) {
+    return f;
+  }
+
+  const t = String(titulo || '');
+  const tm =
+    t.match(
+      /(?:foto|fotografia|cr[eé]dito|photographer|photo\s*by|by|por)\s*[:：\-–]\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.\- ]{1,60})/i
+    ) || t.match(/©\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.\- ]{1,60})/i);
+  if (tm && pareceAutor(tm[1])) {
+    return limpar(tm[1].replace(/\s*[|/·].*$/, ''));
+  }
+
+  return null;
+}
+
+/** Nome amigável do site a partir da URL (sem link). */
+function nomeSiteDeUrl(url) {
+  try {
+    const host = new URL(String(url || '').trim()).hostname.replace(/^www\./i, '');
+    if (!host) return null;
+    const base = host.split('.')[0] || host;
+    const conhecidos = {
+      g1: 'G1',
+      uol: 'UOL',
+      globo: 'Globo',
+      folha: 'Folha',
+      estadao: 'Estadão',
+      cnn: 'CNN',
+      bbc: 'BBC',
+      youtube: 'YouTube',
+      instagram: 'Instagram',
+      facebook: 'Facebook',
+      tiktok: 'TikTok',
+      twitter: 'X',
+      x: 'X',
+    };
+    if (conhecidos[base.toLowerCase()]) return conhecidos[base.toLowerCase()];
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Anexa bloco de créditos (origem do conteúdo + crédito da imagem) antes das hashtags.
+ * Conteúdo: somente o nome do site (sem URL).
+ * Imagem: só o nome do autor, ou "Reprodução/Internet" se não houver.
+ */
+function anexarCreditosFontes(materia, { fonteNome, fonteUrl, imagemAutor } = {}) {
+  const { body, tags } = extrairHashtagsDoTexto(materia);
+  let cleanBody = String(body || '')
+    .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+$/i, '')
+    .trim();
+
+  const linhas = [];
+  let site = String(fonteNome || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  // Se veio URL no nome, ou nome vazio, usa o host amigável
+  if (!site || /^https?:\/\//i.test(site)) {
+    site = nomeSiteDeUrl(fonteUrl || site) || '';
+  } else if (/^https?:\/\//i.test(String(fonteUrl || ''))) {
+    // Nome genérico demais → prefere host
+    if (/^(site|fonte|not[ií]cia|post|link)$/i.test(site)) {
+      site = nomeSiteDeUrl(fonteUrl) || site;
+    }
+  }
+  if (site) linhas.push(`• Conteúdo: ${site}`);
+
+  const creditoImg = limparCreditoAutor(imagemAutor);
+  linhas.push(`• Imagem: ${creditoImg}`);
+
+  const bloco = `Fontes:\n${linhas.join('\n')}`;
+  return anexarHashtagsAoFinal(`${cleanBody}\n\n${bloco}`, tags);
+}
+
+function limparCreditoAutor(value) {
+  const v = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!v || /^reprodu[cç][aã]o(\/internet)?$/i.test(v) || /^internet$/i.test(v)) {
+    return CREDITO_IMAGEM_FALLBACK;
+  }
+  return v.slice(0, 80);
+}
+
+/** Atualiza só a linha de crédito da imagem no bloco Fontes (mantém Conteúdo e hashtags). */
+function atualizarCreditoImagemNaMateria(materia, imagemAutor) {
+  const credito = limparCreditoAutor(imagemAutor);
+  const { body, tags } = extrairHashtagsDoTexto(materia);
+  let cleanBody = String(body || '').trim();
+
+  if (/Fontes:\s*\n(?:[•\-*].+\n?)+$/i.test(cleanBody)) {
+    if (/[•\*]\s*Imagem\s*:/i.test(cleanBody)) {
+      cleanBody = cleanBody.replace(/([•\*]\s*Imagem\s*:\s*)([^\n]+)/i, `$1${credito}`);
+    } else {
+      cleanBody = cleanBody.replace(/(Fontes:\s*\n(?:[•\*].+\n?)*)/i, (m) => `${m.trimEnd()}\n• Imagem: ${credito}\n`);
+    }
+    return anexarHashtagsAoFinal(cleanBody, tags);
+  }
+
+  return anexarCreditosFontes(cleanBody, { imagemAutor: credito });
+}
+
+function blocoRegrasFacebook(faixa, volumeFonte = 'media') {
   return `
-DIRETRIZES FACEBOOK / PEOPLE-FIRST:
-- Texto para leitor de Página gospel, não para engajar de forma inautêntica.
-- NÃO copie a fonte inteira; reescreva a narrativa com estrutura própria.
-- FALAS LITERAIS: quando a apuração trouxer fala/transcrição/legendas, DEIXE 1 a 3 trechos curtos e fortes entre aspas ("…") — fiéis ao que foi dito. Introduza com "afirmou", "declarou", "contou".
-- NÃO invente fatos, números, datas, igrejas, pastores nem declarações entre aspas que NÃO estejam nas fontes.
+DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
+- Meta de tamanho: SEMPRE o máximo útil do feed (${faixa.min}–${faixa.max} chars no corpo; teto ${MAX_MATERIA_CHARS} com créditos/hashtags).
+- Fonte longa → condensar preservando dados principais. Fonte curta → ampliar SÓ com fatos das fontes de apuração / internet documentadas.
+- NÃO copie a fonte inteira nem frases longas: reescreva com estrutura e palavras próprias (anti-plágio).
+- FALAS LITERAIS: 1 a 3 trechos curtos entre aspas ("…") SOMENTE se estiverem documentados na apuração.
+- NÃO invente fatos, números, datas, igrejas, pastores, locais, cargos nem declarações.
+- Se um detalhe NÃO estiver nas fontes documentadas: omita ou generalize (“segundo informações divulgadas”) — nunca preencha com “conhecimento geral” duvidoso.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
-- Formato OBRIGATÓRIO: 3 a 5 parágrafos curtos separados por linha em branco (\\n\\n). Nunca um bloco único.
+- Formato: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n).
 - Gancho forte nos primeiros ~120 caracteres (quem + fato).
-- Extensão alvo desta geração: ${faixa.min}–${faixa.max} caracteres (máx absoluto ${MAX_MATERIA_CHARS}).
-- 3 a 5 hashtags no campo hashtags, SEM espaços internos (ex.: FeCrista), sem # no valor.
+- 3 a 5 hashtags no campo hashtags, SEM espaços internos, sem # no valor.
 - Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 22).map((f) => `"${f}"`).join(', ')}…
-- FECHAMENTO: reflexão de fé, oração ou gratidão ligada ao fato — nunca “como vimos” / “em suma” / CTA de engajamento.
+- FECHAMENTO: fé/oração/gratidão — nunca CTA de engajamento.
+
+${blocoRegraTamanhoAdaptativo(faixa, volumeFonte)}
 
 ${blocoEstiloNewsGospel()}`;
 }
@@ -352,8 +533,13 @@ function mensagemAvisoQualidade(avaliacao) {
 
 module.exports = {
   MAX_MATERIA_CHARS,
+  FAIXA_CORPO_FB,
+  FONTE_CURTA_CHARS,
+  FONTE_LONGA_CHARS,
   FRASES_PROIBIDAS_IA,
   sortearFaixaChars,
+  classificarVolumeFonte,
+  blocoRegraTamanhoAdaptativo,
   sortearEstiloLead,
   sortearEstiloTitulo,
   sortearVozRedator,
@@ -372,5 +558,10 @@ module.exports = {
   quebrarEmParagrafos,
   formatHashtagsLine,
   anexarHashtagsAoFinal,
+  anexarCreditosFontes,
+  atualizarCreditoImagemNaMateria,
+  extrairAutorImagemHeuristico,
+  limparCreditoAutor,
+  CREDITO_IMAGEM_FALLBACK,
   extrairHashtagsDoTexto,
 };

@@ -369,6 +369,25 @@ async function atualizarMateria(req, res, next) {
     await AiMatters.update(matterId, patch);
     const updated = await AiMatters.findById(matterId);
 
+    // Aprende com edições humanas vs snapshot da IA (silencioso)
+    if (body.titulo != null || body.materia != null) {
+      try {
+        const { registrarAprendizado } = require('../services/editorialLearningService');
+        const tituloAntes = matter.titulo_ia != null ? matter.titulo_ia : matter.titulo;
+        const materiaAntes = matter.materia_ia != null ? matter.materia_ia : matter.materia;
+        await registrarAprendizado({
+          userId: req.session.userId,
+          matterId,
+          tituloAntes: body.titulo != null ? tituloAntes : null,
+          tituloDepois: body.titulo != null ? updated.titulo : null,
+          materiaAntes: body.materia != null ? materiaAntes : null,
+          materiaDepois: body.materia != null ? updated.materia : null,
+        });
+      } catch (err) {
+        console.warn('[editorial-learning] salvar:', err.message);
+      }
+    }
+
     const titleChanged =
       body.titulo != null && String(body.titulo).trim() !== String(matter.titulo || '').trim();
     const sourceUrl =
@@ -591,6 +610,7 @@ async function sugerirTitulo(req, res, next) {
 
     const patch = {
       titulo: sugerido.titulo,
+      titulo_ia: sugerido.titulo,
       error_message: null,
     };
     if (matter.status !== 'agendado') patch.status = 'rascunho';
@@ -790,11 +810,38 @@ async function aplicarImagemUrl(req, res, next) {
       force: true,
     });
 
+    // Crédito da imagem: autor dos metadados internos, senão Reprodução/Internet
+    const deepseekService = require('../services/deepseekService');
+    const {
+      atualizarCreditoImagemNaMateria,
+      CREDITO_IMAGEM_FALLBACK,
+    } = require('../services/editorialGuidelinesFb');
+    let imagemAutor = CREDITO_IMAGEM_FALLBACK;
+    try {
+      const identificado = await deepseekService.identificarAutorImagem({
+        autor: req.body?.autor || null,
+        fonte: req.body?.fonte || null,
+        titulo: req.body?.imagemTitulo || req.body?.title || null,
+        origem: req.body?.origem || null,
+      });
+      imagemAutor = identificado || CREDITO_IMAGEM_FALLBACK;
+    } catch {
+      imagemAutor = CREDITO_IMAGEM_FALLBACK;
+    }
+
+    const materiaAtual = artwork.matter?.materia || matter.materia;
+    const materiaComCredito = atualizarCreditoImagemNaMateria(materiaAtual, imagemAutor);
+    if (materiaComCredito && materiaComCredito !== materiaAtual) {
+      await AiMatters.update(matterId, { materia: materiaComCredito });
+      artwork.matter = await AiMatters.findById(matterId);
+    }
+
     return res.json({
       ok: true,
       matter: artwork.matter,
       imagemUrl: artwork.publicUrl,
       hasLogo: artwork.hasLogo,
+      imagemAutor,
     });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -849,6 +896,8 @@ async function reescreverComInfo(req, res, next) {
     const patch = {
       titulo: reescrito.titulo,
       materia: reescrito.materia,
+      titulo_ia: reescrito.titulo,
+      materia_ia: reescrito.materia,
       hashtags: JSON.stringify(reescrito.hashtags || []),
       error_message: null,
     };

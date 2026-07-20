@@ -1,0 +1,60 @@
+<%- include('partials/app-start', { title: title || 'Preparando…', path: '/biblioteca' }) %>
+  <main class="mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center px-4 py-16 text-center">
+    <div id="prep-loading" class="w-full rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
+      <div class="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-violet-400/30 border-t-violet-300"></div>
+      <p id="prep-text" class="mt-4 text-sm text-slate-300">Preparando conteúdo…</p>
+      <p class="mt-2 text-xs text-slate-600">Esta aba abre a matéria quando estiver pronta. Você pode continuar na Biblioteca.</p>
+    </div>
+    <div id="prep-error" class="hidden w-full rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-left">
+      <p class="text-sm font-semibold text-rose-200">Não foi possível preparar</p>
+      <p id="prep-error-msg" class="mt-2 text-sm text-rose-100/80"></p>
+      <a href="/biblioteca" class="mt-4 inline-flex rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:border-slate-500">Voltar à Biblioteca</a>
+    </div>
+  </main>
+  <script>
+    (async function () {
+      const postId = <%- JSON.stringify(String(postId || '')) %>;
+      const media = <%- JSON.stringify(String(media || 'post')) %>;
+      const pageId = <%- JSON.stringify(facebookPageId ? String(facebookPageId) : '') %>;
+      const textEl = document.getElementById('prep-text');
+      const errBox = document.getElementById('prep-error');
+      const errMsg = document.getElementById('prep-error-msg');
+      const loading = document.getElementById('prep-loading');
+
+      function fail(message) {
+        loading.classList.add('hidden');
+        errBox.classList.remove('hidden');
+        errMsg.textContent = message || 'Erro desconhecido';
+      }
+
+      try {
+        const isVideo = media === 'video';
+        textEl.textContent = isVideo
+          ? 'Baixando e preparando o Reel…'
+          : 'IA preparando matéria e capa…';
+
+        const url = isVideo
+          ? `/api/biblioteca/posts/${postId}/gerar-video`
+          : `/api/biblioteca/posts/${postId}/gerar-texto`;
+        const body = isVideo
+          ? { facebook_page_id: pageId || null }
+          : { facebook_page_id: pageId || null, tipoPublicacao: 'foto' };
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || data.message || `Erro ${res.status}`);
+
+        const dest = data.redirect
+          || (isVideo ? '/fila' : (data.matter?.id ? `/materias-ia/${data.matter.id}` : '/minhas-materias'));
+        textEl.textContent = 'Pronto! Abrindo…';
+        location.replace(dest);
+      } catch (err) {
+        fail(err.message || String(err));
+      }
+    })();
+  </script>
+<%- include('partials/app-end') %>

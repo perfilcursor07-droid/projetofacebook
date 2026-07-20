@@ -5,6 +5,7 @@ storage/clips/
 storage/imagens/
 storage/temp/
 uploads/
+secrets/
 *.log
 .DS_Store
 Thumbs.db

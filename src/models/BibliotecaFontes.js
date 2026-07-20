@@ -19,6 +19,42 @@ const BibliotecaFontes = {
       });
   },
 
+  findPendingScrapes(limit = 20) {
+    return db(this.table)
+      .where({ plataforma: 'instagram' })
+      .whereIn('scrape_status', ['triggering', 'pending'])
+      .orderBy('scrape_requested_at', 'asc')
+      .limit(Math.min(100, Math.max(1, Number(limit) || 20)));
+  },
+
+  tryStartScrape(id, { silentFirst = false } = {}) {
+    return db(this.table)
+      .where({ id })
+      .andWhere((qb) => {
+        qb.whereNull('scrape_status').orWhereNotIn('scrape_status', ['triggering', 'pending']);
+      })
+      .update({
+        scrape_snapshot_id: null,
+        scrape_status: 'triggering',
+        scrape_requested_at: db.fn.now(),
+        scrape_error: null,
+        scrape_silent_first: Boolean(silentFirst),
+        updated_at: db.fn.now(),
+      });
+  },
+
+  updateScrapeIfStatus(id, status, data) {
+    return db(this.table)
+      .where({ id, scrape_status: status })
+      .update({ ...data, updated_at: db.fn.now() });
+  },
+
+  updateScrapeIfCurrent(id, snapshotId, data) {
+    return db(this.table)
+      .where({ id, scrape_status: 'pending', scrape_snapshot_id: snapshotId })
+      .update({ ...data, updated_at: db.fn.now() });
+  },
+
   create(data) {
     return db(this.table).insert(data);
   },
@@ -27,8 +63,18 @@ const BibliotecaFontes = {
     return db(this.table).where({ id }).update({ ...data, updated_at: db.fn.now() });
   },
 
-  deleteByUser(id, userId) {
-    return db(this.table).where({ id, user_id: userId }).del();
+  async deleteByUser(id, userId) {
+    const fonteId = Number(id);
+    const uid = Number(userId);
+    const fonte = await db(this.table).where({ id: fonteId, user_id: uid }).first();
+    if (!fonte) return 0;
+
+    return db.transaction(async (trx) => {
+      // Explícito: no WAMP o FK CASCADE às vezes não remove alertas/posts
+      await trx('biblioteca_alertas').where({ fonte_id: fonteId }).del();
+      await trx('biblioteca_posts').where({ fonte_id: fonteId }).del();
+      return trx(this.table).where({ id: fonteId, user_id: uid }).del();
+    });
   },
 };
 

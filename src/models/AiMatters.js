@@ -5,6 +5,7 @@ function prepare(data) {
   if (!data || typeof data !== 'object') return data;
   const out = { ...data };
   if (out.titulo != null) out.titulo = String(out.titulo).replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (out.titulo_ia != null) out.titulo_ia = String(out.titulo_ia).replace(/\s+/g, ' ').trim().slice(0, 300);
   if (out.fonte_titulo != null) {
     out.fonte_titulo = String(out.fonte_titulo).replace(/\s+/g, ' ').trim().slice(0, 500);
   }
