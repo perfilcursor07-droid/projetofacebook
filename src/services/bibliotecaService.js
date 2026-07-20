@@ -341,14 +341,15 @@ async function coletarViaSerper(fonte) {
     .trim();
   let q;
   if (fonte.plataforma === 'instagram' && handle) {
-    q = `site:instagram.com/${handle} (inurl:/p/ OR inurl:/reel/)`;
+    // Conta free do Serper rejeita padrões com OR / when:
+    q = `site:instagram.com/${handle}`;
   } else if (fonte.plataforma === 'facebook' && handle) {
     q = `site:facebook.com/${handle}`;
   } else if (fonte.plataforma === 'site') {
     try {
       const host = new URL(fonte.url).hostname.replace(/^www\./, '');
-      // Preferir conteúdo recente (evita evergreen antigo no ranking SEO)
-      q = `site:${host} when:7d`;
+      // Sem when:/tbs — plano free do Serper bloqueia esses padrões
+      q = `site:${host}`;
     } catch {
       return [];
     }
@@ -356,16 +357,18 @@ async function coletarViaSerper(fonte) {
     q = fonte.nome ? String(fonte.nome) : fonte.url;
   }
 
-  const num =
-    fonte.plataforma === 'site' ? Math.max(SCAN_LIMIT, SCAN_LIMIT_SITE) : SCAN_LIMIT;
+  // Free tier costuma limitar num; 10 é seguro
+  const num = Math.min(10, Number(SCAN_LIMIT) || 10);
 
   try {
-    const payload = { q, num, gl: 'br', hl: 'pt-br' };
-    if (fonte.plataforma === 'site') payload.tbs = 'qdr:w';
-    const { data } = await axios.post('https://google.serper.dev/search', payload, {
-      headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
-      timeout: 15_000,
-    });
+    const { data } = await axios.post(
+      'https://google.serper.dev/search',
+      { q, num, gl: 'br', hl: 'pt-br' },
+      {
+        headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
+        timeout: 15_000,
+      }
+    );
     return (data?.organic || [])
       .filter((r) => r.link)
       .map((r) => ({

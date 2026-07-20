@@ -288,7 +288,12 @@ function ordenarFontesPorTitulo(titulo, candidates) {
 
 async function buscarFontesPorTitulo(titulo) {
   const { env } = require('../config/env');
-  const q = String(titulo || '').trim().slice(0, 200);
+  // Serper free: evita caracteres estranhos e queries muito longas
+  const q = String(titulo || '')
+    .replace(/[^\p{L}\p{N}\s\-.:]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
   if (q.length < 10) return [];
 
   let candidates = [];
@@ -296,7 +301,7 @@ async function buscarFontesPorTitulo(titulo) {
   if (env.braveSearchApiKey) {
     try {
       const { data } = await axios.get('https://api.search.brave.com/res/v1/news/search', {
-        params: { q, count: 8 },
+        params: { q, count: 8, country: 'BR', search_lang: 'pt' },
         headers: {
           Accept: 'application/json',
           'X-Subscription-Token': env.braveSearchApiKey,
@@ -309,12 +314,19 @@ async function buscarFontesPorTitulo(titulo) {
         snippet: item.description || '',
       }));
     } catch (err) {
-      console.warn('buscarFontesPorTitulo Brave:', err.message);
+      console.warn('buscarFontesPorTitulo Brave:', err.response?.data?.message || err.message);
     }
   }
 
   let ranked = ordenarFontesPorTitulo(titulo, candidates);
-  if (!ranked.length && env.serperApiKey) {
+
+  // Evita spam de 400 no Serper free (rate limit / query rejeitada)
+  if (!buscarFontesPorTitulo._serperCooldownUntil) {
+    buscarFontesPorTitulo._serperCooldownUntil = 0;
+  }
+  const serperOk = Date.now() >= buscarFontesPorTitulo._serperCooldownUntil;
+
+  if (!ranked.length && env.serperApiKey && serperOk) {
     try {
       const { data } = await axios.post(
         'https://google.serper.dev/search',
@@ -331,7 +343,14 @@ async function buscarFontesPorTitulo(titulo) {
       }));
       ranked = ordenarFontesPorTitulo(titulo, candidates);
     } catch (err) {
-      console.warn('buscarFontesPorTitulo Serper:', err.message);
+      const status = err.response?.status;
+      if (status === 400 || status === 429 || status === 402) {
+        buscarFontesPorTitulo._serperCooldownUntil = Date.now() + 60_000;
+      }
+      console.warn(
+        'buscarFontesPorTitulo Serper:',
+        err.response?.data?.message || err.message
+      );
     }
   }
 
