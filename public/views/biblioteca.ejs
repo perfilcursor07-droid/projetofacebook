@@ -124,8 +124,11 @@
                 <span class="text-[10px] font-medium uppercase tracking-wide text-slate-600">Página de destino</span>
                 <select id="bib-melhores-page" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-white focus:border-violet-500 focus:outline-none">
                   <option value="">Selecionar depois</option>
-                  <% (pages || []).forEach(function (p) { %>
-                    <option value="<%= p.id %>" <%= Number(auto.facebook_page_id) === Number(p.id) ? 'selected' : '' %>><%= p.page_name %></option>
+                  <% (pages || []).forEach(function (p) {
+                    const sel = Number(auto.facebook_page_id) === Number(p.id)
+                      || (!auto.facebook_page_id && Number(defaultPageId) === Number(p.id));
+                  %>
+                    <option value="<%= p.id %>" <%= sel ? 'selected' : '' %>><%= p.page_name %><%= Number(defaultPageId) === Number(p.id) ? ' · padrão' : '' %></option>
                   <% }) %>
                 </select>
               </label>
@@ -231,7 +234,7 @@
                 class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30">
                 <option value="">Vincular depois</option>
                 <% (pages || []).forEach(function (p) { %>
-                  <option value="<%= p.id %>"><%= p.page_name %></option>
+                  <option value="<%= p.id %>" <%= Number(defaultPageId) === Number(p.id) ? 'selected' : '' %>><%= p.page_name %><%= Number(defaultPageId) === Number(p.id) ? ' · padrão' : '' %></option>
                 <% }) %>
               </select>
             </label>
@@ -427,8 +430,11 @@
               <select id="bib-auto-page" required
                 class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30">
                 <option value="">Selecione uma página</option>
-                <% (pages || []).forEach(function (p) { %>
-                  <option value="<%= p.id %>" <%= Number(auto.facebook_page_id) === Number(p.id) ? 'selected' : '' %>><%= p.page_name %></option>
+                <% (pages || []).forEach(function (p) {
+                  const sel = Number(auto.facebook_page_id) === Number(p.id)
+                    || (!auto.facebook_page_id && Number(defaultPageId) === Number(p.id));
+                %>
+                  <option value="<%= p.id %>" <%= sel ? 'selected' : '' %>><%= p.page_name %><%= Number(defaultPageId) === Number(p.id) ? ' · padrão' : '' %></option>
                 <% }) %>
               </select>
             </label>

@@ -13,7 +13,16 @@ const Users = {
 
   list() {
     return db(this.table)
-      .select('id', 'nome', 'email', 'nivel_acesso', 'logo_path', 'created_at', 'updated_at')
+      .select(
+        'id',
+        'nome',
+        'email',
+        'nivel_acesso',
+        'logo_path',
+        'default_facebook_page_id',
+        'created_at',
+        'updated_at'
+      )
       .orderBy('nome', 'asc');
   },
 
@@ -31,6 +40,18 @@ const Users = {
 
   countByAccess(nivelAcesso) {
     return db(this.table).where({ nivel_acesso: nivelAcesso }).count({ total: '*' }).first();
+  },
+
+  async getDefaultFacebookPageId(userId) {
+    const row = await db(this.table).where({ id: userId }).select('default_facebook_page_id').first();
+    const id = Number(row?.default_facebook_page_id || 0);
+    return id > 0 ? id : null;
+  },
+
+  setDefaultFacebookPageId(userId, facebookPageId) {
+    return this.update(userId, {
+      default_facebook_page_id: facebookPageId ? Number(facebookPageId) : null,
+    });
   },
 };
 

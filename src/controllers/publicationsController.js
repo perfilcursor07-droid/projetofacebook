@@ -17,7 +17,13 @@ const PHOTO_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.we
 const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 
 async function resolvePage(userId, facebookPageId) {
-  const page = await FacebookPages.findById(facebookPageId);
+  let id = Number(facebookPageId);
+  if (!Number.isFinite(id) || id < 1) {
+    const Users = require('../models/Users');
+    id = await Users.getDefaultFacebookPageId(userId);
+  }
+  if (!id) return null;
+  const page = await FacebookPages.findById(id);
   if (!page) return null;
   const account = await FacebookAccounts.findByUser(userId);
   if (!account || page.facebook_account_id !== account.id) return null;

@@ -66,9 +66,12 @@
         <span class="text-slate-400">Página FB para gerar matéria (opcional)</span>
         <select id="bib-page" name="facebook_page_id"
           class="mt-1.5 w-full max-w-md rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
-          <option value="">— selecionar —</option>
-          <% (pages || []).forEach(function (p) { %>
-            <option value="<%= p.id %>" <%= Number(f.facebook_page_id) === Number(p.id) ? 'selected' : '' %>><%= p.page_name %></option>
+            <option value="">— selecionar —</option>
+          <% (pages || []).forEach(function (p) {
+            const sel = Number(f.facebook_page_id) === Number(p.id)
+              || (!f.facebook_page_id && Number(defaultPageId) === Number(p.id));
+          %>
+            <option value="<%= p.id %>" <%= sel ? 'selected' : '' %>><%= p.page_name %><%= Number(defaultPageId) === Number(p.id) ? ' · padrão' : '' %></option>
           <% }) %>
         </select>
       </label>

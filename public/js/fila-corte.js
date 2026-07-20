@@ -34,8 +34,17 @@
         pageSelect.innerHTML = '<option value="">Conecte uma página em /paginas</option>';
         return;
       }
+      const preferred =
+        Number(data.default_facebook_page_id) ||
+        (pages.find((p) => p.is_default)?.id) ||
+        pages[0]?.id ||
+        null;
       pageSelect.innerHTML = pages
-        .map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)}</option>`)
+        .map((p) => {
+          const selected = Number(p.id) === Number(preferred) ? ' selected' : '';
+          const tag = p.is_default ? ' · padrão' : '';
+          return `<option value="${p.id}"${selected}>${escapeHtml(p.page_name)}${tag}</option>`;
+        })
         .join('');
     } catch {
       pageSelect.innerHTML = '<option value="">Erro ao carregar páginas</option>';

@@ -1,11 +1,18 @@
 const materiaIaService = require('../services/materiaIaService');
 const AiMatters = require('../models/AiMatters');
 const AiMonitors = require('../models/AiMonitors');
+const Users = require('../models/Users');
 const { composeMatterArtwork } = require('../services/matterArtworkService');
 
 function pickPageId(body = {}) {
   const raw = body.facebookPageId ?? body.facebook_page_id;
   return raw != null && raw !== '' ? Number(raw) : null;
+}
+
+async function resolvePageId(userId, body = {}) {
+  const fromBody = pickPageId(body);
+  if (fromBody) return fromBody;
+  return Users.getDefaultFacebookPageId(userId);
 }
 
 function pickTipo(body = {}) {
@@ -32,7 +39,7 @@ async function pesquisar(req, res, next) {
       body.periodo ||
       (diasRecentes ? `${Number(diasRecentes)}d` : '24h');
     const filtrarPeriodo = body.filtrarPeriodo !== false;
-    const facebookPageId = pickPageId(body);
+    const facebookPageId = await resolvePageId(req.session.userId, body);
 
     if (!String(palavrasChave || '').trim()) {
       return res.status(400).json({ error: 'Informe palavras-chave' });
@@ -67,7 +74,7 @@ async function emAlta(req, res, next) {
     const body = req.body || {};
     const palavrasExtras = body.palavrasExtras || body.palavras_extras || '';
     const horas = body.horas || 24;
-    const facebookPageId = pickPageId(body);
+    const facebookPageId = await resolvePageId(req.session.userId, body);
     const result = await materiaIaService.buscarEmAltaAgora(palavrasExtras, { horas });
     const topicos = await materiaIaService.marcarJaPublicados(
       req.session.userId,
@@ -88,7 +95,7 @@ async function gerar(req, res, next) {
       return res.status(400).json({ error: 'Envie um tópico válido' });
     }
 
-    const facebookPageId = pickPageId(body);
+    const facebookPageId = await resolvePageId(req.session.userId, body);
     const tipoPublicacao = pickTipo(body);
     const status = String(body.status || 'rascunho').toLowerCase() === 'publicado'
       ? 'publicado'
@@ -127,7 +134,7 @@ async function reescreverLink(req, res, next) {
       return res.status(400).json({ error: 'Cole o link da notícia' });
     }
 
-    const facebookPageId = pickPageId(body);
+    const facebookPageId = await resolvePageId(req.session.userId, body);
     const tipoPublicacao = pickTipo(body);
     const status = String(body.status || 'rascunho').toLowerCase() === 'publicado'
       ? 'publicado'
@@ -180,7 +187,7 @@ async function gerarPreview(req, res, next) {
       return res.status(400).json({ error: 'Envie um tópico válido' });
     }
     const tipo = pickTipo(req.body);
-    const facebookPageId = pickPageId(req.body);
+    const facebookPageId = await resolvePageId(req.session.userId, req.body);
     const gerado = await materiaIaService.gerarPreviewDeTopico(topico, {
       userId: req.session.userId,
       facebookPageId,
@@ -222,7 +229,7 @@ async function gerarLote(req, res, next) {
   try {
     const body = req.body || {};
     const { topicos } = body;
-    const facebook_page_id = pickPageId(body);
+    const facebook_page_id = await resolvePageId(req.session.userId, body);
     const tipo_publicacao = pickTipo(body);
     if (!Array.isArray(topicos) || !topicos.length) {
       return res.status(400).json({ error: 'Selecione ao menos um tópico' });
@@ -253,7 +260,7 @@ async function publicar(req, res, next) {
       matter?.tipo_publicacao === 'reel' ? 'reel' : tipoBody === 'auto' ? matter?.tipo_publicacao : tipoBody;
 
     const result = await materiaIaService.publicarMateria(req.session.userId, matterId, {
-      facebook_page_id: pickPageId(body),
+      facebook_page_id: await resolvePageId(req.session.userId, body),
       tipo_publicacao: tipo || matter?.tipo_publicacao || 'texto',
       titulo: body.titulo,
       materia: body.materia,
@@ -524,7 +531,7 @@ async function monitorCriar(req, res, next) {
     const body = req.body || {};
     const monitor = await materiaIaService.criarMonitor({
       userId: req.session.userId,
-      facebookPageId: pickPageId(body),
+      facebookPageId: await resolvePageId(req.session.userId, body),
       palavrasChave: body.palavrasChave || body.palavras_chave,
       intervaloMinutos: body.intervaloMinutos || body.intervalo_minutos,
       postsPorCiclo: body.postsPorCiclo || body.posts_por_ciclo,

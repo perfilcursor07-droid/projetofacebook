@@ -164,6 +164,7 @@
 
     // —— estado ——
     let fbPages = [];
+    let fbDefaultPageId = null;
     let allVideos = [];
     let allImagens = [];
     let allPublicacoes = [];
@@ -292,9 +293,14 @@
       const cls = large
         ? 'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none'
         : 'rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none';
+      const selectedId = current != null && current !== '' ? current : fbDefaultPageId;
       return `
         <select name="facebook_page_id" class="${cls}">
-          ${fbPages.map((p) => `<option value="${p.id}" ${String(p.id) === String(current) ? 'selected' : ''}>${escapeHtml(p.page_name)}</option>`).join('')}
+          ${fbPages.map((p) => {
+            const tag = p.is_default ? ' · padrão' : '';
+            const sel = String(p.id) === String(selectedId) ? 'selected' : '';
+            return `<option value="${p.id}" ${sel}>${escapeHtml(p.page_name)}${tag}</option>`;
+          }).join('')}
         </select>`;
     }
 
@@ -833,6 +839,10 @@
         const pubData = pubRes.ok ? await pubRes.json() : { publications: [] };
 
         fbPages = pData.pages || [];
+        fbDefaultPageId =
+          Number(pData.default_facebook_page_id) ||
+          (fbPages.find((p) => p.is_default)?.id) ||
+          null;
         allVideos = vData.videos || [];
         allImagens = iData.imagens || [];
         allPublicacoes = pubData.publications || [];

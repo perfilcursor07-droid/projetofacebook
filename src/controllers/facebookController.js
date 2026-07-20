@@ -4,6 +4,7 @@ const postpulseService = require('../services/postpulseService');
 const PostpulseConnections = require('../models/PostpulseConnections');
 const FacebookAccounts = require('../models/FacebookAccounts');
 const FacebookPages = require('../models/FacebookPages');
+const Users = require('../models/Users');
 const db = require('../config/db');
 
 /** Redireciona para o diálogo de login do Facebook. */
@@ -112,11 +113,23 @@ async function listPages(req, res, next) {
       : null;
     const postsyncerService = require('../services/postsyncerService');
     const psConfigured = postsyncerService.isConfigured();
+    let defaultPageId = await Users.getDefaultFacebookPageId(req.session.userId);
+
+    // Se a padrão sumiu, limpa; se só há 1 página e não tem padrão, define automático
+    if (defaultPageId && !pages.some((p) => Number(p.id) === Number(defaultPageId))) {
+      await Users.setDefaultFacebookPageId(req.session.userId, null);
+      defaultPageId = null;
+    }
+    if (!defaultPageId && pages.length === 1) {
+      await Users.setDefaultFacebookPageId(req.session.userId, pages[0].id);
+      defaultPageId = pages[0].id;
+    }
 
     res.json({
       conectado: true,
       fb_user_id: account.fb_user_id,
       expira_em: account.expires_at,
+      default_facebook_page_id: defaultPageId,
       postpulse: {
         configured: postpulseService.isConfigured(),
         connected: Boolean(ppConn?.access_token),
@@ -142,6 +155,7 @@ async function listPages(req, res, next) {
           postpulse_chat_id: p.postpulse_chat_id || null,
           postsyncer_account_id: p.postsyncer_account_id || null,
           publica_via,
+          is_default: Number(p.id) === Number(defaultPageId),
         };
       }),
     });
@@ -151,4 +165,33 @@ async function listPages(req, res, next) {
   }
 }
 
-module.exports = { facebookLogin, facebookCallback, listPages };
+/** Define a Página padrão usada nos seletores de publicação. */
+async function setDefaultPage(req, res, next) {
+  try {
+    const pageId = Number(req.body?.facebook_page_id ?? req.body?.facebookPageId ?? 0);
+    if (!pageId) {
+      await Users.setDefaultFacebookPageId(req.session.userId, null);
+      return res.json({ ok: true, default_facebook_page_id: null });
+    }
+
+    const account = await FacebookAccounts.findByUser(req.session.userId);
+    if (!account) {
+      return res.status(400).json({ error: 'Conecte uma conta Facebook primeiro' });
+    }
+    const page = await FacebookPages.findById(pageId);
+    if (!page || Number(page.facebook_account_id) !== Number(account.id)) {
+      return res.status(404).json({ error: 'Página não encontrada' });
+    }
+
+    await Users.setDefaultFacebookPageId(req.session.userId, page.id);
+    res.json({
+      ok: true,
+      default_facebook_page_id: page.id,
+      page: { id: page.id, page_name: page.page_name },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { facebookLogin, facebookCallback, listPages, setDefaultPage };

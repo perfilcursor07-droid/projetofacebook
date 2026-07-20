@@ -140,12 +140,18 @@
       const res = await fetch('/api/facebook/pages');
       const data = await res.json();
       const pages = data.pages || [];
+      const preferred =
+        Number(cfg.pageId) ||
+        Number(data.default_facebook_page_id) ||
+        (pages.find((p) => p.is_default)?.id) ||
+        null;
       const html = !pages.length
         ? '<option value="">Conecte uma página em /paginas</option>'
         : pages
             .map((p) => {
-              const selected = Number(p.id) === Number(cfg.pageId) ? ' selected' : '';
-              return `<option value="${p.id}"${selected}>${escapeHtml(p.page_name)}</option>`;
+              const selected = Number(p.id) === Number(preferred) ? ' selected' : '';
+              const tag = p.is_default ? ' · padrão' : '';
+              return `<option value="${p.id}"${selected}>${escapeHtml(p.page_name)}${tag}</option>`;
             })
             .join('');
       selects.forEach((el) => {

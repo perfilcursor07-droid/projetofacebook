@@ -11,14 +11,27 @@ async function pagesDoUsuario(userId) {
   return FacebookPages.findByAccount(account.id);
 }
 
+async function defaultPageIdDoUsuario(userId) {
+  const Users = require('../models/Users');
+  return Users.getDefaultFacebookPageId(userId);
+}
+
+async function resolveFacebookPageId(userId, raw) {
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0) return n;
+  return defaultPageIdDoUsuario(userId);
+}
+
 async function listPage(req, res, next) {
   try {
     const data = await bibliotecaService.dashboardUsuario(req.session.userId);
     const pages = await pagesDoUsuario(req.session.userId);
+    const defaultPageId = await defaultPageIdDoUsuario(req.session.userId);
     return res.render('biblioteca', {
       title: 'Biblioteca',
       ...data,
       pages,
+      defaultPageId,
     });
   } catch (err) {
     return next(err);
@@ -29,10 +42,12 @@ async function fontePage(req, res, next) {
   try {
     const data = await bibliotecaService.detalheFonte(req.session.userId, Number(req.params.id));
     const pages = await pagesDoUsuario(req.session.userId);
+    const defaultPageId = await defaultPageIdDoUsuario(req.session.userId);
     return res.render('biblioteca-fonte', {
       title: data.fonte.nome || 'Fonte',
       ...data,
       pages,
+      defaultPageId,
     });
   } catch (err) {
     if (err.status === 404) return res.redirect('/biblioteca');
@@ -51,7 +66,10 @@ async function prepararPage(req, res, next) {
       return res.redirect('/biblioteca');
     }
     const media = String(req.query.media || '').toLowerCase() === 'video' ? 'video' : 'post';
-    const facebookPageId = req.query.facebook_page_id || req.query.page || null;
+    let facebookPageId = req.query.facebook_page_id || req.query.page || null;
+    if (!facebookPageId) {
+      facebookPageId = await defaultPageIdDoUsuario(req.session.userId);
+    }
     return res.render('biblioteca-preparar', {
       title: media === 'video' ? 'Preparando Reel…' : 'Preparando matéria…',
       postId,
@@ -75,6 +93,10 @@ async function listar(req, res, next) {
 async function criar(req, res, next) {
   try {
     const body = req.body || {};
+    const facebookPageId = await resolveFacebookPageId(
+      req.session.userId,
+      body.facebookPageId || body.facebook_page_id
+    );
     const fonte = await bibliotecaService.criarFonte({
       userId: req.session.userId,
       url: body.url,
@@ -82,7 +104,7 @@ async function criar(req, res, next) {
       notas: body.notas,
       monitorar: body.monitorar === true || body.monitorar === '1' || body.monitorar === 'on',
       intervaloMinutos: body.intervaloMinutos || body.intervalo_minutos,
-      facebookPageId: body.facebookPageId || body.facebook_page_id || null,
+      facebookPageId,
     });
     res.status(201).json({ ok: true, fonte });
   } catch (err) {
@@ -141,10 +163,14 @@ async function postsDaFonte(req, res, next) {
 async function gerarTexto(req, res, next) {
   try {
     const body = req.body || {};
+    const facebookPageId = await resolveFacebookPageId(
+      req.session.userId,
+      body.facebookPageId || body.facebook_page_id
+    );
     const gerado = await bibliotecaService.gerarTextoDePost({
       userId: req.session.userId,
       postId: Number(req.params.postId),
-      facebookPageId: body.facebookPageId || body.facebook_page_id || null,
+      facebookPageId,
       tipoPublicacao: body.tipoPublicacao === 'foto' ? 'foto' : 'texto',
     });
     res.status(201).json({
@@ -161,10 +187,14 @@ async function gerarTexto(req, res, next) {
 async function gerarVideo(req, res, next) {
   try {
     const body = req.body || {};
+    const facebookPageId = await resolveFacebookPageId(
+      req.session.userId,
+      body.facebookPageId || body.facebook_page_id
+    );
     const result = await bibliotecaService.gerarVideoDePost({
       userId: req.session.userId,
       postId: Number(req.params.postId),
-      facebookPageId: body.facebookPageId || body.facebook_page_id || null,
+      facebookPageId,
     });
     res.status(202).json({ ok: true, ...result, redirect: result.redirect || '/fila' });
   } catch (err) {
@@ -175,10 +205,14 @@ async function gerarVideo(req, res, next) {
 async function publicarDireto(req, res, next) {
   try {
     const body = req.body || {};
+    const facebookPageId = await resolveFacebookPageId(
+      req.session.userId,
+      body.facebookPageId || body.facebook_page_id
+    );
     const result = await bibliotecaService.publicarPostDireto({
       userId: req.session.userId,
       postId: Number(req.params.postId),
-      facebookPageId: body.facebookPageId || body.facebook_page_id || null,
+      facebookPageId,
     });
     res.status(result.queued ? 202 : 200).json({ ok: true, ...result });
   } catch (err) {
