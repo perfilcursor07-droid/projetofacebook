@@ -26,6 +26,41 @@ const AiMatters = {
     return db(this.table).where({ user_id: userId }).orderBy('created_at', 'desc').limit(limit);
   },
 
+  /**
+   * Lista matérias com dados da publicação (views, link FB).
+   */
+  findByUserWithPub(userId, { limit = 100, q = '' } = {}) {
+    let query = db(this.table)
+      .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
+      .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
+      .where('ai_matters.user_id', userId)
+      .select(
+        'ai_matters.*',
+        'publications.fb_post_id as pub_fb_post_id',
+        'publications.fb_post_url as pub_fb_post_url',
+        'publications.fb_views as pub_fb_views',
+        'publications.fb_views_at as pub_fb_views_at',
+        'publications.fb_native_post_id as pub_fb_native_post_id',
+        'publications.status as pub_status',
+        'facebook_pages.page_name as page_name'
+      )
+      .orderBy('ai_matters.created_at', 'desc')
+      .limit(limit);
+
+    const term = String(q || '').trim();
+    if (term) {
+      const like = `%${term.replace(/[%_]/g, '')}%`;
+      query = query.andWhere(function whereQ() {
+        this.where('ai_matters.titulo', 'like', like)
+          .orWhere('ai_matters.materia', 'like', like)
+          .orWhere('ai_matters.fonte_titulo', 'like', like)
+          .orWhere('facebook_pages.page_name', 'like', like);
+      });
+    }
+
+    return query;
+  },
+
   create(data) {
     return db(this.table).insert(prepare(data));
   },

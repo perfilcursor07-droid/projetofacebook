@@ -1,6 +1,7 @@
 <%- include('partials/app-start') %>
 <%
   const mattersList = typeof matters !== 'undefined' && Array.isArray(matters) ? matters : [];
+  const q = typeof searchQuery !== 'undefined' ? String(searchQuery || '') : '';
   const statusLabels = {
     rascunho: 'Rascunho',
     pronto: 'Pronta',
@@ -15,6 +16,13 @@
     publicado: 'bg-emerald-500/15 text-emerald-300',
     erro: 'bg-rose-500/15 text-rose-300',
   };
+  function formatViews(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v < 0) return null;
+    if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, '') + ' mi';
+    if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
+    return String(Math.round(v));
+  }
 %>
 
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
@@ -23,7 +31,7 @@
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1 class="text-2xl font-semibold text-white">Matérias salvas</h1>
-        <p class="mt-2 text-slate-400">Revise, edite, publique ou remova o conteúdo que você gerou.</p>
+        <p class="mt-2 text-slate-400">Revise, edite, publique ou gere uma nova no mesmo tema.</p>
       </div>
       <a href="/conteudo"
         class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">
@@ -31,23 +39,54 @@
       </a>
     </div>
 
+    <form method="get" action="/minhas-materias" class="mt-6 flex flex-wrap gap-2">
+      <label class="relative min-w-[220px] flex-1">
+        <span class="sr-only">Buscar matérias</span>
+        <input type="search" name="q" value="<%= q %>" placeholder="Buscar por título, texto, fonte ou página…"
+          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30" />
+      </label>
+      <button type="submit" class="rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-200 hover:border-emerald-500 hover:text-emerald-300">
+        Buscar
+      </button>
+      <% if (q) { %>
+        <a href="/minhas-materias" class="rounded-lg px-3 py-2.5 text-sm text-slate-500 hover:text-slate-300">Limpar</a>
+      <% } %>
+    </form>
+
     <% if (!mattersList.length) { %>
       <p class="mt-8 rounded-xl border border-dashed border-slate-700 px-4 py-12 text-center text-sm text-slate-400">
-        Nenhuma matéria gerada ainda.
-        <a href="/conteudo" class="mt-2 block text-emerald-400 hover:text-emerald-300">Criar conteúdo →</a>
+        <%= q ? 'Nenhuma matéria encontrada para essa busca.' : 'Nenhuma matéria gerada ainda.' %>
+        <a href="<%= q ? '/minhas-materias' : '/conteudo' %>" class="mt-2 block text-emerald-400 hover:text-emerald-300">
+          <%= q ? 'Ver todas →' : 'Criar conteúdo →' %>
+        </a>
       </p>
     <% } else { %>
-      <p class="mt-6 text-sm text-slate-500"><%= mattersList.length %> matéria(s) salva(s)</p>
+      <p class="mt-6 text-sm text-slate-500">
+        <%= mattersList.length %> matéria(s)<%= q ? ' encontrada(s)' : ' salva(s)' %>
+      </p>
       <ul id="mia-matters-list" class="mt-3 divide-y divide-slate-800 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/40">
         <% mattersList.forEach((item) => {
           const st = item.status || 'rascunho';
           const preview = String(item.materia || '').replace(/\s+/g, ' ').trim();
+          const viewsLabel = formatViews(item.pub_fb_views);
+          const isPub = st === 'publicado' || item.publication_id;
         %>
           <li class="mia-matter-row flex flex-wrap items-start gap-3 px-4 py-3.5 transition hover:bg-slate-900/70" data-id="<%= item.id %>">
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="rounded-full px-2.5 py-0.5 text-[10px] font-medium <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+                <% if (item.page_name) { %>
+                  <span class="text-[11px] text-slate-500"><%= item.page_name %></span>
+                <% } %>
                 <span class="text-[11px] text-slate-600"><%= item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '' %></span>
+                <% if (isPub) { %>
+                  <button type="button"
+                    class="mia-matter-views inline-flex items-center gap-1 rounded-full border border-slate-700/80 px-2 py-0.5 text-[10px] text-slate-400 hover:border-sky-500/40 hover:text-sky-300"
+                    data-id="<%= item.id %>"
+                    title="Atualizar visualizações no Facebook">
+                    <span class="mia-views-label"><%= viewsLabel != null ? viewsLabel + ' views' : 'Ver views' %></span>
+                  </button>
+                <% } %>
               </div>
               <a href="/materias-ia/<%= item.id %>" class="mt-1.5 block text-sm font-semibold text-white hover:text-emerald-200">
                 <%= item.titulo || 'Sem título' %>
@@ -56,7 +95,14 @@
                 <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500"><%= preview.slice(0, 180) %><%= preview.length > 180 ? '…' : '' %></p>
               <% } %>
             </div>
-            <div class="flex shrink-0 items-center gap-2">
+            <div class="flex shrink-0 flex-wrap items-center gap-2">
+              <button type="button"
+                class="mia-matter-variacao rounded-lg border border-violet-500/40 px-3 py-1.5 text-xs text-violet-200 transition hover:bg-violet-500/15"
+                data-id="<%= item.id %>"
+                data-titulo="<%= item.titulo || 'Sem título' %>"
+                title="Gera outra matéria no mesmo tema (Brave + anti-plágio)">
+                Nova no tema
+              </button>
               <a href="/materias-ia/<%= item.id %>"
                 class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500/50 hover:text-emerald-300">
                 Editar

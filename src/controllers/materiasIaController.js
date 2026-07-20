@@ -489,12 +489,58 @@ async function showLotePage(req, res, next) {
 
 async function listMinhasMaterias(req, res, next) {
   try {
-    const matters = await AiMatters.findByUser(req.session.userId, 100);
+    const q = String(req.query.q || req.query.busca || '').trim();
+    const matters = await AiMatters.findByUserWithPub(req.session.userId, {
+      limit: 150,
+      q,
+    });
     return res.render('minhas-materias', {
       title: 'Minhas matérias',
       matters,
+      searchQuery: q,
     });
   } catch (err) {
+    return next(err);
+  }
+}
+
+async function gerarVariacao(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+    const body = req.body || {};
+    const result = await materiaIaService.gerarVariacaoDeMateria({
+      userId: req.session.userId,
+      matterId,
+      facebookPageId: await resolvePageId(req.session.userId, body),
+      tipoPublicacao: body.tipoPublicacao || body.tipo_publicacao || null,
+    });
+    res.status(201).json({
+      ok: true,
+      ...result,
+      redirect: result.matter?.id ? `/materias-ia/${result.matter.id}` : '/minhas-materias',
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+async function atualizarViews(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+    const force = req.query.force === '1' || req.body?.force === true;
+    const result = await materiaIaService.atualizarViewsDaMateria(req.session.userId, matterId, {
+      force,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     return next(err);
   }
 }
@@ -998,6 +1044,8 @@ module.exports = {
   listPage,
   showLotePage,
   listMinhasMaterias,
+  gerarVariacao,
+  atualizarViews,
   agendar,
   monitorCriar,
   monitorLista,

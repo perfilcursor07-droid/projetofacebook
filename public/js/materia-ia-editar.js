@@ -982,6 +982,70 @@
     }
   });
 
+  document.getElementById('btn-variacao-tema')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-variacao-tema');
+    if (!confirm('Gerar uma NOVA matéria neste tema?\n\nA IA busca informações novas e reescreve sem plagiar.')) {
+      return;
+    }
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Gerando…';
+    }
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/variacao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          facebookPageId: pageSelect?.value ? Number(pageSelect.value) : null,
+          tipoPublicacao: tipoEl?.value || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao gerar');
+      const dest = data.redirect || (data.matter?.id ? '/materias-ia/' + data.matter.id : null);
+      if (dest) window.location.href = dest;
+      else alert('Matéria gerada.');
+    } catch (err) {
+      alert(err.message || 'Erro');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Nova matéria neste tema';
+      }
+    }
+  });
+
+  document.getElementById('btn-matter-views')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-matter-views');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Buscando…';
+    }
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/views?force=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha');
+      if (data.views != null) {
+        const n = Number(data.views);
+        let label = String(n);
+        if (n >= 1000000) label = (n / 1000000).toFixed(1).replace(/\.0$/, '') + ' mi';
+        else if (n >= 1000) label = (n / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
+        alert('Visualizações / impressões: ' + label);
+      } else {
+        alert(data.message || 'Sem dado de visualizações ainda.');
+      }
+    } catch (err) {
+      alert(err.message || 'Erro ao buscar views');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Atualizar visualizações no Facebook';
+      }
+    }
+  });
+
   window.addEventListener('beforeunload', releaseImagePreview);
   loadPages();
 })();

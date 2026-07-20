@@ -432,5 +432,6 @@ module.exports = {
   uploadMediaUrl,
   getPost,
   waitForPostSettled,
+  platformStatusSummary,
   publishToFacebook,
 };

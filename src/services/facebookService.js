@@ -27,7 +27,7 @@ function loginUrl(state) {
     client_id: env.facebook.appId,
     redirect_uri: env.facebook.redirectUri,
     state,
-    scope: 'pages_show_list,pages_manage_posts,pages_read_engagement',
+    scope: 'pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content',
     response_type: 'code',
   });
   return `https://www.facebook.com/v21.0/dialog/oauth?${params}`;
@@ -393,6 +393,88 @@ function graphErrorMessage(err) {
   );
 }
 
+/**
+ * Extrai ID nativo do post Facebook a partir de URL ou string.
+ * Aceita: "123_456", "https://www.facebook.com/.../posts/456", pfbid, etc.
+ */
+function parseFacebookPostId(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (/^\d+_\d+$/.test(s)) return s;
+  if (/^\d{8,}$/.test(s)) return s;
+  const m =
+    s.match(/facebook\.com\/[^/]+\/posts\/(\d+)/i) ||
+    s.match(/facebook\.com\/permalink\.php\?[^#]*story_fbid=(\d+)/i) ||
+    s.match(/facebook\.com\/photo\/?\?[^#]*fbid=(\d+)/i) ||
+    s.match(/facebook\.com\/reel\/(\d+)/i) ||
+    s.match(/facebook\.com\/watch\/?\?[^#]*v=(\d+)/i) ||
+    s.match(/story_fbid=(\d+)/i) ||
+    s.match(/\/posts\/(\d+)/i);
+  if (m?.[1]) return m[1];
+  return null;
+}
+
+/**
+ * Busca impressões/visualizações do post via Insights.
+ * Requer pages_read_engagement (e às vezes read_insights) no token da Página.
+ * @returns {{ views: number|null, metrics: object, postId: string }}
+ */
+async function fetchPostViews(pageAccessToken, postIdOrUrl) {
+  const postId = parseFacebookPostId(postIdOrUrl) || String(postIdOrUrl || '').trim();
+  if (!postId || !pageAccessToken) {
+    return { views: null, metrics: {}, postId: null };
+  }
+
+  const metrics = [
+    'post_impressions',
+    'post_impressions_unique',
+    'post_video_views',
+    'post_video_views_organic',
+    'post_media_view',
+  ];
+
+  try {
+    const { data } = await axios.get(`${GRAPH}/${encodeURIComponent(postId)}/insights`, {
+      params: {
+        metric: metrics.join(','),
+        access_token: pageAccessToken,
+      },
+      timeout: 20000,
+      validateStatus: (s) => s < 500,
+    });
+
+    if (data?.error) {
+      const err = new Error(data.error.message || 'Insights indisponíveis');
+      err.status = data.error.code === 100 ? 404 : 400;
+      err.graph = data.error;
+      throw err;
+    }
+
+    const byName = {};
+    for (const row of data?.data || []) {
+      const name = row.name;
+      const val = Number(row.values?.[0]?.value);
+      if (name && Number.isFinite(val)) byName[name] = val;
+    }
+
+    const views =
+      byName.post_video_views ??
+      byName.post_video_views_organic ??
+      byName.post_media_view ??
+      byName.post_impressions ??
+      byName.post_impressions_unique ??
+      null;
+
+    return { views: views != null ? Math.round(views) : null, metrics: byName, postId };
+  } catch (err) {
+    if (err.graph) throw err;
+    const msg = graphErrorMessage(err);
+    const e = new Error(msg);
+    e.status = err.response?.status || 502;
+    throw e;
+  }
+}
+
 module.exports = {
   loginUrl,
   exchangeCodeForToken,
@@ -405,6 +487,8 @@ module.exports = {
   publishReel,
   publishText,
   graphErrorMessage,
+  parseFacebookPostId,
+  fetchPostViews,
   assertConfigured,
   REELS_DAILY_LIMIT,
 };

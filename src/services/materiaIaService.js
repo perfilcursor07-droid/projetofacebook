@@ -9,8 +9,10 @@ const { buscarEmAltaAgora } = require('./trendingTopics');
 const { apurarTopico } = require('./articleSource');
 const { gerarMateriaNoticiaFacebook, assertDeepseek } = require('./deepseekService');
 const pexelsService = require('./pexelsService');
+const facebookService = require('./facebookService');
 const { enqueue } = require('../workers/queue');
 const { env } = require('../config/env');
+const db = require('../config/db');
 const { titulosParecidos, formatFacebookCaption, montarFonteCredito, estiloCreditoDaPagina } = require('./editorialGuidelinesFb');
 const { applyBrandArtworkToResult } = require('./matterArtworkService');
 
@@ -1394,6 +1396,245 @@ async function gerarDeLink({
   });
 }
 
+/**
+ * Nova matéria no mesmo tema (anti-plágio), complementando com Brave/Serper.
+ */
+async function gerarVariacaoDeMateria({
+  userId,
+  matterId,
+  facebookPageId = null,
+  tipoPublicacao = null,
+}) {
+  assertDeepseek();
+  const matter = await AiMatters.findById(matterId);
+  if (!matter || Number(matter.user_id) !== Number(userId)) {
+    const err = new Error('Matéria não encontrada');
+    err.status = 404;
+    throw err;
+  }
+
+  const pageId = facebookPageId || matter.facebook_page_id || null;
+  const tipo =
+    tipoPublicacao === 'foto' || tipoPublicacao === 'texto'
+      ? tipoPublicacao
+      : matter.tipo_publicacao === 'foto'
+        ? 'foto'
+        : 'texto';
+
+  const tema = String(matter.titulo || matter.fonte_titulo || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!tema) {
+    const err = new Error('A matéria precisa de um título para gerar variação');
+    err.status = 400;
+    throw err;
+  }
+
+  const { coletarFontesComplementares, apurarTopico } = require('./articleSource');
+  let fontesExtras = [];
+  try {
+    fontesExtras = await coletarFontesComplementares({
+      titulo: tema,
+      resumo: String(matter.materia || '').slice(0, 200),
+      linkExcluir: matter.fonte_url,
+      max: 4,
+    });
+  } catch (err) {
+    console.warn('gerarVariacaoDeMateria Brave:', err.message);
+  }
+
+  const blocoExtras = fontesExtras
+    .map(
+      (f, i) =>
+        `Fonte nova ${i + 1} (${f.veiculo || 'Web'}): ${f.titulo || ''}\n${String(f.trecho || f.resumo || '').slice(0, 1400)}`
+    )
+    .join('\n\n');
+
+  const topicoBase = {
+    titulo: tema,
+    link: matter.fonte_url || null,
+    resumo: String(matter.materia || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+    fonte: matter.fonte_titulo || null,
+    veiculo: null,
+    imagemFonte: matter.imagem_url && /^https?:\/\//i.test(matter.imagem_url) ? matter.imagem_url : null,
+    nicho: 'variação editorial',
+    contextoApuracao: [
+      `TEMA ORIGINAL (NÃO COPIE — reescreva com ângulo novo, outras palavras e estrutura diferente):`,
+      `Título: ${tema}`,
+      `Trecho da matéria anterior (só referência de fatos):\n${String(matter.materia || '').slice(0, 1200)}`,
+      blocoExtras
+        ? `NOVAS INFORMAÇÕES DA INTERNET (priorize fatos novos/atualizados):\n${blocoExtras}`
+        : 'Não houve fontes novas na busca — reescreva o tema com ângulo editorial diferente, sem inventar fatos.',
+      'REGRAS: não plagiar frases da matéria anterior; gancho diferente; se houver fatos novos, use-os; português BR.',
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    fontesApuracao: fontesExtras,
+    furoReportagem: true,
+    traduzirFonte: true,
+    idiomaObrigatorio: 'pt-BR',
+  };
+
+  let apurado = topicoBase;
+  try {
+    apurado = await apurarTopico(topicoBase);
+    // Garante que o anti-plágio e extras não se percam
+    apurado.contextoApuracao = [
+      topicoBase.contextoApuracao,
+      apurado.contextoApuracao && apurado.contextoApuracao !== topicoBase.contextoApuracao
+        ? apurado.contextoApuracao
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  } catch (err) {
+    console.warn('gerarVariacaoDeMateria apurar:', err.message);
+  }
+
+  const result = await gerarCompleto({
+    userId,
+    topico: {
+      ...apurado,
+      titulo: `Atualização: ${tema}`.slice(0, 120),
+    },
+    facebookPageId: pageId,
+    tipoPublicacao: tipo,
+    status: 'rascunho',
+    furoReportagem: true,
+  });
+
+  return {
+    ...result,
+    origemMatterId: matter.id,
+    fontesNovas: fontesExtras.length,
+  };
+}
+
+/**
+ * Atualiza visualizações do post Facebook ligado à matéria.
+ */
+async function atualizarViewsDaMateria(userId, matterId, { force = false } = {}) {
+  const matter = await AiMatters.findById(matterId);
+  if (!matter || Number(matter.user_id) !== Number(userId)) {
+    const err = new Error('Matéria não encontrada');
+    err.status = 404;
+    throw err;
+  }
+  if (!matter.publication_id) {
+    return { views: null, message: 'Matéria ainda sem publicação no Facebook' };
+  }
+
+  const pub = await Publications.findById(matter.publication_id);
+  if (!pub) {
+    return { views: null, message: 'Publicação não encontrada' };
+  }
+
+  const STALE_MS = 30 * 60 * 1000;
+  if (
+    !force &&
+    pub.fb_views != null &&
+    pub.fb_views_at &&
+    Date.now() - new Date(pub.fb_views_at).getTime() < STALE_MS
+  ) {
+    return {
+      views: Number(pub.fb_views),
+      cached: true,
+      viewsAt: pub.fb_views_at,
+      postId: pub.fb_native_post_id || pub.fb_post_id,
+    };
+  }
+
+  const page = await resolvePage(userId, pub.facebook_page_id || matter.facebook_page_id);
+  if (!page?.page_access_token || String(page.page_access_token).startsWith('postsyncer:')) {
+    // Sem token Graph (só PostSyncer) — tenta resolver ID nativo via PostSyncer
+    let nativeId = pub.fb_native_post_id || null;
+    const fbPostId = String(pub.fb_post_id || '');
+    if (!nativeId && /^postsyncer:/i.test(fbPostId)) {
+      try {
+        const postsyncerService = require('./postsyncerService');
+        const psPost = await postsyncerService.getPost(fbPostId);
+        const summary = postsyncerService.platformStatusSummary(psPost);
+        nativeId =
+          facebookService.parseFacebookPostId(summary.postedOn) ||
+          facebookService.parseFacebookPostId(psPost?.permalink) ||
+          facebookService.parseFacebookPostId(psPost?.url) ||
+          null;
+        if (nativeId) {
+          await Publications.update(pub.id, { fb_native_post_id: nativeId });
+        }
+      } catch (err) {
+        console.warn('atualizarViews PostSyncer:', err.message);
+      }
+    }
+    return {
+      views: pub.fb_views != null ? Number(pub.fb_views) : null,
+      message:
+        'Conecte o Facebook (OAuth) em /paginas para buscar visualizações. Publicações só via PostSyncer não têm Insights sem token da Página.',
+      needsOauth: true,
+      postId: nativeId,
+    };
+  }
+
+  let nativeId =
+    pub.fb_native_post_id ||
+    facebookService.parseFacebookPostId(pub.fb_post_url) ||
+    facebookService.parseFacebookPostId(pub.fb_post_id);
+
+  const fbPostId = String(pub.fb_post_id || '');
+  if (!nativeId && /^postsyncer:/i.test(fbPostId)) {
+    try {
+      const postsyncerService = require('./postsyncerService');
+      const psPost = await postsyncerService.getPost(fbPostId);
+      const summary = postsyncerService.platformStatusSummary(psPost);
+      nativeId =
+        facebookService.parseFacebookPostId(summary.postedOn) ||
+        facebookService.parseFacebookPostId(psPost?.permalink) ||
+        facebookService.parseFacebookPostId(psPost?.url) ||
+        null;
+    } catch (err) {
+      console.warn('atualizarViews PostSyncer id:', err.message);
+    }
+  }
+
+  if (!nativeId || /^postsyncer:/i.test(String(nativeId)) || /^postpulse:/i.test(String(nativeId))) {
+    return {
+      views: pub.fb_views != null ? Number(pub.fb_views) : null,
+      message: 'Ainda não temos o ID nativo do post no Facebook para consultar Insights.',
+    };
+  }
+
+  // Graph às vezes precisa pageId_postId
+  let insightId = nativeId;
+  if (/^\d+$/.test(nativeId) && page.page_id) {
+    insightId = `${page.page_id}_${nativeId}`;
+  }
+
+  try {
+    let result = await facebookService.fetchPostViews(page.page_access_token, insightId);
+    if (result.views == null && insightId !== nativeId) {
+      result = await facebookService.fetchPostViews(page.page_access_token, nativeId);
+    }
+    const views = result.views;
+    await Publications.update(pub.id, {
+      fb_views: views,
+      fb_views_at: db.fn.now(),
+      fb_native_post_id: result.postId || nativeId,
+    });
+    return {
+      views,
+      metrics: result.metrics,
+      postId: result.postId || nativeId,
+      viewsAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    return {
+      views: pub.fb_views != null ? Number(pub.fb_views) : null,
+      message: err.message || 'Não foi possível ler as visualizações',
+      error: true,
+    };
+  }
+}
+
 module.exports = {
   pesquisarNichos,
   buscarEmAltaAgora,
@@ -1401,6 +1642,8 @@ module.exports = {
   gerarPreviewDeTopico,
   gerarCompleto,
   gerarDeLink,
+  gerarVariacaoDeMateria,
+  atualizarViewsDaMateria,
   syncConteudoReelMatter,
   limparTextoReelSocial,
   tituloCurtoReel,
