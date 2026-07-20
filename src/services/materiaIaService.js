@@ -177,7 +177,18 @@ async function marcarJaPublicados(userId, facebookPageId, topicos) {
   });
 }
 
-async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublicacao = 'texto', investigativa = false, furoReportagem = false } = {}) {
+async function gerarPreviewDeTopico(
+  topico,
+  {
+    userId,
+    facebookPageId,
+    tipoPublicacao = 'texto',
+    investigativa = false,
+    furoReportagem = false,
+    variacaoViral = false,
+    textoEvitar = null,
+  } = {}
+) {
   assertDeepseek();
   const apurado = await apurarTopico(topico || {});
 
@@ -203,6 +214,8 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
     redeSocial: Boolean(apurado.redeSocial || apurado.tipoFonte === 'rede_social'),
     investigativa,
     furoReportagem,
+    variacaoViral,
+    textoEvitar,
     contextoAprendizado,
     traduzirFonte: Boolean(
       topico?.traduzirFonte ||
@@ -589,6 +602,8 @@ async function gerarCompleto({
   status = 'rascunho',
   investigativa = false,
   furoReportagem = false,
+  variacaoViral = false,
+  textoEvitar = null,
 }) {
   const tipo = tipoPublicacao === 'foto' ? 'foto' : 'texto';
   const gerado = await gerarPreviewDeTopico(topico, {
@@ -597,6 +612,8 @@ async function gerarCompleto({
     tipoPublicacao: tipo,
     investigativa,
     furoReportagem,
+    variacaoViral,
+    textoEvitar,
   });
   const topicoApurado = gerado.topico || topico;
 
@@ -1397,7 +1414,8 @@ async function gerarDeLink({
 }
 
 /**
- * Nova matéria no mesmo tema (anti-plágio), complementando com Brave/Serper.
+ * Nova matéria no mesmo tema (anti-plágio + curiosidade), complementando com Brave/Serper.
+ * Ex.: original fala do fato → variação pergunta "por que a pastora afirmou isso".
  */
 async function gerarVariacaoDeMateria({
   userId,
@@ -1421,27 +1439,61 @@ async function gerarVariacaoDeMateria({
         ? 'foto'
         : 'texto';
 
-  const tema = String(matter.titulo || matter.fonte_titulo || '')
+  const tituloOrig = String(matter.titulo || matter.fonte_titulo || '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!tema) {
+  if (!tituloOrig) {
     const err = new Error('A matéria precisa de um título para gerar variação');
     err.status = 400;
     throw err;
   }
 
+  const corpoOrig = String(matter.materia || '')
+    .replace(/\n*Fontes:[\s\S]*$/i, '')
+    .replace(/\n*Por\s+.+$/im, '')
+    .replace(/#[\wÀ-ÿ]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Extrai pessoa + aspas para buscas melhores
+  const aspas = [...corpoOrig.matchAll(/[“"]([^”"]{12,160})[”"]/g)].map((m) => m[1].trim());
+  const pessoaMatch = tituloOrig.match(
+    /(?:pastora|pastor|cantor|atriz|ator|bispo|mission[aá]ri[oa])\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.-]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.-]+){0,3})/i
+  ) || corpoOrig.match(
+    /(?:pastora|pastor|cantor|atriz|ator|bispo)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.-]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.-]+){0,3})/i
+  );
+  const pessoa = pessoaMatch?.[1]?.trim() || null;
+  const falaChave = aspas[0] || null;
+
   const { coletarFontesComplementares, apurarTopico } = require('./articleSource');
   let fontesExtras = [];
-  try {
-    fontesExtras = await coletarFontesComplementares({
-      titulo: tema,
-      resumo: String(matter.materia || '').slice(0, 200),
-      linkExcluir: matter.fonte_url,
-      max: 4,
-    });
-  } catch (err) {
-    console.warn('gerarVariacaoDeMateria Brave:', err.message);
+  const queries = [
+    pessoa && falaChave ? `${pessoa} ${falaChave.slice(0, 60)}` : null,
+    pessoa ? `${pessoa} declaração igreja política` : null,
+    `${tituloOrig}`.slice(0, 100),
+  ].filter(Boolean);
+
+  for (const q of queries.slice(0, 2)) {
+    try {
+      const mais = await coletarFontesComplementares({
+        titulo: q,
+        resumo: corpoOrig.slice(0, 180),
+        linkExcluir: matter.fonte_url,
+        max: 3,
+      });
+      fontesExtras = [...fontesExtras, ...mais];
+    } catch (err) {
+      console.warn('gerarVariacaoDeMateria Brave:', err.message);
+    }
   }
+  // Dedup por URL
+  const vistos = new Set();
+  fontesExtras = fontesExtras.filter((f) => {
+    const k = String(f.url || f.titulo || '').toLowerCase();
+    if (!k || vistos.has(k)) return false;
+    vistos.add(k);
+    return true;
+  }).slice(0, 5);
 
   const blocoExtras = fontesExtras
     .map(
@@ -1450,22 +1502,48 @@ async function gerarVariacaoDeMateria({
     )
     .join('\n\n');
 
+  const angulos = [
+    pessoa
+      ? `Por que ${pessoa} afirmou isso? Explique o motivo e o contexto da declaração.`
+      : 'Por que essa declaração gerou repercussão? Foque no motivo e no contexto.',
+    pessoa
+      ? `O detalhe da fala de ${pessoa} que mais chamou atenção — e o que isso muda para o fiel.`
+      : 'O detalhe da declaração que mais gerou debate nas redes.',
+    'Qual o impacto espiritual e político dessa fala em ano eleitoral — sem partidarizar a fé.',
+  ];
+  const anguloEscolhido = angulos[Math.floor(Math.random() * angulos.length)];
+
   const topicoBase = {
-    titulo: tema,
+    // Título-seed só para apuração; a IA deve inventar manchete curiosa
+    titulo: pessoa
+      ? `${pessoa} declaração polêmica igreja`
+      : tituloOrig.slice(0, 80),
     link: matter.fonte_url || null,
-    resumo: String(matter.materia || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+    resumo: [
+      `Fato central: ${tituloOrig}`,
+      falaChave ? `Fala documentada: "${falaChave}"` : null,
+      `Ângulo pedido para ESTA variação: ${anguloEscolhido}`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+      .slice(0, 500),
     fonte: matter.fonte_titulo || null,
     veiculo: null,
-    imagemFonte: matter.imagem_url && /^https?:\/\//i.test(matter.imagem_url) ? matter.imagem_url : null,
-    nicho: 'variação editorial',
+    imagemFonte:
+      matter.imagem_fonte_url ||
+      (matter.imagem_url && /^https?:\/\//i.test(matter.imagem_url) ? matter.imagem_url : null),
+    nicho: 'variação viral curiosidade',
     contextoApuracao: [
-      `TEMA ORIGINAL (NÃO COPIE — reescreva com ângulo novo, outras palavras e estrutura diferente):`,
-      `Título: ${tema}`,
-      `Trecho da matéria anterior (só referência de fatos):\n${String(matter.materia || '').slice(0, 1200)}`,
+      `MODO: segunda matéria no mesmo tema (post viral). NÃO copie a primeira.`,
+      `ÂNGULO OBRIGATÓRIO DESTA VERSÃO: ${anguloEscolhido}`,
+      `Título da matéria anterior (NÃO repetir): ${tituloOrig}`,
+      falaChave ? `Aspas reais a preservar (curtas): "${falaChave}"` : null,
+      `Fatos da matéria anterior (só referência, reescreva tudo):\n${corpoOrig.slice(0, 900)}`,
       blocoExtras
-        ? `NOVAS INFORMAÇÕES DA INTERNET (priorize fatos novos/atualizados):\n${blocoExtras}`
-        : 'Não houve fontes novas na busca — reescreva o tema com ângulo editorial diferente, sem inventar fatos.',
-      'REGRAS: não plagiar frases da matéria anterior; gancho diferente; se houver fatos novos, use-os; português BR.',
+        ? `NOVAS INFORMAÇÕES DA INTERNET (priorizar no lead se forem relevantes):\n${blocoExtras}`
+        : 'Sem fontes novas na busca — mude o ÂNGULO (curiosidade/motivo/impacto), sem inventar fatos.',
+      'Título final deve causar curiosidade (por que / o que / o detalhe / afirmação que…).',
+      'Corpo: outra ordem de ideias; lead de curiosidade; desenvolvimento; fechamento de fé.',
     ]
       .filter(Boolean)
       .join('\n\n'),
@@ -1478,7 +1556,6 @@ async function gerarVariacaoDeMateria({
   let apurado = topicoBase;
   try {
     apurado = await apurarTopico(topicoBase);
-    // Garante que o anti-plágio e extras não se percam
     apurado.contextoApuracao = [
       topicoBase.contextoApuracao,
       apurado.contextoApuracao && apurado.contextoApuracao !== topicoBase.contextoApuracao
@@ -1487,26 +1564,29 @@ async function gerarVariacaoDeMateria({
     ]
       .filter(Boolean)
       .join('\n\n');
+    // Não deixar a apuração substituir o ângulo pelo título antigo
+    apurado.titulo = topicoBase.titulo;
+    apurado.resumo = topicoBase.resumo;
   } catch (err) {
     console.warn('gerarVariacaoDeMateria apurar:', err.message);
   }
 
   const result = await gerarCompleto({
     userId,
-    topico: {
-      ...apurado,
-      titulo: `Atualização: ${tema}`.slice(0, 120),
-    },
+    topico: apurado,
     facebookPageId: pageId,
     tipoPublicacao: tipo,
     status: 'rascunho',
     furoReportagem: true,
+    variacaoViral: true,
+    textoEvitar: `${tituloOrig}\n\n${corpoOrig}`.slice(0, 2500),
   });
 
   return {
     ...result,
     origemMatterId: matter.id,
     fontesNovas: fontesExtras.length,
+    angulo: anguloEscolhido,
   };
 }
 

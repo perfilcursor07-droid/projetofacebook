@@ -594,7 +594,7 @@ function anexarCreditosFontes(
   }
 
   const fonteEhRedeSocial =
-    /(?:instagram|facebook|fb\.watch|tiktok|youtube|youtu\.be)\./i.test(
+    /(?:instagram|facebook|fb\.watch|tiktok|twitter|x|youtube|youtu\.be)\./i.test(
       String(fonteUrl || '')
     );
   const usarAutorSite =

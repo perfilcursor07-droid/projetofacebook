@@ -157,6 +157,18 @@ function materiaCopiaTranscricao(materia, transcricao) {
   return hit / wordsB.length >= 0.72;
 }
 
+/** Similaridade alta entre duas matérias (variação viral vs original). */
+function textoMuitoParecido(a, b) {
+  const na = normalizeForCompare(a);
+  const nb = normalizeForCompare(b);
+  if (!na || !nb || na.length < 120 || nb.length < 120) return false;
+  const wa = na.split(' ').filter((w) => w.length > 3);
+  const wb = new Set(nb.split(' ').filter((w) => w.length > 3));
+  if (!wa.length || !wb.size) return false;
+  const hit = wa.filter((w) => wb.has(w)).length;
+  return hit / wa.length >= 0.58;
+}
+
 function isTranscricaoInutil(transcricao) {
   const t = String(transcricao || '').trim();
   if (!t) return true;
@@ -252,7 +264,13 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
   return chatJson(userContent, sortearTemperatura(false));
 }
 
-function systemPromptNoticia(faixa, investigativa, furoReportagem = false, volumeFonte = 'media') {
+function systemPromptNoticia(
+  faixa,
+  investigativa,
+  furoReportagem = false,
+  volumeFonte = 'media',
+  variacaoViral = false
+) {
   return `Você é redator de Página gospel no Facebook e Instagram (estilo News Gospel). Escreva matérias ORIGINAIS em português brasileiro.
 
 ${blocoRegrasFacebook(faixa, volumeFonte)}
@@ -278,6 +296,15 @@ ${furoReportagem ? `MODO FURO / MINIMATÉRIA (obrigatório):
 - OBRIGATÓRIO: preserve 1 a 3 falas literais curtas entre aspas ("…") quando houver declaração na apuração.
 - Título próprio — nunca copie a manchete da fonte.
 - Não inclua bloco "Fontes:" — o sistema anexa créditos da origem e da imagem.` : ''}
+${variacaoViral ? `MODO VARIAÇÃO VIRAL (obrigatório — post que já performou bem):
+- NÃO reescreva a matéria anterior. Crie OUTRA matéria no MESMO TEMA.
+- Título NOVO e curioso (perguntas, "por que…", "o que…", "detalhe que…", "afirmação que…").
+  Exemplos de gancho: "Por que a pastora X afirmou que…", "O detalhe da fala de X que…", "O que X quis dizer ao declarar…".
+- Ângulo diferente: motivo da fala, repercussão, contexto eleitoral/espiritual, o que isso muda para o fiel — NÃO a mesma sequência de parágrafos.
+- Estrutura nova: pode começar pela curiosidade/motivo, depois o fato, depois o impacto.
+- Proibido copiar frases longas da matéria anterior (exceto 1–2 aspas literais curtas da pessoa citada).
+- Se houver fatos novos da internet, priorize-os no lead e no desenvolvimento.
+- Hashtags podem se sobrepor parcialmente, mas o título e o corpo devem parecer outro post.` : ''}
 
 Responda APENAS JSON válido: {"titulo":"...","materia":"...","hashtags":["..."],"termos_imagem":["..."]}`;
 }
@@ -297,6 +324,8 @@ async function gerarMateriaNoticiaFacebook({
   redeSocial,
   investigativa = false,
   furoReportagem = false,
+  variacaoViral = false,
+  textoEvitar = null,
   contextoAprendizado = null,
   traduzirFonte = false,
 }) {
@@ -304,11 +333,17 @@ async function gerarMateriaNoticiaFacebook({
 
   const faixa = sortearFaixaChars();
   const voz = sortearVozRedator();
-  const lead = sortearEstiloLead();
-  const estiloTitulo = sortearEstiloTitulo();
-  const temperature = furoReportagem
-    ? 0.72 + Math.random() * 0.08
-    : sortearTemperatura(investigativa);
+  const lead = variacaoViral
+    ? 'Comece com curiosidade ou pergunta implícita (por que / o que / o detalhe), depois o fato.'
+    : sortearEstiloLead();
+  const estiloTitulo = variacaoViral
+    ? 'Título curioso tipo portal (pergunta ou tensão), sem copiar a manchete de referência.'
+    : sortearEstiloTitulo();
+  const temperature = variacaoViral
+    ? 0.88 + Math.random() * 0.08
+    : furoReportagem
+      ? 0.72 + Math.random() * 0.08
+      : sortearTemperatura(investigativa);
 
   const fontesTxt = Array.isArray(fontesApuracao) && fontesApuracao.length
     ? fontesApuracao
@@ -337,7 +372,13 @@ async function gerarMateriaNoticiaFacebook({
     .join('\n');
 
   const volumeFonte = classificarVolumeFonte(materialApuracao);
-  const systemMsg = systemPromptNoticia(faixa, investigativa, furoReportagem, volumeFonte);
+  const systemMsg = systemPromptNoticia(
+    faixa,
+    investigativa,
+    furoReportagem,
+    volumeFonte,
+    variacaoViral
+  );
 
   let blocoAprendizado = null;
   if (contextoAprendizado) {
@@ -368,17 +409,37 @@ async function gerarMateriaNoticiaFacebook({
     furoReportagem
       ? 'PRIORIDADE: ângulo de furo + reescrita total. Fonte longa = condensar; fonte curta = completar SOMENTE com fatos das fontes documentadas / busca na internet abaixo.'
       : null,
+    variacaoViral
+      ? [
+          'MODO VARIAÇÃO VIRAL ATIVO:',
+          '- Entregue OUTRO post: título curioso + ângulo novo (ex.: por que a pessoa afirmou X; o impacto da fala; o detalhe que gerou debate).',
+          '- Proibido repetir a estrutura parágrafo a parágrafo da matéria anterior.',
+          '- Use fatos documentados; aspas literais só da pessoa citada (curtas).',
+          '- Lead de curiosidade nos primeiros ~120 caracteres.',
+        ].join('\n')
+      : null,
     traduzirFonte
       ? 'FONTE EM IDIOMA ESTRANGEIRO: a matéria FINAL deve estar 100% em português brasileiro. Traduza fatos e citações com fidelidade; se usar aspas literais em inglês, acrescente a tradução em seguida entre parênteses.'
       : null,
-    tituloReferencia ? `Título de referência: ${tituloReferencia}` : null,
-    resumoReferencia ? `Resumo de referência: ${resumoReferencia}` : null,
+    variacaoViral
+      ? `Tema (NÃO use como título final — invente manchete curiosa): ${tituloReferencia || ''}`
+      : tituloReferencia
+        ? `Título de referência: ${tituloReferencia}`
+        : null,
+    variacaoViral
+      ? null
+      : resumoReferencia
+        ? `Resumo de referência: ${resumoReferencia}`
+        : null,
     fonte ? `Veículo/origem: ${fonte}` : null,
     dataReferencia ? `Data da fonte: ${dataReferencia}` : null,
     contextoApuracao ? `Contexto de apuração:\n${String(contextoApuracao).slice(0, 8000)}` : null,
     fontesTxt
       ? `FONTES DOCUMENTADAS (única base factual — não invente fora delas):\n${fontesTxt}`
       : 'ATENÇÃO: sem fontes web extras. Use só o material de apuração acima; se faltar fato, generalize sem inventar.',
+    textoEvitar
+      ? `TEXTO DA MATÉRIA ANTERIOR (NÃO COPIAR — só para evitar plágio; produza algo distinto):\n${String(textoEvitar).slice(0, 1800)}`
+      : null,
     'ANTI-PLÁGIO: reescreva com palavras próprias; não copie parágrafos das fontes.',
     'Se faltar detalhe factual nas fontes, generalise (“segundo informações divulgadas”) ou omita — NUNCA invente nome, número, data ou citação.',
     'Quando houver fala documentada, use aspas em pelo menos uma frase literal no corpo.',
@@ -397,6 +458,33 @@ async function gerarMateriaNoticiaFacebook({
       { temperature, json: true, thinking: true }
     )
   );
+
+  // Se a variação ficou parecida demais com o texto a evitar, força um 2º passe
+  if (variacaoViral && textoEvitar && textoMuitoParecido(artigo.materia, textoEvitar)) {
+    artigo = parseArtigoJson(
+      await chatCompletion(
+        [
+          { role: 'system', content: systemMsg },
+          {
+            role: 'user',
+            content: [
+              'ALERTA: a versão anterior ficou quase igual à matéria antiga.',
+              'Refaça do ZERO com ÂNGULO DE CURIOSIDADE (por que / o que / o detalhe).',
+              'Título totalmente diferente. Corpo com outra ordem de ideias.',
+              `Tema: ${tituloReferencia || ''}`,
+              contextoApuracao ? `Apuração:\n${String(contextoApuracao).slice(0, 5000)}` : null,
+              fontesTxt ? `Fontes:\n${fontesTxt.slice(0, 4000)}` : null,
+              `Evitar copiar:\n${String(textoEvitar).slice(0, 1200)}`,
+              'Retorne JSON completo.',
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
+          },
+        ],
+        { temperature: 0.95, json: true, thinking: true }
+      )
+    );
+  }
 
   let qualidade = avaliarComprimentoFb(artigo.materia, faixa);
 

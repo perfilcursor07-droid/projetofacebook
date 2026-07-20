@@ -664,10 +664,15 @@ async function apurarTopico(topico) {
     meta = await extrairMetadadosArtigo(linkOriginal);
   }
 
+  const veiculoMetaEditorial =
+    meta?.veiculo && meta.veiculo !== meta.veiculoHost ? meta.veiculo : null;
+  const veiculoPrincipal =
+    veiculoMetaEditorial || base.veiculo || base.fonte || meta?.veiculo || null;
+
   const fontesApuracao = [];
   if (meta?.trecho || meta?.resumo) {
     fontesApuracao.push({
-      veiculo: meta.veiculo || base.fonte || 'Fonte',
+      veiculo: veiculoPrincipal || 'Fonte',
       url: meta.url || linkOriginal,
       titulo: meta.titulo || base.titulo,
       resumo: meta.resumo || base.resumo || '',
@@ -717,7 +722,7 @@ async function apurarTopico(topico) {
     `Assunto: ${base.titulo || meta?.titulo || ''}`,
     base.resumo ? `Resumo inicial: ${base.resumo}` : null,
     meta?.trecho ? `Trechos documentados da fonte principal:\n${meta.trecho.slice(0, 3500)}` : null,
-    meta?.veiculo ? `Veículo: ${meta.veiculo}` : null,
+    veiculoPrincipal ? `Veículo: ${veiculoPrincipal}` : null,
     meta?.autor ? `Autor da matéria: ${meta.autor}` : null,
     meta?.url ? `URL: ${meta.url}` : null,
     blocoComplementar
@@ -744,7 +749,7 @@ async function apurarTopico(topico) {
     contextoApuracao: contextoBase.length > contextoNovo.length ? contextoBase : contextoNovo,
     fontesApuracao: fontesFinais,
     dataReferencia: base.data || null,
-    veiculo: meta?.veiculo || base.veiculo || base.fonte || null,
+    veiculo: veiculoPrincipal,
     autor: meta?.autor || base.autor || null,
   };
 }
