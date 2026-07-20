@@ -39,46 +39,98 @@ const BibliotecaPosts = {
     return q;
   },
 
-  /** Candidatos ao piloto/análise: posts ainda sem matéria, com diversidade entre fontes. */
+  /**
+   * Candidatos à análise/piloto: prioriza posts NOVOS e recentes por fonte.
+   * Evita que a mesma base antiga monopolize “Melhores para publicar”.
+   */
   async findCandidatosAutopilot(userId, limit = 30) {
     const alvo = Math.min(40, Math.max(1, Number(limit) || 30));
-    const pool = await db(`${this.table} as p`)
+    const maxPorFonte = 4;
+    const corteRecente = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+    const baseSelect = [
+      'p.id',
+      'p.fonte_id',
+      'p.titulo',
+      'p.url',
+      'p.resumo',
+      'p.thumbnail',
+      'p.media_type',
+      'p.status',
+      'p.publicado_em',
+      'p.created_at',
+      'p.viral_score',
+      'f.nome as fonte_nome',
+      'f.plataforma as fonte_plataforma',
+    ];
+
+    // 1) Posts novos / nunca ranqueados (prioridade máxima)
+    const prioritarios = await db(`${this.table} as p`)
       .leftJoin('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
       .where('p.user_id', userId)
       .whereIn('p.status', ['novo', 'visto'])
       .whereNull('p.matter_id')
-      .orderBy('p.created_at', 'desc')
-      .limit(Math.max(alvo * 4, 60))
-      .select(
-        'p.id',
-        'p.fonte_id',
-        'p.titulo',
-        'p.url',
-        'p.resumo',
-        'p.thumbnail',
-        'p.media_type',
-        'p.status',
-        'p.publicado_em',
-        'p.created_at',
-        'f.nome as fonte_nome',
-        'f.plataforma as fonte_plataforma'
-      );
+      .where(function preferFresh() {
+        this.where('p.status', 'novo').orWhereNull('p.viral_score');
+      })
+      .orderByRaw(`CASE WHEN p.status = 'novo' THEN 0 ELSE 1 END`)
+      .orderByRaw('COALESCE(p.publicado_em, p.created_at) DESC')
+      .limit(Math.max(alvo * 3, 60))
+      .select(baseSelect);
 
-    // Round-robin por fonte para não mandar só 1 site à IA
+    // 2) Complemento recente (últimos 14 dias) se faltar volume
+    let complementares = [];
+    if (prioritarios.length < alvo * 2) {
+      const idsJa = prioritarios.map((p) => p.id);
+      const q = db(`${this.table} as p`)
+        .leftJoin('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
+        .where('p.user_id', userId)
+        .whereIn('p.status', ['novo', 'visto'])
+        .whereNull('p.matter_id')
+        .whereRaw('COALESCE(p.publicado_em, p.created_at) >= ?', [corteRecente])
+        .orderByRaw('COALESCE(p.publicado_em, p.created_at) DESC')
+        .limit(Math.max(alvo * 3, 60))
+        .select(baseSelect);
+      if (idsJa.length) q.whereNotIn('p.id', idsJa);
+      complementares = await q;
+    }
+
+    const pool = [...prioritarios, ...complementares];
+
+    // Round-robin por fonte, com no máximo maxPorFonte cada
     const porFonte = new Map();
     for (const post of pool) {
       const key = String(post.fonte_id || 'x');
       if (!porFonte.has(key)) porFonte.set(key, []);
-      porFonte.get(key).push(post);
+      const fila = porFonte.get(key);
+      if (fila.length < maxPorFonte) fila.push(post);
     }
-    const filas = [...porFonte.values()];
+
+    // Primeiro passa só status=novo (1 por fonte por rodada), depois o resto
+    const filasNovo = [...porFonte.values()].map((fila) => fila.filter((p) => p.status === 'novo'));
+    const filasResto = [...porFonte.values()].map((fila) => fila.filter((p) => p.status !== 'novo'));
     const diversificados = [];
-    let i = 0;
-    while (diversificados.length < alvo && filas.some((f) => f.length)) {
-      const fila = filas[i % filas.length];
-      if (fila.length) diversificados.push(fila.shift());
-      i += 1;
-    }
+    const ja = new Set();
+
+    const drenar = (filas) => {
+      let i = 0;
+      let guard = 0;
+      while (diversificados.length < alvo && filas.some((f) => f.length) && guard < 500) {
+        const fila = filas[i % filas.length];
+        if (fila.length) {
+          const post = fila.shift();
+          if (!ja.has(post.id)) {
+            ja.add(post.id);
+            diversificados.push(post);
+          }
+        }
+        i += 1;
+        guard += 1;
+      }
+    };
+
+    drenar(filasNovo);
+    drenar(filasResto);
     return diversificados;
   },
 
@@ -95,11 +147,12 @@ const BibliotecaPosts = {
       });
   },
 
-  /** Remove um item da lista “Melhores para publicar” (só o ranking, não apaga o post). */
-  clearViralRankingPost(userId, postId) {
+  /** Remove da lista “Melhores” e não volta na próxima análise. */
+  async clearViralRankingPost(userId, postId) {
     return db(this.table)
       .where({ id: postId, user_id: userId })
       .update({
+        status: 'ignorado',
         viral_score: null,
         viral_reason: null,
         viral_analyzed_at: null,

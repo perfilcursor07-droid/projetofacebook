@@ -117,6 +117,7 @@ function nextRun(intervaloMinutos) {
 }
 
 const SCAN_LIMIT = 10;
+const SCAN_LIMIT_SITE = 20;
 
 function dataPublicacaoValida(value) {
   if (!value) return null;
@@ -124,9 +125,10 @@ function dataPublicacaoValida(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function dedupeItens(itens) {
+function dedupeItens(itens, limite = SCAN_LIMIT) {
   const seen = new Set();
   const unicos = [];
+  const max = Math.min(40, Math.max(1, Number(limite) || SCAN_LIMIT));
   for (const item of itens) {
     if (!item?.url) continue;
     const key = String(item.externalId || item.url)
@@ -147,7 +149,7 @@ function dedupeItens(itens) {
       const dataB = b.publicadoEm?.getTime() || 0;
       return dataB - dataA || a.ordemOriginal - b.ordemOriginal;
     })
-    .slice(0, SCAN_LIMIT)
+    .slice(0, max)
     .map(({ ordemOriginal, ...item }) => item);
 }
 
@@ -345,7 +347,8 @@ async function coletarViaSerper(fonte) {
   } else if (fonte.plataforma === 'site') {
     try {
       const host = new URL(fonte.url).hostname.replace(/^www\./, '');
-      q = `site:${host}`;
+      // Preferir conteúdo recente (evita evergreen antigo no ranking SEO)
+      q = `site:${host} when:7d`;
     } catch {
       return [];
     }
@@ -353,15 +356,16 @@ async function coletarViaSerper(fonte) {
     q = fonte.nome ? String(fonte.nome) : fonte.url;
   }
 
+  const num =
+    fonte.plataforma === 'site' ? Math.max(SCAN_LIMIT, SCAN_LIMIT_SITE) : SCAN_LIMIT;
+
   try {
-    const { data } = await axios.post(
-      'https://google.serper.dev/search',
-      { q, num: SCAN_LIMIT, gl: 'br', hl: 'pt-br' },
-      {
-        headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
-        timeout: 15_000,
-      }
-    );
+    const payload = { q, num, gl: 'br', hl: 'pt-br' };
+    if (fonte.plataforma === 'site') payload.tbs = 'qdr:w';
+    const { data } = await axios.post('https://google.serper.dev/search', payload, {
+      headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
+      timeout: 15_000,
+    });
     return (data?.organic || [])
       .filter((r) => r.link)
       .map((r) => ({
@@ -785,6 +789,7 @@ async function coletarInstagramHtml(fonte) {
 async function coletarViaSite(fonte) {
   const collected = [];
   const erros = [];
+  const limite = SCAN_LIMIT_SITE;
 
   try {
     collected.push(...(await coletarViaRss(fonte.url)));
@@ -792,15 +797,15 @@ async function coletarViaSite(fonte) {
     erros.push(`rss: ${err.message}`);
   }
 
-  if (collected.length < SCAN_LIMIT) {
+  if (collected.length < limite) {
     try {
-      collected.push(...(await coletarSiteGoogleNews(fonte.url)));
+      collected.push(...(await coletarSiteGoogleNews(fonte.url, '7d')));
     } catch (err) {
       erros.push(`gnews: ${err.message}`);
     }
   }
 
-  if (collected.length < SCAN_LIMIT) {
+  if (collected.length < limite) {
     collected.push(...(await coletarViaSerper({ ...fonte, plataforma: 'site' })));
   }
 
@@ -816,7 +821,7 @@ async function coletarViaSite(fonte) {
     }
   }
 
-  const itens = dedupeItens(collected);
+  const itens = dedupeItens(collected, limite);
   if (!itens.length) {
     const err = new Error(
       `Não encontrei notícias neste site. ${erros[0] || 'Tente a URL da home ou do feed RSS.'}`
@@ -919,14 +924,15 @@ async function descobrirFeedsRss(pageUrl) {
   return [...feeds];
 }
 
-async function coletarSiteGoogleNews(pageUrl) {
+async function coletarSiteGoogleNews(pageUrl, janela = '7d') {
   let host;
   try {
     host = new URL(pageUrl).hostname.replace(/^www\./, '');
   } catch {
     return [];
   }
-  const q = encodeURIComponent(`site:${host} when:1d`);
+  const when = ['1d', '7d'].includes(String(janela)) ? String(janela) : '7d';
+  const q = encodeURIComponent(`site:${host} when:${when}`);
   const rssUrl = `https://news.google.com/rss/search?q=${q}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
   const { data } = await axios.get(rssUrl, {
     timeout: 15000,
@@ -934,7 +940,7 @@ async function coletarSiteGoogleNews(pageUrl) {
   });
   const xml = String(data || '');
   const blocks = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
-  return blocks.slice(0, SCAN_LIMIT).map((block) => {
+  return blocks.slice(0, SCAN_LIMIT_SITE).map((block) => {
     const titulo = (block.match(/<title[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/title>/i) ||
       block.match(/<title[^>]*>([\s\S]*?)<\/title>/i) ||
       [])[1];
@@ -1175,7 +1181,8 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
 
 async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
   const jaTemPosts = (await BibliotecaPosts.findByFonte(fonte.id, 1)).length > 0;
-  const lote = dedupeItens(itens).slice(0, SCAN_LIMIT);
+  const limite = fonte.plataforma === 'site' ? SCAN_LIMIT_SITE : SCAN_LIMIT;
+  const lote = dedupeItens(itens, limite);
 
   // Primeira varredura automática: cria uma base sem inundar os alertas.
   if (!jaTemPosts && silentFirst) {
@@ -1769,6 +1776,9 @@ async function analisarMelhoresParaPublicar(userId, limit = 30) {
       fonte: post.fonte_nome,
       plataforma: post.fonte_plataforma,
       tipo_midia: post.media_type,
+      status: post.status,
+      publicado_em: post.publicado_em,
+      created_at: post.created_at,
     })),
     quantidade
   );
@@ -2018,10 +2028,14 @@ async function tickAutopilot() {
           fonte: p.fonte_nome,
           plataforma: p.fonte_plataforma,
           tipo_midia: p.media_type,
+          status: p.status,
+          publicado_em: p.publicado_em,
+          created_at: p.created_at,
         })),
         qtd
       );
-      await salvarRankingViral(cfg.user_id, ranking);
+      // Não sobrescreve a lista manual "Melhores para publicar" do usuário.
+      // O ranking do autopilot fica só em memória para decidir o que publicar.
 
       const byId = new Map(candidatos.map((p) => [Number(p.id), p]));
       let processados = retomados;

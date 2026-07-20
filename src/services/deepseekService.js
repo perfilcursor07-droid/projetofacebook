@@ -938,18 +938,28 @@ function diversificarRankingPorFonte(itens, candidatos, maxPorFonte = 2) {
  */
 async function ranquearPostsViralFacebook(candidatos, topN = 3) {
   assertDeepseek();
+  const agora = Date.now();
   const lista = (Array.isArray(candidatos) ? candidatos : [])
     .filter((c) => c && c.id != null)
     .slice(0, 40)
-    .map((c) => ({
-      id: Number(c.id),
-      fonte_id: c.fonte_id != null ? Number(c.fonte_id) : null,
-      titulo: String(c.titulo || '').slice(0, 200),
-      resumo: String(c.resumo || '').slice(0, 400),
-      fonte: String(c.fonte || c.fonte_nome || '').slice(0, 120),
-      plataforma: String(c.plataforma || c.fonte_plataforma || '').slice(0, 40),
-      tipo_midia: String(c.tipo_midia || c.media_type || 'post').slice(0, 20),
-    }));
+    .map((c) => {
+      const pub = c.publicado_em || c.publicadoEm || c.created_at || c.createdAt || null;
+      const ts = pub ? new Date(pub).getTime() : NaN;
+      const idadeHoras = Number.isFinite(ts) ? Math.max(0, Math.round((agora - ts) / 3_600_000)) : null;
+      return {
+        id: Number(c.id),
+        fonte_id: c.fonte_id != null ? Number(c.fonte_id) : null,
+        titulo: String(c.titulo || '').slice(0, 200),
+        resumo: String(c.resumo || '').slice(0, 400),
+        fonte: String(c.fonte || c.fonte_nome || '').slice(0, 120),
+        plataforma: String(c.plataforma || c.fonte_plataforma || '').slice(0, 40),
+        tipo_midia: String(c.tipo_midia || c.media_type || 'post').slice(0, 20),
+        status: String(c.status || '').slice(0, 20) || null,
+        idade_horas: idadeHoras,
+        publicado_em: Number.isFinite(ts) ? new Date(ts).toISOString() : null,
+        prioridade_novo: c.status === 'novo' || idadeHoras == null ? true : idadeHoras <= 72,
+      };
+    });
 
   const n = Math.min(Math.max(Number(topN) || 1, 1), 30);
   if (!lista.length) return [];
@@ -960,7 +970,11 @@ async function ranquearPostsViralFacebook(candidatos, topN = 3) {
         role: 'system',
         content: `Você é editor de uma página no Facebook (estilo notícia / engajamento).
 Escolha os posts com MAIOR potencial de viralizar no Facebook AGORA.
-Critérios: relevância, emoção/curiosidade legítima, clareza do assunto, atualidade, potencial de compartilhamento e adequação ao formato indicado em tipo_midia.
+Critérios: relevância, emoção/curiosidade legítima, clareza do assunto, ATUALIDADE, potencial de compartilhamento e adequação ao formato indicado em tipo_midia.
+PRIORIDADE DE FRESHNESS (obrigatório):
+- Prefira fortemente itens com status "novo" e idade_horas baixa (últimas 72h).
+- Itens com mais de 7 dias (idade_horas > 168) só entram se forem excepcionais; na dúvida, omita.
+- Não repita pautas antigas já conhecidas se houver material mais recente na lista.
 Vídeos/Reels podem ser escolhidos quando o assunto e a narrativa tiverem potencial real; não priorize o formato sozinho.
 DIVERSIDADE OBRIGATÓRIA: não concentre o ranking em uma única fonte/site. No máximo 2 itens da mesma fonte (mesmo fonte_id ou mesmo nome de fonte). Prefira misturar fontes diferentes.
 Se o título/resumo estiver em idioma estrangeiro, traduza para português brasileiro em titulo_pt e escreva o motivo em português.
@@ -1000,21 +1014,35 @@ Ordene do melhor para o pior. Inclua no máximo ${n} itens. Use só IDs da lista
     });
   }
 
-  const diversificado = diversificarRankingPorFonte(out, lista, 2).slice(0, n);
+  const diversificado = diversificarRankingPorFonte(out, lista, 2)
+    .map((item) => {
+      const cand = lista.find((c) => c.id === item.id);
+      // Penaliza conteúdo antigo que a IA ainda assim priorizou (>7 dias)
+      if (cand?.idade_horas != null && cand.idade_horas > 168 && item.score >= 50) {
+        return { ...item, score: Math.min(item.score, 49) };
+      }
+      return item;
+    })
+    .filter((item) => item.score >= 50)
+    .slice(0, n);
 
   // Fallback: completa com os mais recentes se a IA devolveu pouco (também diversificado)
   if (diversificado.length < Math.min(n, lista.length)) {
     const extras = [];
-    for (const c of lista) {
+    const porIdade = [...lista].sort((a, b) => (a.idade_horas ?? 99999) - (b.idade_horas ?? 99999));
+    for (const c of porIdade) {
       if (diversificado.some((x) => x.id === c.id) || extras.some((x) => x.id === c.id)) continue;
-      extras.push({ id: c.id, score: 40, motivo: 'Complemento por recência.', titulo_pt: null });
+      if (c.idade_horas != null && c.idade_horas > 168) continue;
+      extras.push({
+        id: c.id,
+        score: c.status === 'novo' ? 55 : 45,
+        motivo: c.status === 'novo' ? 'Conteúdo novo da fonte.' : 'Complemento por recência.',
+        titulo_pt: null,
+      });
     }
-    for (const item of diversificarRankingPorFonte(
-      [...diversificado, ...extras],
-      lista,
-      2
-    )) {
+    for (const item of diversificarRankingPorFonte([...diversificado, ...extras], lista, 2)) {
       if (diversificado.some((x) => x.id === item.id)) continue;
+      if (item.score < 50) continue;
       diversificado.push(item);
       if (diversificado.length >= n) break;
     }
