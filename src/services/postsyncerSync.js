@@ -1,6 +1,38 @@
 const postsyncerService = require('./postsyncerService');
 const FacebookPages = require('../models/FacebookPages');
 const FacebookAccounts = require('../models/FacebookAccounts');
+const db = require('../config/db');
+
+function isPostsyncerStubAccount(account) {
+  if (!account) return false;
+  const token = String(account.access_token || '');
+  const fbUid = String(account.fb_user_id || '');
+  return token.startsWith('postsyncer:') || fbUid.startsWith('postsyncer:');
+}
+
+/**
+ * Garante uma linha em facebook_accounts para o usuário.
+ * Se não houver OAuth, cria stub — páginas e publicação vêm do PostSyncer.
+ */
+async function ensureFacebookAccountForUser(userId) {
+  let fbAcc = await FacebookAccounts.findByUser(userId);
+  if (fbAcc) return fbAcc;
+
+  const fbUserId = `postsyncer:${userId}`;
+  await db('facebook_accounts').insert({
+    user_id: userId,
+    fb_user_id: fbUserId,
+    access_token: 'postsyncer:stub',
+    expires_at: null,
+  });
+  fbAcc = await FacebookAccounts.findByUser(userId);
+  if (!fbAcc) {
+    const err = new Error('Não foi possível criar conta local para o PostSyncer');
+    err.status = 500;
+    throw err;
+  }
+  return fbAcc;
+}
 
 function normName(value) {
   return String(value || '')
@@ -180,15 +212,7 @@ async function syncPostsyncerAccounts(userId) {
     ).slice(0, 2000)
   );
 
-  const fbAcc = await FacebookAccounts.findByUser(userId);
-  if (!fbAcc) {
-    const err = new Error(
-      'Conecte a conta Facebook no app (botão Reconectar / OAuth) antes de sincronizar o PostSyncer.'
-    );
-    err.status = 400;
-    throw err;
-  }
-
+  const fbAcc = await ensureFacebookAccountForUser(userId);
   let pages = await FacebookPages.findByAccount(fbAcc.id);
 
   // 0) Importa páginas do PostSyncer que ainda não estão no app
@@ -291,12 +315,7 @@ async function syncPostsyncerAccounts(userId) {
 
 async function linkPageToPostsyncer(userId, facebookPageId, postsyncerAccountId) {
   postsyncerService.assertConfigured();
-  const fbAcc = await FacebookAccounts.findByUser(userId);
-  if (!fbAcc) {
-    const err = new Error('Conecte uma conta Facebook no app antes de vincular');
-    err.status = 400;
-    throw err;
-  }
+  const fbAcc = await ensureFacebookAccountForUser(userId);
 
   const page = await FacebookPages.findById(facebookPageId);
   if (!page || Number(page.facebook_account_id) !== Number(fbAcc.id)) {
@@ -334,4 +353,6 @@ module.exports = {
   serializeAccount,
   scoreMatch,
   importMissingPagesFromPostsyncer,
+  ensureFacebookAccountForUser,
+  isPostsyncerStubAccount,
 };

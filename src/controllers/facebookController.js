@@ -48,17 +48,28 @@ async function facebookCallback(req, res, next) {
     }
 
     const me = await facebookService.getMe(accessToken);
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
-    await FacebookAccounts.upsert({
-      user_id: req.session.userId,
-      fb_user_id: me.id,
-      access_token: accessToken,
-      expires_at: new Date(Date.now() + expiresIn * 1000),
-    });
+    // Se já existe conta stub (só PostSyncer), promove para OAuth real
+    // em vez de criar segunda linha (findByUser retorna .first()).
+    const existing = await FacebookAccounts.findByUser(req.session.userId);
+    if (existing) {
+      await db('facebook_accounts').where({ id: existing.id }).update({
+        fb_user_id: me.id,
+        access_token: accessToken,
+        expires_at: expiresAt,
+        updated_at: db.fn.now(),
+      });
+    } else {
+      await FacebookAccounts.upsert({
+        user_id: req.session.userId,
+        fb_user_id: me.id,
+        access_token: accessToken,
+        expires_at: expiresAt,
+      });
+    }
 
-    const account = await db('facebook_accounts')
-      .where({ user_id: req.session.userId, fb_user_id: me.id })
-      .first();
+    const account = await FacebookAccounts.findByUser(req.session.userId);
 
     const pages = await facebookService.getPages(accessToken);
     if (pages.length) {
@@ -88,22 +99,25 @@ async function listPages(req, res, next) {
     }
 
     if (req.query.refresh === '1') {
-      const pages = await facebookService.getPages(account.access_token);
-      if (pages.length) {
-        await FacebookPages.upsertMany(
-          pages.map((p) => ({
-            facebook_account_id: account.id,
-            page_id: p.id,
-            page_name: p.name,
-            page_access_token: p.access_token,
-          }))
-        );
-      }
-      try {
-        const { syncPostpulseAccounts } = require('../services/postpulseSync');
-        await syncPostpulseAccounts(req.session.userId);
-      } catch (syncErr) {
-        console.warn('PostPulse sync após refresh:', postpulseService.apiErrorMessage(syncErr));
+      const { isPostsyncerStubAccount } = require('../services/postsyncerSync');
+      if (!isPostsyncerStubAccount(account)) {
+        const pages = await facebookService.getPages(account.access_token);
+        if (pages.length) {
+          await FacebookPages.upsertMany(
+            pages.map((p) => ({
+              facebook_account_id: account.id,
+              page_id: p.id,
+              page_name: p.name,
+              page_access_token: p.access_token,
+            }))
+          );
+        }
+        try {
+          const { syncPostpulseAccounts } = require('../services/postpulseSync');
+          await syncPostpulseAccounts(req.session.userId);
+        } catch (syncErr) {
+          console.warn('PostPulse sync após refresh:', postpulseService.apiErrorMessage(syncErr));
+        }
       }
     }
 
@@ -112,7 +126,9 @@ async function listPages(req, res, next) {
       ? await PostpulseConnections.findByUser(req.session.userId)
       : null;
     const postsyncerService = require('../services/postsyncerService');
+    const { isPostsyncerStubAccount } = require('../services/postsyncerSync');
     const psConfigured = postsyncerService.isConfigured();
+    const oauthConnected = !isPostsyncerStubAccount(account);
     let defaultPageId = await Users.getDefaultFacebookPageId(req.session.userId);
 
     // Se a padrão sumiu, limpa; se só há 1 página e não tem padrão, define automático
@@ -127,6 +143,7 @@ async function listPages(req, res, next) {
 
     res.json({
       conectado: true,
+      oauth: oauthConnected,
       fb_user_id: account.fb_user_id,
       expira_em: account.expires_at,
       default_facebook_page_id: defaultPageId,
