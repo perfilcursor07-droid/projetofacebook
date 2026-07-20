@@ -11,9 +11,10 @@
         <div class="min-w-0 flex-1">
           <h2 class="text-sm font-semibold text-white">PostSyncer</h2>
           <p class="mt-1 text-xs text-slate-400">
-            Conecte a Página em
+            Conecte as Páginas em
             <a href="https://app.postsyncer.com" target="_blank" rel="noopener" class="text-sky-400 hover:underline">app.postsyncer.com</a>
-            e sincronize aqui. Publicação sem App Review da Meta.
+            e clique em <strong class="font-medium text-slate-300">Sincronizar / vincular</strong>.
+            O sistema importa as contas Facebook do PostSyncer para você publicar em todas elas.
           </p>
           <p id="ps-status" class="mt-2 text-sm text-slate-300">Carregando status…</p>
           <div id="ps-link-panel" class="mt-3 hidden"></div>
@@ -330,10 +331,13 @@
             window.__psAccounts = j.accounts || [];
             let msg =
               'PostSyncer: ' +
+              (j.imported || 0) +
+              ' página(s) importada(s), ' +
               (j.linked || 0) +
-              ' página(s) vinculada(s). Contas FB: ' +
+              ' vinculada(s). Contas FB no PS: ' +
               (j.accounts || []).length;
-            if (j.needs_manual) {
+            if (j.hint) msg += ' — ' + j.hint;
+            else if (j.needs_manual) {
               const names = (j.accounts || []).map((a) => a.label || a.name || a.id).join(' | ');
               msg += '. Vincule manualmente no painel abaixo (contas: ' + names + ').';
             }

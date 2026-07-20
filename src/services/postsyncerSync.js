@@ -83,8 +83,83 @@ function serializeAccount(account) {
   };
 }
 
+/** ID estável da Página no Facebook (ou fallback PostSyncer). */
+function resolveExternalPageId(account) {
+  const raw =
+    account.external_id ||
+    account.platform_id ||
+    account.account_id ||
+    account.provider_id ||
+    account.facebook_page_id ||
+    account.username ||
+    null;
+  if (raw != null && String(raw).trim()) {
+    return String(raw).trim().slice(0, 64);
+  }
+  return `ps:${account.id}`.slice(0, 64);
+}
+
 /**
- * Lista contas Facebook do PostSyncer e tenta vincular às páginas do app.
+ * Importa contas Facebook do PostSyncer que ainda não existem como páginas no app.
+ * Assim o seletor de publicação mostra as 3 páginas, não só as que vieram do Graph.
+ */
+async function importMissingPagesFromPostsyncer(fbAcc, fbAccounts, pages) {
+  if (!fbAcc || !fbAccounts?.length) return { imported: 0, imports: [] };
+
+  const byPsId = new Set(
+    pages.filter((p) => p.postsyncer_account_id).map((p) => Number(p.postsyncer_account_id))
+  );
+  const byPageId = new Set(pages.map((p) => String(p.page_id)));
+  const imports = [];
+
+  for (const account of fbAccounts) {
+    const psId = Number(account.id);
+    if (byPsId.has(psId)) continue;
+
+    const pageId = resolveExternalPageId(account);
+    const pageName = String(account.name || account.username || `Página PostSyncer #${psId}`).slice(
+      0,
+      255
+    );
+
+    // Já existe página com esse page_id → só vincula
+    const existing = pages.find((p) => String(p.page_id) === String(pageId));
+    if (existing) {
+      if (!existing.postsyncer_account_id) {
+        await FacebookPages.setPostsyncerAccount(existing.id, psId);
+        imports.push({ page: existing.page_name, account: pageName, mode: 'linked' });
+      }
+      byPsId.add(psId);
+      continue;
+    }
+
+    // Cria página só via PostSyncer (token local é placeholder; publicação vai pelo PS)
+    await FacebookPages.upsertMany([
+      {
+        facebook_account_id: fbAcc.id,
+        page_id: pageId,
+        page_name: pageName,
+        page_access_token: `postsyncer:${psId}`,
+      },
+    ]);
+
+    const created = await require('../config/db')('facebook_pages')
+      .where({ facebook_account_id: fbAcc.id, page_id: pageId })
+      .first();
+    if (created) {
+      await FacebookPages.setPostsyncerAccount(created.id, psId);
+      byPsId.add(psId);
+      byPageId.add(String(pageId));
+      pages.push({ ...created, postsyncer_account_id: psId });
+      imports.push({ page: pageName, account: pageName, mode: 'imported' });
+    }
+  }
+
+  return { imported: imports.length, imports };
+}
+
+/**
+ * Lista contas Facebook do PostSyncer, importa as que faltam e vincula às páginas do app.
  */
 async function syncPostsyncerAccounts(userId) {
   postsyncerService.assertConfigured();
@@ -94,21 +169,41 @@ async function syncPostsyncerAccounts(userId) {
 
   console.log(
     '[postsyncer] accounts',
-    JSON.stringify(fbAccounts.map((a) => ({ id: a.id, name: a.name, username: a.username, platform: a.platform }))).slice(
-      0,
-      2000
-    )
+    JSON.stringify(
+      fbAccounts.map((a) => ({
+        id: a.id,
+        name: a.name,
+        username: a.username,
+        platform: a.platform,
+        external_id: resolveExternalPageId(a),
+      }))
+    ).slice(0, 2000)
   );
 
   const fbAcc = await FacebookAccounts.findByUser(userId);
-  const pages = fbAcc ? await FacebookPages.findByAccount(fbAcc.id) : [];
+  if (!fbAcc) {
+    const err = new Error(
+      'Conecte a conta Facebook no app (botão Reconectar / OAuth) antes de sincronizar o PostSyncer.'
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  let pages = await FacebookPages.findByAccount(fbAcc.id);
+
+  // 0) Importa páginas do PostSyncer que ainda não estão no app
+  const { imported, imports } = await importMissingPagesFromPostsyncer(fbAcc, fbAccounts, pages);
+  if (imported) {
+    pages = await FacebookPages.findByAccount(fbAcc.id);
+    console.log('[postsyncer] imported pages', JSON.stringify(imports));
+  }
 
   const used = new Set(
     pages.filter((p) => p.postsyncer_account_id).map((p) => Number(p.postsyncer_account_id))
   );
 
   let linked = 0;
-  const links = [];
+  const links = [...(imports || [])];
 
   // 1) Match por score (nome / page_id)
   for (const page of pages) {
@@ -132,7 +227,7 @@ async function syncPostsyncerAccounts(userId) {
   }
 
   // 2) Fallback: páginas ainda sem vínculo
-  const pagesNow = fbAcc ? await FacebookPages.findByAccount(fbAcc.id) : [];
+  const pagesNow = await FacebookPages.findByAccount(fbAcc.id);
   const openPages = pagesNow.filter((p) => !p.postsyncer_account_id);
   const freeAccounts = fbAccounts.filter((a) => !used.has(Number(a.id)));
 
@@ -166,15 +261,19 @@ async function syncPostsyncerAccounts(userId) {
     }
   }
 
-  const pagesAfter = fbAcc ? await FacebookPages.findByAccount(fbAcc.id) : [];
+  const pagesAfter = await FacebookPages.findByAccount(fbAcc.id);
   const needsLink = pagesAfter.filter((p) => !p.postsyncer_account_id);
+  const unboundPs = fbAccounts.filter(
+    (a) => !pagesAfter.some((p) => Number(p.postsyncer_account_id) === Number(a.id))
+  );
 
   return {
     workspaceId,
     accounts: fbAccounts.map(serializeAccount),
     linked,
     links,
-    needs_manual: needsLink.length > 0,
+    imported,
+    needs_manual: needsLink.length > 0 || unboundPs.length > 0,
     pages: pagesAfter.map((p) => ({
       id: p.id,
       page_name: p.page_name,
@@ -183,8 +282,10 @@ async function syncPostsyncerAccounts(userId) {
     })),
     hint:
       needsLink.length > 0
-        ? 'Selecione abaixo a Página do app e a conta PostSyncer correspondente (ex.: Apocalipse Gospel) e clique em Vincular.'
-        : null,
+        ? 'Selecione abaixo a Página do app e a conta PostSyncer correspondente e clique em Vincular.'
+        : imported
+          ? `Importamos ${imported} página(s) do PostSyncer. Elas já aparecem na lista para publicar.`
+          : null,
   };
 }
 
@@ -232,4 +333,5 @@ module.exports = {
   linkPageToPostsyncer,
   serializeAccount,
   scoreMatch,
+  importMissingPagesFromPostsyncer,
 };
