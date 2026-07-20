@@ -582,6 +582,25 @@ async function apurarTopico(topico) {
       console.warn('apurarTopico (social) busca web:', err.message);
     }
 
+    // Se a URL original for artigo web (compartilhado na rede), puxa capa + autor
+    let imagemFonte = base.imagemFonte || null;
+    let autor = base.autor || null;
+    let veiculo = base.veiculo || base.fonte || null;
+    const linkPareceArtigo =
+      linkOriginal &&
+      /^https?:\/\//i.test(linkOriginal) &&
+      !/(?:instagram|facebook|fb\.watch|tiktok|youtube|youtu\.be)\./i.test(linkOriginal);
+    if (linkPareceArtigo && (!imagemFonte || !autor)) {
+      try {
+        const metaSocial = await extrairMetadadosArtigo(linkOriginal);
+        if (metaSocial?.imagem && !imagemFonte) imagemFonte = metaSocial.imagem;
+        if (metaSocial?.autor && !autor) autor = metaSocial.autor;
+        if (metaSocial?.veiculo) veiculo = metaSocial.veiculo;
+      } catch (err) {
+        console.warn('apurarTopico (social) meta artigo:', err.message);
+      }
+    }
+
     const blocoWeb = fontes
       .filter((f) => f.origemBusca)
       .map(
@@ -592,6 +611,7 @@ async function apurarTopico(topico) {
 
     const contexto = [
       String(base.contextoApuracao || '').trim(),
+      autor ? `Autor da matéria: ${autor}` : null,
       blocoWeb
         ? `Complemento factual encontrado na internet (use só o que estiver documentado abaixo):\n${blocoWeb}`
         : null,
@@ -605,11 +625,12 @@ async function apurarTopico(topico) {
       link: base.link || linkOriginal,
       titulo: base.titulo || null,
       resumo: base.resumo || null,
-      imagemFonte: base.imagemFonte || null,
+      imagemFonte,
+      autor,
       contextoApuracao: contexto || base.contextoApuracao,
       fontesApuracao: fontes,
       dataReferencia: base.data || null,
-      veiculo: base.veiculo || base.fonte || null,
+      veiculo,
       redeSocial: true,
       tipoFonte: 'rede_social',
     };

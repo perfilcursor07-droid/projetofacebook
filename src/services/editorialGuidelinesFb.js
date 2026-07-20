@@ -261,7 +261,7 @@ function quebrarEmParagrafos(texto) {
   // Separa créditos do corpo para não juntar "Fontes:\n• …" numa linha só
   let creditos = '';
   const creditMatch = t.match(
-    /\n\n((?:Fontes:\s*\n(?:[•\-*].+\n?)+)|(?:Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?))\s*$/i
+    /\n\n((?:Fontes:\s*\n(?:[•\-*].+\n?)+)|(?:Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?)|(?:Por\s+.+(?:\n\(Foto:[^\n]+\))?))\s*$/i
   );
   if (creditMatch) {
     creditos = creditMatch[1].trim();
@@ -321,6 +321,8 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, inclui
   const temFontesNoCorpo =
     /Fontes:\s*\n/i.test(body) ||
     /^Fonte:\s.+/m.test(body) ||
+    /^Por\s+.+\s+-\s+Site:\s.+/m.test(body) ||
+    /^Por\s+.+/m.test(body) ||
     /\(Foto:\s/i.test(body);
   const credit = temFontesNoCorpo
     ? ''
@@ -346,15 +348,22 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, inclui
 
 /**
  * Estilo de crédito por página:
- * - jm → "Fonte: Autor · site" + "(Foto: …)"
+ * - jm → "Por Autor - Site: dominio" + "(Foto: …)"
  * - apocalipse → "Fontes:" com bullets Conteúdo/Imagem (padrão)
  */
 function estiloCreditoDaPagina(pageName) {
   const n = String(pageName || '')
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  if (/\bjm\b/.test(n) || n.includes('jm noticia') || n.includes('jm noticias')) {
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  if (
+    /\bjm\b/.test(n) ||
+    n.includes('jm noticia') ||
+    n.includes('jm noticias') ||
+    n === 'jm' ||
+    /^jm[\s_-]/.test(n)
+  ) {
     return 'jm';
   }
   return 'apocalipse';
@@ -378,7 +387,7 @@ function limparAutorArtigo(value) {
 
 /**
  * Monta crédito padrão da matéria (editável depois).
- * JM: "Fonte: Abby Trivett · terra.com.br" + "(Foto: Reprodução)"
+ * JM: "Por Abby Trivett - Site: terra.com.br" + "(Foto: Reprodução)"
  * Demais: "Fonte: G1" + "(Foto: Reprodução)" (campo fonte_credito)
  */
 function montarFonteCredito({
@@ -391,37 +400,36 @@ function montarFonteCredito({
   estilo,
 } = {}) {
   let nome = String(veiculo || fonte || '').replace(/\s+/g, ' ').trim();
+  if (host) {
+    const fromHost = nomeSiteDeUrl(host);
+    // Hostname completo (fuxicogospel.com.br) > nome genérico da fonte
+    if (fromHost && (!nome || !/\./.test(nome) || /instagram|facebook|tiktok|youtube|rede social/i.test(nome))) {
+      nome = fromHost;
+    }
+  }
   if (!nome && host) {
     try {
       const hostname = String(host).includes('://') ? new URL(host).hostname : host;
-      nome = String(hostname)
-        .replace(/^www\./i, '')
-        .split('.')[0]
-        .replace(/[-_]/g, ' ')
-        .trim();
-      if (nome) nome = nome.charAt(0).toUpperCase() + nome.slice(1);
+      nome = String(hostname).replace(/^www\./i, '');
     } catch {
       /* ignore */
     }
   }
-  // Prefere domínio amigável (terra.com.br) quando veio hostname completo
   if (nome && /\./.test(nome) && !/\s/.test(nome)) {
     nome = nome.replace(/^www\./i, '');
-  } else if (host && (!nome || nome.length <= 2)) {
-    nome = nomeSiteDeUrl(host) || nome;
   }
 
-  const genericos = /^(fonte|google news|brave|editorial|serpapi|pexels)$/i;
+  const genericos = /^(fonte|google news|brave|editorial|serpapi|pexels|rede social|instagram|facebook)$/i;
   if (nome && genericos.test(nome)) nome = '';
 
-  const autor = limparAutorArtigo(autorArtigo);
+  const autor = limparAutorArtigo(autorArtigo) || (estilo === 'jm' ? 'Redação' : null);
   const estiloFinal = estilo === 'jm' ? 'jm' : 'simples';
   const lines = [];
 
   if (estiloFinal === 'jm') {
-    if (autor && nome) lines.push(`Fonte: ${autor} · ${nome}`);
-    else if (autor) lines.push(`Fonte: ${autor}`);
-    else if (nome) lines.push(`Fonte: ${nome}`);
+    if (autor && nome) lines.push(`Por ${autor} - Site: ${nome}`);
+    else if (autor) lines.push(`Por ${autor}`);
+    else if (nome) lines.push(`Por Redação - Site: ${nome}`);
   } else if (nome) {
     lines.push(`Fonte: ${nome}`);
   }
@@ -431,7 +439,8 @@ function montarFonteCredito({
     if (imagemOrigem?.tipo === 'pexels') {
       lines.push('(Foto: Pexels)');
     } else if (imagemOrigem?.autor) {
-      lines.push(`(Foto: ${limparCreditoAutor(imagemOrigem.autor)})`);
+      const a = limparCreditoAutor(imagemOrigem.autor);
+      lines.push(`(Foto: ${a === CREDITO_IMAGEM_FALLBACK ? 'Reprodução' : a})`);
     } else {
       lines.push('(Foto: Reprodução)');
     }
@@ -526,6 +535,7 @@ function removerBlocoCreditosDoCorpo(cleanBody) {
   return String(cleanBody || '')
     .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+$/i, '')
     .replace(/\n*Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?$/i, '')
+    .replace(/\n*Por\s+.+(?:\n\(Foto:[^\n]+\))?$/i, '')
     .replace(/\n*\(Foto:[^\n]+\)$/i, '')
     .trim();
 }
@@ -533,8 +543,27 @@ function removerBlocoCreditosDoCorpo(cleanBody) {
 /**
  * Anexa bloco de créditos antes das hashtags.
  * Apocalipse: Fontes: + bullets Conteúdo/Imagem
- * JM: Fonte: Autor · site + (Foto: …)
+ * JM: Por Autor - Site: dominio + (Foto: …)
  */
+function converterCreditosParaJm(materia, { fonteUrl, autorArtigo } = {}) {
+  const { body } = extrairHashtagsDoTexto(materia);
+  let site = null;
+  let img = null;
+  const conteudo = String(body || '').match(/[•\*]\s*Conte[uú]do\s*:\s*([^\n]+)/i);
+  const imagem = String(body || '').match(/[•\*]\s*Imagem\s*:\s*([^\n]+)/i);
+  if (conteudo) site = conteudo[1].trim();
+  if (imagem) img = imagem[1].trim();
+  if (!site) site = nomeSiteDeUrl(fonteUrl) || null;
+
+  return anexarCreditosFontes(body, {
+    fonteNome: site,
+    fonteUrl,
+    imagemAutor: img || CREDITO_IMAGEM_FALLBACK,
+    autorArtigo: autorArtigo || null,
+    estilo: 'jm',
+  });
+}
+
 function anexarCreditosFontes(
   materia,
   { fonteNome, fonteUrl, imagemAutor, autorArtigo, estilo } = {}
@@ -548,12 +577,16 @@ function anexarCreditosFontes(
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 80);
-  if (!site || /^https?:\/\//i.test(site)) {
-    site = nomeSiteDeUrl(fonteUrl || site) || '';
+  if (!site || /^https?:\/\//i.test(site) || /rede social|instagram|facebook/i.test(site)) {
+    site = nomeSiteDeUrl(fonteUrl || site) || site;
   } else if (/^https?:\/\//i.test(String(fonteUrl || ''))) {
     if (/^(site|fonte|not[ií]cia|post|link)$/i.test(site)) {
       site = nomeSiteDeUrl(fonteUrl) || site;
     }
+  }
+  // Prefer domínio da URL quando o nome da fonte é genérico
+  if (fonteUrl && (!site || !/\./.test(site))) {
+    site = nomeSiteDeUrl(fonteUrl) || site;
   }
 
   let bloco;
@@ -678,6 +711,7 @@ module.exports = {
   formatHashtagsLine,
   anexarHashtagsAoFinal,
   anexarCreditosFontes,
+  converterCreditosParaJm,
   atualizarCreditoImagemNaMateria,
   extrairAutorImagemHeuristico,
   limparCreditoAutor,

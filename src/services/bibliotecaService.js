@@ -1596,7 +1596,15 @@ async function gerarTextoDePost({
   const fonte = await BibliotecaFontes.findById(post.fonte_id);
   // Fonte em inglês/outro idioma → traduz título/resumo antes de gerar a matéria
   const postPt = await garantirPostEmPortugues(fonte, post);
-  const pageId = facebookPageId || fonte?.facebook_page_id;
+  let pageId = facebookPageId || fonte?.facebook_page_id || null;
+  if (!pageId) {
+    try {
+      const Users = require('../models/Users');
+      pageId = await Users.getDefaultFacebookPageId(userId);
+    } catch {
+      pageId = null;
+    }
+  }
   if (pageId) {
     const page = await resolvePage(userId, pageId);
     if (!page) {
@@ -1606,17 +1614,23 @@ async function gerarTextoDePost({
     }
   }
 
+  const urlPost = String(postPt.url || '');
+  const ehRedeSocialUrl =
+    /(?:instagram|facebook|fb\.watch|tiktok|youtube|youtu\.be)\.com/i.test(urlPost) ||
+    /youtu\.be\//i.test(urlPost);
+
   const topico = {
     titulo: postPt.titulo,
     link: postPt.url,
     resumo: postPt.resumo,
-    nicho: fonte?.nome || fonte?.plataforma || 'rede social',
+    nicho: fonte?.nome || fonte?.plataforma || 'notícia',
     fonte: fonte?.nome,
-    veiculo: fonte?.plataforma,
+    veiculo: fonte?.nome || fonte?.plataforma,
     imagemFonte: postPt.thumbnail,
-    redeSocial: true,
-    tipoFonte: 'rede_social',
-    // Garante matéria em PT mesmo se a apuração puxar trechos em inglês
+    // Só trata como rede social se a URL for IG/FB/TikTok/YT —
+    // sites de notícia (ex.: fuxicogospel) precisam de scrape de autor + capa.
+    redeSocial: ehRedeSocialUrl,
+    tipoFonte: ehRedeSocialUrl ? 'rede_social' : 'noticia',
     idiomaObrigatorio: 'pt-BR',
     traduzirFonte: true,
   };

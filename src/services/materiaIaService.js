@@ -362,7 +362,16 @@ async function publicarMateria(userId, matterId, overrides = {}) {
         : matter.tipo_publicacao || 'texto';
   const mensagem = montarMensagem({
     titulo: overrides.titulo || matter.titulo,
-    materia: overrides.materia || matter.materia,
+    materia: (() => {
+      const raw = overrides.materia || matter.materia;
+      if (estiloCreditoDaPagina(page.page_name) !== 'jm') return raw;
+      if (!/Fontes:\s*\n\s*[•\*]/i.test(String(raw || ''))) return raw;
+      const { converterCreditosParaJm } = require('./editorialGuidelinesFb');
+      return converterCreditosParaJm(raw, {
+        fonteUrl: matter.fonte_url,
+        autorArtigo: null,
+      });
+    })(),
     hashtags: overrides.hashtags || matter.hashtags,
     fonteCredito: overrides.fonte_credito != null ? overrides.fonte_credito : matter.fonte_credito,
     incluirTitulo: tipo !== 'foto',
