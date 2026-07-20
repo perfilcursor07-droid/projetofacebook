@@ -232,11 +232,13 @@ async function listarMelhores(req, res, next) {
 
 async function analisarMelhores(req, res, next) {
   try {
-    const melhores = await bibliotecaService.analisarMelhoresParaPublicar(
+    const result = await bibliotecaService.analisarMelhoresParaPublicar(
       req.session.userId,
       Number(req.body?.limit) || 30
     );
-    res.json({ ok: true, melhores });
+    const melhores = Array.isArray(result) ? result : result?.melhores || [];
+    const scan = Array.isArray(result) ? null : result?.scan || null;
+    res.json({ ok: true, melhores, scan });
   } catch (err) {
     next(err);
   }

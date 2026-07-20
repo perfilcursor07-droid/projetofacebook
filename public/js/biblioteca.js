@@ -369,13 +369,18 @@
 
   document.getElementById('bib-analisar-melhores')?.addEventListener('click', async () => {
     try {
-      setBusy(true, 'IA analisando conteúdos de todas as fontes…');
+      setBusy(true, 'Escaneando fontes e atualizando análise…');
       const data = await api('/api/biblioteca/melhores/analisar', {
         method: 'POST',
         body: JSON.stringify({ limit: 30 }),
       });
       if (!data.melhores?.length) {
-        alert('Nenhum conteúdo pendente encontrado. Escaneie suas fontes primeiro.');
+        const novas = data.scan?.novas || 0;
+        alert(
+          novas
+            ? 'Fontes escaneadas, mas nenhum conteúdo com pontuação 50+ ainda. Tente de novo em instantes.'
+            : 'Nenhum conteúdo pendente encontrado nas fontes. Confira se as fontes estão ativas.'
+        );
       }
       location.reload();
     } catch (err) {

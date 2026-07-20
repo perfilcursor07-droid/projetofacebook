@@ -1758,13 +1758,59 @@ async function ocultarMelhorParaPublicar(userId, postId) {
   return listarMelhoresParaPublicar(userId, 30);
 }
 
+async function escanearFontesDoUsuario(userId, { silentFirst = false, concorrencia = 3 } = {}) {
+  const fontes = await BibliotecaFontes.findByUser(userId);
+  const ativas = (fontes || []).filter((f) => f.monitorar !== false && f.monitorar !== 0);
+  const resultado = {
+    fontes: ativas.length,
+    escaneadas: 0,
+    novas: 0,
+    pendentes: 0,
+    erros: [],
+  };
+  if (!ativas.length) return resultado;
+
+  const fila = [...ativas];
+  const workers = Math.min(Math.max(1, Number(concorrencia) || 3), fila.length);
+
+  async function worker() {
+    while (fila.length) {
+      const fonte = fila.shift();
+      if (!fonte) break;
+      try {
+        const r = await escanearFonte(fonte, { silentFirst });
+        resultado.escaneadas += 1;
+        if (r?.pending) {
+          resultado.pendentes += 1;
+        } else {
+          resultado.novas += Array.isArray(r?.novos) ? r.novos.length : Number(r?.salvos || 0);
+        }
+      } catch (err) {
+        resultado.erros.push(`${fonte.nome || fonte.url}: ${err.message || err}`);
+        await BibliotecaFontes.update(fonte.id, {
+          ultimo_erro: String(err.message || err).slice(0, 1000),
+          proxima_execucao: nextRun(fonte.intervalo_minutos),
+          ultimo_scan: new Date(),
+        }).catch(() => null);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return resultado;
+}
+
 async function analisarMelhoresParaPublicar(userId, limit = 30) {
   assertDeepseek();
   const quantidade = Math.min(30, Math.max(1, Number(limit) || 30));
+
+  // Sempre varre as fontes antes de remontar a lista
+  const scan = await escanearFontesDoUsuario(userId, { silentFirst: false, concorrencia: 3 });
+
   const candidatos = await BibliotecaPosts.findCandidatosAutopilot(userId, 30);
   if (!candidatos.length) {
     await BibliotecaPosts.clearViralRanking(userId);
-    return [];
+    return { melhores: [], scan };
   }
 
   const ranking = await ranquearPostsViralFacebook(
@@ -1783,7 +1829,8 @@ async function analisarMelhoresParaPublicar(userId, limit = 30) {
     quantidade
   );
   await salvarRankingViral(userId, ranking);
-  return listarMelhoresParaPublicar(userId, quantidade);
+  const melhores = await listarMelhoresParaPublicar(userId, quantidade);
+  return { melhores, scan };
 }
 
 async function dashboardUsuario(userId) {
@@ -2111,6 +2158,7 @@ module.exports = {
   detalheFonte,
   listarMelhoresParaPublicar,
   analisarMelhoresParaPublicar,
+  escanearFontesDoUsuario,
   ocultarMelhorParaPublicar,
   obterAutopilot,
   salvarAutopilot,
