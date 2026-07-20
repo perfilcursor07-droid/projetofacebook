@@ -252,40 +252,54 @@ function extrairHashtagsDoTexto(texto) {
 
 /**
  * Quebra texto corrido em parágrafos curtos (1–2 frases) para o feed do Facebook.
+ * Preserva blocos de crédito (Fontes: / Fonte:) sem achatar linhas internas.
  */
 function quebrarEmParagrafos(texto) {
   let t = String(texto || '').replace(/\r\n/g, '\n').trim();
   if (!t) return '';
 
+  // Separa créditos do corpo para não juntar "Fontes:\n• …" numa linha só
+  let creditos = '';
+  const creditMatch = t.match(
+    /\n\n((?:Fontes:\s*\n(?:[•\-*].+\n?)+)|(?:Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?))\s*$/i
+  );
+  if (creditMatch) {
+    creditos = creditMatch[1].trim();
+    t = t.slice(0, creditMatch.index).trim();
+  }
+
+  let body;
   if (/\n\s*\n/.test(t)) {
-    return t
+    body = t
       .split(/\n\s*\n/)
       .map((p) => p.replace(/[ \t]+/g, ' ').replace(/\n+/g, ' ').trim())
       .filter(Boolean)
       .join('\n\n');
-  }
+  } else {
+    const sentences = t.match(/[^.!?…]+[.!?…]+(?:["”')\]]*)?|[^.!?…]+$/g) || [t];
+    const paras = [];
+    let buf = '';
+    let frasesNoBuf = 0;
 
-  const sentences = t.match(/[^.!?…]+[.!?…]+(?:["”')\]]*)?|[^.!?…]+$/g) || [t];
-  const paras = [];
-  let buf = '';
-  let frasesNoBuf = 0;
-
-  for (const raw of sentences) {
-    const piece = String(raw).replace(/\s+/g, ' ').trim();
-    if (!piece) continue;
-    const next = buf ? `${buf} ${piece}` : piece;
-    const wouldBeLong = next.length > 240;
-    if (buf && (frasesNoBuf >= 2 || wouldBeLong)) {
-      paras.push(buf);
-      buf = piece;
-      frasesNoBuf = 1;
-    } else {
-      buf = next;
-      frasesNoBuf += 1;
+    for (const raw of sentences) {
+      const piece = String(raw).replace(/\s+/g, ' ').trim();
+      if (!piece) continue;
+      const next = buf ? `${buf} ${piece}` : piece;
+      const wouldBeLong = next.length > 240;
+      if (buf && (frasesNoBuf >= 2 || wouldBeLong)) {
+        paras.push(buf);
+        buf = piece;
+        frasesNoBuf = 1;
+      } else {
+        buf = next;
+        frasesNoBuf += 1;
+      }
     }
+    if (buf) paras.push(buf);
+    body = paras.join('\n\n');
   }
-  if (buf) paras.push(buf);
-  return paras.join('\n\n');
+
+  return creditos ? `${body}\n\n${creditos}`.trim() : body;
 }
 
 /**
@@ -303,8 +317,11 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, inclui
 
   body = quebrarEmParagrafos(body);
 
-  // Evita duplicar se o corpo já tem o bloco "Fontes:" (produção).
-  const temFontesNoCorpo = /Fontes:\s*\n/i.test(body);
+  // Evita duplicar se o corpo já tem créditos (Apocalipse ou JM).
+  const temFontesNoCorpo =
+    /Fontes:\s*\n/i.test(body) ||
+    /^Fonte:\s.+/m.test(body) ||
+    /\(Foto:\s/i.test(body);
   const credit = temFontesNoCorpo
     ? ''
     : String(fonteCredito || '')
@@ -328,10 +345,51 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, inclui
 }
 
 /**
- * Monta crédito padrão da matéria (editável depois).
- * Ex.: "Fonte: G1" + "(Foto: Reprodução)"
+ * Estilo de crédito por página:
+ * - jm → "Fonte: Autor · site" + "(Foto: …)"
+ * - apocalipse → "Fontes:" com bullets Conteúdo/Imagem (padrão)
  */
-function montarFonteCredito({ veiculo, fonte, host, tipoPublicacao, imagemOrigem } = {}) {
+function estiloCreditoDaPagina(pageName) {
+  const n = String(pageName || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (/\bjm\b/.test(n) || n.includes('jm noticia') || n.includes('jm noticias')) {
+    return 'jm';
+  }
+  return 'apocalipse';
+}
+
+function limparAutorArtigo(value) {
+  const v = String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^por\s+/i, '')
+    .replace(/^by\s+/i, '')
+    .replace(/^["'“”]+|["'“”]+$/g, '')
+    .trim()
+    .slice(0, 80);
+  if (!v || v.length < 2) return null;
+  if (/^(redacao|redação|equipe|staff|editor|admin|adminstracao|administração)$/i.test(v)) {
+    return null;
+  }
+  if (/\.(com|br|net|org)\b/i.test(v)) return null;
+  return v;
+}
+
+/**
+ * Monta crédito padrão da matéria (editável depois).
+ * JM: "Fonte: Abby Trivett · terra.com.br" + "(Foto: Reprodução)"
+ * Demais: "Fonte: G1" + "(Foto: Reprodução)" (campo fonte_credito)
+ */
+function montarFonteCredito({
+  veiculo,
+  fonte,
+  host,
+  tipoPublicacao,
+  imagemOrigem,
+  autorArtigo,
+  estilo,
+} = {}) {
   let nome = String(veiculo || fonte || '').replace(/\s+/g, ' ').trim();
   if (!nome && host) {
     try {
@@ -346,15 +404,37 @@ function montarFonteCredito({ veiculo, fonte, host, tipoPublicacao, imagemOrigem
       /* ignore */
     }
   }
+  // Prefere domínio amigável (terra.com.br) quando veio hostname completo
+  if (nome && /\./.test(nome) && !/\s/.test(nome)) {
+    nome = nome.replace(/^www\./i, '');
+  } else if (host && (!nome || nome.length <= 2)) {
+    nome = nomeSiteDeUrl(host) || nome;
+  }
+
   const genericos = /^(fonte|google news|brave|editorial|serpapi|pexels)$/i;
+  if (nome && genericos.test(nome)) nome = '';
+
+  const autor = limparAutorArtigo(autorArtigo);
+  const estiloFinal = estilo === 'jm' ? 'jm' : 'simples';
   const lines = [];
-  if (nome && !genericos.test(nome)) {
+
+  if (estiloFinal === 'jm') {
+    if (autor && nome) lines.push(`Fonte: ${autor} · ${nome}`);
+    else if (autor) lines.push(`Fonte: ${autor}`);
+    else if (nome) lines.push(`Fonte: ${nome}`);
+  } else if (nome) {
     lines.push(`Fonte: ${nome}`);
   }
 
   const temFoto = tipoPublicacao === 'foto' || Boolean(imagemOrigem);
   if (temFoto) {
-    lines.push(imagemOrigem?.tipo === 'pexels' ? '(Foto: Pexels)' : '(Foto: Reprodução)');
+    if (imagemOrigem?.tipo === 'pexels') {
+      lines.push('(Foto: Pexels)');
+    } else if (imagemOrigem?.autor) {
+      lines.push(`(Foto: ${limparCreditoAutor(imagemOrigem.autor)})`);
+    } else {
+      lines.push('(Foto: Reprodução)');
+    }
   }
 
   return lines.join('\n').slice(0, 400) || null;
@@ -430,45 +510,76 @@ function nomeSiteDeUrl(url) {
       tiktok: 'TikTok',
       twitter: 'X',
       x: 'X',
+      terra: 'terra.com.br',
+      christianpost: 'christianpost.com',
     };
     if (conhecidos[base.toLowerCase()]) return conhecidos[base.toLowerCase()];
+    // Mantém domínio curto quando útil (terra.com.br)
+    if (host.split('.').length <= 3) return host;
     return base.charAt(0).toUpperCase() + base.slice(1);
   } catch {
     return null;
   }
 }
 
-/**
- * Anexa bloco de créditos (origem do conteúdo + crédito da imagem) antes das hashtags.
- * Conteúdo: somente o nome do site (sem URL).
- * Imagem: só o nome do autor, ou "Reprodução/Internet" se não houver.
- */
-function anexarCreditosFontes(materia, { fonteNome, fonteUrl, imagemAutor } = {}) {
-  const { body, tags } = extrairHashtagsDoTexto(materia);
-  let cleanBody = String(body || '')
+function removerBlocoCreditosDoCorpo(cleanBody) {
+  return String(cleanBody || '')
     .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+$/i, '')
+    .replace(/\n*Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?$/i, '')
+    .replace(/\n*\(Foto:[^\n]+\)$/i, '')
     .trim();
+}
 
-  const linhas = [];
+/**
+ * Anexa bloco de créditos antes das hashtags.
+ * Apocalipse: Fontes: + bullets Conteúdo/Imagem
+ * JM: Fonte: Autor · site + (Foto: …)
+ */
+function anexarCreditosFontes(
+  materia,
+  { fonteNome, fonteUrl, imagemAutor, autorArtigo, estilo } = {}
+) {
+  const { body, tags } = extrairHashtagsDoTexto(materia);
+  let cleanBody = removerBlocoCreditosDoCorpo(body);
+
+  const estiloFinal = estilo === 'jm' ? 'jm' : 'apocalipse';
+
   let site = String(fonteNome || '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 80);
-  // Se veio URL no nome, ou nome vazio, usa o host amigável
   if (!site || /^https?:\/\//i.test(site)) {
     site = nomeSiteDeUrl(fonteUrl || site) || '';
   } else if (/^https?:\/\//i.test(String(fonteUrl || ''))) {
-    // Nome genérico demais → prefere host
     if (/^(site|fonte|not[ií]cia|post|link)$/i.test(site)) {
       site = nomeSiteDeUrl(fonteUrl) || site;
     }
   }
-  if (site) linhas.push(`• Conteúdo: ${site}`);
 
-  const creditoImg = limparCreditoAutor(imagemAutor);
-  linhas.push(`• Imagem: ${creditoImg}`);
+  let bloco;
+  if (estiloFinal === 'jm') {
+    bloco = montarFonteCredito({
+      veiculo: site,
+      host: fonteUrl,
+      autorArtigo,
+      estilo: 'jm',
+      tipoPublicacao: 'foto',
+      imagemOrigem: {
+        tipo: /pexels/i.test(String(imagemAutor || '')) ? 'pexels' : 'fonte',
+        autor:
+          imagemAutor && !/reprodu[cç][aã]o/i.test(String(imagemAutor))
+            ? imagemAutor
+            : null,
+      },
+    });
+  } else {
+    const linhas = [];
+    if (site) linhas.push(`• Conteúdo: ${site}`);
+    linhas.push(`• Imagem: ${limparCreditoAutor(imagemAutor)}`);
+    bloco = `Fontes:\n${linhas.join('\n')}`;
+  }
 
-  const bloco = `Fontes:\n${linhas.join('\n')}`;
+  if (!bloco) return anexarHashtagsAoFinal(cleanBody, tags);
   return anexarHashtagsAoFinal(`${cleanBody}\n\n${bloco}`, tags);
 }
 
@@ -482,11 +593,17 @@ function limparCreditoAutor(value) {
   return v.slice(0, 80);
 }
 
-/** Atualiza só a linha de crédito da imagem no bloco Fontes (mantém Conteúdo e hashtags). */
+/** Atualiza só a linha de crédito da imagem (Apocalipse ou JM). */
 function atualizarCreditoImagemNaMateria(materia, imagemAutor) {
   const credito = limparCreditoAutor(imagemAutor);
   const { body, tags } = extrairHashtagsDoTexto(materia);
   let cleanBody = String(body || '').trim();
+
+  // JM: (Foto: …)
+  if (/\(Foto:\s*[^)]+\)/i.test(cleanBody)) {
+    cleanBody = cleanBody.replace(/\(Foto:\s*[^)]+\)/i, `(Foto: ${credito === CREDITO_IMAGEM_FALLBACK ? 'Reprodução' : credito})`);
+    return anexarHashtagsAoFinal(cleanBody, tags);
+  }
 
   if (/Fontes:\s*\n(?:[•\-*].+\n?)+$/i.test(cleanBody)) {
     if (/[•\*]\s*Imagem\s*:/i.test(cleanBody)) {
@@ -555,6 +672,8 @@ module.exports = {
   mensagemAvisoQualidade,
   formatFacebookCaption,
   montarFonteCredito,
+  estiloCreditoDaPagina,
+  limparAutorArtigo,
   quebrarEmParagrafos,
   formatHashtagsLine,
   anexarHashtagsAoFinal,

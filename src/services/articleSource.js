@@ -213,6 +213,77 @@ function extrairParagrafos(html) {
   return textos;
 }
 
+function extrairAutorDoHtml(html) {
+  const limpar = (s) =>
+    String(s || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^por\s+/i, '')
+      .replace(/^by\s+/i, '')
+      .replace(/^["'“”]+|["'“”]+$/g, '')
+      .trim()
+      .slice(0, 80);
+
+  const pareceNome = (s) => {
+    const v = limpar(s);
+    if (!v || v.length < 3 || v.length > 70) return false;
+    if (/^(redacao|redação|equipe|staff|editor|admin|agencia|agência)$/i.test(v)) return false;
+    if (/\d{4}/.test(v)) return false;
+    if (/\.(com|br|net|org)\b/i.test(v)) return false;
+    // Prefer nomes com 2+ palavras ou nome próprio capitalizado
+    return /[\p{L}]{2,}/u.test(v);
+  };
+
+  const metaAuthor =
+    extrairMeta(html, 'author') ||
+    extrairMeta(html, 'article:author') ||
+    extrairMeta(html, 'og:article:author') ||
+    extrairMeta(html, 'parsely-author') ||
+    extrairMeta(html, 'byl');
+  if (pareceNome(metaAuthor)) return limpar(metaAuthor);
+
+  // JSON-LD author.name
+  const ldBlocks = String(html || '').match(
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  ) || [];
+  for (const block of ldBlocks) {
+    const raw = block.replace(/^[\s\S]*?>/, '').replace(/<\/script>$/i, '');
+    try {
+      const data = JSON.parse(raw);
+      const nodes = Array.isArray(data) ? data : [data];
+      for (const node of nodes) {
+        const graph = Array.isArray(node?.['@graph']) ? node['@graph'] : [node];
+        for (const item of graph) {
+          const a = item?.author;
+          const name =
+            (typeof a === 'string' && a) ||
+            a?.name ||
+            (Array.isArray(a) && (a[0]?.name || a[0])) ||
+            null;
+          if (pareceNome(name)) return limpar(name);
+        }
+      }
+    } catch {
+      /* ignore json */
+    }
+  }
+
+  // Byline visível: "Por Abby Trivett" / "By Abby Trivett"
+  const byline =
+    String(html || '').match(
+      /(?:class|id)=["'][^"']*(?:author|byline|escritor|reporter)[^"']*["'][^>]*>[\s\S]{0,200}?Por\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.\-]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.\-]+){0,3})/i
+    ) ||
+    String(html || '').match(
+      />\s*Por\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.\-]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ'’.\-]+){0,3})\s*</i
+    ) ||
+    String(html || '').match(
+      />\s*By\s+([A-Z][\w'’.\-]+(?:\s+[A-Z][\w'’.\-]+){0,3})\s*</i
+    );
+  if (byline && pareceNome(byline[1])) return limpar(byline[1]);
+
+  return null;
+}
+
 async function extrairMetadadosArtigo(url) {
   const urlReal = (await resolverUrlNoticia(url)) || url;
   if (!urlReal) return null;
@@ -236,6 +307,7 @@ async function extrairMetadadosArtigo(url) {
     const resumo = extrairMeta(html, 'og:description') || extrairMeta(html, 'description') || '';
     const imagem = extrairImagemCapa(html, finalUrl);
     const paragrafos = extrairParagrafos(html);
+    const autor = extrairAutorDoHtml(html);
 
     return {
       url: finalUrl,
@@ -243,6 +315,7 @@ async function extrairMetadadosArtigo(url) {
       resumo: resumo || null,
       imagem: imagem || null,
       trecho: paragrafos.slice(0, 8).join('\n\n'),
+      autor: autor || null,
       veiculo: (() => {
         try {
           return new URL(finalUrl).hostname.replace(/^www\./, '');
@@ -253,7 +326,15 @@ async function extrairMetadadosArtigo(url) {
     };
   } catch (err) {
     console.warn('extrairMetadadosArtigo:', err.message);
-    return { url: urlReal, titulo: null, resumo: null, imagem: null, trecho: '', veiculo: null };
+    return {
+      url: urlReal,
+      titulo: null,
+      resumo: null,
+      imagem: null,
+      trecho: '',
+      autor: null,
+      veiculo: null,
+    };
   }
 }
 
@@ -610,6 +691,7 @@ async function apurarTopico(topico) {
     base.resumo ? `Resumo inicial: ${base.resumo}` : null,
     meta?.trecho ? `Trechos documentados da fonte principal:\n${meta.trecho.slice(0, 3500)}` : null,
     meta?.veiculo ? `Veículo: ${meta.veiculo}` : null,
+    meta?.autor ? `Autor da matéria: ${meta.autor}` : null,
     meta?.url ? `URL: ${meta.url}` : null,
     blocoComplementar
       ? `Outras fontes na internet (só use fatos documentados):\n${blocoComplementar}`
@@ -636,6 +718,7 @@ async function apurarTopico(topico) {
     fontesApuracao: fontesFinais,
     dataReferencia: base.data || null,
     veiculo: meta?.veiculo || base.veiculo || base.fonte || null,
+    autor: meta?.autor || base.autor || null,
   };
 }
 

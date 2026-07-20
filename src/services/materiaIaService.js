@@ -11,7 +11,7 @@ const { gerarMateriaNoticiaFacebook, assertDeepseek } = require('./deepseekServi
 const pexelsService = require('./pexelsService');
 const { enqueue } = require('../workers/queue');
 const { env } = require('../config/env');
-const { titulosParecidos, formatFacebookCaption, montarFonteCredito } = require('./editorialGuidelinesFb');
+const { titulosParecidos, formatFacebookCaption, montarFonteCredito, estiloCreditoDaPagina } = require('./editorialGuidelinesFb');
 const { applyBrandArtworkToResult } = require('./matterArtworkService');
 
 async function resolvePage(userId, facebookPageId) {
@@ -43,13 +43,18 @@ function montarMensagem({ titulo, materia, hashtags, fonteCredito, incluirTitulo
   });
 }
 
-function creditoPadraoDaMateria({ topico, gerado, tipoPublicacao }) {
+function creditoPadraoDaMateria({ topico, gerado, tipoPublicacao, pageName }) {
+  const estilo = estiloCreditoDaPagina(pageName);
   return montarFonteCredito({
     veiculo: topico?.veiculo || topico?.fonte || gerado?.imagemOrigem?.veiculo,
     fonte: topico?.fonte,
     host: topico?.link || topico?.url,
     tipoPublicacao,
-    imagemOrigem: gerado?.imagemOrigem || (tipoPublicacao === 'foto' || gerado?.imagemUrl ? { tipo: 'fonte' } : null),
+    autorArtigo: topico?.autor || gerado?.autorArtigo || null,
+    estilo,
+    imagemOrigem:
+      gerado?.imagemOrigem ||
+      (tipoPublicacao === 'foto' || gerado?.imagemUrl ? { tipo: 'fonte', autor: gerado?.imagemAutor } : null),
   });
 }
 
@@ -225,8 +230,21 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
   const { identificarAutorImagem } = require('./deepseekService');
   const {
     anexarCreditosFontes,
+    estiloCreditoDaPagina,
     CREDITO_IMAGEM_FALLBACK,
   } = require('./editorialGuidelinesFb');
+
+  let pageName = null;
+  if (facebookPageId) {
+    try {
+      const page = await FacebookPages.findById(facebookPageId);
+      pageName = page?.page_name || null;
+    } catch {
+      /* ignore */
+    }
+  }
+  const estiloCredito = estiloCreditoDaPagina(pageName);
+
   let imagemAutor = CREDITO_IMAGEM_FALLBACK;
   if (imagemUrl) {
     const identificado = await identificarAutorImagem({
@@ -260,8 +278,10 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
 
   const materiaComFontes = anexarCreditosFontes(gerado.materia, {
     fonteNome: apurado.fonte || apurado.veiculo || null,
-    fonteUrl: apurado.link || null, // só para derivar o nome do site se faltar
+    fonteUrl: apurado.link || null,
     imagemAutor,
+    autorArtigo: apurado.autor || null,
+    estilo: estiloCredito,
   });
 
   return {
@@ -270,6 +290,9 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
     imagemUrl,
     imagemOrigem,
     imagemAutor,
+    autorArtigo: apurado.autor || null,
+    estiloCredito,
+    pageName,
     topico: apurado,
     avisos,
     forcarRascunho: semImagemFoto,
@@ -298,7 +321,12 @@ async function salvarMateria({ userId, facebookPageId, gerado, topico, tipoPubli
     fonte_resumo: topico?.resumo || null,
     fonte_credito:
       gerado.fonteCredito
-      || creditoPadraoDaMateria({ topico, gerado, tipoPublicacao })
+      || creditoPadraoDaMateria({
+        topico,
+        gerado,
+        tipoPublicacao,
+        pageName: gerado.pageName,
+      })
       || null,
     contexto_apuracao: topico?.contextoApuracao || null,
     status: finalStatus,
