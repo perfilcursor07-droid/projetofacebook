@@ -15,6 +15,7 @@ const {
 } = require('./deepseekService');
 const { env } = require('../config/env');
 const axios = require('axios');
+const { titulosParecidos } = require('./editorialGuidelinesFb');
 
 /** external_id é VARCHAR(191); URLs do Google News passam disso → hash estável. */
 function stableExternalId(raw) {
@@ -22,6 +23,91 @@ function stableExternalId(raw) {
   if (!s) return null;
   if (s.length <= 180) return s;
   return `h:${crypto.createHash('sha256').update(s).digest('hex')}`;
+}
+
+function normalizarUrlBiblioteca(url) {
+  try {
+    const u = new URL(String(url || '').trim());
+    u.hash = '';
+    return u.href.replace(/\/$/, '').toLowerCase();
+  } catch {
+    return String(url || '')
+      .split(/[?#]/)[0]
+      .replace(/\/$/, '')
+      .toLowerCase();
+  }
+}
+
+/**
+ * Índice de matérias já publicadas do usuário (URL + títulos).
+ * Usado para não recomendar nem republicar a mesma pauta.
+ */
+async function carregarIndiceJaPublicados(userId) {
+  const AiMatters = require('../models/AiMatters');
+  const matters = await AiMatters.findByUser(userId, 200);
+  const urls = new Set();
+  const titulos = [];
+  for (const m of matters || []) {
+    if (m.status !== 'publicado' && !m.publication_id) continue;
+    if (m.fonte_url) urls.add(normalizarUrlBiblioteca(m.fonte_url));
+    if (m.fonte_titulo) titulos.push(String(m.fonte_titulo));
+    if (m.titulo) titulos.push(String(m.titulo));
+  }
+  return { urls, titulos };
+}
+
+function postJaFoiPublicado(post, indice) {
+  if (!post || !indice) return false;
+  const url = normalizarUrlBiblioteca(post.url);
+  if (url && indice.urls.has(url)) return true;
+  const titulo = String(post.titulo || '').trim();
+  if (titulo && indice.titulos.some((t) => titulosParecidos(titulo, t))) return true;
+  return false;
+}
+
+async function assertPostNaoPublicado(userId, post) {
+  if (post.matter_id) {
+    const AiMatters = require('../models/AiMatters');
+    const existing = await AiMatters.findById(post.matter_id);
+    if (existing?.status === 'publicado' || existing?.publication_id) {
+      const err = new Error('Esta matéria já foi publicada. Escolha outra pauta.');
+      err.status = 409;
+      throw err;
+    }
+  }
+  const indice = await carregarIndiceJaPublicados(userId);
+  if (postJaFoiPublicado(post, indice)) {
+    await BibliotecaPosts.update(post.id, {
+      status: 'ignorado',
+      viral_score: null,
+      viral_reason: null,
+      viral_analyzed_at: null,
+    }).catch(() => null);
+    const err = new Error('Esta matéria já foi publicada. Escolha outra pauta.');
+    err.status = 409;
+    throw err;
+  }
+}
+
+/** Remove da lista candidatos já publicados e marca-os como ignorados. */
+async function filtrarPostsNaoPublicados(userId, posts) {
+  const lista = Array.isArray(posts) ? posts : [];
+  if (!lista.length) return [];
+  const indice = await carregarIndiceJaPublicados(userId);
+  const livres = [];
+  for (const post of lista) {
+    if (postJaFoiPublicado(post, indice)) {
+      await BibliotecaPosts.update(post.id, {
+        status: 'ignorado',
+        viral_score: null,
+        viral_reason: null,
+        viral_analyzed_at: null,
+      }).catch(() => null);
+      continue;
+    }
+    livres.push(post);
+  }
+  return livres;
 }
 
 const directPublishingPosts = new Set();
@@ -1395,6 +1481,7 @@ async function gerarTextoDePost({
     err.status = 404;
     throw err;
   }
+  await assertPostNaoPublicado(userId, post);
   const fonte = await BibliotecaFontes.findById(post.fonte_id);
   const pageId = facebookPageId || fonte?.facebook_page_id;
   if (pageId) {
@@ -1444,6 +1531,7 @@ async function gerarVideoDePost({ userId, postId, facebookPageId = null }) {
     err.status = 404;
     throw err;
   }
+  await assertPostNaoPublicado(userId, post);
 
   const fonte = await BibliotecaFontes.findById(post.fonte_id);
   const instagramVideo =
@@ -1547,6 +1635,23 @@ async function executarPublicacaoDireta({ userId, postId, facebookPageId }) {
         message: 'Este conteúdo já foi publicado.',
       };
     }
+  }
+
+  // Também bloqueia se a mesma URL/título já saiu em outra matéria publicada
+  try {
+    await assertPostNaoPublicado(userId, post);
+  } catch (err) {
+    if (err.status === 409) {
+      return {
+        modo: 'foto',
+        published: true,
+        alreadyPublished: true,
+        queued: false,
+        matterId: post.matter_id || null,
+        message: err.message,
+      };
+    }
+    throw err;
   }
 
   if (isInstagramVideo) {
@@ -1747,7 +1852,8 @@ async function salvarRankingViral(userId, ranking) {
 }
 
 async function listarMelhoresParaPublicar(userId, limit = 30) {
-  return BibliotecaPosts.findMelhoresPublicacao(userId, limit, 50);
+  const lista = await BibliotecaPosts.findMelhoresPublicacao(userId, limit, 50);
+  return filtrarPostsNaoPublicados(userId, lista);
 }
 
 async function ocultarMelhorParaPublicar(userId, postId) {
@@ -1810,7 +1916,8 @@ async function analisarMelhoresParaPublicar(userId, limit = 30) {
   // Sempre varre as fontes antes de remontar a lista
   const scan = await escanearFontesDoUsuario(userId, { silentFirst: false, concorrencia: 3 });
 
-  const candidatos = await BibliotecaPosts.findCandidatosAutopilot(userId, 30);
+  let candidatos = await BibliotecaPosts.findCandidatosAutopilot(userId, 40);
+  candidatos = await filtrarPostsNaoPublicados(userId, candidatos);
   if (!candidatos.length) {
     await BibliotecaPosts.clearViralRanking(userId);
     return { melhores: [], scan };
@@ -2058,7 +2165,8 @@ async function tickAutopilot() {
 
       assertDeepseek();
 
-      const candidatos = await BibliotecaPosts.findCandidatosAutopilot(cfg.user_id, 30);
+      const candidatosBrutos = await BibliotecaPosts.findCandidatosAutopilot(cfg.user_id, 30);
+      const candidatos = await filtrarPostsNaoPublicados(cfg.user_id, candidatosBrutos);
 
       if (!candidatos.length) {
         await BibliotecaAutopilot.update(cfg.id, {
