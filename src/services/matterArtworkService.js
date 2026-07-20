@@ -195,10 +195,11 @@ async function applyBrandArtworkToResult(userId, result) {
     await AiMatters.update(matter.id, {
       imagem_fonte_url: sourceUrl,
       imagem_path: null,
-      imagem_url: null,
+      // Preserve a foto editorial para exibição/seleção mesmo quando a composição da arte falha.
+      imagem_url: sourceUrl,
       error_message: String(err.message).slice(0, 500),
     });
-    article.imagemUrl = null;
+    article.imagemUrl = sourceUrl;
     warnings.push(`Não foi possível criar a arte com título e logomarca: ${err.message}`);
     return {
       ...result,

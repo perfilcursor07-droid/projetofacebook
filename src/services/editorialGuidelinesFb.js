@@ -402,8 +402,15 @@ function montarFonteCredito({
   let nome = String(veiculo || fonte || '').replace(/\s+/g, ' ').trim();
   if (host) {
     const fromHost = nomeSiteDeUrl(host);
-    // Hostname completo (fuxicogospel.com.br) > nome genérico da fonte
-    if (fromHost && (!nome || !/\./.test(nome) || /instagram|facebook|tiktok|youtube|rede social/i.test(nome))) {
+    // Use o nome da URL somente quando não houver nome editorial ou quando o valor atual
+    // ainda for hostname/rede social. Nomes como “O Fuxico Gospel” devem ser preservados.
+    if (
+      fromHost &&
+      (!nome ||
+        (/\./.test(nome) && !/\s/.test(nome)) ||
+        nome.toLocaleLowerCase('pt-BR').startsWith(fromHost.toLocaleLowerCase('pt-BR')) ||
+        /instagram|facebook|tiktok|youtube|rede social/i.test(nome))
+    ) {
       nome = fromHost;
     }
   }
@@ -427,9 +434,9 @@ function montarFonteCredito({
   const lines = [];
 
   if (estiloFinal === 'jm') {
-    if (autor && nome) lines.push(`Por ${autor} - Site: ${nome}`);
+    if (autor && nome) lines.push(`Por ${autor} — Site: ${nome}`);
     else if (autor) lines.push(`Por ${autor}`);
-    else if (nome) lines.push(`Por Redação - Site: ${nome}`);
+    else if (nome) lines.push(`Por Redação — Site: ${nome}`);
   } else if (nome) {
     lines.push(`Fonte: ${nome}`);
   }
@@ -521,6 +528,7 @@ function nomeSiteDeUrl(url) {
       x: 'X',
       terra: 'terra.com.br',
       christianpost: 'christianpost.com',
+      fuxicogospel: 'O Fuxico Gospel',
     };
     if (conhecidos[base.toLowerCase()]) return conhecidos[base.toLowerCase()];
     // Mantém domínio curto quando útil (terra.com.br)
@@ -584,13 +592,17 @@ function anexarCreditosFontes(
       site = nomeSiteDeUrl(fonteUrl) || site;
     }
   }
-  // Prefer domínio da URL quando o nome da fonte é genérico
-  if (fonteUrl && (!site || !/\./.test(site))) {
-    site = nomeSiteDeUrl(fonteUrl) || site;
-  }
+
+  const fonteEhRedeSocial =
+    /(?:instagram|facebook|fb\.watch|tiktok|youtube|youtu\.be)\./i.test(
+      String(fonteUrl || '')
+    );
+  const usarAutorSite =
+    estiloFinal === 'jm' ||
+    (/^https?:\/\//i.test(String(fonteUrl || '')) && !fonteEhRedeSocial);
 
   let bloco;
-  if (estiloFinal === 'jm') {
+  if (usarAutorSite) {
     bloco = montarFonteCredito({
       veiculo: site,
       host: fonteUrl,

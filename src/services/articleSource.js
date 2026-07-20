@@ -308,6 +308,17 @@ async function extrairMetadadosArtigo(url) {
     const imagem = extrairImagemCapa(html, finalUrl);
     const paragrafos = extrairParagrafos(html);
     const autor = extrairAutorDoHtml(html);
+    const veiculoMeta =
+      extrairMeta(html, 'og:site_name') ||
+      extrairMeta(html, 'application-name') ||
+      extrairMeta(html, 'publisher');
+    const veiculoHost = (() => {
+      try {
+        return new URL(finalUrl).hostname.replace(/^www\./, '');
+      } catch {
+        return null;
+      }
+    })();
 
     return {
       url: finalUrl,
@@ -316,13 +327,8 @@ async function extrairMetadadosArtigo(url) {
       imagem: imagem || null,
       trecho: paragrafos.slice(0, 8).join('\n\n'),
       autor: autor || null,
-      veiculo: (() => {
-        try {
-          return new URL(finalUrl).hostname.replace(/^www\./, '');
-        } catch {
-          return null;
-        }
-      })(),
+      veiculo: veiculoMeta || veiculoHost,
+      veiculoHost,
     };
   } catch (err) {
     console.warn('extrairMetadadosArtigo:', err.message);

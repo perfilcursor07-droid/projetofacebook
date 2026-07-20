@@ -192,7 +192,7 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
   const gerado = await gerarMateriaNoticiaFacebook({
     tituloReferencia: apurado.titulo,
     resumoReferencia: apurado.resumo,
-    fonte: apurado.fonte || apurado.veiculo,
+    fonte: apurado.veiculo || apurado.fonte,
     nicho: apurado.nicho,
     contextoApuracao: apurado.contextoApuracao,
     fontesApuracao: apurado.fontesApuracao,
@@ -277,7 +277,7 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
   const semImagemFoto = tipoPublicacao === 'foto' && !imagemUrl;
 
   const materiaComFontes = anexarCreditosFontes(gerado.materia, {
-    fonteNome: apurado.fonte || apurado.veiculo || null,
+    fonteNome: apurado.veiculo || apurado.fonte || null,
     fonteUrl: apurado.link || null,
     imagemAutor,
     autorArtigo: apurado.autor || null,
