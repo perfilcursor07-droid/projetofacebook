@@ -1,5 +1,6 @@
 const express = require('express');
 const controller = require('../controllers/materiasIaController');
+const { uploadMatterImage } = require('../middleware/uploadMatterImage');
 
 const router = express.Router();
 
@@ -9,6 +10,14 @@ router.post('/reescrever-link', controller.reescreverLink);
 router.post('/gerar', controller.gerar);
 router.post('/gerar-preview', controller.gerarPreview);
 router.post('/gerar-lote', controller.gerarLote);
+router.post('/gerar-manual', (req, res, next) => {
+  uploadMatterImage(req, res, (uploadError) => {
+    if (uploadError) {
+      return res.status(uploadError.status || 400).json({ error: uploadError.message });
+    }
+    return controller.gerarManual(req, res, next);
+  });
+});
 router.get('/matters', controller.listarMaterias);
 router.get('/matters/:id', controller.obterMateria);
 router.put('/matters/:id', controller.atualizarMateria);

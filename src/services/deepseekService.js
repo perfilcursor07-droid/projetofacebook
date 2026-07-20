@@ -239,24 +239,31 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
   return artigo;
 }
 
-async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo }) {
-  const tema = String(promptUsuario || '').trim();
-  if (!tema) {
-    const err = new Error('Informe o tipo/tema da matéria (ex.: curiosidade, dica, notícia)');
+async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo, informacoes }) {
+  const tema = String(promptUsuario || informacoes || '').trim();
+  const fatos = String(informacoes || '').trim();
+  if (!tema && !fatos) {
+    const err = new Error('Informe as informações da matéria (fatos, nomes, o que aconteceu)');
     err.status = 400;
     throw err;
   }
 
   const userContent = [
     'Crie uma matéria ORIGINAL estilo News Gospel para um post de FOTO no Facebook.',
-    `Tipo/tema pedido pelo usuário: ${tema}`,
-    termo ? `Termo de busca / contexto: ${termo}` : null,
-    descricaoImagem ? `Descrição/alt da imagem: ${descricaoImagem}` : null,
-    autor ? `Autor da foto (crédito se fizer sentido no fechamento): ${autor}` : null,
-    'ESTRUTURA: lead com o fato/tema → desenvolvimento com detalhes → fechamento de fé (oração, gratidão ou reflexão).',
-    'Tom de portal gospel: caloroso, claro, sem clickbait e sem pedir like/compartilhar.',
+    'O usuário forneceu as informações abaixo — use SOMENTE esses fatos (não invente nomes, números nem citações).',
+    fatos
+      ? `INFORMAÇÕES FORNECIDAS PELO USUÁRIO (base factual):\n${fatos.slice(0, 5000)}`
+      : null,
+    tema && tema !== fatos ? `Tipo/ângulo pedido: ${tema}` : null,
+    termo ? `Termo / contexto extra: ${termo}` : null,
+    descricaoImagem ? `Descrição da imagem enviada: ${descricaoImagem}` : null,
+    autor ? `Autor da foto (crédito se fizer sentido): ${autor}` : null,
+    'ESTRUTURA: lead com quem + fato → desenvolvimento com detalhes das infos → fechamento de fé (oração/gratidão).',
+    'Título próprio, curto e chamativo (máx. 110 chars) — baseado nas infos, sem clickbait mentiroso.',
+    'Tom de portal gospel: caloroso, claro, sem pedir like/compartilhar.',
     'Parágrafos curtos com linha em branco. Alvo: 1700–2100 caracteres (máximo útil Face/Insta).',
-    'Se fizer sentido, no último parágrafo pode citar crédito curto (ex.: Reprodução) — sem inventar @ de quem não foi informado.',
+    'NÃO inclua bloco Fontes:/créditos no campo materia — o sistema anexa depois.',
+    'Responda JSON: {"titulo":"...","materia":"...","hashtags":["..."]}',
   ]
     .filter(Boolean)
     .join('\n');

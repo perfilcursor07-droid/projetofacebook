@@ -1591,6 +1591,146 @@ async function gerarVariacaoDeMateria({
 }
 
 /**
+ * Matéria manual: usuário informa fatos (+ imagem opcional) → IA gera título/legenda + capa Minha marca.
+ */
+async function gerarMateriaManual({
+  userId,
+  informacoes,
+  angulo = null,
+  facebookPageId = null,
+  imagemBuffer = null,
+  imagemUrl = null,
+  creditoImagem = null,
+}) {
+  assertDeepseek();
+  const fatos = String(informacoes || '').trim();
+  if (fatos.length < 20) {
+    const err = new Error('Descreva as informações da matéria (mín. ~20 caracteres)');
+    err.status = 400;
+    throw err;
+  }
+
+  const pageId = facebookPageId || null;
+  if (pageId) {
+    const page = await resolvePage(userId, pageId);
+    if (!page) {
+      const err = new Error('Página do Facebook inválida');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  const { gerarMateriaImagem } = require('./deepseekService');
+  const {
+    anexarCreditosFontes,
+    estiloCreditoDaPagina,
+    montarFonteCredito,
+  } = require('./editorialGuidelinesFb');
+
+  const gerado = await gerarMateriaImagem({
+    informacoes: fatos,
+    promptUsuario: angulo || 'notícia gospel a partir das informações do usuário',
+    descricaoImagem: null,
+    autor: creditoImagem || null,
+  });
+
+  let pageName = null;
+  if (pageId) {
+    try {
+      const page = await FacebookPages.findById(pageId);
+      pageName = page?.page_name || null;
+    } catch {
+      /* ignore */
+    }
+  }
+  const estilo = estiloCreditoDaPagina(pageName);
+  const materiaComFontes = anexarCreditosFontes(gerado.materia, {
+    fonteNome: 'Informações do editor',
+    fonteUrl: null,
+    imagemAutor: creditoImagem || 'Reprodução/Internet',
+    autorArtigo: null,
+    estilo,
+  });
+
+  const fonteCredito = montarFonteCredito({
+    veiculo: null,
+    autorArtigo: null,
+    estilo,
+    tipoPublicacao: 'foto',
+    imagemOrigem: { tipo: 'fonte', autor: creditoImagem || null },
+  });
+
+  const [matterId] = await AiMatters.create({
+    user_id: userId,
+    facebook_page_id: pageId || null,
+    titulo: gerado.titulo || 'Matéria manual',
+    materia: materiaComFontes,
+    titulo_ia: gerado.titulo || null,
+    materia_ia: materiaComFontes,
+    hashtags: JSON.stringify(gerado.hashtags || []),
+    fonte_titulo: 'Matéria manual',
+    fonte_url: null,
+    fonte_resumo: fatos.slice(0, 1500),
+    fonte_credito: fonteCredito,
+    status: 'rascunho',
+    tipo_publicacao: 'foto',
+    imagem_url: imagemUrl && /^https?:\/\//i.test(imagemUrl) ? imagemUrl : null,
+    error_message: null,
+  });
+
+  let matter = await AiMatters.findById(matterId);
+  const { storeMatterSourceImage, composeMatterArtwork } = require('./matterArtworkService');
+
+  if (imagemBuffer && Buffer.isBuffer(imagemBuffer) && imagemBuffer.length) {
+    const stored = await storeMatterSourceImage({
+      userId,
+      matterId,
+      buffer: imagemBuffer,
+    });
+    const artwork = await composeMatterArtwork({
+      userId,
+      matterId,
+      sourceUrl: stored.publicUrl,
+      title: matter.titulo,
+      force: true,
+    });
+    matter = artwork.matter;
+  } else if (imagemUrl && /^https?:\/\//i.test(imagemUrl)) {
+    try {
+      const artwork = await composeMatterArtwork({
+        userId,
+        matterId,
+        sourceUrl: imagemUrl,
+        title: matter.titulo,
+        force: true,
+      });
+      matter = artwork.matter;
+    } catch (err) {
+      console.warn('gerarMateriaManual arte URL:', err.message);
+      await AiMatters.update(matterId, {
+        imagem_url: imagemUrl,
+        imagem_fonte_url: imagemUrl,
+        error_message: `Arte: ${String(err.message).slice(0, 200)}`,
+      });
+      matter = await AiMatters.findById(matterId);
+    }
+  }
+
+  return {
+    matter,
+    artigo: {
+      titulo: matter.titulo,
+      materia: matter.materia,
+      hashtags: gerado.hashtags || [],
+      imagemUrl: matter.imagem_url,
+    },
+    avisos: !matter.imagem_path && !matter.imagem_url
+      ? ['Matéria gerada sem capa. Envie uma imagem na edição para criar a arte.']
+      : [],
+  };
+}
+
+/**
  * Atualiza visualizações do post Facebook ligado à matéria.
  */
 async function atualizarViewsDaMateria(userId, matterId, { force = false } = {}) {
@@ -1723,6 +1863,7 @@ module.exports = {
   gerarCompleto,
   gerarDeLink,
   gerarVariacaoDeMateria,
+  gerarMateriaManual,
   atualizarViewsDaMateria,
   syncConteudoReelMatter,
   limparTextoReelSocial,

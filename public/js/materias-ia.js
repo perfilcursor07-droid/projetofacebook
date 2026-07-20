@@ -85,6 +85,7 @@
       document.getElementById('mia-alta')?.classList.toggle('hidden', modo !== 'alta');
       document.getElementById('mia-link')?.classList.toggle('hidden', modo !== 'link');
       document.getElementById('mia-auto')?.classList.toggle('hidden', modo !== 'auto');
+      document.getElementById('mia-manual')?.classList.toggle('hidden', modo !== 'manual');
       if (modo === 'auto') loadMonitores();
     });
   });
@@ -479,6 +480,59 @@
       st.textContent = 'Automação criada ✓';
       loadMonitores();
     } catch (err) {
+      st.textContent = err.message;
+    }
+  });
+
+  document.getElementById('mia-btn-manual')?.addEventListener('click', async () => {
+    const st = document.getElementById('mia-manual-status');
+    const info = String(document.getElementById('mia-manual-info')?.value || '').trim();
+    const pageEl = document.getElementById('mia-manual-page');
+    if (info.length < 20) {
+      st.textContent = 'Descreva as informações da matéria (mín. ~20 caracteres)';
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('informacoes', info);
+    const angulo = String(document.getElementById('mia-manual-angulo')?.value || '').trim();
+    if (angulo) fd.append('angulo', angulo);
+    const credito = String(document.getElementById('mia-manual-credito')?.value || '').trim();
+    if (credito) fd.append('creditoImagem', credito);
+    const imagemUrl = String(document.getElementById('mia-manual-imagem-url')?.value || '').trim();
+    if (imagemUrl) fd.append('imagemUrl', imagemUrl);
+    if (pageEl?.value) fd.append('facebookPageId', pageEl.value);
+    const file = document.getElementById('mia-manual-file')?.files?.[0];
+    if (file) fd.append('imagem', file);
+
+    setGenerating(
+      true,
+      file || imagemUrl
+        ? 'Escrevendo título e matéria e montando a capa com a Minha marca…'
+        : 'Escrevendo título e matéria com as informações que você passou…'
+    );
+    st.textContent = 'Gerando matéria…';
+
+    try {
+      const res = await fetch('/api/materias-ia/gerar-manual', {
+        method: 'POST',
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao gerar');
+
+      const matterId = data.matter?.id;
+      const dest =
+        data.redirect || (matterId ? '/materias-ia/' + matterId : null);
+      if (!dest) throw new Error('Matéria gerada, mas sem ID para abrir');
+
+      st.textContent = 'Abrindo matéria…';
+      if (generatingText) {
+        generatingText.textContent = 'Matéria pronta! Abrindo a tela de edição…';
+      }
+      window.location.href = dest;
+    } catch (err) {
+      setGenerating(false);
       st.textContent = err.message;
     }
   });

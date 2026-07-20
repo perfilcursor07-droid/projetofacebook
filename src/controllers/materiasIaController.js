@@ -504,6 +504,31 @@ async function listMinhasMaterias(req, res, next) {
   }
 }
 
+async function gerarManual(req, res, next) {
+  try {
+    const body = req.body || {};
+    const informacoes = body.informacoes || body.info || body.texto || body.fatos;
+    const facebookPageId = await resolvePageId(req.session.userId, body);
+    const result = await materiaIaService.gerarMateriaManual({
+      userId: req.session.userId,
+      informacoes,
+      angulo: body.angulo || body.tema || null,
+      facebookPageId,
+      imagemBuffer: req.file?.buffer || null,
+      imagemUrl: body.imagemUrl || body.imagem_url || null,
+      creditoImagem: body.creditoImagem || body.credito_imagem || null,
+    });
+    res.status(201).json({
+      ok: true,
+      ...result,
+      redirect: result.matter?.id ? `/materias-ia/${result.matter.id}` : '/minhas-materias',
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 async function gerarVariacao(req, res, next) {
   try {
     const matterId = Number(req.params.id);
@@ -1044,6 +1069,7 @@ module.exports = {
   listPage,
   showLotePage,
   listMinhasMaterias,
+  gerarManual,
   gerarVariacao,
   atualizarViews,
   agendar,
