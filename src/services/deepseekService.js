@@ -298,6 +298,7 @@ async function gerarMateriaNoticiaFacebook({
   investigativa = false,
   furoReportagem = false,
   contextoAprendizado = null,
+  traduzirFonte = false,
 }) {
   assertDeepseek();
 
@@ -366,6 +367,9 @@ async function gerarMateriaNoticiaFacebook({
       : null,
     furoReportagem
       ? 'PRIORIDADE: ângulo de furo + reescrita total. Fonte longa = condensar; fonte curta = completar SOMENTE com fatos das fontes documentadas / busca na internet abaixo.'
+      : null,
+    traduzirFonte
+      ? 'FONTE EM IDIOMA ESTRANGEIRO: a matéria FINAL deve estar 100% em português brasileiro. Traduza fatos e citações com fidelidade; se usar aspas literais em inglês, acrescente a tradução em seguida entre parênteses.'
       : null,
     tituloReferencia ? `Título de referência: ${tituloReferencia}` : null,
     resumoReferencia ? `Resumo de referência: ${resumoReferencia}` : null,

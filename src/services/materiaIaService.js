@@ -186,6 +186,13 @@ async function gerarPreviewDeTopico(topico, { userId, facebookPageId, tipoPublic
     investigativa,
     furoReportagem,
     contextoAprendizado,
+    traduzirFonte: Boolean(
+      topico?.traduzirFonte ||
+        topico?.idiomaObrigatorio === 'pt-BR' ||
+        /\b(the|and|church|christian|should|about|after|before)\b/i.test(
+          `${apurado.titulo || ''} ${apurado.resumo || ''}`
+        )
+    ),
   });
 
   const capa = await escolherImagemCapa(apurado, gerado);

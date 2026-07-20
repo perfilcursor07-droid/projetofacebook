@@ -38,6 +38,87 @@ function normalizarUrlBiblioteca(url) {
   }
 }
 
+/** Heurística simples: texto parece inglês/outro idioma (não PT). */
+function pareceTextoEstrangeiro(texto) {
+  const t = String(texto || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#\d+;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (t.length < 18) return false;
+
+  const temAcentoPt = /[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/.test(t);
+  const marcadoresPt =
+    (t.match(/\b(não|você|está|também|após|sobre|igreja|pastor|segundo|durante|pela|pelos|pela|uma|umas|aos)\b/gi) || [])
+      .length;
+  if (temAcentoPt && marcadoresPt >= 1) return false;
+  if (marcadoresPt >= 3) return false;
+
+  const marcadoresEn =
+    (t.match(
+      /\b(the|and|of|to|in|for|with|from|that|this|are|was|were|have|has|will|should|church|after|before|their|they|said|about|into|over|under|christian|gospel|pastor|how|what|when|why|should)\b/gi
+    ) || []).length;
+  const palavras = t.split(/\s+/).filter(Boolean).length;
+  if (marcadoresEn >= 3) return true;
+  if (palavras >= 8 && marcadoresEn / palavras >= 0.12) return true;
+  // Sem acento PT e muitas palavras latinas típicas de inglês
+  if (!temAcentoPt && marcadoresEn >= 2 && palavras >= 6) return true;
+  return false;
+}
+
+/**
+ * Traduz título/resumo para PT-BR quando o original estiver em outro idioma.
+ * Grava no post e devolve o registro atualizado.
+ */
+async function garantirPostEmPortugues(fonte, post) {
+  if (!post || !env.deepseekApiKey) return post;
+  const precisa =
+    pareceTextoEstrangeiro(post.titulo) || pareceTextoEstrangeiro(post.resumo);
+  if (!precisa) return post;
+
+  try {
+    const ia = await resumirAlertaBiblioteca({
+      plataforma: fonte?.plataforma || 'site',
+      nomeFonte: fonte?.nome || '',
+      titulo: post.titulo,
+      url: post.url,
+      snippet: post.resumo,
+    });
+    const titulo = String(ia.titulo || post.titulo || 'Sem título').slice(0, 500);
+    const resumo = String(ia.resumo || post.resumo || '').slice(0, 2000) || null;
+    await BibliotecaPosts.update(post.id, { titulo, resumo });
+    return { ...post, titulo, resumo };
+  } catch (err) {
+    console.warn('[biblioteca] traduzir post:', err.message);
+    return post;
+  }
+}
+
+async function traduzirItemBrutoSeEstrangeiro(fonte, item) {
+  const titulo = item?.titulo || '';
+  const resumo = item?.resumo || '';
+  if (!env.deepseekApiKey) return { titulo, resumo };
+  if (!pareceTextoEstrangeiro(titulo) && !pareceTextoEstrangeiro(resumo)) {
+    return { titulo, resumo };
+  }
+  try {
+    const ia = await resumirAlertaBiblioteca({
+      plataforma: fonte?.plataforma || 'site',
+      nomeFonte: fonte?.nome || '',
+      titulo,
+      url: item?.url,
+      snippet: resumo,
+    });
+    return {
+      titulo: String(ia.titulo || titulo).slice(0, 500),
+      resumo: String(ia.resumo || resumo).slice(0, 2000) || null,
+    };
+  } catch (err) {
+    console.warn('[biblioteca] traduzir item:', err.message);
+    return { titulo, resumo };
+  }
+}
+
 /**
  * Índice de matérias já publicadas do usuário (URL + títulos).
  * Usado para não recomendar nem republicar a mesma pauta.
@@ -1218,23 +1299,13 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
     const byUrl = await BibliotecaPosts.findByFonte(fonte.id, 50);
     if (byUrl.some((p) => p.url === url)) continue;
 
-    const [postId] = await BibliotecaPosts.create({
-      fonte_id: fonte.id,
-      user_id: fonte.user_id,
-      external_id: externalId,
-      titulo: String(item.titulo || 'Sem título').slice(0, 500),
-      url,
-      resumo: item.resumo ? String(item.resumo).slice(0, 2000) : null,
-      thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
-      media_type: normalizarTipoMidia(item),
-      publicado_em: item.publicadoEm || null,
-      status: 'novo',
-    });
+    const estrangeiro =
+      pareceTextoEstrangeiro(item.titulo) || pareceTextoEstrangeiro(item.resumo);
+    // Sempre traduz/resume em PT quando for língua estrangeira; senão só se gerarResumoIa
+    let tituloFinal = String(item.titulo || 'Sem título').slice(0, 500);
+    let resumoFinal = item.resumo ? String(item.resumo).slice(0, 2000) : null;
 
-    let alertaTitulo = `${fonte.nome}: ${item.titulo || 'novo conteúdo'}`.slice(0, 300);
-    let alertaResumo = item.resumo || `Novo conteúdo em ${fonte.plataforma}: ${item.url}`;
-
-    if (gerarResumoIa && env.deepseekApiKey) {
+    if ((gerarResumoIa || estrangeiro) && env.deepseekApiKey) {
       try {
         const ia = await resumirAlertaBiblioteca({
           plataforma: fonte.plataforma,
@@ -1243,23 +1314,35 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
           url: item.url,
           snippet: item.resumo,
         });
-        alertaTitulo = ia.titulo.slice(0, 300);
-        alertaResumo = ia.resumo || alertaResumo;
-        await BibliotecaPosts.update(postId, {
-          titulo: String(ia.titulo || item.titulo || 'Sem título').slice(0, 500),
-          resumo: alertaResumo,
-        });
+        tituloFinal = String(ia.titulo || tituloFinal).slice(0, 500);
+        resumoFinal = String(ia.resumo || resumoFinal || '').slice(0, 2000) || null;
       } catch (err) {
-        console.warn('[biblioteca] resumo IA:', err.message);
+        console.warn('[biblioteca] resumo/tradução IA:', err.message);
+        const fallback = await traduzirItemBrutoSeEstrangeiro(fonte, item);
+        tituloFinal = String(fallback.titulo || tituloFinal).slice(0, 500);
+        resumoFinal = fallback.resumo ? String(fallback.resumo).slice(0, 2000) : resumoFinal;
       }
     }
+
+    const [postId] = await BibliotecaPosts.create({
+      fonte_id: fonte.id,
+      user_id: fonte.user_id,
+      external_id: externalId,
+      titulo: tituloFinal,
+      url,
+      resumo: resumoFinal,
+      thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
+      media_type: normalizarTipoMidia(item),
+      publicado_em: item.publicadoEm || null,
+      status: 'novo',
+    });
 
     await BibliotecaAlertas.create({
       user_id: fonte.user_id,
       fonte_id: fonte.id,
       post_id: postId,
-      titulo: alertaTitulo,
-      resumo: alertaResumo,
+      titulo: `${fonte.nome}: ${tituloFinal}`.slice(0, 300),
+      resumo: resumoFinal || `Novo conteúdo em ${fonte.plataforma}: ${item.url}`,
       lido: false,
     });
 
@@ -1282,13 +1365,19 @@ async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
       const externalId = stableExternalId(item.externalId || url);
       const exists = await BibliotecaPosts.findByExternal(fonte.id, externalId);
       if (exists) continue;
+      // Mesmo na baseline: traduz título/resumo estrangeiro para PT
+      const traduzido = await traduzirItemBrutoSeEstrangeiro(fonte, item);
       await BibliotecaPosts.create({
         fonte_id: fonte.id,
         user_id: fonte.user_id,
         external_id: externalId,
-        titulo: String(item.titulo || 'Sem título').slice(0, 500),
+        titulo: String(traduzido.titulo || item.titulo || 'Sem título').slice(0, 500),
         url,
-        resumo: item.resumo ? String(item.resumo).slice(0, 2000) : null,
+        resumo: traduzido.resumo
+          ? String(traduzido.resumo).slice(0, 2000)
+          : item.resumo
+            ? String(item.resumo).slice(0, 2000)
+            : null,
         thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
         media_type: normalizarTipoMidia(item),
         publicado_em: item.publicadoEm || null,
@@ -1425,6 +1514,7 @@ async function iniciarBrightDataScan(fonte, { silentFirst = false } = {}) {
 
 async function escanearFonte(fonte, { silentFirst = false } = {}) {
   const scrapeCreators = require('./scrapeCreatorsInstagram');
+  let resultado;
   if (fonte.plataforma === 'instagram' && scrapeCreators.isConfigured()) {
     // Descarta qualquer estado legado da Bright Data antes da coleta direta.
     await BibliotecaFontes.update(fonte.id, {
@@ -1437,11 +1527,32 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
     const handle = fonte.handle || extrairHandle(fonte.url, 'instagram');
     const itens = await scrapeCreators.listarPostsPerfil(handle, SCAN_LIMIT);
     console.log(`[scrapecreators-ig] @${handle}: ${itens.length} post(s)`);
-    return salvarItensFonte(fonte, itens, { silentFirst });
+    resultado = await salvarItensFonte(fonte, itens, { silentFirst });
+  } else {
+    const itens = await coletarItensFonte(fonte);
+    resultado = await salvarItensFonte(fonte, itens, { silentFirst });
   }
 
-  const itens = await coletarItensFonte(fonte);
-  return salvarItensFonte(fonte, itens, { silentFirst });
+  // Traduz posts antigos ainda em inglês/outro idioma (para a lista e a matéria)
+  try {
+    await traduzirPostsPendentesDaFonte(fonte, 12);
+  } catch (err) {
+    console.warn('[biblioteca] traduzir pendentes:', err.message);
+  }
+  return resultado;
+}
+
+async function traduzirPostsPendentesDaFonte(fonte, limit = 12) {
+  if (!env.deepseekApiKey) return 0;
+  const posts = await BibliotecaPosts.findByFonte(fonte.id, Math.min(30, Math.max(1, limit)));
+  let n = 0;
+  for (const post of posts) {
+    if (post.matter_id) continue;
+    if (!pareceTextoEstrangeiro(post.titulo) && !pareceTextoEstrangeiro(post.resumo)) continue;
+    await garantirPostEmPortugues(fonte, post);
+    n += 1;
+  }
+  return n;
 }
 
 async function escanearAgora(userId, fonteId) {
@@ -1483,6 +1594,8 @@ async function gerarTextoDePost({
   }
   await assertPostNaoPublicado(userId, post);
   const fonte = await BibliotecaFontes.findById(post.fonte_id);
+  // Fonte em inglês/outro idioma → traduz título/resumo antes de gerar a matéria
+  const postPt = await garantirPostEmPortugues(fonte, post);
   const pageId = facebookPageId || fonte?.facebook_page_id;
   if (pageId) {
     const page = await resolvePage(userId, pageId);
@@ -1494,15 +1607,18 @@ async function gerarTextoDePost({
   }
 
   const topico = {
-    titulo: post.titulo,
-    link: post.url,
-    resumo: post.resumo,
+    titulo: postPt.titulo,
+    link: postPt.url,
+    resumo: postPt.resumo,
     nicho: fonte?.nome || fonte?.plataforma || 'rede social',
     fonte: fonte?.nome,
     veiculo: fonte?.plataforma,
-    imagemFonte: post.thumbnail,
+    imagemFonte: postPt.thumbnail,
     redeSocial: true,
     tipoFonte: 'rede_social',
+    // Garante matéria em PT mesmo se a apuração puxar trechos em inglês
+    idiomaObrigatorio: 'pt-BR',
+    traduzirFonte: true,
   };
 
   const gerado = await materiaIaService.gerarCompleto({
@@ -1516,6 +1632,8 @@ async function gerarTextoDePost({
   await BibliotecaPosts.update(post.id, {
     status: 'gerado_texto',
     matter_id: gerado.matter?.id || null,
+    titulo: postPt.titulo,
+    resumo: postPt.resumo,
   });
 
   return gerado;
