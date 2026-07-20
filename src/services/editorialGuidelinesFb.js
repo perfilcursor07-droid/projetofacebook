@@ -256,9 +256,9 @@ function quebrarEmParagrafos(texto) {
 }
 
 /**
- * Monta a legenda final do post: título + corpo em parágrafos + hashtags, com espaços.
+ * Monta a legenda final do post: título + corpo + crédito/fonte + hashtags.
  */
-function formatFacebookCaption({ titulo, materia, hashtags } = {}) {
+function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito } = {}) {
   const title = String(titulo || '').replace(/\s+/g, ' ').trim();
   const extracted = extrairHashtagsDoTexto(materia);
   let body = extracted.body;
@@ -269,6 +269,14 @@ function formatFacebookCaption({ titulo, materia, hashtags } = {}) {
 
   body = quebrarEmParagrafos(body);
 
+  const credit = String(fonteCredito || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+
   const tagsLine = formatHashtagsLine(
     Array.isArray(hashtags) && hashtags.length ? hashtags : extracted.tags
   );
@@ -276,8 +284,42 @@ function formatFacebookCaption({ titulo, materia, hashtags } = {}) {
   const parts = [];
   if (title) parts.push(title);
   if (body) parts.push(body);
+  if (credit) parts.push(credit);
   if (tagsLine) parts.push(tagsLine);
   return parts.join('\n\n').trim();
+}
+
+/**
+ * Monta crédito padrão da matéria (editável depois).
+ * Ex.: "Fonte: G1" + "(Foto: Reprodução)"
+ */
+function montarFonteCredito({ veiculo, fonte, host, tipoPublicacao, imagemOrigem } = {}) {
+  let nome = String(veiculo || fonte || '').replace(/\s+/g, ' ').trim();
+  if (!nome && host) {
+    try {
+      const hostname = String(host).includes('://') ? new URL(host).hostname : host;
+      nome = String(hostname)
+        .replace(/^www\./i, '')
+        .split('.')[0]
+        .replace(/[-_]/g, ' ')
+        .trim();
+      if (nome) nome = nome.charAt(0).toUpperCase() + nome.slice(1);
+    } catch {
+      /* ignore */
+    }
+  }
+  const genericos = /^(fonte|google news|brave|editorial|serpapi|pexels)$/i;
+  const lines = [];
+  if (nome && !genericos.test(nome)) {
+    lines.push(`Fonte: ${nome}`);
+  }
+
+  const temFoto = tipoPublicacao === 'foto' || Boolean(imagemOrigem);
+  if (temFoto) {
+    lines.push(imagemOrigem?.tipo === 'pexels' ? '(Foto: Pexels)' : '(Foto: Reprodução)');
+  }
+
+  return lines.join('\n').slice(0, 400) || null;
 }
 
 function blocoRegrasFacebook(faixa) {
@@ -326,6 +368,7 @@ module.exports = {
   blocoEstiloNewsGospel,
   mensagemAvisoQualidade,
   formatFacebookCaption,
+  montarFonteCredito,
   quebrarEmParagrafos,
   formatHashtagsLine,
   anexarHashtagsAoFinal,

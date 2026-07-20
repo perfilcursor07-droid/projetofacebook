@@ -6,6 +6,7 @@
   const pageSelect = document.getElementById('matter-page');
   const tituloEl = document.getElementById('matter-titulo');
   const materiaEl = document.getElementById('matter-materia');
+  const fonteCreditoEl = document.getElementById('matter-fonte-credito');
   const tipoEl = document.getElementById('matter-tipo');
   const imgEl = document.getElementById('matter-img');
   const imgWrap = document.getElementById('matter-img-wrap');
@@ -38,8 +39,28 @@
     syncDownloadArtLink(withCache);
   }
 
+  function montarLegendaCompleta() {
+    const titulo = String(tituloEl?.value || '').trim();
+    const materia = String(materiaEl?.value || '').trim();
+    const credito = String(fonteCreditoEl?.value || '').trim();
+    const tags = String(document.getElementById('matter-hashtags-line')?.textContent || '').trim();
+    const parts = [];
+    if (titulo) parts.push(titulo);
+    if (materia) {
+      // Evita duplicar o título no início do corpo
+      let body = materia;
+      if (titulo && body.toLowerCase().startsWith(titulo.toLowerCase())) {
+        body = body.slice(titulo.length).replace(/^[\s:—\-–.]+/, '').trim();
+      }
+      if (body) parts.push(body);
+    }
+    if (credito) parts.push(credito);
+    if (tags) parts.push(tags);
+    return parts.join('\n\n').trim();
+  }
+
   async function copiarLegenda() {
-    const texto = String(materiaEl?.value || '').trim();
+    const texto = montarLegendaCompleta();
     if (!texto) {
       setStatus('Não há legenda para copiar.', true);
       return;
@@ -48,7 +69,7 @@
       await navigator.clipboard.writeText(texto);
       const prev = btnCopiarLegenda?.textContent;
       if (btnCopiarLegenda) btnCopiarLegenda.textContent = 'Copiado ✓';
-      setStatus('Legenda copiada ✓');
+      setStatus('Legenda completa copiada (com fonte) ✓');
       setTimeout(() => {
         if (btnCopiarLegenda && prev) btnCopiarLegenda.textContent = prev;
       }, 1600);
@@ -137,6 +158,7 @@
       body: JSON.stringify({
         titulo: tituloEl.value,
         materia: materiaEl.value,
+        fonteCredito: fonteCreditoEl ? fonteCreditoEl.value : undefined,
         tipoPublicacao: tipoEl.value,
         facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
       }),

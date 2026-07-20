@@ -4,8 +4,8 @@ const materiaIaService = require('./materiaIaService');
 const { resolveArtworkPath } = require('./matterArtworkService');
 const { formatFacebookCaption } = require('./editorialGuidelinesFb');
 
-function buildMessage(title, body, hashtags) {
-  return formatFacebookCaption({ titulo: title, materia: body, hashtags });
+function buildMessage(title, body, hashtags, fonteCredito) {
+  return formatFacebookCaption({ titulo: title, materia: body, hashtags, fonteCredito });
 }
 
 async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, body }) {
@@ -40,7 +40,7 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
   } catch {
     hashtags = [];
   }
-  const message = buildMessage(finalTitle, finalBody, hashtags);
+  const message = buildMessage(finalTitle, finalBody, hashtags, matter.fonte_credito);
   if (!message) {
     const err = new Error('Matéria vazia');
     err.status = 400;

@@ -341,6 +341,10 @@ async function atualizarMateria(req, res, next) {
     const patch = {};
     if (body.titulo != null) patch.titulo = String(body.titulo).trim().slice(0, 300);
     if (body.materia != null) patch.materia = String(body.materia);
+    if (body.fonteCredito != null || body.fonte_credito != null) {
+      const raw = body.fonteCredito != null ? body.fonteCredito : body.fonte_credito;
+      patch.fonte_credito = String(raw || '').trim().slice(0, 400) || null;
+    }
     if (body.hashtags != null) patch.hashtags = JSON.stringify(parseHashtags(body.hashtags));
     if (body.tipoPublicacao != null || body.tipo_publicacao != null) {
       const t = pickTipo(body);

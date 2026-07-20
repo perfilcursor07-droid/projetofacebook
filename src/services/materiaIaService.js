@@ -11,7 +11,7 @@ const { gerarMateriaNoticiaFacebook, assertDeepseek } = require('./deepseekServi
 const pexelsService = require('./pexelsService');
 const { enqueue } = require('../workers/queue');
 const { env } = require('../config/env');
-const { titulosParecidos, formatFacebookCaption } = require('./editorialGuidelinesFb');
+const { titulosParecidos, formatFacebookCaption, montarFonteCredito } = require('./editorialGuidelinesFb');
 const { applyBrandArtworkToResult } = require('./matterArtworkService');
 
 async function resolvePage(userId, facebookPageId) {
@@ -32,12 +32,23 @@ function parseHashtagsField(raw) {
   return [];
 }
 
-/** Legenda formatada para o Facebook (espaços, parágrafos, hashtags). */
-function montarMensagem({ titulo, materia, hashtags }) {
+/** Legenda formatada para o Facebook (espaços, parágrafos, crédito, hashtags). */
+function montarMensagem({ titulo, materia, hashtags, fonteCredito }) {
   return formatFacebookCaption({
     titulo,
     materia,
     hashtags: parseHashtagsField(hashtags),
+    fonteCredito,
+  });
+}
+
+function creditoPadraoDaMateria({ topico, gerado, tipoPublicacao }) {
+  return montarFonteCredito({
+    veiculo: topico?.veiculo || topico?.fonte || gerado?.imagemOrigem?.veiculo,
+    fonte: topico?.fonte,
+    host: topico?.link || topico?.url,
+    tipoPublicacao,
+    imagemOrigem: gerado?.imagemOrigem || (tipoPublicacao === 'foto' || gerado?.imagemUrl ? { tipo: 'fonte' } : null),
   });
 }
 
@@ -219,6 +230,10 @@ async function salvarMateria({ userId, facebookPageId, gerado, topico, tipoPubli
     fonte_titulo: topico?.titulo || null,
     fonte_url: topico?.link || null,
     fonte_resumo: topico?.resumo || null,
+    fonte_credito:
+      gerado.fonteCredito
+      || creditoPadraoDaMateria({ topico, gerado, tipoPublicacao })
+      || null,
     contexto_apuracao: topico?.contextoApuracao || null,
     status: finalStatus,
     tipo_publicacao: tipoPublicacao === 'foto' ? 'foto' : 'texto',
@@ -255,6 +270,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     titulo: overrides.titulo || matter.titulo,
     materia: overrides.materia || matter.materia,
     hashtags: overrides.hashtags || matter.hashtags,
+    fonteCredito: overrides.fonte_credito != null ? overrides.fonte_credito : matter.fonte_credito,
   });
 
   if (!mensagem.trim() || String(mensagem).startsWith('⏳')) {
@@ -987,6 +1003,11 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
       fonte_titulo: titulo,
       fonte_url: link,
       fonte_resumo: textoLimpo.slice(0, 1500) || null,
+      fonte_credito: montarFonteCredito({
+        veiculo: meta.autor || meta.channel || video.autor || null,
+        host: link,
+        tipoPublicacao: 'reel',
+      }),
       status: 'rascunho',
       tipo_publicacao: 'reel',
       imagem_url: meta.thumbnail || video.thumbnail || null,

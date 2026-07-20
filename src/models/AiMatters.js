@@ -8,6 +8,9 @@ function prepare(data) {
   if (out.fonte_titulo != null) {
     out.fonte_titulo = String(out.fonte_titulo).replace(/\s+/g, ' ').trim().slice(0, 500);
   }
+  if (out.fonte_credito != null) {
+    out.fonte_credito = String(out.fonte_credito).replace(/\r\n/g, '\n').trim().slice(0, 400);
+  }
   return out;
 }
 
