@@ -143,26 +143,42 @@
       const res = await fetch('/api/facebook/pages');
       const data = await res.json();
       const pages = data.pages || [];
-      const preferred =
-        Number(cfg.pageId) ||
+      const defaultId =
         Number(data.default_facebook_page_id) ||
-        (pages.find((p) => p.is_default)?.id) ||
+        Number(pages.find((p) => p.is_default)?.id) ||
         null;
-      const html = !pages.length
-        ? '<option value="">Conecte uma página em /paginas</option>'
-        : pages
-            .map((p) => {
-              const selected = Number(p.id) === Number(preferred) ? ' selected' : '';
-              const tag = p.is_default ? ' · padrão' : '';
-              return `<option value="${p.id}"${selected}>${escapeHtml(p.page_name)}${tag}</option>`;
-            })
-            .join('');
+
+      // Na publicação da matéria: só a página padrão do perfil (/paginas)
+      let page = defaultId
+        ? pages.find((p) => Number(p.id) === Number(defaultId))
+        : null;
+
+      // Fallback: página já salva na matéria, se não houver padrão definida
+      if (!page && cfg.pageId) {
+        page = pages.find((p) => Number(p.id) === Number(cfg.pageId)) || null;
+      }
+
+      let html;
+      if (!pages.length) {
+        html = '<option value="">Conecte uma página em /paginas</option>';
+      } else if (!page) {
+        html =
+          '<option value="">Defina a página padrão em /paginas</option>';
+      } else {
+        const tag = page.is_default || Number(page.id) === Number(defaultId) ? ' · padrão' : '';
+        html = `<option value="${page.id}" selected>${escapeHtml(page.page_name)}${tag}</option>`;
+      }
+
       selects.forEach((el) => {
         el.innerHTML = html;
+        // Uma única opção: trava troca acidental
+        if (page) el.disabled = true;
+        else el.disabled = false;
       });
     } catch {
       selects.forEach((el) => {
         el.innerHTML = '<option value="">Erro ao carregar páginas</option>';
+        el.disabled = false;
       });
     }
   }
@@ -431,7 +447,7 @@
 
   document.getElementById('btn-publicar')?.addEventListener('click', async () => {
     if (!pageSelect.value) {
-      setStatus('Selecione a Página do Facebook', true);
+      setStatus('Defina a página padrão em /paginas antes de publicar', true);
       return;
     }
 
