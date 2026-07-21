@@ -1856,10 +1856,17 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
 }
 
 /**
- * Busca fontes relacionadas (Brave/Serper) e enriquecem a matéria com fatos novos,
- * sem plágio — a IA só incorpora dados reescritos.
+ * Enriquece matéria buscando reportagens com o MESMO pipeline de /conteudo
+ * (Google News + Brave News via pesquisarNichos) e incorpora só fatos sem plágio.
  */
-async function enriquecerMateriaComWeb({ userId, matterId, tituloAtual = null, materiaAtual = null }) {
+async function enriquecerMateriaComWeb({
+  userId,
+  matterId,
+  tituloAtual = null,
+  materiaAtual = null,
+  palavrasChave = null,
+  periodo = '180d',
+} = {}) {
   const deepseekService = require('./deepseekService');
   deepseekService.assertDeepseek();
 
@@ -1883,63 +1890,191 @@ async function enriquecerMateriaComWeb({ userId, matterId, tituloAtual = null, m
     throw err;
   }
 
-  const { coletarFontesComplementares } = require('./articleSource');
-  const { env } = require('../config/env');
-  if (!env.braveSearchApiKey && !env.serperApiKey) {
-    const err = new Error(
-      'Configure BRAVE_SEARCH_API_KEY (ou SERPER_API_KEY) no .env para buscar fontes relacionadas.'
-    );
-    err.status = 503;
-    throw err;
+  const { coletarFontesComplementares, extrairMetadadosArtigo } = require('./articleSource');
+  const { pesquisarNichos, titulosSimilares, buscarBraveNews, buscarGoogleNewsRss, whenParaGoogle } = require('./newsResearch');
+
+  const stop = new Set([
+    'para', 'com', 'sobre', 'apos', 'após', 'durante', 'sendo', 'filmada', 'filmado',
+    'confusao', 'confusão', 'entre', 'pela', 'pelo', 'pelos', 'pelas', 'uma', 'uns',
+    'umas', 'este', 'esta', 'esse', 'essa', 'aquele', 'aquela', 'como', 'mais', 'menos',
+    'muito', 'muita', 'quando', 'onde', 'quais', 'qual', 'quem', 'porque', 'porquê',
+    'ainda', 'tambem', 'também', 'depois', 'antes', 'agora', 'hoje', 'ontem',
+  ]);
+
+  function keywordsDoTitulo(t) {
+    return String(t || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .split(/\s+/)
+      .map((w) => w.trim())
+      .filter((w) => w.length > 3 && !stop.has(w.toLowerCase()))
+      .slice(0, 7)
+      .join(' ');
   }
 
-  const corpoLimpo = materia
-    .replace(/\n*Fontes:[\s\S]*$/i, '')
-    .replace(/#[\wÀ-ÿ]+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const queryManual = String(palavrasChave || '').trim();
+  const queryTitulo = keywordsDoTitulo(titulo) || titulo.slice(0, 100);
+  const queries = [queryManual, queryTitulo, titulo.slice(0, 120)]
+    .map((q) => String(q || '').replace(/\s+/g, ' ').trim())
+    .filter((q, i, arr) => q.length >= 8 && arr.indexOf(q) === i);
 
-  const queries = [
-    titulo.slice(0, 120),
-    `${titulo}`.split(/\s+/).slice(0, 8).join(' ') + ' notícia',
-  ].filter((q, i, arr) => q && q.length >= 12 && arr.indexOf(q) === i);
-
-  let fontes = [];
-  for (const q of queries.slice(0, 2)) {
+  function normalizarUrl(url) {
     try {
-      const mais = await coletarFontesComplementares({
-        titulo: q,
-        resumo: corpoLimpo.slice(0, 160),
-        linkExcluir: matter.fonte_url,
-        max: 4,
-      });
-      fontes = [...fontes, ...mais];
-    } catch (err) {
-      console.warn('[enriquecer] busca:', err.message);
+      const u = new URL(String(url || '').trim());
+      u.hash = '';
+      return u.href.replace(/\/$/, '').toLowerCase();
+    } catch {
+      return String(url || '')
+        .split(/[?#]/)[0]
+        .replace(/\/$/, '')
+        .toLowerCase();
     }
   }
 
-  const vistos = new Set();
-  fontes = fontes
-    .filter((f) => {
-      const k = String(f.url || f.titulo || '')
-        .toLowerCase()
-        .trim();
-      if (!k || vistos.has(k)) return false;
-      vistos.add(k);
-      return true;
-    })
-    .slice(0, 5);
+  const excluirUrl = normalizarUrl(matter.fonte_url);
+  const fontes = [];
+  const vistosUrl = new Set(excluirUrl ? [excluirUrl] : []);
+  const vistosTitulo = [];
 
-  if (!fontes.length) {
+  function adicionarFonte(f) {
+    if (!f) return;
+    const urlKey = normalizarUrl(f.url || f.link);
+    if (urlKey && vistosUrl.has(urlKey)) return;
+    const tit = String(f.titulo || '').trim();
+    if (tit && vistosTitulo.some((x) => titulosSimilares(x, tit))) return;
+    const trecho = String(f.trecho || f.contextoApuracao || f.resumo || f.snippet || '').trim();
+    if (trecho.length < 40) return;
+    if (urlKey) vistosUrl.add(urlKey);
+    if (tit) vistosTitulo.push(tit);
+    fontes.push({
+      veiculo: f.veiculo || f.fonte || 'Web',
+      url: f.url || f.link || null,
+      titulo: tit || queryTitulo,
+      resumo: String(f.resumo || '').slice(0, 500),
+      trecho: trecho.slice(0, 2500),
+    });
+  }
+
+  // 1) Mesmas fontes de /conteudo (Google News + Brave), sem apurar tudo (mais rápido)
+  for (const q of queries.slice(0, 2)) {
+    if (fontes.length >= 5) break;
+    try {
+      const when = whenParaGoogle(periodo || '180d');
+      const encontrados = [
+        ...(await buscarGoogleNewsRss(q, { when })),
+        ...(await buscarBraveNews(q, 180)),
+      ];
+      for (const t of encontrados.slice(0, 12)) {
+        if (fontes.length >= 5) break;
+        const url = t.link;
+        if (!url || normalizarUrl(url) === excluirUrl) continue;
+        let meta = null;
+        try {
+          meta = await extrairMetadadosArtigo(url);
+        } catch {
+          /* ignore */
+        }
+        adicionarFonte({
+          titulo: meta?.titulo || t.titulo,
+          url: meta?.url || url,
+          veiculo: meta?.veiculo || t.veiculo || t.fonte,
+          resumo: meta?.resumo || t.resumo,
+          trecho: meta?.trecho || t.resumo,
+        });
+      }
+    } catch (err) {
+      console.warn('[enriquecer] busca noticias:', err.message);
+    }
+  }
+
+  // 1b) Se ainda vazio, pipeline completo (com apuração) como em Pautas com IA
+  if (!fontes.length && queries[0]) {
+    try {
+      const topicos = await pesquisarNichos(queries[0], 6, {
+        periodo: periodo || '180d',
+        incluirRedesSociais: false,
+        filtrarPeriodo: true,
+      });
+      for (const t of topicos || []) {
+        if (fontes.length >= 5) break;
+        const fontesAp = Array.isArray(t.fontesApuracao) ? t.fontesApuracao : [];
+        if (fontesAp.length) {
+          for (const fa of fontesAp) adicionarFonte(fa);
+        } else {
+          adicionarFonte({
+            titulo: t.titulo,
+            link: t.link,
+            veiculo: t.veiculo || t.fonte,
+            resumo: t.resumo,
+            trecho: t.contextoApuracao || t.resumo,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[enriquecer] pesquisarNichos:', err.message);
+    }
+  }
+
+  // 2) Fallback: busca complementar (Brave/Serper + scrape)
+  if (fontes.length < 2) {
+    for (const q of queries.slice(0, 2)) {
+      try {
+        const mais = await coletarFontesComplementares({
+          titulo: q,
+          resumo: materia.replace(/\s+/g, ' ').trim().slice(0, 160),
+          linkExcluir: matter.fonte_url,
+          max: 4,
+        });
+        for (const f of mais) adicionarFonte(f);
+      } catch (err) {
+        console.warn('[enriquecer] complementares:', err.message);
+      }
+    }
+  }
+
+  // 3) Snippets brutos se ainda faltar volume
+  if (fontes.length < 2 && queries[0]) {
+    try {
+      const when = whenParaGoogle(periodo || '180d');
+      const brutos = [
+        ...(await buscarBraveNews(queries[0], 180)),
+        ...(await buscarGoogleNewsRss(queries[0], { when })),
+      ];
+      for (const r of brutos.slice(0, 10)) {
+        if (fontes.length >= 5) break;
+        const url = r.link;
+        if (!url || normalizarUrl(url) === excluirUrl) continue;
+        let meta = null;
+        try {
+          meta = await extrairMetadadosArtigo(url);
+        } catch {
+          /* ignore */
+        }
+        adicionarFonte({
+          titulo: meta?.titulo || r.titulo,
+          url: meta?.url || url,
+          veiculo: meta?.veiculo || r.veiculo || r.fonte,
+          resumo: meta?.resumo || r.resumo,
+          trecho: meta?.trecho || r.resumo,
+        });
+      }
+    } catch (err) {
+      console.warn('[enriquecer] fallback bruto:', err.message);
+    }
+  }
+
+  const fontesFinais = fontes.slice(0, 5);
+
+  if (!fontesFinais.length) {
     const err = new Error(
-      'Não encontramos outras reportagens úteis sobre este fato. Tente de novo ou cole infos manuais.'
+      'Não encontramos outras reportagens úteis. Ajuste as palavras-chave (como em Pautas com IA) ou cole infos manuais abaixo.'
     );
     err.status = 422;
     throw err;
   }
 
-  const blocoFatos = fontes
+  const blocoFatos = fontesFinais
     .map(
       (f, i) =>
         `Fonte ${i + 1} — ${f.veiculo || 'Web'}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo || ''}\nTrecho factual:\n${String(f.trecho || f.resumo || '').slice(0, 1800)}`
@@ -1977,7 +2112,7 @@ async function enriquecerMateriaComWeb({ userId, matterId, tituloAtual = null, m
   let updated = await AiMatters.findById(matterId);
   let imagemUrl = updated.imagem_url || null;
   let videoUrl = null;
-  let aviso = `Texto enriquecido com fatos de ${fontes.length} fonte(s) — sem copiar trechos ✓`;
+  let aviso = `Texto enriquecido com fatos de ${fontesFinais.length} fonte(s) — mesma busca de Pautas com IA ✓`;
 
   const titleChanged =
     String(reescrito.titulo || '').trim() !== String(matter.titulo || '').trim();
@@ -2030,11 +2165,12 @@ async function enriquecerMateriaComWeb({ userId, matterId, tituloAtual = null, m
     materia: reescrito.materia,
     hashtags: reescrito.hashtags,
     fatosUsados: reescrito.fatosUsados || [],
-    fontes: fontes.map((f) => ({
+    fontes: fontesFinais.map((f) => ({
       veiculo: f.veiculo,
       titulo: f.titulo,
       url: f.url,
     })),
+    queryUsada: queries[0] || queryTitulo,
     imagemUrl,
     videoUrl,
     aviso,

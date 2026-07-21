@@ -319,15 +319,22 @@
   document.getElementById('btn-enriquecer-fontes')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-enriquecer-fontes');
     const box = document.getElementById('matter-fontes-enriquecimento');
+    const kwEl = document.getElementById('matter-enriquecer-keywords');
+    const periodoEl = document.getElementById('matter-enriquecer-periodo');
     const original = btn?.textContent;
     if (btn) {
       btn.disabled = true;
       btn.textContent = 'Buscando…';
     }
-    setStatus('Buscando reportagens relacionadas e enriquecendo com fatos (sem plágio)…');
+    const keywords = String(kwEl?.value || '').trim() || String(tituloEl?.value || '').trim();
+    setStatus('Buscando reportagens (Google News + Brave), como em Pautas com IA…');
     if (box) {
       box.classList.remove('hidden');
-      box.textContent = 'Consultando Brave / fontes…';
+      box.innerHTML =
+        '<span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-emerald-400/30 border-t-emerald-300 align-middle"></span> ' +
+        'Consultando notícias com: <strong class="text-slate-300">' +
+        keywords.replace(/</g, '&lt;') +
+        '</strong>';
     }
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/enriquecer-fontes', {
@@ -336,13 +343,18 @@
         body: JSON.stringify({
           titulo: tituloEl?.value || '',
           materia: materiaEl?.value || '',
+          palavrasChave: keywords,
+          periodo: periodoEl?.value || '180d',
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao enriquecer a matéria');
 
       if (data.titulo && tituloEl) tituloEl.value = data.titulo;
-      if (data.materia && materiaEl) materiaEl.value = data.materia;
+      if (data.materia && materiaEl) {
+        materiaEl.value = data.materia;
+        materiaEl.dispatchEvent(new Event('input'));
+      }
 
       const tagsLine = document.getElementById('matter-hashtags-line');
       const tagsWrap = document.getElementById('matter-hashtags-wrap');
@@ -368,23 +380,34 @@
         const fontes = Array.isArray(data.fontes) ? data.fontes : [];
         const fatos = Array.isArray(data.fatosUsados) ? data.fatosUsados : [];
         const linhas = [];
+        if (data.queryUsada) {
+          linhas.push(
+            '<span class="text-slate-500">Busca:</span> <span class="text-slate-300">' +
+              String(data.queryUsada).replace(/</g, '&lt;') +
+              '</span>'
+          );
+        }
         if (fontes.length) {
           linhas.push(
-            '<span class="font-semibold text-slate-300">Fontes consultadas:</span> ' +
+            '<span class="font-semibold text-slate-300">Fontes:</span> ' +
               fontes
                 .map((f) => {
-                  const nome = f.veiculo || 'Web';
+                  const nome = (f.veiculo || 'Web') + (f.titulo ? ' — ' + String(f.titulo).slice(0, 60) : '');
                   return f.url
-                    ? `<a class="text-sky-400 hover:text-sky-300" href="${f.url}" target="_blank" rel="noopener">${nome}</a>`
-                    : nome;
+                    ? '<a class="text-sky-400 hover:text-sky-300" href="' +
+                        f.url +
+                        '" target="_blank" rel="noopener">' +
+                        String(nome).replace(/</g, '&lt;') +
+                        '</a>'
+                    : String(nome).replace(/</g, '&lt;');
                 })
-                .join(' · ')
+                .join('<br/>')
           );
         }
         if (fatos.length) {
           linhas.push(
             '<span class="font-semibold text-slate-300">Fatos usados:</span> ' +
-              fatos.map((f) => String(f)).join(' · ')
+              fatos.map((f) => String(f).replace(/</g, '&lt;')).join(' · ')
           );
         }
         box.innerHTML = linhas.join('<br/>') || 'Enriquecimento concluído.';

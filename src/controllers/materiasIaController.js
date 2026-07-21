@@ -1088,6 +1088,8 @@ async function enriquecerFontes(req, res, next) {
       matterId,
       tituloAtual: req.body?.titulo,
       materiaAtual: req.body?.materia,
+      palavrasChave: req.body?.palavrasChave || req.body?.palavras_chave || req.body?.q,
+      periodo: req.body?.periodo || '180d',
     });
     return res.json({
       ok: true,
@@ -1096,6 +1098,7 @@ async function enriquecerFontes(req, res, next) {
       hashtags: result.hashtags,
       fatosUsados: result.fatosUsados,
       fontes: result.fontes,
+      queryUsada: result.queryUsada,
       matter: result.matter,
       imagemUrl: result.imagemUrl,
       videoUrl: result.videoUrl,

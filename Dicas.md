@@ -25,14 +25,12 @@ git push origin main
 
 
 rapido
-# SEMPRE como viralizeai (NVM). Nunca root — PM2 do root é outro.
-su - viralizeai
-# ou: sudo -iu viralizeai
 cd /home/viralizeai/htdocs/www.viralizeai.online
+git checkout -- public/css/app.css
 git pull origin main
 npm install --omit=dev
+npm run build:css
 NODE_ENV=production npm run migrate
 pm2 reload viralizeai --update-env
-# após mudar ecosystem.config.cjs:
-# pm2 delete viralizeai && pm2 start ecosystem.config.cjs && pm2 save
+pm2 save
 pm2 logs viralizeai --lines 50
