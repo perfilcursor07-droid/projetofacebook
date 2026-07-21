@@ -431,6 +431,8 @@
     return `
       <a
         href="${escHtml(dest)}"
+        target="_blank"
+        rel="noopener noreferrer"
         class="group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 ${lido ? 'opacity-55' : ''} ${clicavel ? '' : 'pointer-events-none'}"
         data-alerta="${escHtml(a.id)}">
         <div class="mt-1.5 shrink-0">${dot}</div>
