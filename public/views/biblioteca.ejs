@@ -388,8 +388,7 @@
                 const palavrasCorrespondentes = palavrasDoAlerta(a);
               %>
               <a href="<%= dest || '#bib-secao-alertas' %>"
-                target="_blank" rel="noopener noreferrer"
-                class="group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 <%= a.lido ? 'opacity-55' : '' %> <%= dest ? '' : 'pointer-events-none' %>"
+                class="bib-alerta-link group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 <%= a.lido ? 'opacity-55' : '' %> <%= dest ? '' : 'pointer-events-none' %>"
                 data-alerta="<%= a.id %>" data-lido="<%= a.lido ? '1' : '0' %>">
                 <div class="mt-1.5 shrink-0">
                   <span class="block h-2 w-2 rounded-full <%= a.lido ? 'bg-slate-700' : 'bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.15)]' %>" title="<%= a.lido ? 'Lido' : 'Não lido' %>"></span>

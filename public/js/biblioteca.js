@@ -339,6 +339,67 @@
   const filterStatus = document.getElementById('bib-alertas-filter-status');
   const markAllBtn = document.getElementById('bib-mark-all');
 
+  /** Abre URL em nova aba sem tirar o foco de /biblioteca. */
+  function abrirAbaEmSegundoPlano(url) {
+    if (!url || url.startsWith('#')) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    // Ctrl/Cmd+click costuma abrir em segundo plano (sem mudar de aba)
+    a.dispatchEvent(
+      new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        ctrlKey: true,
+        metaKey: true,
+      })
+    );
+  }
+
+  function marcarAlertaVisualComoLido(link) {
+    if (!link || link.dataset.lido === '1') return false;
+    link.dataset.lido = '1';
+    link.classList.add('opacity-55');
+    const dot = link.querySelector('[title="Não lido"], .h-2.w-2');
+    if (dot) {
+      dot.className = 'block h-2 w-2 rounded-full bg-slate-700';
+      dot.title = 'Lido';
+    }
+    const unread = document.getElementById('bib-alertas-unread-count');
+    const app = document.getElementById('biblioteca-app');
+    const atual = Number(app?.dataset?.alertasNaoLidos || 0);
+    if (atual > 0 && app) {
+      const novo = atual - 1;
+      app.dataset.alertasNaoLidos = String(novo);
+      if (unread) {
+        if (novo <= 0) unread.classList.add('hidden');
+        else {
+          unread.classList.remove('hidden');
+          unread.textContent = `${novo} novo${novo === 1 ? '' : 's'}`;
+        }
+      }
+    }
+    return true;
+  }
+
+  alertasBox?.addEventListener('click', (e) => {
+    const link = e.target.closest('.bib-alerta-link');
+    if (!link || !alertasBox.contains(link)) return;
+    const href = link.getAttribute('href') || '';
+    if (!href || href.startsWith('#')) return;
+    // Já com Ctrl/Cmd/Shift: deixa o navegador agir
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault();
+    abrirAbaEmSegundoPlano(href);
+    const eraNovo = marcarAlertaVisualComoLido(link);
+    const alertaId = link.dataset.alerta;
+    if (eraNovo && alertaId) {
+      api(`/api/biblioteca/alertas/${alertaId}/lido`, { method: 'POST', body: '{}' }).catch(() => {});
+    }
+  });
+
   function parseKeywordsClient(raw) {
     const parts = Array.isArray(raw) ? raw : String(raw || '').split(/[,;\n]+/);
     const seen = new Set();
@@ -431,10 +492,9 @@
     return `
       <a
         href="${escHtml(dest)}"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 ${lido ? 'opacity-55' : ''} ${clicavel ? '' : 'pointer-events-none'}"
-        data-alerta="${escHtml(a.id)}">
+        class="bib-alerta-link group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 ${lido ? 'opacity-55' : ''} ${clicavel ? '' : 'pointer-events-none'}"
+        data-alerta="${escHtml(a.id)}"
+        data-lido="${lido ? '1' : '0'}">
         <div class="mt-1.5 shrink-0">${dot}</div>
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
