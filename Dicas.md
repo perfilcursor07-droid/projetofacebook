@@ -26,11 +26,14 @@ git push origin main
 
 rapido
 cd /home/viralizeai/htdocs/www.viralizeai.online
+
+# descarta só o CSS local (é gerado de novo no build)
 git checkout -- public/css/app.css
+
 git pull origin main
 npm install --omit=dev
 npm run build:css
 NODE_ENV=production npm run migrate
 pm2 reload viralizeai --update-env
 pm2 save
-pm2 logs viralizeai --lines 50
+pm2 logs viralizeai --lines 30

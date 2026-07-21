@@ -409,18 +409,20 @@
 
   function renderKeywordsList() {
     if (!keywordsListEl) return;
+    const countEl = document.getElementById('bib-keywords-count');
+    if (countEl) countEl.textContent = `${keywordsList.length}/40`;
     keywordsClearBtn?.classList.toggle('hidden', !keywordsList.length);
     if (!keywordsList.length) {
-      keywordsListEl.innerHTML = '<p class="text-[11px] text-slate-600" data-empty>Nenhuma palavra na lista ainda.</p>';
+      keywordsListEl.innerHTML = '<p class="text-[11px] text-slate-600" data-empty>Nenhuma palavra cadastrada.</p>';
       return;
     }
     keywordsListEl.innerHTML = keywordsList
       .map(
         (kw) => `
-      <span class="inline-flex items-center gap-0.5 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-200" data-keyword="${escHtml(kw)}">
-        ${escHtml(kw)}
-        <button type="button" class="bib-kw-remove rounded p-0.5 text-emerald-300/70 hover:bg-emerald-500/20 hover:text-white" data-remove="${escHtml(kw)}" aria-label="Remover ${escHtml(kw)}">
-          <svg class="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-200" data-keyword="${escHtml(kw)}">
+        <span class="truncate" title="${escHtml(kw)}">${escHtml(kw)}</span>
+        <button type="button" class="bib-kw-remove shrink-0 rounded-full p-0.5 text-emerald-300/70 transition hover:bg-emerald-500/20 hover:text-white" data-remove="${escHtml(kw)}" aria-label="Remover ${escHtml(kw)}">
+          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </span>`
       )
@@ -474,7 +476,7 @@
     } finally {
       if (keywordAddBtn) {
         keywordAddBtn.disabled = false;
-        keywordAddBtn.textContent = '+';
+        keywordAddBtn.innerHTML = '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add';
       }
     }
   }
