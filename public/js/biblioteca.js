@@ -399,13 +399,17 @@
     }
   });
 
-  // --- Filtro por palavras-chave nos alertas recentes ---
+  // --- Filtro por palavras-chave nos alertas recentes (com salvamento) ---
   const alertasBox = document.getElementById('bib-alertas');
+  const alertasAside = document.getElementById('bib-secao-alertas');
   const keywordsInput = document.getElementById('bib-alertas-keywords');
+  const keywordsSaveBtn = document.getElementById('bib-alertas-keywords-save');
+  const keywordsClearBtn = document.getElementById('bib-alertas-keywords-clear');
   const filterStatus = document.getElementById('bib-alertas-filter-status');
   const markAllBtn = document.getElementById('bib-mark-all');
   let keywordsTimer = null;
   let keywordsReq = 0;
+  let keywordsSalvas = String(alertasAside?.dataset?.keywordsSalvas || '').trim();
 
   function escHtml(value) {
     return String(value ?? '')
@@ -451,7 +455,7 @@
         }</p>
         <p class="mt-1 text-xs leading-relaxed text-slate-600">${
           filtrando
-            ? 'Tente outras palavras ou limpe o filtro para ver todos os alertas.'
+            ? 'Quando surgir conteúdo com essas palavras, ele aparece aqui automaticamente.'
             : 'As novidades aparecerão aqui quando uma fonte monitorada publicar algo.'
         }</p>
       </div>`;
@@ -497,42 +501,84 @@
     filterStatus.classList.toggle('hidden', !show);
   }
 
+  function syncClearBtn() {
+    keywordsClearBtn?.classList.toggle('hidden', !keywordsSalvas);
+  }
+
+  function aplicarListaAlertas(list, filtroTexto) {
+    const raw = String(filtroTexto || '').trim();
+    if (!list.length) {
+      alertasBox.innerHTML = renderAlertasEmpty(Boolean(raw));
+    } else {
+      alertasBox.innerHTML = list.map(renderAlertaItem).join('');
+    }
+    if (markAllBtn) {
+      markAllBtn.classList.toggle('invisible', !list.length && !raw);
+    }
+    if (raw) {
+      setFilterStatus(
+        list.length
+          ? `Filtro${keywordsSalvas && raw === keywordsSalvas ? ' salvo' : ''}: ${raw} · ${list.length} alerta${list.length === 1 ? '' : 's'}`
+          : `Filtro${keywordsSalvas && raw === keywordsSalvas ? ' salvo' : ''}: ${raw} · nenhum alerta no momento`,
+        true
+      );
+    } else {
+      setFilterStatus('', false);
+    }
+  }
+
   async function carregarAlertasPorKeywords() {
     if (!alertasBox || !keywordsInput) return;
     const raw = String(keywordsInput.value || '').trim();
     const reqId = ++keywordsReq;
-    setFilterStatus(raw ? 'Filtrando…' : '', Boolean(raw));
+    setFilterStatus(raw ? 'Filtrando…' : 'Carregando…', true);
 
     try {
-      const qs = new URLSearchParams();
-      if (raw) qs.set('keywords', raw);
-      const data = await api('/api/biblioteca/alertas' + (qs.toString() ? `?${qs}` : ''));
+      // keywords= (mesmo vazio) evita cair no filtro salvo no servidor
+      const qs = new URLSearchParams({ keywords: raw });
+      const data = await api(`/api/biblioteca/alertas?${qs}`);
       if (reqId !== keywordsReq) return;
-
-      const list = Array.isArray(data.alertas) ? data.alertas : [];
-      if (!list.length) {
-        alertasBox.innerHTML = renderAlertasEmpty(Boolean(raw));
-      } else {
-        alertasBox.innerHTML = list.map(renderAlertaItem).join('');
+      if (data.keywordsSalvas != null) {
+        keywordsSalvas = String(data.keywordsSalvas || '').trim();
+        if (alertasAside) alertasAside.dataset.keywordsSalvas = keywordsSalvas;
+        syncClearBtn();
       }
-
-      if (markAllBtn) {
-        markAllBtn.classList.toggle('invisible', !list.length && !raw);
-      }
-
-      if (raw) {
-        setFilterStatus(
-          list.length
-            ? `${list.length} alerta${list.length === 1 ? '' : 's'} com: ${raw}`
-            : `Nenhum resultado para: ${raw}`,
-          true
-        );
-      } else {
-        setFilterStatus('', false);
-      }
+      aplicarListaAlertas(Array.isArray(data.alertas) ? data.alertas : [], raw);
     } catch (err) {
       if (reqId !== keywordsReq) return;
       setFilterStatus(err.message || 'Falha ao filtrar alertas', true);
+    }
+  }
+
+  async function salvarKeywords(rawValue) {
+    const raw = String(rawValue ?? keywordsInput?.value ?? '').trim();
+    if (keywordsSaveBtn) {
+      keywordsSaveBtn.disabled = true;
+      keywordsSaveBtn.textContent = 'Salvando…';
+    }
+    try {
+      const data = await api('/api/biblioteca/alertas/keywords', {
+        method: 'PUT',
+        body: JSON.stringify({ keywords: raw }),
+      });
+      keywordsSalvas = String(data.keywordsSalvas || data.keywords || '').trim();
+      if (alertasAside) alertasAside.dataset.keywordsSalvas = keywordsSalvas;
+      if (keywordsInput) keywordsInput.value = keywordsSalvas;
+      syncClearBtn();
+      aplicarListaAlertas(Array.isArray(data.alertas) ? data.alertas : [], keywordsSalvas);
+      setFilterStatus(
+        keywordsSalvas
+          ? `Filtro salvo: ${keywordsSalvas}${(data.alertas || []).length ? ` · ${data.alertas.length} alerta${data.alertas.length === 1 ? '' : 's'}` : ' · nenhum alerta no momento'}`
+          : 'Filtro limpo. Mostrando todos os alertas.',
+        true
+      );
+    } catch (err) {
+      setFilterStatus(err.message || 'Falha ao salvar filtro', true);
+    } finally {
+      if (keywordsSaveBtn) {
+        keywordsSaveBtn.disabled = false;
+        keywordsSaveBtn.textContent = 'Salvar filtro';
+      }
     }
   }
 
@@ -545,9 +591,22 @@
     if (e.key === 'Enter') {
       e.preventDefault();
       clearTimeout(keywordsTimer);
-      carregarAlertasPorKeywords();
+      salvarKeywords();
     }
   });
+
+  keywordsSaveBtn?.addEventListener('click', () => {
+    clearTimeout(keywordsTimer);
+    salvarKeywords();
+  });
+
+  keywordsClearBtn?.addEventListener('click', async () => {
+    clearTimeout(keywordsTimer);
+    if (keywordsInput) keywordsInput.value = '';
+    await salvarKeywords('');
+  });
+
+  syncClearBtn();
 
   document.querySelectorAll('a[href="#bib-secao-alertas"], #bib-btn-alertas').forEach((el) => {
     el.addEventListener('click', (e) => {

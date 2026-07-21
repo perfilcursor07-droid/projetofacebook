@@ -222,16 +222,51 @@ async function publicarDireto(req, res, next) {
 
 async function listarAlertas(req, res, next) {
   try {
+    const Users = require('../models/Users');
     const apenasNaoLidos = req.query.unread === '1' || req.query.naoLidos === '1';
-    const keywords = req.query.keywords || req.query.q || req.query.palavras || '';
-    const hasKeywords = String(keywords || '').trim().length > 0;
+    const user = await Users.findById(req.session.userId);
+    const savedKeywords = String(user?.biblioteca_alertas_keywords || '').trim();
+    const keywordsRaw = req.query.keywords != null || req.query.q != null || req.query.palavras != null
+      ? (req.query.keywords || req.query.q || req.query.palavras || '')
+      : savedKeywords;
+    const keywords = String(keywordsRaw || '').trim();
+    const hasKeywords = keywords.length > 0;
     const alertas = await BibliotecaAlertas.findByUser(req.session.userId, {
       apenasNaoLidos,
-      keywords,
+      keywords: hasKeywords ? keywords : null,
       limit: hasKeywords ? 100 : 40,
     });
     const countRow = await BibliotecaAlertas.countNaoLidos(req.session.userId);
-    res.json({ ok: true, alertas, alertasNaoLidos: Number(countRow?.total || 0), keywords: String(keywords || '').trim() });
+    res.json({
+      ok: true,
+      alertas,
+      alertasNaoLidos: Number(countRow?.total || 0),
+      keywords,
+      keywordsSalvas: savedKeywords,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function salvarAlertasKeywords(req, res, next) {
+  try {
+    const Users = require('../models/Users');
+    const { parseKeywords } = require('../models/BibliotecaAlertas');
+    const raw = req.body?.keywords != null ? req.body.keywords : req.body?.palavras;
+    const parsed = parseKeywords(raw);
+    const value = parsed.length ? parsed.join(', ').slice(0, 500) : null;
+    await Users.update(req.session.userId, { biblioteca_alertas_keywords: value });
+    const alertas = await BibliotecaAlertas.findByUser(req.session.userId, {
+      keywords: value,
+      limit: value ? 100 : 50,
+    });
+    res.json({
+      ok: true,
+      keywords: value || '',
+      keywordsSalvas: value || '',
+      alertas,
+    });
   } catch (err) {
     next(err);
   }
@@ -325,6 +360,7 @@ module.exports = {
   gerarVideo,
   publicarDireto,
   listarAlertas,
+  salvarAlertasKeywords,
   marcarAlertaLido,
   marcarTodosLidos,
   listarMelhores,

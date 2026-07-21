@@ -2077,10 +2077,18 @@ async function analisarMelhoresParaPublicar(userId, limit = 30) {
 
 async function dashboardUsuario(userId) {
   await BibliotecaAlertas.limparOrfaos(userId).catch(() => 0);
+  const Users = require('../models/Users');
+  const user = await Users.findById(userId);
+  const alertasKeywords = String(user?.biblioteca_alertas_keywords || '').trim();
+  const hasKeywords = alertasKeywords.length > 0;
+
   const [fontes, postsPorFonte, alertas, countRow, autopilot, melhores] = await Promise.all([
     BibliotecaFontes.findByUser(userId),
     BibliotecaPosts.countsByUser(userId),
-    BibliotecaAlertas.findByUser(userId, { limit: 50 }),
+    BibliotecaAlertas.findByUser(userId, {
+      limit: hasKeywords ? 100 : 50,
+      keywords: hasKeywords ? alertasKeywords : null,
+    }),
     BibliotecaAlertas.countNaoLidos(userId),
     obterAutopilot(userId),
     listarMelhoresParaPublicar(userId, 30),
@@ -2093,6 +2101,7 @@ async function dashboardUsuario(userId) {
     fontes: fontesComContagem,
     alertas,
     alertasNaoLidos: Number(countRow?.total || 0),
+    alertasKeywords,
     autopilot,
     melhores,
   };
