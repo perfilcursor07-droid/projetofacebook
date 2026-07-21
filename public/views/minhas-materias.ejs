@@ -3,6 +3,10 @@
   const mattersList = typeof matters !== 'undefined' && Array.isArray(matters) ? matters : [];
   const q = typeof searchQuery !== 'undefined' ? String(searchQuery || '') : '';
   const activeStatus = typeof statusFilter !== 'undefined' ? String(statusFilter || 'all') : 'all';
+  const counts = typeof statusCounts !== 'undefined' && statusCounts ? statusCounts : { all: 0 };
+  const pag = typeof pagination !== 'undefined' && pagination ? pagination : {
+    page: 1, perPage: 10, total: mattersList.length, totalPages: 1,
+  };
   const statusLabels = {
     rascunho: 'Rascunho',
     pronto: 'Pronta',
@@ -25,15 +29,6 @@
     { key: 'publicado', label: 'Publicadas' },
     { key: 'erro', label: 'Erros' },
   ];
-  const counts = { all: mattersList.length };
-  tabDefs.forEach((t) => {
-    if (t.key === 'all') return;
-    counts[t.key] = 0;
-  });
-  mattersList.forEach((item) => {
-    const st = item.status || 'rascunho';
-    counts[st] = (counts[st] || 0) + 1;
-  });
   function formatViews(n) {
     const v = Number(n);
     if (!Number.isFinite(v) || v < 0) return null;
@@ -41,16 +36,34 @@
     if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
     return String(Math.round(v));
   }
-  function tabHref(key, keepQuery) {
+  function listHref({ status, page, keepQuery } = {}) {
     const params = new URLSearchParams();
     if (keepQuery !== false && q) params.set('q', q);
-    if (key && key !== 'all') params.set('status', key);
+    const st = status != null ? status : activeStatus;
+    if (st && st !== 'all') params.set('status', st);
+    const p = page != null ? page : pag.page;
+    if (p && p > 1) params.set('page', String(p));
     const qs = params.toString();
     return '/minhas-materias' + (qs ? '?' + qs : '');
   }
+  function pageWindow(current, total, size = 5) {
+    if (total <= size) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    let start = Math.max(1, current - Math.floor(size / 2));
+    let end = start + size - 1;
+    if (end > total) {
+      end = total;
+      start = Math.max(1, end - size + 1);
+    }
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }
+  const pages = pageWindow(pag.page, pag.totalPages, 5);
+  const fromItem = pag.total === 0 ? 0 : (pag.page - 1) * pag.perPage + 1;
+  const toItem = Math.min(pag.page * pag.perPage, pag.total);
 %>
 
-  <main class="mx-auto max-w-9xl px-4 py-4 sm:px-6 sm:py-5" data-matters-page>
+  <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8" data-matters-page>
     <%- include('partials/content-nav', { contentTab: 'matters' }) %>
 
     <div class="flex flex-wrap items-center justify-between gap-2">
@@ -77,7 +90,7 @@
         Buscar
       </button>
       <% if (q) { %>
-        <a href="<%= tabHref(activeStatus, false) %>" class="rounded-lg px-2.5 py-2 text-xs text-slate-500 hover:text-slate-300">Limpar</a>
+        <a href="<%= listHref({ status: activeStatus, page: 1, keepQuery: false }) %>" class="rounded-lg px-2.5 py-2 text-xs text-slate-500 hover:text-slate-300">Limpar</a>
       <% } %>
     </form>
 
@@ -85,11 +98,10 @@
     <div class="mt-3 flex gap-1 overflow-x-auto pb-0.5" role="tablist" aria-label="Filtrar por status" id="mia-status-tabs">
       <% tabDefs.forEach((tab) => {
         const count = counts[tab.key] || 0;
-        const isActive = activeStatus === tab.key || (activeStatus === 'all' && tab.key === 'all');
-        if (tab.key !== 'all' && tab.key !== 'erro' && count === 0 && !isActive) return;
-        if (tab.key === 'erro' && count === 0 && !isActive) return;
+        const isActive = activeStatus === tab.key;
+        if (tab.key !== 'all' && count === 0 && !isActive) return;
       %>
-        <a href="<%= tabHref(tab.key) %>"
+        <a href="<%= listHref({ status: tab.key, page: 1 }) %>"
           role="tab"
           aria-selected="<%= isActive ? 'true' : 'false' %>"
           data-status="<%= tab.key %>"
@@ -102,15 +114,14 @@
 
     <% if (!mattersList.length) { %>
       <p class="mt-4 rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-        <%= q ? 'Nenhuma matéria encontrada para essa busca.' : 'Nenhuma matéria gerada ainda.' %>
-        <a href="<%= q ? '/minhas-materias' : '/conteudo' %>" class="mt-2 block text-emerald-400 hover:text-emerald-300">
-          <%= q ? 'Ver todas →' : 'Criar conteúdo →' %>
+        <%= q ? 'Nenhuma matéria encontrada para essa busca.' : (activeStatus !== 'all' ? 'Nenhuma matéria neste status.' : 'Nenhuma matéria gerada ainda.') %>
+        <a href="<%= q || activeStatus !== 'all' ? '/minhas-materias' : '/conteudo' %>" class="mt-2 block text-emerald-400 hover:text-emerald-300">
+          <%= q || activeStatus !== 'all' ? 'Ver todas →' : 'Criar conteúdo →' %>
         </a>
       </p>
     <% } else { %>
       <p id="mia-matters-count" class="mt-2.5 text-[11px] text-slate-500">
-        <span id="mia-visible-count"><%= activeStatus === 'all' ? mattersList.length : (counts[activeStatus] || 0) %></span>
-        matéria(s)<%= q ? ' encontrada(s)' : '' %>
+        <%= fromItem %>–<%= toItem %> de <span id="mia-visible-count"><%= pag.total %></span> matéria(s)<%= q ? ' encontrada(s)' : '' %>
       </p>
 
       <ul id="mia-matters-list" class="mt-2 divide-y divide-slate-800/80 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
@@ -118,9 +129,8 @@
           const st = item.status || 'rascunho';
           const viewsLabel = formatViews(item.pub_fb_views);
           const isPub = st === 'publicado' || item.publication_id;
-          const hide = activeStatus !== 'all' && activeStatus !== st;
         %>
-          <li class="mia-matter-row group flex items-center gap-2 px-2.5 py-1.5 transition hover:bg-slate-900/70 sm:px-3 sm:py-2 <%= hide ? 'hidden' : '' %>"
+          <li class="mia-matter-row group flex items-center gap-2 px-2.5 py-1.5 transition hover:bg-slate-900/70 sm:px-3 sm:py-2"
             data-id="<%= item.id %>"
             data-status="<%= st %>">
             <div class="min-w-0 flex-1">
@@ -171,14 +181,41 @@
         <% }) %>
       </ul>
 
-      <p id="mia-empty-tab" class="mt-4 hidden rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-sm text-slate-400">
-        Nenhuma matéria neste status.
-      </p>
+      <% if (pag.totalPages > 1) { %>
+        <nav class="mt-3 flex flex-wrap items-center justify-between gap-2" aria-label="Paginação">
+          <p class="text-[11px] text-slate-500">Página <%= pag.page %> de <%= pag.totalPages %></p>
+          <div class="flex flex-wrap items-center gap-1">
+            <% if (pag.page > 1) { %>
+              <a href="<%= listHref({ page: pag.page - 1 }) %>"
+                class="rounded-lg border border-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white">
+                ← Anterior
+              </a>
+            <% } else { %>
+              <span class="rounded-lg border border-slate-800/50 px-2.5 py-1.5 text-xs text-slate-600">← Anterior</span>
+            <% } %>
+
+            <% pages.forEach((p) => { %>
+              <% if (p === pag.page) { %>
+                <span class="inline-flex min-w-[2rem] items-center justify-center rounded-lg bg-emerald-500 px-2 py-1.5 text-xs font-semibold text-slate-950"><%= p %></span>
+              <% } else { %>
+                <a href="<%= listHref({ page: p }) %>"
+                  class="inline-flex min-w-[2rem] items-center justify-center rounded-lg border border-slate-800 px-2 py-1.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white"><%= p %></a>
+              <% } %>
+            <% }) %>
+
+            <% if (pag.page < pag.totalPages) { %>
+              <a href="<%= listHref({ page: pag.page + 1 }) %>"
+                class="rounded-lg border border-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white">
+                Próxima →
+              </a>
+            <% } else { %>
+              <span class="rounded-lg border border-slate-800/50 px-2.5 py-1.5 text-xs text-slate-600">Próxima →</span>
+            <% } %>
+          </div>
+        </nav>
+      <% } %>
     <% } %>
   </main>
 
-  <script>
-    window.__MIA_STATUS__ = <%= JSON.stringify(activeStatus || 'all') %>;
-  </script>
   <script src="/js/minhas-materias.js"></script>
 <%- include('partials/app-end') %>

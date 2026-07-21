@@ -493,15 +493,40 @@ async function listMinhasMaterias(req, res, next) {
     const allowed = new Set(['all', 'rascunho', 'pronto', 'agendado', 'publicado', 'erro']);
     const rawStatus = String(req.query.status || 'all').trim().toLowerCase();
     const statusFilter = allowed.has(rawStatus) ? rawStatus : 'all';
+    const perPage = 10;
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+
+    const [statusCounts, total] = await Promise.all([
+      AiMatters.countByStatusForUser(req.session.userId, { q }),
+      AiMatters.countByUserWithPub(req.session.userId, {
+        q,
+        status: statusFilter === 'all' ? null : statusFilter,
+      }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / perPage));
+    const safePage = Math.min(page, totalPages);
+    const offset = (safePage - 1) * perPage;
+
     const matters = await AiMatters.findByUserWithPub(req.session.userId, {
-      limit: 150,
+      limit: perPage,
+      offset,
       q,
+      status: statusFilter === 'all' ? null : statusFilter,
     });
+
     return res.render('minhas-materias', {
       title: 'Minhas matérias',
       matters,
       searchQuery: q,
       statusFilter,
+      statusCounts,
+      pagination: {
+        page: safePage,
+        perPage,
+        total,
+        totalPages,
+      },
     });
   } catch (err) {
     return next(err);

@@ -29,7 +29,7 @@ const AiMatters = {
   /**
    * Lista matérias com dados da publicação (views, link FB).
    */
-  findByUserWithPub(userId, { limit = 100, q = '' } = {}) {
+  findByUserWithPub(userId, { limit = 100, offset = 0, q = '', status = null } = {}) {
     let query = db(this.table)
       .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
       .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
@@ -45,7 +45,13 @@ const AiMatters = {
         'facebook_pages.page_name as page_name'
       )
       .orderBy('ai_matters.created_at', 'desc')
-      .limit(limit);
+      .limit(Math.max(1, Math.min(100, Number(limit) || 20)))
+      .offset(Math.max(0, Number(offset) || 0));
+
+    const st = String(status || '').trim().toLowerCase();
+    if (st && st !== 'all') {
+      query = query.andWhere('ai_matters.status', st);
+    }
 
     const term = String(q || '').trim();
     if (term) {
@@ -59,6 +65,64 @@ const AiMatters = {
     }
 
     return query;
+  },
+
+  async countByUserWithPub(userId, { q = '', status = null } = {}) {
+    let query = db(this.table)
+      .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
+      .where('ai_matters.user_id', userId);
+
+    const st = String(status || '').trim().toLowerCase();
+    if (st && st !== 'all') {
+      query = query.andWhere('ai_matters.status', st);
+    }
+
+    const term = String(q || '').trim();
+    if (term) {
+      const like = `%${term.replace(/[%_]/g, '')}%`;
+      query = query.andWhere(function whereQ() {
+        this.where('ai_matters.titulo', 'like', like)
+          .orWhere('ai_matters.materia', 'like', like)
+          .orWhere('ai_matters.fonte_titulo', 'like', like)
+          .orWhere('facebook_pages.page_name', 'like', like);
+      });
+    }
+
+    const row = await query.count({ total: '*' }).first();
+    return Number(row?.total) || 0;
+  },
+
+  async countByStatusForUser(userId, { q = '' } = {}) {
+    let query = db(this.table)
+      .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
+      .where('ai_matters.user_id', userId);
+
+    const term = String(q || '').trim();
+    if (term) {
+      const like = `%${term.replace(/[%_]/g, '')}%`;
+      query = query.andWhere(function whereQ() {
+        this.where('ai_matters.titulo', 'like', like)
+          .orWhere('ai_matters.materia', 'like', like)
+          .orWhere('ai_matters.fonte_titulo', 'like', like)
+          .orWhere('facebook_pages.page_name', 'like', like);
+      });
+    }
+
+    const rows = await query
+      .select('ai_matters.status')
+      .count('* as total')
+      .groupBy('ai_matters.status');
+
+    const out = {};
+    let all = 0;
+    for (const row of rows || []) {
+      const key = row.status || 'rascunho';
+      const n = Number(row.total) || 0;
+      out[key] = n;
+      all += n;
+    }
+    out.all = all;
+    return out;
   },
 
   create(data) {
