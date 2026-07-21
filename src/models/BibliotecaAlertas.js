@@ -21,28 +21,40 @@ function serializeKeywords(raw) {
   return parsed.length ? parsed.join(', ').slice(0, 800) : null;
 }
 
-/** Escapa metacaracteres de REGEXP do MySQL. */
-function escapeRegexp(value) {
-  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function escapeLike(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_');
+}
+
+function stripAccents(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 /**
- * Monta REGEXP de palavra/frase inteira (não pedaço dentro de outra palavra).
- * Evita: "fé" bater em "férias", "federal", "professor".
+ * Expressão SQL que "isola" palavras com espaços (sem REGEXP — compatível com MySQL 8 ICU).
+ * Assim "fé" não casa com "férias"/"federal".
+ * Usa CHAR(63) no lugar de '?' para não confundir bindings do Knex.
  */
-function keywordWordRegexp(keyword) {
-  const parts = String(keyword || '')
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(escapeRegexp);
-  if (!parts.length) return null;
-  // [[:<:]] / [[:>:]] = início/fim de palavra no MySQL
-  if (parts.length === 1) {
-    return `[[:<:]]${parts[0]}[[:>:]]`;
-  }
-  return `[[:<:]]${parts.join('[[:space:]]+')}[[:>:]]`;
+function paddedTextExpr(columnSql) {
+  return (
+    "CONCAT(' ', " +
+    "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(" +
+    `LOWER(COALESCE(${columnSql}, '')), ` +
+    "'.', ' '), ',', ' '), ':', ' '), ';', ' '), '!', ' '), CHAR(63), ' '), '\"', ' '), '''', ' '), '(', ' '), ')', ' '), " +
+    "' ')"
+  );
+}
+
+/** Variantes da palavra (com/sem acento) para LIKE com espaços laterais. */
+function keywordLikePatterns(keyword) {
+  const base = String(keyword || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (base.length < 2) return [];
+  const variants = new Set([base, stripAccents(base).toLowerCase()]);
+  return [...variants].map((v) => `% ${escapeLike(v)} %`);
 }
 
 const BibliotecaAlertas = {
@@ -66,18 +78,17 @@ const BibliotecaAlertas = {
 
     if (kws.length) {
       q.leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id');
+      const cols = ['a.titulo', 'a.resumo', 'p.titulo', 'p.resumo', 'f.nome'];
       q.andWhere(function matchKeywords() {
         kws.forEach((kw) => {
-          const pattern = keywordWordRegexp(kw);
-          if (!pattern) return;
-          this.orWhere(function matchOne() {
-            // REGEXP no MySQL com collation unicode trata acentos de forma flexível (fé≈fe),
-            // mas [[:<:]] impede match no meio de outra palavra (férias/federal).
-            this.whereRaw('LOWER(COALESCE(a.titulo, \'\')) REGEXP ?', [pattern])
-              .orWhereRaw('LOWER(COALESCE(a.resumo, \'\')) REGEXP ?', [pattern])
-              .orWhereRaw('LOWER(COALESCE(p.titulo, \'\')) REGEXP ?', [pattern])
-              .orWhereRaw('LOWER(COALESCE(p.resumo, \'\')) REGEXP ?', [pattern])
-              .orWhereRaw('LOWER(COALESCE(f.nome, \'\')) REGEXP ?', [pattern]);
+          const patterns = keywordLikePatterns(kw);
+          if (!patterns.length) return;
+          this.orWhere(function matchOneKeyword() {
+            patterns.forEach((pattern) => {
+              cols.forEach((col) => {
+                this.orWhereRaw(`${paddedTextExpr(col)} LIKE ?`, [pattern]);
+              });
+            });
           });
         });
       });
@@ -125,4 +136,4 @@ const BibliotecaAlertas = {
 module.exports = BibliotecaAlertas;
 module.exports.parseKeywords = parseKeywords;
 module.exports.serializeKeywords = serializeKeywords;
-module.exports.keywordWordRegexp = keywordWordRegexp;
+module.exports.keywordLikePatterns = keywordLikePatterns;
