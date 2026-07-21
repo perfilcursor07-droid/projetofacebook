@@ -16,7 +16,10 @@
   function setStatus(msg, isError) {
     if (!statusEl) return;
     statusEl.textContent = msg || '';
-    statusEl.className = 'mt-4 text-sm ' + (isError ? 'text-rose-300' : 'text-slate-400');
+    statusEl.className =
+      'mb-2 text-sm ' +
+      (msg ? '' : 'hidden ') +
+      (isError ? 'text-rose-300' : 'text-slate-400');
   }
 
   function syncDownloadArtLink(url) {
@@ -309,6 +312,96 @@
       if (btn) {
         btn.disabled = false;
         btn.textContent = original || 'Reescrever texto com informações incluídas';
+      }
+    }
+  });
+
+  document.getElementById('btn-enriquecer-fontes')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-enriquecer-fontes');
+    const box = document.getElementById('matter-fontes-enriquecimento');
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Buscando…';
+    }
+    setStatus('Buscando reportagens relacionadas e enriquecendo com fatos (sem plágio)…');
+    if (box) {
+      box.classList.remove('hidden');
+      box.textContent = 'Consultando Brave / fontes…';
+    }
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/enriquecer-fontes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titulo: tituloEl?.value || '',
+          materia: materiaEl?.value || '',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao enriquecer a matéria');
+
+      if (data.titulo && tituloEl) tituloEl.value = data.titulo;
+      if (data.materia && materiaEl) materiaEl.value = data.materia;
+
+      const tagsLine = document.getElementById('matter-hashtags-line');
+      const tagsWrap = document.getElementById('matter-hashtags-wrap');
+      if (Array.isArray(data.hashtags) && data.hashtags.length && tagsLine) {
+        tagsLine.textContent = data.hashtags
+          .map((h) => '#' + String(h).replace(/^#/, ''))
+          .join(' ');
+        tagsWrap?.classList.remove('hidden');
+        tagsLine.parentElement?.classList.remove('hidden');
+      }
+
+      if (data.imagemUrl && imgEl) {
+        imgEl.src = data.imagemUrl + (data.imagemUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        imgWrap?.classList.remove('hidden');
+      }
+      const reelVideo = document.getElementById('matter-reel-video');
+      if (data.videoUrl && reelVideo) {
+        reelVideo.src = data.videoUrl + (data.videoUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+        reelVideo.load();
+      }
+
+      if (box) {
+        const fontes = Array.isArray(data.fontes) ? data.fontes : [];
+        const fatos = Array.isArray(data.fatosUsados) ? data.fatosUsados : [];
+        const linhas = [];
+        if (fontes.length) {
+          linhas.push(
+            '<span class="font-semibold text-slate-300">Fontes consultadas:</span> ' +
+              fontes
+                .map((f) => {
+                  const nome = f.veiculo || 'Web';
+                  return f.url
+                    ? `<a class="text-sky-400 hover:text-sky-300" href="${f.url}" target="_blank" rel="noopener">${nome}</a>`
+                    : nome;
+                })
+                .join(' · ')
+          );
+        }
+        if (fatos.length) {
+          linhas.push(
+            '<span class="font-semibold text-slate-300">Fatos usados:</span> ' +
+              fatos.map((f) => String(f)).join(' · ')
+          );
+        }
+        box.innerHTML = linhas.join('<br/>') || 'Enriquecimento concluído.';
+        box.classList.remove('hidden');
+      }
+
+      setStatus(data.aviso || 'Matéria enriquecida com fatos de outras fontes ✓');
+    } catch (err) {
+      setStatus(err.message, true);
+      if (box) {
+        box.textContent = err.message;
+        box.classList.remove('hidden');
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original || 'Buscar e enriquecer';
       }
     }
   });

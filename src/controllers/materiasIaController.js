@@ -490,6 +490,9 @@ async function showLotePage(req, res, next) {
 async function listMinhasMaterias(req, res, next) {
   try {
     const q = String(req.query.q || req.query.busca || '').trim();
+    const allowed = new Set(['all', 'rascunho', 'pronto', 'agendado', 'publicado', 'erro']);
+    const rawStatus = String(req.query.status || 'all').trim().toLowerCase();
+    const statusFilter = allowed.has(rawStatus) ? rawStatus : 'all';
     const matters = await AiMatters.findByUserWithPub(req.session.userId, {
       limit: 150,
       q,
@@ -498,6 +501,7 @@ async function listMinhasMaterias(req, res, next) {
       title: 'Minhas matérias',
       matters,
       searchQuery: q,
+      statusFilter,
     });
   } catch (err) {
     return next(err);
@@ -1048,6 +1052,36 @@ async function reescreverComInfo(req, res, next) {
   }
 }
 
+/**
+ * Busca fontes relacionadas (Brave) e enriquecem a matéria com fatos — sem plágio.
+ */
+async function enriquecerFontes(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const result = await materiaIaService.enriquecerMateriaComWeb({
+      userId: req.session.userId,
+      matterId,
+      tituloAtual: req.body?.titulo,
+      materiaAtual: req.body?.materia,
+    });
+    return res.json({
+      ok: true,
+      titulo: result.titulo,
+      materia: result.materia,
+      hashtags: result.hashtags,
+      fatosUsados: result.fatosUsados,
+      fontes: result.fontes,
+      matter: result.matter,
+      imagemUrl: result.imagemUrl,
+      videoUrl: result.videoUrl,
+      aviso: result.aviso,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 module.exports = {
   pesquisar,
   emAlta,
@@ -1062,6 +1096,7 @@ module.exports = {
   atualizarMateria,
   sugerirTitulo,
   reescreverComInfo,
+  enriquecerFontes,
   buscarImagemFonte,
   sugerirImagens,
   aplicarImagemUrl,

@@ -1855,6 +1855,192 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
   }
 }
 
+/**
+ * Busca fontes relacionadas (Brave/Serper) e enriquecem a matéria com fatos novos,
+ * sem plágio — a IA só incorpora dados reescritos.
+ */
+async function enriquecerMateriaComWeb({ userId, matterId, tituloAtual = null, materiaAtual = null }) {
+  const deepseekService = require('./deepseekService');
+  deepseekService.assertDeepseek();
+
+  const matter = await AiMatters.findById(matterId);
+  if (!matter || Number(matter.user_id) !== Number(userId)) {
+    const err = new Error('Matéria não encontrada');
+    err.status = 404;
+    throw err;
+  }
+  if (matter.status === 'publicado') {
+    const err = new Error('Matéria já publicada. Gere uma nova se precisar enriquecer o texto.');
+    err.status = 400;
+    throw err;
+  }
+
+  const titulo = String(tituloAtual || matter.titulo || '').trim();
+  const materia = String(materiaAtual || matter.materia || '').trim();
+  if (!materia) {
+    const err = new Error('Não há texto na matéria para enriquecer.');
+    err.status = 400;
+    throw err;
+  }
+
+  const { coletarFontesComplementares } = require('./articleSource');
+  const { env } = require('../config/env');
+  if (!env.braveSearchApiKey && !env.serperApiKey) {
+    const err = new Error(
+      'Configure BRAVE_SEARCH_API_KEY (ou SERPER_API_KEY) no .env para buscar fontes relacionadas.'
+    );
+    err.status = 503;
+    throw err;
+  }
+
+  const corpoLimpo = materia
+    .replace(/\n*Fontes:[\s\S]*$/i, '')
+    .replace(/#[\wÀ-ÿ]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const queries = [
+    titulo.slice(0, 120),
+    `${titulo}`.split(/\s+/).slice(0, 8).join(' ') + ' notícia',
+  ].filter((q, i, arr) => q && q.length >= 12 && arr.indexOf(q) === i);
+
+  let fontes = [];
+  for (const q of queries.slice(0, 2)) {
+    try {
+      const mais = await coletarFontesComplementares({
+        titulo: q,
+        resumo: corpoLimpo.slice(0, 160),
+        linkExcluir: matter.fonte_url,
+        max: 4,
+      });
+      fontes = [...fontes, ...mais];
+    } catch (err) {
+      console.warn('[enriquecer] busca:', err.message);
+    }
+  }
+
+  const vistos = new Set();
+  fontes = fontes
+    .filter((f) => {
+      const k = String(f.url || f.titulo || '')
+        .toLowerCase()
+        .trim();
+      if (!k || vistos.has(k)) return false;
+      vistos.add(k);
+      return true;
+    })
+    .slice(0, 5);
+
+  if (!fontes.length) {
+    const err = new Error(
+      'Não encontramos outras reportagens úteis sobre este fato. Tente de novo ou cole infos manuais.'
+    );
+    err.status = 422;
+    throw err;
+  }
+
+  const blocoFatos = fontes
+    .map(
+      (f, i) =>
+        `Fonte ${i + 1} — ${f.veiculo || 'Web'}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo || ''}\nTrecho factual:\n${String(f.trecho || f.resumo || '').slice(0, 1800)}`
+    )
+    .join('\n\n---\n\n');
+
+  let hashtags = [];
+  try {
+    hashtags = Array.isArray(matter.hashtags)
+      ? matter.hashtags
+      : JSON.parse(matter.hashtags || '[]');
+  } catch {
+    hashtags = [];
+  }
+
+  const reescrito = await deepseekService.enriquecerMateriaComFatos({
+    titulo,
+    materia,
+    fatosFontes: blocoFatos,
+    hashtags,
+    fonteTitulo: matter.fonte_titulo,
+  });
+
+  const patch = {
+    titulo: reescrito.titulo,
+    materia: reescrito.materia,
+    titulo_ia: reescrito.titulo,
+    materia_ia: reescrito.materia,
+    hashtags: JSON.stringify(reescrito.hashtags || []),
+    error_message: null,
+  };
+  if (matter.status !== 'agendado') patch.status = 'rascunho';
+  await AiMatters.update(matterId, patch);
+
+  let updated = await AiMatters.findById(matterId);
+  let imagemUrl = updated.imagem_url || null;
+  let videoUrl = null;
+  let aviso = `Texto enriquecido com fatos de ${fontes.length} fonte(s) — sem copiar trechos ✓`;
+
+  const titleChanged =
+    String(reescrito.titulo || '').trim() !== String(matter.titulo || '').trim();
+
+  if (titleChanged && updated.tipo_publicacao === 'reel' && updated.video_clip_id) {
+    try {
+      const { applyCoverToClipNow } = require('./clipPostProcessService');
+      await applyCoverToClipNow({
+        clipId: updated.video_clip_id,
+        userId,
+        titulo: reescrito.titulo,
+        force: true,
+      });
+      updated = await AiMatters.findById(matterId);
+      if (updated.video_path) {
+        videoUrl = `/media/${String(updated.video_path).replace(/\\/g, '/')}`;
+      }
+      aviso += ' Capa do Reel atualizada.';
+    } catch (err) {
+      console.warn('[enriquecer] capa reel:', err.message);
+    }
+  } else if (titleChanged) {
+    const sourceUrl =
+      updated.imagem_fonte_url ||
+      (!updated.imagem_path && /^https?:\/\//i.test(String(updated.imagem_url || ''))
+        ? updated.imagem_url
+        : null);
+    if (sourceUrl) {
+      try {
+        const { composeMatterArtwork } = require('./matterArtworkService');
+        const artwork = await composeMatterArtwork({
+          userId,
+          matterId: updated.id,
+          sourceUrl,
+          title: reescrito.titulo,
+          force: true,
+        });
+        updated = artwork.matter || (await AiMatters.findById(matterId));
+        if (artwork.publicUrl) imagemUrl = artwork.publicUrl;
+        aviso += ' Arte regenerada.';
+      } catch (err) {
+        console.warn('[enriquecer] arte:', err.message);
+      }
+    }
+  }
+
+  return {
+    matter: updated,
+    titulo: reescrito.titulo,
+    materia: reescrito.materia,
+    hashtags: reescrito.hashtags,
+    fatosUsados: reescrito.fatosUsados || [],
+    fontes: fontes.map((f) => ({
+      veiculo: f.veiculo,
+      titulo: f.titulo,
+      url: f.url,
+    })),
+    imagemUrl,
+    videoUrl,
+    aviso,
+  };
+}
+
 module.exports = {
   pesquisarNichos,
   buscarEmAltaAgora,
@@ -1876,4 +2062,5 @@ module.exports = {
   agendarMateria,
   tickFilaJobs,
   resolvePage,
+  enriquecerMateriaComWeb,
 };

@@ -48,6 +48,19 @@ const Publications = {
       .groupBy('publications.status');
   },
 
+  countByDay(userId, days = 7) {
+    const d = Math.max(1, Math.min(90, Number(days) || 7));
+    return db(this.table)
+      .join('facebook_pages', 'publications.facebook_page_id', 'facebook_pages.id')
+      .join('facebook_accounts', 'facebook_pages.facebook_account_id', 'facebook_accounts.id')
+      .where('facebook_accounts.user_id', userId)
+      .where('publications.created_at', '>=', db.raw('DATE_SUB(CURDATE(), INTERVAL ? DAY)', [d - 1]))
+      .select(db.raw('DATE(publications.created_at) as dia'))
+      .count('* as total')
+      .groupByRaw('DATE(publications.created_at)')
+      .orderBy('dia', 'asc');
+  },
+
   create(data) {
     return db(this.table).insert(data);
   },

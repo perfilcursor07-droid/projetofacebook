@@ -46,6 +46,11 @@ const ART_MODELS = Object.freeze([
     name: 'Estilo Fatos',
     description: 'Foto full-bleed, logo da marca acima do título e tipografia grande no rodapé escuro.',
   }),
+  Object.freeze({
+    id: 'citacao_marcador',
+    name: 'Citação marcador',
+    description: 'Foto no topo, logo no divisor e citação com destaque amarelo no bloco preto — estilo viral.',
+  }),
 ]);
 
 const ART_MODEL_IDS = new Set(ART_MODELS.map((model) => model.id));

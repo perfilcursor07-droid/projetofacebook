@@ -1440,6 +1440,120 @@ Regras:
 }
 
 /**
+ * Enriquece a matéria com FATOS de outras fontes (Brave/web), sem plágio.
+ * Reescreve com as próprias palavras; só incorpora dados verificáveis das fontes.
+ */
+async function enriquecerMateriaComFatos({
+  titulo,
+  materia,
+  fatosFontes,
+  hashtags = [],
+  fonteTitulo = null,
+}) {
+  assertDeepseek();
+  const blocoFatos = String(fatosFontes || '').trim();
+  if (!blocoFatos) {
+    const err = new Error('Nenhum fato encontrado em outras fontes para enriquecer.');
+    err.status = 422;
+    throw err;
+  }
+  if (!String(materia || '').trim()) {
+    const err = new Error('Não há matéria para enriquecer.');
+    err.status = 400;
+    throw err;
+  }
+
+  const tagsHint = Array.isArray(hashtags) && hashtags.length
+    ? hashtags.map((h) => String(h).replace(/^#/, '')).slice(0, 6).join(', ')
+    : null;
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é redator de Páginas do Facebook (gospel/notícias).
+Sua tarefa: ENRIQUECER a matéria com FATOS adicionais de outras reportagens, SEM PLÁGIO.
+
+ANTI-PLÁGIO (obrigatório):
+- NÃO copie frases, parágrafos ou estrutura das fontes.
+- NÃO parafraseie frase a frase.
+- Extraia apenas FATOS: nomes, datas, locais, números, cargos, decisões, aspas atribuídas a alguém.
+- Reescreva 100% com as suas palavras, no tom da matéria atual.
+- Se um "fato" das fontes contradisser a matéria atual, ignore-o (não invente e não troque o fato central).
+- Se as fontes não trouxerem fato novo útil, mantenha a matéria quase igual (não invente).
+
+Regras de saída:
+- Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosUsados":["fato 1","fato 2"]}
+- Título: pode ajustar levemente (máx. 110 chars) se um fato novo fortalecer o gancho; senão mantenha próximo.
+- Matéria: português do Brasil, parágrafos curtos com \\n\\n, ideal 1700–2100 chars (sem hashtags).
+- Integre os fatos de forma natural no fluxo (não faça lista "segundo o site X").
+- Pode citar o veículo só se ajudar (ex.: "segundo o G1"), sem colar texto deles.
+- Preserve bloco "Fontes:" se já existir; se não houver, não invente lista longa de URLs.
+- 3 a 5 hashtags sem # no JSON.
+- fatosUsados: lista curta (2–6) dos fatos novos realmente incorporados (para auditoria).`,
+      },
+      {
+        role: 'user',
+        content: [
+          titulo ? `Título atual: ${titulo}` : null,
+          fonteTitulo ? `Fonte original da matéria: ${fonteTitulo}` : null,
+          tagsHint ? `Hashtags atuais: ${tagsHint}` : null,
+          `Matéria atual (base — preserve o fato central):\n${String(materia).slice(0, 4000)}`,
+          `FATOS / TRECHOS DE OUTRAS FONTES (use só o que for fato verificável; NÃO copie a prosa):\n${blocoFatos.slice(0, 7000)}`,
+          'Reescreva título + matéria enriquecidos, sem plágio.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+    { temperature: 0.7, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+
+  const novoTitulo = String(parsed.titulo || titulo || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  let novaMateria = String(parsed.materia || '')
+    .replace(/\r\n/g, '\n')
+    .trim();
+  if (!novaMateria) {
+    const err = new Error('A IA não devolveu o texto enriquecido. Tente de novo.');
+    err.status = 502;
+    throw err;
+  }
+  novaMateria = novaMateria
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .join('\n\n');
+
+  let novasHashtags = Array.isArray(parsed.hashtags)
+    ? parsed.hashtags.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean).slice(0, 6)
+    : [];
+  if (!novasHashtags.length && Array.isArray(hashtags)) {
+    novasHashtags = hashtags.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean).slice(0, 6);
+  }
+
+  const fatosUsados = Array.isArray(parsed.fatosUsados)
+    ? parsed.fatosUsados.map((f) => String(f || '').trim()).filter(Boolean).slice(0, 8)
+    : [];
+
+  return {
+    titulo: novoTitulo || String(titulo || '').trim(),
+    materia: novaMateria.slice(0, 4000),
+    hashtags: novasHashtags,
+    fatosUsados,
+  };
+}
+
+/**
  * Gera consultas de busca de imagem alinhadas à matéria (prioriza pessoa/fato específico).
  */
 async function sugerirConsultasImagem({ titulo, materia, fonteTitulo }) {
@@ -1564,6 +1678,7 @@ module.exports = {
   ranquearPostsViralFacebook,
   sugerirTituloMateria,
   reescreverMateriaComInfo,
+  enriquecerMateriaComFatos,
   sugerirConsultasImagem,
   identificarAutorImagem,
   TITULO_TOMES,

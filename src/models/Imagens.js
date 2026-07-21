@@ -32,6 +32,17 @@ const Imagens = {
       .count('* as total')
       .groupBy('status');
   },
+
+  countByDay(userId, days = 7) {
+    const d = Math.max(1, Math.min(90, Number(days) || 7));
+    return db(this.table)
+      .where({ user_id: userId })
+      .where('created_at', '>=', db.raw('DATE_SUB(CURDATE(), INTERVAL ? DAY)', [d - 1]))
+      .select(db.raw('DATE(created_at) as dia'))
+      .count('* as total')
+      .groupByRaw('DATE(created_at)')
+      .orderBy('dia', 'asc');
+  },
 };
 
 module.exports = Imagens;

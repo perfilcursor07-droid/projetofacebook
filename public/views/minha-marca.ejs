@@ -123,7 +123,7 @@
                 <span class="block overflow-hidden rounded-xl border-2 border-slate-600 bg-slate-950 transition peer-checked:border-emerald-400 peer-checked:ring-2 peer-checked:ring-emerald-400/25 hover:border-slate-400">
                   <span class="relative flex aspect-[4/5] flex-col overflow-hidden bg-gradient-to-br from-slate-600 via-slate-900 to-black p-2">
                     <span class="pointer-events-none absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black via-black/50 to-transparent"></span>
-                    <% if (model.id !== 'estilo_fatos') { %>
+                    <% if (model.id !== 'estilo_fatos' && model.id !== 'citacao_marcador') { %>
                       <span class="relative z-10 mx-auto mt-0.5 rounded bg-white/90 px-2 py-0.5 text-[8px] font-bold leading-none text-slate-900">MARCA</span>
                     <% } %>
                     <span class="relative z-10 mt-auto space-y-1">
@@ -177,6 +177,16 @@
                       <% } else if (model.id === 'estilo_fatos') { %>
                         <span class="mx-auto mb-1 block h-3 w-10 rounded bg-white/90"></span>
                         <span class="block pb-1 text-center text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA EM<br />DESTAQUE</span>
+                      <% } else if (model.id === 'citacao_marcador') { %>
+                        <span class="relative z-10 space-y-1 pb-1">
+                          <span class="mx-auto mb-0.5 flex items-center gap-1">
+                            <span class="h-px flex-1 bg-white/50"></span>
+                            <span class="h-2.5 w-2.5 rounded-sm bg-white/80"></span>
+                            <span class="h-px flex-1 bg-white/50"></span>
+                          </span>
+                          <span class="block text-left text-[8px] font-bold leading-tight text-white drop-shadow">Manchete da notícia:</span>
+                          <span class="inline-block bg-yellow-400 px-1 text-[8px] font-black leading-tight text-slate-950">'Citação em destaque'</span>
+                        </span>
                       <% } else { %>
                         <span class="block text-center text-[8px] font-bold tracking-wide text-white">ÚLTIMAS</span>
                         <span class="mx-auto block h-1 w-full rounded bg-gradient-to-r from-yellow-400 to-orange-400"></span>

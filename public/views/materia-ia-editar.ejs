@@ -8,11 +8,11 @@
     erro: 'Erro',
   };
   const statusClass = {
-    rascunho: 'bg-slate-800 text-slate-300',
-    pronto: 'bg-sky-500/15 text-sky-300',
-    agendado: 'bg-amber-500/15 text-amber-300',
-    publicado: 'bg-emerald-500/15 text-emerald-300',
-    erro: 'bg-rose-500/15 text-rose-300',
+    rascunho: 'bg-slate-700 text-slate-200',
+    pronto: 'bg-sky-500/20 text-sky-300',
+    agendado: 'bg-amber-500/20 text-amber-300',
+    publicado: 'bg-emerald-500/20 text-emerald-300',
+    erro: 'bg-rose-500/20 text-rose-300',
   };
   const st = matter.status || 'rascunho';
   const canEdit = st !== 'publicado';
@@ -25,59 +25,91 @@
     !isReel &&
     (Boolean(matter.imagem_fonte_url) ||
       (!matter.imagem_path && /^https?:\/\//i.test(String(imageUrl))));
+  const fonteUrl = String(matter.fonte_url || '').trim();
+  const fonteTitulo = String(matter.fonte_titulo || '').trim();
+  let fonteHost = '';
+  if (fonteUrl) {
+    try { fonteHost = new URL(fonteUrl).hostname.replace(/^www\./i, ''); } catch (_) {}
+  }
+  const hashtagsList = hashtags && hashtags.length
+    ? hashtags.map((h) => '#' + String(h).replace(/^#/, '')).join(' ')
+    : '';
 %>
 
-  <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
+  <main class="mx-auto max-w-9xl px-3 py-3 sm:px-5 sm:py-4">
     <%- include('partials/content-nav', { contentTab: 'matters' }) %>
 
-    <div class="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <a href="/minhas-materias" class="text-xs font-medium text-slate-500 hover:text-emerald-300">← Voltar para matérias salvas</a>
-        <h1 class="mt-2 text-2xl font-semibold text-white">Editar matéria</h1>
-        <p class="mt-1 text-sm text-slate-400">Revise o texto, salve as alterações e publique quando quiser.</p>
+    <% if (success) { %><div class="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"><%= success %></div><% } %>
+    <% if (error) { %><div class="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200"><%= error %></div><% } %>
+    <p id="matter-status" class="mb-2 hidden text-sm text-slate-400 empty:hidden"></p>
+
+    <!-- Barra estilo WP: voltar + status + ações -->
+    <div class="sticky top-0 z-20 -mx-3 mb-3 flex flex-wrap items-center gap-2 border-b border-slate-800 bg-slate-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 md:top-0">
+      <a href="/minhas-materias" class="text-xs text-slate-500 hover:text-emerald-300">← Matérias</a>
+      <span class="hidden text-slate-700 sm:inline">|</span>
+      <h1 class="text-sm font-semibold text-white">Editar post</h1>
+      <span class="rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+      <div class="ml-auto flex flex-wrap items-center gap-1.5">
+        <button type="button" id="btn-limpar-nova-materia"
+          class="rounded border border-slate-800 px-2.5 py-1.5 text-[11px] text-slate-400 hover:border-slate-500 hover:text-slate-200"
+          title="Começar outra matéria a partir de um novo link">
+          Novo
+        </button>
+        <% if (canEdit) { %>
+          <button type="button" id="btn-salvar"
+            class="rounded border border-slate-600 bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-slate-100 hover:bg-slate-700 sm:text-xs">
+            Salvar
+          </button>
+          <button type="button" id="btn-publicar"
+            class="rounded bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-slate-950 hover:bg-emerald-400 sm:text-xs"
+            <%= reelProcessing ? 'disabled' : '' %>>
+            <%= isReel ? 'Publicar Reel' : 'Publicar' %>
+          </button>
+        <% } else if (canRepublish) { %>
+          <button type="button" id="btn-publicar" data-republicar="1"
+            class="rounded bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold text-slate-950 hover:bg-emerald-400 sm:text-xs">
+            Republicar
+          </button>
+        <% } %>
       </div>
-      <span class="rounded-full px-3 py-1 text-xs font-medium <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
     </div>
 
-    <% if (success) { %><div class="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"><%= success %></div><% } %>
-    <% if (error) { %><div class="mt-5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"><%= error %></div><% } %>
-    <p id="matter-status" class="mt-4 text-sm text-slate-400"></p>
-
-    <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-        <!-- Nova matéria a partir do link (sem sair da tela) -->
-        <div id="matter-nova-link" class="hidden space-y-4">
+    <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
+      <!-- Coluna principal: documento -->
+      <div class="min-w-0 space-y-3">
+        <!-- Nova matéria a partir do link -->
+        <div id="matter-nova-link" class="hidden rounded-lg border border-slate-800 bg-slate-900 p-4 space-y-3">
           <div>
             <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">Nova matéria a partir do link</p>
-            <p class="mt-1 text-sm text-slate-400">Cole o próximo link. A matéria atual permanece salva — você só começa outra daqui.</p>
+            <p class="mt-1 text-xs text-slate-400">Cole o próximo link. A matéria atual permanece salva.</p>
           </div>
           <label class="block text-sm">
             <span class="text-slate-400">Link (foto do Facebook, notícia ou Reel)</span>
             <input id="matter-nova-link-url" type="url" inputmode="url"
               placeholder="https://…"
-              class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100 focus:border-emerald-500 focus:outline-none" />
+              class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
           </label>
-          <details class="rounded-xl border border-amber-500/25 bg-amber-500/5">
-            <summary class="cursor-pointer px-3 py-2.5 text-xs font-medium text-amber-100 hover:text-white">
+          <details class="rounded border border-amber-500/25 bg-amber-500/5">
+            <summary class="cursor-pointer px-3 py-2 text-xs font-medium text-amber-100 hover:text-white">
               Se o Facebook bloquear a leitura — cole a legenda aqui
             </summary>
-            <div class="space-y-3 border-t border-amber-500/20 px-3 py-3">
+            <div class="space-y-2 border-t border-amber-500/20 px-3 py-3">
               <textarea id="matter-nova-link-texto" rows="3" placeholder="Cole a legenda completa do post…"
-                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
+                class="w-full rounded border border-slate-800 bg-slate-900/50 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
               <input id="matter-nova-link-imagem" type="url" placeholder="URL da imagem (opcional)"
-                class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+                class="w-full rounded border border-slate-800 bg-slate-900/50 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
             </div>
           </details>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <label class="block text-sm">
+          <div class="grid gap-2 sm:grid-cols-2">
+            <label class="block text-xs">
               <span class="text-slate-400">Página do Facebook</span>
-              <select id="matter-nova-link-page" class="mia-page-select mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100">
+              <select id="matter-nova-link-page" class="mia-page-select mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-3 py-2 text-sm text-slate-100">
                 <option value="">Carregando…</option>
               </select>
             </label>
-            <label class="block text-sm">
+            <label class="block text-xs">
               <span class="text-slate-400">Tipo de publicação</span>
-              <select id="matter-nova-link-tipo" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-slate-100">
+              <select id="matter-nova-link-tipo" class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-3 py-2 text-sm text-slate-100">
                 <option value="auto" selected>Automático (detecta Reel)</option>
                 <option value="foto">Foto + legenda</option>
                 <option value="texto">Texto</option>
@@ -87,318 +119,330 @@
           </div>
           <div class="flex flex-wrap gap-2">
             <button type="button" id="btn-gerar-nova-link"
-              class="rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+              class="rounded bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400">
               Gerar a partir do link
             </button>
             <button type="button" id="btn-cancelar-nova-link"
-              class="rounded-lg border border-slate-600 px-4 py-2.5 text-sm text-slate-300 hover:border-slate-400 hover:text-white">
+              class="rounded border border-slate-600 px-3 py-2 text-xs text-slate-300 hover:border-slate-400">
               Voltar à matéria
             </button>
           </div>
-          <p id="matter-nova-link-status" class="text-sm text-slate-400"></p>
+          <p id="matter-nova-link-status" class="text-xs text-slate-400"></p>
         </div>
 
-        <div id="matter-edit-atual">
-        <label class="mt-0 block text-sm">
-          <span class="text-slate-400">Título</span>
-          <input id="matter-titulo" <%= canEdit ? '' : 'readonly' %> value="<%= matter.titulo || '' %>"
-            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base font-semibold text-white focus:border-emerald-500 focus:outline-none <%= canEdit ? '' : 'opacity-80' %>" />
-        </label>
-        <div class="mt-2 flex flex-wrap items-center gap-2">
+        <div id="matter-edit-atual" class="space-y-3">
+          <!-- Documento estilo WP -->
+          <article class="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40 shadow-sm">
+            <!-- Título grande (estilo WP) -->
+            <div class="border-b border-slate-800 px-4 pt-4 sm:px-6 sm:pt-5">
+              <input id="matter-titulo" <%= canEdit ? '' : 'readonly' %> value="<%= matter.titulo || '' %>"
+                placeholder="Adicionar título"
+                class="w-full border-0 bg-transparent text-xl font-semibold leading-snug text-white placeholder:text-slate-600 focus:outline-none focus:ring-0 sm:text-2xl <%= canEdit ? '' : 'opacity-80' %>" />
+              <% if (canEdit) { %>
+                <div class="mt-2 flex flex-wrap items-center gap-2 pb-3">
+                  <label class="flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <span>Tom</span>
+                    <select id="matter-titulo-tom" class="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 focus:border-emerald-500 focus:outline-none">
+                      <option value="natural" selected>Natural</option>
+                      <option value="polemico">Mais polêmico</option>
+                      <option value="direto">Direto</option>
+                      <option value="curiosidade">Curiosidade</option>
+                      <option value="emocional">Emocional</option>
+                      <option value="factual">Factual</option>
+                    </select>
+                  </label>
+                  <button type="button" id="btn-sugerir-titulo"
+                    class="rounded border border-slate-600 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-sky-300">
+                    Sugerir título
+                  </button>
+                </div>
+              <% } else { %>
+                <div class="pb-3"></div>
+              <% } %>
+            </div>
+
+            <!-- Corpo / legenda -->
+            <div class="px-4 py-3 sm:px-6 sm:py-4">
+              <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Conteúdo</span>
+                <div class="flex items-center gap-2">
+                  <span id="matter-char-count" class="text-[10px] tabular-nums text-slate-500">0</span>
+                  <button type="button" id="btn-copiar-legenda"
+                    class="rounded border border-slate-600 bg-slate-900/40 px-2 py-0.5 text-[10px] font-medium text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300">
+                    Copiar
+                  </button>
+                </div>
+              </div>
+              <textarea id="matter-materia" rows="16" <%= canEdit ? '' : 'readonly' %>
+                placeholder="Escreva a matéria / legenda…"
+                class="min-h-[320px] w-full resize-y border-0 bg-transparent text-[15px] leading-7 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-0 <%= canEdit ? '' : 'opacity-80' %>"><%= matter.materia || '' %></textarea>
+              <p class="mt-1 border-t border-slate-800/60 pt-2 text-[10px] leading-snug text-slate-500">Parágrafos com linha em branco · alvo ~1700–2100 caracteres</p>
+            </div>
+          </article>
+
+          <!-- Metabox: Fonte / crédito -->
+          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 open:shadow-sm" open>
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-transparent px-3 py-2.5 text-xs font-semibold text-slate-200 group-open:border-slate-800 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
+              <span>Fonte / crédito</span>
+              <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
+            </summary>
+            <div class="space-y-2 px-3 py-3">
+              <textarea id="matter-fonte-credito" rows="2" <%= canEdit ? '' : 'readonly' %>
+                placeholder="Ex.: Fonte: G1&#10;(Foto: Reprodução)"
+                class="w-full rounded border border-slate-800 bg-slate-900/50 px-3 py-2 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none <%= canEdit ? '' : 'opacity-80' %>"><%= matter.fonte_credito || '' %></textarea>
+              <p class="text-[10px] text-slate-500">Aparece depois do texto e antes das hashtags.</p>
+            </div>
+          </details>
+
           <% if (canEdit) { %>
-            <label class="flex items-center gap-1.5 text-xs text-slate-400">
-              <span class="shrink-0">Tom</span>
-              <select id="matter-titulo-tom" class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-violet-500 focus:outline-none">
-                <option value="natural" selected>Natural</option>
-                <option value="polemico">Mais polêmico</option>
-                <option value="direto">Direto</option>
-                <option value="curiosidade">Curiosidade</option>
-                <option value="emocional">Emocional</option>
-                <option value="factual">Factual</option>
+            <!-- Metabox: Ferramentas IA -->
+            <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40">
+              <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-transparent px-3 py-2.5 text-xs font-semibold text-slate-200 group-open:border-slate-800 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
+                <span>Ferramentas da IA</span>
+                <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
+              </summary>
+              <div class="space-y-3 border-t border-slate-800 px-3 py-3">
+                <div class="flex flex-wrap items-start justify-between gap-2 rounded border border-slate-800/80 bg-slate-900/50 p-2.5">
+                  <div class="min-w-0 flex-1">
+                    <p class="text-xs font-medium text-slate-200">Mais fatos na web</p>
+                    <p class="mt-0.5 text-[10px] text-slate-500">Busca reportagens (Brave) e acrescenta só fatos.</p>
+                  </div>
+                  <button type="button" id="btn-enriquecer-fontes"
+                    class="shrink-0 rounded border border-violet-500/40 bg-violet-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-violet-200 hover:bg-violet-500/20">
+                    Buscar e enriquecer
+                  </button>
+                </div>
+                <div id="matter-fontes-enriquecimento" class="hidden rounded border border-slate-800 bg-slate-900/50 px-2.5 py-2 text-[11px] text-slate-400"></div>
+
+                <div>
+                  <label class="block text-xs text-slate-400">
+                    Informações extras
+                    <textarea id="matter-info-extra" rows="3"
+                      placeholder="Cole fatos, nomes, números…"
+                      class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"></textarea>
+                  </label>
+                  <button type="button" id="btn-reescrever-info"
+                    class="mt-2 rounded border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/20">
+                    Reescrever com informações
+                  </button>
+                </div>
+              </div>
+            </details>
+          <% } %>
+
+          <!-- Metabox: Hashtags -->
+          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 <%= hashtagsList ? '' : 'hidden' %>" id="matter-hashtags-wrap" <%= hashtagsList ? 'open' : '' %>>
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-transparent px-3 py-2.5 text-xs font-semibold text-slate-200 group-open:border-slate-800 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
+              <span>Hashtags</span>
+              <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
+            </summary>
+            <div class="border-t border-slate-800 px-3 py-3">
+              <p id="matter-hashtags-line" class="text-sm leading-relaxed text-sky-300/90"><%= hashtagsList %></p>
+            </div>
+          </details>
+
+          <!-- Metabox: Fonte da matéria -->
+          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 <%= (fonteUrl || fonteTitulo) ? '' : 'hidden' %>" id="matter-fonte-wrap" <%= (fonteUrl || fonteTitulo) ? 'open' : '' %>>
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-transparent px-3 py-2.5 text-xs font-semibold text-slate-200 group-open:border-slate-800 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
+              <span>Link da fonte</span>
+              <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
+            </summary>
+            <div class="space-y-1 border-t border-slate-800 px-3 py-3">
+              <p class="text-sm text-slate-300" id="matter-fonte-titulo"><%= fonteTitulo %></p>
+              <% if (fonteUrl) { %>
+                <a id="matter-fonte-link" href="<%= fonteUrl %>" target="_blank" rel="noopener"
+                  class="inline-flex items-center gap-1 text-sm text-sky-400 hover:underline break-all">
+                  <%= fonteHost || 'Abrir fonte' %> →
+                </a>
+                <p class="text-[10px] text-slate-600 break-all"><%= fonteUrl %></p>
+              <% } else { %>
+                <a id="matter-fonte-link" href="#" target="_blank" rel="noopener"
+                  class="hidden inline-flex items-center gap-1 text-sm text-sky-400 hover:underline break-all"></a>
+              <% } %>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- Sidebar estilo WP -->
+      <aside class="space-y-3 lg:sticky lg:top-14 lg:self-start">
+        <!-- Publicar (metabox WP) -->
+        <div class="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+          <div class="border-b border-slate-800 px-3 py-2">
+            <p class="text-xs font-semibold text-slate-200">Publicar</p>
+          </div>
+          <div class="space-y-3 px-3 py-3">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-slate-500">Status</span>
+              <span class="font-medium text-slate-300"><%= statusLabels[st] || st %></span>
+            </div>
+
+            <label class="block text-[11px] text-slate-500">
+              Página
+              <select id="matter-page" class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-2.5 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                <option value="">Carregando…</option>
               </select>
             </label>
-            <button type="button" id="btn-sugerir-titulo"
-              class="rounded-lg border border-violet-500/40 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-200 hover:bg-violet-500/25">
-              Sugerir outro título
-            </button>
-          <% } %>
-          <button type="button" id="btn-limpar-nova-materia"
-            class="rounded-lg border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-emerald-500/50 hover:text-emerald-300"
-            title="Limpar e começar outra matéria a partir de um novo link, sem sair desta tela">
-            Limpar
-          </button>
-        </div>
-        <% if (canEdit) { %>
-          <p class="mt-1.5 text-[11px] leading-snug text-slate-500">A IA gera outra manchete no tom escolhido. Clique de novo até gostar — em Reels a capa no início do vídeo também é regenerada (modelo Minha marca).</p>
-        <% } %>
 
-        <label class="mt-4 block text-sm">
-          <span class="flex flex-wrap items-center justify-between gap-2">
-            <span class="text-slate-400">Matéria / legenda (Facebook)</span>
-            <button type="button" id="btn-copiar-legenda"
-              class="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300">
-              Copiar legenda
-            </button>
-          </span>
-          <textarea id="matter-materia" rows="14" <%= canEdit ? '' : 'readonly' %>
-            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm leading-relaxed text-slate-100 focus:border-emerald-500 focus:outline-none <%= canEdit ? '' : 'opacity-80' %>"><%= matter.materia || '' %></textarea>
-          <p class="mt-1.5 text-[11px] leading-snug text-slate-500">Separe parágrafos com linha em branco. Alvo da IA: ~1700–2100 caracteres (máximo útil Face/Insta). Fonte longa = condensar; fonte curta = completar.</p>
-        </label>
-
-        <label class="mt-4 block text-sm">
-          <span class="text-slate-400">Fonte / crédito (na legenda)</span>
-          <textarea id="matter-fonte-credito" rows="2" <%= canEdit ? '' : 'readonly' %>
-            placeholder="Ex.: Fonte: G1&#10;(Foto: Reprodução)"
-            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none <%= canEdit ? '' : 'opacity-80' %>"><%= matter.fonte_credito || '' %></textarea>
-          <p class="mt-1.5 text-[11px] leading-snug text-slate-500">Aparece no post depois do texto e antes das hashtags. Nas matérias novas a IA já preenche com o veículo e “(Foto: Reprodução)”.</p>
-        </label>
-
-        <% if (canEdit) { %>
-          <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-            <label class="block text-sm">
-              <span class="text-slate-400">Informações extras (opcional)</span>
-              <textarea id="matter-info-extra" rows="4"
-                placeholder="Cole fatos, nomes, números ou contexto que faltam no texto…"
-                class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"></textarea>
+            <label class="block text-[11px] text-slate-500">
+              Tipo
+              <select id="matter-tipo" class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-2.5 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none" <%= isReel ? 'disabled' : '' %>>
+                <% if (isReel) { %>
+                  <option value="reel" selected>Reel (vídeo)</option>
+                <% } else { %>
+                  <option value="foto" <%= matter.tipo_publicacao !== 'texto' ? 'selected' : '' %>>Foto + legenda</option>
+                  <option value="texto" <%= matter.tipo_publicacao === 'texto' ? 'selected' : '' %>>Texto</option>
+                <% } %>
+              </select>
             </label>
-            <button type="button" id="btn-reescrever-info"
-              class="mt-2.5 rounded-lg border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/25">
-              Reescrever texto com informações incluídas
-            </button>
-            <p class="mt-1.5 text-[11px] leading-snug text-slate-500">A IA reforça a matéria com o que você colou, sem inventar fora disso.</p>
-          </div>
-        <% } %>
 
-        <% if (hashtags && hashtags.length) { %>
-          <div class="mt-4">
-            <p class="text-xs uppercase tracking-wide text-slate-500">Hashtags sugeridas</p>
-            <p id="matter-hashtags-line" class="mt-1.5 text-sm text-slate-400"><%= hashtags.map((h) => '#' + String(h).replace(/^#/, '')).join(' ') %></p>
-          </div>
-        <% } else { %>
-          <div class="mt-4 hidden" id="matter-hashtags-wrap">
-            <p class="text-xs uppercase tracking-wide text-slate-500">Hashtags sugeridas</p>
-            <p id="matter-hashtags-line" class="mt-1.5 text-sm text-slate-400"></p>
-          </div>
-        <% } %>
-
-        <%
-          const fonteUrl = String(matter.fonte_url || '').trim();
-          const fonteTitulo = String(matter.fonte_titulo || '').trim();
-          let fonteHost = '';
-          if (fonteUrl) {
-            try { fonteHost = new URL(fonteUrl).hostname.replace(/^www\./i, ''); } catch (_) {}
-          }
-        %>
-        <% if (fonteUrl || fonteTitulo) { %>
-          <div class="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-3" id="matter-fonte-wrap">
-            <p class="text-xs uppercase tracking-wide text-slate-500">Fonte da matéria</p>
-            <% if (fonteTitulo) { %>
-              <p class="mt-1.5 text-sm text-slate-300" id="matter-fonte-titulo"><%= fonteTitulo %></p>
-            <% } %>
-            <% if (fonteUrl) { %>
-              <a id="matter-fonte-link" href="<%= fonteUrl %>" target="_blank" rel="noopener"
-                class="mt-1 inline-flex items-center gap-1 text-sm text-sky-400 hover:text-sky-300 break-all">
-                <%= fonteHost || 'Abrir fonte' %> →
-              </a>
-              <p class="mt-1 text-[11px] text-slate-600 break-all"><%= fonteUrl %></p>
-            <% } else { %>
-              <p class="mt-1.5 text-sm text-slate-500">Sem link da fonte salvo nesta matéria.</p>
-            <% } %>
-          </div>
-        <% } else { %>
-          <div class="mt-4 hidden rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-3" id="matter-fonte-wrap">
-            <p class="text-xs uppercase tracking-wide text-slate-500">Fonte da matéria</p>
-            <p class="mt-1.5 text-sm text-slate-300" id="matter-fonte-titulo"></p>
-            <a id="matter-fonte-link" href="#" target="_blank" rel="noopener"
-              class="mt-1 hidden inline-flex items-center gap-1 text-sm text-sky-400 hover:text-sky-300 break-all"></a>
-          </div>
-        <% } %>
-
-        <% if (canEdit) { %>
-          <div class="mt-5 flex flex-wrap gap-2">
-            <button type="button" id="btn-salvar" class="rounded-lg border border-emerald-500/50 bg-emerald-500/15 px-4 py-2.5 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/25">Salvar alterações</button>
-          </div>
-        <% } %>
-        </div><!-- /matter-edit-atual -->
-      </section>
-
-      <aside class="space-y-4">
-        <% if (isReel) { %>
-          <div id="matter-reel-wrap" class="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <span class="text-xs font-semibold uppercase tracking-wide text-violet-300">Reel</span>
-              <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">9:16 · capa no início</span>
-            </div>
-            <% if (videoUrl) { %>
-              <video id="matter-reel-video" class="block w-full rounded-xl border border-slate-700 bg-black" controls playsinline
-                src="<%= videoUrl %>?t=<%= Date.now() %>" poster="<%= imageUrl || '' %>"></video>
-            <% } else { %>
-              <div id="matter-reel-placeholder" class="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-700 bg-slate-950 px-4 py-8 text-center">
-                <span class="inline-block h-8 w-8 animate-spin rounded-full border-2 border-violet-400/30 border-t-violet-300"></span>
-                <p class="text-sm text-slate-300">Processando o Reel…</p>
-                <p class="text-[11px] text-slate-500">Baixando · transcrevendo · legenda · capa Minha marca</p>
+            <% if (canEdit) { %>
+              <div class="flex flex-col gap-1.5 border-t border-slate-800 pt-3">
+                <button type="button" class="wp-btn-salvar-dup rounded border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700"
+                  onclick="document.getElementById('btn-salvar')?.click()">
+                  Salvar rascunho
+                </button>
+                <p class="text-[10px] leading-snug text-slate-500">Use <strong class="font-medium text-slate-400">Publicar</strong> na barra superior.</p>
               </div>
-            <% } %>
-            <% if (matter.error_message) { %>
-              <p class="mt-2 text-xs text-amber-200"><%= matter.error_message %></p>
+
+              <div class="border-t border-slate-800 pt-3">
+                <label class="block text-[11px] text-slate-500">Agendar (Araguaína −03)
+                  <input id="matter-schedule" type="datetime-local" class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-2 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none" />
+                </label>
+                <button type="button" id="btn-agendar" class="mt-2 w-full rounded border border-slate-600 px-3 py-1.5 text-[11px] text-slate-300 hover:border-slate-400">
+                  Agendar
+                </button>
+              </div>
+
+              <button type="button" id="btn-variacao-tema"
+                class="w-full rounded border border-violet-500/30 px-3 py-2 text-[11px] font-medium text-violet-200 hover:bg-violet-500/10"
+                <%= reelProcessing ? 'disabled' : '' %>>
+                Nova matéria neste tema
+              </button>
+            <% } else if (canRepublish) { %>
+              <% if (matter.published_at) { %>
+                <p class="text-[10px] text-slate-500">Publicada em <%= new Date(matter.published_at).toLocaleString('pt-BR') %></p>
+              <% } %>
+              <p class="text-[10px] leading-snug text-slate-500">Republicar cria um novo post (não edita o antigo).</p>
+              <button type="button" id="btn-variacao-tema"
+                class="w-full rounded border border-violet-500/30 px-3 py-2 text-[11px] font-medium text-violet-200 hover:bg-violet-500/10">
+                Nova matéria neste tema
+              </button>
+              <button type="button" id="btn-matter-views"
+                class="w-full rounded border border-slate-800 px-3 py-1.5 text-[11px] text-slate-400 hover:border-sky-500/40 hover:text-sky-300">
+                Atualizar views
+              </button>
+            <% } else if (matter.published_at) { %>
+              <p class="text-[10px] text-slate-500">Publicada em <%= new Date(matter.published_at).toLocaleString('pt-BR') %></p>
+              <button type="button" id="btn-variacao-tema"
+                class="w-full rounded border border-violet-500/30 px-3 py-2 text-[11px] font-medium text-violet-200 hover:bg-violet-500/10">
+                Nova matéria neste tema
+              </button>
+              <button type="button" id="btn-matter-views"
+                class="w-full rounded border border-slate-800 px-3 py-1.5 text-[11px] text-slate-400 hover:border-sky-500/40 hover:text-sky-300">
+                Atualizar views
+              </button>
             <% } %>
           </div>
+        </div>
+
+        <!-- Imagem destacada / Reel -->
+        <% if (isReel) { %>
+          <div id="matter-reel-wrap" class="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+            <div class="flex items-center justify-between border-b border-slate-800 px-3 py-2">
+              <p class="text-xs font-semibold text-slate-200">Reel</p>
+              <span class="text-[10px] text-slate-500">9:16</span>
+            </div>
+            <div class="p-2">
+              <% if (videoUrl) { %>
+                <video id="matter-reel-video" class="block w-full rounded border border-slate-800 bg-black" controls playsinline
+                  src="<%= videoUrl %>?t=<%= Date.now() %>" poster="<%= imageUrl || '' %>"></video>
+              <% } else { %>
+                <div id="matter-reel-placeholder" class="flex min-h-[220px] flex-col items-center justify-center gap-2 rounded border border-dashed border-slate-800 bg-slate-900/50 px-3 py-6 text-center">
+                  <span class="inline-block h-6 w-6 animate-spin rounded-full border-2 border-violet-400/30 border-t-violet-300"></span>
+                  <p class="text-xs text-slate-300">Processando o Reel…</p>
+                </div>
+              <% } %>
+              <% if (matter.error_message) { %>
+                <p class="mt-2 text-[11px] text-amber-200"><%= matter.error_message %></p>
+              <% } %>
+            </div>
+          </div>
         <% } else { %>
-          <div id="matter-img-wrap" class="<%= imageUrl ? '' : 'hidden' %> rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <span class="text-xs font-semibold uppercase tracking-wide text-emerald-300">Arte</span>
+          <div id="matter-img-wrap" class="<%= imageUrl ? '' : 'hidden' %> overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+            <div class="flex items-center justify-between border-b border-slate-800 px-3 py-2">
+              <p class="text-xs font-semibold text-slate-200">Imagem destacada</p>
               <div class="flex items-center gap-2">
                 <a id="btn-baixar-arte" href="<%= imageUrl || '#' %>" download="arte-materia-<%= matter.id %>.jpg"
-                  class="<%= imageUrl ? '' : 'hidden' %> rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300">
-                  Baixar imagem
-                </a>
-                <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">1080 × 1350 · 4:5</span>
+                  class="<%= imageUrl ? '' : 'hidden' %> text-[10px] text-sky-400 hover:underline">Baixar</a>
+                <span class="text-[10px] text-slate-500">4:5</span>
               </div>
             </div>
-            <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="block h-auto w-full rounded-xl border border-slate-700 bg-slate-950 object-contain" />
-          </div>
-        <% } %>
-
-        <% if (canEdit && !isReel) { %>
-          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Outras sugestões</p>
-            <div id="matter-img-suggest-loading" class="mt-2 hidden items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2">
-              <span class="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-amber-300/30 border-t-amber-300"></span>
-              <p class="text-xs font-medium text-amber-100">Aguarde, alterando a arte…</p>
-            </div>
-            <p id="matter-img-suggest-meta" class="mt-1 line-clamp-2 text-[11px] text-slate-500">Buscando fotos relacionadas…</p>
-            <div id="matter-img-suggest-strip" class="mt-2 flex max-h-[7.5rem] flex-wrap gap-1.5 overflow-y-auto">
-              <div class="h-16 w-12 shrink-0 animate-pulse rounded-md bg-slate-800" style="width:48px;height:64px"></div>
-              <div class="h-16 w-12 shrink-0 animate-pulse rounded-md bg-slate-800" style="width:48px;height:64px"></div>
-              <div class="h-16 w-12 shrink-0 animate-pulse rounded-md bg-slate-800" style="width:48px;height:64px"></div>
-              <div class="h-16 w-12 shrink-0 animate-pulse rounded-md bg-slate-800" style="width:48px;height:64px"></div>
-              <div class="h-16 w-12 shrink-0 animate-pulse rounded-md bg-slate-800" style="width:48px;height:64px"></div>
-              <div class="h-16 w-12 shrink-0 animate-pulse rounded-md bg-slate-800" style="width:48px;height:64px"></div>
+            <div class="p-2">
+              <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="block h-auto w-full rounded border border-slate-800 bg-slate-900/50 object-contain" />
             </div>
           </div>
         <% } %>
 
         <% if (canEdit && !isReel) { %>
-          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Trocar imagem</p>
-            <p class="mt-2 text-xs leading-relaxed text-slate-400">Escolha uma foto. Depois de confirmar, a identidade visual configurada em <a href="/minha-marca" class="text-emerald-300 hover:underline">Minha marca</a> será aplicada automaticamente.</p>
-
-            <% if (canReloadBrand) { %>
-              <div class="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-3">
-                <p class="text-xs font-semibold text-emerald-200">Aplicar ou atualizar Minha marca</p>
-                <p class="mt-1 text-xs leading-relaxed text-slate-400">Gera a arte 4:5 com título, cores e logo configurados em Minha marca, usando a foto atual.</p>
-                <button type="button" id="btn-recarregar-marca" class="mt-2 w-full rounded-lg border border-emerald-500/50 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/15">↻ Aplicar modelo da minha marca</button>
+          <div class="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+            <div class="border-b border-slate-800 px-3 py-2">
+              <p class="text-xs font-semibold text-slate-200">Trocar imagem</p>
+            </div>
+            <div class="space-y-2.5 px-3 py-3">
+              <div id="matter-img-suggest-loading" class="hidden items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5">
+                <span class="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-300/30 border-t-amber-300"></span>
+                <p class="text-[11px] text-amber-100">Alterando a arte…</p>
               </div>
-            <% } else { %>
-              <p class="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200">Para aplicar sua marca, escolha uma imagem abaixo.</p>
-              <% if (matter.fonte_url) { %>
-                <button type="button" id="btn-buscar-imagem-fonte"
-                  class="mt-2 w-full rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/20">
-                  Buscar imagem da fonte
+              <p id="matter-img-suggest-meta" class="line-clamp-2 text-[10px] text-slate-500">Sugestões</p>
+              <div id="matter-img-suggest-strip" class="flex max-h-[6.5rem] flex-wrap gap-1 overflow-y-auto">
+                <div class="h-14 w-10 shrink-0 animate-pulse rounded bg-slate-800"></div>
+                <div class="h-14 w-10 shrink-0 animate-pulse rounded bg-slate-800"></div>
+                <div class="h-14 w-10 shrink-0 animate-pulse rounded bg-slate-800"></div>
+                <div class="h-14 w-10 shrink-0 animate-pulse rounded bg-slate-800"></div>
+              </div>
+
+              <% if (canReloadBrand) { %>
+                <button type="button" id="btn-recarregar-marca" class="w-full rounded border border-emerald-500/40 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/10">
+                  ↻ Aplicar Minha marca
                 </button>
+              <% } else { %>
+                <p class="rounded border border-amber-500/20 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-200">Escolha uma imagem para aplicar a marca.</p>
+                <% if (matter.fonte_url) { %>
+                  <button type="button" id="btn-buscar-imagem-fonte"
+                    class="w-full rounded border border-sky-500/40 px-2.5 py-1.5 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/10">
+                    Buscar imagem da fonte
+                  </button>
+                <% } %>
               <% } %>
-            <% } %>
 
-            <div class="mt-3 rounded-lg border border-violet-500/25 bg-violet-500/10 p-3">
-              <p class="text-xs font-semibold text-violet-200">Sugestões da IA</p>
-              <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                A primeira miniatura é a foto do post/fonte. As outras são sugestões — clique para trocar a arte.
-              </p>
               <button type="button" id="btn-sugerir-imagens"
-                class="mt-2 w-full rounded-lg border border-violet-500/50 px-3 py-2 text-xs font-semibold text-violet-200 hover:bg-violet-500/15">
+                class="w-full rounded border border-violet-500/40 px-2.5 py-1.5 text-[11px] font-semibold text-violet-200 hover:bg-violet-500/10">
                 Buscar novas sugestões
               </button>
-            </div>
 
-            <label class="mt-3 block cursor-pointer rounded-lg border border-dashed border-slate-600 px-3 py-2.5 text-center text-sm font-medium text-slate-300 hover:border-emerald-500 hover:text-emerald-200">
-              Escolher outra imagem
-              <input id="matter-image-input" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" />
-            </label>
+              <label class="block cursor-pointer rounded border border-dashed border-slate-600 px-2.5 py-2 text-center text-[11px] font-medium text-slate-300 hover:border-emerald-500 hover:text-emerald-200">
+                Enviar imagem
+                <input id="matter-image-input" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" />
+              </label>
 
-            <div id="matter-image-preview-wrap" class="mt-3 hidden">
-              <img id="matter-image-preview" src="" alt="Pré-visualização da imagem escolhida" class="block max-h-72 w-full rounded-lg border border-slate-700 bg-slate-950 object-contain" />
-              <p class="mt-2 text-xs text-slate-500">Esta é a foto original. Confirme para gerar a arte com título e marca.</p>
-              <div class="mt-3 flex gap-2">
-                <button type="button" id="btn-confirmar-imagem" class="flex-1 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400">Sim, usar esta imagem</button>
-                <button type="button" id="btn-cancelar-imagem" class="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 hover:border-slate-400">Cancelar</button>
+              <div id="matter-image-preview-wrap" class="hidden">
+                <img id="matter-image-preview" src="" alt="Pré-visualização" class="block max-h-48 w-full rounded border border-slate-800 bg-slate-900/50 object-contain" />
+                <div class="mt-2 flex gap-1.5">
+                  <button type="button" id="btn-confirmar-imagem" class="flex-1 rounded bg-emerald-500 px-2 py-1.5 text-[11px] font-semibold text-slate-950 hover:bg-emerald-400">Usar esta</button>
+                  <button type="button" id="btn-cancelar-imagem" class="rounded border border-slate-600 px-2 py-1.5 text-[11px] text-slate-300">Cancelar</button>
+                </div>
               </div>
             </div>
           </div>
         <% } %>
-
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Publicação</p>
-
-          <label class="mt-3 block text-sm">
-            <span class="text-slate-400">Página do Facebook</span>
-            <select id="matter-page" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white">
-              <option value="">Carregando…</option>
-            </select>
-          </label>
-
-          <label class="mt-3 block text-sm">
-            <span class="text-slate-400">Tipo</span>
-            <select id="matter-tipo" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" <%= isReel ? 'disabled' : '' %>>
-              <% if (isReel) { %>
-                <option value="reel" selected>Reel (vídeo)</option>
-              <% } else { %>
-                <option value="foto" <%= matter.tipo_publicacao !== 'texto' ? 'selected' : '' %>>Foto + legenda</option>
-                <option value="texto" <%= matter.tipo_publicacao === 'texto' ? 'selected' : '' %>>Texto</option>
-              <% } %>
-            </select>
-          </label>
-
-          <% if (canEdit) { %>
-            <button type="button" id="btn-publicar" class="mt-4 w-full rounded-lg bg-[#1877F2] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#166FE5]" <%= reelProcessing ? 'disabled' : '' %>>
-              <%= isReel ? 'Publicar como Reels' : 'Publicar na Página' %>
-            </button>
-
-            <button type="button" id="btn-variacao-tema"
-              class="mt-2 w-full rounded-lg border border-violet-500/40 px-4 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-500/15"
-              <%= reelProcessing ? 'disabled' : '' %>>
-              Nova matéria neste tema
-            </button>
-            <p class="mt-1.5 text-[11px] leading-snug text-slate-500">Busca infos novas (Brave) e reescreve sem plagiar — ideal quando o post viraliza.</p>
-
-            <div class="mt-4 border-t border-slate-800 pt-4">
-              <label class="block text-xs text-slate-400">Agendar (horário de Araguaína −03)
-                <input id="matter-schedule" type="datetime-local" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-slate-200" />
-              </label>
-              <button type="button" id="btn-agendar" class="mt-2 w-full rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 hover:border-slate-400">Agendar publicação</button>
-            </div>
-          <% } else if (canRepublish) { %>
-            <% if (matter.published_at) { %>
-              <p class="mt-3 text-xs text-slate-500">Publicada em <%= new Date(matter.published_at).toLocaleString('pt-BR') %></p>
-            <% } %>
-            <button type="button" id="btn-publicar" data-republicar="1" class="mt-4 w-full rounded-lg bg-[#1877F2] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#166FE5]">Republicar na Página</button>
-            <p class="mt-1.5 text-[11px] leading-snug text-slate-500">Cria um novo post no Facebook com o texto e a arte atuais (não edita o post antigo).</p>
-            <button type="button" id="btn-variacao-tema"
-              class="mt-3 w-full rounded-lg border border-violet-500/40 px-4 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-500/15">
-              Nova matéria neste tema
-            </button>
-            <button type="button" id="btn-matter-views"
-              class="mt-2 w-full rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-400 hover:border-sky-500/40 hover:text-sky-300">
-              Atualizar visualizações no Facebook
-            </button>
-          <% } else if (matter.published_at) { %>
-            <p class="mt-3 text-xs text-slate-500">Publicada em <%= new Date(matter.published_at).toLocaleString('pt-BR') %></p>
-            <button type="button" id="btn-variacao-tema"
-              class="mt-3 w-full rounded-lg border border-violet-500/40 px-4 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-500/15">
-              Nova matéria neste tema
-            </button>
-            <button type="button" id="btn-matter-views"
-              class="mt-2 w-full rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-400 hover:border-sky-500/40 hover:text-sky-300">
-              Atualizar visualizações no Facebook
-            </button>
-          <% } %>
-        </div>
       </aside>
     </div>
   </main>
 
   <div id="publish-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="publish-modal-title">
-    <div class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-8 text-center shadow-xl shadow-black/40">
-      <div id="publish-modal-spin" class="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-[#1877F2]/30 border-t-[#1877F2]"></div>
+    <div class="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-8 text-center shadow-xl shadow-black/40">
+      <div id="publish-modal-spin" class="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400"></div>
       <div id="publish-modal-ok" class="mx-auto hidden flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-2xl text-emerald-300">✓</div>
       <h2 id="publish-modal-title" class="mt-5 text-lg font-semibold text-white">Publicando…</h2>
       <p id="publish-modal-text" class="mt-2 text-sm leading-relaxed text-slate-400">Enviando a matéria para a Página do Facebook.</p>
@@ -417,6 +461,19 @@
       videoUrl: <%- JSON.stringify(videoUrl || null) %>,
       listUrl: '/minhas-materias',
     };
+    (function () {
+      const ta = document.getElementById('matter-materia');
+      const counter = document.getElementById('matter-char-count');
+      if (!ta || !counter) return;
+      function update() {
+        const n = (ta.value || '').length;
+        counter.textContent = n.toLocaleString('pt-BR') + ' caracteres';
+        counter.classList.toggle('text-amber-400', n > 0 && (n < 1200 || n > 2200));
+        counter.classList.toggle('text-emerald-400', n >= 1700 && n <= 2100);
+      }
+      ta.addEventListener('input', update);
+      update();
+    })();
   </script>
   <script src="/js/materia-ia-editar.js"></script>
 <%- include('partials/app-end') %>

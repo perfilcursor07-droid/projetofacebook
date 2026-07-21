@@ -30,6 +30,7 @@ router.post('/matters/:id/views', controller.atualizarViews);
 router.get('/matters/:id/views', controller.atualizarViews);
 router.post('/matters/:id/sugerir-titulo', controller.sugerirTitulo);
 router.post('/matters/:id/reescrever-com-info', controller.reescreverComInfo);
+router.post('/matters/:id/enriquecer-fontes', controller.enriquecerFontes);
 router.post('/matters/:id/buscar-imagem-fonte', controller.buscarImagemFonte);
 router.post('/matters/:id/sugerir-imagens', controller.sugerirImagens);
 router.post('/matters/:id/aplicar-imagem-url', controller.aplicarImagemUrl);

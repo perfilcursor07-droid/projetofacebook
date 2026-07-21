@@ -119,9 +119,117 @@ function wrapTitle(value, maxChars = 27, maxLines = 5) {
   return limited;
 }
 
-function renderTitleLines(lines, { x, y, lineHeight, anchor = 'middle' }) {
+/** Quebra de linha sem forçar maiúsculas (modelo citação). */
+function wrapTextLines(value, maxChars = 28, maxLines = 5) {
+  const words = String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxChars || !current) current = candidate;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  const limited = lines.slice(0, maxLines);
+  if (lines.length > maxLines) {
+    limited[maxLines - 1] = `${limited[maxLines - 1].replace(/[.,;:!?]?$/, '')}…`;
+  }
+  return limited;
+}
+
+/**
+ * Separa manchete branca + trecho final com marcador (cor primária).
+ * - Com aspas: usa a citação no marcador.
+ * - Sem aspas: título da matéria inteiro; só as últimas palavras vão no marcador (sem inventar ":").
+ */
+function splitHeadlinePunchline(title) {
+  const raw = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return { headline: '', punchline: '' };
+
+  // Aspas no final: Manchete "citação"
+  const quoted = raw.match(/^(.*?)[\s]*[:\-–—]?\s*[“"']([^“"'”]{8,})[”"']\s*$/);
+  if (quoted) {
+    let headline = quoted[1].trim().replace(/[:\-–—]\s*$/, '').trim();
+    if (headline && !/[:：]$/.test(headline)) headline = `${headline}:`;
+    const punch = quoted[2].trim();
+    const punchline = /^['"“]/.test(punch) ? punch : `'${punch}'`;
+    return { headline: headline || raw, punchline };
+  }
+
+  const midQuote = raw.match(/^(.+?)\s+[“"']([^“"'”]{8,})[”"']\s*$/);
+  if (midQuote && midQuote[1].trim().length >= 12) {
+    const punch = midQuote[2].trim();
+    return {
+      headline: midQuote[1].trim(),
+      punchline: /^['"“]/.test(punch) ? punch : `'${punch}'`,
+    };
+  }
+
+  // Sem aspas: mantém o texto da matéria; destaca o final no marcador
+  const words = raw.split(' ').filter(Boolean);
+  if (words.length >= 5) {
+    // ~últimas 35–40% das palavras (mín. 2, máx. 6)
+    const punchCount = Math.min(6, Math.max(2, Math.round(words.length * 0.38)));
+    const cut = words.length - punchCount;
+    if (cut >= 2) {
+      return {
+        headline: words.slice(0, cut).join(' '),
+        punchline: words.slice(cut).join(' '),
+      };
+    }
+  }
+
+  return { headline: raw, punchline: '' };
+}
+
+/** Estimativa de largura de texto bold/condensado (px) — folga para não cortar o marcador. */
+function estimateTextWidth(text, fontSize) {
+  const s = String(text || '');
+  // Condensed bold costuma ficar perto de 0.58–0.65em; usamos folga alta.
+  let units = 0;
+  for (const ch of s) {
+    if (ch === ' ') units += 0.32;
+    else if (/[ilI|.,:;!'`]/.test(ch)) units += 0.38;
+    else if (/[mwMW@%]/.test(ch)) units += 0.85;
+    else units += 0.68;
+  }
+  return Math.ceil(units * fontSize);
+}
+
+function renderHighlightedLines(lines, {
+  x,
+  y,
+  lineHeight,
+  fontSize,
+  padX,
+  padY,
+  bg,
+  textFill = '#111111',
+  fontFamily,
+  maxWidth,
+  anchor = 'start',
+}) {
+  return lines.map((line, index) => {
+    const top = y + index * lineHeight;
+    const contentW = estimateTextWidth(line, fontSize);
+    const textW = Math.min(maxWidth, contentW + padX * 2 + Math.round(fontSize * 0.2));
+    const rectH = Math.round(fontSize * 1.15 + padY * 2);
+    const rectY = top - Math.round(fontSize * 0.88) - padY;
+    const rectX = anchor === 'middle' ? Math.round(x - textW / 2) : x;
+    const textX = anchor === 'middle' ? x : x + padX;
+    return `
+      <rect x="${rectX}" y="${rectY}" width="${textW}" height="${rectH}" fill="${bg}"/>
+      <text x="${textX}" y="${top}" text-anchor="${anchor}" fill="${textFill}"
+        font-family="${fontFamily}" font-weight="900" font-size="${fontSize}px">${escapeXml(line)}</text>`;
+  }).join('');
+}
+
+function renderTitleLines(lines, { x, y, lineHeight, anchor = 'middle', className = 'title' }) {
   return lines.map((line, index) => (
-    `<text x="${x}" y="${y + index * lineHeight}" text-anchor="${anchor}" class="title">${escapeXml(line)}</text>`
+    `<text x="${x}" y="${y + index * lineHeight}" text-anchor="${anchor}" class="${className}">${escapeXml(line)}</text>`
   )).join('');
 }
 
@@ -131,6 +239,11 @@ function fatosTitleTopBase(lineCount) {
   if (lineCount === 3) return 1045;
   if (lineCount === 4) return 1005;
   return 965;
+}
+
+/** Centro vertical do divisor/logo no modelo Citação marcador (base 1350). */
+function citacaoDividerY() {
+  return 700;
 }
 
 function buildOverlay({
@@ -172,21 +285,69 @@ function buildOverlay({
   const y = (n) => Math.round(n * sy);
   const ww = (n) => Math.round(n * sx);
   const hh = (n) => Math.round(n * sy);
-  const baseMaxChars = modelId === 'estilo_fatos' ? 30
+  const baseMaxChars = modelId === 'estilo_fatos' || modelId === 'citacao_marcador' ? 30
     : modelId === 'faixa_classica' || modelId === 'impacto_central' ? 27
     : modelId === 'minimalista' || modelId === 'faixa_topo' ? 25
     : 24;
   const maxChars = Math.max(16, baseMaxChars + (sizeMeta?.maxCharsBonus || 0));
-  const lines = wrapTitle(title, maxChars, 5);
+  const isCitacao = modelId === 'citacao_marcador';
+  const lines = isCitacao ? [] : wrapTitle(title, maxChars, 5);
   // tamanho escolhido em Minha marca (30–50, padrão 43), escalado ao canvas
-  const fontSize = Math.round((sizeMeta?.px || 43) * Math.min(sx, sy));
-  const lineHeight = Math.round(fontSize * (modelId === 'estilo_fatos' ? 1.12 : 1.08));
+  const fontSize = Math.round((sizeMeta?.px || 43) * Math.min(sx, sy) * (isCitacao ? 1.12 : 1));
+  const lineHeight = Math.round(fontSize * (modelId === 'estilo_fatos' || isCitacao ? 1.14 : 1.08));
   const safeCategory = escapeXml(category || 'ÚLTIMAS');
   const safeFooter = escapeXml(footer || brandName || '');
 
   let layout;
 
-  if (modelId === 'estilo_fatos') {
+  if (isCitacao) {
+    const split = splitHeadlinePunchline(title);
+    const headLines = wrapTextLines(split.headline, maxChars, 4);
+    const punchLines = split.punchline
+      ? wrapTextLines(split.punchline, Math.max(18, maxChars - 2), 3)
+      : [];
+    const headFont = fontSize;
+    const headLh = Math.round(headFont * 1.16);
+    const punchFont = Math.round(fontSize * 1.02);
+    const punchLh = Math.round(punchFont * 1.24);
+    const centerX = x(540);
+    const textMaxW = W - ww(96);
+    const totalTextH =
+      headLines.length * headLh +
+      (punchLines.length ? hh(16) + punchLines.length * punchLh : 0);
+    const textBottomPad = hh(52);
+    const blockTop = H - textBottomPad - totalTextH;
+    const dividerY = Math.max(y(620), blockTop - hh(70));
+    const punchTop = blockTop + headLines.length * headLh + hh(16);
+    const markerBg = primary || '#ffd400';
+    const logoGap = ww(70);
+
+    layout = `
+      <line x1="${x(48)}" y1="${dividerY}" x2="${x(540) - logoGap}" y2="${dividerY}" stroke="rgba(255,255,255,.55)" stroke-width="${Math.max(2, Math.round(3 * sy))}"/>
+      <line x1="${x(540) + logoGap}" y1="${dividerY}" x2="${x(1032)}" y2="${dividerY}" stroke="rgba(255,255,255,.55)" stroke-width="${Math.max(2, Math.round(3 * sy))}"/>
+      ${renderTitleLines(headLines, {
+        x: centerX,
+        y: blockTop + Math.round(headFont * 0.85),
+        lineHeight: headLh,
+        anchor: 'middle',
+        className: 'title-citacao',
+      })}
+      ${punchLines.length
+        ? renderHighlightedLines(punchLines, {
+            x: centerX,
+            y: punchTop + Math.round(punchFont * 0.85),
+            lineHeight: punchLh,
+            fontSize: punchFont,
+            padX: Math.round(18 * sx),
+            padY: Math.round(10 * sy),
+            bg: markerBg,
+            textFill: '#111111',
+            fontFamily: titleFontFamily,
+            maxWidth: textMaxW,
+            anchor: 'middle',
+          })
+        : ''}`;
+  } else if (modelId === 'estilo_fatos') {
     const titleTop = y(fatosTitleTopBase(lines.length));
     layout = `
       ${renderTitleLines(lines, { x: x(540), y: titleTop, lineHeight })}`;
@@ -263,6 +424,9 @@ function buildOverlay({
       const brandY = y(fatosTitleTopBase(lines.length) - 95);
       fallbackBrand = `
         <text x="${x(540)}" y="${brandY}" text-anchor="middle" class="brand-fatos">${escapeXml(brandLabel)}</text>`;
+    } else if (modelId === 'citacao_marcador') {
+      // Sem texto de marca/handle — só a logo (se houver) no divisor
+      fallbackBrand = '';
     } else {
       fallbackBrand = `
         <rect x="${x(240)}" y="${y(52)}" width="${ww(600)}" height="${hh(118)}" rx="${ww(28)}" fill="rgba(255,255,255,.88)"/>
@@ -277,11 +441,20 @@ function buildOverlay({
           <stop offset="58%" stop-color="#000" stop-opacity=".45"/>
           <stop offset="78%" stop-color="#000" stop-opacity=".92"/>
           <stop offset="100%" stop-color="#000" stop-opacity="1"/>`
+    : modelId === 'citacao_marcador'
+    ? `
+          <stop offset="0%" stop-color="#000" stop-opacity="0"/>
+          <stop offset="45%" stop-color="#000" stop-opacity="0"/>
+          <stop offset="62%" stop-color="#000" stop-opacity=".28"/>
+          <stop offset="82%" stop-color="#000" stop-opacity=".72"/>
+          <stop offset="100%" stop-color="#000" stop-opacity=".88"/>`
     : `
           <stop offset="0%" stop-color="#000" stop-opacity="0"/>
           <stop offset="42%" stop-color="#000" stop-opacity=".08"/>
           <stop offset="68%" stop-color="#000" stop-opacity=".68"/>
           <stop offset="100%" stop-color="#000" stop-opacity=".96"/>`;
+
+  const punchFontCss = Math.round(fontSize * (isCitacao ? 0.95 : 1));
 
   return Buffer.from(`
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
@@ -298,9 +471,13 @@ function buildOverlay({
           ${fontFace.faceCss}
           .brand { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(50 * Math.min(sx, sy))}px; fill: #111827; }
           .brand-fatos { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(36 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #fff; filter: url(#shadow); }
+          .brand-citacao { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(28 * Math.min(sx, sy))}px; fill: #e5e7eb; }
+          .handle { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 700; font-size: ${Math.round(28 * Math.min(sx, sy))}px; fill: #fff; filter: url(#shadow); }
           .category { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(42 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #fff; filter: url(#shadow); }
           .category-dark { fill: #111827; filter: none; }
           .title { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${fontSize}px; fill: ${titleFill}; filter: url(#shadow); }
+          .title-citacao { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${fontSize}px; fill: #ffffff; filter: url(#shadow); }
+          .title-mark { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${punchFontCss}px; fill: #111111; filter: none; }
           .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(1 * sx))}px; fill: ${primary}; filter: url(#shadow); }
         </style>
       </defs>
@@ -335,7 +512,7 @@ async function composeBrandOverlayOnImage({
   const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
   const brandName = String(user.marca_nome || '').trim();
-  const maxChars = modelId === 'estilo_fatos' ? 30 : 27;
+  const maxChars = modelId === 'estilo_fatos' || modelId === 'citacao_marcador' ? 30 : 27;
   const titleLines = wrapTitle(title, maxChars, 5);
   const logo = await buildLogoComposite(user.logo_path, w, {
     model: modelId,
@@ -380,8 +557,9 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
   const cw = Math.max(320, Math.round(Number(canvasWidth) || WIDTH));
   const ch = Math.max(320, Math.round(Number(options.canvasHeight) || HEIGHT));
   const isFatos = modelId === 'estilo_fatos';
-  const maxW = Math.round(cw * ((isFatos ? 480 : 560) / 1080));
-  const maxH = Math.round(cw * ((isFatos ? 110 : 125) / 1080));
+  const isCitacao = modelId === 'citacao_marcador';
+  const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : 560) / 1080));
+  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : 125) / 1080));
   const input = await sharp(absolute)
     .resize(maxW, maxH, { fit: 'inside', withoutEnlargement: true })
     .png()
@@ -393,6 +571,11 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
     const titleTop = Math.round(fatosTitleTopBase(options.titleLineCount || 3) * sy);
     const gap = Math.round(28 * sy);
     top = Math.max(Math.round(720 * sy), titleTop - input.info.height - gap);
+  } else if (isCitacao) {
+    const sy = ch / 1350;
+    // Logo acima do bloco de texto, no divisor
+    const approxTextTop = Math.round(980 * sy);
+    top = Math.max(Math.round(640 * sy), approxTextTop - input.info.height - Math.round(36 * sy));
   }
 
   return {
@@ -406,9 +589,11 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
  * Monta canvas 4:5 (1080×1350) para o feed do Facebook.
  * - Foto quase 4:5 → full-bleed (cover)
  * - Foto larga/paisagem (colagens) → imagem inteira (contain) + fundo desfocado
- *   assim o post fica alto no feed e a foto não é cortada.
+ * - mode: 'cover' → sempre preenche a arte inteira (sem faixas), usado no Citação marcador
  */
-async function buildFeedBaseImage(sourceBuffer) {
+async function buildFeedBaseImage(sourceBuffer, options = {}) {
+  const forceCover = options.mode === 'cover';
+
   let sourcePrepared = sourceBuffer;
   try {
     sourcePrepared = await sharp(sourceBuffer, { failOn: 'error', limitInputPixels: 40_000_000 })
@@ -425,12 +610,12 @@ async function buildFeedBaseImage(sourceBuffer) {
   const targetRatio = WIDTH / HEIGHT;
   const ratioDiff = Math.abs(srcRatio - targetRatio) / targetRatio;
 
-  // Próximo de 4:5: preenche o post sem faixas.
-  if (ratioDiff <= 0.14) {
+  // Full-bleed: preenche 1080×1350 sem faixas pretas/blur.
+  if (forceCover || ratioDiff <= 0.14) {
     return sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
       .resize(WIDTH, HEIGHT, {
         fit: 'cover',
-        position: 'attention',
+        position: forceCover ? 'centre' : 'attention',
         withoutEnlargement: false,
         kernel: sharp.kernel.lanczos3,
       })
@@ -482,7 +667,7 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
   const brandName = String(user.marca_nome || '').trim();
-  const maxChars = modelId === 'estilo_fatos' ? 30 : 27;
+  const maxChars = modelId === 'estilo_fatos' || modelId === 'citacao_marcador' ? 30 : 27;
   const titleLines = wrapTitle(title, maxChars, 5);
   const logo = await buildLogoComposite(user.logo_path, WIDTH, {
     model: modelId,
@@ -512,7 +697,10 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   const composites = [{ input: overlay, left: 0, top: 0 }];
   if (logo) composites.push(logo);
 
-  const feedBase = await buildFeedBaseImage(source);
+  const feedBase = await buildFeedBaseImage(source, {
+    // Citação marcador: foto em toda a arte (sem faixa blur / strip)
+    mode: modelId === 'citacao_marcador' ? 'cover' : 'auto',
+  });
 
   await sharp(feedBase, { failOn: 'error', limitInputPixels: 40_000_000 })
     .resize(WIDTH, HEIGHT, { fit: 'fill' })

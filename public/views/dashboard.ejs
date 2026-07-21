@@ -3,10 +3,16 @@
 <%
   const s = typeof stats !== 'undefined' ? stats : {
     videos: 0, imagens: 0, clips: 0, publicacoes: 0, paginas: 0,
-    videosByStatus: {}, clipsByStatus: {}, pubsByStatus: {},
+    videosByStatus: {}, clipsByStatus: {}, pubsByStatus: {}, imagensByStatus: {},
   };
   const pubs = typeof recent !== 'undefined' ? recent : [];
   const connected = typeof hasFacebook !== 'undefined' ? hasFacebook : false;
+  const c = typeof charts !== 'undefined' ? charts : {
+    activity: { labels: [], videos: [], clips: [], publicacoes: [], imagens: [] },
+    videosByStatus: {},
+    clipsByStatus: {},
+    pubsByStatus: {},
+  };
 
   function fmtDate(value) {
     if (!value) return '—';
@@ -36,129 +42,153 @@
     const map = { reel: 'Reel', video: 'Vídeo', foto: 'Foto', texto: 'Texto' };
     return map[tipo] || tipo || 'Post';
   }
+
+  const chartsJson = JSON.stringify(c).replace(/</g, '\\u003c');
 %>
 
-<main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
-  <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+<main class="mx-auto max-w-9xl px-4 py-4 sm:px-6 sm:py-6">
+  <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
     <div class="min-w-0">
-      <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400/80">Visão geral</p>
-      <h1 class="mt-1 text-2xl font-semibold text-white sm:text-3xl">Dashboard</h1>
-      <p class="mt-2 text-sm text-slate-400">Acompanhe produção, cortes e publicações.</p>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Visão geral</p>
+      <h1 class="mt-0.5 text-xl font-semibold text-white sm:text-2xl">Dashboard</h1>
+      <p class="mt-1 text-xs text-slate-400 sm:text-sm">Produção, cortes e publicações em um só lugar.</p>
     </div>
-    <div class="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-      <a href="/conteudo" class="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Criar conteúdo</a>
-      <a href="/fila" class="inline-flex items-center justify-center rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-200 hover:border-slate-500">Acompanhar fila</a>
+    <div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+      <a href="/conteudo" class="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400 sm:text-sm">Criar conteúdo</a>
+      <a href="/fila" class="inline-flex items-center justify-center rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 hover:border-slate-500 sm:text-sm">Acompanhar fila</a>
     </div>
   </div>
 
-  <div class="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 xl:grid-cols-5">
-    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:p-5">
-      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Vídeos</p>
-      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.videos %></p>
-      <p class="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs"><%= s.videosByStatus.cortado || 0 %> cortados · <%= s.videosByStatus.erro || 0 %> erro</p>
+  <!-- KPI cards compactos -->
+  <div class="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-2.5 xl:grid-cols-5">
+    <article class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">Vídeos</p>
+      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.videos %></p>
+      <p class="mt-0.5 text-[10px] leading-tight text-slate-500"><%= s.videosByStatus.cortado || 0 %> cortados · <%= s.videosByStatus.erro || 0 %> erro</p>
     </article>
-    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:p-5">
-      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Cortes</p>
-      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.clips %></p>
-      <p class="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs"><%= s.clipsByStatus.pronto || 0 %> prontos · <%= s.clipsByStatus.processando || 0 %> processando</p>
+    <article class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">Cortes</p>
+      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.clips %></p>
+      <p class="mt-0.5 text-[10px] leading-tight text-slate-500"><%= s.clipsByStatus.pronto || 0 %> prontos · <%= s.clipsByStatus.processando || 0 %> proc.</p>
     </article>
-    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:p-5">
-      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Imagens</p>
-      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.imagens %></p>
-      <p class="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs"><%= s.imagensByStatus.baixado || 0 %> baixadas</p>
+    <article class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">Imagens</p>
+      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.imagens %></p>
+      <p class="mt-0.5 text-[10px] leading-tight text-slate-500"><%= s.imagensByStatus.baixado || 0 %> baixadas</p>
     </article>
-    <article class="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:p-5">
-      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Publicações</p>
-      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.publicacoes %></p>
-      <p class="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs"><%= s.pubsByStatus.publicado || 0 %> ok · <%= s.pubsByStatus.erro || 0 %> erro</p>
+    <article class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">Publicações</p>
+      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.publicacoes %></p>
+      <p class="mt-0.5 text-[10px] leading-tight text-slate-500"><%= s.pubsByStatus.publicado || 0 %> ok · <%= s.pubsByStatus.erro || 0 %> erro</p>
     </article>
-    <article class="col-span-2 rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4 sm:col-span-1 sm:p-5 xl:col-span-1">
-      <p class="text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">Páginas FB</p>
-      <p class="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-3xl"><%= s.paginas %></p>
-      <p class="mt-1.5 text-[11px] leading-snug sm:mt-2 sm:text-xs <%= connected ? 'text-emerald-400' : 'text-amber-300' %>">
-        <%= connected ? 'Conta conectada' : 'Sem conta conectada' %>
+    <article class="col-span-2 rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5 sm:col-span-1 xl:col-span-1">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">Páginas FB</p>
+      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.paginas %></p>
+      <p class="mt-0.5 text-[10px] leading-tight <%= connected ? 'text-emerald-400' : 'text-amber-300' %>">
+        <%= connected ? 'Conta conectada' : 'Sem conta' %>
       </p>
     </article>
   </div>
 
-  <div class="mt-6 grid gap-5 sm:mt-8 sm:gap-6 lg:grid-cols-3">
-    <section class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5 lg:col-span-1">
-      <h2 class="text-sm font-semibold text-white">Atalhos</h2>
-      <div class="mt-4 space-y-2">
-        <a href="/conteudo" class="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 transition hover:border-emerald-500/40 hover:text-white">
+  <!-- Gráficos -->
+  <div class="mt-4 grid gap-3 sm:mt-5 lg:grid-cols-3">
+    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4 lg:col-span-2">
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-xs font-semibold text-white sm:text-sm">Atividade — 7 dias</h2>
+        <span class="text-[10px] text-slate-500">vídeos · cortes · pubs</span>
+      </div>
+      <div class="relative mt-2 h-48 sm:h-56">
+        <canvas id="chart-activity" aria-label="Gráfico de atividade dos últimos 7 dias"></canvas>
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4">
+      <h2 class="text-xs font-semibold text-white sm:text-sm">Publicações por status</h2>
+      <div class="relative mx-auto mt-2 h-48 max-w-[220px] sm:h-56">
+        <canvas id="chart-pubs" aria-label="Gráfico de publicações por status"></canvas>
+      </div>
+    </section>
+  </div>
+
+  <div class="mt-3 grid gap-3 sm:grid-cols-2">
+    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4">
+      <h2 class="text-xs font-semibold text-white sm:text-sm">Vídeos por status</h2>
+      <div class="relative mt-2 h-40 sm:h-44">
+        <canvas id="chart-videos" aria-label="Gráfico de vídeos por status"></canvas>
+      </div>
+    </section>
+    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4">
+      <h2 class="text-xs font-semibold text-white sm:text-sm">Cortes por status</h2>
+      <div class="relative mt-2 h-40 sm:h-44">
+        <canvas id="chart-clips" aria-label="Gráfico de cortes por status"></canvas>
+      </div>
+    </section>
+  </div>
+
+  <div class="mt-3 grid gap-3 lg:grid-cols-3">
+    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4 lg:col-span-1">
+      <h2 class="text-xs font-semibold text-white sm:text-sm">Atalhos</h2>
+      <div class="mt-2.5 space-y-1.5">
+        <a href="/conteudo" class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-300 transition hover:border-emerald-500/40 hover:text-white sm:text-sm">
           Criar conteúdo
           <span class="text-emerald-400">→</span>
         </a>
-        <a href="/fila" class="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 transition hover:border-emerald-500/40 hover:text-white">
+        <a href="/fila" class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-300 transition hover:border-emerald-500/40 hover:text-white sm:text-sm">
           Acompanhar fila
           <span class="text-emerald-400">→</span>
         </a>
-        <a href="/paginas" class="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 transition hover:border-emerald-500/40 hover:text-white">
+        <a href="/paginas" class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-300 transition hover:border-emerald-500/40 hover:text-white sm:text-sm">
           <%= connected ? 'Gerenciar páginas' : 'Conectar Facebook' %>
           <span class="text-emerald-400">→</span>
         </a>
       </div>
-
-      <h2 class="mt-8 text-sm font-semibold text-white">Status dos vídeos</h2>
-      <ul class="mt-3 space-y-2 text-sm">
-        <% ['pendente','baixado','cortado','publicado','erro'].forEach((st) => { %>
-          <li class="flex items-center justify-between rounded-lg bg-slate-950/50 px-3 py-2">
-            <span class="inline-flex items-center gap-2">
-              <span class="rounded-full px-2 py-0.5 text-[11px] <%= statusTone(st) %>"><%= st %></span>
-            </span>
-            <span class="font-medium text-white"><%= s.videosByStatus[st] || 0 %></span>
-          </li>
-        <% }) %>
-      </ul>
     </section>
 
-    <section class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5 lg:col-span-2">
+    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4 lg:col-span-2">
       <div class="flex items-center justify-between gap-3">
-        <h2 class="text-sm font-semibold text-white">Últimas publicações</h2>
-        <span class="shrink-0 text-xs text-slate-500"><%= pubs.length %> recentes</span>
+        <h2 class="text-xs font-semibold text-white sm:text-sm">Últimas publicações</h2>
+        <span class="shrink-0 text-[10px] text-slate-500 sm:text-xs"><%= pubs.length %> recentes</span>
       </div>
 
       <% if (!pubs.length) { %>
-        <div class="mt-6 rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-4 py-10 text-center sm:mt-8 sm:px-6 sm:py-12">
-          <p class="text-slate-300">Nenhuma publicação ainda.</p>
-          <p class="mt-2 text-sm text-slate-500">Gere um corte na fila e publique como Reel.</p>
-          <a href="/fila" class="mt-4 inline-block text-sm text-emerald-400 hover:text-emerald-300">Ir para a fila →</a>
+        <div class="mt-4 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 px-4 py-8 text-center">
+          <p class="text-sm text-slate-300">Nenhuma publicação ainda.</p>
+          <p class="mt-1 text-xs text-slate-500">Gere um corte na fila e publique como Reel.</p>
+          <a href="/fila" class="mt-3 inline-block text-xs text-emerald-400 hover:text-emerald-300">Ir para a fila →</a>
         </div>
       <% } else { %>
-        <!-- Mobile: lista em cards -->
-        <ul class="mt-4 space-y-2 sm:hidden">
+        <ul class="mt-3 space-y-1.5 sm:hidden">
           <% pubs.forEach((p) => { %>
-            <li class="rounded-xl border border-slate-800 bg-slate-950/40 px-3.5 py-3">
+            <li class="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-medium text-slate-200"><%= tipoLabel(p.tipo) %></span>
-                <span class="rounded-full px-2 py-0.5 text-[11px] <%= statusTone(p.status) %>"><%= p.status %></span>
+                <span class="text-xs font-medium text-slate-200"><%= tipoLabel(p.tipo) %></span>
+                <span class="rounded-full px-2 py-0.5 text-[10px] <%= statusTone(p.status) %>"><%= p.status %></span>
               </div>
-              <p class="mt-1.5 truncate text-xs text-slate-400"><%= p.page_name || '—' %></p>
-              <p class="mt-1 text-[11px] text-slate-500"><%= fmtDate(p.published_at || p.created_at) %></p>
+              <p class="mt-1 truncate text-[11px] text-slate-400"><%= p.page_name || '—' %></p>
+              <p class="mt-0.5 text-[10px] text-slate-500"><%= fmtDate(p.published_at || p.created_at) %></p>
             </li>
           <% }) %>
         </ul>
 
-        <!-- Desktop: tabela -->
-        <div class="mt-4 hidden overflow-x-auto rounded-xl border border-slate-800 sm:block">
-          <table class="w-full min-w-[28rem] text-left text-sm">
-            <thead class="bg-slate-950/80 text-xs uppercase tracking-wide text-slate-500">
+        <div class="mt-3 hidden overflow-x-auto rounded-lg border border-slate-800 sm:block">
+          <table class="w-full min-w-[28rem] text-left text-xs sm:text-sm">
+            <thead class="bg-slate-950/80 text-[10px] uppercase tracking-wide text-slate-500">
               <tr>
-                <th class="px-4 py-3 font-medium">Tipo</th>
-                <th class="px-4 py-3 font-medium">Página</th>
-                <th class="px-4 py-3 font-medium">Status</th>
-                <th class="px-4 py-3 font-medium">Quando</th>
+                <th class="px-3 py-2 font-medium">Tipo</th>
+                <th class="px-3 py-2 font-medium">Página</th>
+                <th class="px-3 py-2 font-medium">Status</th>
+                <th class="px-3 py-2 font-medium">Quando</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-800">
               <% pubs.forEach((p) => { %>
                 <tr class="bg-slate-950/30 hover:bg-slate-900/60">
-                  <td class="px-4 py-3 text-slate-200"><%= tipoLabel(p.tipo) %></td>
-                  <td class="px-4 py-3 text-slate-300"><%= p.page_name || '—' %></td>
-                  <td class="px-4 py-3">
-                    <span class="rounded-full px-2 py-0.5 text-[11px] <%= statusTone(p.status) %>"><%= p.status %></span>
+                  <td class="px-3 py-2 text-slate-200"><%= tipoLabel(p.tipo) %></td>
+                  <td class="px-3 py-2 text-slate-300"><%= p.page_name || '—' %></td>
+                  <td class="px-3 py-2">
+                    <span class="rounded-full px-2 py-0.5 text-[10px] <%= statusTone(p.status) %>"><%= p.status %></span>
                   </td>
-                  <td class="px-4 py-3 text-slate-400"><%= fmtDate(p.published_at || p.created_at) %></td>
+                  <td class="px-3 py-2 text-slate-400"><%= fmtDate(p.published_at || p.created_at) %></td>
                 </tr>
               <% }) %>
             </tbody>
@@ -168,5 +198,224 @@
     </section>
   </div>
 </main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  const data = <%- chartsJson %>;
+  if (typeof Chart === 'undefined') return;
+
+  const grid = 'rgba(148, 163, 184, 0.12)';
+  const tick = '#94a3b8';
+  const font = { family: 'ui-sans-serif, system-ui, sans-serif', size: 11 };
+
+  Chart.defaults.color = tick;
+  Chart.defaults.font = font;
+  Chart.defaults.plugins.legend.labels.boxWidth = 10;
+  Chart.defaults.plugins.legend.labels.padding = 12;
+
+  function statusEntries(map, order) {
+    const labels = [];
+    const values = [];
+    order.forEach(function (k) {
+      const v = Number((map && map[k]) || 0);
+      if (v > 0 || order.length <= 5) {
+        labels.push(k);
+        values.push(v);
+      }
+    });
+    if (!values.some(function (v) { return v > 0; })) {
+      return { labels: ['sem dados'], values: [1], empty: true };
+    }
+    return { labels: labels, values: values, empty: false };
+  }
+
+  const act = data.activity || { labels: [], videos: [], clips: [], publicacoes: [] };
+  const ctxAct = document.getElementById('chart-activity');
+  if (ctxAct) {
+    new Chart(ctxAct, {
+      type: 'line',
+      data: {
+        labels: act.labels || [],
+        datasets: [
+          {
+            label: 'Vídeos',
+            data: act.videos || [],
+            borderColor: '#34d399',
+            backgroundColor: 'rgba(52, 211, 153, 0.12)',
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3,
+            borderWidth: 2,
+          },
+          {
+            label: 'Cortes',
+            data: act.clips || [],
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.08)',
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3,
+            borderWidth: 2,
+          },
+          {
+            label: 'Publicações',
+            data: act.publicacoes || [],
+            borderColor: '#a78bfa',
+            backgroundColor: 'rgba(167, 139, 250, 0.08)',
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3,
+            borderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom' },
+        },
+        scales: {
+          x: {
+            grid: { color: grid },
+            ticks: { maxRotation: 0 },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { precision: 0 },
+            grid: { color: grid },
+          },
+        },
+      },
+    });
+  }
+
+  const pubColors = {
+    publicado: '#34d399',
+    pendente: '#fbbf24',
+    erro: '#fb7185',
+  };
+  const pubOrder = ['publicado', 'pendente', 'erro'];
+  const pubs = statusEntries(data.pubsByStatus, pubOrder);
+  const ctxPubs = document.getElementById('chart-pubs');
+  if (ctxPubs) {
+    new Chart(ctxPubs, {
+      type: 'doughnut',
+      data: {
+        labels: pubs.labels,
+        datasets: [{
+          data: pubs.values,
+          backgroundColor: pubs.empty
+            ? ['#334155']
+            : pubs.labels.map(function (l) { return pubColors[l] || '#64748b'; }),
+          borderWidth: 0,
+          hoverOffset: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                if (pubs.empty) return ' Sem publicações';
+                return ' ' + ctx.label + ': ' + ctx.raw;
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  const videoColors = {
+    pendente: '#fbbf24',
+    baixado: '#38bdf8',
+    cortado: '#a78bfa',
+    publicado: '#34d399',
+    erro: '#fb7185',
+  };
+  const videoOrder = ['pendente', 'baixado', 'cortado', 'publicado', 'erro'];
+  const vids = statusEntries(data.videosByStatus, videoOrder);
+  const ctxVids = document.getElementById('chart-videos');
+  if (ctxVids) {
+    new Chart(ctxVids, {
+      type: 'bar',
+      data: {
+        labels: vids.labels,
+        datasets: [{
+          data: vids.values,
+          backgroundColor: vids.empty
+            ? ['#334155']
+            : vids.labels.map(function (l) { return videoColors[l] || '#64748b'; }),
+          borderRadius: 6,
+          borderSkipped: false,
+          maxBarThickness: 36,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: {
+            beginAtZero: true,
+            ticks: { precision: 0 },
+            grid: { color: grid },
+          },
+        },
+      },
+    });
+  }
+
+  const clipColors = {
+    sugerido: '#94a3b8',
+    pendente: '#fbbf24',
+    processando: '#38bdf8',
+    pronto: '#34d399',
+    erro: '#fb7185',
+    publicado: '#a78bfa',
+  };
+  const clipOrder = ['sugerido', 'pendente', 'processando', 'pronto', 'publicado', 'erro'];
+  const clips = statusEntries(data.clipsByStatus, clipOrder);
+  const ctxClips = document.getElementById('chart-clips');
+  if (ctxClips) {
+    new Chart(ctxClips, {
+      type: 'bar',
+      data: {
+        labels: clips.labels,
+        datasets: [{
+          data: clips.values,
+          backgroundColor: clips.empty
+            ? ['#334155']
+            : clips.labels.map(function (l) { return clipColors[l] || '#64748b'; }),
+          borderRadius: 6,
+          borderSkipped: false,
+          maxBarThickness: 36,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: {
+            beginAtZero: true,
+            ticks: { precision: 0 },
+            grid: { color: grid },
+          },
+        },
+      },
+    });
+  }
+})();
+</script>
 
 <%- include('partials/app-end') %>

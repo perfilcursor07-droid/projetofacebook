@@ -51,6 +51,18 @@ const VideoClips = {
       .count({ total: '*' })
       .first();
   },
+
+  countByDayForUser(userId, days = 7) {
+    const d = Math.max(1, Math.min(90, Number(days) || 7));
+    return db(this.table)
+      .join('videos', 'video_clips.video_id', 'videos.id')
+      .where('videos.user_id', userId)
+      .where('video_clips.created_at', '>=', db.raw('DATE_SUB(CURDATE(), INTERVAL ? DAY)', [d - 1]))
+      .select(db.raw('DATE(video_clips.created_at) as dia'))
+      .count('* as total')
+      .groupByRaw('DATE(video_clips.created_at)')
+      .orderBy('dia', 'asc');
+  },
 };
 
 module.exports = VideoClips;

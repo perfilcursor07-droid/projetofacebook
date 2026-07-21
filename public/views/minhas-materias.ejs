@@ -2,6 +2,7 @@
 <%
   const mattersList = typeof matters !== 'undefined' && Array.isArray(matters) ? matters : [];
   const q = typeof searchQuery !== 'undefined' ? String(searchQuery || '') : '';
+  const activeStatus = typeof statusFilter !== 'undefined' ? String(statusFilter || 'all') : 'all';
   const statusLabels = {
     rascunho: 'Rascunho',
     pronto: 'Pronta',
@@ -16,6 +17,23 @@
     publicado: 'bg-emerald-500/15 text-emerald-300',
     erro: 'bg-rose-500/15 text-rose-300',
   };
+  const tabDefs = [
+    { key: 'all', label: 'Todas' },
+    { key: 'rascunho', label: 'Rascunhos' },
+    { key: 'pronto', label: 'Prontas' },
+    { key: 'agendado', label: 'Agendadas' },
+    { key: 'publicado', label: 'Publicadas' },
+    { key: 'erro', label: 'Erros' },
+  ];
+  const counts = { all: mattersList.length };
+  tabDefs.forEach((t) => {
+    if (t.key === 'all') return;
+    counts[t.key] = 0;
+  });
+  mattersList.forEach((item) => {
+    const st = item.status || 'rascunho';
+    counts[st] = (counts[st] || 0) + 1;
+  });
   function formatViews(n) {
     const v = Number(n);
     if (!Number.isFinite(v) || v < 0) return null;
@@ -23,102 +41,144 @@
     if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
     return String(Math.round(v));
   }
+  function tabHref(key, keepQuery) {
+    const params = new URLSearchParams();
+    if (keepQuery !== false && q) params.set('q', q);
+    if (key && key !== 'all') params.set('status', key);
+    const qs = params.toString();
+    return '/minhas-materias' + (qs ? '?' + qs : '');
+  }
 %>
 
-  <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
+  <main class="mx-auto max-w-9xl px-4 py-4 sm:px-6 sm:py-5" data-matters-page>
     <%- include('partials/content-nav', { contentTab: 'matters' }) %>
 
-    <div class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-semibold text-white">Matérias salvas</h1>
-        <p class="mt-2 text-slate-400">Revise, edite, publique ou gere uma nova no mesmo tema.</p>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="min-w-0">
+        <h1 class="text-lg font-semibold text-white sm:text-xl">Matérias salvas</h1>
+        <p class="mt-0.5 text-xs text-slate-500">Revise, edite e publique por status.</p>
       </div>
       <a href="/conteudo"
-        class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">
+        class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 sm:text-sm">
         Criar conteúdo
       </a>
     </div>
 
-    <form method="get" action="/minhas-materias" class="mt-6 flex flex-wrap gap-2">
-      <label class="relative min-w-[220px] flex-1">
+    <form method="get" action="/minhas-materias" class="mt-3 flex flex-wrap gap-1.5">
+      <% if (activeStatus && activeStatus !== 'all') { %>
+        <input type="hidden" name="status" value="<%= activeStatus %>" />
+      <% } %>
+      <label class="relative min-w-[180px] flex-1">
         <span class="sr-only">Buscar matérias</span>
-        <input type="search" name="q" value="<%= q %>" placeholder="Buscar por título, texto, fonte ou página…"
-          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30" />
+        <input type="search" name="q" value="<%= q %>" placeholder="Buscar título, texto, fonte…"
+          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30" />
       </label>
-      <button type="submit" class="rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-200 hover:border-emerald-500 hover:text-emerald-300">
+      <button type="submit" class="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 hover:border-emerald-500 hover:text-emerald-300 sm:text-sm">
         Buscar
       </button>
       <% if (q) { %>
-        <a href="/minhas-materias" class="rounded-lg px-3 py-2.5 text-sm text-slate-500 hover:text-slate-300">Limpar</a>
+        <a href="<%= tabHref(activeStatus, false) %>" class="rounded-lg px-2.5 py-2 text-xs text-slate-500 hover:text-slate-300">Limpar</a>
       <% } %>
     </form>
 
+    <!-- Abas por status -->
+    <div class="mt-3 flex gap-1 overflow-x-auto pb-0.5" role="tablist" aria-label="Filtrar por status" id="mia-status-tabs">
+      <% tabDefs.forEach((tab) => {
+        const count = counts[tab.key] || 0;
+        const isActive = activeStatus === tab.key || (activeStatus === 'all' && tab.key === 'all');
+        if (tab.key !== 'all' && tab.key !== 'erro' && count === 0 && !isActive) return;
+        if (tab.key === 'erro' && count === 0 && !isActive) return;
+      %>
+        <a href="<%= tabHref(tab.key) %>"
+          role="tab"
+          aria-selected="<%= isActive ? 'true' : 'false' %>"
+          data-status="<%= tab.key %>"
+          class="mia-status-tab inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition <%= isActive ? 'bg-emerald-500 text-slate-950' : 'border border-slate-800 bg-slate-900/50 text-slate-400 hover:border-slate-600 hover:text-slate-200' %>">
+          <%= tab.label %>
+          <span class="mia-tab-count rounded-md px-1.5 py-0.5 text-[10px] tabular-nums <%= isActive ? 'bg-slate-950/20 text-slate-900' : 'bg-slate-800 text-slate-400' %>"><%= count %></span>
+        </a>
+      <% }) %>
+    </div>
+
     <% if (!mattersList.length) { %>
-      <p class="mt-8 rounded-xl border border-dashed border-slate-700 px-4 py-12 text-center text-sm text-slate-400">
+      <p class="mt-4 rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
         <%= q ? 'Nenhuma matéria encontrada para essa busca.' : 'Nenhuma matéria gerada ainda.' %>
         <a href="<%= q ? '/minhas-materias' : '/conteudo' %>" class="mt-2 block text-emerald-400 hover:text-emerald-300">
           <%= q ? 'Ver todas →' : 'Criar conteúdo →' %>
         </a>
       </p>
     <% } else { %>
-      <p class="mt-6 text-sm text-slate-500">
-        <%= mattersList.length %> matéria(s)<%= q ? ' encontrada(s)' : ' salva(s)' %>
+      <p id="mia-matters-count" class="mt-2.5 text-[11px] text-slate-500">
+        <span id="mia-visible-count"><%= activeStatus === 'all' ? mattersList.length : (counts[activeStatus] || 0) %></span>
+        matéria(s)<%= q ? ' encontrada(s)' : '' %>
       </p>
-      <ul id="mia-matters-list" class="mt-3 divide-y divide-slate-800 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/40">
+
+      <ul id="mia-matters-list" class="mt-2 divide-y divide-slate-800/80 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
         <% mattersList.forEach((item) => {
           const st = item.status || 'rascunho';
-          const preview = String(item.materia || '').replace(/\s+/g, ' ').trim();
           const viewsLabel = formatViews(item.pub_fb_views);
           const isPub = st === 'publicado' || item.publication_id;
+          const hide = activeStatus !== 'all' && activeStatus !== st;
         %>
-          <li class="mia-matter-row flex flex-wrap items-start gap-3 px-4 py-3.5 transition hover:bg-slate-900/70" data-id="<%= item.id %>">
+          <li class="mia-matter-row group flex items-center gap-2 px-2.5 py-1.5 transition hover:bg-slate-900/70 sm:px-3 sm:py-2 <%= hide ? 'hidden' : '' %>"
+            data-id="<%= item.id %>"
+            data-status="<%= st %>">
             <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="rounded-full px-2.5 py-0.5 text-[10px] font-medium <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+              <div class="flex min-w-0 items-center gap-1.5">
+                <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+                <a href="/materias-ia/<%= item.id %>" class="min-w-0 truncate text-sm font-medium text-white hover:text-emerald-200">
+                  <%= item.titulo || 'Sem título' %>
+                </a>
+              </div>
+              <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
                 <% if (item.page_name) { %>
-                  <span class="text-[11px] text-slate-500"><%= item.page_name %></span>
+                  <span class="truncate max-w-[140px] sm:max-w-[200px]"><%= item.page_name %></span>
                 <% } %>
-                <span class="text-[11px] text-slate-600"><%= item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '' %></span>
+                <span><%= item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '' %></span>
                 <% if (isPub) { %>
                   <button type="button"
-                    class="mia-matter-views inline-flex items-center gap-1 rounded-full border border-slate-700/80 px-2 py-0.5 text-[10px] text-slate-400 hover:border-sky-500/40 hover:text-sky-300"
+                    class="mia-matter-views inline-flex items-center gap-0.5 text-slate-400 hover:text-sky-300"
                     data-id="<%= item.id %>"
                     title="Atualizar visualizações no Facebook">
-                    <span class="mia-views-label"><%= viewsLabel != null ? viewsLabel + ' views' : 'Ver views' %></span>
+                    <span class="mia-views-label"><%= viewsLabel != null ? viewsLabel + ' views' : 'views' %></span>
                   </button>
                 <% } %>
               </div>
-              <a href="/materias-ia/<%= item.id %>" class="mt-1.5 block text-sm font-semibold text-white hover:text-emerald-200">
-                <%= item.titulo || 'Sem título' %>
-              </a>
-              <% if (preview) { %>
-                <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500"><%= preview.slice(0, 180) %><%= preview.length > 180 ? '…' : '' %></p>
-              <% } %>
             </div>
-            <div class="flex shrink-0 flex-wrap items-center gap-2">
+            <div class="flex shrink-0 items-center gap-1">
               <button type="button"
-                class="mia-matter-variacao rounded-lg border border-violet-500/40 px-3 py-1.5 text-xs text-violet-200 transition hover:bg-violet-500/15"
+                class="mia-matter-variacao rounded-md border border-violet-500/30 px-2 py-1 text-[10px] text-violet-200 transition hover:bg-violet-500/15 sm:text-[11px]"
                 data-id="<%= item.id %>"
                 data-titulo="<%= item.titulo || 'Sem título' %>"
-                title="Gera outra matéria no mesmo tema (Brave + anti-plágio)">
-                Nova no tema
+                title="Gera outra matéria no mesmo tema">
+                Nova
               </button>
               <a href="/materias-ia/<%= item.id %>"
-                class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500/50 hover:text-emerald-300">
+                class="rounded-md border border-slate-700 px-2 py-1 text-[10px] text-slate-300 transition hover:border-emerald-500/50 hover:text-emerald-300 sm:text-[11px]"
+                title="Editar">
                 Editar
               </a>
               <button type="button"
-                class="mia-matter-remove rounded-lg border border-rose-500/30 px-3 py-1.5 text-xs text-rose-300 transition hover:border-rose-400 hover:bg-rose-500/10"
+                class="mia-matter-remove rounded-md border border-rose-500/25 px-1.5 py-1 text-[10px] text-rose-300/90 transition hover:border-rose-400 hover:bg-rose-500/10 sm:text-[11px]"
                 data-id="<%= item.id %>"
-                data-titulo="<%= item.titulo || 'Sem título' %>">
-                Remover
+                data-titulo="<%= item.titulo || 'Sem título' %>"
+                title="Remover"
+                aria-label="Remover">
+                ×
               </button>
             </div>
           </li>
         <% }) %>
       </ul>
+
+      <p id="mia-empty-tab" class="mt-4 hidden rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-sm text-slate-400">
+        Nenhuma matéria neste status.
+      </p>
     <% } %>
   </main>
 
+  <script>
+    window.__MIA_STATUS__ = <%= JSON.stringify(activeStatus || 'all') %>;
+  </script>
   <script src="/js/minhas-materias.js"></script>
 <%- include('partials/app-end') %>
