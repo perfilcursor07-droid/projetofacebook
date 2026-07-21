@@ -316,7 +316,25 @@
   document.body.addEventListener('click', (e) => {
     const t = e.target.closest('.bib-gen-texto');
     const v = e.target.closest('.bib-gen-video');
-    if (t) gerarTexto(t.dataset.id);
+    if (t) {
+      e.preventDefault();
+      const postId = t.dataset.id;
+      if (!postId) return;
+      const qs = new URLSearchParams();
+      const page = pageId();
+      if (page) qs.set('facebook_page_id', page);
+      // Abre preparação em nova aba e permanece na fonte
+      const url = `/biblioteca/preparar/${postId}${qs.toString() ? `?${qs}` : ''}`;
+      abrirAbaEmSegundoPlano(url);
+      const original = t.textContent;
+      t.textContent = 'Abrindo…';
+      t.disabled = true;
+      setTimeout(() => {
+        t.textContent = original || 'Gerar Matéria';
+        t.disabled = false;
+      }, 1500);
+      return;
+    }
     if (v) gerarVideo(v.dataset.id);
   });
 
