@@ -358,15 +358,16 @@
     );
   }
 
-  function marcarAlertaVisualComoLido(link) {
-    if (!link || link.dataset.lido === '1') return false;
-    link.dataset.lido = '1';
-    link.classList.add('opacity-55');
-    const dot = link.querySelector('[title="Não lido"], .h-2.w-2');
+  function marcarAlertaVisualComoLido(item) {
+    if (!item || item.dataset.lido === '1') return false;
+    item.dataset.lido = '1';
+    item.classList.add('opacity-55');
+    const dot = item.querySelector('[title="Não lido"], .h-2.w-2');
     if (dot) {
       dot.className = 'block h-2 w-2 rounded-full bg-slate-700';
       dot.title = 'Lido';
     }
+    item.querySelector('.bib-alerta-marcar-lido')?.closest('div')?.remove();
     const app = document.getElementById('biblioteca-app');
     const atual = Number(app?.dataset?.alertasNaoLidos || 0);
     const novoNao = Math.max(0, atual - 1);
@@ -392,15 +393,15 @@
     // Na aba "Não lidos", some o item da lista
     const tab = alertasBox?.dataset?.tabAtual || 'nao-lidos';
     if (tab === 'nao-lidos') {
-      link.remove();
-      const restam = alertasBox.querySelectorAll('.bib-alerta-link').length;
+      item.remove();
+      const restam = alertasBox.querySelectorAll('.bib-alerta-item').length;
       const visibleCount = document.getElementById('bib-alertas-visible-count');
       if (visibleCount) visibleCount.textContent = String(restam);
       if (!restam && alertasBox) {
         alertasBox.innerHTML = `
           <div class="px-5 py-14 text-center">
             <p class="text-sm font-medium text-slate-400">Nenhum alerta não lido</p>
-            <p class="mt-1 text-xs text-slate-600">Os que você abrir passam para a aba Lidos.</p>
+            <p class="mt-1 text-xs text-slate-600">Os que você marcar ou abrir passam para a aba Lidos.</p>
           </div>`;
       }
     }
@@ -408,16 +409,32 @@
   }
 
   alertasBox?.addEventListener('click', (e) => {
+    const marcarBtn = e.target.closest('.bib-alerta-marcar-lido');
+    if (marcarBtn && alertasBox.contains(marcarBtn)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const item = marcarBtn.closest('.bib-alerta-item');
+      if (!item) return;
+      const alertaId = item.dataset.alerta;
+      const eraNovo = marcarAlertaVisualComoLido(item);
+      if (eraNovo && alertaId) {
+        api(`/api/biblioteca/alertas/${alertaId}/lido`, { method: 'POST', body: '{}' }).catch(() => {});
+      }
+      return;
+    }
+
     const link = e.target.closest('.bib-alerta-link');
-    if (!link || !alertasBox.contains(link)) return;
+    if (!link || !alertasBox.contains(link) || link.tagName !== 'A') return;
     const href = link.getAttribute('href') || '';
     if (!href || href.startsWith('#')) return;
     // Já com Ctrl/Cmd/Shift: deixa o navegador agir
     if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     e.preventDefault();
     abrirAbaEmSegundoPlano(href);
-    const eraNovo = marcarAlertaVisualComoLido(link);
-    const alertaId = link.dataset.alerta;
+    const item = link.closest('.bib-alerta-item');
+    if (!item) return;
+    const eraNovo = marcarAlertaVisualComoLido(item);
+    const alertaId = item.dataset.alerta;
     if (eraNovo && alertaId) {
       api(`/api/biblioteca/alertas/${alertaId}/lido`, { method: 'POST', body: '{}' }).catch(() => {});
     }
@@ -505,7 +522,7 @@
       ? `/biblioteca/posts/${a.post_id}`
       : a.fonte_id
         ? `/biblioteca/fontes/${a.fonte_id}`
-        : '#bib-secao-alertas';
+        : '';
     const lido = Boolean(a.lido);
     const plat = a.fonte_plataforma
       ? `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset ${platClass(a.fonte_plataforma)}">${escHtml(a.fonte_plataforma)}</span>`
@@ -519,25 +536,37 @@
     const dot = lido
       ? '<span class="block h-2 w-2 rounded-full bg-slate-700" title="Lido"></span>'
       : '<span class="block h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.15)]" title="Não lido"></span>';
-    const clicavel = Boolean(a.post_id || a.fonte_id);
+    const openTag = dest
+      ? `<a href="${escHtml(dest)}" class="bib-alerta-link block rounded-md outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40">`
+      : '<div class="bib-alerta-link pointer-events-none">';
+    const closeTag = dest ? '</a>' : '</div>';
+    const btnLido = lido
+      ? ''
+      : `<div class="mt-2.5">
+          <button type="button" class="bib-alerta-marcar-lido inline-flex items-center rounded-md border border-slate-700 bg-slate-900/60 px-2.5 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-300">
+            Marcar como lido
+          </button>
+        </div>`;
 
     return `
-      <a
-        href="${escHtml(dest)}"
-        class="bib-alerta-link group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 ${lido ? 'opacity-55' : ''} ${clicavel ? '' : 'pointer-events-none'}"
+      <article
+        class="bib-alerta-item group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 ${lido ? 'opacity-55' : ''}"
         data-alerta="${escHtml(a.id)}"
         data-lido="${lido ? '1' : '0'}">
         <div class="mt-1.5 shrink-0">${dot}</div>
         <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            ${plat}
-            ${fonteNome}
-            <time class="ml-auto shrink-0 text-[11px] tabular-nums text-slate-600">${escHtml(fmtQuando(a.created_at))}</time>
-          </div>
-          <h3 class="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-white transition group-hover:text-emerald-300">${escHtml(a.titulo || '')}</h3>
-          ${resumo}
+          ${openTag}
+            <div class="flex flex-wrap items-center gap-2">
+              ${plat}
+              ${fonteNome}
+              <time class="ml-auto shrink-0 text-[11px] tabular-nums text-slate-600">${escHtml(fmtQuando(a.created_at))}</time>
+            </div>
+            <h3 class="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-white transition group-hover:text-emerald-300">${escHtml(a.titulo || '')}</h3>
+            ${resumo}
+          ${closeTag}
+          ${btnLido}
         </div>
-      </a>`;
+      </article>`;
   }
 
   function setFilterStatus(text, show) {

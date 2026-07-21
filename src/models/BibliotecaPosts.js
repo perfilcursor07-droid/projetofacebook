@@ -8,11 +8,17 @@ const BibliotecaPosts = {
   },
 
   findByFonte(fonteId, limit = 30) {
-    return db(this.table)
-      .where({ fonte_id: fonteId })
-      .orderByRaw('COALESCE(publicado_em, created_at) DESC')
-      .orderBy('id', 'desc')
-      .limit(limit);
+    return db(`${this.table} as p`)
+      .leftJoin('ai_matters as m', 'm.id', 'p.matter_id')
+      .where('p.fonte_id', fonteId)
+      .orderByRaw('COALESCE(p.publicado_em, p.created_at) DESC')
+      .orderBy('p.id', 'desc')
+      .limit(limit)
+      .select(
+        'p.*',
+        'm.status as matter_status',
+        'm.publication_id as matter_publication_id'
+      );
   },
 
   countByFonte(fonteId) {

@@ -2171,13 +2171,22 @@ async function detalheFonte(userId, fonteId) {
     err.status = 404;
     throw err;
   }
-  const [posts, countRow] = await Promise.all([
+  const [posts, countRow, indice] = await Promise.all([
     BibliotecaPosts.findByFonte(fonte.id, 80),
     BibliotecaPosts.countByFonte(fonte.id),
+    carregarIndiceJaPublicados(userId),
   ]);
+  const postsEnriquecidos = (posts || []).map((p) => {
+    const jaPublicado = Boolean(
+      p.matter_status === 'publicado' ||
+        p.matter_publication_id ||
+        postJaFoiPublicado(p, indice)
+    );
+    return { ...p, ja_publicado: jaPublicado };
+  });
   return {
     fonte: { ...fonte, posts_count: Number(countRow?.total || 0) },
-    posts,
+    posts: postsEnriquecidos,
   };
 }
 

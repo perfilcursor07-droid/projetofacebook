@@ -403,32 +403,49 @@
                   : (a.fonte_id ? '/biblioteca/fontes/' + a.fonte_id : null);
                 const palavrasCorrespondentes = palavrasDoAlerta(a);
               %>
-              <a href="<%= dest || '#bib-secao-alertas' %>"
-                class="bib-alerta-link group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 <%= a.lido ? 'opacity-55' : '' %> <%= dest ? '' : 'pointer-events-none' %>"
+              <article
+                class="bib-alerta-item group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 <%= a.lido ? 'opacity-55' : '' %>"
                 data-alerta="<%= a.id %>" data-lido="<%= a.lido ? '1' : '0' %>">
                 <div class="mt-1.5 shrink-0">
                   <span class="block h-2 w-2 rounded-full <%= a.lido ? 'bg-slate-700' : 'bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.15)]' %>" title="<%= a.lido ? 'Lido' : 'Não lido' %>"></span>
                 </div>
                 <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <% if (a.fonte_plataforma) { %>
-                      <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset <%= platClass(a.fonte_plataforma) %>"><%= a.fonte_plataforma %></span>
-                    <% } %>
-                    <% if (a.fonte_nome) { %><span class="max-w-[9rem] truncate text-[11px] text-slate-500"><%= a.fonte_nome %></span><% } %>
-                    <time class="ml-auto shrink-0 text-[11px] tabular-nums text-slate-600"><%= fmtQuando(a.created_at) %></time>
-                  </div>
-                  <h3 class="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-white transition group-hover:text-emerald-300"><%= a.titulo %></h3>
-                  <% if (a.resumo) { %><p class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400"><%= a.resumo %></p><% } %>
-                  <% if (palavrasCorrespondentes.length) { %>
-                    <div class="mt-2 flex flex-wrap items-center gap-1">
-                      <span class="text-[10px] text-slate-600">Encontrado por:</span>
-                      <% palavrasCorrespondentes.slice(0, 3).forEach(function (kw) { %>
-                        <span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300"><%= kw %></span>
-                      <% }) %>
+                  <% if (dest) { %>
+                    <a href="<%= dest %>" class="bib-alerta-link block rounded-md outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40">
+                  <% } else { %>
+                    <div class="bib-alerta-link pointer-events-none">
+                  <% } %>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <% if (a.fonte_plataforma) { %>
+                          <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset <%= platClass(a.fonte_plataforma) %>"><%= a.fonte_plataforma %></span>
+                        <% } %>
+                        <% if (a.fonte_nome) { %><span class="max-w-[9rem] truncate text-[11px] text-slate-500"><%= a.fonte_nome %></span><% } %>
+                        <time class="ml-auto shrink-0 text-[11px] tabular-nums text-slate-600"><%= fmtQuando(a.created_at) %></time>
+                      </div>
+                      <h3 class="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-white transition group-hover:text-emerald-300"><%= a.titulo %></h3>
+                      <% if (a.resumo) { %><p class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400"><%= a.resumo %></p><% } %>
+                      <% if (palavrasCorrespondentes.length) { %>
+                        <div class="mt-2 flex flex-wrap items-center gap-1">
+                          <span class="text-[10px] text-slate-600">Encontrado por:</span>
+                          <% palavrasCorrespondentes.slice(0, 3).forEach(function (kw) { %>
+                            <span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300"><%= kw %></span>
+                          <% }) %>
+                        </div>
+                      <% } %>
+                  <% if (dest) { %>
+                    </a>
+                  <% } else { %>
+                    </div>
+                  <% } %>
+                  <% if (!a.lido) { %>
+                    <div class="mt-2.5">
+                      <button type="button" class="bib-alerta-marcar-lido inline-flex items-center rounded-md border border-slate-700 bg-slate-900/60 px-2.5 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-300">
+                        Marcar como lido
+                      </button>
                     </div>
                   <% } %>
                 </div>
-              </a>
+              </article>
             <% }) %>
           </div>
         </section>

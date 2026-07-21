@@ -19,6 +19,18 @@
       return '';
     }
   }
+  function statusPost(p) {
+    if (p.ja_publicado) {
+      return { text: 'Publicada', cls: 'bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-500/25' };
+    }
+    const k = String(p.status || '').toLowerCase();
+    if (k === 'novo') return { text: 'Novo', cls: 'bg-sky-500/15 text-sky-300' };
+    if (k === 'visto') return { text: 'Visto', cls: 'bg-slate-800 text-slate-400' };
+    if (k === 'gerado_texto') return { text: 'Matéria gerada', cls: 'bg-violet-500/15 text-violet-300' };
+    if (k === 'gerado_video') return { text: 'Vídeo gerado', cls: 'bg-violet-500/15 text-violet-300' };
+    if (k === 'ignorado') return { text: 'Ignorado', cls: 'bg-slate-800 text-slate-500' };
+    return { text: p.status || '—', cls: 'bg-slate-800 text-slate-400' };
+  }
 %>
 
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8" id="biblioteca-fonte-app"
@@ -81,7 +93,7 @@
       <div class="mb-3 flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <h2 class="text-base font-semibold text-white">Posts detectados</h2>
-          <p class="mt-0.5 text-xs text-slate-500">Conteúdo encontrado nesta fonte. Gere texto ou vídeo a partir de cada item.</p>
+          <p class="mt-0.5 text-xs text-slate-500">Conteúdo encontrado nesta fonte. Gere matéria a partir de cada item.</p>
         </div>
         <span class="text-xs text-slate-500"><%= postsList.length %> de <%= Number(f.posts_count || postsList.length) %> item(ns)</span>
       </div>
@@ -94,23 +106,31 @@
           </div>
         <% } else { %>
           <div class="divide-y divide-slate-800/80">
-            <% postsList.forEach(function (p) { %>
-              <article class="flex flex-col gap-3 px-4 py-4 transition hover:bg-slate-800/25 sm:flex-row sm:items-center sm:justify-between" data-post="<%= p.id %>" id="post-<%= p.id %>">
+            <% postsList.forEach(function (p) {
+              const st = statusPost(p);
+            %>
+              <article class="flex flex-col gap-3 px-4 py-4 transition hover:bg-slate-800/25 sm:flex-row sm:items-center sm:justify-between <%= p.ja_publicado ? 'opacity-80' : '' %>" data-post="<%= p.id %>" id="post-<%= p.id %>">
                 <div class="min-w-0 flex-1">
                   <p class="text-sm font-medium leading-snug text-white"><%= p.titulo || 'Sem título' %></p>
                   <% if (p.resumo) { %>
                     <p class="mt-1 text-xs leading-relaxed text-slate-400 line-clamp-2"><%= p.resumo %></p>
                   <% } %>
                   <div class="mt-2 flex flex-wrap items-center gap-2">
-                    <span class="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400"><%= p.status %></span>
+                    <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide <%= st.cls %>"><%= st.text %></span>
                     <% if (p.publicado_em || p.created_at) { %>
                       <span class="text-[11px] text-slate-600"><%= fmtQuando(p.publicado_em || p.created_at) %></span>
                     <% } %>
                   </div>
                 </div>
                 <div class="flex flex-wrap gap-1.5 sm:shrink-0">
-                  <button type="button" class="bib-gen-texto rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20" data-id="<%= p.id %>">Gerar Matéria</button>
-                  <button type="button" class="bib-gen-video rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-300 hover:bg-violet-500/20" data-id="<%= p.id %>">Gerar vídeo</button>
+                  <% if (p.ja_publicado && p.matter_id) { %>
+                    <a href="/materias-ia/<%= p.matter_id %>" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20">Ver matéria</a>
+                  <% } else if (p.matter_id && String(p.status) === 'gerado_texto') { %>
+                    <a href="/materias-ia/<%= p.matter_id %>" class="rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-300 hover:bg-violet-500/20">Abrir matéria</a>
+                    <button type="button" class="bib-gen-texto rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20" data-id="<%= p.id %>">Gerar Matéria</button>
+                  <% } else if (!p.ja_publicado) { %>
+                    <button type="button" class="bib-gen-texto rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20" data-id="<%= p.id %>">Gerar Matéria</button>
+                  <% } %>
                   <% if (p.url) { %>
                     <a href="<%= p.url %>" target="_blank" rel="noopener" class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white">Abrir original</a>
                   <% } %>
