@@ -105,11 +105,6 @@
     return el && el.value ? Number(el.value) : null;
   }
 
-  function recommendationPageId() {
-    const el = document.getElementById('bib-melhores-page');
-    return el && el.value ? Number(el.value) : null;
-  }
-
   if (form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -258,7 +253,7 @@
     }
   }
 
-  async function gerarVideo(id, facebookPageId = recommendationPageId() || pageId(), { openInNewTab = false } = {}) {
+  async function gerarVideo(id, facebookPageId = pageId(), { openInNewTab = false } = {}) {
     setBusy(true, 'Baixando e preparando o Reel…');
     try {
       const data = await api(`/api/biblioteca/posts/${id}/gerar-video`, {
@@ -278,116 +273,11 @@
     }
   }
 
-  async function publicarMelhor(id, mediaType) {
-    const destinationPage = recommendationPageId();
-    if (!destinationPage) {
-      alert('Selecione a Página do Facebook no topo de “Melhores para publicar”.');
-      document.getElementById('bib-melhores-page')?.focus();
-      return;
-    }
-
-    const isVideo = mediaType === 'video';
-    const confirmation = isVideo
-      ? 'Processar este Reel e publicar automaticamente quando vídeo, transcrição, matéria e capa estiverem prontos?'
-      : 'Gerar a matéria e a capa e publicar agora na Página do Facebook selecionada?';
-    if (!confirm(confirmation)) return;
-
-    try {
-      setBusy(
-        true,
-        isVideo
-          ? 'Preparando Reel para publicação automática…'
-          : 'IA gerando matéria, capa e publicando…'
-      );
-      const data = await api(`/api/biblioteca/posts/${id}/publicar`, {
-        method: 'POST',
-        body: JSON.stringify({ facebook_page_id: destinationPage }),
-      });
-      const warnings = Array.isArray(data.avisos) && data.avisos.length
-        ? `\n\nAvisos: ${data.avisos.join(' ')}`
-        : '';
-      alert(`${data.message || (data.published ? 'Publicado com sucesso.' : 'Processamento iniciado.')}${warnings}`);
-      location.reload();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function renumerarMelhores() {
-    document.querySelectorAll('#bib-melhores-track [data-melhor-post]').forEach((card, i) => {
-      const rank = card.querySelector('.bib-melhor-rank');
-      if (rank) rank.textContent = String(i + 1);
-    });
-  }
-
-  async function ocultarMelhor(id, cardEl) {
-    try {
-      cardEl?.classList.add('opacity-40', 'pointer-events-none');
-      await api(`/api/biblioteca/melhores/${id}`, { method: 'DELETE' });
-      cardEl?.remove();
-      renumerarMelhores();
-      const track = document.getElementById('bib-melhores-track');
-      if (track && !track.querySelector('[data-melhor-post]')) {
-        location.reload();
-      }
-    } catch (err) {
-      cardEl?.classList.remove('opacity-40', 'pointer-events-none');
-      alert(err.message);
-    }
-  }
-
   document.body.addEventListener('click', (e) => {
-    const ocultar = e.target.closest('.bib-ocultar-melhor');
-    const publicar = e.target.closest('.bib-publicar-melhor');
-    const preparar = e.target.closest('.bib-preparar-melhor');
     const t = e.target.closest('.bib-gen-texto');
     const v = e.target.closest('.bib-gen-video');
-    if (ocultar) {
-      const card = ocultar.closest('[data-melhor-post]');
-      ocultarMelhor(ocultar.dataset.id, card);
-      return;
-    }
-    if (publicar) {
-      publicarMelhor(publicar.dataset.id, publicar.dataset.media);
-      return;
-    }
-    if (preparar) {
-      const id = preparar.dataset.id;
-      const destinationPage = recommendationPageId();
-      const media = preparar.dataset.media === 'video' ? 'video' : 'post';
-      const qs = new URLSearchParams({ media });
-      if (destinationPage) qs.set('facebook_page_id', String(destinationPage));
-      // Abre na hora em nova aba — sem modal na Biblioteca
-      window.open(`/biblioteca/preparar/${id}?${qs.toString()}`, '_blank', 'noopener,noreferrer');
-      return;
-    }
     if (t) gerarTexto(t.dataset.id);
     if (v) gerarVideo(v.dataset.id);
-  });
-
-  document.getElementById('bib-analisar-melhores')?.addEventListener('click', async () => {
-    try {
-      setBusy(true, 'Escaneando fontes e atualizando análise…');
-      const data = await api('/api/biblioteca/melhores/analisar', {
-        method: 'POST',
-        body: JSON.stringify({ limit: 30 }),
-      });
-      if (!data.melhores?.length) {
-        const novas = data.scan?.novas || 0;
-        alert(
-          novas
-            ? 'Fontes escaneadas, mas nenhum conteúdo com pontuação 50+ ainda. Tente de novo em instantes.'
-            : 'Nenhum conteúdo pendente encontrado nas fontes. Confira se as fontes estão ativas.'
-        );
-      }
-      location.reload();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setBusy(false);
-    }
   });
 
   document.getElementById('bib-mark-all')?.addEventListener('click', async () => {

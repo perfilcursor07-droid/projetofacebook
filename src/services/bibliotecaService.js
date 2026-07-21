@@ -2082,7 +2082,7 @@ async function dashboardUsuario(userId) {
   const alertasKeywords = String(user?.biblioteca_alertas_keywords || '').trim();
   const hasKeywords = alertasKeywords.length > 0;
 
-  const [fontes, postsPorFonte, alertas, countRow, autopilot, melhores] = await Promise.all([
+  const [fontes, postsPorFonte, alertas, countRow, autopilot] = await Promise.all([
     BibliotecaFontes.findByUser(userId),
     BibliotecaPosts.countsByUser(userId),
     BibliotecaAlertas.findByUser(userId, {
@@ -2091,7 +2091,6 @@ async function dashboardUsuario(userId) {
     }),
     BibliotecaAlertas.countNaoLidos(userId),
     obterAutopilot(userId),
-    listarMelhoresParaPublicar(userId, 30),
   ]);
   const fontesComContagem = (fontes || []).map((f) => ({
     ...f,
@@ -2103,7 +2102,6 @@ async function dashboardUsuario(userId) {
     alertasNaoLidos: Number(countRow?.total || 0),
     alertasKeywords,
     autopilot,
-    melhores,
   };
 }
 
