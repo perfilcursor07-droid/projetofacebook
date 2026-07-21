@@ -399,6 +399,156 @@
     }
   });
 
+  // --- Filtro por palavras-chave nos alertas recentes ---
+  const alertasBox = document.getElementById('bib-alertas');
+  const keywordsInput = document.getElementById('bib-alertas-keywords');
+  const filterStatus = document.getElementById('bib-alertas-filter-status');
+  const markAllBtn = document.getElementById('bib-mark-all');
+  let keywordsTimer = null;
+  let keywordsReq = 0;
+
+  function escHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function platClass(p) {
+    const k = String(p || '').toLowerCase();
+    if (k === 'youtube') return 'bg-rose-500/15 text-rose-300 ring-rose-500/20';
+    if (k === 'facebook') return 'bg-sky-500/15 text-sky-300 ring-sky-500/20';
+    if (k === 'instagram') return 'bg-fuchsia-500/15 text-fuchsia-300 ring-fuchsia-500/20';
+    if (k === 'tiktok') return 'bg-slate-100/10 text-slate-200 ring-slate-500/30';
+    if (k === 'site') return 'bg-amber-500/15 text-amber-300 ring-amber-500/20';
+    return 'bg-slate-800 text-slate-300 ring-slate-700';
+  }
+
+  function fmtQuando(d) {
+    if (!d) return '';
+    try {
+      return new Date(d).toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function renderAlertasEmpty(filtrando) {
+    return `
+      <div class="px-5 py-14 text-center">
+        <span class="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-800/70 text-slate-500">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M13.7 21h-3.4" /></svg>
+        </span>
+        <p class="mt-3 text-sm font-medium text-slate-400">${
+          filtrando ? 'Nenhum alerta com essas palavras-chave' : 'Nenhum alerta por enquanto'
+        }</p>
+        <p class="mt-1 text-xs leading-relaxed text-slate-600">${
+          filtrando
+            ? 'Tente outras palavras ou limpe o filtro para ver todos os alertas.'
+            : 'As novidades aparecerão aqui quando uma fonte monitorada publicar algo.'
+        }</p>
+      </div>`;
+  }
+
+  function renderAlertaItem(a) {
+    const dest = a.fonte_id ? `/biblioteca/fontes/${a.fonte_id}` : '#bib-secao-alertas';
+    const lido = Boolean(a.lido);
+    const plat = a.fonte_plataforma
+      ? `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset ${platClass(a.fonte_plataforma)}">${escHtml(a.fonte_plataforma)}</span>`
+      : '';
+    const fonteNome = a.fonte_nome
+      ? `<span class="max-w-[9rem] truncate text-[11px] text-slate-500">${escHtml(a.fonte_nome)}</span>`
+      : '';
+    const resumo = a.resumo
+      ? `<p class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">${escHtml(a.resumo)}</p>`
+      : '';
+    const dot = lido
+      ? '<span class="block h-2 w-2 rounded-full bg-slate-700" title="Lido"></span>'
+      : '<span class="block h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.15)]" title="Não lido"></span>';
+
+    return `
+      <a
+        href="${escHtml(dest)}"
+        class="group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 ${lido ? 'opacity-55' : ''} ${a.fonte_id ? '' : 'pointer-events-none'}"
+        data-alerta="${escHtml(a.id)}">
+        <div class="mt-1.5 shrink-0">${dot}</div>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-2">
+            ${plat}
+            ${fonteNome}
+            <time class="ml-auto shrink-0 text-[11px] tabular-nums text-slate-600">${escHtml(fmtQuando(a.created_at))}</time>
+          </div>
+          <h3 class="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-white transition group-hover:text-emerald-300">${escHtml(a.titulo || '')}</h3>
+          ${resumo}
+        </div>
+      </a>`;
+  }
+
+  function setFilterStatus(text, show) {
+    if (!filterStatus) return;
+    filterStatus.textContent = text || '';
+    filterStatus.classList.toggle('hidden', !show);
+  }
+
+  async function carregarAlertasPorKeywords() {
+    if (!alertasBox || !keywordsInput) return;
+    const raw = String(keywordsInput.value || '').trim();
+    const reqId = ++keywordsReq;
+    setFilterStatus(raw ? 'Filtrando…' : '', Boolean(raw));
+
+    try {
+      const qs = new URLSearchParams();
+      if (raw) qs.set('keywords', raw);
+      const data = await api('/api/biblioteca/alertas' + (qs.toString() ? `?${qs}` : ''));
+      if (reqId !== keywordsReq) return;
+
+      const list = Array.isArray(data.alertas) ? data.alertas : [];
+      if (!list.length) {
+        alertasBox.innerHTML = renderAlertasEmpty(Boolean(raw));
+      } else {
+        alertasBox.innerHTML = list.map(renderAlertaItem).join('');
+      }
+
+      if (markAllBtn) {
+        markAllBtn.classList.toggle('invisible', !list.length && !raw);
+      }
+
+      if (raw) {
+        setFilterStatus(
+          list.length
+            ? `${list.length} alerta${list.length === 1 ? '' : 's'} com: ${raw}`
+            : `Nenhum resultado para: ${raw}`,
+          true
+        );
+      } else {
+        setFilterStatus('', false);
+      }
+    } catch (err) {
+      if (reqId !== keywordsReq) return;
+      setFilterStatus(err.message || 'Falha ao filtrar alertas', true);
+    }
+  }
+
+  keywordsInput?.addEventListener('input', () => {
+    clearTimeout(keywordsTimer);
+    keywordsTimer = setTimeout(carregarAlertasPorKeywords, 350);
+  });
+
+  keywordsInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      clearTimeout(keywordsTimer);
+      carregarAlertasPorKeywords();
+    }
+  });
+
   document.querySelectorAll('a[href="#bib-secao-alertas"], #bib-btn-alertas').forEach((el) => {
     el.addEventListener('click', (e) => {
       const target = document.getElementById('bib-secao-alertas');

@@ -340,6 +340,14 @@
               Marcar lidos
             </button>
           </div>
+          <label class="mt-3 block">
+            <span class="sr-only">Filtrar por palavra-chave</span>
+            <input id="bib-alertas-keywords" type="search" autocomplete="off"
+              placeholder="Palavras-chave: pastor, igreja, milagre…"
+              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+            <span class="mt-1.5 block text-[11px] leading-snug text-slate-500">Separe por vírgula. Mostra alertas que contenham qualquer uma das palavras.</span>
+          </label>
+          <p id="bib-alertas-filter-status" class="mt-2 hidden text-[11px] text-emerald-300/90"></p>
         </div>
 
         <div id="bib-alertas" class="max-h-[42rem] divide-y divide-slate-800/80 overflow-y-auto">

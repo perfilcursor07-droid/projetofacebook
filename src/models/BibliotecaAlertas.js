@@ -1,9 +1,25 @@
 const db = require('../config/db');
 
+function parseKeywords(raw) {
+  const list = Array.isArray(raw) ? raw : String(raw || '').split(',');
+  return list
+    .map((k) => String(k || '').trim())
+    .filter((k) => k.length >= 2)
+    .slice(0, 15);
+}
+
+function escapeLike(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_');
+}
+
 const BibliotecaAlertas = {
   table: 'biblioteca_alertas',
 
-  findByUser(userId, { apenasNaoLidos = false, limit = 40 } = {}) {
+  findByUser(userId, { apenasNaoLidos = false, limit = 40, keywords = null } = {}) {
+    const kws = parseKeywords(keywords);
     // Só alertas de fontes que ainda existem (some junto com a exclusão)
     const q = db(`${this.table} as a`)
       .innerJoin('biblioteca_fontes as f', 'f.id', 'a.fonte_id')
@@ -17,6 +33,23 @@ const BibliotecaAlertas = {
         'f.url as fonte_url'
       );
     if (apenasNaoLidos) q.andWhere('a.lido', false);
+
+    if (kws.length) {
+      q.leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id');
+      q.andWhere(function matchKeywords() {
+        kws.forEach((kw) => {
+          const like = `%${escapeLike(kw.toLowerCase())}%`;
+          this.orWhere(function matchOne() {
+            this.whereRaw("LOWER(COALESCE(a.titulo, '')) LIKE ?", [like])
+              .orWhereRaw("LOWER(COALESCE(a.resumo, '')) LIKE ?", [like])
+              .orWhereRaw("LOWER(COALESCE(p.titulo, '')) LIKE ?", [like])
+              .orWhereRaw("LOWER(COALESCE(p.resumo, '')) LIKE ?", [like])
+              .orWhereRaw("LOWER(COALESCE(f.nome, '')) LIKE ?", [like]);
+          });
+        });
+      });
+    }
+
     return q;
   },
 
@@ -57,3 +90,4 @@ const BibliotecaAlertas = {
 };
 
 module.exports = BibliotecaAlertas;
+module.exports.parseKeywords = parseKeywords;

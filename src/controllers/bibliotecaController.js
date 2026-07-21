@@ -223,12 +223,15 @@ async function publicarDireto(req, res, next) {
 async function listarAlertas(req, res, next) {
   try {
     const apenasNaoLidos = req.query.unread === '1' || req.query.naoLidos === '1';
+    const keywords = req.query.keywords || req.query.q || req.query.palavras || '';
+    const hasKeywords = String(keywords || '').trim().length > 0;
     const alertas = await BibliotecaAlertas.findByUser(req.session.userId, {
       apenasNaoLidos,
-      limit: 40,
+      keywords,
+      limit: hasKeywords ? 100 : 40,
     });
     const countRow = await BibliotecaAlertas.countNaoLidos(req.session.userId);
-    res.json({ ok: true, alertas, alertasNaoLidos: Number(countRow?.total || 0) });
+    res.json({ ok: true, alertas, alertasNaoLidos: Number(countRow?.total || 0), keywords: String(keywords || '').trim() });
   } catch (err) {
     next(err);
   }
