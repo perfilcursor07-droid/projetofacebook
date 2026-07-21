@@ -159,6 +159,23 @@
     window.location.href = '/conteudo/lote';
   }
 
+  function abrirMateriaEmNovaAba(url) {
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.dispatchEvent(
+      new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        ctrlKey: true,
+        metaKey: true,
+      })
+    );
+  }
+
   async function gerarSelecionado(statusEl) {
     const sel = selecionados();
     if (!sel.length) {
@@ -174,7 +191,7 @@
     const tipoEl = document.getElementById('mia-tipo');
     setGenerating(
       true,
-      'Apurando fontes, escrevendo o texto e montando a arte. Em seguida você verá a matéria salva para editar.'
+      'Apurando fontes, escrevendo o texto e montando a arte. Em seguida a matéria abre em nova aba.'
     );
     statusEl.textContent = 'Gerando matéria…';
 
@@ -185,7 +202,7 @@
         body: JSON.stringify({
           topico: sel[0],
           facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
-          tipoPublicacao: tipoEl ? tipoEl.value : 'texto',
+          tipoPublicacao: tipoEl ? tipoEl.value : 'foto',
           status: 'rascunho',
         }),
       });
@@ -193,13 +210,24 @@
       if (!res.ok) throw new Error(data.error || 'Falha ao gerar');
 
       const matterId = data.matter?.id;
-      if (!matterId) throw new Error('Matéria gerada, mas sem ID para abrir');
+      const editUrl =
+        data.redirect || (matterId ? '/materias-ia/' + matterId : null);
+      if (!editUrl) throw new Error('Matéria gerada, mas sem ID para abrir');
 
-      statusEl.textContent = 'Abrindo matéria gerada…';
-      if (generatingText) {
-        generatingText.textContent = 'Matéria pronta! Abrindo a tela de edição…';
-      }
-      window.location.href = '/materias-ia/' + matterId;
+      setGenerating(false);
+      abrirMateriaEmNovaAba(editUrl);
+      statusEl.replaceChildren();
+      const msg = document.createElement('span');
+      msg.textContent = 'Matéria pronta. ';
+      statusEl.appendChild(msg);
+      const a = document.createElement('a');
+      a.href = editUrl;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.className = 'text-emerald-400 underline hover:text-emerald-300';
+      a.textContent = 'Abrir matéria';
+      statusEl.appendChild(a);
+      statusEl.appendChild(document.createTextNode(' · você continua em /conteudo.'));
     } catch (err) {
       setGenerating(false);
       statusEl.textContent = err.message;
@@ -373,7 +401,7 @@
       limparFormLink({ keepStatus: true });
 
       if (editUrl) {
-        window.open(editUrl, '_blank', 'noopener');
+        abrirMateriaEmNovaAba(editUrl);
       }
 
       st.replaceChildren();
@@ -526,11 +554,20 @@
         data.redirect || (matterId ? '/materias-ia/' + matterId : null);
       if (!dest) throw new Error('Matéria gerada, mas sem ID para abrir');
 
-      st.textContent = 'Abrindo matéria…';
-      if (generatingText) {
-        generatingText.textContent = 'Matéria pronta! Abrindo a tela de edição…';
-      }
-      window.location.href = dest;
+      setGenerating(false);
+      abrirMateriaEmNovaAba(dest);
+      st.replaceChildren();
+      const msg = document.createElement('span');
+      msg.textContent = 'Matéria pronta. ';
+      st.appendChild(msg);
+      const a = document.createElement('a');
+      a.href = dest;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.className = 'text-emerald-400 underline hover:text-emerald-300';
+      a.textContent = 'Abrir matéria';
+      st.appendChild(a);
+      st.appendChild(document.createTextNode(' · você continua em /conteudo.'));
     } catch (err) {
       setGenerating(false);
       st.textContent = err.message;
