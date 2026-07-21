@@ -1,0 +1,107 @@
+<%- include('partials/app-start') %>
+<%
+  const p = post || {};
+  const f = fonte || {};
+  function platClass(plat) {
+    const k = String(plat || '').toLowerCase();
+    if (k === 'youtube') return 'bg-rose-500/15 text-rose-300 ring-rose-500/20';
+    if (k === 'facebook') return 'bg-sky-500/15 text-sky-300 ring-sky-500/20';
+    if (k === 'instagram') return 'bg-fuchsia-500/15 text-fuchsia-300 ring-fuchsia-500/20';
+    if (k === 'tiktok') return 'bg-slate-100/10 text-slate-200 ring-slate-500/30';
+    if (k === 'site') return 'bg-amber-500/15 text-amber-300 ring-amber-500/20';
+    return 'bg-slate-800 text-slate-300 ring-slate-700';
+  }
+  function fmtQuando(d) {
+    if (!d) return '';
+    try {
+      return new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch (_) {
+      return '';
+    }
+  }
+%>
+
+  <main class="mx-auto max-w-3xl px-4 py-5 sm:px-6 sm:py-8" id="biblioteca-post-app" data-post-id="<%= p.id %>">
+
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <a href="/biblioteca" class="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-emerald-300">
+        ← Voltar à biblioteca
+      </a>
+      <% if (f.id) { %>
+        <a href="/biblioteca/fontes/<%= f.id %>" class="text-xs text-slate-500 hover:text-slate-300">Ver todos os posts desta fonte →</a>
+      <% } %>
+    </div>
+
+    <article class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50">
+      <% if (p.thumbnail) { %>
+        <div class="aspect-[16/9] w-full overflow-hidden bg-slate-950">
+          <img src="<%= p.thumbnail %>" alt="" class="h-full w-full object-cover" loading="lazy" referrerpolicy="no-referrer" />
+        </div>
+      <% } %>
+
+      <div class="p-5 sm:p-7">
+        <div class="flex flex-wrap items-center gap-2">
+          <% if (f.plataforma) { %>
+            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset <%= platClass(f.plataforma) %>"><%= f.plataforma %></span>
+          <% } %>
+          <% if (f.nome) { %>
+            <span class="text-xs text-slate-500"><%= f.nome %></span>
+          <% } %>
+          <% if (p.status) { %>
+            <span class="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400"><%= p.status %></span>
+          <% } %>
+          <% if (p.publicado_em || p.created_at) { %>
+            <time class="ml-auto text-[11px] tabular-nums text-slate-600"><%= fmtQuando(p.publicado_em || p.created_at) %></time>
+          <% } %>
+        </div>
+
+        <h1 class="mt-3 text-xl font-semibold leading-snug tracking-tight text-white sm:text-2xl"><%= p.titulo || 'Sem título' %></h1>
+
+        <% if (p.resumo) { %>
+          <p class="mt-3 text-sm leading-relaxed text-slate-300 whitespace-pre-wrap"><%= p.resumo %></p>
+        <% } %>
+
+        <% if (p.url) { %>
+          <a href="<%= p.url %>" target="_blank" rel="noopener" class="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-400 hover:text-emerald-300">
+            Abrir original
+            <span aria-hidden="true">↗</span>
+          </a>
+        <% } %>
+      </div>
+
+      <div class="border-t border-slate-800 bg-slate-950/30 p-4 sm:p-5">
+        <label class="block text-sm">
+          <span class="text-slate-400">Página FB para gerar matéria (opcional)</span>
+          <select id="bib-page" name="facebook_page_id"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none">
+            <option value="">— selecionar —</option>
+            <% (pages || []).forEach(function (pg) {
+              const sel = Number(f.facebook_page_id) === Number(pg.id)
+                || (!f.facebook_page_id && Number(defaultPageId) === Number(pg.id));
+            %>
+              <option value="<%= pg.id %>" <%= sel ? 'selected' : '' %>><%= pg.page_name %><%= Number(defaultPageId) === Number(pg.id) ? ' · padrão' : '' %></option>
+            <% }) %>
+          </select>
+        </label>
+
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button type="button" class="bib-gen-texto inline-flex items-center justify-center rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2.5 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/25" data-id="<%= p.id %>">
+            Gerar texto
+          </button>
+          <button type="button" class="bib-gen-video inline-flex items-center justify-center rounded-lg border border-violet-500/40 bg-violet-500/10 px-4 py-2.5 text-sm font-semibold text-violet-300 hover:bg-violet-500/20" data-id="<%= p.id %>">
+            Gerar vídeo
+          </button>
+        </div>
+      </div>
+    </article>
+  </main>
+
+  <div id="bib-busy" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
+    <div class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 text-center">
+      <div class="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-emerald-400/30 border-t-emerald-300"></div>
+      <p id="bib-busy-text" class="mt-4 text-sm text-slate-300">Processando…</p>
+    </div>
+  </div>
+
+  <script src="/js/biblioteca.js"></script>
+<%- include('partials/app-end') %>

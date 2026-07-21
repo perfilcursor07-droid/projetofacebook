@@ -55,6 +55,25 @@ async function fontePage(req, res, next) {
   }
 }
 
+async function postPage(req, res, next) {
+  try {
+    const data = await bibliotecaService.detalhePost(req.session.userId, Number(req.params.postId));
+    const pages = await pagesDoUsuario(req.session.userId);
+    const defaultPageId = await defaultPageIdDoUsuario(req.session.userId);
+    // Marca alerta ligado a este post como lido (se existir)
+    await BibliotecaAlertas.marcarLidoPorPost(data.post.id, req.session.userId);
+    return res.render('biblioteca-post', {
+      title: data.post.titulo || 'Notícia',
+      ...data,
+      pages,
+      defaultPageId,
+    });
+  } catch (err) {
+    if (err.status === 404) return res.redirect('/biblioteca');
+    return next(err);
+  }
+}
+
 async function prepararPage(req, res, next) {
   try {
     const postId = Number(req.params.postId);
@@ -353,6 +372,7 @@ async function putAutopilot(req, res, next) {
 module.exports = {
   listPage,
   fontePage,
+  postPage,
   prepararPage,
   listar,
   criar,

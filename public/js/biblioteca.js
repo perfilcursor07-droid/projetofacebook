@@ -172,6 +172,46 @@
     });
   }
 
+  // Abas por plataforma em "Suas fontes"
+  (function initFontesTabs() {
+    const tabs = document.getElementById('bib-fontes-tabs');
+    const list = document.getElementById('bib-fontes');
+    const countEl = document.getElementById('bib-fontes-count');
+    const emptyTab = document.getElementById('bib-fontes-empty-tab');
+    if (!tabs || !list) return;
+
+    const tabActive =
+      'bib-fonte-tab inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 transition';
+    const tabIdle =
+      'bib-fonte-tab inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/40 px-2.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-600 hover:text-slate-200';
+
+    function aplicarFiltro(plat) {
+      const items = list.querySelectorAll('.bib-fonte');
+      let visible = 0;
+      items.forEach((el) => {
+        const match = plat === 'todas' || el.dataset.plataforma === plat;
+        el.classList.toggle('hidden', !match);
+        if (match) visible += 1;
+      });
+      if (emptyTab) emptyTab.classList.toggle('hidden', visible > 0 || items.length === 0);
+      if (countEl) {
+        countEl.textContent = `${visible} salva${visible === 1 ? '' : 's'}`;
+      }
+      tabs.querySelectorAll('.bib-fonte-tab').forEach((btn) => {
+        const on = btn.dataset.plat === plat;
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        btn.className = on ? tabActive : tabIdle;
+      });
+    }
+
+    tabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.bib-fonte-tab');
+      if (!btn) return;
+      e.preventDefault();
+      aplicarFiltro(btn.dataset.plat || 'todas');
+    });
+  })();
+
   document.getElementById('bib-fontes')?.addEventListener('click', async (e) => {
     const scan = e.target.closest('.bib-scan');
     const toggle = e.target.closest('.bib-toggle-mon');
@@ -368,7 +408,11 @@
   }
 
   function renderAlertaItem(a) {
-    const dest = a.fonte_id ? `/biblioteca/fontes/${a.fonte_id}` : '#bib-secao-alertas';
+    const dest = a.post_id
+      ? `/biblioteca/posts/${a.post_id}`
+      : a.fonte_id
+        ? `/biblioteca/fontes/${a.fonte_id}`
+        : '#bib-secao-alertas';
     const lido = Boolean(a.lido);
     const plat = a.fonte_plataforma
       ? `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset ${platClass(a.fonte_plataforma)}">${escHtml(a.fonte_plataforma)}</span>`
@@ -382,11 +426,12 @@
     const dot = lido
       ? '<span class="block h-2 w-2 rounded-full bg-slate-700" title="Lido"></span>'
       : '<span class="block h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.15)]" title="Não lido"></span>';
+    const clicavel = Boolean(a.post_id || a.fonte_id);
 
     return `
       <a
         href="${escHtml(dest)}"
-        class="group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 ${lido ? 'opacity-55' : ''} ${a.fonte_id ? '' : 'pointer-events-none'}"
+        class="group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 ${lido ? 'opacity-55' : ''} ${clicavel ? '' : 'pointer-events-none'}"
         data-alerta="${escHtml(a.id)}">
         <div class="mt-1.5 shrink-0">${dot}</div>
         <div class="min-w-0 flex-1">

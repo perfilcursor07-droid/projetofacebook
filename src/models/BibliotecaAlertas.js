@@ -151,6 +151,12 @@ const BibliotecaAlertas = {
     return db(this.table).where({ id, user_id: userId }).update({ lido: true, updated_at: db.fn.now() });
   },
 
+  marcarLidoPorPost(postId, userId) {
+    return db(this.table)
+      .where({ post_id: postId, user_id: userId, lido: false })
+      .update({ lido: true, updated_at: db.fn.now() });
+  },
+
   async marcarTodosLidos(userId, keywords = null) {
     const ids = await baseQuery(userId, { apenasNaoLidos: true, keywords }).pluck('a.id');
     if (!ids.length) return 0;

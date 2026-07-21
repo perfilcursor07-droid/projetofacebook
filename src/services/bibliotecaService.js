@@ -2122,6 +2122,22 @@ async function detalheFonte(userId, fonteId) {
   };
 }
 
+async function detalhePost(userId, postId) {
+  const post = await BibliotecaPosts.findById(postId);
+  if (!post || Number(post.user_id) !== Number(userId)) {
+    const err = new Error('Post não encontrado');
+    err.status = 404;
+    throw err;
+  }
+  const fonte = post.fonte_id ? await BibliotecaFontes.findById(post.fonte_id) : null;
+  if (fonte && Number(fonte.user_id) !== Number(userId)) {
+    const err = new Error('Post não encontrado');
+    err.status = 404;
+    throw err;
+  }
+  return { post, fonte: fonte || null };
+}
+
 async function obterAutopilot(userId) {
   let row = await BibliotecaAutopilot.findByUser(userId);
   if (!row) {
@@ -2406,6 +2422,7 @@ module.exports = {
   tickAutopilot,
   dashboardUsuario,
   detalheFonte,
+  detalhePost,
   listarMelhoresParaPublicar,
   analisarMelhoresParaPublicar,
   escanearFontesDoUsuario,
