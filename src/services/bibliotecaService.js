@@ -1515,6 +1515,9 @@ async function iniciarBrightDataScan(fonte, { silentFirst = false } = {}) {
 async function escanearFonte(fonte, { silentFirst = false } = {}) {
   const scrapeCreators = require('./scrapeCreatorsInstagram');
   let resultado;
+
+  const salvarColetados = async (itens) => salvarItensFonte(fonte, itens, { silentFirst });
+
   if (fonte.plataforma === 'instagram' && scrapeCreators.isConfigured()) {
     // Descarta qualquer estado legado da Bright Data antes da coleta direta.
     await BibliotecaFontes.update(fonte.id, {
@@ -1525,12 +1528,24 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
       scrape_silent_first: false,
     });
     const handle = fonte.handle || extrairHandle(fonte.url, 'instagram');
-    const itens = await scrapeCreators.listarPostsPerfil(handle, SCAN_LIMIT);
-    console.log(`[scrapecreators-ig] @${handle}: ${itens.length} post(s)`);
-    resultado = await salvarItensFonte(fonte, itens, { silentFirst });
+    try {
+      const itens = await scrapeCreators.listarPostsPerfil(handle, SCAN_LIMIT);
+      console.log(`[scrapecreators-ig] @${handle}: ${itens.length} post(s)`);
+      resultado = await salvarColetados(itens);
+    } catch (err) {
+      const msg = String(err.message || err);
+      const semCredito = /out of credits|not enough credits|insufficient credits|buy more/i.test(msg);
+      const bloqueado = /402|429|403|payment|quota|rate.?limit/i.test(msg);
+      if (!semCredito && !bloqueado) throw err;
+      console.warn(
+        `[scrapecreators-ig] @${handle}: falhou (${semCredito ? 'sem créditos' : 'bloqueio'}), usando fallback cookies/yt-dlp: ${msg}`
+      );
+      const itens = await coletarItensFonte(fonte);
+      resultado = await salvarColetados(itens);
+    }
   } else {
     const itens = await coletarItensFonte(fonte);
-    resultado = await salvarItensFonte(fonte, itens, { silentFirst });
+    resultado = await salvarColetados(itens);
   }
 
   // Traduz posts antigos ainda em inglês/outro idioma (para a lista e a matéria)
