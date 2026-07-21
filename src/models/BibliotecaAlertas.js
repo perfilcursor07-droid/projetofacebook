@@ -1,11 +1,24 @@
 const db = require('../config/db');
 
 function parseKeywords(raw) {
-  const list = Array.isArray(raw) ? raw : String(raw || '').split(',');
-  return list
-    .map((k) => String(k || '').trim())
-    .filter((k) => k.length >= 2)
-    .slice(0, 15);
+  const list = Array.isArray(raw) ? raw : String(raw || '').split(/[,;\n]+/);
+  const seen = new Set();
+  const out = [];
+  for (const item of list) {
+    const k = String(item || '').trim().replace(/\s+/g, ' ');
+    if (k.length < 2) continue;
+    const key = k.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(k);
+    if (out.length >= 30) break;
+  }
+  return out;
+}
+
+function serializeKeywords(raw) {
+  const parsed = parseKeywords(raw);
+  return parsed.length ? parsed.join(', ').slice(0, 500) : null;
 }
 
 function escapeLike(value) {
@@ -91,3 +104,4 @@ const BibliotecaAlertas = {
 
 module.exports = BibliotecaAlertas;
 module.exports.parseKeywords = parseKeywords;
+module.exports.serializeKeywords = serializeKeywords;

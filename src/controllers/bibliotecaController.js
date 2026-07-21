@@ -243,6 +243,7 @@ async function listarAlertas(req, res, next) {
       alertasNaoLidos: Number(countRow?.total || 0),
       keywords,
       keywordsSalvas: savedKeywords,
+      keywordsList: require('../models/BibliotecaAlertas').parseKeywords(savedKeywords),
     });
   } catch (err) {
     next(err);
@@ -252,10 +253,12 @@ async function listarAlertas(req, res, next) {
 async function salvarAlertasKeywords(req, res, next) {
   try {
     const Users = require('../models/Users');
-    const { parseKeywords } = require('../models/BibliotecaAlertas');
-    const raw = req.body?.keywords != null ? req.body.keywords : req.body?.palavras;
+    const { parseKeywords, serializeKeywords } = require('../models/BibliotecaAlertas');
+    const raw = req.body?.keywords != null
+      ? req.body.keywords
+      : (req.body?.palavras != null ? req.body.palavras : req.body?.lista);
     const parsed = parseKeywords(raw);
-    const value = parsed.length ? parsed.join(', ').slice(0, 500) : null;
+    const value = serializeKeywords(parsed);
     await Users.update(req.session.userId, { biblioteca_alertas_keywords: value });
     const alertas = await BibliotecaAlertas.findByUser(req.session.userId, {
       keywords: value,
@@ -265,6 +268,7 @@ async function salvarAlertasKeywords(req, res, next) {
       ok: true,
       keywords: value || '',
       keywordsSalvas: value || '',
+      keywordsList: parsed,
       alertas,
     });
   } catch (err) {

@@ -399,17 +399,33 @@
     }
   });
 
-  // --- Filtro por palavras-chave nos alertas recentes (com salvamento) ---
+  // --- Lista de palavras-chave dos alertas (salva na conta) ---
   const alertasBox = document.getElementById('bib-alertas');
   const alertasAside = document.getElementById('bib-secao-alertas');
-  const keywordsInput = document.getElementById('bib-alertas-keywords');
-  const keywordsSaveBtn = document.getElementById('bib-alertas-keywords-save');
+  const keywordInput = document.getElementById('bib-alertas-keyword-input');
+  const keywordAddBtn = document.getElementById('bib-alertas-keyword-add');
+  const keywordsListEl = document.getElementById('bib-alertas-keywords-list');
   const keywordsClearBtn = document.getElementById('bib-alertas-keywords-clear');
   const filterStatus = document.getElementById('bib-alertas-filter-status');
   const markAllBtn = document.getElementById('bib-mark-all');
-  let keywordsTimer = null;
-  let keywordsReq = 0;
-  let keywordsSalvas = String(alertasAside?.dataset?.keywordsSalvas || '').trim();
+
+  function parseKeywordsClient(raw) {
+    const parts = Array.isArray(raw) ? raw : String(raw || '').split(/[,;\n]+/);
+    const seen = new Set();
+    const out = [];
+    for (const item of parts) {
+      const k = String(item || '').trim().replace(/\s+/g, ' ');
+      if (k.length < 2) continue;
+      const key = k.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(k);
+      if (out.length >= 30) break;
+    }
+    return out;
+  }
+
+  let keywordsList = parseKeywordsClient(alertasAside?.dataset?.keywordsSalvas || '');
 
   function escHtml(value) {
     return String(value ?? '')
@@ -501,25 +517,42 @@
     filterStatus.classList.toggle('hidden', !show);
   }
 
-  function syncClearBtn() {
-    keywordsClearBtn?.classList.toggle('hidden', !keywordsSalvas);
+  function renderKeywordsList() {
+    if (!keywordsListEl) return;
+    keywordsClearBtn?.classList.toggle('hidden', !keywordsList.length);
+    if (!keywordsList.length) {
+      keywordsListEl.innerHTML = '<p class="text-[11px] text-slate-600" data-empty>Nenhuma palavra na lista ainda.</p>';
+      return;
+    }
+    keywordsListEl.innerHTML = keywordsList
+      .map(
+        (kw) => `
+      <span class="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200" data-keyword="${escHtml(kw)}">
+        ${escHtml(kw)}
+        <button type="button" class="bib-kw-remove ml-0.5 rounded-full p-0.5 text-emerald-300/80 hover:bg-emerald-500/20 hover:text-white" data-remove="${escHtml(kw)}" aria-label="Remover ${escHtml(kw)}">
+          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </span>`
+      )
+      .join('');
   }
 
-  function aplicarListaAlertas(list, filtroTexto) {
-    const raw = String(filtroTexto || '').trim();
+  function aplicarListaAlertas(list) {
+    if (!alertasBox) return;
+    const filtrando = keywordsList.length > 0;
     if (!list.length) {
-      alertasBox.innerHTML = renderAlertasEmpty(Boolean(raw));
+      alertasBox.innerHTML = renderAlertasEmpty(filtrando);
     } else {
       alertasBox.innerHTML = list.map(renderAlertaItem).join('');
     }
     if (markAllBtn) {
-      markAllBtn.classList.toggle('invisible', !list.length && !raw);
+      markAllBtn.classList.toggle('invisible', !list.length && !filtrando);
     }
-    if (raw) {
+    if (filtrando) {
       setFilterStatus(
         list.length
-          ? `Filtro${keywordsSalvas && raw === keywordsSalvas ? ' salvo' : ''}: ${raw} · ${list.length} alerta${list.length === 1 ? '' : 's'}`
-          : `Filtro${keywordsSalvas && raw === keywordsSalvas ? ' salvo' : ''}: ${raw} · nenhum alerta no momento`,
+          ? `Lista ativa · ${keywordsList.length} palavra${keywordsList.length === 1 ? '' : 's'} · ${list.length} alerta${list.length === 1 ? '' : 's'}`
+          : `Lista ativa · ${keywordsList.length} palavra${keywordsList.length === 1 ? '' : 's'} · nenhum alerta no momento`,
         true
       );
     } else {
@@ -527,86 +560,88 @@
     }
   }
 
-  async function carregarAlertasPorKeywords() {
-    if (!alertasBox || !keywordsInput) return;
-    const raw = String(keywordsInput.value || '').trim();
-    const reqId = ++keywordsReq;
-    setFilterStatus(raw ? 'Filtrando…' : 'Carregando…', true);
-
-    try {
-      // keywords= (mesmo vazio) evita cair no filtro salvo no servidor
-      const qs = new URLSearchParams({ keywords: raw });
-      const data = await api(`/api/biblioteca/alertas?${qs}`);
-      if (reqId !== keywordsReq) return;
-      if (data.keywordsSalvas != null) {
-        keywordsSalvas = String(data.keywordsSalvas || '').trim();
-        if (alertasAside) alertasAside.dataset.keywordsSalvas = keywordsSalvas;
-        syncClearBtn();
-      }
-      aplicarListaAlertas(Array.isArray(data.alertas) ? data.alertas : [], raw);
-    } catch (err) {
-      if (reqId !== keywordsReq) return;
-      setFilterStatus(err.message || 'Falha ao filtrar alertas', true);
-    }
-  }
-
-  async function salvarKeywords(rawValue) {
-    const raw = String(rawValue ?? keywordsInput?.value ?? '').trim();
-    if (keywordsSaveBtn) {
-      keywordsSaveBtn.disabled = true;
-      keywordsSaveBtn.textContent = 'Salvando…';
+  async function persistirListaKeywords(nextList) {
+    const list = parseKeywordsClient(nextList);
+    if (keywordAddBtn) {
+      keywordAddBtn.disabled = true;
+      keywordAddBtn.textContent = '…';
     }
     try {
       const data = await api('/api/biblioteca/alertas/keywords', {
         method: 'PUT',
-        body: JSON.stringify({ keywords: raw }),
+        body: JSON.stringify({ keywords: list }),
       });
-      keywordsSalvas = String(data.keywordsSalvas || data.keywords || '').trim();
-      if (alertasAside) alertasAside.dataset.keywordsSalvas = keywordsSalvas;
-      if (keywordsInput) keywordsInput.value = keywordsSalvas;
-      syncClearBtn();
-      aplicarListaAlertas(Array.isArray(data.alertas) ? data.alertas : [], keywordsSalvas);
-      setFilterStatus(
-        keywordsSalvas
-          ? `Filtro salvo: ${keywordsSalvas}${(data.alertas || []).length ? ` · ${data.alertas.length} alerta${data.alertas.length === 1 ? '' : 's'}` : ' · nenhum alerta no momento'}`
-          : 'Filtro limpo. Mostrando todos os alertas.',
-        true
-      );
+      keywordsList = Array.isArray(data.keywordsList)
+        ? data.keywordsList
+        : parseKeywordsClient(data.keywordsSalvas || data.keywords || list);
+      const joined = keywordsList.join(', ');
+      if (alertasAside) alertasAside.dataset.keywordsSalvas = joined;
+      renderKeywordsList();
+      aplicarListaAlertas(Array.isArray(data.alertas) ? data.alertas : []);
     } catch (err) {
-      setFilterStatus(err.message || 'Falha ao salvar filtro', true);
+      setFilterStatus(err.message || 'Falha ao salvar lista', true);
+      renderKeywordsList();
     } finally {
-      if (keywordsSaveBtn) {
-        keywordsSaveBtn.disabled = false;
-        keywordsSaveBtn.textContent = 'Salvar filtro';
+      if (keywordAddBtn) {
+        keywordAddBtn.disabled = false;
+        keywordAddBtn.textContent = 'Adicionar';
       }
     }
   }
 
-  keywordsInput?.addEventListener('input', () => {
-    clearTimeout(keywordsTimer);
-    keywordsTimer = setTimeout(carregarAlertasPorKeywords, 350);
+  async function adicionarKeyword() {
+    const raw = String(keywordInput?.value || '').trim();
+    if (!raw) {
+      keywordInput?.focus();
+      return;
+    }
+    // Aceita várias de uma vez se o usuário colar "pastor, igreja"
+    const novas = parseKeywordsClient(raw);
+    if (!novas.length) {
+      setFilterStatus('Digite ao menos 2 caracteres.', true);
+      return;
+    }
+    const merged = parseKeywordsClient([...keywordsList, ...novas]);
+    if (merged.length === keywordsList.length) {
+      setFilterStatus('Essa palavra já está na lista.', true);
+      if (keywordInput) keywordInput.value = '';
+      return;
+    }
+    if (keywordInput) keywordInput.value = '';
+    await persistirListaKeywords(merged);
+    keywordInput?.focus();
+  }
+
+  async function removerKeyword(kw) {
+    const next = keywordsList.filter((item) => item.toLowerCase() !== String(kw || '').toLowerCase());
+    await persistirListaKeywords(next);
+  }
+
+  keywordAddBtn?.addEventListener('click', () => {
+    adicionarKeyword();
   });
 
-  keywordsInput?.addEventListener('keydown', (e) => {
+  keywordInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      clearTimeout(keywordsTimer);
-      salvarKeywords();
+      adicionarKeyword();
     }
   });
 
-  keywordsSaveBtn?.addEventListener('click', () => {
-    clearTimeout(keywordsTimer);
-    salvarKeywords();
+  keywordsListEl?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove]');
+    if (!btn) return;
+    e.preventDefault();
+    removerKeyword(btn.getAttribute('data-remove'));
   });
 
   keywordsClearBtn?.addEventListener('click', async () => {
-    clearTimeout(keywordsTimer);
-    if (keywordsInput) keywordsInput.value = '';
-    await salvarKeywords('');
+    if (!keywordsList.length) return;
+    if (!confirm('Limpar toda a lista de palavras-chave?')) return;
+    await persistirListaKeywords([]);
   });
 
-  syncClearBtn();
+  renderKeywordsList();
 
   document.querySelectorAll('a[href="#bib-secao-alertas"], #bib-btn-alertas').forEach((el) => {
     el.addEventListener('click', (e) => {
