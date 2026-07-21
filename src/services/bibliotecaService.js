@@ -400,12 +400,53 @@ async function coletarItensFonte(fonte) {
 
   if (plataforma === 'facebook') {
     const collected = [];
-    collected.push(...(await coletarViaSerper(fonte)));
-    if (collected.length < 3) collected.push(...(await coletarViaBraveWeb(fonte)));
+    const erros = [];
+    const scrapeCreatorsFb = require('./scrapeCreatorsFacebook');
+
+    if (scrapeCreatorsFb.isConfigured()) {
+      try {
+        const itens = await scrapeCreatorsFb.listarPostsPerfil(url, SCAN_LIMIT);
+        if (itens.length) {
+          console.log(`[scrapecreators-fb] ${url}: ${itens.length} post(s)`);
+          return dedupeItens(itens);
+        }
+      } catch (err) {
+        console.warn('[biblioteca] scrapecreators-fb:', err.message);
+        erros.push(err.message);
+      }
+    }
+
+    try {
+      collected.push(...(await coletarViaSerper(fonte)));
+    } catch (err) {
+      console.warn('[biblioteca] serper-fb:', err.message);
+      erros.push(`serper: ${err.message}`);
+    }
+    if (collected.length < 3) {
+      try {
+        collected.push(...(await coletarViaBraveWeb(fonte)));
+      } catch (err) {
+        console.warn('[biblioteca] brave-fb:', err.message);
+        erros.push(`brave: ${err.message}`);
+      }
+    }
+    if (collected.length < 3) {
+      try {
+        collected.push(...(await coletarViaYtDlp(url, 'facebook')));
+      } catch (err) {
+        console.warn('[biblioteca] yt-dlp-fb:', err.message);
+        erros.push(`yt-dlp: ${err.message}`);
+      }
+    }
+
     const itens = dedupeItens(collected);
     if (!itens.length) {
       const err = new Error(
-        'Não foi possível listar posts do Facebook. Confira SERPER_API_KEY / BRAVE_SEARCH_API_KEY no .env.'
+        [
+          'Não foi possível listar posts do Facebook.',
+          erros[0] || 'Serper/Brave sem créditos ou página inacessível.',
+          'Recarregue créditos em Serper (SERPER_API_KEY) ou ScrapeCreators (SCRAPECREATORS_API_KEY).',
+        ].join(' ')
       );
       err.status = 422;
       throw err;
@@ -2097,14 +2138,16 @@ async function dashboardUsuario(userId) {
   const alertasKeywords = String(user?.biblioteca_alertas_keywords || '').trim();
   const hasKeywords = alertasKeywords.length > 0;
 
-  const [fontes, postsPorFonte, alertas, countRow, autopilot] = await Promise.all([
+  const [fontes, postsPorFonte, alertas, countRow, countLidosRow, autopilot] = await Promise.all([
     BibliotecaFontes.findByUser(userId),
     BibliotecaPosts.countsByUser(userId),
     BibliotecaAlertas.findByUser(userId, {
+      apenasNaoLidos: true,
       limit: hasKeywords ? 100 : 50,
       keywords: hasKeywords ? alertasKeywords : null,
     }),
     BibliotecaAlertas.countNaoLidos(userId, hasKeywords ? alertasKeywords : null),
+    BibliotecaAlertas.countLidos(userId, hasKeywords ? alertasKeywords : null),
     obterAutopilot(userId),
   ]);
   const fontesComContagem = (fontes || []).map((f) => ({
@@ -2115,6 +2158,7 @@ async function dashboardUsuario(userId) {
     fontes: fontesComContagem,
     alertas,
     alertasNaoLidos: Number(countRow?.total || 0),
+    alertasLidos: Number(countLidosRow?.total || 0),
     alertasKeywords,
     autopilot,
   };

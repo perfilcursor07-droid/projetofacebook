@@ -25,11 +25,9 @@ git push origin main
 
 
 rapido
+su - viralizeai
 cd /home/viralizeai/htdocs/www.viralizeai.online
-
-# descarta só o CSS local (é gerado de novo no build)
 git checkout -- public/css/app.css
-
 git pull origin main
 npm install --omit=dev
 npm run build:css

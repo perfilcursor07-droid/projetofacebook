@@ -242,24 +242,40 @@ async function publicarDireto(req, res, next) {
 async function listarAlertas(req, res, next) {
   try {
     const Users = require('../models/Users');
-    const apenasNaoLidos = req.query.unread === '1' || req.query.naoLidos === '1';
+    const apenasNaoLidos =
+      req.query.unread === '1' ||
+      req.query.naoLidos === '1' ||
+      req.query.tab === 'nao-lidos';
+    const apenasLidos =
+      req.query.read === '1' ||
+      req.query.lido === '1' ||
+      req.query.lidos === '1' ||
+      req.query.tab === 'lidos';
+    const filtrarNaoLidos = apenasNaoLidos && !apenasLidos;
+    const filtrarLidos = apenasLidos && !apenasNaoLidos;
     const user = await Users.findById(req.session.userId);
     const savedKeywords = String(user?.biblioteca_alertas_keywords || '').trim();
-    const keywordsRaw = req.query.keywords != null || req.query.q != null || req.query.palavras != null
-      ? (req.query.keywords || req.query.q || req.query.palavras || '')
-      : savedKeywords;
+    const keywordsRaw =
+      req.query.keywords != null || req.query.q != null || req.query.palavras != null
+        ? req.query.keywords || req.query.q || req.query.palavras || ''
+        : savedKeywords;
     const keywords = String(keywordsRaw || '').trim();
     const hasKeywords = keywords.length > 0;
     const alertas = await BibliotecaAlertas.findByUser(req.session.userId, {
-      apenasNaoLidos,
+      apenasNaoLidos: filtrarNaoLidos,
+      apenasLidos: filtrarLidos,
       keywords: hasKeywords ? keywords : null,
-      limit: hasKeywords ? 100 : 40,
+      limit: hasKeywords ? 100 : 50,
     });
-    const countRow = await BibliotecaAlertas.countNaoLidos(req.session.userId);
+    const [countRow, countLidosRow] = await Promise.all([
+      BibliotecaAlertas.countNaoLidos(req.session.userId, hasKeywords ? keywords : null),
+      BibliotecaAlertas.countLidos(req.session.userId, hasKeywords ? keywords : null),
+    ]);
     res.json({
       ok: true,
       alertas,
       alertasNaoLidos: Number(countRow?.total || 0),
+      alertasLidos: Number(countLidosRow?.total || 0),
       keywords,
       keywordsSalvas: savedKeywords,
       keywordsList: require('../models/BibliotecaAlertas').parseKeywords(savedKeywords),
@@ -280,15 +296,22 @@ async function salvarAlertasKeywords(req, res, next) {
     const value = serializeKeywords(parsed);
     await Users.update(req.session.userId, { biblioteca_alertas_keywords: value });
     const alertas = await BibliotecaAlertas.findByUser(req.session.userId, {
+      apenasNaoLidos: true,
       keywords: value,
       limit: value ? 100 : 50,
     });
+    const [countRow, countLidosRow] = await Promise.all([
+      BibliotecaAlertas.countNaoLidos(req.session.userId, value),
+      BibliotecaAlertas.countLidos(req.session.userId, value),
+    ]);
     res.json({
       ok: true,
       keywords: value || '',
       keywordsSalvas: value || '',
       keywordsList: parsed,
       alertas,
+      alertasNaoLidos: Number(countRow?.total || 0),
+      alertasLidos: Number(countLidosRow?.total || 0),
     });
   } catch (err) {
     next(err);

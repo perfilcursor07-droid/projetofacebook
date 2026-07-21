@@ -367,18 +367,41 @@
       dot.className = 'block h-2 w-2 rounded-full bg-slate-700';
       dot.title = 'Lido';
     }
-    const unread = document.getElementById('bib-alertas-unread-count');
     const app = document.getElementById('biblioteca-app');
     const atual = Number(app?.dataset?.alertasNaoLidos || 0);
-    if (atual > 0 && app) {
-      const novo = atual - 1;
-      app.dataset.alertasNaoLidos = String(novo);
-      if (unread) {
-        if (novo <= 0) unread.classList.add('hidden');
-        else {
-          unread.classList.remove('hidden');
-          unread.textContent = `${novo} novo${novo === 1 ? '' : 's'}`;
-        }
+    const novoNao = Math.max(0, atual - 1);
+    const cLid = document.getElementById('bib-tab-count-lidos');
+    const lidosAtual = Number(cLid?.textContent || 0) + 1;
+    if (app) app.dataset.alertasNaoLidos = String(novoNao);
+    const unread = document.getElementById('bib-alertas-unread-count');
+    if (unread) {
+      if (novoNao <= 0) unread.classList.add('hidden');
+      else {
+        unread.classList.remove('hidden');
+        unread.textContent = `${novoNao} novo${novoNao === 1 ? '' : 's'}`;
+      }
+    }
+    const badge = document.getElementById('bib-badge');
+    if (badge) {
+      badge.classList.toggle('hidden', novoNao <= 0);
+      badge.textContent = String(novoNao);
+    }
+    const cNao = document.getElementById('bib-tab-count-nao-lidos');
+    if (cNao) cNao.textContent = String(novoNao);
+    if (cLid) cLid.textContent = String(lidosAtual);
+    // Na aba "Não lidos", some o item da lista
+    const tab = alertasBox?.dataset?.tabAtual || 'nao-lidos';
+    if (tab === 'nao-lidos') {
+      link.remove();
+      const restam = alertasBox.querySelectorAll('.bib-alerta-link').length;
+      const visibleCount = document.getElementById('bib-alertas-visible-count');
+      if (visibleCount) visibleCount.textContent = String(restam);
+      if (!restam && alertasBox) {
+        alertasBox.innerHTML = `
+          <div class="px-5 py-14 text-center">
+            <p class="text-sm font-medium text-slate-400">Nenhum alerta não lido</p>
+            <p class="mt-1 text-xs text-slate-600">Os que você abrir passam para a aba Lidos.</p>
+          </div>`;
       }
     }
     return true;
@@ -451,19 +474,28 @@
     }
   }
 
-  function renderAlertasEmpty(filtrando) {
+  function renderAlertasEmpty(filtrando, tab) {
+    const isLidos = tab === 'lidos';
     return `
       <div class="px-5 py-14 text-center">
         <span class="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-800/70 text-slate-500">
           <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M13.7 21h-3.4" /></svg>
         </span>
         <p class="mt-3 text-sm font-medium text-slate-400">${
-          filtrando ? 'Nenhum alerta com essas palavras-chave' : 'Nenhum alerta por enquanto'
+          isLidos
+            ? filtrando
+              ? 'Nenhum alerta lido com essas palavras'
+              : 'Nenhum alerta lido ainda'
+            : filtrando
+              ? 'Nenhum alerta não lido com essas palavras'
+              : 'Nenhum alerta não lido'
         }</p>
         <p class="mt-1 text-xs leading-relaxed text-slate-600">${
-          filtrando
-            ? 'Quando surgir conteúdo com essas palavras, ele aparece aqui automaticamente.'
-            : 'As novidades aparecerão aqui quando uma fonte monitorada publicar algo.'
+          isLidos
+            ? 'Os alertas que você abrir ou marcar como lidos aparecem aqui.'
+            : filtrando
+              ? 'Quando surgir conteúdo com essas palavras, ele aparece aqui automaticamente.'
+              : 'As novidades aparecerão aqui quando uma fonte monitorada publicar algo.'
         }</p>
       </div>`;
   }
@@ -536,16 +568,67 @@
       .join('');
   }
 
-  function aplicarListaAlertas(list) {
+  let alertasTabAtual = alertasBox?.dataset?.tabAtual || 'nao-lidos';
+
+  const tabActiveCls =
+    'bib-alerta-tab inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 transition';
+  const tabIdleCls =
+    'bib-alerta-tab inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/40 px-2.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-600 hover:text-slate-200';
+
+  function atualizarContadoresAlertas(naoLidos, lidos) {
+    const app = document.getElementById('biblioteca-app');
+    if (typeof naoLidos === 'number' && app) {
+      app.dataset.alertasNaoLidos = String(naoLidos);
+      const unread = document.getElementById('bib-alertas-unread-count');
+      if (unread) {
+        if (naoLidos <= 0) unread.classList.add('hidden');
+        else {
+          unread.classList.remove('hidden');
+          unread.textContent = `${naoLidos} novo${naoLidos === 1 ? '' : 's'}`;
+        }
+      }
+      const badge = document.getElementById('bib-badge');
+      if (badge) {
+        badge.classList.toggle('hidden', naoLidos <= 0);
+        badge.textContent = String(naoLidos);
+      }
+    }
+    const cNao = document.getElementById('bib-tab-count-nao-lidos');
+    const cLid = document.getElementById('bib-tab-count-lidos');
+    if (cNao && typeof naoLidos === 'number') cNao.textContent = String(naoLidos);
+    if (cLid && typeof lidos === 'number') cLid.textContent = String(lidos);
+  }
+
+  function pintarTabsAlertas(tab) {
+    document.querySelectorAll('#bib-alertas-tabs .bib-alerta-tab').forEach((btn) => {
+      const on = btn.dataset.tab === tab;
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      btn.className = on ? tabActiveCls : tabIdleCls;
+    });
+    if (alertasBox) alertasBox.dataset.tabAtual = tab;
+    if (markAllBtn) {
+      markAllBtn.classList.toggle('invisible', tab !== 'nao-lidos');
+      markAllBtn.textContent =
+        tab === 'nao-lidos' ? 'Marcar exibidos como lidos' : 'Marcar exibidos como lidos';
+    }
+  }
+
+  function aplicarListaAlertas(list, meta = {}) {
     if (!alertasBox) return;
     const filtrando = keywordsList.length > 0;
+    const tab = meta.tab || alertasTabAtual;
     if (!list.length) {
-      alertasBox.innerHTML = renderAlertasEmpty(filtrando);
+      alertasBox.innerHTML = renderAlertasEmpty(filtrando, tab);
     } else {
       alertasBox.innerHTML = list.map(renderAlertaItem).join('');
     }
+    const visibleCount = document.getElementById('bib-alertas-visible-count');
+    if (visibleCount) visibleCount.textContent = String(list.length);
     if (markAllBtn) {
-      markAllBtn.classList.toggle('invisible', !list.length && !filtrando);
+      markAllBtn.classList.toggle('invisible', tab !== 'nao-lidos' || (!list.length && !filtrando));
+    }
+    if (typeof meta.alertasNaoLidos === 'number' || typeof meta.alertasLidos === 'number') {
+      atualizarContadoresAlertas(meta.alertasNaoLidos, meta.alertasLidos);
     }
     if (filtrando) {
       setFilterStatus(
@@ -558,6 +641,36 @@
       setFilterStatus('', false);
     }
   }
+
+  async function carregarAlertasTab(tab) {
+    alertasTabAtual = tab === 'lidos' ? 'lidos' : 'nao-lidos';
+    pintarTabsAlertas(alertasTabAtual);
+    if (!alertasBox) return;
+    alertasBox.innerHTML =
+      '<div class="px-5 py-10 text-center text-xs text-slate-500">Carregando…</div>';
+    try {
+      const qs = new URLSearchParams();
+      if (alertasTabAtual === 'lidos') qs.set('lido', '1');
+      else qs.set('unread', '1');
+      const data = await api(`/api/biblioteca/alertas?${qs.toString()}`);
+      aplicarListaAlertas(Array.isArray(data.alertas) ? data.alertas : [], {
+        tab: alertasTabAtual,
+        alertasNaoLidos: Number(data.alertasNaoLidos || 0),
+        alertasLidos: Number(data.alertasLidos || 0),
+      });
+    } catch (err) {
+      alertasBox.innerHTML = `<div class="px-5 py-10 text-center text-xs text-rose-300">${escHtml(err.message || 'Falha ao carregar')}</div>`;
+    }
+  }
+
+  document.getElementById('bib-alertas-tabs')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.bib-alerta-tab');
+    if (!btn) return;
+    e.preventDefault();
+    const tab = btn.dataset.tab || 'nao-lidos';
+    if (tab === alertasTabAtual) return;
+    carregarAlertasTab(tab);
+  });
 
   async function persistirListaKeywords(nextList) {
     const list = parseKeywordsClient(nextList);
@@ -576,7 +689,14 @@
       const joined = keywordsList.join(', ');
       if (alertasAside) alertasAside.dataset.keywordsSalvas = joined;
       renderKeywordsList();
-      aplicarListaAlertas(Array.isArray(data.alertas) ? data.alertas : []);
+      // Após salvar palavras, volta para não lidos (API já devolve essa lista)
+      alertasTabAtual = 'nao-lidos';
+      pintarTabsAlertas(alertasTabAtual);
+      aplicarListaAlertas(Array.isArray(data.alertas) ? data.alertas : [], {
+        tab: 'nao-lidos',
+        alertasNaoLidos: Number(data.alertasNaoLidos || 0),
+        alertasLidos: Number(data.alertasLidos || 0),
+      });
     } catch (err) {
       setFilterStatus(err.message || 'Falha ao salvar lista', true);
       renderKeywordsList();

@@ -96,11 +96,12 @@ function applyKeywordFilter(query, keywords) {
   });
 }
 
-function baseQuery(userId, { apenasNaoLidos = false, keywords = null } = {}) {
+function baseQuery(userId, { apenasNaoLidos = false, apenasLidos = false, keywords = null } = {}) {
   const query = db('biblioteca_alertas as a')
     .innerJoin('biblioteca_fontes as f', 'f.id', 'a.fonte_id')
     .where('a.user_id', userId);
   if (apenasNaoLidos) query.andWhere('a.lido', false);
+  if (apenasLidos) query.andWhere('a.lido', true);
   if (parseKeywords(keywords).length) {
     query.leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id');
     applyKeywordFilter(query, keywords);
@@ -111,8 +112,8 @@ function baseQuery(userId, { apenasNaoLidos = false, keywords = null } = {}) {
 const BibliotecaAlertas = {
   table: 'biblioteca_alertas',
 
-  findByUser(userId, { apenasNaoLidos = false, limit = 40, keywords = null } = {}) {
-    return baseQuery(userId, { apenasNaoLidos, keywords })
+  findByUser(userId, { apenasNaoLidos = false, apenasLidos = false, limit = 40, keywords = null } = {}) {
+    return baseQuery(userId, { apenasNaoLidos, apenasLidos, keywords })
       .orderBy('a.created_at', 'desc')
       .limit(limit)
       .select(
@@ -125,6 +126,12 @@ const BibliotecaAlertas = {
 
   countNaoLidos(userId, keywords = null) {
     return baseQuery(userId, { apenasNaoLidos: true, keywords })
+      .countDistinct({ total: 'a.id' })
+      .first();
+  },
+
+  countLidos(userId, keywords = null) {
+    return baseQuery(userId, { apenasLidos: true, keywords })
       .countDistinct({ total: 'a.id' })
       .first();
   },
