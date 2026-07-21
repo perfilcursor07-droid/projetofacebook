@@ -1,24 +1,35 @@
 const db = require('../config/db');
 
+const MAX_KEYWORDS = 40;
+const MAX_KEYWORD_LENGTH = 60;
+const MAX_SERIALIZED_LENGTH = 500;
+
 function parseKeywords(raw) {
   const list = Array.isArray(raw) ? raw : String(raw || '').split(/[,;\n]+/);
   const seen = new Set();
   const out = [];
   for (const item of list) {
-    const k = String(item || '').trim().replace(/\s+/g, ' ');
-    if (k.length < 2) continue;
-    const key = k.toLowerCase();
+    const keyword = String(item || '').trim().replace(/\s+/g, ' ').slice(0, MAX_KEYWORD_LENGTH);
+    if (keyword.length < 2) continue;
+    const key = stripAccents(keyword).toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(k);
-    if (out.length >= 40) break;
+    out.push(keyword);
+    if (out.length >= MAX_KEYWORDS) break;
   }
   return out;
 }
 
 function serializeKeywords(raw) {
-  const parsed = parseKeywords(raw);
-  return parsed.length ? parsed.join(', ').slice(0, 800) : null;
+  const serialized = [];
+  let length = 0;
+  for (const keyword of parseKeywords(raw)) {
+    const extra = keyword.length + (serialized.length ? 2 : 0);
+    if (length + extra > MAX_SERIALIZED_LENGTH) break;
+    serialized.push(keyword);
+    length += extra;
+  }
+  return serialized.length ? serialized.join(', ') : null;
 }
 
 function escapeLike(value) {
@@ -35,37 +46,73 @@ function stripAccents(value) {
 }
 
 /**
- * Expressão SQL que "isola" palavras com espaços (sem REGEXP — compatível com MySQL 8 ICU).
- * Assim "fé" não casa com "férias"/"federal".
- * Usa CHAR(63) no lugar de '?' para não confundir bindings do Knex.
+ * Normaliza acentos e separadores no próprio SQL para comparar palavras ou frases inteiras.
+ * Ex.: "fé" casa com "Fé-em-Deus", mas não com "férias".
  */
 function paddedTextExpr(columnSql) {
-  return (
-    "CONCAT(' ', " +
-    "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(" +
-    `LOWER(COALESCE(${columnSql}, '')), ` +
-    "'.', ' '), ',', ' '), ':', ' '), ';', ' '), '!', ' '), CHAR(63), ' '), '\"', ' '), '''', ' '), '(', ' '), ')', ' '), " +
-    "' ')"
-  );
+  let expression = `LOWER(COALESCE(${columnSql}, ''))`;
+  const accents = [
+    ['á', 'a'], ['à', 'a'], ['â', 'a'], ['ã', 'a'], ['ä', 'a'],
+    ['é', 'e'], ['è', 'e'], ['ê', 'e'], ['ë', 'e'],
+    ['í', 'i'], ['ì', 'i'], ['î', 'i'], ['ï', 'i'],
+    ['ó', 'o'], ['ò', 'o'], ['ô', 'o'], ['õ', 'o'], ['ö', 'o'],
+    ['ú', 'u'], ['ù', 'u'], ['û', 'u'], ['ü', 'u'], ['ç', 'c'],
+  ];
+  for (const [from, to] of accents) {
+    expression = `REPLACE(${expression}, '${from}', '${to}')`;
+  }
+  const separators = [
+    "'.'", "','", "':'", "';'", "'!'", 'CHAR(63)', 'CHAR(34)', 'CHAR(39)',
+    "'('", "')'", "'['", "']'", "'{'", "'}'", "'-'", "'–'", "'—'", "'/'",
+    "'|'", 'CHAR(92)', 'CHAR(10)', 'CHAR(13)', 'CHAR(9)',
+  ];
+  for (const separator of separators) {
+    expression = `REPLACE(${expression}, ${separator}, ' ')`;
+  }
+  // Compacta espaços repetidos para que frases também funcionem após hífens/quebras de linha.
+  for (let i = 0; i < 4; i += 1) {
+    expression = `REPLACE(${expression}, '  ', ' ')`;
+  }
+  return `CONCAT(' ', ${expression}, ' ')`;
 }
 
-/** Variantes da palavra (com/sem acento) para LIKE com espaços laterais. */
-function keywordLikePatterns(keyword) {
-  const base = String(keyword || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  if (base.length < 2) return [];
-  const variants = new Set([base, stripAccents(base).toLowerCase()]);
-  return [...variants].map((v) => `% ${escapeLike(v)} %`);
+function keywordLikePattern(keyword) {
+  const normalized = stripAccents(keyword).trim().toLowerCase().replace(/\s+/g, ' ');
+  return normalized.length >= 2 ? `% ${escapeLike(normalized)} %` : null;
+}
+
+function applyKeywordFilter(query, keywords) {
+  const patterns = parseKeywords(keywords).map(keywordLikePattern).filter(Boolean);
+  if (!patterns.length) return query;
+  const columns = ['a.titulo', 'a.resumo', 'p.titulo', 'p.resumo', 'f.nome'];
+  return query.andWhere(function matchAnyKeyword() {
+    patterns.forEach((pattern) => {
+      this.orWhere(function matchOneKeyword() {
+        columns.forEach((column) => {
+          this.orWhereRaw(`${paddedTextExpr(column)} LIKE ?`, [pattern]);
+        });
+      });
+    });
+  });
+}
+
+function baseQuery(userId, { apenasNaoLidos = false, keywords = null } = {}) {
+  const query = db('biblioteca_alertas as a')
+    .innerJoin('biblioteca_fontes as f', 'f.id', 'a.fonte_id')
+    .where('a.user_id', userId);
+  if (apenasNaoLidos) query.andWhere('a.lido', false);
+  if (parseKeywords(keywords).length) {
+    query.leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id');
+    applyKeywordFilter(query, keywords);
+  }
+  return query;
 }
 
 const BibliotecaAlertas = {
   table: 'biblioteca_alertas',
 
   findByUser(userId, { apenasNaoLidos = false, limit = 40, keywords = null } = {}) {
-    const kws = parseKeywords(keywords);
-    // Só alertas de fontes que ainda existem (some junto com a exclusão)
-    const q = db(`${this.table} as a`)
-      .innerJoin('biblioteca_fontes as f', 'f.id', 'a.fonte_id')
-      .where('a.user_id', userId)
+    return baseQuery(userId, { apenasNaoLidos, keywords })
       .orderBy('a.created_at', 'desc')
       .limit(limit)
       .select(
@@ -74,35 +121,11 @@ const BibliotecaAlertas = {
         'f.plataforma as fonte_plataforma',
         'f.url as fonte_url'
       );
-    if (apenasNaoLidos) q.andWhere('a.lido', false);
-
-    if (kws.length) {
-      q.leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id');
-      const cols = ['a.titulo', 'a.resumo', 'p.titulo', 'p.resumo', 'f.nome'];
-      q.andWhere(function matchKeywords() {
-        kws.forEach((kw) => {
-          const patterns = keywordLikePatterns(kw);
-          if (!patterns.length) return;
-          this.orWhere(function matchOneKeyword() {
-            patterns.forEach((pattern) => {
-              cols.forEach((col) => {
-                this.orWhereRaw(`${paddedTextExpr(col)} LIKE ?`, [pattern]);
-              });
-            });
-          });
-        });
-      });
-    }
-
-    return q;
   },
 
-  countNaoLidos(userId) {
-    return db(`${this.table} as a`)
-      .innerJoin('biblioteca_fontes as f', 'f.id', 'a.fonte_id')
-      .where('a.user_id', userId)
-      .andWhere('a.lido', false)
-      .count({ total: '*' })
+  countNaoLidos(userId, keywords = null) {
+    return baseQuery(userId, { apenasNaoLidos: true, keywords })
+      .countDistinct({ total: 'a.id' })
       .first();
   },
 
@@ -128,12 +151,20 @@ const BibliotecaAlertas = {
     return db(this.table).where({ id, user_id: userId }).update({ lido: true, updated_at: db.fn.now() });
   },
 
-  marcarTodosLidos(userId) {
-    return db(this.table).where({ user_id: userId, lido: false }).update({ lido: true, updated_at: db.fn.now() });
+  async marcarTodosLidos(userId, keywords = null) {
+    const ids = await baseQuery(userId, { apenasNaoLidos: true, keywords }).pluck('a.id');
+    if (!ids.length) return 0;
+    return db(this.table)
+      .where({ user_id: userId, lido: false })
+      .whereIn('id', ids)
+      .update({ lido: true, updated_at: db.fn.now() });
   },
 };
 
 module.exports = BibliotecaAlertas;
 module.exports.parseKeywords = parseKeywords;
 module.exports.serializeKeywords = serializeKeywords;
-module.exports.keywordLikePatterns = keywordLikePatterns;
+module.exports.keywordLikePatterns = (keyword) => {
+  const pattern = keywordLikePattern(keyword);
+  return pattern ? [pattern] : [];
+};

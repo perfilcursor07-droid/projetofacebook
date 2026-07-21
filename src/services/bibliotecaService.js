@@ -2089,7 +2089,7 @@ async function dashboardUsuario(userId) {
       limit: hasKeywords ? 100 : 50,
       keywords: hasKeywords ? alertasKeywords : null,
     }),
-    BibliotecaAlertas.countNaoLidos(userId),
+    BibliotecaAlertas.countNaoLidos(userId, hasKeywords ? alertasKeywords : null),
     obterAutopilot(userId),
   ]);
   const fontesComContagem = (fontes || []).map((f) => ({
