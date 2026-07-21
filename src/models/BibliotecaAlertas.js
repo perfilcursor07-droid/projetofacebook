@@ -11,21 +11,38 @@ function parseKeywords(raw) {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(k);
-    if (out.length >= 30) break;
+    if (out.length >= 40) break;
   }
   return out;
 }
 
 function serializeKeywords(raw) {
   const parsed = parseKeywords(raw);
-  return parsed.length ? parsed.join(', ').slice(0, 500) : null;
+  return parsed.length ? parsed.join(', ').slice(0, 800) : null;
 }
 
-function escapeLike(value) {
-  return String(value || '')
-    .replace(/\\/g, '\\\\')
-    .replace(/%/g, '\\%')
-    .replace(/_/g, '\\_');
+/** Escapa metacaracteres de REGEXP do MySQL. */
+function escapeRegexp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Monta REGEXP de palavra/frase inteira (não pedaço dentro de outra palavra).
+ * Evita: "fé" bater em "férias", "federal", "professor".
+ */
+function keywordWordRegexp(keyword) {
+  const parts = String(keyword || '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(escapeRegexp);
+  if (!parts.length) return null;
+  // [[:<:]] / [[:>:]] = início/fim de palavra no MySQL
+  if (parts.length === 1) {
+    return `[[:<:]]${parts[0]}[[:>:]]`;
+  }
+  return `[[:<:]]${parts.join('[[:space:]]+')}[[:>:]]`;
 }
 
 const BibliotecaAlertas = {
@@ -51,13 +68,16 @@ const BibliotecaAlertas = {
       q.leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id');
       q.andWhere(function matchKeywords() {
         kws.forEach((kw) => {
-          const like = `%${escapeLike(kw.toLowerCase())}%`;
+          const pattern = keywordWordRegexp(kw);
+          if (!pattern) return;
           this.orWhere(function matchOne() {
-            this.whereRaw("LOWER(COALESCE(a.titulo, '')) LIKE ?", [like])
-              .orWhereRaw("LOWER(COALESCE(a.resumo, '')) LIKE ?", [like])
-              .orWhereRaw("LOWER(COALESCE(p.titulo, '')) LIKE ?", [like])
-              .orWhereRaw("LOWER(COALESCE(p.resumo, '')) LIKE ?", [like])
-              .orWhereRaw("LOWER(COALESCE(f.nome, '')) LIKE ?", [like]);
+            // REGEXP no MySQL com collation unicode trata acentos de forma flexível (fé≈fe),
+            // mas [[:<:]] impede match no meio de outra palavra (férias/federal).
+            this.whereRaw('LOWER(COALESCE(a.titulo, \'\')) REGEXP ?', [pattern])
+              .orWhereRaw('LOWER(COALESCE(a.resumo, \'\')) REGEXP ?', [pattern])
+              .orWhereRaw('LOWER(COALESCE(p.titulo, \'\')) REGEXP ?', [pattern])
+              .orWhereRaw('LOWER(COALESCE(p.resumo, \'\')) REGEXP ?', [pattern])
+              .orWhereRaw('LOWER(COALESCE(f.nome, \'\')) REGEXP ?', [pattern]);
           });
         });
       });
@@ -105,3 +125,4 @@ const BibliotecaAlertas = {
 module.exports = BibliotecaAlertas;
 module.exports.parseKeywords = parseKeywords;
 module.exports.serializeKeywords = serializeKeywords;
+module.exports.keywordWordRegexp = keywordWordRegexp;
