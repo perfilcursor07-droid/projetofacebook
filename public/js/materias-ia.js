@@ -16,6 +16,9 @@
   }
 
   function limparTextoUi(texto) {
+    if (texto != null && typeof texto === 'object') {
+      texto = texto.name || texto.title || texto.username || '';
+    }
     return String(texto || '')
       .replace(/&nbsp;/gi, ' ')
       .replace(/&amp;/gi, '&')
@@ -334,7 +337,7 @@
       renderTopicos(document.getElementById('mia-radar-topicos'), data.topicos || []);
       const parts = [
         (data.topicos || []).length + ' sinal(is)',
-        data.totalTemas != null ? data.totalTemas + ' tema(s)' : '',
+        data.queryApify ? 'query “' + data.queryApify + '”' : '',
         data.totalPosts != null ? data.totalPosts + ' post(s) FB' : '',
         data.fromCache ? 'cache' : '',
         data.apifyConfigured === false ? 'Apify não configurado' : '',

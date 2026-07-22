@@ -19,6 +19,26 @@ function textoLimpo(value) {
     .trim();
 }
 
+function nomeDeCampo(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string' || typeof value === 'number') {
+    return textoLimpo(value);
+  }
+  if (typeof value === 'object') {
+    return textoLimpo(
+      value.name ||
+        value.full_name ||
+        value.fullName ||
+        value.username ||
+        value.userName ||
+        value.title ||
+        value.text ||
+        ''
+    );
+  }
+  return '';
+}
+
 /**
  * Normaliza itens de actors diferentes (scrapeforge, easyapi, etc.).
  */
@@ -69,15 +89,14 @@ function normalizarPost(raw) {
   }
 
   const autor =
-    textoLimpo(
-      raw.author ||
-        raw.userName ||
-        raw.pageName ||
-        raw.page_name ||
-        raw.user?.name ||
-        raw.owner?.name ||
-        ''
-    ) || null;
+    nomeDeCampo(raw.author) ||
+    nomeDeCampo(raw.user) ||
+    nomeDeCampo(raw.owner) ||
+    nomeDeCampo(raw.page) ||
+    nomeDeCampo(raw.userName) ||
+    nomeDeCampo(raw.pageName) ||
+    nomeDeCampo(raw.page_name) ||
+    null;
 
   return {
     url: url ? String(url) : null,
@@ -90,20 +109,51 @@ function normalizarPost(raw) {
   };
 }
 
+/**
+ * Monta query com viés Brasil + gospel (evita resultados ES/AR/global).
+ */
+function montarQueryBrasilGospel(termo) {
+  let q = String(termo || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 80);
+  if (!q) q = 'gospel';
+
+  const lower = q
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  const temBrasil = /\bbrasil\b|\bbrazil\b/.test(lower);
+  const temGospel = /\bgospel\b|\bpastor\b|\bigreja\b|\bfe\b|\bbiblia\b|\bculto\b|\bjesus\b|\bdeus\b|\bevangel/.test(
+    lower
+  );
+
+  if (!temGospel) q = `${q} gospel`;
+  if (!temBrasil) q = `${q} Brasil`;
+  return q.trim();
+}
+
 function buildActorInput(termo, limit) {
   const actor = String(env.apifyFbSearchActor || '');
+  const query = montarQueryBrasilGospel(termo);
+  const locationUid = String(env.apifyFbLocationUid || '').trim();
+
   // scrapeforge/facebook-search-posts
   if (actor.includes('scrapeforge')) {
-    return {
-      query: termo,
+    const input = {
+      query,
       search_type: 'posts',
       max_results: limit,
+      recent_posts: false,
     };
+    if (locationUid) input.location_uid = locationUid;
+    return input;
   }
   // api-empire / scrapier style
   if (actor.includes('api-empire') || actor.includes('scrapier')) {
     return {
-      searchQueries: [termo],
+      searchQueries: [query],
       maxPosts: limit,
       resultsLimit: limit,
     };
@@ -111,18 +161,19 @@ function buildActorInput(termo, limit) {
   // easyapi
   if (actor.includes('easyapi')) {
     return {
-      searchQuery: termo,
+      searchQuery: query,
       maxResults: limit,
     };
   }
   // genérico
   return {
-    query: termo,
-    searchQuery: termo,
-    searchQueries: [termo],
+    query,
+    searchQuery: query,
+    searchQueries: [query],
     max_results: limit,
     maxResults: limit,
     maxPosts: limit,
+    ...(locationUid ? { location_uid: locationUid, locationUid } : {}),
   };
 }
 
@@ -163,7 +214,7 @@ async function buscarPostsPorTermo(termo, opts = {}) {
       'Falha ao consultar Apify';
     const out = new Error(`Apify: ${message}`);
     out.status =
-      /credit|quota|limit|payment|402/i.test(message) ? 402 : err.status || 502;
+      /credit|quota|limit|payment|402|1 run per 24h|free tier/i.test(message) ? 402 : err.status || 502;
     throw out;
   }
 }
@@ -172,4 +223,5 @@ module.exports = {
   isConfigured,
   buscarPostsPorTermo,
   normalizarPost,
+  montarQueryBrasilGospel,
 };

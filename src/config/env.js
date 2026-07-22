@@ -54,6 +54,8 @@ const env = {
   apifyToken: process.env.APIFY_TOKEN || '',
   apifyFbSearchActor:
     process.env.APIFY_FB_SEARCH_ACTOR || 'scrapeforge/facebook-search-posts',
+  /** UID de localização Facebook (opcional) para filtrar geo no actor */
+  apifyFbLocationUid: process.env.APIFY_FB_LOCATION_UID || '',
   ffmpegPath: process.env.FFMPEG_PATH || '',
   pythonPath: process.env.PYTHON_PATH || '',
   storagePath: process.env.STORAGE_PATH || './storage',
