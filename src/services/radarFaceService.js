@@ -119,7 +119,7 @@ function formatarDataCurta(d) {
 }
 
 function cacheKey(extras, url) {
-  return `radar:v5-page:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
+  return `radar:v6-page:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
 }
 
 function getCache(key) {
@@ -534,48 +534,65 @@ async function analisarRadarFace(opts = {}) {
   }
 
   let posts = [];
-  if (apifyFacebook.isConfigured()) {
-    try {
-      if (modoPagina) {
-        posts = await apifyFacebook.buscarPostsDaPagina(origemLink.fonteUrl, {
-          limit: Math.max(MAX_POSTS, 15),
-          maxAgeDays: Math.max(MAX_AGE_DAYS, 14),
-        });
-        avisos.push(`${posts.length} post(s) coletados da página.`);
-        if (!posts.length) {
-          avisos.push(
-            'Nenhum post público recente nessa página. Confira se a página é pública ou tente “Forçar” amanhã (limite Apify).'
-          );
-        }
-      } else {
-        posts = await apifyFacebook.buscarPostsPorTermo(termoPrincipal, {
-          limit: MAX_POSTS,
-          maxAgeDays: MAX_AGE_DAYS,
-        });
-        if (posts.length < 5 && extras[1]) {
-          try {
-            const mais = await apifyFacebook.buscarPostsPorTermo(extras[1], {
-              limit: 10,
-              maxAgeDays: MAX_AGE_DAYS,
-            });
-            const visto = new Set(posts.map((p) => p.url).filter(Boolean));
-            for (const p of mais) {
-              if (p.url && visto.has(p.url)) continue;
-              if (p.url) visto.add(p.url);
-              posts.push(p);
-            }
-          } catch (err2) {
-            avisos.push(`2ª busca: ${err2.message}`);
-          }
-        }
-      }
-    } catch (err) {
-      avisos.push(err.message);
-      if (err.status === 402) {
+  try {
+    if (modoPagina) {
+      // Web (Brave/Serper) primeiro — páginas que o Apify marca como “private”
+      // ainda costumam ter posts no índice de busca; não gasta o free tier.
+      const pageResult = await apifyFacebook.buscarPostsDaPagina(origemLink.fonteUrl, {
+        limit: Math.max(MAX_POSTS, 15),
+        maxAgeDays: Math.max(MAX_AGE_DAYS, 14),
+      });
+      posts = pageResult.posts || [];
+      const fonteColeta = pageResult.fonte || 'none';
+      avisos.push(
+        `${posts.length} post(s) coletados da página${pageResult.handle ? ` (@${pageResult.handle})` : ''} via ${fonteColeta}.`
+      );
+      if (fonteColeta === 'web-index') {
         avisos.push(
-          'Limite do plano grátis Apify (costuma ser 1 busca/24h neste actor). Use o cache ou tente amanhã.'
+          'Apify tratou a página como privada/indisponível — usamos links indexados no Google/Brave (sem curtidas reais). Abra os posts e rode o Radar no link do post para engajamento.'
         );
       }
+      if (!posts.length) {
+        if (pageResult.apifyLimited) {
+          avisos.push(
+            'Limite Apify free tier (1 run/24h). Sem posts no índice web — configure Brave/Serper ou tente amanhã.'
+          );
+        } else {
+          avisos.push(
+            pageResult.privateSkipped
+              ? 'Apify: página privada/sem posts públicos scrapeáveis. Sem resultados no índice web (Brave/Serper). Confira BRAVE_SEARCH_API_KEY / SERPER_API_KEY ou tente outra página pública.'
+              : 'Nenhum post encontrado nessa página. Confira se a URL está correta e se a página publica conteúdo aberto.'
+          );
+        }
+      }
+    } else if (apifyFacebook.isConfigured()) {
+      posts = await apifyFacebook.buscarPostsPorTermo(termoPrincipal, {
+        limit: MAX_POSTS,
+        maxAgeDays: MAX_AGE_DAYS,
+      });
+      if (posts.length < 5 && extras[1]) {
+        try {
+          const mais = await apifyFacebook.buscarPostsPorTermo(extras[1], {
+            limit: 10,
+            maxAgeDays: MAX_AGE_DAYS,
+          });
+          const visto = new Set(posts.map((p) => p.url).filter(Boolean));
+          for (const p of mais) {
+            if (p.url && visto.has(p.url)) continue;
+            if (p.url) visto.add(p.url);
+            posts.push(p);
+          }
+        } catch (err2) {
+          avisos.push(`2ª busca: ${err2.message}`);
+        }
+      }
+    }
+  } catch (err) {
+    avisos.push(err.message);
+    if (err.status === 402) {
+      avisos.push(
+        'Limite do plano grátis Apify (costuma ser 1 busca/24h neste actor). Use o cache ou tente amanhã.'
+      );
     }
   }
 

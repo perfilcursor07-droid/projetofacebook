@@ -176,7 +176,12 @@ function dataIsoDiasAtras(dias) {
 
 function buildActorInput(termo, limit, opts = {}) {
   const actor = String(env.apifyFbSearchActor || '');
-  const query = montarQueryBrasilGospel(termo);
+  const query = opts.rawQuery
+    ? String(termo || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .slice(0, 120)
+    : montarQueryBrasilGospel(termo);
   const locationUid = String(env.apifyFbLocationUid || '').trim();
   const maxAgeDays = Math.min(30, Math.max(1, Number(opts.maxAgeDays) || 7));
   const startDate = dataIsoDiasAtras(maxAgeDays);
@@ -226,7 +231,7 @@ function buildActorInput(termo, limit, opts = {}) {
 
 /**
  * @param {string} termo
- * @param {{ limit?: number, maxAgeDays?: number }} [opts]
+ * @param {{ limit?: number, maxAgeDays?: number, rawQuery?: boolean }} [opts]
  * @returns {Promise<Array<{ url, texto, autor, likes, comments, shares, publicadoEm, hashtags }>>}
  */
 async function buscarPostsPorTermo(termo, opts = {}) {
@@ -245,10 +250,13 @@ async function buscarPostsPorTermo(termo, opts = {}) {
   const actorId = env.apifyFbSearchActor;
 
   try {
-    const run = await client.actor(actorId).call(buildActorInput(keyword, limit, { maxAgeDays }), {
-      waitSecs: 120,
-      memory: 1024,
-    });
+    const run = await client.actor(actorId).call(
+      buildActorInput(keyword, limit, { maxAgeDays, rawQuery: Boolean(opts.rawQuery) }),
+      {
+        waitSecs: 120,
+        memory: 1024,
+      }
+    );
 
     const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit: Math.min(50, limit * 2) });
     return (items || [])
@@ -324,18 +332,117 @@ function handleDaPaginaUrl(pageUrl) {
   }
 }
 
+function postPareceDaPagina(post, handle) {
+  const h = String(handle || '')
+    .toLowerCase()
+    .replace(/^@/, '')
+    .trim();
+  if (!h) return false;
+  const postUrl = String(post?.url || '').toLowerCase();
+  const autor = String(post?.autor || '')
+    .toLowerCase()
+    .replace(/\s+/g, '');
+  if (postUrl.includes(`facebook.com/${h}`) || postUrl.includes(`/${h}/`) || postUrl.includes(`/${h}?`)) {
+    return true;
+  }
+  if (autor && (autor.includes(h) || h.includes(autor))) return true;
+  return false;
+}
+
 /**
- * Posts públicos DE UMA página/perfil (não busca keyword no Feed).
- * @param {string} pageUrl
- * @param {{ limit?: number, maxAgeDays?: number }} [opts]
+ * Posts indexados no Google/Brave com site:facebook.com/{handle}
+ * (fallback quando a página é “privada” para o Apify).
  */
-async function buscarPostsDaPagina(pageUrl, opts = {}) {
-  if (!isConfigured()) {
-    const err = new Error('APIFY_TOKEN não configurada no .env');
-    err.status = 503;
-    throw err;
+async function buscarPostsPaginaViaWeb(pageUrl, opts = {}) {
+  const axios = require('axios');
+  const handle = handleDaPaginaUrl(pageUrl).replace(/^@/, '').trim();
+  if (!handle) return [];
+  const limit = Math.min(15, Math.max(1, Number(opts.limit) || 10));
+  const q = `site:facebook.com/${handle}`;
+  const out = [];
+  const seen = new Set();
+
+  function pushResult(r) {
+    const link = String(r.link || r.url || '').trim();
+    if (!link || !/facebook\.com/i.test(link)) return;
+    const key = link.toLowerCase().split(/[?#]/)[0];
+    if (seen.has(key)) return;
+    // Só links de post/foto/reel dessa página
+    if (!postPareceDaPagina({ url: link, autor: handle }, handle)) return;
+    if (!/\/(posts|permalink|photos?|videos?|reel|watch|share|photo)/i.test(link) && !/story_fbid|fbid|pfbid/i.test(link)) {
+      // homepage da página não conta
+      try {
+        const path = new URL(link).pathname.replace(/\/+$/, '');
+        if (!path || path === `/${handle}`) return;
+      } catch {
+        /* keep */
+      }
+    }
+    seen.add(key);
+    out.push({
+      url: link,
+      texto: textoLimpo(r.snippet || r.description || r.title || ''),
+      autor: handle,
+      likes: 0,
+      comments: 0,
+      shares: 0,
+      publicadoEm: r.date ? new Date(r.date) : null,
+      hashtags: extrairHashtags(r.snippet || r.title || ''),
+      viaWeb: true,
+    });
   }
 
+  if (env.braveSearchApiKey && out.length < limit) {
+    try {
+      const { data } = await axios.get('https://api.search.brave.com/res/v1/web/search', {
+        params: { q, count: Math.min(20, limit + 5), country: 'BR', search_lang: 'pt' },
+        headers: {
+          Accept: 'application/json',
+          'X-Subscription-Token': env.braveSearchApiKey,
+        },
+        timeout: 15000,
+      });
+      for (const r of data?.web?.results || []) {
+        pushResult({
+          link: r.url,
+          title: r.title,
+          snippet: r.description,
+          date: r.age || r.page_age,
+        });
+        if (out.length >= limit) break;
+      }
+    } catch (err) {
+      console.warn('[apify-fb] brave page:', err.response?.data?.message || err.message);
+    }
+  }
+
+  if (env.serperApiKey && out.length < limit) {
+    try {
+      const { data } = await axios.post(
+        'https://google.serper.dev/search',
+        { q, num: Math.min(10, limit), gl: 'br', hl: 'pt-br' },
+        {
+          headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
+          timeout: 15000,
+        }
+      );
+      for (const r of data?.organic || []) {
+        pushResult(r);
+        if (out.length >= limit) break;
+      }
+    } catch (err) {
+      console.warn('[apify-fb] serper page:', err.response?.data?.message || err.message);
+    }
+  }
+
+  return out.slice(0, limit);
+}
+
+/**
+ * Posts públicos DE UMA página/perfil (não busca keyword no Feed).
+ * @returns {Promise<{ posts: Array, handle: string, privateSkipped: boolean, fonte: string }>}
+ */
+async function buscarPostsDaPagina(pageUrl, opts = {}) {
   const url = String(pageUrl || '').trim();
   if (!/^https?:\/\/[^/]*facebook\.com/i.test(url) && !/^https?:\/\/fb\.com/i.test(url)) {
     const err = new Error('Informe a URL de uma página do Facebook');
@@ -345,59 +452,118 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
 
   const limit = Math.min(30, Math.max(1, Number(opts.limit) || 15));
   const maxAgeDays = Number(opts.maxAgeDays) || 14;
-  const client = new ApifyClient({ token: env.apifyToken });
-  const actorId = env.apifyFbPageActor || 'scrapeforge/facebook-posts-scraper';
   const handle = handleDaPaginaUrl(url).toLowerCase();
+  let posts = [];
+  let privateSkipped = false;
+  let fonte = 'none';
+  let apifyLimited = false;
+  // Preferir índice web antes do Apify: páginas “privadas” para o scraper
+  // ainda aparecem no Google/Brave e isso não gasta o 1 run/24h do free tier.
+  const preferApify = Boolean(opts.preferApify);
 
-  try {
-    const run = await client.actor(actorId).call(buildPageActorInput(url, limit, { maxAgeDays }), {
-      waitSecs: 150,
-      memory: 1024,
-    });
-
-    const { items } = await client
-      .dataset(run.defaultDatasetId)
-      .listItems({ limit: Math.min(80, limit * 3) });
-
-    let posts = (items || []).map(normalizarPost).filter(Boolean);
-
-    // Garante que o post é da página (URL ou autor)
-    if (handle) {
-      const filtrados = posts.filter((p) => {
-        const postUrl = String(p.url || '').toLowerCase();
-        const autor = String(p.autor || '').toLowerCase();
-        if (postUrl.includes(`facebook.com/${handle}`) || postUrl.includes(`/${handle}/`)) {
-          return true;
-        }
-        // Alguns actors devolvem só permalink com id; mantém se autor bate com handle
-        if (autor && (autor.includes(handle) || handle.includes(autor.replace(/\s+/g, '')))) {
-          return true;
-        }
-        // Se a URL do post não tem path de outra página conhecida, mantém (dataset já veio da página)
-        return !/facebook\.com\/[a-z0-9.\-_]+\/(posts|photos|videos|reel)/i.test(postUrl) ||
-          postUrl.includes(handle);
-      });
-      // Se o filtro zerou tudo (formato estranho do actor), usa a lista original
-      if (filtrados.length) posts = filtrados;
+  async function tentarWeb() {
+    const web = await buscarPostsPaginaViaWeb(url, { limit });
+    if (web.length) {
+      posts = web;
+      fonte = 'web-index';
+      return true;
     }
-
-    return posts.slice(0, limit);
-  } catch (err) {
-    const message =
-      err?.message ||
-      err?.response?.body?.error?.message ||
-      'Falha ao consultar Apify (página)';
-    const out = new Error(`Apify página: ${message}`);
-    out.status =
-      /credit|quota|limit|payment|402|1 run per 24h|free tier/i.test(message) ? 402 : err.status || 502;
-    throw out;
+    return false;
   }
+
+  async function tentarApifyPage() {
+    if (!isConfigured()) return false;
+    const client = new ApifyClient({ token: env.apifyToken });
+    const actorId = env.apifyFbPageActor || 'scrapeforge/facebook-posts-scraper';
+    try {
+      const run = await client.actor(actorId).call(buildPageActorInput(url, limit, { maxAgeDays }), {
+        waitSecs: 150,
+        memory: 1024,
+      });
+
+      const { items } = await client
+        .dataset(run.defaultDatasetId)
+        .listItems({ limit: Math.min(80, limit * 3) });
+
+      let list = (items || []).map(normalizarPost).filter(Boolean);
+      if (handle) {
+        const filtrados = list.filter((p) => postPareceDaPagina(p, handle));
+        if (filtrados.length) list = filtrados;
+      }
+      if (list.length) {
+        posts = list;
+        fonte = 'apify-page';
+        return true;
+      }
+      privateSkipped = true;
+      return false;
+    } catch (err) {
+      const message =
+        err?.message ||
+        err?.response?.body?.error?.message ||
+        'Falha ao consultar Apify (página)';
+      if (/credit|quota|limit|payment|402|1 run per 24h|free tier/i.test(message)) {
+        apifyLimited = true;
+        console.warn('[apify-fb] page scraper limit:', message);
+        return false;
+      }
+      if (/private|not available|no posts/i.test(message)) {
+        privateSkipped = true;
+        return false;
+      }
+      console.warn('[apify-fb] page scraper:', message);
+      return false;
+    }
+  }
+
+  async function tentarApifySearchHandle() {
+    if (!isConfigured() || !handle || apifyLimited) return false;
+    try {
+      const encontrados = await buscarPostsPorTermo(handle, {
+        limit,
+        maxAgeDays,
+        rawQuery: true,
+      });
+      const daPagina = encontrados.filter((p) => postPareceDaPagina(p, handle));
+      if (daPagina.length) {
+        posts = daPagina;
+        fonte = 'apify-search-handle';
+        return true;
+      }
+    } catch (err) {
+      if (/credit|quota|limit|payment|402|1 run per 24h|free tier/i.test(err.message || '')) {
+        apifyLimited = true;
+      }
+      console.warn('[apify-fb] search handle fallback:', err.message);
+    }
+    return false;
+  }
+
+  if (preferApify) {
+    if (!(await tentarApifyPage()) && !(await tentarWeb())) {
+      await tentarApifySearchHandle();
+    }
+  } else {
+    if (!(await tentarWeb()) && !(await tentarApifyPage())) {
+      await tentarApifySearchHandle();
+    }
+  }
+
+  return {
+    posts: posts.slice(0, limit),
+    handle,
+    privateSkipped,
+    apifyLimited,
+    fonte,
+  };
 }
 
 module.exports = {
   isConfigured,
   buscarPostsPorTermo,
   buscarPostsDaPagina,
+  buscarPostsPaginaViaWeb,
+  postPareceDaPagina,
   normalizarPost,
   montarQueryBrasilGospel,
   extrairHashtags,
