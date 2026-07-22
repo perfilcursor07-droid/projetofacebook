@@ -11,6 +11,7 @@
   <div class="mt-4 inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Modos matérias IA">
     <button type="button" data-mia-modo="buscar" class="mia-modo-btn rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">Buscar e escolher</button>
     <button type="button" data-mia-modo="alta" class="mia-modo-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">Em alta agora</button>
+    <button type="button" data-mia-modo="radar" class="mia-modo-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">Radar Face</button>
     <button type="button" data-mia-modo="link" class="mia-modo-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">A partir do link</button>
     <button type="button" data-mia-modo="auto" class="mia-modo-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">Automação</button>
     <button type="button" data-mia-modo="manual" class="mia-modo-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">Matéria manual</button>
@@ -105,6 +106,32 @@
       <p id="mia-alta-status" class="mt-3 text-sm text-slate-400"></p>
     </div>
     <div id="mia-alta-topicos" class="space-y-2"></div>
+  </div>
+
+  <div id="mia-radar" class="mia-panel mt-5 hidden space-y-4">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">Radar Face — Trends + engajamento</p>
+      <p class="mt-2 text-sm text-slate-400">
+        Cruza Google Trends (Brasil, filtro gospel) com posts públicos do Facebook via Apify (curtidas/comentários).
+        Assim você vê o que sobe nas buscas e o que realmente engaja no Face antes de postar.
+      </p>
+      <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
+        Plano grátis: até 3 temas e 8 posts por tema por análise. Cache de ~6h para economizar créditos.
+        Configure <code class="text-slate-400">APIFY_TOKEN</code> no .env.
+      </p>
+      <label class="mt-4 block text-sm">
+        <span class="text-slate-400">Termos extras (opcional)</span>
+        <input id="mia-radar-extras" type="text" placeholder="ex.: malafaia, cláudio duarte"
+          class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
+      </label>
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        <button type="button" id="mia-btn-radar" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Analisar agora</button>
+        <button type="button" id="mia-btn-radar-force" class="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 hover:border-slate-400" title="Ignora cache e gasta créditos Apify de novo">Forçar nova análise</button>
+        <button type="button" id="mia-btn-preview-radar" class="rounded-lg border border-violet-500/50 bg-violet-500/15 px-4 py-2 text-sm text-violet-200">Gerar matéria do selecionado</button>
+      </div>
+      <p id="mia-radar-status" class="mt-3 text-sm text-slate-400"></p>
+    </div>
+    <div id="mia-radar-topicos" class="space-y-2"></div>
   </div>
 
   <div id="mia-link" class="mia-panel mt-5 hidden space-y-4">

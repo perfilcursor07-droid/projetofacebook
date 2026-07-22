@@ -87,6 +87,29 @@ async function emAlta(req, res, next) {
   }
 }
 
+async function radarFace(req, res, next) {
+  try {
+    const body = req.body || {};
+    const palavrasExtras = body.palavrasExtras || body.palavras_extras || body.keywords || '';
+    const force = body.force === true || body.force === '1' || body.force === 1;
+    const facebookPageId = await resolvePageId(req.session.userId, body);
+    const radarFaceService = require('../services/radarFaceService');
+    const result = await radarFaceService.analisarRadarFace({
+      palavrasExtras,
+      force,
+    });
+    const topicos = await materiaIaService.marcarJaPublicados(
+      req.session.userId,
+      facebookPageId,
+      result.topicos || []
+    );
+    res.json({ ok: true, ...result, topicos });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message, avisos: err.avisos || [] });
+    return next(err);
+  }
+}
+
 async function gerar(req, res, next) {
   try {
     const body = req.body || {};
@@ -1114,6 +1137,7 @@ async function enriquecerFontes(req, res, next) {
 module.exports = {
   pesquisar,
   emAlta,
+  radarFace,
   gerar,
   reescreverLink,
   gerarPreview,

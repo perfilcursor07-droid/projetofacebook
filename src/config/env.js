@@ -50,6 +50,10 @@ const env = {
   appPublicUrl: String(process.env.APP_PUBLIC_URL || '').replace(/\/$/, ''),
   brightdataApiToken: process.env.BRIGHTDATA_API_TOKEN || '',
   scrapeCreatorsApiKey: process.env.SCRAPECREATORS_API_KEY || '',
+  /** Apify — Radar Face (Trends + posts públicos FB) */
+  apifyToken: process.env.APIFY_TOKEN || '',
+  apifyFbSearchActor:
+    process.env.APIFY_FB_SEARCH_ACTOR || 'scrapeforge/facebook-search-posts',
   ffmpegPath: process.env.FFMPEG_PATH || '',
   pythonPath: process.env.PYTHON_PATH || '',
   storagePath: process.env.STORAGE_PATH || './storage',

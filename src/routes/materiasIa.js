@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.post('/pesquisar', controller.pesquisar);
 router.post('/em-alta', controller.emAlta);
+router.post('/radar-face', controller.radarFace);
 router.post('/reescrever-link', controller.reescreverLink);
 router.post('/gerar', controller.gerar);
 router.post('/gerar-preview', controller.gerarPreview);

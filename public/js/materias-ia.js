@@ -83,6 +83,7 @@
       const modo = btn.dataset.miaModo;
       document.getElementById('mia-buscar')?.classList.toggle('hidden', modo !== 'buscar');
       document.getElementById('mia-alta')?.classList.toggle('hidden', modo !== 'alta');
+      document.getElementById('mia-radar')?.classList.toggle('hidden', modo !== 'radar');
       document.getElementById('mia-link')?.classList.toggle('hidden', modo !== 'link');
       document.getElementById('mia-auto')?.classList.toggle('hidden', modo !== 'auto');
       document.getElementById('mia-manual')?.classList.toggle('hidden', modo !== 'manual');
@@ -111,10 +112,24 @@
           const titulo = limparTextoUi(t.titulo);
           const resumo = limparTextoUi(t.resumo);
           const fonte = limparTextoUi(t.veiculo || t.fonte || '');
+          const engajamento = [
+            t.likes != null ? t.likes + ' curtidas' : '',
+            t.comments != null ? t.comments + ' comentários' : '',
+            t.shares != null ? t.shares + ' shares' : '',
+            t.scoreEngajamento != null
+              ? 'score ' + t.scoreEngajamento
+              : t.score != null
+                ? 'score ' + t.score
+                : '',
+            t.termoTrends ? 'Trends: ' + limparTextoUi(t.termoTrends) : '',
+          ]
+            .filter(Boolean)
+            .join(' · ');
           const meta = [
             fonte,
             t.calor ? 'calor ' + t.calor : '',
             t.contagemFontes ? t.contagemFontes + ' fontes' : '',
+            engajamento,
             t.jaPublicado ? 'já usado nesta Página' : '',
           ]
             .filter(Boolean)
@@ -294,6 +309,48 @@
     } catch (err) {
       st.textContent = err.message;
     }
+  });
+
+  async function analisarRadarFace(force) {
+    const st = document.getElementById('mia-radar-status');
+    st.textContent = force
+      ? 'Analisando (forçado, sem cache)… Trends + Facebook via Apify…'
+      : 'Analisando Trends + Facebook via Apify…';
+    try {
+      const res = await fetch('/api/materias-ia/radar-face', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          palavrasExtras: document.getElementById('mia-radar-extras')?.value || '',
+          force: !!force,
+          facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const avisos = (data.avisos || []).join(' ');
+        throw new Error((data.error || 'Falha no Radar Face') + (avisos ? ' — ' + avisos : ''));
+      }
+      renderTopicos(document.getElementById('mia-radar-topicos'), data.topicos || []);
+      const parts = [
+        (data.topicos || []).length + ' sinal(is)',
+        data.totalTemas != null ? data.totalTemas + ' tema(s)' : '',
+        data.totalPosts != null ? data.totalPosts + ' post(s) FB' : '',
+        data.fromCache ? 'cache' : '',
+        data.apifyConfigured === false ? 'Apify não configurado' : '',
+      ].filter(Boolean);
+      const avisos = (data.avisos || []).filter(Boolean);
+      st.textContent = parts.join(' · ') + (avisos.length ? ' — ' + avisos.join(' ') : '');
+    } catch (err) {
+      st.textContent = err.message;
+    }
+  }
+
+  document.getElementById('mia-btn-radar')?.addEventListener('click', () => analisarRadarFace(false));
+  document.getElementById('mia-btn-radar-force')?.addEventListener('click', () => analisarRadarFace(true));
+  document.getElementById('mia-btn-preview-radar')?.addEventListener('click', () => {
+    const st = document.getElementById('mia-radar-status');
+    gerarSelecionado(st || statusMia);
   });
 
   function limparFormLink({ keepStatus = false } = {}) {
