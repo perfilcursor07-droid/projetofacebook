@@ -267,10 +267,139 @@ async function buscarPostsPorTermo(termo, opts = {}) {
   }
 }
 
+function buildPageActorInput(pageUrl, limit, opts = {}) {
+  const actor = String(env.apifyFbPageActor || '');
+  const maxAgeDays = Math.min(30, Math.max(1, Number(opts.maxAgeDays) || 14));
+  const startDate = dataIsoDiasAtras(maxAgeDays);
+  const url = String(pageUrl || '').trim();
+
+  // scrapeforge/facebook-posts-scraper
+  if (actor.includes('scrapeforge') && actor.includes('posts-scraper')) {
+    return {
+      urls: [url],
+      max_posts: limit,
+      start_date: startDate,
+    };
+  }
+  // apify/facebook-posts-scraper
+  if (actor.includes('apify/facebook-posts') || actor.endsWith('facebook-posts-scraper')) {
+    return {
+      startUrls: [{ url }],
+      resultsLimit: limit,
+      onlyPostsNewerThan: `${maxAgeDays} days`,
+    };
+  }
+  // scraper_one / genérico
+  if (actor.includes('scraper_one') || actor.includes('pageUrls')) {
+    return {
+      pageUrls: [url],
+      resultsLimit: limit,
+    };
+  }
+  return {
+    urls: [url],
+    startUrls: [{ url }],
+    pageUrls: [url],
+    max_posts: limit,
+    maxPosts: limit,
+    resultsLimit: limit,
+    start_date: startDate,
+    startDate,
+  };
+}
+
+function handleDaPaginaUrl(pageUrl) {
+  try {
+    const u = new URL(String(pageUrl || '').trim());
+    const id = u.searchParams.get('id');
+    if (id) return String(id);
+    const parts = u.pathname.split('/').filter(Boolean);
+    if (!parts.length) return '';
+    if (/^pages$/i.test(parts[0]) && parts.length >= 2) {
+      return decodeURIComponent(parts[parts.length - 1]);
+    }
+    return decodeURIComponent(parts[0]);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Posts públicos DE UMA página/perfil (não busca keyword no Feed).
+ * @param {string} pageUrl
+ * @param {{ limit?: number, maxAgeDays?: number }} [opts]
+ */
+async function buscarPostsDaPagina(pageUrl, opts = {}) {
+  if (!isConfigured()) {
+    const err = new Error('APIFY_TOKEN não configurada no .env');
+    err.status = 503;
+    throw err;
+  }
+
+  const url = String(pageUrl || '').trim();
+  if (!/^https?:\/\/[^/]*facebook\.com/i.test(url) && !/^https?:\/\/fb\.com/i.test(url)) {
+    const err = new Error('Informe a URL de uma página do Facebook');
+    err.status = 400;
+    throw err;
+  }
+
+  const limit = Math.min(30, Math.max(1, Number(opts.limit) || 15));
+  const maxAgeDays = Number(opts.maxAgeDays) || 14;
+  const client = new ApifyClient({ token: env.apifyToken });
+  const actorId = env.apifyFbPageActor || 'scrapeforge/facebook-posts-scraper';
+  const handle = handleDaPaginaUrl(url).toLowerCase();
+
+  try {
+    const run = await client.actor(actorId).call(buildPageActorInput(url, limit, { maxAgeDays }), {
+      waitSecs: 150,
+      memory: 1024,
+    });
+
+    const { items } = await client
+      .dataset(run.defaultDatasetId)
+      .listItems({ limit: Math.min(80, limit * 3) });
+
+    let posts = (items || []).map(normalizarPost).filter(Boolean);
+
+    // Garante que o post é da página (URL ou autor)
+    if (handle) {
+      const filtrados = posts.filter((p) => {
+        const postUrl = String(p.url || '').toLowerCase();
+        const autor = String(p.autor || '').toLowerCase();
+        if (postUrl.includes(`facebook.com/${handle}`) || postUrl.includes(`/${handle}/`)) {
+          return true;
+        }
+        // Alguns actors devolvem só permalink com id; mantém se autor bate com handle
+        if (autor && (autor.includes(handle) || handle.includes(autor.replace(/\s+/g, '')))) {
+          return true;
+        }
+        // Se a URL do post não tem path de outra página conhecida, mantém (dataset já veio da página)
+        return !/facebook\.com\/[a-z0-9.\-_]+\/(posts|photos|videos|reel)/i.test(postUrl) ||
+          postUrl.includes(handle);
+      });
+      // Se o filtro zerou tudo (formato estranho do actor), usa a lista original
+      if (filtrados.length) posts = filtrados;
+    }
+
+    return posts.slice(0, limit);
+  } catch (err) {
+    const message =
+      err?.message ||
+      err?.response?.body?.error?.message ||
+      'Falha ao consultar Apify (página)';
+    const out = new Error(`Apify página: ${message}`);
+    out.status =
+      /credit|quota|limit|payment|402|1 run per 24h|free tier/i.test(message) ? 402 : err.status || 502;
+    throw out;
+  }
+}
+
 module.exports = {
   isConfigured,
   buscarPostsPorTermo,
+  buscarPostsDaPagina,
   normalizarPost,
   montarQueryBrasilGospel,
   extrairHashtags,
+  handleDaPaginaUrl,
 };

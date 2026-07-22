@@ -119,7 +119,7 @@ function formatarDataCurta(d) {
 }
 
 function cacheKey(extras, url) {
-  return `radar:v4:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
+  return `radar:v5-page:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
 }
 
 function getCache(key) {
@@ -304,7 +304,7 @@ async function resolverTermosDoLink(url) {
   if (isFacebookPageUrl(normalizado)) {
     const handle = extrairHandlePagina(normalizado);
     avisos.push(
-      `Link de página detectado (${handle || 'FB'}) — a IA analisa o perfil e busca posts em alta no mesmo tema.`
+      `Link de página detectado (${handle || 'FB'}) — vamos listar os posts DESSA página e ranquear os que mais engajam.`
     );
     const meta = await metaLeveDaUrl(normalizado);
     const paginaNome = meta.titulo || handle || 'Página Facebook';
@@ -501,20 +501,34 @@ async function analisarRadarFace(opts = {}) {
     avisos.push('APIFY_TOKEN não configurada — configure no .env para medir engajamento no Facebook.');
   }
 
-  const trends = await buscarTrendsBrasil({ limit: 12, onlyGospel: true });
+  const trends = await buscarTrendsBrasil({
+    limit: 12,
+    onlyGospel: origemLink?.tipo !== 'pagina',
+  });
   const extrasManuais = parseTermosUsuario(palavrasExtras);
-  const extrasLink = origemLink?.termos || [];
+  const extrasLink = origemLink?.tipo === 'pagina' ? [] : origemLink?.termos || [];
   const extras = uniqTermos([...extrasManuais, ...extrasLink]).slice(0, 5);
 
-  const termoPrincipal =
-    extras[0] || origemLink?.tema || trends[0]?.termo || '#gospel';
+  const modoPagina = origemLink?.tipo === 'pagina' && origemLink?.fonteUrl;
+  const termoPrincipal = modoPagina
+    ? origemLink.tema || extrasManuais[0] || 'página'
+    : extras[0] || origemLink?.tema || trends[0]?.termo || '#gospel';
   const crescimentoPrincipal =
     extras[0] != null || origemLink ? 999 : Number(trends[0]?.crescimento) || 50;
 
-  const queryApify = apifyFacebook.montarQueryBrasilGospel(termoPrincipal);
-  avisos.push(
-    `Busca FB recente (até ${MAX_AGE_DAYS} dias): “${queryApify}”. Aceita #hashtags.`
-  );
+  let queryApify = modoPagina
+    ? `página: ${origemLink.fonteUrl}`
+    : apifyFacebook.montarQueryBrasilGospel(termoPrincipal);
+
+  if (modoPagina) {
+    avisos.push(
+      `Lendo posts DA PÁGINA (não busca genérica no Feed): ${origemLink.fonteUrl}`
+    );
+  } else {
+    avisos.push(
+      `Busca FB recente (até ${MAX_AGE_DAYS} dias): “${queryApify}”. Aceita #hashtags.`
+    );
+  }
   if (origemLink?.tema) {
     avisos.push(`Tema do link: ${origemLink.tema}`);
   }
@@ -522,25 +536,37 @@ async function analisarRadarFace(opts = {}) {
   let posts = [];
   if (apifyFacebook.isConfigured()) {
     try {
-      posts = await apifyFacebook.buscarPostsPorTermo(termoPrincipal, {
-        limit: MAX_POSTS,
-        maxAgeDays: MAX_AGE_DAYS,
-      });
-      // Segunda passada com termo alternativo do link (se houver)
-      if (posts.length < 5 && extras[1]) {
-        try {
-          const mais = await apifyFacebook.buscarPostsPorTermo(extras[1], {
-            limit: 10,
-            maxAgeDays: MAX_AGE_DAYS,
-          });
-          const visto = new Set(posts.map((p) => p.url).filter(Boolean));
-          for (const p of mais) {
-            if (p.url && visto.has(p.url)) continue;
-            if (p.url) visto.add(p.url);
-            posts.push(p);
+      if (modoPagina) {
+        posts = await apifyFacebook.buscarPostsDaPagina(origemLink.fonteUrl, {
+          limit: Math.max(MAX_POSTS, 15),
+          maxAgeDays: Math.max(MAX_AGE_DAYS, 14),
+        });
+        avisos.push(`${posts.length} post(s) coletados da página.`);
+        if (!posts.length) {
+          avisos.push(
+            'Nenhum post público recente nessa página. Confira se a página é pública ou tente “Forçar” amanhã (limite Apify).'
+          );
+        }
+      } else {
+        posts = await apifyFacebook.buscarPostsPorTermo(termoPrincipal, {
+          limit: MAX_POSTS,
+          maxAgeDays: MAX_AGE_DAYS,
+        });
+        if (posts.length < 5 && extras[1]) {
+          try {
+            const mais = await apifyFacebook.buscarPostsPorTermo(extras[1], {
+              limit: 10,
+              maxAgeDays: MAX_AGE_DAYS,
+            });
+            const visto = new Set(posts.map((p) => p.url).filter(Boolean));
+            for (const p of mais) {
+              if (p.url && visto.has(p.url)) continue;
+              if (p.url) visto.add(p.url);
+              posts.push(p);
+            }
+          } catch (err2) {
+            avisos.push(`2ª busca: ${err2.message}`);
           }
-        } catch (err2) {
-          avisos.push(`2ª busca: ${err2.message}`);
         }
       }
     } catch (err) {
@@ -553,8 +579,8 @@ async function analisarRadarFace(opts = {}) {
     }
   }
 
-  // Exclui o próprio post de origem do ranking
-  if (origemLink?.fonteUrl) {
+  // Exclui o próprio post de origem do ranking (só para link de POST, não página)
+  if (origemLink?.tipo === 'post' && origemLink?.fonteUrl) {
     const origemKey = origemLink.fonteUrl.toLowerCase().replace(/\/$/, '');
     posts = posts.filter((p) => {
       const u = String(p.url || '')
@@ -569,25 +595,27 @@ async function analisarRadarFace(opts = {}) {
       ...p,
       hashtags: p.hashtags || apifyFacebook.extrairHashtags(p.texto),
       score: scoreEngajamento(p),
-      relevancia: relevanciaBrGospel(p),
+      // Em modo página: não força filtro gospel (página pode ser economia, política, etc.)
+      relevancia: modoPagina ? 50 : relevanciaBrGospel(p),
       recencia: bonusRecencia(p),
       velocidade: scoreVelocidade(p),
     }))
     .sort(
       (a, b) =>
         b.recencia - a.recencia ||
-        b.relevancia - a.relevancia ||
         b.velocidade - a.velocidade ||
-        b.score - a.score
+        b.score - a.score ||
+        b.relevancia - a.relevancia
     );
 
+  const ageLimit = modoPagina ? Math.max(MAX_AGE_DAYS, 14) : MAX_AGE_DAYS;
   let recentes = ranked.filter((p) => {
     const d = idadeDias(p);
-    return d == null || d <= MAX_AGE_DAYS;
+    return d == null || d <= ageLimit;
   });
   const recentesComData = ranked.filter((p) => {
     const d = idadeDias(p);
-    return d != null && d <= MAX_AGE_DAYS;
+    return d != null && d <= ageLimit;
   });
 
   if (recentesComData.length >= 1) {
@@ -599,20 +627,22 @@ async function analisarRadarFace(opts = {}) {
     });
     if (ate14.length) {
       ranked = ate14;
-      avisos.push(`Poucos posts ≤${MAX_AGE_DAYS} dias — ampliando para ${MAX_AGE_FALLBACK_DAYS} dias.`);
+      avisos.push(`Poucos posts ≤${ageLimit} dias — ampliando para ${MAX_AGE_FALLBACK_DAYS} dias.`);
     } else if (recentes.length) {
       ranked = recentes;
-      avisos.push('Alguns posts sem data — ranqueados por engajamento + relevância (podem ser mais antigos).');
+      avisos.push('Alguns posts sem data — ranqueados por engajamento (podem ser mais antigos).');
     }
   }
 
-  const preferidos = ranked.filter((p) => p.relevancia >= 20);
-  if (preferidos.length >= 1) {
-    ranked = preferidos;
-  } else if (ranked.length) {
-    avisos.push(
-      'Poucos posts claramente BR/gospel — refine com #gospel, #igreja, pastor, louvor.'
-    );
+  if (!modoPagina) {
+    const preferidos = ranked.filter((p) => p.relevancia >= 20);
+    if (preferidos.length >= 1) {
+      ranked = preferidos;
+    } else if (ranked.length) {
+      avisos.push(
+        'Poucos posts claramente BR/gospel — refine com #gospel, #igreja, pastor, louvor.'
+      );
+    }
   }
 
   const topicos = ranked.slice(0, MAX_TOPICOS).map((p) =>
