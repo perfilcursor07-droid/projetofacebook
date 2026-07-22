@@ -71,6 +71,14 @@ function parseDataPost(raw) {
 /**
  * Normaliza itens de actors diferentes (scrapeforge, easyapi, etc.).
  */
+function slugifyFb(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
 function normalizarPost(raw) {
   if (!raw || typeof raw !== 'object') return null;
 
@@ -90,6 +98,7 @@ function normalizarPost(raw) {
     raw.likes ??
       raw.likesCount ??
       raw.reactionsCount ??
+      raw.reactions_count ??
       raw.reactionCount ??
       raw.reactions?.like ??
       raw.reactions?.total ??
@@ -107,6 +116,8 @@ function normalizarPost(raw) {
       raw.sharesCount ??
       raw.shareCount ??
       raw.shares_count ??
+      raw.reshare_count ??
+      raw.reshareCount ??
       raw.engagement?.shares
   );
 
@@ -123,10 +134,23 @@ function normalizarPost(raw) {
     nomeDeCampo(raw.page_name) ||
     null;
 
+  const authorUrl =
+    (typeof raw.author === 'object' && raw.author
+      ? raw.author.url || raw.author.profileUrl || raw.author.profile_url
+      : null) ||
+    raw.authorUrl ||
+    raw.author_url ||
+    raw.pageUrl ||
+    raw.page_url ||
+    raw.userUrl ||
+    raw.profileUrl ||
+    null;
+
   return {
     url: url ? String(url) : null,
     texto: texto || null,
     autor,
+    authorUrl: authorUrl ? String(authorUrl) : null,
     likes,
     comments,
     shares,
@@ -332,20 +356,44 @@ function handleDaPaginaUrl(pageUrl) {
   }
 }
 
-function postPareceDaPagina(post, handle) {
+function urlContemHandle(url, handle) {
+  const h = String(handle || '')
+    .toLowerCase()
+    .replace(/^@/, '')
+    .trim();
+  if (!h || !url) return false;
+  const u = String(url).toLowerCase();
+  return (
+    u.includes(`facebook.com/${h}`) ||
+    u.includes(`fb.com/${h}`) ||
+    u.includes(`/${h}/`) ||
+    u.includes(`/${h}?`) ||
+    u.includes(`/${h}&`)
+  );
+}
+
+function postPareceDaPagina(post, handle, aliases = []) {
   const h = String(handle || '')
     .toLowerCase()
     .replace(/^@/, '')
     .trim();
   if (!h) return false;
-  const postUrl = String(post?.url || '').toLowerCase();
-  const autor = String(post?.autor || '')
-    .toLowerCase()
-    .replace(/\s+/g, '');
-  if (postUrl.includes(`facebook.com/${h}`) || postUrl.includes(`/${h}/`) || postUrl.includes(`/${h}?`)) {
+  const postUrl = String(post?.url || '');
+  const authorUrl = String(post?.authorUrl || '');
+  if (urlContemHandle(postUrl, h) || urlContemHandle(authorUrl, h)) return true;
+
+  const autorSlug = slugifyFb(post?.autor);
+  const handleSlug = slugifyFb(h);
+  if (autorSlug && handleSlug && (autorSlug.includes(handleSlug) || handleSlug.includes(autorSlug))) {
     return true;
   }
-  if (autor && (autor.includes(h) || h.includes(autor))) return true;
+
+  for (const alias of aliases || []) {
+    const a = slugifyFb(alias);
+    if (!a || a.length < 4) continue;
+    if (autorSlug && (autorSlug.includes(a) || a.includes(autorSlug))) return true;
+    if (urlContemHandle(postUrl, a) || urlContemHandle(authorUrl, a)) return true;
+  }
   return false;
 }
 
@@ -393,16 +441,36 @@ async function buscarPostsPaginaViaWeb(pageUrl, opts = {}) {
   }
 
   if (env.braveSearchApiKey && out.length < limit) {
-    try {
+    const tryBrave = async (params) => {
       const { data } = await axios.get('https://api.search.brave.com/res/v1/web/search', {
-        params: { q, count: Math.min(20, limit + 5), country: 'BR', search_lang: 'pt' },
+        params,
         headers: {
           Accept: 'application/json',
           'X-Subscription-Token': env.braveSearchApiKey,
         },
         timeout: 15000,
       });
-      for (const r of data?.web?.results || []) {
+      return data?.web?.results || [];
+    };
+    try {
+      let results = [];
+      try {
+        results = await tryBrave({
+          q,
+          count: Math.min(20, limit + 5),
+          country: 'BR',
+          search_lang: 'pt',
+        });
+      } catch (err422) {
+        if (err422.response?.status !== 422) throw err422;
+        // Plano free / params rejeitados → tenta query mínima
+        console.warn(
+          '[apify-fb] brave page 422, retry mínimo:',
+          err422.response?.data?.error?.detail || err422.message
+        );
+        results = await tryBrave({ q, count: Math.min(10, limit) });
+      }
+      for (const r of results) {
         pushResult({
           link: r.url,
           title: r.title,
@@ -411,8 +479,28 @@ async function buscarPostsPaginaViaWeb(pageUrl, opts = {}) {
         });
         if (out.length >= limit) break;
       }
+      // Sem site: às vezes o free plan engasga; tenta menção ao handle
+      if (!out.length) {
+        const alt = await tryBrave({
+          q: `"facebook.com/${handle}" OR ${handle} site:facebook.com`,
+          count: Math.min(10, limit),
+        }).catch(() => []);
+        for (const r of alt) {
+          pushResult({
+            link: r.url,
+            title: r.title,
+            snippet: r.description,
+            date: r.age || r.page_age,
+          });
+          if (out.length >= limit) break;
+        }
+      }
     } catch (err) {
-      console.warn('[apify-fb] brave page:', err.response?.data?.message || err.message);
+      const detail =
+        err.response?.data?.error?.detail ||
+        err.response?.data?.message ||
+        err.message;
+      console.warn('[apify-fb] brave page:', detail);
     }
   }
 
@@ -435,6 +523,44 @@ async function buscarPostsPaginaViaWeb(pageUrl, opts = {}) {
     }
   }
 
+  // Fallback sem API: DuckDuckGo HTML (quando Brave 422 / Serper sem crédito)
+  if (!out.length) {
+    try {
+      const { data: html } = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q },
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'text/html',
+        },
+        timeout: 18000,
+        responseType: 'text',
+      });
+      const re =
+        /uddg=([^&"]+)|href="(https?:\/\/(?:www\.)?(?:facebook|fb)\.com\/[^"]+)"/gi;
+      let m;
+      while ((m = re.exec(String(html || ''))) && out.length < limit) {
+        let link = '';
+        if (m[1]) {
+          try {
+            link = decodeURIComponent(m[1]);
+          } catch {
+            link = m[1];
+          }
+        } else {
+          link = m[2] || '';
+        }
+        if (!link || !/facebook\.com|fb\.com/i.test(link)) continue;
+        pushResult({ link, title: '', snippet: '' });
+      }
+      if (out.length) {
+        console.info(`[apify-fb] duckduckgo page: ${out.length} link(s) para @${handle}`);
+      }
+    } catch (err) {
+      console.warn('[apify-fb] duckduckgo page:', err.message);
+    }
+  }
+
   return out.slice(0, limit);
 }
 
@@ -453,10 +579,23 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
   const limit = Math.min(30, Math.max(1, Number(opts.limit) || 15));
   const maxAgeDays = Number(opts.maxAgeDays) || 14;
   const handle = handleDaPaginaUrl(url).toLowerCase();
+  const aliases = Array.isArray(opts.aliases)
+    ? opts.aliases.map((a) => String(a || '').trim()).filter(Boolean)
+    : [];
+  // handle "investibr" → alias "investi br"
+  if (handle && !/^\d+$/.test(handle)) {
+    const spaced = handle.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[.\-_]+/g, ' ');
+    if (spaced && spaced !== handle) aliases.push(spaced);
+    // investibr → "investi br" heurística comum (marca + br)
+    if (/br$/i.test(handle) && handle.length > 4) {
+      aliases.push(`${handle.slice(0, -2)} br`, handle.slice(0, -2));
+    }
+  }
   let posts = [];
   let privateSkipped = false;
   let fonte = 'none';
   let apifyLimited = false;
+  let searchRaw = 0;
   // Preferir índice web antes do Apify: páginas “privadas” para o scraper
   // ainda aparecem no Google/Brave e isso não gasta o 1 run/24h do free tier.
   const preferApify = Boolean(opts.preferApify);
@@ -481,13 +620,22 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
         memory: 1024,
       });
 
+      const statusMsg = String(run?.statusMessage || run?.status || '');
+      if (/free tier|1 run per 24h/i.test(statusMsg) || /ABORT|FAIL/i.test(String(run?.status || ''))) {
+        if (/free tier|1 run per 24h/i.test(statusMsg)) {
+          apifyLimited = true;
+          console.warn('[apify-fb] page scraper limit:', statusMsg);
+          return false;
+        }
+      }
+
       const { items } = await client
         .dataset(run.defaultDatasetId)
         .listItems({ limit: Math.min(80, limit * 3) });
 
       let list = (items || []).map(normalizarPost).filter(Boolean);
       if (handle) {
-        const filtrados = list.filter((p) => postPareceDaPagina(p, handle));
+        const filtrados = list.filter((p) => postPareceDaPagina(p, handle, aliases));
         if (filtrados.length) list = filtrados;
       }
       if (list.length) {
@@ -517,18 +665,45 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
   }
 
   async function tentarApifySearchHandle() {
-    if (!isConfigured() || !handle || apifyLimited) return false;
+    // Search é outro actor — não bloqueia só porque o page-scraper bateu free tier.
+    if (!isConfigured() || !handle) return false;
+    const queries = [];
+    const pushQ = (q) => {
+      const t = String(q || '').trim();
+      if (!t || queries.some((x) => x.toLowerCase() === t.toLowerCase())) return;
+      queries.push(t);
+    };
+    pushQ(handle);
+    for (const a of aliases) pushQ(a);
+    // Nome da página sem espaços colados
+    if (handle.length >= 6) pushQ(handle.replace(/br$/i, ' brasil'));
+
     try {
-      const encontrados = await buscarPostsPorTermo(handle, {
-        limit,
-        maxAgeDays,
-        rawQuery: true,
-      });
-      const daPagina = encontrados.filter((p) => postPareceDaPagina(p, handle));
-      if (daPagina.length) {
-        posts = daPagina;
-        fonte = 'apify-search-handle';
-        return true;
+      let encontrados = [];
+      for (const q of queries.slice(0, 2)) {
+        const batch = await buscarPostsPorTermo(q, {
+          limit: Math.max(limit, 15),
+          maxAgeDays,
+          rawQuery: true,
+        });
+        encontrados = encontrados.concat(batch);
+        const daPagina = encontrados.filter((p) => postPareceDaPagina(p, handle, aliases));
+        if (daPagina.length) {
+          posts = daPagina;
+          fonte = 'apify-search-handle';
+          searchRaw = encontrados.length;
+          return true;
+        }
+        // 1 query já gastou o free tier do search — não dispara segunda se veio vazio de match
+        if (batch.length) {
+          searchRaw = batch.length;
+          break;
+        }
+      }
+      if (searchRaw) {
+        console.warn(
+          `[apify-fb] search "${handle}": ${searchRaw} post(s) brutos, 0 da página (author.url/url sem match)`
+        );
       }
     } catch (err) {
       if (/credit|quota|limit|payment|402|1 run per 24h|free tier/i.test(err.message || '')) {
@@ -554,6 +729,7 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
     handle,
     privateSkipped,
     apifyLimited,
+    searchRaw,
     fonte,
   };
 }
@@ -564,6 +740,7 @@ module.exports = {
   buscarPostsDaPagina,
   buscarPostsPaginaViaWeb,
   postPareceDaPagina,
+  slugifyFb,
   normalizarPost,
   montarQueryBrasilGospel,
   extrairHashtags,

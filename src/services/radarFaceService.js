@@ -119,7 +119,7 @@ function formatarDataCurta(d) {
 }
 
 function cacheKey(extras, url) {
-  return `radar:v6-page:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
+  return `radar:v7-page:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
 }
 
 function getCache(key) {
@@ -325,6 +325,8 @@ async function resolverTermosDoLink(url) {
           tipo: 'pagina',
           termos,
           tema: extraido.tema || paginaNome,
+          paginaNome,
+          handle: handle || null,
           resumo: extraido.resumo || meta.descricao || `Posts no tema de ${paginaNome}`,
           fonteUrl: normalizado,
           avisos,
@@ -343,6 +345,8 @@ async function resolverTermosDoLink(url) {
       tipo: 'pagina',
       termos,
       tema: paginaNome,
+      paginaNome,
+      handle: handle || null,
       resumo: meta.descricao || `Tema da página ${paginaNome}`,
       fonteUrl: normalizado,
       avisos,
@@ -541,6 +545,7 @@ async function analisarRadarFace(opts = {}) {
       const pageResult = await apifyFacebook.buscarPostsDaPagina(origemLink.fonteUrl, {
         limit: Math.max(MAX_POSTS, 15),
         maxAgeDays: Math.max(MAX_AGE_DAYS, 14),
+        aliases: [origemLink.paginaNome, origemLink.handle, origemLink.tema].filter(Boolean),
       });
       posts = pageResult.posts || [];
       const fonteColeta = pageResult.fonte || 'none';
@@ -553,9 +558,14 @@ async function analisarRadarFace(opts = {}) {
         );
       }
       if (!posts.length) {
+        if (pageResult.searchRaw > 0) {
+          avisos.push(
+            `Apify search achou ${pageResult.searchRaw} post(s) mencionando o termo, mas nenhum era DESSA página (author/url ≠ @${pageResult.handle}).`
+          );
+        }
         if (pageResult.apifyLimited) {
           avisos.push(
-            'Limite Apify free tier (1 run/24h). Sem posts no índice web — configure Brave/Serper ou tente amanhã.'
+            'Limite Apify free tier (1 run/24h no page-scraper). Sem posts no índice web — confira Brave/Serper ou tente amanhã.'
           );
         } else {
           avisos.push(
