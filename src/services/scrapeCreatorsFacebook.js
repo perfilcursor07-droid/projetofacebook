@@ -49,21 +49,46 @@ function normalizarItem(item) {
   };
 }
 
-async function listarPostsPerfil(pageUrl, limit = 10) {
-  if (!isConfigured()) {
-    throw new Error('SCRAPECREATORS_API_KEY não configurada');
-  }
+/** Formato do Radar Face (engajamento real). */
+function normalizarPostRadar(item, pageUrl) {
+  if (!item || typeof item !== 'object') return null;
+  const url = String(item.url || item.permalink || '').trim();
+  const id = String(item.id || '').trim();
+  if (!url && !id) return null;
 
-  const url = String(pageUrl || '').trim();
-  if (!url) throw new Error('URL da página do Facebook inválida');
+  const texto = typeof item.text === 'string' ? item.text.trim() : '';
+  const author = item.author && typeof item.author === 'object' ? item.author : {};
+  const handle = (() => {
+    try {
+      const parts = new URL(String(pageUrl || '')).pathname.split('/').filter(Boolean);
+      return parts[0] || '';
+    } catch {
+      return '';
+    }
+  })();
 
+  return {
+    url: url || (id ? `https://www.facebook.com/${id}` : null),
+    texto: texto || null,
+    autor: String(author.short_name || author.name || handle || 'Facebook').trim(),
+    authorUrl: author.url || (handle ? `https://www.facebook.com/${handle}` : null),
+    likes: Number(item.reactionCount) || 0,
+    comments: Number(item.commentCount) || 0,
+    shares: Number(item.shareCount || item.reshareCount) || 0,
+    publicadoEm: normalizarData(item.publishTime),
+    hashtags: (texto.match(/#[\wÀ-ÿ]+/gi) || []).slice(0, 12),
+    viaScrapeCreators: true,
+  };
+}
+
+async function fetchPostsPage(params) {
   const response = await axios.get(POSTS_URL, {
-    params: { url },
+    params,
     headers: {
       'x-api-key': env.scrapeCreatorsApiKey,
       Accept: 'application/json',
     },
-    timeout: 30000,
+    timeout: 45000,
     validateStatus: () => true,
   });
 
@@ -73,24 +98,86 @@ async function listarPostsPerfil(pageUrl, limit = 10) {
       response.data?.error ||
       response.data?.detail ||
       `HTTP ${response.status}`;
-    const err = new Error(`ScrapeCreators não listou a página Facebook: ${message}`);
+    const err = new Error(message);
     err.status = response.status === 429 ? 429 : 502;
     throw err;
   }
 
   if (response.data?.success === false) {
     const message = response.data?.message || response.data?.error || 'falha desconhecida';
-    const err = new Error(`ScrapeCreators não listou a página Facebook: ${message}`);
+    const err = new Error(message);
     err.status = 502;
     throw err;
   }
 
+  return response.data || {};
+}
+
+/**
+ * Posts da página com curtidas/comentários (ScrapeCreators).
+ * API devolve ~3 posts por request; usa cursor para paginar.
+ */
+async function listarPostsPerfilRadar(pageUrl, opts = {}) {
+  if (!isConfigured()) {
+    throw new Error('SCRAPECREATORS_API_KEY não configurada');
+  }
+
+  const url = String(pageUrl || '').trim();
+  if (!url) throw new Error('URL da página do Facebook inválida');
+
+  const limit = Math.min(30, Math.max(1, Number(opts.limit) || 15));
+  const maxAgeDays = Math.min(30, Math.max(1, Number(opts.maxAgeDays) || 14));
+  const maxRequests = Math.min(8, Math.ceil(limit / 3) + 1);
+  const out = [];
+  const seen = new Set();
+  let cursor = null;
+
+  for (let i = 0; i < maxRequests && out.length < limit; i++) {
+    const params = { url };
+    if (cursor) params.cursor = cursor;
+
+    const data = await fetchPostsPage(params);
+    const batch = Array.isArray(data.posts) ? data.posts : [];
+    cursor = data.cursor || null;
+
+    for (const raw of batch) {
+      const post = normalizarPostRadar(raw, url);
+      if (!post?.url) continue;
+      const key = post.url.split(/[?#]/)[0].toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      if (post.publicadoEm) {
+        const ageDays = (Date.now() - post.publicadoEm.getTime()) / 86400000;
+        if (ageDays > maxAgeDays) continue;
+      }
+
+      out.push(post);
+      if (out.length >= limit) break;
+    }
+
+    if (!batch.length || !cursor) break;
+  }
+
+  return out;
+}
+
+async function listarPostsPerfil(pageUrl, limit = 10) {
+  if (!isConfigured()) {
+    throw new Error('SCRAPECREATORS_API_KEY não configurada');
+  }
+
+  const url = String(pageUrl || '').trim();
+  if (!url) throw new Error('URL da página do Facebook inválida');
+
+  const data = await fetchPostsPage({ url });
   const max = Math.min(30, Math.max(1, Number(limit) || 10));
-  const posts = Array.isArray(response.data?.posts) ? response.data.posts : [];
+  const posts = Array.isArray(data.posts) ? data.posts : [];
   return posts.map(normalizarItem).filter(Boolean).slice(0, max);
 }
 
 module.exports = {
   isConfigured,
   listarPostsPerfil,
+  listarPostsPerfilRadar,
 };

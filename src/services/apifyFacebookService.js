@@ -661,16 +661,7 @@ async function buscarPostsPaginaViaWeb(pageUrl, opts = {}) {
   }
 
   // Fallback sem API: DuckDuckGo HTML (quando Brave 422 / Serper sem crédito)
-  const antesDdg = out.length;
   if (out.length < limit) {
-    await buscarDuckDuckGo();
-  }
-
-  // Se Brave trouxe só lixo genérico do FB, tenta DDG para snippets melhores
-  const soRotulos = out.length > 0 && out.every((p) => (p.indiceWeb || 0) < 30);
-  if (soRotulos && out.length <= antesDdg + 1) {
-    seen.clear();
-    out.length = 0;
     await buscarDuckDuckGo();
   }
 
@@ -711,9 +702,36 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
   let fonte = 'none';
   let apifyLimited = false;
   let searchRaw = 0;
+  let scrapeCreatorsLimited = false;
   // Preferir índice web antes do Apify: páginas “privadas” para o scraper
   // ainda aparecem no Google/Brave e isso não gasta o 1 run/24h do free tier.
   const preferApify = Boolean(opts.preferApify);
+
+  async function tentarScrapeCreators() {
+    let sc;
+    try {
+      sc = require('./scrapeCreatorsFacebook');
+    } catch {
+      return false;
+    }
+    if (!sc.isConfigured()) return false;
+    try {
+      const list = await sc.listarPostsPerfilRadar(url, { limit, maxAgeDays });
+      if (list.length) {
+        posts = list;
+        fonte = 'scrapecreators';
+        console.info(`[apify-fb] scrapecreators ok (@${handle}, ${list.length} post(s))`);
+        return true;
+      }
+    } catch (err) {
+      const msg = err.message || '';
+      if (/credit|out of credits|payment|402|429/i.test(msg)) {
+        scrapeCreatorsLimited = true;
+      }
+      console.warn('[apify-fb] scrapecreators page:', msg);
+    }
+    return false;
+  }
 
   async function tentarWeb() {
     const web = await buscarPostsPaginaViaWeb(url, { limit });
@@ -830,13 +848,17 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
   }
 
   if (preferApify) {
-    if (!(await tentarApifyPage()) && !(await tentarWeb())) {
-      await tentarApifySearchHandle();
+    if (!(await tentarApifyPage())) {
+      if (!(await tentarScrapeCreators()) && !(await tentarWeb())) {
+        await tentarApifySearchHandle();
+      }
     }
-  } else {
-    if (!(await tentarWeb()) && !(await tentarApifyPage())) {
-      await tentarApifySearchHandle();
-    }
+  } else if (await tentarScrapeCreators()) {
+    /* engajamento real via ScrapeCreators */
+  } else if (await tentarWeb()) {
+    console.info(`[apify-fb] web-index ok (@${handle}, ${posts.length} post(s)) — Apify não será chamado`);
+  } else if (!(await tentarApifyPage())) {
+    await tentarApifySearchHandle();
   }
 
   return {
@@ -844,6 +866,7 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
     handle,
     privateSkipped,
     apifyLimited,
+    scrapeCreatorsLimited,
     searchRaw,
     fonte,
   };

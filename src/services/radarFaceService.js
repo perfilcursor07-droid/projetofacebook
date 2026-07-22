@@ -124,7 +124,7 @@ function formatarDataCurta(d) {
 }
 
 function cacheKey(extras, url) {
-  return `radar:v8-page:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
+  return `radar:v10-sc:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
 }
 
 function getCache(key) {
@@ -512,7 +512,12 @@ async function analisarRadarFace(opts = {}) {
   }
 
   if (!apifyFacebook.isConfigured()) {
-    avisos.push('APIFY_TOKEN não configurada — configure no .env para medir engajamento no Facebook.');
+    const sc = require('./scrapeCreatorsFacebook');
+    if (!sc.isConfigured()) {
+      avisos.push(
+        'Configure SCRAPECREATORS_API_KEY (recomendado, pay-as-you-go) ou APIFY_TOKEN para engajamento no Facebook.'
+      );
+    }
   }
 
   const trends = await buscarTrendsBrasil({
@@ -564,10 +569,18 @@ async function analisarRadarFace(opts = {}) {
       );
       if (fonteColeta === 'web-index') {
         avisos.push(
-          'Apify tratou a página como privada/indisponível — usamos links indexados no Google/Brave (sem curtidas reais). Abra os posts e rode o Radar no link do post para engajamento.'
+          'Sem ScrapeCreators/Apify — usamos links indexados (sem curtidas reais). Cadastre SCRAPECREATORS_API_KEY ou aguarde o Apify.'
         );
       }
+      if (fonteColeta === 'scrapecreators') {
+        avisos.push('Posts via ScrapeCreators — curtidas e comentários reais (pay-as-you-go, sem limite 24h do Apify).');
+      }
       if (!posts.length) {
+        if (pageResult.scrapeCreatorsLimited) {
+          avisos.push(
+            'ScrapeCreators sem créditos. Recarregue em scrapecreators.com (cartão, pay-as-you-go) ou use Apify amanhã.'
+          );
+        }
         if (pageResult.searchRaw > 0) {
           avisos.push(
             `Apify search achou ${pageResult.searchRaw} post(s) mencionando o termo, mas nenhum era DESSA página (author/url ≠ @${pageResult.handle}).`
@@ -782,6 +795,13 @@ async function analisarRadarFace(opts = {}) {
     maxAgeDays: MAX_AGE_DAYS,
     avisos,
     apifyConfigured: apifyFacebook.isConfigured(),
+    scrapeCreatorsConfigured: (() => {
+      try {
+        return require('./scrapeCreatorsFacebook').isConfigured();
+      } catch {
+        return false;
+      }
+    })(),
     fromCache: false,
     geradoEm: new Date().toISOString(),
     origemLink: origemLink
