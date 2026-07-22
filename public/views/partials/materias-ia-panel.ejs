@@ -219,11 +219,24 @@
           class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
       </label>
 
-      <label class="mt-3 block text-sm">
-        <span class="text-slate-400">Ângulo / tom (opcional)</span>
-        <input id="mia-manual-angulo" type="text" placeholder="ex.: repercussão na comunidade, furo sobre a declaração…"
-          class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
-      </label>
+      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <label class="block text-sm">
+          <span class="text-slate-400">Tom</span>
+          <select id="mia-manual-tom" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none">
+            <option value="natural" selected>Natural</option>
+            <option value="polemico">Mais polêmico</option>
+            <option value="direto">Direto</option>
+            <option value="curiosidade">Curiosidade</option>
+            <option value="emocional">Emocional</option>
+            <option value="factual">Factual</option>
+          </select>
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-400">Ângulo (opcional)</span>
+          <input id="mia-manual-angulo" type="text" placeholder="ex.: repercussão na comunidade, furo sobre a declaração…"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+        </label>
+      </div>
 
       <div class="mt-3 grid gap-3 lg:grid-cols-2">
         <label class="block text-sm">

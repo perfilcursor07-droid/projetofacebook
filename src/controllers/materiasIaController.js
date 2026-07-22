@@ -542,6 +542,7 @@ async function gerarManual(req, res, next) {
       userId: req.session.userId,
       informacoes,
       angulo: body.angulo || body.tema || null,
+      tom: body.tom || body.tone || 'natural',
       facebookPageId,
       imagemBuffer: req.file?.buffer || null,
       imagemUrl: body.imagemUrl || body.imagem_url || null,

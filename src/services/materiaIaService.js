@@ -1597,6 +1597,7 @@ async function gerarMateriaManual({
   userId,
   informacoes,
   angulo = null,
+  tom = 'natural',
   facebookPageId = null,
   imagemBuffer = null,
   imagemUrl = null,
@@ -1632,6 +1633,7 @@ async function gerarMateriaManual({
     promptUsuario: angulo || 'notícia gospel a partir das informações do usuário',
     descricaoImagem: null,
     autor: creditoImagem || null,
+    tom,
   });
 
   let pageName = null;

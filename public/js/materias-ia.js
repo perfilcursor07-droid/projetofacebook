@@ -523,6 +523,8 @@
 
     const fd = new FormData();
     fd.append('informacoes', info);
+    const tom = String(document.getElementById('mia-manual-tom')?.value || 'natural').trim();
+    if (tom) fd.append('tom', tom);
     const angulo = String(document.getElementById('mia-manual-angulo')?.value || '').trim();
     if (angulo) fd.append('angulo', angulo);
     const credito = String(document.getElementById('mia-manual-credito')?.value || '').trim();
@@ -555,6 +557,7 @@
       if (!dest) throw new Error('Matéria gerada, mas sem ID para abrir');
 
       setGenerating(false);
+      // Abre a matéria em nova aba e permanece em /conteudo
       abrirMateriaEmNovaAba(dest);
       st.replaceChildren();
       const msg = document.createElement('span');

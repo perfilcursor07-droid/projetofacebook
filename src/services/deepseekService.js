@@ -239,7 +239,7 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
   return artigo;
 }
 
-async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo, informacoes }) {
+async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo, informacoes, tom = 'natural' }) {
   const tema = String(promptUsuario || informacoes || '').trim();
   const fatos = String(informacoes || '').trim();
   if (!tema && !fatos) {
@@ -248,6 +248,9 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
     throw err;
   }
 
+  const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
+  const tomDesc = TITULO_TOMES[tomKey];
+
   const userContent = [
     'Crie uma matéria ORIGINAL estilo News Gospel para um post de FOTO no Facebook.',
     'O usuário forneceu as informações abaixo — use SOMENTE esses fatos (não invente nomes, números nem citações).',
@@ -255,12 +258,13 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
       ? `INFORMAÇÕES FORNECIDAS PELO USUÁRIO (base factual):\n${fatos.slice(0, 5000)}`
       : null,
     tema && tema !== fatos ? `Tipo/ângulo pedido: ${tema}` : null,
+    `Tom editorial obrigatório: ${tomDesc}`,
+    `Aplique esse tom no TÍTULO e no corpo (manchete e ritmo da escrita). Chave: ${tomKey}.`,
     termo ? `Termo / contexto extra: ${termo}` : null,
     descricaoImagem ? `Descrição da imagem enviada: ${descricaoImagem}` : null,
     autor ? `Autor da foto (crédito se fizer sentido): ${autor}` : null,
     'ESTRUTURA: lead com quem + fato → desenvolvimento com detalhes das infos → fechamento de fé (oração/gratidão).',
     'Título próprio, curto e chamativo (máx. 110 chars) — baseado nas infos, sem clickbait mentiroso.',
-    'Tom de portal gospel: caloroso, claro, sem pedir like/compartilhar.',
     'Parágrafos curtos com linha em branco. Alvo: 1700–2100 caracteres (máximo útil Face/Insta).',
     'NÃO inclua bloco Fontes:/créditos no campo materia — o sistema anexa depois.',
     'Responda JSON: {"titulo":"...","materia":"...","hashtags":["..."]}',
@@ -268,7 +272,7 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
     .filter(Boolean)
     .join('\n');
 
-  return chatJson(userContent, sortearTemperatura(false));
+  return chatJson(userContent, sortearTemperatura(tomKey === 'polemico'));
 }
 
 function systemPromptNoticia(
