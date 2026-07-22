@@ -372,6 +372,100 @@ function urlContemHandle(url, handle) {
   );
 }
 
+const LIXO_TEXTO_FB = [
+  /we cannot provide a description/i,
+  /log in to facebook/i,
+  /log into facebook/i,
+  /see posts, photos and more on facebook/i,
+  /content not found/i,
+  /page not found/i,
+  /this content isn't available/i,
+  /conte[uú]do n[aã]o (est[aá]|foi) dispon/i,
+  /p[aá]gina n[aã]o encontrada/i,
+  /^facebook$/i,
+];
+
+function textoPostUtil(texto) {
+  const t = textoLimpo(texto);
+  if (!t || t.length < 8) return '';
+  if (LIXO_TEXTO_FB.some((re) => re.test(t))) return '';
+  return t;
+}
+
+function normalizarUrlFbPost(rawUrl) {
+  let link = String(rawUrl || '').trim();
+  if (!link) return '';
+  try {
+    const u = new URL(link);
+    if (/login/i.test(u.pathname)) {
+      const next = u.searchParams.get('next') || u.searchParams.get('redirect_uri');
+      if (next && /facebook\.com|fb\.com/i.test(next)) {
+        link = decodeURIComponent(next);
+      }
+    }
+  } catch {
+    /* keep */
+  }
+  return link;
+}
+
+function urlFbELogin(url) {
+  return /facebook\.com\/login|\/login\.php/i.test(String(url || ''));
+}
+
+function urlFbParecePost(url) {
+  const u = String(url || '');
+  if (!u || urlFbELogin(u)) return false;
+  if (/\/(posts|photos?|videos?|reel|watch)\//i.test(u)) return true;
+  if (/[?&](story_fbid|fbid|v)=/i.test(u)) return true;
+  if (/pfbid/i.test(u)) return true;
+  if (/permalink\.php/i.test(u)) return true;
+  if (/photo\/?\?/i.test(u)) return true;
+  return false;
+}
+
+function chaveDedupeFbUrl(url) {
+  const link = normalizarUrlFbPost(url);
+  try {
+    const u = new URL(link);
+    const pfbid = u.pathname.match(/pfbid[\w]+/i)?.[0];
+    if (pfbid) return pfbid.toLowerCase();
+    const fbid = u.searchParams.get('fbid') || u.searchParams.get('story_fbid');
+    if (fbid) return `fbid:${fbid}`;
+    const path = u.pathname.replace(/\/+$/, '');
+    if (path.includes('/posts/')) return path.toLowerCase();
+    return link.split(/[?#]/)[0].toLowerCase();
+  } catch {
+    return String(link || url || '')
+      .split(/[?#]/)[0]
+      .toLowerCase();
+  }
+}
+
+function rotuloPostPorUrl(url, handle) {
+  const u = String(url || '');
+  const h = String(handle || 'fb').replace(/^@/, '');
+  if (/\/reel\//i.test(u)) return `Reel @${h}`;
+  if (/\/videos?\//i.test(u) || /watch\?/i.test(u)) return `Vídeo @${h}`;
+  if (/photo|fbid|pfbid/i.test(u)) return `Foto @${h}`;
+  if (/\/posts\//i.test(u)) return `Post @${h}`;
+  return `Publicação @${h}`;
+}
+
+function qualidadeIndiceWeb(post) {
+  let s = 0;
+  const t = textoPostUtil(post?.texto);
+  const rotulo = rotuloPostPorUrl(post?.url, post?.autor);
+  if (t && t !== rotulo && !/^Post @|^Foto @|^Reel @|^Publicação @|^Vídeo @/.test(t)) {
+    s += 60 + Math.min(40, t.length / 4);
+  } else if (t) {
+    s += 15;
+  }
+  if (post?.publicadoEm) s += 25;
+  if (urlFbParecePost(post?.url)) s += 10;
+  return s;
+}
+
 function postPareceDaPagina(post, handle, aliases = []) {
   const h = String(handle || '')
     .toLowerCase()
@@ -411,33 +505,76 @@ async function buscarPostsPaginaViaWeb(pageUrl, opts = {}) {
   const seen = new Set();
 
   function pushResult(r) {
-    const link = String(r.link || r.url || '').trim();
-    if (!link || !/facebook\.com/i.test(link)) return;
-    const key = link.toLowerCase().split(/[?#]/)[0];
-    if (seen.has(key)) return;
-    // Só links de post/foto/reel dessa página
+    let link = normalizarUrlFbPost(r.link || r.url || '');
+    if (!link || !/facebook\.com|fb\.com/i.test(link)) return;
+    if (urlFbELogin(link)) return;
+    if (!urlFbParecePost(link)) return;
     if (!postPareceDaPagina({ url: link, autor: handle }, handle)) return;
-    if (!/\/(posts|permalink|photos?|videos?|reel|watch|share|photo)/i.test(link) && !/story_fbid|fbid|pfbid/i.test(link)) {
-      // homepage da página não conta
-      try {
-        const path = new URL(link).pathname.replace(/\/+$/, '');
-        if (!path || path === `/${handle}`) return;
-      } catch {
-        /* keep */
-      }
-    }
+
+    const key = chaveDedupeFbUrl(link);
+    if (seen.has(key)) return;
+
+    let texto = textoPostUtil(r.snippet || r.description || r.title || '');
+    if (!texto) texto = rotuloPostPorUrl(link, handle);
+
     seen.add(key);
     out.push({
       url: link,
-      texto: textoLimpo(r.snippet || r.description || r.title || ''),
+      texto,
       autor: handle,
       likes: 0,
       comments: 0,
       shares: 0,
       publicadoEm: r.date ? new Date(r.date) : null,
-      hashtags: extrairHashtags(r.snippet || r.title || ''),
+      hashtags: extrairHashtags(r.snippet || r.title || texto || ''),
       viaWeb: true,
+      indiceWeb: qualidadeIndiceWeb({ url: link, texto, autor: handle, publicadoEm: r.date }),
     });
+  }
+
+  async function buscarDuckDuckGo() {
+    try {
+      const { data: html } = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q },
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'text/html',
+        },
+        timeout: 18000,
+        responseType: 'text',
+      });
+      const blocks = String(html || '').split(/class="result\s/);
+      for (const block of blocks) {
+        if (out.length >= limit) break;
+        const href =
+          block.match(/uddg=([^&"]+)/)?.[1] ||
+          block.match(/href="(https?:\/\/(?:www\.)?(?:facebook|fb)\.com\/[^"]+)"/i)?.[1];
+        if (!href) continue;
+        let link = href;
+        try {
+          link = decodeURIComponent(href);
+        } catch {
+          link = href;
+        }
+        const title = textoPostUtil(
+          (block.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i)?.[1] || '')
+            .replace(/<[^>]+>/g, ' ')
+        );
+        const snippet = textoPostUtil(
+          (block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)?.[1] ||
+            block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/div>/i)?.[1] ||
+            '')
+            .replace(/<[^>]+>/g, ' ')
+        );
+        pushResult({ link, title, snippet: snippet || title });
+      }
+      if (out.length) {
+        console.info(`[apify-fb] duckduckgo page: ${out.length} link(s) para @${handle}`);
+      }
+    } catch (err) {
+      console.warn('[apify-fb] duckduckgo page:', err.message);
+    }
   }
 
   if (env.braveSearchApiKey && out.length < limit) {
@@ -524,42 +661,20 @@ async function buscarPostsPaginaViaWeb(pageUrl, opts = {}) {
   }
 
   // Fallback sem API: DuckDuckGo HTML (quando Brave 422 / Serper sem crédito)
-  if (!out.length) {
-    try {
-      const { data: html } = await axios.get('https://html.duckduckgo.com/html/', {
-        params: { q },
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          Accept: 'text/html',
-        },
-        timeout: 18000,
-        responseType: 'text',
-      });
-      const re =
-        /uddg=([^&"]+)|href="(https?:\/\/(?:www\.)?(?:facebook|fb)\.com\/[^"]+)"/gi;
-      let m;
-      while ((m = re.exec(String(html || ''))) && out.length < limit) {
-        let link = '';
-        if (m[1]) {
-          try {
-            link = decodeURIComponent(m[1]);
-          } catch {
-            link = m[1];
-          }
-        } else {
-          link = m[2] || '';
-        }
-        if (!link || !/facebook\.com|fb\.com/i.test(link)) continue;
-        pushResult({ link, title: '', snippet: '' });
-      }
-      if (out.length) {
-        console.info(`[apify-fb] duckduckgo page: ${out.length} link(s) para @${handle}`);
-      }
-    } catch (err) {
-      console.warn('[apify-fb] duckduckgo page:', err.message);
-    }
+  const antesDdg = out.length;
+  if (out.length < limit) {
+    await buscarDuckDuckGo();
   }
+
+  // Se Brave trouxe só lixo genérico do FB, tenta DDG para snippets melhores
+  const soRotulos = out.length > 0 && out.every((p) => (p.indiceWeb || 0) < 30);
+  if (soRotulos && out.length <= antesDdg + 1) {
+    seen.clear();
+    out.length = 0;
+    await buscarDuckDuckGo();
+  }
+
+  out.sort((a, b) => (b.indiceWeb || 0) - (a.indiceWeb || 0));
 
   return out.slice(0, limit);
 }
@@ -741,6 +856,11 @@ module.exports = {
   buscarPostsPaginaViaWeb,
   postPareceDaPagina,
   slugifyFb,
+  textoPostUtil,
+  urlFbParecePost,
+  chaveDedupeFbUrl,
+  qualidadeIndiceWeb,
+  rotuloPostPorUrl,
   normalizarPost,
   montarQueryBrasilGospel,
   extrairHashtags,

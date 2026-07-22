@@ -91,10 +91,15 @@ function relevanciaBrGospel(post) {
 }
 
 function tituloDoPost(post, termo) {
-  const texto = String(post.texto || '').trim();
-  if (!texto) return `Post sobre ${termo}`;
-  const primeira = texto.split(/\n/).map((l) => l.trim()).find(Boolean) || texto;
-  return primeira.slice(0, 140);
+  const texto = apifyFacebook.textoPostUtil(post.texto) || String(post.texto || '').trim();
+  if (texto) {
+    const primeira = texto.split(/\n/).map((l) => l.trim()).find(Boolean) || texto;
+    return primeira.slice(0, 140);
+  }
+  if (post.url) {
+    return apifyFacebook.rotuloPostPorUrl(post.url, post.autor || 'Facebook');
+  }
+  return `Post sobre ${termo}`;
 }
 
 function autorTexto(autor) {
@@ -119,7 +124,7 @@ function formatarDataCurta(d) {
 }
 
 function cacheKey(extras, url) {
-  return `radar:v7-page:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
+  return `radar:v8-page:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
 }
 
 function getCache(key) {
@@ -445,9 +450,17 @@ function postParaTopico(post, termoTrends, crescimento) {
   const autor = autorTexto(post.autor);
   const hashtags = post.hashtags || apifyFacebook.extrairHashtags(post.texto);
   const publicadoEm = post.publicadoEm ? new Date(post.publicadoEm).toISOString() : null;
+  const textoUtil = apifyFacebook.textoPostUtil(post.texto);
+  const indiceWeb = post.indiceWeb ?? (post.viaWeb ? apifyFacebook.qualidadeIndiceWeb(post) : 0);
+  const calor = post.viaWeb
+    ? indiceWeb + Math.min(20, Number(crescimento) || 0)
+    : (post.velocidade || 0) +
+      Math.max(0, post.relevancia || 0) +
+      Math.max(0, post.recencia || 0) +
+      Math.min(50, Number(crescimento) || 0);
   return {
     titulo: tituloDoPost(post, termoTrends),
-    resumo: String(post.texto || '').slice(0, 400),
+    resumo: (textoUtil || String(post.texto || '')).slice(0, 400),
     link: post.url || null,
     fonte: autor,
     veiculo: autor,
@@ -466,11 +479,8 @@ function postParaTopico(post, termoTrends, crescimento) {
     publicadoEm,
     publicadoEmLabel: formatarDataCurta(post.publicadoEm),
     idadeDias: idadeDias(post) != null ? Math.round(idadeDias(post) * 10) / 10 : null,
-    calor:
-      (post.velocidade || 0) +
-      Math.max(0, post.relevancia || 0) +
-      Math.max(0, post.recencia || 0) +
-      Math.min(50, Number(crescimento) || 0),
+    viaWeb: Boolean(post.viaWeb),
+    calor,
   };
 }
 
@@ -617,6 +627,17 @@ async function analisarRadarFace(opts = {}) {
     });
   }
 
+  // Remove lixo do índice web (mensagem genérica do Facebook, links inválidos)
+  posts = posts.filter((p) => {
+    if (!p.url || !apifyFacebook.urlFbParecePost(p.url)) return false;
+    if (p.viaWeb && !apifyFacebook.textoPostUtil(p.texto)) {
+      const rotulo = apifyFacebook.rotuloPostPorUrl(p.url, p.autor);
+      p.texto = rotulo;
+      p.indiceWeb = apifyFacebook.qualidadeIndiceWeb(p);
+    }
+    return Boolean(p.texto);
+  });
+
   let ranked = posts
     .map((p) => ({
       ...p,
@@ -624,16 +645,25 @@ async function analisarRadarFace(opts = {}) {
       score: scoreEngajamento(p),
       // Em modo página: não força filtro gospel (página pode ser economia, política, etc.)
       relevancia: modoPagina ? 50 : relevanciaBrGospel(p),
-      recencia: bonusRecencia(p),
+      recencia: p.viaWeb ? apifyFacebook.qualidadeIndiceWeb(p) : bonusRecencia(p),
       velocidade: scoreVelocidade(p),
+      indiceWeb: p.indiceWeb ?? (p.viaWeb ? apifyFacebook.qualidadeIndiceWeb(p) : 0),
     }))
-    .sort(
-      (a, b) =>
+    .sort((a, b) => {
+      if (modoPagina && (a.viaWeb || b.viaWeb)) {
+        return (
+          (b.indiceWeb || 0) - (a.indiceWeb || 0) ||
+          b.score - a.score ||
+          b.recencia - a.recencia
+        );
+      }
+      return (
         b.recencia - a.recencia ||
         b.velocidade - a.velocidade ||
         b.score - a.score ||
         b.relevancia - a.relevancia
-    );
+      );
+    });
 
   const ageLimit = modoPagina ? Math.max(MAX_AGE_DAYS, 14) : MAX_AGE_DAYS;
   let recentes = ranked.filter((p) => {
@@ -672,9 +702,16 @@ async function analisarRadarFace(opts = {}) {
     }
   }
 
-  const topicos = ranked.slice(0, MAX_TOPICOS).map((p) =>
-    postParaTopico(p, termoPrincipal, crescimentoPrincipal)
-  );
+  const topicos = [];
+  const vistosTop = new Set();
+  for (const p of ranked) {
+    if (topicos.length >= MAX_TOPICOS) break;
+    const top = postParaTopico(p, termoPrincipal, crescimentoPrincipal);
+    const dedupe = top.link ? apifyFacebook.chaveDedupeFbUrl(top.link) : top.titulo.toLowerCase();
+    if (vistosTop.has(dedupe)) continue;
+    vistosTop.add(dedupe);
+    topicos.push(top);
+  }
 
   // Se veio de um link de post, inclui a origem como primeiro card (referência)
   if (origemLink?.tipo === 'post' && origemLink.fonteUrl) {
