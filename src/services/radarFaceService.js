@@ -118,8 +118,8 @@ function formatarDataCurta(d) {
   }
 }
 
-function cacheKey(extras) {
-  return `radar:v3:${String(extras || '').trim().toLowerCase()}`;
+function cacheKey(extras, url) {
+  return `radar:v4:${String(extras || '').trim().toLowerCase()}|${String(url || '').trim().toLowerCase()}`;
 }
 
 function getCache(key) {
@@ -146,6 +146,295 @@ function parseTermosUsuario(palavrasExtras) {
       return t.length >= 3;
     })
     .slice(0, 5);
+}
+
+/** URL de página/perfil FB (não é post/reel/foto). */
+function isFacebookPageUrl(url) {
+  const link = String(url || '').trim();
+  if (!/^https?:\/\//i.test(link)) return false;
+  try {
+    const { isSocialPostUrl, detectarPlataformaSocial } = require('./socialPostExtract');
+    if (detectarPlataformaSocial(link) !== 'facebook') return false;
+    if (isSocialPostUrl(link)) return false;
+    const u = new URL(link);
+    const path = u.pathname.replace(/\/+$/, '') || '/';
+    if (/^\/(watch|marketplace|groups|events|gaming|reel|reels|stories)(\/|$)/i.test(path)) {
+      return false;
+    }
+    // /NomeDaPagina ou /pages/... ou profile.php?id=
+    if (/profile\.php/i.test(path) && u.searchParams.get('id')) return true;
+    if (/^\/pages\//i.test(path)) return true;
+    if (/^\/people\//i.test(path)) return true;
+    if (/^\/[A-Za-z0-9.\-_]+$/i.test(path)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function extrairHandlePagina(url) {
+  try {
+    const u = new URL(String(url || '').trim());
+    const id = u.searchParams.get('id');
+    if (id) return id;
+    const parts = u.pathname.split('/').filter(Boolean);
+    if (!parts.length) return null;
+    if (/^pages$/i.test(parts[0]) && parts[1]) {
+      // /pages/Name/123 or /pages/category/Name
+      return parts[parts.length - 1].replace(/[^\w.\-]/g, '') || parts[1];
+    }
+    if (/^people$/i.test(parts[0]) && parts[1]) return parts[1];
+    const skip = new Set(['pg', 'public']);
+    const handle = parts.find((p) => !skip.has(p.toLowerCase()));
+    return handle ? decodeURIComponent(handle) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function metaLeveDaUrl(url) {
+  try {
+    const axios = require('axios');
+    const { data } = await axios.get(url, {
+      timeout: 12000,
+      headers: {
+        'User-Agent':
+          'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+        Accept: 'text/html',
+      },
+      maxRedirects: 3,
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+    const html = String(data || '');
+    const ogTitle =
+      html.match(/property=["']og:title["']\s+content=["']([^"']+)["']/i)?.[1] ||
+      html.match(/content=["']([^"']+)["']\s+property=["']og:title["']/i)?.[1] ||
+      '';
+    const ogDesc =
+      html.match(/property=["']og:description["']\s+content=["']([^"']+)["']/i)?.[1] ||
+      html.match(/content=["']([^"']+)["']\s+property=["']og:description["']/i)?.[1] ||
+      '';
+    const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
+    const decode = (s) =>
+      String(s || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return {
+      titulo: decode(ogTitle || title).slice(0, 160),
+      descricao: decode(ogDesc).slice(0, 400),
+    };
+  } catch {
+    return { titulo: '', descricao: '' };
+  }
+}
+
+/**
+ * A partir de um link de post OU página, monta termos de busca para o radar.
+ */
+async function resolverTermosDoLink(url) {
+  const link = String(url || '').trim();
+  const avisos = [];
+  const { isSocialPostUrl, normalizarUrlSocial, extrairPostSocial } = require('./socialPostExtract');
+  const deepseek = require('./deepseekService');
+  const normalizado = normalizarUrlSocial(link);
+
+  if (isSocialPostUrl(normalizado)) {
+    avisos.push('Link de postagem detectado — a IA lê a legenda e busca o que está em alta no mesmo tema.');
+    let social = null;
+    try {
+      social = await extrairPostSocial(normalizado, {});
+    } catch (err) {
+      avisos.push(`Não deu para ler o post automaticamente (${err.message}). Usando o link como pista.`);
+    }
+    const texto = String(social?.texto || '').trim();
+    const pagina = String(social?.veiculo || social?.autor || '').trim();
+    const hashtags = apifyFacebook.extrairHashtags(texto);
+
+    if (texto.length >= 40 && envTemDeepseek()) {
+      try {
+        const extraido = await deepseek.extrairTermosRadar({
+          texto,
+          pagina,
+          url: normalizado,
+        });
+        const termos = [
+          ...(extraido.termos || []),
+          ...hashtags.slice(0, 2),
+        ].filter(Boolean);
+        return {
+          tipo: 'post',
+          termos: uniqTermos(termos).slice(0, 5),
+          tema: extraido.tema || tituloCurto(texto),
+          resumo: extraido.resumo || texto.slice(0, 180),
+          fonteUrl: normalizado,
+          avisos,
+        };
+      } catch (err) {
+        avisos.push(`IA de termos: ${err.message}`);
+      }
+    }
+
+    const fallback = uniqTermos([
+      ...hashtags,
+      ...keywordsHeuristico(texto),
+      pagina,
+    ]).slice(0, 5);
+    if (!fallback.length) {
+      const err = new Error(
+        'Não consegui extrair o tema deste post. Cole a legenda em “Termos” ou tente outro link.'
+      );
+      err.status = 422;
+      throw err;
+    }
+    return {
+      tipo: 'post',
+      termos: fallback,
+      tema: tituloCurto(texto) || fallback[0],
+      resumo: texto.slice(0, 180) || '',
+      fonteUrl: normalizado,
+      avisos,
+    };
+  }
+
+  if (isFacebookPageUrl(normalizado)) {
+    const handle = extrairHandlePagina(normalizado);
+    avisos.push(
+      `Link de página detectado (${handle || 'FB'}) — a IA analisa o perfil e busca posts em alta no mesmo tema.`
+    );
+    const meta = await metaLeveDaUrl(normalizado);
+    const paginaNome = meta.titulo || handle || 'Página Facebook';
+    const textoBase = [paginaNome, meta.descricao, handle].filter(Boolean).join('\n');
+
+    if (envTemDeepseek()) {
+      try {
+        const extraido = await deepseek.extrairTermosRadar({
+          texto: textoBase,
+          pagina: paginaNome,
+          url: normalizado,
+        });
+        const termos = uniqTermos([
+          ...(extraido.termos || []),
+          handle && !/^\d+$/.test(handle) ? handle.replace(/[.\-_]/g, ' ') : null,
+        ]).slice(0, 5);
+        return {
+          tipo: 'pagina',
+          termos,
+          tema: extraido.tema || paginaNome,
+          resumo: extraido.resumo || meta.descricao || `Posts no tema de ${paginaNome}`,
+          fonteUrl: normalizado,
+          avisos,
+        };
+      } catch (err) {
+        avisos.push(`IA de termos: ${err.message}`);
+      }
+    }
+
+    const termos = uniqTermos([
+      handle && !/^\d+$/.test(handle) ? handle.replace(/[.\-_]/g, ' ') : null,
+      ...keywordsHeuristico(meta.descricao || meta.titulo),
+      '#gospel',
+    ]).slice(0, 5);
+    return {
+      tipo: 'pagina',
+      termos,
+      tema: paginaNome,
+      resumo: meta.descricao || `Tema da página ${paginaNome}`,
+      fonteUrl: normalizado,
+      avisos,
+    };
+  }
+
+  // Notícia / outro link: usa título OG + IA
+  avisos.push('Link detectado — extraindo tema para buscar o que está em alta.');
+  const meta = await metaLeveDaUrl(normalizado);
+  const texto = [meta.titulo, meta.descricao].filter(Boolean).join('\n');
+  if (!texto) {
+    const err = new Error(
+      'Não reconheci este link. Use um post do Facebook, o link da página, ou preencha os termos manualmente.'
+    );
+    err.status = 422;
+    throw err;
+  }
+  if (envTemDeepseek()) {
+    try {
+      const extraido = await deepseek.extrairTermosRadar({
+        texto,
+        url: normalizado,
+      });
+      return {
+        tipo: 'link',
+        termos: uniqTermos(extraido.termos || [extraido.tema]).slice(0, 5),
+        tema: extraido.tema || meta.titulo,
+        resumo: extraido.resumo || meta.descricao,
+        fonteUrl: normalizado,
+        avisos,
+      };
+    } catch (err) {
+      avisos.push(`IA de termos: ${err.message}`);
+    }
+  }
+  return {
+    tipo: 'link',
+    termos: uniqTermos([meta.titulo, ...keywordsHeuristico(texto)]).slice(0, 5),
+    tema: meta.titulo,
+    resumo: meta.descricao,
+    fonteUrl: normalizado,
+    avisos,
+  };
+}
+
+function envTemDeepseek() {
+  try {
+    const { env } = require('../config/env');
+    return Boolean(env.deepseekApiKey);
+  } catch {
+    return false;
+  }
+}
+
+function uniqTermos(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of list || []) {
+    const t = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!t || t.length < 2) continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
+function tituloCurto(texto) {
+  const linha = String(texto || '')
+    .split(/\n/)
+    .map((l) => l.trim())
+    .find(Boolean);
+  return linha ? linha.slice(0, 120) : '';
+}
+
+function keywordsHeuristico(texto) {
+  const stop = new Set([
+    'para', 'com', 'sobre', 'essa', 'esse', 'esta', 'este', 'pela', 'pelo', 'uma', 'uns',
+    'mais', 'menos', 'quando', 'onde', 'como', 'também', 'tambem', 'ainda', 'depois',
+    'antes', 'hoje', 'ontem', 'agora', 'muito', 'muita', 'facebook', 'instagram', 'https',
+  ]);
+  return String(texto || '')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/[^\p{L}\p{N}#\s]/gu, ' ')
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter((w) => {
+      if (w.startsWith('#') && w.length >= 3) return true;
+      return w.length > 3 && !stop.has(w.toLowerCase());
+    })
+    .slice(0, 8);
 }
 
 function postParaTopico(post, termoTrends, crescimento) {
@@ -182,11 +471,12 @@ function postParaTopico(post, termoTrends, crescimento) {
 }
 
 /**
- * @param {{ palavrasExtras?: string, force?: boolean }} [opts]
+ * @param {{ palavrasExtras?: string, force?: boolean, url?: string }} [opts]
  */
 async function analisarRadarFace(opts = {}) {
   const palavrasExtras = String(opts.palavrasExtras || '').trim();
-  const key = cacheKey(palavrasExtras);
+  const url = String(opts.url || opts.link || '').trim();
+  const key = cacheKey(palavrasExtras, url);
   if (!opts.force) {
     const cached = getCache(key);
     if (cached) {
@@ -195,21 +485,39 @@ async function analisarRadarFace(opts = {}) {
   }
 
   const avisos = [];
+  let origemLink = null;
+
+  if (url) {
+    if (!/^https?:\/\//i.test(url)) {
+      const err = new Error('Informe um link válido (http ou https)');
+      err.status = 400;
+      throw err;
+    }
+    origemLink = await resolverTermosDoLink(url);
+    avisos.push(...(origemLink.avisos || []));
+  }
+
   if (!apifyFacebook.isConfigured()) {
     avisos.push('APIFY_TOKEN não configurada — configure no .env para medir engajamento no Facebook.');
   }
 
   const trends = await buscarTrendsBrasil({ limit: 12, onlyGospel: true });
-  const extras = parseTermosUsuario(palavrasExtras);
+  const extrasManuais = parseTermosUsuario(palavrasExtras);
+  const extrasLink = origemLink?.termos || [];
+  const extras = uniqTermos([...extrasManuais, ...extrasLink]).slice(0, 5);
 
-  const termoPrincipal = extras[0] || trends[0]?.termo || '#gospel';
+  const termoPrincipal =
+    extras[0] || origemLink?.tema || trends[0]?.termo || '#gospel';
   const crescimentoPrincipal =
-    extras[0] != null ? 999 : Number(trends[0]?.crescimento) || 50;
+    extras[0] != null || origemLink ? 999 : Number(trends[0]?.crescimento) || 50;
 
   const queryApify = apifyFacebook.montarQueryBrasilGospel(termoPrincipal);
   avisos.push(
     `Busca FB recente (até ${MAX_AGE_DAYS} dias): “${queryApify}”. Aceita #hashtags.`
   );
+  if (origemLink?.tema) {
+    avisos.push(`Tema do link: ${origemLink.tema}`);
+  }
 
   let posts = [];
   if (apifyFacebook.isConfigured()) {
@@ -218,6 +526,23 @@ async function analisarRadarFace(opts = {}) {
         limit: MAX_POSTS,
         maxAgeDays: MAX_AGE_DAYS,
       });
+      // Segunda passada com termo alternativo do link (se houver)
+      if (posts.length < 5 && extras[1]) {
+        try {
+          const mais = await apifyFacebook.buscarPostsPorTermo(extras[1], {
+            limit: 10,
+            maxAgeDays: MAX_AGE_DAYS,
+          });
+          const visto = new Set(posts.map((p) => p.url).filter(Boolean));
+          for (const p of mais) {
+            if (p.url && visto.has(p.url)) continue;
+            if (p.url) visto.add(p.url);
+            posts.push(p);
+          }
+        } catch (err2) {
+          avisos.push(`2ª busca: ${err2.message}`);
+        }
+      }
     } catch (err) {
       avisos.push(err.message);
       if (err.status === 402) {
@@ -226,6 +551,17 @@ async function analisarRadarFace(opts = {}) {
         );
       }
     }
+  }
+
+  // Exclui o próprio post de origem do ranking
+  if (origemLink?.fonteUrl) {
+    const origemKey = origemLink.fonteUrl.toLowerCase().replace(/\/$/, '');
+    posts = posts.filter((p) => {
+      const u = String(p.url || '')
+        .toLowerCase()
+        .replace(/\/$/, '');
+      return !u || u !== origemKey;
+    });
   }
 
   let ranked = posts
@@ -245,7 +581,6 @@ async function analisarRadarFace(opts = {}) {
         b.score - a.score
     );
 
-  // Preferir posts dos últimos 7 dias (com data conhecida)
   let recentes = ranked.filter((p) => {
     const d = idadeDias(p);
     return d == null || d <= MAX_AGE_DAYS;
@@ -283,6 +618,35 @@ async function analisarRadarFace(opts = {}) {
   const topicos = ranked.slice(0, MAX_TOPICOS).map((p) =>
     postParaTopico(p, termoPrincipal, crescimentoPrincipal)
   );
+
+  // Se veio de um link de post, inclui a origem como primeiro card (referência)
+  if (origemLink?.tipo === 'post' && origemLink.fonteUrl) {
+    topicos.unshift({
+      titulo: origemLink.tema || 'Post de referência',
+      resumo: origemLink.resumo || 'Post usado como base do radar.',
+      link: origemLink.fonteUrl,
+      fonte: 'Post de origem',
+      veiculo: 'Referência',
+      tipoFonte: 'rede_social',
+      redeSocial: true,
+      emAlta: true,
+      emAltaAgora: true,
+      termoTrends: termoPrincipal,
+      crescimentoTrends: crescimentoPrincipal,
+      likes: 0,
+      comments: 0,
+      shares: 0,
+      scoreEngajamento: 0,
+      relevancia: 100,
+      hashtags: [],
+      publicadoEm: null,
+      publicadoEmLabel: null,
+      idadeDias: null,
+      calor: 999,
+      origemRadar: true,
+    });
+    while (topicos.length > MAX_TOPICOS + 1) topicos.pop();
+  }
 
   if (!topicos.length && trends.length) {
     for (const tema of trends.slice(0, 3)) {
@@ -326,6 +690,14 @@ async function analisarRadarFace(opts = {}) {
     apifyConfigured: apifyFacebook.isConfigured(),
     fromCache: false,
     geradoEm: new Date().toISOString(),
+    origemLink: origemLink
+      ? {
+          tipo: origemLink.tipo,
+          tema: origemLink.tema,
+          termos: origemLink.termos,
+          url: origemLink.fonteUrl,
+        }
+      : null,
   };
 
   if (topicos.length) setCache(key, payload);
@@ -336,6 +708,8 @@ module.exports = {
   analisarRadarFace,
   scoreEngajamento,
   relevanciaBrGospel,
+  isFacebookPageUrl,
+  resolverTermosDoLink,
   MAX_TEMAS: 1,
   MAX_POSTS_POR_TEMA: MAX_POSTS,
 };

@@ -1672,6 +1672,58 @@ Regras:
   }
 }
 
+/**
+ * Extrai termos/hashtags de busca a partir de um post ou nome de página (Radar Face).
+ * @returns {Promise<{ termos: string[], tema: string, resumo: string }>}
+ */
+async function extrairTermosRadar({ texto = '', pagina = '', url = '' } = {}) {
+  assertDeepseek();
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você analisa posts/páginas do Facebook (nicho gospel/notícias BR) para o Radar Face.
+Retorne APENAS JSON: {"tema":"frase curta do assunto","termos":["termo1","#hashtag","termo2"],"resumo":"1 frase"}
+Regras:
+- tema: o fato/assunto central (máx. 80 chars)
+- termos: 2 a 5 termos ÚTEIS para buscar posts parecidos em alta no Face/Google (nomes, lugares, #hashtags, ângulos)
+- Prefira português do Brasil; inclua 1 hashtag gospel se couber (#gospel #igreja #pastor)
+- NÃO invente nomes ou fatos que não estejam no texto/página
+- Se o texto for fraco, use o nome da página + ângulo genérico gospel/viral`,
+      },
+      {
+        role: 'user',
+        content: [
+          url ? `URL: ${url}` : null,
+          pagina ? `Página/perfil: ${pagina}` : null,
+          texto ? `Texto/legenda:\n${String(texto).slice(0, 2500)}` : null,
+          'Extraia tema + termos de busca para achar posts em alta no mesmo assunto.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+    { temperature: 0.35, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+
+  const termos = (Array.isArray(parsed.termos) ? parsed.termos : [])
+    .map((t) => String(t || '').replace(/\s+/g, ' ').trim())
+    .filter((t) => t.length >= 2)
+    .slice(0, 5);
+  const tema = String(parsed.tema || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+  const resumo = String(parsed.resumo || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+
+  if (!termos.length && tema) termos.push(tema);
+  return { termos, tema, resumo };
+}
+
 module.exports = {
   gerarMateriaVideo,
   gerarMateriaImagem,
@@ -1685,6 +1737,7 @@ module.exports = {
   enriquecerMateriaComFatos,
   sugerirConsultasImagem,
   identificarAutorImagem,
+  extrairTermosRadar,
   TITULO_TOMES,
   assertDeepseek,
   MAX_MATERIA_CHARS,

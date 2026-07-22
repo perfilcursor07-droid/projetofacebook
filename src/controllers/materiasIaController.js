@@ -91,11 +91,13 @@ async function radarFace(req, res, next) {
   try {
     const body = req.body || {};
     const palavrasExtras = body.palavrasExtras || body.palavras_extras || body.keywords || '';
+    const url = body.url || body.link || body.fonteUrl || '';
     const force = body.force === true || body.force === '1' || body.force === 1;
     const facebookPageId = await resolvePageId(req.session.userId, body);
     const radarFaceService = require('../services/radarFaceService');
     const result = await radarFaceService.analisarRadarFace({
       palavrasExtras,
+      url,
       force,
     });
     const topicos = await materiaIaService.marcarJaPublicados(

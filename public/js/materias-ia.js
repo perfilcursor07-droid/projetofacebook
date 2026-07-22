@@ -321,15 +321,19 @@
 
   async function analisarRadarFace(force) {
     const st = document.getElementById('mia-radar-status');
+    const url = String(document.getElementById('mia-radar-url')?.value || '').trim();
     st.textContent = force
-      ? 'Analisando (forçado, sem cache)… Trends + Facebook via Apify…'
-      : 'Analisando Trends + Facebook via Apify…';
+      ? 'Analisando (forçado)…' + (url ? ' Lendo o link + Trends/Apify…' : ' Trends + Facebook via Apify…')
+      : url
+        ? 'Lendo o link e buscando o que está em alta no tema…'
+        : 'Analisando Trends + Facebook via Apify…';
     try {
       const res = await fetch('/api/materias-ia/radar-face', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           palavrasExtras: document.getElementById('mia-radar-extras')?.value || '',
+          url,
           force: !!force,
           facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
         }),
@@ -340,8 +344,17 @@
         throw new Error((data.error || 'Falha no Radar Face') + (avisos ? ' — ' + avisos : ''));
       }
       renderTopicos(document.getElementById('mia-radar-topicos'), data.topicos || []);
+      const origem = data.origemLink;
       const parts = [
         (data.topicos || []).length + ' sinal(is)',
+        origem?.tipo === 'post'
+          ? 'a partir do post'
+          : origem?.tipo === 'pagina'
+            ? 'a partir da página'
+            : origem
+              ? 'a partir do link'
+              : '',
+        origem?.tema ? 'tema “' + origem.tema + '”' : '',
         data.queryApify ? 'query “' + data.queryApify + '”' : '',
         data.totalPosts != null ? data.totalPosts + ' post(s) FB' : '',
         data.fromCache ? 'cache' : '',

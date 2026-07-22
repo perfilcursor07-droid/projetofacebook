@@ -112,18 +112,30 @@
     <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
       <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">Radar Face — Trends + engajamento</p>
       <p class="mt-2 text-sm text-slate-400">
-        Cruza Google Trends (Brasil, filtro gospel) com posts públicos do Facebook via Apify (curtidas/comentários).
-        Assim você vê o que sobe nas buscas e o que realmente engaja no Face antes de postar.
+        Cruza Google Trends (Brasil, filtro gospel) com posts públicos do Facebook via Apify.
+        Cole um <strong class="font-medium text-slate-300">link de post</strong> ou da
+        <strong class="font-medium text-slate-300">página</strong>: a IA lê o tema e busca o que está em alta no mesmo assunto.
       </p>
       <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
         Busca <strong class="font-medium text-slate-400">posts recentes (até ~7 dias)</strong> com viés Brasil + gospel.
-        Aceita <strong class="font-medium text-slate-400">#hashtags</strong> (ex.: #gospel, #igreja).
+        Aceita <strong class="font-medium text-slate-400">#hashtags</strong> e links de post/página do Facebook.
         Plano grátis Apify: em geral 1 busca/24h — use o cache e evite “Forçar”.
-        Configure <code class="text-slate-400">APIFY_TOKEN</code> no .env.
       </p>
+
       <label class="mt-4 block text-sm">
+        <span class="text-slate-400">Link do post ou da página (opcional)</span>
+        <input id="mia-radar-url" type="url" inputmode="url"
+          placeholder="https://www.facebook.com/posts/… ou https://www.facebook.com/NomeDaPagina"
+          class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none" />
+      </label>
+      <p class="mt-1 text-[11px] text-slate-500">
+        Post → analisa a legenda e procura sinais em alta no tema.
+        Página → analisa o perfil e busca posts parecidos que estão bombando.
+      </p>
+
+      <label class="mt-3 block text-sm">
         <span class="text-slate-400">Termos ou hashtags (opcional)</span>
-        <input id="mia-radar-extras" type="text" placeholder="ex.: #gospel, #igreja, malafaia, política igreja"
+        <input id="mia-radar-extras" type="text" placeholder="ex.: #gospel, #igreja, malafaia — complementa o link"
           class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
       </label>
       <div class="mt-3 flex flex-wrap items-center gap-3">
