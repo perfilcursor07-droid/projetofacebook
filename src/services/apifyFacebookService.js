@@ -1,5 +1,5 @@
 /**
- * Apify — busca posts públicos do Facebook por keyword (curtidas/comentários).
+ * Apify — busca posts públicos do Facebook por keyword/hashtag (curtidas/comentários).
  */
 const { ApifyClient } = require('apify-client');
 const { env } = require('../config/env');
@@ -37,6 +37,35 @@ function nomeDeCampo(value) {
     );
   }
   return '';
+}
+
+function extrairHashtags(texto) {
+  const found = String(texto || '').match(/#[\wÀ-ÿ]+/gi) || [];
+  const uniq = [];
+  const seen = new Set();
+  for (const h of found) {
+    const key = h.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniq.push(h);
+    if (uniq.length >= 12) break;
+  }
+  return uniq;
+}
+
+function parseDataPost(raw) {
+  const ts =
+    raw.timestamp ||
+    raw.time ||
+    raw.publishedAt ||
+    raw.date ||
+    raw.createdTime ||
+    raw.created_time ||
+    raw.postDate ||
+    raw.publish_time;
+  if (!ts) return null;
+  const d = new Date(typeof ts === 'number' && ts < 1e12 ? ts * 1000 : ts);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -81,12 +110,8 @@ function normalizarPost(raw) {
       raw.engagement?.shares
   );
 
-  let publicadoEm = null;
-  const ts = raw.timestamp || raw.time || raw.publishedAt || raw.date || raw.createdTime;
-  if (ts) {
-    const d = new Date(typeof ts === 'number' && ts < 1e12 ? ts * 1000 : ts);
-    if (!Number.isNaN(d.getTime())) publicadoEm = d;
-  }
+  const publicadoEm = parseDataPost(raw);
+  const hashtags = extrairHashtags(texto);
 
   const autor =
     nomeDeCampo(raw.author) ||
@@ -106,66 +131,84 @@ function normalizarPost(raw) {
     comments,
     shares,
     publicadoEm,
+    hashtags,
   };
 }
 
 /**
- * Monta query com viés Brasil + gospel (evita resultados ES/AR/global).
+ * Monta query com viés Brasil + gospel; preserva #hashtags do usuário.
  */
 function montarQueryBrasilGospel(termo) {
   let q = String(termo || '')
     .trim()
     .replace(/\s+/g, ' ')
-    .slice(0, 80);
-  if (!q) q = 'gospel';
+    .slice(0, 100);
+  if (!q) q = '#gospel';
 
   const lower = q
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 
+  const soHashtag = /^#[\w]+$/i.test(q.replace(/\s/g, ''));
   const temBrasil = /\bbrasil\b|\bbrazil\b/.test(lower);
-  const temGospel = /\bgospel\b|\bpastor\b|\bigreja\b|\bfe\b|\bbiblia\b|\bculto\b|\bjesus\b|\bdeus\b|\bevangel/.test(
-    lower
-  );
+  const temGospel =
+    /\bgospel\b|\bpastor\b|\bigreja\b|\bfe\b|\bbiblia\b|\bculto\b|\bjesus\b|\bdeus\b|\bevangel|#gospel|#igreja|#pastor|#louvor|#fe\b|#biblia/.test(
+      lower
+    );
+
+  // Hashtag pura: busca a tag + Brasil (sem diluir demais)
+  if (soHashtag) {
+    if (!temBrasil) q = `${q} Brasil`;
+    return q.trim();
+  }
 
   if (!temGospel) q = `${q} gospel`;
   if (!temBrasil) q = `${q} Brasil`;
   return q.trim();
 }
 
-function buildActorInput(termo, limit) {
+function dataIsoDiasAtras(dias) {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - dias);
+  return d.toISOString().slice(0, 10);
+}
+
+function buildActorInput(termo, limit, opts = {}) {
   const actor = String(env.apifyFbSearchActor || '');
   const query = montarQueryBrasilGospel(termo);
   const locationUid = String(env.apifyFbLocationUid || '').trim();
+  const maxAgeDays = Math.min(30, Math.max(1, Number(opts.maxAgeDays) || 7));
+  const startDate = dataIsoDiasAtras(maxAgeDays);
 
-  // scrapeforge/facebook-search-posts
+  // scrapeforge/facebook-search-posts — recent_posts + start_date cortam matérias antigas
   if (actor.includes('scrapeforge')) {
     const input = {
       query,
       search_type: 'posts',
       max_results: limit,
-      recent_posts: false,
+      recent_posts: true,
+      start_date: startDate,
     };
     if (locationUid) input.location_uid = locationUid;
     return input;
   }
-  // api-empire / scrapier style
   if (actor.includes('api-empire') || actor.includes('scrapier')) {
     return {
       searchQueries: [query],
       maxPosts: limit,
       resultsLimit: limit,
+      recentPosts: true,
+      startDate,
     };
   }
-  // easyapi
   if (actor.includes('easyapi')) {
     return {
       searchQuery: query,
       maxResults: limit,
+      recentPosts: true,
     };
   }
-  // genérico
   return {
     query,
     searchQuery: query,
@@ -173,14 +216,18 @@ function buildActorInput(termo, limit) {
     max_results: limit,
     maxResults: limit,
     maxPosts: limit,
+    recent_posts: true,
+    recentPosts: true,
+    start_date: startDate,
+    startDate,
     ...(locationUid ? { location_uid: locationUid, locationUid } : {}),
   };
 }
 
 /**
  * @param {string} termo
- * @param {{ limit?: number }} [opts]
- * @returns {Promise<Array<{ url, texto, autor, likes, comments, shares, publicadoEm }>>}
+ * @param {{ limit?: number, maxAgeDays?: number }} [opts]
+ * @returns {Promise<Array<{ url, texto, autor, likes, comments, shares, publicadoEm, hashtags }>>}
  */
 async function buscarPostsPorTermo(termo, opts = {}) {
   if (!isConfigured()) {
@@ -193,16 +240,17 @@ async function buscarPostsPorTermo(termo, opts = {}) {
   if (keyword.length < 2) return [];
 
   const limit = Math.min(20, Math.max(1, Number(opts.limit) || 8));
+  const maxAgeDays = Number(opts.maxAgeDays) || 7;
   const client = new ApifyClient({ token: env.apifyToken });
   const actorId = env.apifyFbSearchActor;
 
   try {
-    const run = await client.actor(actorId).call(buildActorInput(keyword, limit), {
+    const run = await client.actor(actorId).call(buildActorInput(keyword, limit, { maxAgeDays }), {
       waitSecs: 120,
       memory: 1024,
     });
 
-    const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit });
+    const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit: Math.min(50, limit * 2) });
     return (items || [])
       .map(normalizarPost)
       .filter(Boolean)
@@ -224,4 +272,5 @@ module.exports = {
   buscarPostsPorTermo,
   normalizarPost,
   montarQueryBrasilGospel,
+  extrairHashtags,
 };

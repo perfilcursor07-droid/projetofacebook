@@ -116,6 +116,8 @@
           const resumo = limparTextoUi(t.resumo);
           const fonte = limparTextoUi(t.veiculo || t.fonte || '');
           const engajamento = [
+            t.publicadoEmLabel ? 'em ' + t.publicadoEmLabel : '',
+            t.idadeDias != null ? t.idadeDias + 'd' : '',
             t.likes != null ? t.likes + ' curtidas' : '',
             t.comments != null ? t.comments + ' comentários' : '',
             t.shares != null ? t.shares + ' shares' : '',
@@ -125,6 +127,9 @@
                 ? 'score ' + t.score
                 : '',
             t.termoTrends ? 'Trends: ' + limparTextoUi(t.termoTrends) : '',
+            Array.isArray(t.hashtags) && t.hashtags.length
+              ? t.hashtags.slice(0, 5).join(' ')
+              : '',
           ]
             .filter(Boolean)
             .join(' · ');
