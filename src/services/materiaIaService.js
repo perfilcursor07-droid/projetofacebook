@@ -1646,8 +1646,9 @@ async function gerarMateriaManual({
     }
   }
   const estilo = estiloCreditoDaPagina(pageName);
+  const nomeConteudo = String(pageName || '').trim() || 'Informações do editor';
   const materiaComFontes = anexarCreditosFontes(gerado.materia, {
-    fonteNome: 'Informações do editor',
+    fonteNome: nomeConteudo,
     fonteUrl: null,
     imagemAutor: creditoImagem || 'Reprodução/Internet',
     autorArtigo: null,
@@ -1655,7 +1656,7 @@ async function gerarMateriaManual({
   });
 
   const fonteCredito = montarFonteCredito({
-    veiculo: null,
+    veiculo: pageName || null,
     autorArtigo: null,
     estilo,
     tipoPublicacao: 'foto',
