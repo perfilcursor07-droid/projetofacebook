@@ -1,0 +1,79 @@
+<%- include('partials/app-start') %>
+<%
+  const perfilNome = (perfil && perfil.nome) || 'sua página';
+  const slotLabel = (slotSugerido && slotSugerido.label) || 'Terça/quarta 12h–16h';
+%>
+
+  <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
+    <%- include('partials/content-nav', { contentTab: 'viralizar' }) %>
+
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-rose-400">Conteúdo Viralizar</p>
+        <h1 class="mt-1 text-2xl font-semibold text-white">Pautas com potencial de viralizar</h1>
+        <p class="mt-2 max-w-2xl text-sm text-slate-400">
+          A IA busca sozinha assuntos alinhados ao público de <strong class="font-medium text-slate-300"><%= perfilNome %></strong>
+          (polêmica, política×religião, escândalo, pastoras…) — sem você colar link ou digitar palavra-chave.
+        </p>
+      </div>
+      <div class="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-2.5">
+        <p class="text-[11px] uppercase tracking-wide text-rose-300/80">Melhor horário</p>
+        <p class="mt-0.5 text-sm font-semibold text-rose-100"><%= slotLabel %></p>
+      </div>
+    </div>
+
+    <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <div class="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="block text-sm">
+            <span class="text-slate-400">Página do Facebook</span>
+            <select id="vir-page" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
+              <option value="">Carregando…</option>
+            </select>
+          </label>
+          <label class="block text-sm">
+            <span class="text-slate-400">Tipo de publicação</span>
+            <select id="vir-tipo" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
+              <option value="foto" selected>Foto + legenda (melhor histórico)</option>
+              <option value="texto">Só texto</option>
+            </select>
+          </label>
+        </div>
+        <button type="button" id="vir-btn-curar"
+          class="rounded-xl bg-rose-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-400 disabled:opacity-50">
+          Buscar pautas virais agora
+        </button>
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <label class="inline-flex items-center gap-2 text-sm text-slate-300">
+          <input type="checkbox" id="vir-auto-pub" class="accent-rose-500" />
+          Publicar automaticamente após gerar
+        </label>
+        <button type="button" id="vir-btn-gerar" disabled
+          class="rounded-lg border border-violet-500/50 bg-violet-500/15 px-4 py-2 text-sm text-violet-200 hover:border-violet-400 disabled:opacity-40">
+          Gerar selecionados
+        </button>
+        <a href="/minhas-materias" class="text-xs text-slate-500 hover:text-emerald-400">Abrir matérias salvas →</a>
+      </div>
+
+      <p class="mt-3 text-[11px] leading-relaxed text-slate-500">
+        Prioridade: conflito, escândalo e política×religião. Testemunho/cura entram com score baixo (manutenção de marca).
+        Com “publicar automático” desligado, as matérias vão como <strong class="font-medium text-slate-400">rascunho</strong> em Matérias salvas.
+      </p>
+      <p id="vir-status" class="mt-3 text-sm text-slate-400"></p>
+    </div>
+
+    <div id="vir-lista" class="mt-5 space-y-2"></div>
+  </main>
+
+  <div id="vir-generating" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-6 backdrop-blur-sm">
+    <div class="w-full max-w-md rounded-2xl border border-rose-500/30 bg-slate-900 p-8 text-center shadow-xl">
+      <div class="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-rose-400/30 border-t-rose-300"></div>
+      <h2 class="mt-5 text-lg font-semibold text-white">Gerando matérias virais…</h2>
+      <p id="vir-generating-text" class="mt-2 text-sm text-slate-400">Apurando fontes e montando as matérias.</p>
+    </div>
+  </div>
+
+  <script src="/js/viralizar.js"></script>
+<%- include('partials/app-end') %>

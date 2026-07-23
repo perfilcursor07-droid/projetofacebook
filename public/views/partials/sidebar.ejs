@@ -5,7 +5,7 @@
     return path === href || (href !== '/' && path.startsWith(href));
   }
   function contentAreaActive() {
-    return path === '/conteudo' || path === '/busca' || path === '/fila' ||
+    return path === '/conteudo' || path === '/viralizar' || path === '/busca' || path === '/fila' ||
       path === '/minhas-materias' || path.startsWith('/materias-ia');
   }
   function itemClass(href, groupedContent = false) {
@@ -44,6 +44,10 @@
     <a href="/conteudo" title="Criar conteúdo" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= itemClass('/conteudo', true) %>">
       <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M4 8h16M4 16h10"/></svg>
       <span class="sidebar-text">Criar conteúdo</span>
+    </a>
+    <a href="/viralizar" title="Conteúdo Viralizar" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= navActive('/viralizar') ? 'bg-rose-500/15 text-rose-300' : 'text-slate-400 hover:bg-slate-800/80 hover:text-white' %>">
+      <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      <span class="sidebar-text">Viralizar</span>
     </a>
     <a href="/biblioteca" title="Biblioteca de fontes" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= itemClass('/biblioteca') %>">
       <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h6"/></svg>
