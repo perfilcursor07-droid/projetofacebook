@@ -124,7 +124,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
-          limit: 12,
+          limit: 18,
         }),
       });
       const data = await res.json();
@@ -134,7 +134,9 @@
       const slot = data.slotSugerido?.label ? ' · sugerido: ' + data.slotSugerido.label : '';
       statusEl.textContent =
         topicos.length +
-        ' pauta(s) ranqueada(s) · analisadas ' +
+        ' pauta(s) · ' +
+        (data.totalGospel != null ? data.totalGospel + ' gospel · ' : '') +
+        'analisadas ' +
         (data.totalAnalisado || 0) +
         slot +
         (avisos.length ? ' — ' + avisos.join(' ') : '');

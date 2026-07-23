@@ -14,96 +14,169 @@ const PERFIL_VIRAL = {
   melhoresDias: ['terça', 'quarta'],
   evitarHorarios: [17, 18, 19, 20, 21, 22],
   preferirFormato: 'foto',
-  /** Seeds de busca automática (sem o usuário digitar). */
+  /**
+   * Seeds de busca (gospel BR + conflito). Mais termos = mais notícias relevantes.
+   * pesquisarNichos aceita até 10 por chamada — usamos em lotes.
+   */
   seedsBusca: [
-    'pastor polêmica',
-    'pastora igreja',
-    'igreja política',
-    'TSE igreja',
-    'Malafaia',
-    'escândalo pastor',
-    'tumulto igreja',
-    'vídeo pastor',
+    'pastor polêmica Brasil',
+    'pastora igreja Brasil',
+    'igreja evangélica política',
+    'TSE igreja pastor',
+    'Silas Malafaia',
+    'escândalo pastor Brasil',
+    'tumulto igreja evangélica',
+    'vídeo vazado pastor',
+    'Assembleia de Deus polêmica',
+    'IURD pastor',
+    'bispo Macedo',
+    'cantor gospel polêmica',
+    'pastor preso Brasil',
+    'igreja Justiça Brasil',
+    'líder evangélico denuncia',
+    'culto polêmica Brasil',
   ],
 };
 
+const PALAVRAS_GOSPEL = [
+  'pastor',
+  'pastora',
+  'igreja',
+  'evangel',
+  'gospel',
+  'malafaia',
+  'assembleia de deus',
+  'iurd',
+  'universal',
+  'quadrilateral',
+  'quadrangular',
+  'culto',
+  'bispo',
+  'apostolo',
+  'apóstolo',
+  'crente',
+  'louvor',
+  'testemunho',
+  'oracao',
+  'oração',
+  'biblia',
+  'bíblia',
+  'jesus',
+  'cristo',
+];
+
+const PALAVRAS_POLITICA = [
+  'tse',
+  'eleitoral',
+  'partido',
+  'deputado',
+  'senador',
+  'vereador',
+  'campanha',
+  'eleicao',
+  'eleição',
+  'camara',
+  'câmara',
+  'congresso',
+  'governo',
+  'prefeito',
+  'governador',
+];
+
+/** Fora do nicho da página — penaliza forte (mesmo se tiver "polêmica"). */
+const FORA_NICHIO = [
+  'chatgpt',
+  'openai',
+  'inteligencia artificial',
+  'inteligência artificial',
+  'sudario',
+  'sudário',
+  'vaticano',
+  'papa francisco',
+  'catolic',
+  'padre exorcista',
+  'africa',
+  'áfrica',
+  'italia',
+  'itália',
+  'extradi',
+  'zambelli',
+];
+
 /**
- * Taxonomia + pesos (quanto maior, mais alinhado ao que viraliza na página).
- * Conteúdo devocional fica baixo de propósito (manutenção, não crescimento).
+ * Taxonomia viral (só aplica peso alto se o texto for do nicho gospel).
  */
 const TAXONOMIA = [
   {
     id: 'tumulto_igreja',
     label: 'Tumulto / confusão em igreja',
     peso: 100,
-    keywords: ['tumulto', 'confusão', 'bagunça', 'briga', 'invasão', 'protesto igreja'],
+    keywords: ['tumulto', 'confusao', 'confusão', 'bagunca', 'bagunça', 'briga', 'invasao', 'invasão'],
+    exigeGospel: true,
   },
   {
     id: 'politica_religiao',
     label: 'Política + religião',
     peso: 92,
-    keywords: [
-      'tse',
-      'eleitoral',
-      'partido',
-      'política',
-      'politica',
-      'deputado',
-      'senador',
-      'vereador',
-      'campanha',
-      'urna',
-      'eleição',
-      'eleicao',
-    ],
+    keywords: PALAVRAS_POLITICA,
+    exigeGospel: true,
+    exigePoliticaEGospel: true,
   },
   {
     id: 'polemica',
     label: 'Polêmica',
     peso: 88,
-    keywords: ['polêmica', 'polemica', 'repercussão', 'repercussao', 'declaração', 'declaracao', 'detona', 'explode'],
+    keywords: ['polemica', 'polêmica', 'repercussao', 'repercussão', 'declaracao', 'declaração', 'detona'],
+    exigeGospel: true,
   },
   {
     id: 'escandalo',
     label: 'Escândalo / expôs',
     peso: 86,
-    keywords: ['escândalo', 'escandalo', 'expôs', 'expos', 'vazou', 'vazado', 'denúncia', 'denuncia', 'acusad'],
+    keywords: ['escandalo', 'escândalo', 'expos', 'expôs', 'vazou', 'vazado', 'denuncia', 'denúncia', 'acusad'],
+    exigeGospel: true,
   },
   {
     id: 'pastora',
     label: 'Pastora / liderança feminina',
     peso: 82,
-    keywords: ['pastora', 'bispo mulher', 'liderança feminina', 'lideranca feminina'],
+    keywords: ['pastora'],
+    exigeGospel: false,
   },
   {
     id: 'justica',
     label: 'Justiça / processo',
     peso: 55,
-    keywords: ['justiça', 'justica', 'processo', 'stf', 'prisão', 'prisao', 'condenad', 'investigad'],
+    keywords: ['justica', 'justiça', 'processo', 'stf', 'prisao', 'prisão', 'condenad', 'investigad'],
+    exigeGospel: true,
   },
   {
     id: 'crime',
     label: 'Crime',
     peso: 48,
-    keywords: ['crime', 'fraude', 'desvio', 'roubo', 'assalto'],
+    keywords: ['crime', 'fraude', 'desvio', 'roubo', 'assalto', 'preso'],
+    exigeGospel: true,
   },
   {
     id: 'pastor',
     label: 'Pastor (figura pública)',
-    peso: 45,
-    keywords: ['pastor', 'bispo', 'apóstolo', 'apostolo', 'líder religioso', 'lider religioso'],
+    peso: 50,
+    keywords: ['pastor', 'bispo', 'apostolo', 'apóstolo'],
+    exigeGospel: false,
   },
   {
     id: 'testemunho',
     label: 'Testemunho / fé',
     peso: 18,
-    keywords: ['testemunho', 'conversão', 'conversao', 'aceitou jesus', 'fé', 'fe '],
+    keywords: ['testemunho', 'conversao', 'conversão', 'aceitou jesus'],
+    exigeGospel: true,
   },
   {
     id: 'cura_milagre',
     label: 'Cura / milagre',
     peso: 12,
-    keywords: ['cura', 'milagre', 'ungido', 'libertação', 'libertacao'],
+    keywords: ['cura', 'milagre', 'ungido', 'libertacao', 'libertação'],
+    exigeGospel: true,
   },
 ];
 
@@ -126,15 +199,39 @@ function textoTopico(topico) {
     .join(' ');
 }
 
+function temAlguma(texto, lista) {
+  const t = stripAccents(texto);
+  return lista.some((k) => t.includes(stripAccents(k)));
+}
+
+function hitsEm(texto, lista) {
+  const t = stripAccents(texto);
+  return lista.filter((k) => t.includes(stripAccents(k)));
+}
+
+function ehNichoGospel(texto) {
+  return temAlguma(texto, PALAVRAS_GOSPEL);
+}
+
 function classificarTopico(topico) {
-  const texto = stripAccents(textoTopico(topico));
-  let melhor = { id: 'geral', label: 'Geral / outros', peso: 25, matches: [] };
-  let scoreTax = 25;
+  const texto = textoTopico(topico);
+  const tNorm = stripAccents(texto);
+  const gospel = ehNichoGospel(texto);
+  const politica = temAlguma(texto, PALAVRAS_POLITICA);
+  const fora = temAlguma(texto, FORA_NICHIO);
+
+  let melhor = { id: 'geral', label: 'Geral / outros', peso: 20, matches: [] };
+  let scoreTax = 20;
 
   for (const cat of TAXONOMIA) {
-    const hits = cat.keywords.filter((k) => texto.includes(stripAccents(k)));
+    if (cat.exigeGospel && !gospel) continue;
+    if (cat.exigePoliticaEGospel && !(gospel && politica)) continue;
+
+    const hits = hitsEm(texto, cat.keywords);
     if (!hits.length) continue;
-    const bonus = hits.length * 4;
+
+    // "política" sozinha sem igreja não entra (já barrada por exigePoliticaEGospel)
+    const bonus = hits.length * 5;
     const score = cat.peso + bonus;
     if (score > scoreTax) {
       scoreTax = score;
@@ -142,53 +239,62 @@ function classificarTopico(topico) {
     }
   }
 
-  const temFigura =
-    /\b(pastor|pastora|bispo|malafaia|deputad|senador|cantor|ministro)\b/i.test(texto);
-  const temNomeProprio = /\b[\p{Lu}][\p{L}'’-]{2,}(?:\s+(?:da|das|de|do|dos)?\s*[\p{Lu}][\p{L}'’-]{2,})+/u.test(
-    String(topico?.titulo || '')
-  );
-  const feminino = /\bpastora\b/i.test(texto);
-
   let score = scoreTax;
-  if (temFigura) score += 12;
-  if (temNomeProprio) score += 10;
-  if (feminino) score += 15;
-  if (topico?.calor) score += Math.min(20, Number(topico.calor) || 0);
-  if (topico?.contagemFontes) score += Math.min(10, Number(topico.contagemFontes) * 2);
+
+  if (gospel) score += 35;
+  else score -= 45;
+
+  if (gospel && politica) score += 25;
+  if (/\bpastora\b/i.test(tNorm)) score += 18;
+  if (/\b(malafaia|macedo|valdemiro|eadir)\b/i.test(tNorm)) score += 15;
+  if (/\b(brasil|fortaleza|sao paulo|rio de janeiro|bahia|cuiaba|belo horizonte|recife)\b/i.test(tNorm)) {
+    score += 10;
+  }
+
+  if (fora) {
+    // Tech/católico/internacional genérico: derruba, salvo se for bem gospel
+    score -= gospel ? 25 : 70;
+  }
+
+  if (topico?.calor) score += Math.min(15, Number(topico.calor) || 0);
+  if (topico?.contagemFontes) score += Math.min(8, Number(topico.contagemFontes) * 2);
   if (topico?.jaPublicado) score -= 80;
 
-  // Devocional puro: não matar da lista, mas marcar potencial baixo
-  const baixoAlcance = ['testemunho', 'cura_milagre'].includes(melhor.id);
+  const baixoAlcance = ['testemunho', 'cura_milagre', 'geral'].includes(melhor.id);
+  if (!gospel) {
+    melhor = { id: 'fora_nicho', label: 'Fora do nicho', peso: 0, matches: [] };
+  }
 
   let potencial = 'medio';
-  if (score >= 95) potencial = 'alto';
-  else if (score < 45 || baixoAlcance) potencial = 'baixo';
+  if (gospel && score >= 90) potencial = 'alto';
+  else if (!gospel || score < 50 || baixoAlcance) potencial = 'baixo';
 
   return {
     temaPrincipal: melhor.id,
     temaLabel: melhor.label,
-    scoreViral: Math.round(score),
+    scoreViral: Math.round(Math.max(0, score)),
     potencial,
-    gatilho: melhor.id.includes('politica') || melhor.id === 'polemica' || melhor.id === 'escandalo'
-      ? 'indignacao'
-      : melhor.id === 'pastora'
-        ? 'curiosidade'
-        : 'surpresa',
-    envolveFiguraPublica: temFigura || temNomeProprio,
-    generoFigura: feminino ? 'feminino' : temFigura ? 'masculino' : 'nao_aplicavel',
-    nivelPolemica: Math.min(5, Math.max(0, Math.round((score - 30) / 20))),
+    nichoGospel: gospel,
+    gatilho:
+      melhor.id === 'politica_religiao' || melhor.id === 'polemica' || melhor.id === 'escandalo'
+        ? 'indignacao'
+        : melhor.id === 'pastora'
+          ? 'curiosidade'
+          : 'surpresa',
+    envolveFiguraPublica: /\b(pastor|pastora|bispo|malafaia|deputad|senador|cantor)\b/i.test(tNorm),
+    generoFigura: /\bpastora\b/i.test(tNorm) ? 'feminino' : /\bpastor\b/i.test(tNorm) ? 'masculino' : 'nao_aplicavel',
+    nivelPolemica: Math.min(5, Math.max(0, Math.round((score - 40) / 20))),
     matches: melhor.matches || [],
   };
 }
 
 function proximoSlotSugerido() {
   const agora = new Date();
-  const dia = agora.getDay(); // 0=dom
+  const dia = agora.getDay();
   const hora = agora.getHours();
-  const melhoresDiasNum = [2, 3]; // terça, quarta
+  const melhoresDiasNum = [2, 3];
   const horarios = PERFIL_VIRAL.melhoresHorarios;
 
-  // Se hoje é bom e ainda dá tempo, sugere próximo horário bom
   if (melhoresDiasNum.includes(dia)) {
     const proxHora = horarios.find((h) => h > hora);
     if (proxHora != null) {
@@ -200,10 +306,9 @@ function proximoSlotSugerido() {
     }
   }
 
-  // Próxima terça/quarta às 12h
   let add = 1;
-  let d = new Date(agora);
   while (add < 8) {
+    const d = new Date(agora);
     d.setDate(agora.getDate() + add);
     if (melhoresDiasNum.includes(d.getDay())) {
       const nome = d.getDay() === 2 ? 'terça' : 'quarta';
@@ -241,32 +346,44 @@ function dedupeTitulos(lista) {
   return out;
 }
 
-/**
- * Busca pautas automaticamente (sem o usuário digitar) e ranqueia pelo perfil viral.
- */
-async function curarPautasVirais({ userId, facebookPageId, limit = 12 } = {}) {
-  const lim = Math.min(20, Math.max(3, Number(limit) || 12));
-  const avisos = [];
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
 
-  const seeds = PERFIL_VIRAL.seedsBusca.join(', ');
+/**
+ * Busca pautas automaticamente e ranqueia pelo perfil viral (só nicho gospel).
+ */
+async function curarPautasVirais({ userId, facebookPageId, limit = 18 } = {}) {
+  const lim = Math.min(24, Math.max(5, Number(limit) || 18));
+  const avisos = [];
   let brutos = [];
 
+  // 1) Em alta — corrige: a API devolve { topicos }, não array
   try {
-    const emAlta = await buscarEmAltaAgora(seeds, { horas: 24 });
-    brutos = brutos.concat(emAlta || []);
+    const emAlta = await buscarEmAltaAgora(PERFIL_VIRAL.seedsBusca.slice(0, 8).join(', '), {
+      horas: 48,
+    });
+    const lista = Array.isArray(emAlta) ? emAlta : emAlta?.topicos || [];
+    brutos = brutos.concat(lista);
   } catch (err) {
     avisos.push(`Em alta: ${err.message}`);
   }
 
-  try {
-    const nichos = await pesquisarNichos(seeds, 4, {
-      incluirRedesSociais: false,
-      filtrarPeriodo: true,
-      diasRecentes: 2,
-    });
-    brutos = brutos.concat(nichos || []);
-  } catch (err) {
-    avisos.push(`Nichos: ${err.message}`);
+  // 2) Nichos em lotes (até 10 termos/chamada) — mais notícias gospel
+  const lotesSeeds = chunk(PERFIL_VIRAL.seedsBusca, 8);
+  for (const lote of lotesSeeds) {
+    try {
+      const nichos = await pesquisarNichos(lote.join(', '), 6, {
+        incluirRedesSociais: false,
+        filtrarPeriodo: true,
+        diasRecentes: 3,
+      });
+      brutos = brutos.concat(nichos || []);
+    } catch (err) {
+      avisos.push(`Nichos: ${err.message}`);
+    }
   }
 
   brutos = dedupeTitulos(brutos);
@@ -289,22 +406,32 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 12 } = {}) {
       };
     })
     .filter((t) => !t.jaPublicado)
-    .sort((a, b) => b.scoreViral - a.scoreViral || b.calorViral - a.calorViral)
-    .slice(0, lim);
+    .sort((a, b) => b.scoreViral - a.scoreViral || b.calorViral - a.calorViral);
 
-  // Preferir alto/médio potencial no topo; manter alguns médios se lista curta
-  const altos = topicos.filter((t) => t.potencial === 'alto');
-  const medios = topicos.filter((t) => t.potencial === 'medio');
-  const baixos = topicos.filter((t) => t.potencial === 'baixo');
+  // Prioriza nicho gospel; fora do nicho só entra se faltar volume
+  const noNicho = topicos.filter((t) => t.nichoGospel);
+  const fora = topicos.filter((t) => !t.nichoGospel);
+  const base = noNicho.length >= 5 ? noNicho : [...noNicho, ...fora];
+
+  const altos = base.filter((t) => t.potencial === 'alto');
+  const medios = base.filter((t) => t.potencial === 'medio');
+  const baixos = base.filter((t) => t.potencial === 'baixo');
   const ranqueados = [...altos, ...medios, ...baixos].slice(0, lim);
 
   ranqueados.forEach((t, i) => {
     t.posicao = i + 1;
   });
 
+  if (noNicho.length < 5) {
+    avisos.push(
+      `Poucas notícias gospel no radar agora (${noNicho.length}). Ampliei a busca; rode de novo em alguns minutos.`
+    );
+  }
+
   return {
     topicos: ranqueados,
     totalAnalisado: brutos.length,
+    totalGospel: noNicho.length,
     perfil: {
       id: PERFIL_VIRAL.id,
       nome: PERFIL_VIRAL.nome,
@@ -318,10 +445,6 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 12 } = {}) {
   };
 }
 
-/**
- * Gera matérias a partir de tópicos curados.
- * @param {{ status?: 'rascunho'|'publicado', publicar?: boolean }}
- */
 async function gerarDePautas({
   userId,
   facebookPageId,
@@ -347,7 +470,6 @@ async function gerarDePautas({
         userId,
         topico: {
           ...topico,
-          // Ângulo viral no contexto da geração
           anguloViral: topico.temaLabel || topico.temaPrincipal,
           potencialViral: topico.potencial,
         },
