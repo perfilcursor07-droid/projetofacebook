@@ -1136,6 +1136,44 @@ async function enriquecerFontes(req, res, next) {
   }
 }
 
+async function linksLista(req, res, next) {
+  try {
+    const conteudoLinksService = require('../services/conteudoLinksService');
+    const links = await conteudoLinksService.listar(req.session.userId);
+    res.json({ ok: true, links });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function linksSalvar(req, res, next) {
+  try {
+    const body = req.body || {};
+    const conteudoLinksService = require('../services/conteudoLinksService');
+    const link = await conteudoLinksService.salvar(req.session.userId, {
+      url: body.url,
+      nome: body.nome,
+      notas: body.notas,
+      tipo: body.tipo,
+    });
+    res.status(201).json({ ok: true, link });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+async function linksRemover(req, res, next) {
+  try {
+    const conteudoLinksService = require('../services/conteudoLinksService');
+    await conteudoLinksService.remover(req.session.userId, Number(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 module.exports = {
   pesquisar,
   emAlta,
@@ -1167,4 +1205,7 @@ module.exports = {
   monitorLista,
   monitorPausar,
   monitorRetomar,
+  linksLista,
+  linksSalvar,
+  linksRemover,
 };

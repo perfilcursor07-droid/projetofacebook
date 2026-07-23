@@ -39,5 +39,8 @@ router.post('/monitor', controller.monitorCriar);
 router.get('/monitor', controller.monitorLista);
 router.post('/monitor/:id/pausar', controller.monitorPausar);
 router.post('/monitor/:id/retomar', controller.monitorRetomar);
+router.get('/links', controller.linksLista);
+router.post('/links', controller.linksSalvar);
+router.delete('/links/:id', controller.linksRemover);
 
 module.exports = router;

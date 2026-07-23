@@ -91,6 +91,7 @@
       document.getElementById('mia-auto')?.classList.toggle('hidden', modo !== 'auto');
       document.getElementById('mia-manual')?.classList.toggle('hidden', modo !== 'manual');
       if (modo === 'auto') loadMonitores();
+      if (modo === 'radar' || modo === 'link') loadLinksSalvos();
     });
   });
 
@@ -662,5 +663,130 @@
     const url = '/api/materias-ia/monitor/' + btn.dataset.id + (ativo ? '/pausar' : '/retomar');
     await fetch(url, { method: 'POST' });
     loadMonitores();
+  });
+
+  let miaLinksCache = [];
+
+  function rotuloTipoLink(tipo) {
+    const map = {
+      pagina: 'página',
+      post: 'post',
+      reel: 'reel',
+      noticia: 'notícia',
+      outro: 'link',
+    };
+    return map[tipo] || 'link';
+  }
+
+  function renderLinksSalvos() {
+    const lists = document.querySelectorAll('.mia-links-list');
+    lists.forEach((list) => {
+      if (!miaLinksCache.length) {
+        list.innerHTML =
+          '<p class="px-1 py-2 text-xs text-slate-500">Nenhum link salvo ainda. Cole um URL e clique em “Salvar link na lista”.</p>';
+        return;
+      }
+      list.innerHTML = miaLinksCache
+        .map((l) => {
+          const nome = escapeHtml(l.nome || 'Link');
+          const tipo = escapeHtml(rotuloTipoLink(l.tipo));
+          const url = escapeHtml(l.url || '');
+          return `
+          <div class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-2 py-1.5 hover:border-emerald-500/30">
+            <button type="button" class="mia-link-pick min-w-0 flex-1 text-left" data-url="${url}" title="${url}">
+              <span class="block truncate text-xs font-medium text-slate-100">${nome}</span>
+              <span class="block truncate text-[10px] text-slate-500">${tipo} · ${url}</span>
+            </button>
+            <button type="button" class="mia-link-del shrink-0 rounded px-1.5 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/10" data-id="${l.id}" title="Remover">✕</button>
+          </div>`;
+        })
+        .join('');
+    });
+  }
+
+  async function loadLinksSalvos() {
+    try {
+      const res = await fetch('/api/materias-ia/links');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao carregar links');
+      miaLinksCache = data.links || [];
+      renderLinksSalvos();
+    } catch (err) {
+      document.querySelectorAll('.mia-links-list').forEach((list) => {
+        list.innerHTML = `<p class="px-1 py-2 text-xs text-rose-300">${escapeHtml(err.message)}</p>`;
+      });
+    }
+  }
+
+  async function salvarLinkAtual({ urlEl, nomeEl, statusEl }) {
+    const url = String(urlEl?.value || '').trim();
+    if (!url) {
+      if (statusEl) statusEl.textContent = 'Cole o link no campo acima antes de salvar.';
+      return;
+    }
+    try {
+      const res = await fetch('/api/materias-ia/links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          nome: String(nomeEl?.value || '').trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Não foi possível salvar');
+      if (nomeEl) nomeEl.value = '';
+      if (statusEl) statusEl.textContent = 'Link salvo: ' + (data.link?.nome || url);
+      await loadLinksSalvos();
+    } catch (err) {
+      if (statusEl) statusEl.textContent = err.message;
+    }
+  }
+
+  document.getElementById('mia-btn-radar-salvar-link')?.addEventListener('click', () => {
+    salvarLinkAtual({
+      urlEl: document.getElementById('mia-radar-url'),
+      nomeEl: document.getElementById('mia-radar-link-nome'),
+      statusEl: document.getElementById('mia-radar-status'),
+    });
+  });
+
+  document.getElementById('mia-btn-link-salvar-link')?.addEventListener('click', () => {
+    salvarLinkAtual({
+      urlEl: document.getElementById('mia-link-url'),
+      nomeEl: document.getElementById('mia-link-save-nome'),
+      statusEl: document.getElementById('mia-link-status'),
+    });
+  });
+
+  document.querySelectorAll('.mia-btn-refresh-links').forEach((btn) => {
+    btn.addEventListener('click', () => loadLinksSalvos());
+  });
+
+  document.querySelectorAll('.mia-links-list').forEach((list) => {
+    list.addEventListener('click', async (e) => {
+      const pick = e.target.closest('.mia-link-pick');
+      if (pick) {
+        const targetId = list.dataset.target;
+        const input = targetId ? document.getElementById(targetId) : null;
+        if (input) {
+          input.value = pick.dataset.url || '';
+          input.focus();
+        }
+        return;
+      }
+      const del = e.target.closest('.mia-link-del');
+      if (!del) return;
+      const id = del.dataset.id;
+      if (!id || !confirm('Remover este link da lista?')) return;
+      try {
+        const res = await fetch('/api/materias-ia/links/' + id, { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Falha ao remover');
+        await loadLinksSalvos();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
   });
 })();
