@@ -35,6 +35,12 @@ const PERFIL_VIRAL = {
     'igreja Justiça Brasil',
     'líder evangélico denuncia',
     'culto polêmica Brasil',
+    'pastor processado',
+    'igreja evangélica Brasil notícia',
+    'gospel Brasil polêmica',
+    'Valdemiro Santiago',
+    'Edir Macedo',
+    'pastor viral Brasil',
   ],
 };
 
@@ -354,15 +360,17 @@ function chunk(arr, size) {
 
 /**
  * Busca pautas automaticamente e ranqueia pelo perfil viral (só nicho gospel).
+ * Conteúdo recente + busca profunda em vários termos/sites.
+ * Pautas já publicadas/agendadas saem da lista principal e vão em `excluidos`.
  */
-async function curarPautasVirais({ userId, facebookPageId, limit = 18 } = {}) {
-  const lim = Math.min(24, Math.max(5, Number(limit) || 18));
+async function curarPautasVirais({ userId, facebookPageId, limit = 20 } = {}) {
+  const lim = Math.min(28, Math.max(5, Number(limit) || 20));
   const avisos = [];
   let brutos = [];
 
-  // 1) Em alta — corrige: a API devolve { topicos }, não array
+  // 1) Em alta (48h) — a API devolve { topicos }
   try {
-    const emAlta = await buscarEmAltaAgora(PERFIL_VIRAL.seedsBusca.slice(0, 8).join(', '), {
+    const emAlta = await buscarEmAltaAgora(PERFIL_VIRAL.seedsBusca.slice(0, 10).join(', '), {
       horas: 48,
     });
     const lista = Array.isArray(emAlta) ? emAlta : emAlta?.topicos || [];
@@ -371,11 +379,11 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 18 } = {}) {
     avisos.push(`Em alta: ${err.message}`);
   }
 
-  // 2) Nichos em lotes (até 10 termos/chamada) — mais notícias gospel
+  // 2) Nichos em lotes — mais termos × mais itens (notícias recentes de vários sites)
   const lotesSeeds = chunk(PERFIL_VIRAL.seedsBusca, 8);
   for (const lote of lotesSeeds) {
     try {
-      const nichos = await pesquisarNichos(lote.join(', '), 6, {
+      const nichos = await pesquisarNichos(lote.join(', '), 8, {
         incluirRedesSociais: false,
         filtrarPeriodo: true,
         diasRecentes: 3,
@@ -396,7 +404,10 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 18 } = {}) {
 
   let topicos = await materiaIaService.marcarJaPublicados(userId, facebookPageId, brutos);
 
-  topicos = topicos
+  const jaUsados = topicos.filter((t) => t.jaPublicado);
+  const novos = topicos.filter((t) => !t.jaPublicado);
+
+  const classificados = novos
     .map((t) => {
       const meta = classificarTopico(t);
       return {
@@ -405,12 +416,10 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 18 } = {}) {
         calorViral: meta.scoreViral + (Number(t.calor) || 0),
       };
     })
-    .filter((t) => !t.jaPublicado)
     .sort((a, b) => b.scoreViral - a.scoreViral || b.calorViral - a.calorViral);
 
-  // Prioriza nicho gospel; fora do nicho só entra se faltar volume
-  const noNicho = topicos.filter((t) => t.nichoGospel);
-  const fora = topicos.filter((t) => !t.nichoGospel);
+  const noNicho = classificados.filter((t) => t.nichoGospel);
+  const fora = classificados.filter((t) => !t.nichoGospel);
   const base = noNicho.length >= 5 ? noNicho : [...noNicho, ...fora];
 
   const altos = base.filter((t) => t.potencial === 'alto');
@@ -422,6 +431,16 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 18 } = {}) {
     t.posicao = i + 1;
   });
 
+  const excluidos = jaUsados.slice(0, 15).map((t) => ({
+    titulo: t.titulo,
+    link: t.link || null,
+    fonte: t.veiculo || t.fonte || null,
+    motivo: 'Já publicada ou agendada nesta página',
+  }));
+
+  if (excluidos.length) {
+    avisos.push(`${excluidos.length} pauta(s) já usada(s) foram ocultadas da lista.`);
+  }
   if (noNicho.length < 5) {
     avisos.push(
       `Poucas notícias gospel no radar agora (${noNicho.length}). Ampliei a busca; rode de novo em alguns minutos.`
@@ -430,8 +449,10 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 18 } = {}) {
 
   return {
     topicos: ranqueados,
+    excluidos,
     totalAnalisado: brutos.length,
     totalGospel: noNicho.length,
+    totalExcluidos: excluidos.length,
     perfil: {
       id: PERFIL_VIRAL.id,
       nome: PERFIL_VIRAL.nome,

@@ -153,15 +153,20 @@ async function marcarJaPublicados(userId, facebookPageId, topicos) {
   const lista = Array.isArray(topicos) ? topicos : [];
   if (!lista.length || !userId) return lista;
 
-  const matters = await AiMatters.findByUser(userId, 100);
+  // Histórico maior para não sugerir de novo pautas já usadas na página
+  const matters = await AiMatters.findByUser(userId, 250);
   const urls = new Set();
   const titulos = [];
   for (const m of matters) {
     if (facebookPageId && m.facebook_page_id && Number(m.facebook_page_id) !== Number(facebookPageId)) {
       continue;
     }
-    // Só marca o que realmente saiu (ou foi enfileirado) na Página
-    if (m.status !== 'publicado' && !m.publication_id) continue;
+    // Publicado, agendado ou já com publication_id
+    const usado =
+      m.status === 'publicado' ||
+      m.status === 'agendado' ||
+      Boolean(m.publication_id);
+    if (!usado) continue;
     if (m.fonte_url) urls.add(String(m.fonte_url).split(/[?#]/)[0].toLowerCase());
     if (m.fonte_titulo) titulos.push(m.fonte_titulo);
     if (m.titulo) titulos.push(m.titulo);

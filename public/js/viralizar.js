@@ -2,6 +2,8 @@
   const pageSelect = document.getElementById('vir-page');
   const statusEl = document.getElementById('vir-status');
   const listaEl = document.getElementById('vir-lista');
+  const excluidosWrap = document.getElementById('vir-excluidos-wrap');
+  const excluidosEl = document.getElementById('vir-excluidos');
   const btnCurar = document.getElementById('vir-btn-curar');
   const btnGerar = document.getElementById('vir-btn-gerar');
   const autoPub = document.getElementById('vir-auto-pub');
@@ -97,6 +99,31 @@
     syncGerarBtn();
   }
 
+  function renderExcluidos(excluidos) {
+    if (!excluidosWrap || !excluidosEl) return;
+    if (!excluidos || !excluidos.length) {
+      excluidosWrap.classList.add('hidden');
+      excluidosEl.innerHTML = '';
+      return;
+    }
+    excluidosWrap.classList.remove('hidden');
+    excluidosEl.innerHTML = excluidos
+      .map((t) => {
+        const titulo = escapeHtml(t.titulo || 'Sem título');
+        const fonte = escapeHtml(t.fonte || '');
+        return `
+        <div class="flex items-start gap-2 rounded-lg border border-slate-800/80 bg-slate-950/40 px-3 py-2 opacity-75">
+          <span class="mt-0.5 shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">já usada</span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-xs text-slate-300">${titulo}</span>
+            ${fonte ? `<span class="block text-[10px] text-slate-600">${fonte}</span>` : ''}
+            ${t.link ? `<a href="${escapeHtml(t.link)}" target="_blank" rel="noopener" class="text-[10px] text-sky-500 hover:text-sky-400">fonte →</a>` : ''}
+          </span>
+        </div>`;
+      })
+      .join('');
+  }
+
   function syncGerarBtn() {
     const n = listaEl.querySelectorAll('.vir-check:checked').length;
     btnGerar.disabled = n < 1;
@@ -118,13 +145,14 @@
     statusEl.textContent = 'Buscando pautas alinhadas ao público da página…';
     listaEl.innerHTML = '';
     topicos = [];
+    renderExcluidos([]);
     try {
       const res = await fetch('/api/viralizar/curar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
-          limit: 18,
+          limit: 20,
         }),
       });
       const data = await res.json();
@@ -132,18 +160,22 @@
       topicos = data.topicos || [];
       const avisos = (data.avisos || []).filter(Boolean);
       const slot = data.slotSugerido?.label ? ' · sugerido: ' + data.slotSugerido.label : '';
+      const excl = data.excluidos || [];
       statusEl.textContent =
         topicos.length +
-        ' pauta(s) · ' +
+        ' pauta(s) novas · ' +
         (data.totalGospel != null ? data.totalGospel + ' gospel · ' : '') +
         'analisadas ' +
         (data.totalAnalisado || 0) +
+        (excl.length ? ' · ' + excl.length + ' já usadas ocultas' : '') +
         slot +
         (avisos.length ? ' — ' + avisos.join(' ') : '');
       renderLista();
+      renderExcluidos(excl);
     } catch (err) {
       statusEl.textContent = err.message;
       renderLista();
+      renderExcluidos([]);
     } finally {
       btnCurar.disabled = false;
     }

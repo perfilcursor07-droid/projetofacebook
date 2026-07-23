@@ -42,6 +42,7 @@ const AiMatters = {
         'publications.fb_views_at as pub_fb_views_at',
         'publications.fb_native_post_id as pub_fb_native_post_id',
         'publications.status as pub_status',
+        'publications.published_at as pub_published_at',
         'facebook_pages.page_name as page_name'
       )
       .orderBy('ai_matters.created_at', 'desc')
