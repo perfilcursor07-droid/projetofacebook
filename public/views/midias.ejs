@@ -1,0 +1,257 @@
+<%- include('partials/app-start') %>
+
+  <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-violet-400">Administração</p>
+        <h1 class="mt-1 text-2xl font-semibold text-white">Mídias no servidor</h1>
+        <p class="mt-2 max-w-2xl text-sm text-slate-400">
+          Veja vídeos, imagens e artes salvos em disco e apague o que não precisa mais para liberar espaço.
+        </p>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-2.5">
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">Uso total</p>
+        <p id="midias-total" class="mt-0.5 text-lg font-semibold text-white"><%= totalSizeLabel %></p>
+      </div>
+    </div>
+
+    <div id="midias-pastas" class="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <% pastas.forEach(function (p) { %>
+        <button type="button"
+          class="midias-pasta-btn rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-left transition hover:border-violet-500/40 <%= p.folder === 'videos' ? 'border-violet-500 bg-violet-500/10 ring-1 ring-violet-500' : '' %>"
+          data-folder="<%= p.folder %>">
+          <span class="block text-sm font-semibold text-white"><%= p.folder %></span>
+          <span class="mt-1 block text-xs text-slate-400"><%= p.arquivos %> arquivo(s) · <%= p.sizeLabel %></span>
+        </button>
+      <% }) %>
+    </div>
+
+    <div class="mt-6 flex flex-wrap items-end gap-3">
+      <label class="min-w-[12rem] flex-1 text-sm">
+        <span class="text-slate-500">Buscar arquivo</span>
+        <input id="midias-q" type="search" placeholder="nome ou caminho…"
+          class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100" />
+      </label>
+      <label class="text-sm">
+        <span class="text-slate-500">Tipo</span>
+        <select id="midias-tipo" class="mt-1 block rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
+          <option value="">Todos</option>
+          <option value="video">Vídeos</option>
+          <option value="imagem">Imagens</option>
+          <option value="outro">Outros</option>
+        </select>
+      </label>
+      <button type="button" id="midias-refresh"
+        class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:border-slate-400">Atualizar</button>
+      <button type="button" id="midias-apagar-sel"
+        class="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-200 hover:border-rose-400 disabled:opacity-40"
+        disabled>Apagar selecionados</button>
+    </div>
+
+    <p id="midias-status" class="mt-3 text-sm text-slate-400"></p>
+
+    <div class="mt-4 overflow-hidden rounded-2xl border border-slate-800">
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-left text-sm">
+          <thead class="bg-slate-900/80 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-3 py-2.5"><input type="checkbox" id="midias-check-all" class="accent-violet-500" title="Selecionar todos" /></th>
+              <th class="px-3 py-2.5">Prévia</th>
+              <th class="px-3 py-2.5">Arquivo</th>
+              <th class="px-3 py-2.5">Tipo</th>
+              <th class="px-3 py-2.5">Tamanho</th>
+              <th class="px-3 py-2.5">Modificado</th>
+              <th class="px-3 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody id="midias-tbody" class="divide-y divide-slate-800 bg-slate-950/40"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      let folder = 'videos';
+      const tbody = document.getElementById('midias-tbody');
+      const statusEl = document.getElementById('midias-status');
+      const totalEl = document.getElementById('midias-total');
+      const btnApagar = document.getElementById('midias-apagar-sel');
+      const checkAll = document.getElementById('midias-check-all');
+
+      function escapeHtml(t) {
+        return String(t || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function formatDate(iso) {
+        try {
+          return new Date(iso).toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+        } catch {
+          return '—';
+        }
+      }
+
+      function syncSelBtn() {
+        const n = tbody.querySelectorAll('.midias-check:checked').length;
+        btnApagar.disabled = n < 1;
+        btnApagar.textContent = n ? 'Apagar selecionados (' + n + ')' : 'Apagar selecionados';
+      }
+
+      function setPastaActive(name) {
+        folder = name;
+        document.querySelectorAll('.midias-pasta-btn').forEach((btn) => {
+          const on = btn.dataset.folder === folder;
+          btn.classList.toggle('border-violet-500', on);
+          btn.classList.toggle('bg-violet-500/10', on);
+          btn.classList.toggle('ring-1', on);
+          btn.classList.toggle('ring-violet-500', on);
+        });
+      }
+
+      async function refreshPastas() {
+        try {
+          const res = await fetch('/api/midias/pastas');
+          const data = await res.json();
+          if (!res.ok) return;
+          if (data.sizeLabel && totalEl) totalEl.textContent = data.sizeLabel;
+          (data.pastas || []).forEach((p) => {
+            const btn = document.querySelector('.midias-pasta-btn[data-folder="' + p.folder + '"]');
+            if (!btn) return;
+            const meta = btn.querySelector('span:last-child');
+            if (meta) meta.textContent = p.arquivos + ' arquivo(s) · ' + p.sizeLabel;
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+
+      async function loadFiles() {
+        statusEl.textContent = 'Carregando…';
+        tbody.innerHTML = '';
+        checkAll.checked = false;
+        syncSelBtn();
+        const q = document.getElementById('midias-q').value.trim();
+        const tipo = document.getElementById('midias-tipo').value;
+        const params = new URLSearchParams({ folder });
+        if (q) params.set('q', q);
+        if (tipo) params.set('tipo', tipo);
+
+        try {
+          const res = await fetch('/api/midias?' + params.toString());
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha ao listar');
+
+          statusEl.textContent =
+            data.total + ' arquivo(s) em /' + data.folder + ' · ' + (data.sizeLabel || '');
+
+          if (!data.arquivos || !data.arquivos.length) {
+            tbody.innerHTML =
+              '<tr><td colspan="7" class="px-4 py-10 text-center text-slate-500">Nenhum arquivo nesta pasta.</td></tr>';
+            return;
+          }
+
+          tbody.innerHTML = data.arquivos
+            .map((f) => {
+              const preview =
+                f.tipo === 'imagem'
+                  ? `<img src="${escapeHtml(f.url)}" alt="" class="h-12 w-12 rounded object-cover bg-slate-900" loading="lazy" />`
+                  : f.tipo === 'video'
+                    ? `<div class="flex h-12 w-12 items-center justify-center rounded bg-slate-900 text-[10px] font-semibold text-slate-400">VID</div>`
+                    : `<div class="flex h-12 w-12 items-center justify-center rounded bg-slate-900 text-[10px] text-slate-500">FILE</div>`;
+              return `
+              <tr class="hover:bg-slate-900/60">
+                <td class="px-3 py-2"><input type="checkbox" class="midias-check accent-violet-500" value="${escapeHtml(f.path)}" /></td>
+                <td class="px-3 py-2">${preview}</td>
+                <td class="px-3 py-2">
+                  <p class="max-w-md truncate font-medium text-slate-100" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</p>
+                  <p class="max-w-md truncate text-[11px] text-slate-500">${escapeHtml(f.path)}</p>
+                </td>
+                <td class="px-3 py-2 text-slate-400">${escapeHtml(f.tipo)}</td>
+                <td class="px-3 py-2 text-slate-300">${escapeHtml(f.sizeLabel)}</td>
+                <td class="px-3 py-2 text-slate-400 whitespace-nowrap">${formatDate(f.mtime)}</td>
+                <td class="px-3 py-2 text-right whitespace-nowrap">
+                  <a href="${escapeHtml(f.url)}" target="_blank" rel="noopener" class="mr-2 text-xs text-sky-400 hover:text-sky-300">Abrir</a>
+                  <button type="button" class="midias-del text-xs text-rose-300 hover:text-rose-200" data-path="${escapeHtml(f.path)}">Apagar</button>
+                </td>
+              </tr>`;
+            })
+            .join('');
+          syncSelBtn();
+        } catch (err) {
+          statusEl.textContent = err.message;
+        }
+      }
+
+      async function apagarPaths(paths) {
+        if (!paths.length) return;
+        if (!confirm('Apagar ' + paths.length + ' arquivo(s) do servidor? Esta ação não pode ser desfeita.')) return;
+        statusEl.textContent = 'Apagando…';
+        try {
+          const res = await fetch('/api/midias', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paths }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Falha ao apagar');
+          statusEl.textContent =
+            'Apagados: ' + (data.apagados || 0) + (data.falhas ? ' · falhas: ' + data.falhas : '');
+          await refreshPastas();
+          await loadFiles();
+        } catch (err) {
+          statusEl.textContent = err.message;
+        }
+      }
+
+      document.querySelectorAll('.midias-pasta-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          setPastaActive(btn.dataset.folder);
+          loadFiles();
+        });
+      });
+
+      document.getElementById('midias-refresh').addEventListener('click', () => {
+        refreshPastas();
+        loadFiles();
+      });
+      document.getElementById('midias-q').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') loadFiles();
+      });
+      document.getElementById('midias-tipo').addEventListener('change', loadFiles);
+
+      checkAll.addEventListener('change', () => {
+        tbody.querySelectorAll('.midias-check').forEach((c) => {
+          c.checked = checkAll.checked;
+        });
+        syncSelBtn();
+      });
+
+      tbody.addEventListener('change', (e) => {
+        if (e.target.classList.contains('midias-check')) syncSelBtn();
+      });
+
+      tbody.addEventListener('click', (e) => {
+        const del = e.target.closest('.midias-del');
+        if (!del) return;
+        apagarPaths([del.dataset.path]);
+      });
+
+      btnApagar.addEventListener('click', () => {
+        const paths = [...tbody.querySelectorAll('.midias-check:checked')].map((c) => c.value);
+        apagarPaths(paths);
+      });
+
+      loadFiles();
+    })();
+  </script>
+<%- include('partials/app-end') %>

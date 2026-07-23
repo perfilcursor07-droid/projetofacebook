@@ -25,4 +25,7 @@ router.post('/usuarios/:id/nivel', requireAuth, requireAdmin, usersController.up
 router.post('/usuarios/:id/senha', requireAuth, requireAdmin, usersController.resetPassword);
 router.post('/usuarios/:id/remover', requireAuth, requireAdmin, usersController.remove);
 
+const midiasController = require('../controllers/midiasController');
+router.get('/midias', requireAuth, requireAdmin, midiasController.index);
+
 module.exports = router;

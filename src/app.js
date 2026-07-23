@@ -106,6 +106,7 @@ app.use('/api/publications', requireAuth, require('./routes/publications'));
 app.use('/api/materias-ia', requireAuth, require('./routes/materiasIa'));
 app.use('/api/biblioteca', requireAuth, require('./routes/biblioteca'));
 app.use('/api/youtube-cookies', requireAuth, require('./routes/ytCookies'));
+app.use('/api/midias', require('./routes/midias'));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {
