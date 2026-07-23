@@ -16,6 +16,7 @@ router.post('/upload', (req, res, next) => {
   });
 }, videosController.upload);
 router.post('/import', videosController.importLink);
+router.post('/import-lote', videosController.importLote);
 router.post('/:pexelsId/select', videosController.selectVideo);
 router.post('/:id/download', videosController.download);
 router.post('/:id/clip', videosController.clip);

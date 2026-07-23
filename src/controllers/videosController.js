@@ -45,66 +45,151 @@ async function upload(req, res, next) {
 }
 
 /** Importa vídeo por link (YouTube, TikTok, URL direta) via yt-dlp. */
+async function importOneLink(userId, { url, termo, titulo, thumbnail, fonte }) {
+  const normalized = String(url || '').trim();
+  if (!/^https?:\/\//i.test(normalized)) {
+    const err = new Error('URL inválida (use http/https)');
+    err.status = 400;
+    throw err;
+  }
+
+  const existing = await Videos.findByUrl(userId, normalized);
+  if (existing) {
+    return { video: existing, created: false, queued: existing.status === 'pendente', aviso: null };
+  }
+
+  let meta = {};
+  let metaWarning = null;
+  try {
+    meta = await importService.fetchLinkMetadata(normalized);
+  } catch (metaErr) {
+    metaWarning = importService.humanizeYtDlpError(metaErr);
+    console.warn('[import] metadata falhou, enfileirando mesmo assim:', metaWarning);
+    meta = {
+      titulo: titulo || null,
+      thumbnail: thumbnail || null,
+      extractor: null,
+      autor: null,
+      autorUrl: null,
+      duracao: null,
+    };
+  }
+
+  const [id] = await Videos.create({
+    user_id: userId,
+    origem: 'link',
+    termo_busca: (termo || meta.extractor || 'link').toString().slice(0, 255),
+    titulo: String(meta.titulo || titulo || normalized)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 480),
+    url_original: normalized,
+    thumbnail: meta.thumbnail || thumbnail || null,
+    duracao: meta.duracao,
+    autor: meta.autor ? String(meta.autor).slice(0, 255) : null,
+    autor_url: meta.autorUrl ? String(meta.autorUrl).slice(0, 500) : null,
+    status: 'pendente',
+    metadata: { extractor: meta.extractor, fonte: fonte || null, metaWarning },
+  });
+
+  const video = await Videos.findById(id);
+  importService.queueLinkImport(video);
+
+  return {
+    video,
+    queued: true,
+    created: true,
+    aviso: metaWarning ? `Link enfileirado, mas a prévia falhou: ${metaWarning}` : null,
+  };
+}
+
 async function importLink(req, res, next) {
   try {
     const url = String(req.body.url || '').trim();
-    if (!/^https?:\/\//i.test(url)) {
-      const err = new Error('Informe uma URL válida (http/https)');
-      err.status = 400;
-      throw err;
+    if (!url) {
+      return res.status(400).json({ error: 'Informe uma URL válida (http/https)' });
     }
 
-    const existing = await Videos.findByUrl(req.session.userId, url);
-    if (existing) {
-      return res.json({ video: existing, created: false, queued: existing.status === 'pendente' });
-    }
-
-    let meta = {};
-    let metaWarning = null;
-    try {
-      meta = await importService.fetchLinkMetadata(url);
-    } catch (metaErr) {
-      // Em VPS o YouTube às vezes bloqueia só a leitura de metadados —
-      // ainda assim enfileira o download e deixa a Fila tentar.
-      metaWarning = importService.humanizeYtDlpError(metaErr);
-      console.warn('[import] metadata falhou, enfileirando mesmo assim:', metaWarning);
-      meta = {
-        titulo: req.body.titulo || null,
-        thumbnail: req.body.thumbnail || null,
-        extractor: null,
-        autor: null,
-        autorUrl: null,
-        duracao: null,
-      };
-    }
-
-    const [id] = await Videos.create({
-      user_id: req.session.userId,
-      origem: 'link',
-      termo_busca: (req.body.termo || meta.extractor || 'link').toString().slice(0, 255),
-      titulo: String(meta.titulo || req.body.titulo || url)
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 480),
-      url_original: url,
-      thumbnail: meta.thumbnail || req.body.thumbnail || null,
-      duracao: meta.duracao,
-      autor: meta.autor ? String(meta.autor).slice(0, 255) : null,
-      autor_url: meta.autorUrl ? String(meta.autorUrl).slice(0, 500) : null,
-      status: 'pendente',
-      metadata: { extractor: meta.extractor, fonte: req.body.fonte || null, metaWarning },
+    const result = await importOneLink(req.session.userId, {
+      url,
+      termo: req.body.termo,
+      titulo: req.body.titulo,
+      thumbnail: req.body.thumbnail,
+      fonte: req.body.fonte,
     });
 
-    const video = await Videos.findById(id);
-    importService.queueLinkImport(video);
+    res.status(result.created ? 202 : 200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Importa vários links de uma vez (um por linha ou array). */
+async function importLote(req, res, next) {
+  try {
+    let raw = req.body.urls || req.body.links || req.body.url || '';
+    let list = [];
+    if (Array.isArray(raw)) {
+      list = raw.map((u) => String(u || '').trim());
+    } else {
+      list = String(raw)
+        .split(/[\n\r,;]+/)
+        .map((u) => u.trim())
+        .filter(Boolean);
+    }
+
+    const urls = [];
+    const seen = new Set();
+    for (const u of list) {
+      if (!/^https?:\/\//i.test(u)) continue;
+      const key = u.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      urls.push(u);
+      if (urls.length >= 20) break;
+    }
+
+    if (!urls.length) {
+      return res.status(400).json({ error: 'Cole ao menos um link válido (http/https), um por linha' });
+    }
+
+    const resultados = [];
+    for (const url of urls) {
+      try {
+        const result = await importOneLink(req.session.userId, {
+          url,
+          termo: req.body.termo || 'lote',
+          fonte: req.body.fonte || null,
+        });
+        resultados.push({
+          url,
+          ok: true,
+          created: result.created,
+          videoId: result.video?.id || null,
+          titulo: result.video?.titulo || null,
+          aviso: result.aviso || null,
+        });
+      } catch (err) {
+        resultados.push({
+          url,
+          ok: false,
+          error: err.message || 'Falha ao importar',
+        });
+      }
+    }
+
+    const ok = resultados.filter((r) => r.ok).length;
+    const criados = resultados.filter((r) => r.ok && r.created).length;
+    const falhas = resultados.filter((r) => !r.ok).length;
 
     res.status(202).json({
-      video,
-      queued: true,
-      created: true,
-      aviso: metaWarning
-        ? `Link enfileirado, mas a prévia falhou: ${metaWarning}`
-        : null,
+      ok: true,
+      total: resultados.length,
+      importados: ok,
+      criados,
+      jaExistiam: ok - criados,
+      falhas,
+      resultados,
     });
   } catch (err) {
     next(err);
@@ -612,5 +697,6 @@ module.exports = {
   criarReels,
   upload,
   importLink,
+  importLote,
   removeVideo,
 };
