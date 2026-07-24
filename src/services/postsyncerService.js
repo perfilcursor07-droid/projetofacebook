@@ -34,6 +34,41 @@ function apiErrorMessage(err) {
   const body = err.response?.data;
   if (!body) return err.message || 'Erro desconhecido na API PostSyncer';
 
+  // Limite diário do plano Free do PostSyncer (não é bloqueio do Facebook Graph)
+  const details = body.details || body.data?.details || null;
+  const code = String(body.error || body.code || '').toLowerCase();
+  const rawMsg = String(body.message || '').toLowerCase();
+  if (
+    code === 'rate_limit_exceeded' ||
+    rawMsg.includes('rate limit') ||
+    details?.daily_limit != null
+  ) {
+    const lim = details?.daily_limit ?? 5;
+    const usados = details?.posts_in_last_24h;
+    const plano = details?.plan || 'Free';
+    let resetLabel = '';
+    if (details?.reset_time) {
+      try {
+        resetLabel = new Date(details.reset_time).toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'America/Sao_Paulo',
+        });
+      } catch {
+        resetLabel = String(details.reset_time);
+      }
+    }
+    const partes = [
+      `Limite do PostSyncer (${plano}): máx. ${lim} posts Facebook / 24h.`,
+    ];
+    if (usados != null) partes.push(`Já foram ${usados} nas últimas 24h.`);
+    if (resetLabel) partes.push(`Libera de novo em ${resetLabel}.`);
+    else partes.push('Aguarde o reset ou faça upgrade no PostSyncer.');
+    return partes.join(' ');
+  }
+
   if (typeof body === 'string') return body;
   if (typeof body.message === 'string') return body.message;
   if (typeof body.error === 'string') return body.error;

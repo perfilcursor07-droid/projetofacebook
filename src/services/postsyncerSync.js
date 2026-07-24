@@ -347,9 +347,65 @@ async function linkPageToPostsyncer(userId, facebookPageId, postsyncerAccountId)
   };
 }
 
+/**
+ * Remove o vínculo PostSyncer da página no ViralizeAI (sem precisar abrir o PostSyncer).
+ * Publicação passa a usar Facebook Graph / outro provider, se houver token real.
+ */
+async function unlinkPageFromPostsyncer(userId, facebookPageId) {
+  const fbAcc = await ensureFacebookAccountForUser(userId);
+  const page = await FacebookPages.findById(facebookPageId);
+  if (!page || Number(page.facebook_account_id) !== Number(fbAcc.id)) {
+    const err = new Error('Página não encontrada');
+    err.status = 404;
+    throw err;
+  }
+
+  await FacebookPages.clearPostsyncerAccount(page.id);
+
+  // Token stub do sync PostSyncer não serve para Graph API
+  const token = String(page.page_access_token || '');
+  const precisaReconectar = !token || token.startsWith('postsyncer:') || token.startsWith('postpulse:');
+
+  const finalPage = await FacebookPages.findById(page.id);
+  return {
+    page: {
+      id: finalPage.id,
+      page_name: finalPage.page_name,
+      page_id: finalPage.page_id,
+      postsyncer_account_id: finalPage.postsyncer_account_id,
+    },
+    precisa_reconectar_facebook: precisaReconectar,
+    aviso: precisaReconectar
+      ? 'PostSyncer removido. Clique em “Conectar Facebook” / “Reconectar” nesta página para publicar pela API do Facebook.'
+      : 'PostSyncer removido. Publicações desta página não passam mais pelo PostSyncer.',
+  };
+}
+
+/** Desvincula PostSyncer de todas as páginas do usuário. */
+async function unlinkAllPagesFromPostsyncer(userId) {
+  const fbAcc = await ensureFacebookAccountForUser(userId);
+  const pages = await FacebookPages.findByAccount(fbAcc.id);
+  const results = [];
+  for (const page of pages) {
+    if (!page.postsyncer_account_id) continue;
+    results.push(await unlinkPageFromPostsyncer(userId, page.id));
+  }
+  return {
+    ok: true,
+    desvinculadas: results.length,
+    results,
+    aviso:
+      results.length > 0
+        ? `${results.length} página(s) desvinculada(s) do PostSyncer.`
+        : 'Nenhuma página estava vinculada ao PostSyncer.',
+  };
+}
+
 module.exports = {
   syncPostsyncerAccounts,
   linkPageToPostsyncer,
+  unlinkPageFromPostsyncer,
+  unlinkAllPagesFromPostsyncer,
   serializeAccount,
   scoreMatch,
   importMissingPagesFromPostsyncer,

@@ -194,6 +194,9 @@
             const defaultBtn = isDefault
               ? `<span class="rounded-full bg-violet-500/20 px-2.5 py-0.5 text-xs font-semibold text-violet-200">página padrão</span>`
               : `<button type="button" data-set-default="${p.id}" class="ps-default-btn rounded-lg border border-violet-500/40 px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/15">Usar como padrão</button>`;
+            const unlinkBtn = linked
+              ? `<button type="button" data-ps-unlink="${p.id}" class="ps-unlink-btn rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/10" title="Remove o PostSyncer desta página no ViralizeAI">Remover PostSyncer</button>`
+              : '';
             return `
           <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 ${isDefault ? 'ring-1 ring-violet-500/40' : ''}">
             <div>
@@ -203,6 +206,7 @@
             <div class="flex flex-wrap items-center gap-2">
               ${defaultBtn}
               ${linkBtn}
+              ${unlinkBtn}
               <span class="rounded-full ${viaClass} px-2.5 py-0.5 text-xs">via ${via}</span>
               <span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs text-emerald-300">conectada</span>
             </div>
@@ -314,6 +318,38 @@
           });
         });
 
+        contentEl.querySelectorAll('.ps-unlink-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            if (
+              !confirm(
+                'Remover o PostSyncer desta página?\n\nA publicação deixa de passar pelo PostSyncer (sem limite Free). Se a página só existia via PostSyncer, use “Reconectar” Facebook em seguida.'
+              )
+            ) {
+              return;
+            }
+            btn.disabled = true;
+            try {
+              const r = await fetch('/api/facebook/postsyncer/unlink', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ facebook_page_id: Number(btn.dataset.psUnlink) }),
+              });
+              const j = await r.json();
+              if (!r.ok) throw new Error(j.error || 'Falha ao remover');
+              alertEl.textContent = j.aviso || 'PostSyncer removido desta página.';
+              alertEl.className =
+                'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+              await load();
+              renderPsLinkPanel();
+            } catch (err) {
+              alertEl.textContent = 'Erro: ' + err.message;
+              alertEl.className =
+                'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+              btn.disabled = false;
+            }
+          });
+        });
+
         document.getElementById('refresh-pages')?.addEventListener('click', async (e) => {
           e.currentTarget.disabled = true;
           await fetch('/api/facebook/pages?refresh=1');
@@ -350,12 +386,47 @@
           <button id="ps-sync" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-sky-500 hover:text-sky-300">
             Sincronizar / vincular
           </button>
+          <button id="ps-unlink-all" class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm text-rose-300 hover:bg-rose-500/10">
+            Remover PostSyncer de todas
+          </button>
           <a href="https://app.postsyncer.com" target="_blank" rel="noopener"
             class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-sky-500 hover:text-sky-300">
             Abrir PostSyncer
           </a>`;
 
         renderPsLinkPanel();
+
+        document.getElementById('ps-unlink-all')?.addEventListener('click', async (e) => {
+          if (
+            !confirm(
+              'Remover o PostSyncer de TODAS as páginas?\n\nNão precisa entrar no PostSyncer. Depois use “Reconectar” Facebook se a publicação pedir.'
+            )
+          ) {
+            return;
+          }
+          const btn = e.currentTarget;
+          btn.disabled = true;
+          try {
+            const r = await fetch('/api/facebook/postsyncer/unlink', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ all: true }),
+            });
+            const j = await r.json();
+            if (!r.ok) throw new Error(j.error || 'Falha ao remover');
+            alertEl.textContent = j.aviso || 'PostSyncer removido.';
+            alertEl.className =
+              'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+            await load();
+            renderPsLinkPanel();
+          } catch (err) {
+            alertEl.textContent = 'Erro: ' + err.message;
+            alertEl.className =
+              'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+          } finally {
+            btn.disabled = false;
+          }
+        });
 
         document.getElementById('ps-sync')?.addEventListener('click', async (e) => {
           const btn = e.currentTarget;

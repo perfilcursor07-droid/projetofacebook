@@ -1,5 +1,10 @@
 const postsyncerService = require('../services/postsyncerService');
-const { syncPostsyncerAccounts, linkPageToPostsyncer } = require('../services/postsyncerSync');
+const {
+  syncPostsyncerAccounts,
+  linkPageToPostsyncer,
+  unlinkPageFromPostsyncer,
+  unlinkAllPagesFromPostsyncer,
+} = require('../services/postsyncerSync');
 const { env } = require('../config/env');
 
 async function statusHandler(req, res, next) {
@@ -68,8 +73,35 @@ async function linkHandler(req, res, next) {
   }
 }
 
+async function unlinkHandler(req, res, next) {
+  try {
+    const facebookPageId = Number(
+      req.body.facebook_page_id || req.body.facebookPageId || req.params.pageId
+    );
+    const all = req.body.all === true || req.body.all === '1' || req.query.all === '1';
+
+    if (all) {
+      const result = await unlinkAllPagesFromPostsyncer(req.session.userId);
+      return res.json(result);
+    }
+
+    if (!facebookPageId) {
+      const err = new Error('Informe facebook_page_id ou all=1');
+      err.status = 400;
+      throw err;
+    }
+
+    const result = await unlinkPageFromPostsyncer(req.session.userId, facebookPageId);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    if (!err.status) err.message = err.message || postsyncerService.apiErrorMessage(err);
+    return next(err);
+  }
+}
+
 module.exports = {
   statusHandler,
   syncHandler,
   linkHandler,
+  unlinkHandler,
 };

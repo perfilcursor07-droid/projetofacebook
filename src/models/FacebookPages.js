@@ -44,6 +44,16 @@ const FacebookPages = {
         updated_at: db.fn.now(),
       });
   },
+
+  /** Remove vínculo PostSyncer da página (null = desvinculado). */
+  clearPostsyncerAccount(id) {
+    return db(this.table)
+      .where({ id })
+      .update({
+        postsyncer_account_id: null,
+        updated_at: db.fn.now(),
+      });
+  },
 };
 
 module.exports = FacebookPages;

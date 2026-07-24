@@ -16,5 +16,7 @@ router.delete('/postpulse', postpulseController.disconnectHandler);
 router.get('/postsyncer/status', postsyncerController.statusHandler);
 router.post('/postsyncer/sync', postsyncerController.syncHandler);
 router.post('/postsyncer/link', postsyncerController.linkHandler);
+router.post('/postsyncer/unlink', postsyncerController.unlinkHandler);
+router.delete('/postsyncer/unlink', postsyncerController.unlinkHandler);
 
 module.exports = router;
