@@ -227,6 +227,57 @@
     return true;
   }
 
+  /**
+   * Sem consumir ScrapeCreators/News: só confere no banco o que já virou matéria
+   * (rascunho, agendada ou publicada) e move para “já usadas”.
+   */
+  async function sincronizarUsadosDoServidor({ silencioso = false, preservarStatusHtml = null } = {}) {
+    if (!topicos.length) return;
+    if (!silencioso) {
+      statusEl.textContent = (statusEl.textContent || '') + ' · conferindo já usadas…';
+    }
+    try {
+      const res = await fetch('/api/viralizar/sincronizar-usados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
+          topicos,
+          excluidos: excluidosAtuais,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao sincronizar');
+
+      const movidos = Number(data.novosExcluidos) || 0;
+      aplicarResultado({
+        topicosNovos: data.topicos || [],
+        excluidos: data.excluidos || [],
+        meta: metaUltimaBusca,
+        statusOverride: null,
+        fromCache: true,
+      });
+      if (preservarStatusHtml) {
+        statusEl.innerHTML =
+          preservarStatusHtml +
+          (movidos
+            ? `<br/><span class="text-xs text-slate-500">${movidos} pauta(s) movida(s) para “já usadas”.</span>`
+            : '');
+      } else {
+        statusEl.textContent =
+          montarStatusResumo(metaUltimaBusca) +
+          (movidos
+            ? ` · ${movidos} já gerada(s)/agendada(s)/publicada(s) movida(s) para abaixo`
+            : '');
+      }
+      salvarCache();
+    } catch (err) {
+      if (!silencioso) {
+        console.warn('viralizar sync:', err.message);
+      }
+    }
+  }
+
   function atualizarTabs() {
     if (!tabsEl) return;
     const c = contagens();
@@ -468,7 +519,7 @@
             `<a class="text-emerald-400 underline" href="${escapeHtml(g.redirect)}" target="_blank" rel="noopener">${escapeHtml(g.titulo || 'Matéria')}</a>`
         )
         .join(' · ');
-      statusEl.innerHTML =
+      const msgOk =
         escapeHtml(data.mensagem || 'Pronto.') +
         (links ? '<br/><span class="text-xs">Abrir: ' + links + '</span>' : '') +
         (data.erros?.length
@@ -476,10 +527,14 @@
             data.erros.length +
             ' falha(s)</span>'
           : '');
+      statusEl.innerHTML = msgOk;
 
       if (!publicar && data.gerados?.[0]?.redirect) {
         window.open(data.gerados[0].redirect, '_blank', 'noopener');
       }
+
+      // Atualiza lista salva sem apagar a mensagem de sucesso
+      await sincronizarUsadosDoServidor({ silencioso: true, preservarStatusHtml: msgOk });
     } catch (err) {
       setGenerating(false);
       statusEl.textContent = err.message;
@@ -493,8 +548,11 @@
   });
   autoPub.addEventListener('change', syncGerarBtn);
 
-  loadPages().then(() => {
-    if (!restaurarCache()) {
+  loadPages().then(async () => {
+    if (restaurarCache()) {
+      await sincronizarUsadosDoServidor({ silencioso: true });
+      atualizarCacheInfo(lerCache()?.salvoEm, true);
+    } else {
       renderLista();
     }
   });

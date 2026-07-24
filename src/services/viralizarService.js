@@ -618,11 +618,106 @@ async function gerarDePautas({
   };
 }
 
+function normalizarLink(url) {
+  return String(url || '')
+    .split(/[?#]/)[0]
+    .toLowerCase()
+    .replace(/\/$/, '');
+}
+
+/**
+ * Revalida pautas do cache contra matérias já geradas/agendadas/publicadas (só DB, sem API externa).
+ * Move as já usadas para `excluidos` e mantém as livres em `topicos`.
+ */
+async function sincronizarPautasUsadas({
+  userId,
+  facebookPageId,
+  topicos = [],
+  excluidos = [],
+} = {}) {
+  const { titulosParecidos } = require('./editorialGuidelinesFb');
+  const AiMatters = require('../models/AiMatters');
+
+  const pool = Array.isArray(topicos) ? topicos.filter((t) => t && t.titulo) : [];
+  const excluidosPrev = Array.isArray(excluidos) ? excluidos : [];
+
+  if (!userId || !pool.length) {
+    return {
+      topicos: pool,
+      excluidos: excluidosPrev.slice(0, 30),
+      totalExcluidos: excluidosPrev.length,
+      novosExcluidos: 0,
+    };
+  }
+
+  const matters = await AiMatters.findByUser(userId, 300);
+  const urlsUsadas = new Set();
+  const titulosUsados = [];
+
+  for (const m of matters) {
+    if (facebookPageId && m.facebook_page_id && Number(m.facebook_page_id) !== Number(facebookPageId)) {
+      continue;
+    }
+    // Qualquer matéria gerada desta fonte (rascunho → agendado → publicado)
+    const statusOk = ['rascunho', 'pronto', 'agendado', 'publicado'].includes(String(m.status || ''));
+    if (!statusOk && !m.publication_id) continue;
+
+    const fonteUrl = normalizarLink(m.fonte_url);
+    if (fonteUrl) urlsUsadas.add(fonteUrl);
+    if (m.fonte_titulo) titulosUsados.push(m.fonte_titulo);
+    if (m.titulo) titulosUsados.push(m.titulo);
+  }
+
+  const livres = [];
+  const acabaramDeUsar = [];
+
+  for (const t of pool) {
+    const link = normalizarLink(t.link);
+    const jaPorUrl = Boolean(link && urlsUsadas.has(link));
+    const jaPorTitulo = titulosUsados.some(
+      (x) => titulosParecidos(t.titulo, x) || titulosParecidos(String(t.resumo || '').slice(0, 120), x)
+    );
+    if (jaPorUrl || jaPorTitulo) {
+      acabaramDeUsar.push({
+        titulo: t.titulo,
+        link: t.link || null,
+        fonte: t.veiculo || t.fonte || null,
+        motivo: 'Já gerada, agendada ou publicada nesta página',
+        origemSocial: t.origemSocial || t.plataforma || null,
+      });
+    } else {
+      livres.push({ ...t, jaPublicado: false });
+    }
+  }
+
+  const seen = new Set();
+  const excluidosMerged = [];
+  for (const item of [...acabaramDeUsar, ...excluidosPrev]) {
+    const key =
+      normalizarLink(item.link) ||
+      String(item.titulo || '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .slice(0, 80);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    excluidosMerged.push(item);
+  }
+
+  return {
+    topicos: livres,
+    excluidos: excluidosMerged.slice(0, 40),
+    totalExcluidos: excluidosMerged.length,
+    novosExcluidos: acabaramDeUsar.length,
+  };
+}
+
 module.exports = {
   PERFIL_VIRAL,
   TAXONOMIA,
   classificarTopico,
   curarPautasVirais,
   gerarDePautas,
+  sincronizarPautasUsadas,
   proximoSlotSugerido,
 };

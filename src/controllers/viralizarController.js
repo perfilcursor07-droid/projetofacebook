@@ -73,6 +73,23 @@ async function gerar(req, res, next) {
   }
 }
 
+async function sincronizarUsados(req, res, next) {
+  try {
+    const body = req.body || {};
+    const facebookPageId = await resolvePageId(req.session.userId, body);
+    const result = await viralizarService.sincronizarPautasUsadas({
+      userId: req.session.userId,
+      facebookPageId,
+      topicos: body.topicos || [],
+      excluidos: body.excluidos || [],
+    });
+    res.json({ ok: true, facebookPageId, ...result });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 async function perfil(req, res) {
   res.json({
     ok: true,
@@ -90,5 +107,6 @@ module.exports = {
   page,
   curar,
   gerar,
+  sincronizarUsados,
   perfil,
 };
