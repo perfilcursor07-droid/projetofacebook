@@ -15,6 +15,11 @@
 
   let topicos = [];
   let abaAtiva = 'todos';
+  let excluidosAtuais = [];
+  let metaUltimaBusca = null;
+
+  const CACHE_KEY = 'viralizar_curadoria_v1';
+  const cacheInfoEl = document.getElementById('vir-cache-info');
 
   function escapeHtml(text) {
     return String(text || '')
@@ -93,6 +98,133 @@
         if (abaAtiva === 'alto') return t.potencial === 'alto';
         return origemDoTopico(t) === abaAtiva;
       });
+  }
+
+  function formatarQuando(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const diffMs = Date.now() - d.getTime();
+    const min = Math.floor(diffMs / 60000);
+    if (min < 1) return 'agora';
+    if (min < 60) return `há ${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `há ${h}h`;
+    const dias = Math.floor(h / 24);
+    if (dias < 7) return `há ${dias} dia${dias > 1 ? 's' : ''}`;
+    return d.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function salvarCache() {
+    try {
+      const payload = {
+        v: 1,
+        salvoEm: new Date().toISOString(),
+        facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
+        abaAtiva,
+        topicos,
+        excluidos: excluidosAtuais,
+        meta: metaUltimaBusca,
+        statusText: statusEl.textContent || '',
+      };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
+      atualizarCacheInfo(payload.salvoEm, false);
+      if (btnCurar) btnCurar.textContent = 'Atualizar busca';
+    } catch (err) {
+      console.warn('viralizar cache save:', err.message);
+    }
+  }
+
+  function lerCache() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data || data.v !== 1 || !Array.isArray(data.topicos)) return null;
+      // Descarta cache muito antigo (7 dias)
+      if (data.salvoEm) {
+        const age = Date.now() - new Date(data.salvoEm).getTime();
+        if (age > 7 * 24 * 60 * 60 * 1000) {
+          localStorage.removeItem(CACHE_KEY);
+          return null;
+        }
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  function atualizarCacheInfo(salvoEm, fromCache) {
+    if (!cacheInfoEl) return;
+    if (!salvoEm && !topicos.length) {
+      cacheInfoEl.classList.add('hidden');
+      cacheInfoEl.textContent = '';
+      return;
+    }
+    const quando = formatarQuando(salvoEm);
+    cacheInfoEl.classList.remove('hidden');
+    cacheInfoEl.textContent = fromCache
+      ? `Mostrando última busca salva (${quando}) — sem consumir API. Clique em “Atualizar busca” para pesquisar de novo.`
+      : `Resultado salvo neste navegador (${quando}).`;
+  }
+
+  function montarStatusResumo(data) {
+    const c = contagens();
+    const avisos = (data?.avisos || []).filter(Boolean);
+    const slot = data?.slotSugerido?.label ? ' · sugerido: ' + data.slotSugerido.label : '';
+    const excl = excluidosAtuais || [];
+    return (
+      topicos.length +
+      ' pauta(s) · ' +
+      c.noticia +
+      ' notícia · ' +
+      c.instagram +
+      ' IG · ' +
+      c.facebook +
+      ' FB' +
+      (data?.totalGospel != null ? ' · ' + data.totalGospel + ' gospel' : '') +
+      (data?.totalAnalisado != null ? ' · analisadas ' + data.totalAnalisado : '') +
+      (excl.length ? ' · ' + excl.length + ' já usadas ocultas' : '') +
+      slot +
+      (avisos.length ? ' — ' + avisos.join(' ') : '')
+    );
+  }
+
+  function aplicarResultado({ topicosNovos, excluidos, meta, statusOverride, fromCache }) {
+    topicos = Array.isArray(topicosNovos) ? topicosNovos : [];
+    excluidosAtuais = Array.isArray(excluidos) ? excluidos : [];
+    metaUltimaBusca = meta || null;
+    if (!fromCache) abaAtiva = 'todos';
+    statusEl.textContent = statusOverride || montarStatusResumo(meta);
+    renderLista();
+    renderExcluidos(excluidosAtuais);
+  }
+
+  function restaurarCache() {
+    const cached = lerCache();
+    if (!cached || !cached.topicos.length) return false;
+
+    if (cached.facebookPageId && pageSelect.querySelector(`option[value="${cached.facebookPageId}"]`)) {
+      pageSelect.value = String(cached.facebookPageId);
+    }
+    if (cached.abaAtiva) abaAtiva = cached.abaAtiva;
+
+    aplicarResultado({
+      topicosNovos: cached.topicos,
+      excluidos: cached.excluidos || [],
+      meta: cached.meta || null,
+      statusOverride: cached.statusText || null,
+      fromCache: true,
+    });
+    atualizarCacheInfo(cached.salvoEm, true);
+    if (btnCurar) btnCurar.textContent = 'Atualizar busca';
+    return true;
   }
 
   function atualizarTabs() {
@@ -241,13 +373,18 @@
     if (!btn) return;
     abaAtiva = btn.dataset.virTab || 'todos';
     renderLista();
+    if (topicos.length) salvarCache();
   });
 
   btnCurar.addEventListener('click', async () => {
     btnCurar.disabled = true;
     statusEl.textContent = 'Buscando pautas alinhadas ao público da página…';
+    if (cacheInfoEl) {
+      cacheInfoEl.classList.add('hidden');
+    }
     listaEl.innerHTML = '';
     topicos = [];
+    excluidosAtuais = [];
     abaAtiva = 'todos';
     renderExcluidos([]);
     atualizarTabs();
@@ -262,28 +399,22 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha na curadoria');
-      topicos = data.topicos || [];
-      const avisos = (data.avisos || []).filter(Boolean);
-      const slot = data.slotSugerido?.label ? ' · sugerido: ' + data.slotSugerido.label : '';
-      const excl = data.excluidos || [];
-      const c = contagens();
-      statusEl.textContent =
-        topicos.length +
-        ' pauta(s) · ' +
-        c.noticia +
-        ' notícia · ' +
-        c.instagram +
-        ' IG · ' +
-        c.facebook +
-        ' FB' +
-        (data.totalGospel != null ? ' · ' + data.totalGospel + ' gospel' : '') +
-        ' · analisadas ' +
-        (data.totalAnalisado || 0) +
-        (excl.length ? ' · ' + excl.length + ' já usadas ocultas' : '') +
-        slot +
-        (avisos.length ? ' — ' + avisos.join(' ') : '');
-      renderLista();
-      renderExcluidos(excl);
+
+      excluidosAtuais = data.excluidos || [];
+      metaUltimaBusca = {
+        avisos: data.avisos || [],
+        slotSugerido: data.slotSugerido || null,
+        totalGospel: data.totalGospel,
+        totalAnalisado: data.totalAnalisado,
+        totalScrapeCreators: data.totalScrapeCreators,
+      };
+      aplicarResultado({
+        topicosNovos: data.topicos || [],
+        excluidos: excluidosAtuais,
+        meta: metaUltimaBusca,
+        fromCache: false,
+      });
+      salvarCache();
     } catch (err) {
       statusEl.textContent = err.message;
       renderLista();
@@ -361,6 +492,9 @@
   });
   autoPub.addEventListener('change', syncGerarBtn);
 
-  loadPages();
-  renderLista();
+  loadPages().then(() => {
+    if (!restaurarCache()) {
+      renderLista();
+    }
+  });
 })();
