@@ -35,8 +35,8 @@ const env = {
       process.env.POSTPULSE_REDIRECT_URI ||
       'http://localhost:3000/api/auth/postpulse/callback',
     /**
-     * auto | postsyncer | postpulse | facebook
-     * auto: PostSyncer (se vinculado) → PostPulse → Graph API
+     * auto | ayrshare | postsyncer | postpulse | facebook
+     * auto: Ayrshare (se key) → PostSyncer (se vinculado) → PostPulse → Graph API
      */
     publishProvider: (process.env.PUBLISH_PROVIDER || 'auto').toLowerCase(),
   },
@@ -45,6 +45,10 @@ const env = {
     workspaceId: process.env.POSTSYNCER_WORKSPACE_ID
       ? Number(process.env.POSTSYNCER_WORKSPACE_ID)
       : null,
+  },
+  /** Ayrshare — publicação social (Primary Profile API Key) */
+  ayrshare: {
+    apiKey: process.env.AYRSHARE_API_KEY || '',
   },
   /** URL pública do app (opcional; útil para mídia https) */
   appPublicUrl: String(process.env.APP_PUBLIC_URL || '').replace(/\/$/, ''),

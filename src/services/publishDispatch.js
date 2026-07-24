@@ -1,6 +1,7 @@
 const facebookService = require('./facebookService');
 const postpulseService = require('./postpulseService');
 const postsyncerService = require('./postsyncerService');
+const ayrshareService = require('./ayrshareService');
 const PostpulseConnections = require('../models/PostpulseConnections');
 const { env } = require('../config/env');
 const fs = require('fs');
@@ -10,11 +11,24 @@ const { resolveArtworkPath } = require('./matterArtworkService');
 
 /**
  * Decide o provedor de publicação.
- * provider: auto | postsyncer | postpulse | facebook
+ * provider: auto | ayrshare | postsyncer | postpulse | facebook
  */
 async function resolveProvider(userId, page) {
   const mode = env.postpulse.publishProvider || 'auto';
   if (mode === 'facebook') return 'facebook';
+
+  const canAyrshare = ayrshareService.isConfigured();
+
+  if (mode === 'ayrshare') {
+    if (!canAyrshare) {
+      const err = new Error(
+        'Publicação via Ayrshare exigida, mas AYRSHARE_API_KEY não está configurada no .env.'
+      );
+      err.status = 400;
+      throw err;
+    }
+    return 'ayrshare';
+  }
 
   const canPostsyncer =
     postsyncerService.isConfigured() && Boolean(page?.postsyncer_account_id);
@@ -45,7 +59,8 @@ async function resolveProvider(userId, page) {
     return 'postpulse';
   }
 
-  // auto: PostSyncer → PostPulse → Graph
+  // auto: Ayrshare → PostSyncer → PostPulse → Graph
+  if (canAyrshare) return 'ayrshare';
   if (canPostsyncer) return 'postsyncer';
   return canPostpulse ? 'postpulse' : 'facebook';
 }
@@ -53,7 +68,13 @@ async function resolveProvider(userId, page) {
 function buildFbPostUrl(page, postId) {
   if (!postId) return null;
   const id = String(postId);
-  if (id.startsWith('postpulse:') || id.startsWith('postsyncer:')) return null;
+  if (
+    id.startsWith('postpulse:') ||
+    id.startsWith('postsyncer:') ||
+    id.startsWith('ayrshare:')
+  ) {
+    return null;
+  }
   if (id.includes('_')) return `https://www.facebook.com/${id}`;
   return `https://www.facebook.com/${page.page_id}/posts/${id}`;
 }
@@ -90,7 +111,7 @@ function resolveLocalImageFile({ imagemPath, imageUrl }) {
 }
 
 /**
- * Publica foto/vídeo/reel/texto na página (PostSyncer, PostPulse ou Graph API).
+ * Publica foto/vídeo/reel/texto na página (Ayrshare, PostSyncer, PostPulse ou Graph API).
  */
 async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, titulo, link, imagemPath }) {
   const provider = await resolveProvider(userId, page);
@@ -104,6 +125,51 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
     !localFile && imageUrl && /^https?:\/\//i.test(String(imageUrl)) && !String(imageUrl).includes('/media/')
       ? String(imageUrl)
       : null;
+
+  if (provider === 'ayrshare') {
+    let content = texto || '';
+    if (link) content = content ? `${content}\n\n${link}` : link;
+
+    if (tipo === 'foto' && !localFile && !remoteUrl) {
+      const err = new Error(
+        'Imagem da arte não encontrada no servidor. Gere a arte novamente antes de publicar.'
+      );
+      err.status = 422;
+      throw err;
+    }
+
+    if (tipo === 'reel' && !localFile) {
+      const err = new Error(
+        'Vídeo do Reel não encontrado para upload. Aguarde o processamento ou importe o link de novo.'
+      );
+      err.status = 422;
+      throw err;
+    }
+
+    console.log('[publish] ayrshare', {
+      pageId: page.id,
+      tipo,
+      hasFile: Boolean(localFile),
+      file: localFile ? path.basename(localFile) : null,
+    });
+
+    const result = await ayrshareService.publishToFacebook({
+      post: content,
+      filePath: localFile || null,
+      imageUrl: localFile ? null : remoteUrl || imageUrl || null,
+      isReel: tipo === 'reel',
+      title: titulo || null,
+    });
+
+    const postId = result.post_id || result.id;
+    return {
+      ...result,
+      id: postId,
+      post_id: postId,
+      fb_post_url: result.postUrl || buildFbPostUrl(page, postId),
+      provider: 'ayrshare',
+    };
+  }
 
   if (provider === 'postsyncer') {
     let content = texto || '';
@@ -254,10 +320,12 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
 
 function publishErrorMessage(err) {
   const url = String(err.response?.config?.url || '');
+  if (url.includes('ayrshare.com')) return ayrshareService.apiErrorMessage(err);
   if (url.includes('postsyncer.com')) return postsyncerService.apiErrorMessage(err);
   if (url.includes('post-pulse')) return postpulseService.apiErrorMessage(err);
   return (
     facebookService.graphErrorMessage(err) ||
+    ayrshareService.apiErrorMessage(err) ||
     postsyncerService.apiErrorMessage(err) ||
     postpulseService.apiErrorMessage(err)
   );
