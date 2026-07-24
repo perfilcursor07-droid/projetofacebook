@@ -565,8 +565,11 @@ async function gerarDePautas({
   const status = publicar ? 'publicado' : 'rascunho';
   const gerados = [];
   const erros = [];
+  const maxGerar = 20;
+  const fila = lista.slice(0, maxGerar);
+  const omitidos = Math.max(0, lista.length - fila.length);
 
-  for (const topico of lista.slice(0, 5)) {
+  for (const topico of fila) {
     try {
       const result = await materiaIaService.gerarCompleto({
         userId,
@@ -595,15 +598,23 @@ async function gerarDePautas({
     }
   }
 
+  const extras = [];
+  if (omitidos) extras.push(`${omitidos} selecionada(s) acima do limite de ${maxGerar} por vez`);
+  if (erros.length) extras.push(`${erros.length} falha(s)`);
+
   return {
     ok: true,
     gerados,
     erros,
     total: gerados.length,
+    selecionados: lista.length,
+    processados: fila.length,
+    omitidos,
     publicar,
     mensagem: publicar
       ? `${gerados.length} matéria(s) gerada(s) e enviada(s) para publicação.`
-      : `${gerados.length} rascunho(s) em Matérias salvas — revise e publique quando quiser.`,
+      : `${gerados.length} rascunho(s) em Matérias salvas — revise e publique quando quiser.` +
+        (extras.length ? ` (${extras.join('; ')})` : ''),
   };
 }
 

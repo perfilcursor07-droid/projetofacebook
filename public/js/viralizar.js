@@ -436,14 +436,15 @@
     }
 
     const publicar = Boolean(autoPub.checked);
+    const qtd = Math.min(sel.length, 20);
     setGenerating(
       true,
       publicar
-        ? 'Gerando e publicando… Isso pode levar alguns minutos.'
-        : 'Gerando rascunhos em Matérias salvas…'
+        ? `Gerando e publicando ${qtd} matéria(s)… Isso pode levar vários minutos.`
+        : `Gerando ${qtd} rascunho(s) em Matérias salvas… Pode demorar.`
     );
     btnGerar.disabled = true;
-    statusEl.textContent = 'Gerando…';
+    statusEl.textContent = `Gerando ${qtd} de ${sel.length} selecionada(s)…`;
 
     try {
       const res = await fetch('/api/viralizar/gerar', {
