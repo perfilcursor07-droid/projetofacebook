@@ -2,6 +2,7 @@
   const pageSelect = document.getElementById('vir-page');
   const statusEl = document.getElementById('vir-status');
   const listaEl = document.getElementById('vir-lista');
+  const tabsEl = document.getElementById('vir-tabs');
   const excluidosWrap = document.getElementById('vir-excluidos-wrap');
   const excluidosEl = document.getElementById('vir-excluidos');
   const btnCurar = document.getElementById('vir-btn-curar');
@@ -13,6 +14,7 @@
   if (!pageSelect || !listaEl) return;
 
   let topicos = [];
+  let abaAtiva = 'todos';
 
   function escapeHtml(text) {
     return String(text || '')
@@ -35,15 +37,34 @@
     return 'bg-amber-500/15 text-amber-200 ring-amber-500/25';
   }
 
+  function origemDoTopico(t) {
+    const o = String(t.origemSocial || t.plataforma || '').toLowerCase();
+    const fonte = String(t.fonte || '');
+    const link = String(t.link || '');
+    if (o === 'instagram' || /instagram/i.test(fonte) || /instagram\.com/i.test(link)) {
+      return 'instagram';
+    }
+    if (o === 'facebook' || /facebook/i.test(fonte) || /facebook\.com|fb\.watch/i.test(link)) {
+      return 'facebook';
+    }
+    if (t.redeSocial || t.tipoFonte === 'rede_social') {
+      return 'redes';
+    }
+    return 'noticia';
+  }
+
   function origemBadge(t) {
-    const origem = String(t.origemSocial || t.plataforma || '').toLowerCase();
-    if (origem === 'instagram' || /instagram/i.test(t.fonte || '')) {
+    const origem = origemDoTopico(t);
+    if (origem === 'instagram') {
       return '<span class="rounded-md bg-fuchsia-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-200 ring-1 ring-fuchsia-500/30">Instagram</span>';
     }
-    if (origem === 'facebook' || /facebook/i.test(t.fonte || '')) {
+    if (origem === 'facebook') {
       return '<span class="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200 ring-1 ring-sky-500/30">Facebook</span>';
     }
-    return '';
+    if (origem === 'redes') {
+      return '<span class="rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-200 ring-1 ring-violet-500/30">Redes</span>';
+    }
+    return '<span class="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200/90 ring-1 ring-emerald-500/25">Notícia</span>';
   }
 
   function engajamentoMeta(t) {
@@ -52,6 +73,44 @@
     if (t.comments) parts.push(t.comments + ' coment.');
     if (t.views) parts.push(t.views + ' views');
     return parts.join(' · ');
+  }
+
+  function contagens() {
+    const c = { todos: topicos.length, noticia: 0, instagram: 0, facebook: 0, redes: 0, alto: 0 };
+    for (const t of topicos) {
+      const o = origemDoTopico(t);
+      if (c[o] != null) c[o] += 1;
+      if (t.potencial === 'alto') c.alto += 1;
+    }
+    return c;
+  }
+
+  function topicosFiltrados() {
+    return topicos
+      .map((t, idx) => ({ t, idx }))
+      .filter(({ t }) => {
+        if (abaAtiva === 'todos') return true;
+        if (abaAtiva === 'alto') return t.potencial === 'alto';
+        return origemDoTopico(t) === abaAtiva;
+      });
+  }
+
+  function atualizarTabs() {
+    if (!tabsEl) return;
+    const c = contagens();
+    tabsEl.classList.toggle('hidden', !topicos.length);
+    tabsEl.querySelectorAll('[data-count-for]').forEach((el) => {
+      const key = el.getAttribute('data-count-for');
+      const n = c[key] || 0;
+      el.textContent = n ? `(${n})` : '(0)';
+    });
+    tabsEl.querySelectorAll('.vir-tab-btn').forEach((btn) => {
+      const on = btn.dataset.virTab === abaAtiva;
+      btn.classList.toggle('bg-rose-500', on);
+      btn.classList.toggle('text-white', on);
+      btn.classList.toggle('font-semibold', on);
+      btn.classList.toggle('text-slate-300', !on);
+    });
   }
 
   async function loadPages() {
@@ -78,6 +137,8 @@
   }
 
   function renderLista() {
+    atualizarTabs();
+
     if (!topicos.length) {
       listaEl.innerHTML =
         '<p class="rounded-xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-500">Clique em “Buscar pautas virais agora” — a IA encontra sozinha o que mais engaja o público da página.</p>';
@@ -85,8 +146,21 @@
       return;
     }
 
-    listaEl.innerHTML = topicos
-      .map((t, i) => {
+    const filtrados = topicosFiltrados();
+    if (!filtrados.length) {
+      const labels = {
+        noticia: 'notícias',
+        instagram: 'Instagram',
+        facebook: 'Facebook',
+        alto: 'alto potencial',
+      };
+      listaEl.innerHTML = `<p class="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-500">Nenhuma pauta nesta aba (${labels[abaAtiva] || abaAtiva}). Troque de aba ou busque de novo.</p>`;
+      btnGerar.disabled = true;
+      return;
+    }
+
+    listaEl.innerHTML = filtrados
+      .map(({ t, idx }) => {
         const titulo = escapeHtml(t.titulo);
         const resumo = escapeHtml(String(t.resumo || '').slice(0, 200));
         const tema = escapeHtml(t.temaLabel || 'Geral');
@@ -103,7 +177,7 @@
           .join(' · ');
         return `
         <label class="flex gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-4 cursor-pointer hover:border-rose-500/40">
-          <input type="checkbox" class="vir-check mt-1 accent-rose-500" data-idx="${i}" ${pot === 'alto' ? 'checked' : ''} />
+          <input type="checkbox" class="vir-check mt-1 accent-rose-500" data-idx="${idx}" ${pot === 'alto' ? 'checked' : ''} />
           <span class="min-w-0 flex-1">
             <span class="flex flex-wrap items-center gap-2">
               <span class="text-sm font-medium text-white">${titulo}</span>
@@ -162,12 +236,21 @@
       .filter(Boolean);
   }
 
+  tabsEl?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.vir-tab-btn');
+    if (!btn) return;
+    abaAtiva = btn.dataset.virTab || 'todos';
+    renderLista();
+  });
+
   btnCurar.addEventListener('click', async () => {
     btnCurar.disabled = true;
     statusEl.textContent = 'Buscando pautas alinhadas ao público da página…';
     listaEl.innerHTML = '';
     topicos = [];
+    abaAtiva = 'todos';
     renderExcluidos([]);
+    atualizarTabs();
     try {
       const res = await fetch('/api/viralizar/curar', {
         method: 'POST',
@@ -183,15 +266,19 @@
       const avisos = (data.avisos || []).filter(Boolean);
       const slot = data.slotSugerido?.label ? ' · sugerido: ' + data.slotSugerido.label : '';
       const excl = data.excluidos || [];
+      const c = contagens();
       statusEl.textContent =
         topicos.length +
-        ' pauta(s) novas · ' +
-        (data.totalGospel != null ? data.totalGospel + ' gospel · ' : '') +
-        'analisadas ' +
+        ' pauta(s) · ' +
+        c.noticia +
+        ' notícia · ' +
+        c.instagram +
+        ' IG · ' +
+        c.facebook +
+        ' FB' +
+        (data.totalGospel != null ? ' · ' + data.totalGospel + ' gospel' : '') +
+        ' · analisadas ' +
         (data.totalAnalisado || 0) +
-        (data.totalScrapeCreators
-          ? ' · ' + data.totalScrapeCreators + ' redes (ScrapeCreators)'
-          : '') +
         (excl.length ? ' · ' + excl.length + ' já usadas ocultas' : '') +
         slot +
         (avisos.length ? ' — ' + avisos.join(' ') : '');
