@@ -1,12 +1,46 @@
 <%- include('partials/app-start') %>
+<%
+  const provider = String(typeof publishProvider !== 'undefined' ? publishProvider : 'auto').toLowerCase();
+  const useAyrshare = provider === 'ayrshare' || (provider === 'auto' && Boolean(ayrshareConfigured));
+%>
 
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
     <h1 class="text-2xl font-semibold text-white">Páginas do Facebook</h1>
+    <% if (useAyrshare) { %>
+    <p class="mt-2 text-slate-400">
+      Publicação via <strong class="font-medium text-emerald-300">Ayrshare</strong>.
+      Conecte a Página no painel Ayrshare e mantenha as páginas listadas abaixo (padrão / OAuth).
+    </p>
+    <% } else { %>
     <p class="mt-2 text-slate-400">Conecte sua conta e vincule as páginas ao PostSyncer para publicar.</p>
+    <% } %>
 
     <div id="alert" class="mt-4 hidden rounded-lg px-4 py-3 text-sm"></div>
 
-    <div id="postsyncer-box" class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4">
+    <% if (useAyrshare) { %>
+    <div class="mt-6 rounded-xl border border-emerald-800/50 bg-emerald-950/20 px-5 py-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <h2 class="text-sm font-semibold text-white">Ayrshare</h2>
+          <p class="mt-1 text-xs text-slate-400">
+            Posts saem pela API Ayrshare para a Página conectada em
+            <a href="https://app.ayrshare.com" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">app.ayrshare.com</a>
+            → <strong class="font-medium text-slate-300">Social Accounts</strong>.
+            Não é preciso vincular PostSyncer.
+          </p>
+          <p class="mt-2 text-sm text-emerald-200/90">
+            <%= ayrshareConfigured ? 'API Key configurada · PUBLISH_PROVIDER=' + provider : 'Configure AYRSHARE_API_KEY no .env' %>
+          </p>
+        </div>
+        <a href="https://app.ayrshare.com" target="_blank" rel="noopener"
+          class="rounded-lg border border-emerald-700/60 px-3 py-1.5 text-sm text-emerald-200 hover:border-emerald-400">
+          Abrir Ayrshare
+        </a>
+      </div>
+    </div>
+    <% } %>
+
+    <div id="postsyncer-box" class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4 <%= useAyrshare ? 'hidden' : '' %>">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
           <h2 class="text-sm font-semibold text-white">PostSyncer</h2>
@@ -36,6 +70,8 @@
     const psStatusEl = document.getElementById('ps-status');
     const psActionsEl = document.getElementById('ps-actions');
     const psLinkPanel = document.getElementById('ps-link-panel');
+    const publishProvider = <%- JSON.stringify(provider) %>;
+    const useAyrshare = <%= useAyrshare ? 'true' : 'false' %>;
     let lastPages = [];
     window.__psAccounts = [];
 
@@ -48,6 +84,7 @@
     }
 
     function renderPsLinkPanel() {
+      if (useAyrshare || !psLinkPanel) return;
       const accounts = window.__psAccounts || [];
       const unlinked = (lastPages || []).filter((p) => !p.postsyncer_account_id);
       if (!accounts.length) {
@@ -137,7 +174,20 @@
       history.replaceState({}, '', '/paginas');
     }
 
-    const connectHtml = `
+    const connectHtml = useAyrshare
+      ? `
+      <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
+        <p class="text-slate-300">Ainda não há páginas neste app.</p>
+        <p class="mt-2 text-sm text-slate-500">
+          Conecte a Página no <strong class="font-medium text-slate-400">Ayrshare</strong> (Social Accounts)
+          e use <strong class="font-medium text-slate-400">Conectar com Facebook</strong> abaixo para listar as páginas no ViralizeAI.
+        </p>
+        <a href="/api/auth/facebook"
+          class="mt-5 inline-block rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-medium text-slate-200 hover:border-[#1877F2] hover:text-white">
+          Conectar com Facebook
+        </a>
+      </div>`
+      : `
       <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
         <p class="text-slate-300">Ainda não há páginas neste app.</p>
         <p class="mt-2 text-sm text-slate-500">
@@ -166,20 +216,27 @@
         lastPages = data.pages || [];
         renderPsLinkPanel();
 
-        const psAccounts = window.__psAccounts || [];
+        const psAccounts = useAyrshare ? [] : (window.__psAccounts || []);
         const pagesHtml = (data.pages || [])
           .map((p) => {
             const linked = Boolean(p.postsyncer_account_id);
-            const via = linked ? 'PostSyncer' : 'Não vinculado';
-            const viaClass = linked ? 'bg-sky-500/15 text-sky-300' : 'bg-amber-500/15 text-amber-300';
+            let via;
+            let viaClass;
+            if (useAyrshare) {
+              via = 'Ayrshare';
+              viaClass = 'bg-emerald-500/15 text-emerald-300';
+            } else {
+              via = linked ? 'PostSyncer' : 'Não vinculado';
+              viaClass = linked ? 'bg-sky-500/15 text-sky-300' : 'bg-amber-500/15 text-amber-300';
+            }
             const isDefault = Boolean(p.is_default);
             let linkBtn = '';
-            if (!linked && psAccounts.length === 1) {
+            if (!useAyrshare && !linked && psAccounts.length === 1) {
               linkBtn = `<button type="button" data-ps-link-page="${p.id}" data-ps-id="${psAccounts[0].id}"
                 class="ps-link-btn rounded-lg border border-sky-700 px-2.5 py-1 text-xs text-sky-300 hover:border-sky-400">
                 Vincular PostSyncer
               </button>`;
-            } else if (!linked && psAccounts.length > 1) {
+            } else if (!useAyrshare && !linked && psAccounts.length > 1) {
               const opts = psAccounts
                 .map(
                   (a) =>
@@ -194,9 +251,10 @@
             const defaultBtn = isDefault
               ? `<span class="rounded-full bg-violet-500/20 px-2.5 py-0.5 text-xs font-semibold text-violet-200">página padrão</span>`
               : `<button type="button" data-set-default="${p.id}" class="ps-default-btn rounded-lg border border-violet-500/40 px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/15">Usar como padrão</button>`;
-            const unlinkBtn = linked
-              ? `<button type="button" data-ps-unlink="${p.id}" class="ps-unlink-btn rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/10" title="Remove o PostSyncer desta página no ViralizeAI">Remover PostSyncer</button>`
-              : '';
+            const unlinkBtn =
+              !useAyrshare && linked
+                ? `<button type="button" data-ps-unlink="${p.id}" class="ps-unlink-btn rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/10" title="Remove o PostSyncer desta página no ViralizeAI">Remover PostSyncer</button>`
+                : '';
             return `
           <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 ${isDefault ? 'ring-1 ring-violet-500/40' : ''}">
             <div>
@@ -220,7 +278,9 @@
               ${data.oauth
                 ? 'Conta Facebook conectada (FB user ' + escapeHtml(data.fb_user_id) + ')'
                   + (data.expira_em ? ' · token expira em ' + new Date(data.expira_em).toLocaleDateString('pt-BR') : '')
-                : 'Páginas importadas do PostSyncer (OAuth Facebook opcional)'}
+                : useAyrshare
+                  ? 'Páginas do app · publicação via Ayrshare (OAuth Facebook opcional para Insights)'
+                  : 'Páginas importadas do PostSyncer (OAuth Facebook opcional)'}
             </p>
             <div class="flex gap-2">
               ${data.oauth
@@ -231,7 +291,9 @@
           </div>
           <p class="mt-3 text-xs text-slate-500">A <strong class="font-medium text-slate-400">página padrão</strong> já vem selecionada ao publicar matérias, na Biblioteca e na fila.</p>
           <div class="mt-5 space-y-3">
-            ${pagesHtml || '<p class="text-slate-400">Nenhuma página encontrada. Clique em Sincronizar / vincular no PostSyncer acima.</p>'}
+            ${pagesHtml || (useAyrshare
+              ? '<p class="text-slate-400">Nenhuma página encontrada. Conecte o Facebook (OAuth) ou importe páginas.</p>'
+              : '<p class="text-slate-400">Nenhuma página encontrada. Clique em Sincronizar / vincular no PostSyncer acima.</p>')}
           </div>`;
 
         contentEl.querySelectorAll('.ps-default-btn').forEach((btn) => {
@@ -361,6 +423,7 @@
     }
 
     async function loadPostsyncer() {
+      if (useAyrshare || !psStatusEl || !psActionsEl) return;
       try {
         const res = await fetch('/api/facebook/postsyncer/status');
         const data = await res.json();

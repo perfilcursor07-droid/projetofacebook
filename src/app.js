@@ -94,7 +94,12 @@ app.get('/minhas-materias', requireAuth, require('./controllers/materiasIaContro
 app.get('/materias-ia/:id', requireAuth, require('./controllers/materiasIaController').showMatter);
 app.get('/fila', requireAuth, (_req, res) => renderPage(res, 'fila', 'Produção'));
 app.get('/fila/corte/:id', requireAuth, require('./controllers/clipsController').showClipPage);
-app.get('/paginas', requireAuth, (_req, res) => renderPage(res, 'paginas', 'Páginas'));
+app.get('/paginas', requireAuth, (_req, res) =>
+  renderPage(res, 'paginas', 'Páginas', {
+    publishProvider: env.postpulse.publishProvider || 'auto',
+    ayrshareConfigured: Boolean(env.ayrshare?.apiKey),
+  })
+);
 app.get('/dashboard', requireAuth, require('./controllers/dashboardController').show);
 app.get('/cookies', requireAuth, (_req, res) => renderPage(res, 'cookies', 'Cookies do YouTube'));
 
