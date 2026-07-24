@@ -176,8 +176,93 @@ async function listarPostsPerfil(pageUrl, limit = 10) {
   return posts.map(normalizarItem).filter(Boolean).slice(0, max);
 }
 
+/**
+ * Converte post do Radar Face para tópico do Viralizar.
+ */
+function postRadarParaTopico(post, pageMeta = {}) {
+  if (!post || typeof post !== 'object') return null;
+  const url = String(post.url || '').trim();
+  if (!url) return null;
+
+  const texto = String(post.texto || '').trim();
+  const titulo = tituloDoTexto(texto, pageMeta.nome || 'Post do Facebook');
+  const likes = Number(post.likes) || 0;
+  const comments = Number(post.comments) || 0;
+  const shares = Number(post.shares) || 0;
+  const ts = post.publicadoEm instanceof Date ? post.publicadoEm.getTime() : 0;
+  const veiculo = String(post.autor || pageMeta.nome || 'Facebook').trim();
+
+  return {
+    id: `fb-${Buffer.from(url).toString('base64url').slice(0, 20)}`,
+    titulo,
+    resumo: texto ? texto.slice(0, 400) : null,
+    link: url,
+    fonte: 'ScrapeCreators · Facebook',
+    veiculo,
+    tipoFonte: 'rede_social',
+    redeSocial: true,
+    plataforma: 'facebook',
+    origemSocial: 'facebook',
+    nicho: pageMeta.nome || null,
+    likes,
+    comments,
+    shares,
+    data: post.publicadoEm ? post.publicadoEm.toISOString() : null,
+    dataTimestamp: Number.isFinite(ts) && ts > 0 ? ts : 0,
+    recente: true,
+    emAlta: likes + comments * 3 + shares * 5 >= 200,
+  };
+}
+
+/**
+ * Coleta posts recentes de várias páginas FB (1 request ~3 posts cada).
+ * @param {Array<{url:string,nome?:string}>} paginas
+ * @param {{ maxAgeDays?: number, postsPorPagina?: number }} [opts]
+ */
+async function coletarTopicosDePaginas(paginas, opts = {}) {
+  if (!isConfigured()) {
+    return { topicos: [], avisos: ['ScrapeCreators não configurada (FB).'] };
+  }
+
+  const lista = (Array.isArray(paginas) ? paginas : [])
+    .map((p) => ({
+      url: String(p?.url || p || '').trim(),
+      nome: String(p?.nome || '').trim() || null,
+    }))
+    .filter((p) => /^https?:\/\//i.test(p.url));
+
+  const topicos = [];
+  const avisos = [];
+  const seen = new Set();
+  const postsPorPagina = Math.min(6, Math.max(1, Number(opts.postsPorPagina) || 3));
+  const maxAgeDays = Math.min(14, Math.max(1, Number(opts.maxAgeDays) || 7));
+
+  for (const page of lista) {
+    try {
+      const posts = await listarPostsPerfilRadar(page.url, {
+        limit: postsPorPagina,
+        maxAgeDays,
+      });
+      for (const post of posts) {
+        const t = postRadarParaTopico(post, page);
+        if (!t?.link) continue;
+        const key = t.link.split(/[?#]/)[0].toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        topicos.push(t);
+      }
+    } catch (err) {
+      avisos.push(`FB ${page.nome || page.url}: ${err.message}`);
+    }
+  }
+
+  return { topicos, avisos };
+}
+
 module.exports = {
   isConfigured,
   listarPostsPerfil,
   listarPostsPerfilRadar,
+  postRadarParaTopico,
+  coletarTopicosDePaginas,
 };

@@ -35,6 +35,25 @@
     return 'bg-amber-500/15 text-amber-200 ring-amber-500/25';
   }
 
+  function origemBadge(t) {
+    const origem = String(t.origemSocial || t.plataforma || '').toLowerCase();
+    if (origem === 'instagram' || /instagram/i.test(t.fonte || '')) {
+      return '<span class="rounded-md bg-fuchsia-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-200 ring-1 ring-fuchsia-500/30">Instagram</span>';
+    }
+    if (origem === 'facebook' || /facebook/i.test(t.fonte || '')) {
+      return '<span class="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200 ring-1 ring-sky-500/30">Facebook</span>';
+    }
+    return '';
+  }
+
+  function engajamentoMeta(t) {
+    const parts = [];
+    if (t.likes) parts.push(t.likes + ' curtidas');
+    if (t.comments) parts.push(t.comments + ' coment.');
+    if (t.views) parts.push(t.views + ' views');
+    return parts.join(' · ');
+  }
+
   async function loadPages() {
     try {
       const res = await fetch('/api/facebook/pages');
@@ -72,10 +91,12 @@
         const resumo = escapeHtml(String(t.resumo || '').slice(0, 200));
         const tema = escapeHtml(t.temaLabel || 'Geral');
         const pot = t.potencial || 'medio';
+        const eng = engajamentoMeta(t);
         const meta = [
           tema,
           'score ' + (t.scoreViral || 0),
           t.fonte || t.veiculo || '',
+          eng,
           t.contagemFontes ? t.contagemFontes + ' fontes' : '',
         ]
           .filter(Boolean)
@@ -87,6 +108,7 @@
             <span class="flex flex-wrap items-center gap-2">
               <span class="text-sm font-medium text-white">${titulo}</span>
               <span class="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ${potencialBadge(pot)}">${escapeHtml(pot)}</span>
+              ${origemBadge(t)}
             </span>
             <span class="mt-1 block text-xs text-slate-500">${escapeHtml(meta)}</span>
             ${resumo ? `<span class="mt-1 block text-xs text-slate-400">${resumo}${String(t.resumo || '').length > 200 ? '…' : ''}</span>` : ''}
@@ -167,6 +189,9 @@
         (data.totalGospel != null ? data.totalGospel + ' gospel · ' : '') +
         'analisadas ' +
         (data.totalAnalisado || 0) +
+        (data.totalScrapeCreators
+          ? ' · ' + data.totalScrapeCreators + ' redes (ScrapeCreators)'
+          : '') +
         (excl.length ? ' · ' + excl.length + ' já usadas ocultas' : '') +
         slot +
         (avisos.length ? ' — ' + avisos.join(' ') : '');

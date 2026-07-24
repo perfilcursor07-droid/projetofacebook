@@ -42,6 +42,25 @@ const PERFIL_VIRAL = {
     'Edir Macedo',
     'pastor viral Brasil',
   ],
+  /**
+   * Queries usadas na busca de Reels Instagram (ScrapeCreators) — máx. 4 por curadoria.
+   */
+  seedsInstagram: [
+    'pastor polêmica Brasil',
+    'Silas Malafaia',
+    'pastora igreja',
+    'escândalo pastor',
+  ],
+  /**
+   * Páginas FB concorrentes / portais gospel — 1 request (~3 posts) cada, máx. 5.
+   */
+  paginasRadarFb: [
+    { nome: 'Folha Gospel', url: 'https://www.facebook.com/FolhaGospel' },
+    { nome: 'Comunhão', url: 'https://www.facebook.com/comunhao' },
+    { nome: 'Gospel Mais', url: 'https://www.facebook.com/gospelmais' },
+    { nome: 'Guiame', url: 'https://www.facebook.com/guiame' },
+    { nome: 'Silas Malafaia', url: 'https://www.facebook.com/SilasMalafaia' },
+  ],
 };
 
 const PALAVRAS_GOSPEL = [
@@ -266,6 +285,22 @@ function classificarTopico(topico) {
   if (topico?.contagemFontes) score += Math.min(8, Number(topico.contagemFontes) * 2);
   if (topico?.jaPublicado) score -= 80;
 
+  // Engajamento real (ScrapeCreators FB/IG)
+  const likes = Number(topico?.likes) || 0;
+  const comments = Number(topico?.comments) || 0;
+  const shares = Number(topico?.shares) || 0;
+  const views = Number(topico?.views) || 0;
+  if (likes || comments || shares || views) {
+    const engBonus = Math.min(
+      25,
+      Math.log(likes + 1) * 4 + Math.log(comments + 1) * 3 + Math.log(shares + 1) * 2 + Math.log(views + 1) * 1.2
+    );
+    score += engBonus;
+  }
+  if (topico?.redeSocial || topico?.origemSocial) {
+    score += 5;
+  }
+
   const baixoAlcance = ['testemunho', 'cura_milagre', 'geral'].includes(melhor.id);
   if (!gospel) {
     melhor = { id: 'fora_nicho', label: 'Fora do nicho', peso: 0, matches: [] };
@@ -332,6 +367,14 @@ function proximoSlotSugerido() {
 function dedupeTitulos(lista) {
   const out = [];
   for (const item of lista) {
+    const linkKey = String(item.link || '')
+      .split(/[?#]/)[0]
+      .toLowerCase()
+      .replace(/\/$/, '');
+    if (linkKey && out.some((x) => String(x.link || '').split(/[?#]/)[0].toLowerCase().replace(/\/$/, '') === linkKey)) {
+      continue;
+    }
+
     const t = String(item.titulo || '')
       .toLowerCase()
       .replace(/\s+/g, ' ')
@@ -360,13 +403,14 @@ function chunk(arr, size) {
 
 /**
  * Busca pautas automaticamente e ranqueia pelo perfil viral (só nicho gospel).
- * Conteúdo recente + busca profunda em vários termos/sites.
+ * Conteúdo recente + busca profunda em vários termos/sites + ScrapeCreators (IG/FB).
  * Pautas já publicadas/agendadas saem da lista principal e vão em `excluidos`.
  */
 async function curarPautasVirais({ userId, facebookPageId, limit = 20 } = {}) {
   const lim = Math.min(28, Math.max(5, Number(limit) || 20));
   const avisos = [];
   let brutos = [];
+  let totalScrapeCreators = 0;
 
   // 1) Em alta (48h) — a API devolve { topicos }
   try {
@@ -392,6 +436,42 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 20 } = {}) {
     } catch (err) {
       avisos.push(`Nichos: ${err.message}`);
     }
+  }
+
+  // 3) ScrapeCreators — Reels IG (keyword) + posts de páginas FB concorrentes
+  try {
+    const scrapeIg = require('./scrapeCreatorsSearch');
+    const scrapeFb = require('./scrapeCreatorsFacebook');
+
+    if (scrapeIg.isConfigured()) {
+      const igQueries = (PERFIL_VIRAL.seedsInstagram || PERFIL_VIRAL.seedsBusca).slice(0, 4);
+      const igResult = await scrapeIg.buscarReelsPorQueries(igQueries, {
+        datePosted: 'last-week',
+        limit: 8,
+      });
+      brutos = brutos.concat(igResult.topicos || []);
+      totalScrapeCreators += (igResult.topicos || []).length;
+      if (igResult.avisos?.length) avisos.push(...igResult.avisos.slice(0, 3));
+      if ((igResult.topicos || []).length) {
+        avisos.push(`Instagram: ${(igResult.topicos || []).length} reel(s) via ScrapeCreators.`);
+      }
+
+      const paginas = (PERFIL_VIRAL.paginasRadarFb || []).slice(0, 5);
+      const fbResult = await scrapeFb.coletarTopicosDePaginas(paginas, {
+        maxAgeDays: 7,
+        postsPorPagina: 3,
+      });
+      brutos = brutos.concat(fbResult.topicos || []);
+      totalScrapeCreators += (fbResult.topicos || []).length;
+      if (fbResult.avisos?.length) avisos.push(...fbResult.avisos.slice(0, 3));
+      if ((fbResult.topicos || []).length) {
+        avisos.push(`Facebook: ${(fbResult.topicos || []).length} post(s) de páginas gospel.`);
+      }
+    } else {
+      avisos.push('ScrapeCreators não configurada — só notícias (Google/Brave).');
+    }
+  } catch (err) {
+    avisos.push(`ScrapeCreators: ${err.message}`);
   }
 
   brutos = dedupeTitulos(brutos);
@@ -453,6 +533,7 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 20 } = {}) {
     totalAnalisado: brutos.length,
     totalGospel: noNicho.length,
     totalExcluidos: excluidos.length,
+    totalScrapeCreators,
     perfil: {
       id: PERFIL_VIRAL.id,
       nome: PERFIL_VIRAL.nome,
