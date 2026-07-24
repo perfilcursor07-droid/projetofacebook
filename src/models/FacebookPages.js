@@ -54,6 +54,16 @@ const FacebookPages = {
         updated_at: db.fn.now(),
       });
   },
+
+  setAyrshareProfileKey(id, profileKey) {
+    const key = profileKey == null || profileKey === '' ? null : String(profileKey).trim();
+    return db(this.table)
+      .where({ id })
+      .update({
+        ayrshare_profile_key: key,
+        updated_at: db.fn.now(),
+      });
+  },
 };
 
 module.exports = FacebookPages;

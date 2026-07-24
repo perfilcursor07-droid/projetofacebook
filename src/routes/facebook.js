@@ -2,12 +2,14 @@ const express = require('express');
 const facebookController = require('../controllers/facebookController');
 const postpulseController = require('../controllers/postpulseController');
 const postsyncerController = require('../controllers/postsyncerController');
+const ayrshareController = require('../controllers/ayrshareController');
 
 const router = express.Router();
 
 router.get('/pages', facebookController.listPages);
 router.put('/pages/default', facebookController.setDefaultPage);
 router.post('/pages/default', facebookController.setDefaultPage);
+router.post('/ayrshare/profile-key', ayrshareController.setProfileKey);
 router.get('/postpulse/status', postpulseController.statusHandler);
 router.post('/postpulse/sync', postpulseController.syncHandler);
 router.post('/postpulse/link', postpulseController.linkHandler);

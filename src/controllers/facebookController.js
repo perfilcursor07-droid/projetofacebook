@@ -157,7 +157,14 @@ async function listPages(req, res, next) {
       },
       pages: pages.map((p) => {
         let publica_via = 'facebook';
-        if (psConfigured && p.postsyncer_account_id) {
+        const { env } = require('../config/env');
+        const pubMode = (env.postpulse.publishProvider || 'auto').toLowerCase();
+        const ayrshareOn =
+          require('../services/ayrshareService').isConfigured() &&
+          (pubMode === 'ayrshare' || pubMode === 'auto');
+        if (ayrshareOn) {
+          publica_via = 'ayrshare';
+        } else if (psConfigured && p.postsyncer_account_id) {
           publica_via = 'postsyncer';
         } else if (p.postpulse_account_id && p.postpulse_chat_id && ppConn?.access_token) {
           publica_via = 'postpulse';
@@ -171,6 +178,8 @@ async function listPages(req, res, next) {
           postpulse_account_id: p.postpulse_account_id || null,
           postpulse_chat_id: p.postpulse_chat_id || null,
           postsyncer_account_id: p.postsyncer_account_id || null,
+          ayrshare_profile_key: p.ayrshare_profile_key || null,
+          has_ayrshare_profile_key: Boolean(p.ayrshare_profile_key),
           publica_via,
           is_default: Number(p.id) === Number(defaultPageId),
         };

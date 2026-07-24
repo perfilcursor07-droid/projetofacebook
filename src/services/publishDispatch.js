@@ -153,12 +153,16 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
       file: localFile ? path.basename(localFile) : null,
     });
 
+    const FacebookPages = require('../models/FacebookPages');
+    const freshPage = await FacebookPages.findById(page.id);
+
     const result = await ayrshareService.publishToFacebook({
       post: content,
       filePath: localFile || null,
       imageUrl: localFile ? null : remoteUrl || imageUrl || null,
       isReel: tipo === 'reel',
       title: titulo || null,
+      profileKey: freshPage?.ayrshare_profile_key || page.ayrshare_profile_key || null,
     });
 
     const postId = result.post_id || result.id;

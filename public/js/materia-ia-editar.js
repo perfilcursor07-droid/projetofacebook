@@ -556,6 +556,29 @@
     document.body.style.overflow = '';
   }
 
+  /** datetime-local: agora em Araguaína + 10 min (YYYY-MM-DDTHH:mm) */
+  function defaultScheduleAraguainaPlus10() {
+    const target = new Date(Date.now() + 10 * 60 * 1000);
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Araguaina',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(target);
+    const get = (type) => parts.find((p) => p.type === type)?.value || '00';
+    let hour = get('hour');
+    if (hour === '24') hour = '00';
+    return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`;
+  }
+
+  const scheduleInput = document.getElementById('matter-schedule');
+  if (scheduleInput && !scheduleInput.value) {
+    scheduleInput.value = defaultScheduleAraguainaPlus10();
+  }
+
   document.getElementById('btn-agendar')?.addEventListener('click', async () => {
     const runAt = document.getElementById('matter-schedule')?.value;
     if (!runAt) {

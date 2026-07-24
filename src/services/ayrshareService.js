@@ -21,12 +21,15 @@ function assertConfigured() {
   }
 }
 
-function authHeaders(extra = {}) {
+function authHeaders(extra = {}, profileKey = null) {
   assertConfigured();
-  return {
+  const headers = {
     Authorization: `Bearer ${env.ayrshare.apiKey}`,
     ...extra,
   };
+  const key = profileKey != null ? String(profileKey).trim() : '';
+  if (key) headers['Profile-Key'] = key;
+  return headers;
 }
 
 function apiErrorMessage(err) {
@@ -204,7 +207,8 @@ async function resolveMediaUrl({ filePath, imageUrl }) {
 }
 
 /**
- * Publica na Página Facebook ligada ao Primary Profile Ayrshare.
+ * Publica na Página Facebook ligada ao perfil Ayrshare (Primary ou User Profile).
+ * Com vários profiles (Business): passe profileKey da página.
  */
 async function publishToFacebook({
   post,
@@ -212,6 +216,7 @@ async function publishToFacebook({
   imageUrl = null,
   isReel = false,
   title = null,
+  profileKey = null,
 }) {
   assertConfigured();
 
@@ -242,9 +247,12 @@ async function publishToFacebook({
     if (title) body.faceBookOptions.title = String(title).slice(0, 255);
   }
 
+  const pk = profileKey != null ? String(profileKey).trim() : '';
+
   console.log('[ayrshare] post', {
     hasMedia: Boolean(mediaUrl),
     isReel,
+    hasProfileKey: Boolean(pk),
     mediaHost: mediaUrl ? (() => {
       try {
         return new URL(mediaUrl).hostname;
@@ -256,7 +264,7 @@ async function publishToFacebook({
 
   try {
     const { data } = await axios.post(`${API}/post`, body, {
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      headers: authHeaders({ 'Content-Type': 'application/json' }, pk || null),
       timeout: 120000,
     });
 

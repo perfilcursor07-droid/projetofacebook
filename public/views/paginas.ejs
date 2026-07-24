@@ -9,7 +9,7 @@
     <% if (useAyrshare) { %>
     <p class="mt-2 text-slate-400">
       Publicação via <strong class="font-medium text-emerald-300">Ayrshare</strong>.
-      Conecte a Página no painel Ayrshare e mantenha as páginas listadas abaixo (padrão / OAuth).
+      Um User Profile na Ayrshare = uma Página Facebook. Cole o <strong class="font-medium text-slate-300">Profile Key</strong> de cada profile.
     </p>
     <% } else { %>
     <p class="mt-2 text-slate-400">Conecte sua conta e vincule as páginas ao PostSyncer para publicar.</p>
@@ -22,11 +22,12 @@
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
           <h2 class="text-sm font-semibold text-white">Ayrshare</h2>
-          <p class="mt-1 text-xs text-slate-400">
-            Posts saem pela API Ayrshare para a Página conectada em
+          <p class="mt-1 text-xs text-slate-400 leading-relaxed">
+            1) Em
             <a href="https://app.ayrshare.com" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">app.ayrshare.com</a>
-            → <strong class="font-medium text-slate-300">Social Accounts</strong>.
-            Não é preciso vincular PostSyncer.
+            crie um <strong class="font-medium text-slate-300">User Profile</strong> por Página FB e conecte a Página em Social Accounts.<br />
+            2) Em cada profile, copie o <strong class="font-medium text-slate-300">Profile Key</strong> e cole abaixo.<br />
+            3) Sem Profile Key, posts vão no <em>Primary Profile</em> (uma página só).
           </p>
           <p class="mt-2 text-sm text-emerald-200/90">
             <%= ayrshareConfigured ? 'API Key configurada · PUBLISH_PROVIDER=' + provider : 'Configure AYRSHARE_API_KEY no .env' %>
@@ -38,9 +39,15 @@
         </a>
       </div>
     </div>
-    <% } %>
 
-    <div id="postsyncer-box" class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4 <%= useAyrshare ? 'hidden' : '' %>">
+    <div id="content" class="mt-8">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
+        <p class="text-slate-300">Carregando…</p>
+      </div>
+    </div>
+    <% } else { %>
+
+    <div id="postsyncer-box" class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
           <h2 class="text-sm font-semibold text-white">PostSyncer</h2>
@@ -62,18 +69,13 @@
         <p class="text-slate-300">Carregando…</p>
       </div>
     </div>
+    <% } %>
   </main>
 
   <script>
     const alertEl = document.getElementById('alert');
     const contentEl = document.getElementById('content');
-    const psStatusEl = document.getElementById('ps-status');
-    const psActionsEl = document.getElementById('ps-actions');
-    const psLinkPanel = document.getElementById('ps-link-panel');
-    const publishProvider = <%- JSON.stringify(provider) %>;
     const useAyrshare = <%= useAyrshare ? 'true' : 'false' %>;
-    let lastPages = [];
-    window.__psAccounts = [];
 
     function escapeHtml(text) {
       return String(text || '')
@@ -83,8 +85,140 @@
         .replace(/"/g, '&quot;');
     }
 
+    function showAlert(msg, isError) {
+      alertEl.textContent = msg;
+      alertEl.className =
+        'mt-4 rounded-lg border px-4 py-3 text-sm ' +
+        (isError
+          ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200');
+    }
+
+    <% if (useAyrshare) { %>
+    async function loadAyrshare() {
+      try {
+        const res = await fetch('/api/facebook/pages');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao carregar');
+
+        if (!data.conectado || !(data.pages || []).length) {
+          contentEl.innerHTML = `
+            <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-8 text-center">
+              <p class="text-slate-300">Nenhuma página listada no app ainda.</p>
+              <p class="mt-2 text-sm text-slate-500">
+                As páginas que já existiam (PostSyncer/OAuth) continuam válidas como alvos de publicação.
+                Se a lista estiver vazia, conecte o Facebook uma vez só para importar os nomes.
+              </p>
+              <a href="/api/auth/facebook"
+                class="mt-5 inline-block rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-medium text-slate-200 hover:border-[#1877F2] hover:text-white">
+                Importar nomes via Facebook
+              </a>
+            </div>`;
+          return;
+        }
+
+        const pagesHtml = (data.pages || [])
+          .map((p) => {
+            const isDefault = Boolean(p.is_default);
+            const key = p.ayrshare_profile_key || '';
+            const defaultBtn = isDefault
+              ? `<span class="rounded-full bg-violet-500/20 px-2.5 py-0.5 text-xs font-semibold text-violet-200">página padrão</span>`
+              : `<button type="button" data-set-default="${p.id}" class="ay-default-btn rounded-lg border border-violet-500/40 px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/15">Usar como padrão</button>`;
+            return `
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 ${isDefault ? 'ring-1 ring-violet-500/40' : ''}">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p class="text-white">${escapeHtml(p.page_name)}</p>
+                <p class="text-xs text-slate-500">Alvo de publicação no ViralizeAI</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">${defaultBtn}</div>
+            </div>
+            <label class="mt-3 block text-[11px] text-slate-500">
+              Profile Key Ayrshare
+              <div class="mt-1 flex flex-wrap gap-2">
+                <input type="text" data-ay-key="${p.id}" value="${escapeHtml(key)}"
+                  placeholder="Cole o Profile Key deste User Profile"
+                  class="min-w-[16rem] flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none" />
+                <button type="button" data-ay-save="${p.id}"
+                  class="ay-save-btn rounded-lg border border-emerald-700/60 px-3 py-1.5 text-xs text-emerald-200 hover:border-emerald-400">
+                  Salvar
+                </button>
+              </div>
+            </label>
+          </div>`;
+          })
+          .join('');
+
+        contentEl.innerHTML = `
+          <p class="text-xs text-slate-500 mb-4">
+            A <strong class="font-medium text-slate-400">página padrão</strong> e o seletor nas matérias escolhem
+            qual Profile Key (qual Página FB) receberá o post.
+          </p>
+          <div class="space-y-3">${pagesHtml}</div>`;
+
+        contentEl.querySelectorAll('.ay-default-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+              const r = await fetch('/api/facebook/pages/default', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ facebook_page_id: Number(btn.dataset.setDefault) }),
+              });
+              const j = await r.json();
+              if (!r.ok) throw new Error(j.error || 'Falha ao definir padrão');
+              showAlert('Página padrão: ' + (j.page?.page_name || 'ok'));
+              loadAyrshare();
+            } catch (err) {
+              showAlert(err.message, true);
+              btn.disabled = false;
+            }
+          });
+        });
+
+        contentEl.querySelectorAll('.ay-save-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = Number(btn.dataset.aySave);
+            const input = contentEl.querySelector('input[data-ay-key="' + id + '"]');
+            btn.disabled = true;
+            try {
+              const r = await fetch('/api/facebook/ayrshare/profile-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  facebook_page_id: id,
+                  ayrshare_profile_key: input?.value || '',
+                }),
+              });
+              const j = await r.json();
+              if (!r.ok) throw new Error(j.error || 'Falha ao salvar Profile Key');
+              showAlert(
+                j.page?.has_profile_key
+                  ? 'Profile Key salvo: ' + (j.page.page_name || '')
+                  : 'Profile Key removido — usará o Primary Profile'
+              );
+              loadAyrshare();
+            } catch (err) {
+              showAlert(err.message, true);
+              btn.disabled = false;
+            }
+          });
+        });
+      } catch (err) {
+        contentEl.innerHTML = `<p class="text-rose-300">${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    loadAyrshare();
+    <% } else { %>
+    const psStatusEl = document.getElementById('ps-status');
+    const psActionsEl = document.getElementById('ps-actions');
+    const psLinkPanel = document.getElementById('ps-link-panel');
+    let lastPages = [];
+    window.__psAccounts = [];
+
     function renderPsLinkPanel() {
-      if (useAyrshare || !psLinkPanel) return;
+      if (!psLinkPanel) return;
       const accounts = window.__psAccounts || [];
       const unlinked = (lastPages || []).filter((p) => !p.postsyncer_account_id);
       if (!accounts.length) {
@@ -94,33 +228,24 @@
       }
       if (!unlinked.length) {
         psLinkPanel.classList.remove('hidden');
-        psLinkPanel.innerHTML = `
-          <div class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
-            Todas as páginas do app já estão vinculadas ao PostSyncer.
-          </div>`;
+        psLinkPanel.innerHTML =
+          '<p class="text-xs text-emerald-300/90">Todas as páginas do app já estão vinculadas ao PostSyncer.</p>';
         return;
       }
-
+      const pageOpts = unlinked
+        .map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)}</option>`)
+        .join('');
       const accOpts = accounts
         .map(
           (a) =>
-            `<option value="${a.id}">${escapeHtml(a.label || a.name || a.username || a.id)} (PS #${a.id})</option>`
+            `<option value="${a.id}">${escapeHtml(a.label || a.name || a.username || a.id)}</option>`
         )
         .join('');
-      const pageOpts = unlinked
-        .map((p) => `<option value="${p.id}">${escapeHtml(p.page_name)} (${escapeHtml(p.page_id)})</option>`)
-        .join('');
-      const accountList = accounts
-        .map((a) => `<li>${escapeHtml(a.label || a.name || a.username || '#' + a.id)}</li>`)
-        .join('');
-
       psLinkPanel.classList.remove('hidden');
       psLinkPanel.innerHTML = `
-        <div class="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-3 text-sm text-sky-100">
-          <p class="mb-1 text-xs font-semibold text-sky-200">Vínculo manual</p>
+        <div class="rounded-lg border border-sky-800/50 bg-sky-950/20 p-3">
           <p class="mb-2 text-xs text-sky-300/90">Escolha a Página do app e a conta correspondente no PostSyncer:</p>
-          <ul class="mb-3 list-disc pl-4 text-xs text-sky-100/90">${accountList}</ul>
-          <div class="flex flex-wrap items-end gap-2">
+          <div class="flex flex-wrap items-end gap-2 text-slate-300">
             <label class="text-xs">Página do app
               <select id="ps-link-page" class="mt-1 block rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-200">${pageOpts}</select>
             </label>
@@ -147,47 +272,17 @@
           });
           const j = await r.json();
           if (!r.ok) throw new Error(j.error || 'Falha ao vincular');
-          alertEl.textContent = 'Vinculado: ' + (j.page?.page_name || 'ok') + ' → PostSyncer';
-          alertEl.className =
-            'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+          showAlert('Vinculado: ' + (j.page?.page_name || 'ok') + ' → PostSyncer');
           await load();
           renderPsLinkPanel();
         } catch (err) {
-          alertEl.textContent = 'Erro: ' + err.message;
-          alertEl.className =
-            'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+          showAlert('Erro: ' + err.message, true);
           btn.disabled = false;
         }
       });
     }
 
-    const params = new URLSearchParams(location.search);
-    if (params.get('conectado') === '1') {
-      alertEl.textContent = 'Conta do Facebook conectada com sucesso!';
-      alertEl.className =
-        'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
-      history.replaceState({}, '', '/paginas');
-    } else if (params.get('erro')) {
-      alertEl.textContent = 'Erro: ' + params.get('erro');
-      alertEl.className =
-        'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
-      history.replaceState({}, '', '/paginas');
-    }
-
-    const connectHtml = useAyrshare
-      ? `
-      <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
-        <p class="text-slate-300">Ainda não há páginas neste app.</p>
-        <p class="mt-2 text-sm text-slate-500">
-          Conecte a Página no <strong class="font-medium text-slate-400">Ayrshare</strong> (Social Accounts)
-          e use <strong class="font-medium text-slate-400">Conectar com Facebook</strong> abaixo para listar as páginas no ViralizeAI.
-        </p>
-        <a href="/api/auth/facebook"
-          class="mt-5 inline-block rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-medium text-slate-200 hover:border-[#1877F2] hover:text-white">
-          Conectar com Facebook
-        </a>
-      </div>`
-      : `
+    const connectHtml = `
       <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
         <p class="text-slate-300">Ainda não há páginas neste app.</p>
         <p class="mt-2 text-sm text-slate-500">
@@ -216,27 +311,20 @@
         lastPages = data.pages || [];
         renderPsLinkPanel();
 
-        const psAccounts = useAyrshare ? [] : (window.__psAccounts || []);
+        const psAccounts = window.__psAccounts || [];
         const pagesHtml = (data.pages || [])
           .map((p) => {
             const linked = Boolean(p.postsyncer_account_id);
-            let via;
-            let viaClass;
-            if (useAyrshare) {
-              via = 'Ayrshare';
-              viaClass = 'bg-emerald-500/15 text-emerald-300';
-            } else {
-              via = linked ? 'PostSyncer' : 'Não vinculado';
-              viaClass = linked ? 'bg-sky-500/15 text-sky-300' : 'bg-amber-500/15 text-amber-300';
-            }
+            const via = linked ? 'PostSyncer' : 'Não vinculado';
+            const viaClass = linked ? 'bg-sky-500/15 text-sky-300' : 'bg-amber-500/15 text-amber-300';
             const isDefault = Boolean(p.is_default);
             let linkBtn = '';
-            if (!useAyrshare && !linked && psAccounts.length === 1) {
+            if (!linked && psAccounts.length === 1) {
               linkBtn = `<button type="button" data-ps-link-page="${p.id}" data-ps-id="${psAccounts[0].id}"
                 class="ps-link-btn rounded-lg border border-sky-700 px-2.5 py-1 text-xs text-sky-300 hover:border-sky-400">
                 Vincular PostSyncer
               </button>`;
-            } else if (!useAyrshare && !linked && psAccounts.length > 1) {
+            } else if (!linked && psAccounts.length > 1) {
               const opts = psAccounts
                 .map(
                   (a) =>
@@ -251,10 +339,9 @@
             const defaultBtn = isDefault
               ? `<span class="rounded-full bg-violet-500/20 px-2.5 py-0.5 text-xs font-semibold text-violet-200">página padrão</span>`
               : `<button type="button" data-set-default="${p.id}" class="ps-default-btn rounded-lg border border-violet-500/40 px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/15">Usar como padrão</button>`;
-            const unlinkBtn =
-              !useAyrshare && linked
-                ? `<button type="button" data-ps-unlink="${p.id}" class="ps-unlink-btn rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/10" title="Remove o PostSyncer desta página no ViralizeAI">Remover PostSyncer</button>`
-                : '';
+            const unlinkBtn = linked
+              ? `<button type="button" data-ps-unlink="${p.id}" class="ps-unlink-btn rounded-lg border border-rose-500/40 px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/10">Remover PostSyncer</button>`
+              : '';
             return `
           <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 ${isDefault ? 'ring-1 ring-violet-500/40' : ''}">
             <div>
@@ -278,9 +365,7 @@
               ${data.oauth
                 ? 'Conta Facebook conectada (FB user ' + escapeHtml(data.fb_user_id) + ')'
                   + (data.expira_em ? ' · token expira em ' + new Date(data.expira_em).toLocaleDateString('pt-BR') : '')
-                : useAyrshare
-                  ? 'Páginas do app · publicação via Ayrshare (OAuth Facebook opcional para Insights)'
-                  : 'Páginas importadas do PostSyncer (OAuth Facebook opcional)'}
+                : 'Páginas importadas do PostSyncer (OAuth Facebook opcional)'}
             </p>
             <div class="flex gap-2">
               ${data.oauth
@@ -291,9 +376,7 @@
           </div>
           <p class="mt-3 text-xs text-slate-500">A <strong class="font-medium text-slate-400">página padrão</strong> já vem selecionada ao publicar matérias, na Biblioteca e na fila.</p>
           <div class="mt-5 space-y-3">
-            ${pagesHtml || (useAyrshare
-              ? '<p class="text-slate-400">Nenhuma página encontrada. Conecte o Facebook (OAuth) ou importe páginas.</p>'
-              : '<p class="text-slate-400">Nenhuma página encontrada. Clique em Sincronizar / vincular no PostSyncer acima.</p>')}
+            ${pagesHtml || '<p class="text-slate-400">Nenhuma página encontrada. Clique em Sincronizar / vincular no PostSyncer acima.</p>'}
           </div>`;
 
         contentEl.querySelectorAll('.ps-default-btn').forEach((btn) => {
@@ -307,16 +390,11 @@
               });
               const j = await r.json();
               if (!r.ok) throw new Error(j.error || 'Falha ao definir padrão');
-              alertEl.textContent =
-                'Página padrão: ' + (j.page?.page_name || 'ok') + '. Ela será pré-selecionada nas publicações.';
-              alertEl.className =
-                'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+              showAlert('Página padrão: ' + (j.page?.page_name || 'ok'));
               await load();
               renderPsLinkPanel();
             } catch (err) {
-              alertEl.textContent = 'Erro: ' + err.message;
-              alertEl.className =
-                'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+              showAlert('Erro: ' + err.message, true);
               btn.disabled = false;
             }
           });
@@ -336,15 +414,11 @@
               });
               const j = await r.json();
               if (!r.ok) throw new Error(j.error || 'Falha ao vincular');
-              alertEl.textContent = 'Página vinculada ao PostSyncer: ' + (j.page?.page_name || '');
-              alertEl.className =
-                'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+              showAlert('Página vinculada ao PostSyncer: ' + (j.page?.page_name || ''));
               await load();
               renderPsLinkPanel();
             } catch (err) {
-              alertEl.textContent = 'Erro: ' + err.message;
-              alertEl.className =
-                'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+              showAlert('Erro: ' + err.message, true);
               btn.disabled = false;
             }
           });
@@ -353,7 +427,8 @@
         contentEl.querySelectorAll('.ps-link-select').forEach((btn) => {
           btn.addEventListener('click', async () => {
             const pageId = btn.dataset.psLinkSelect;
-            const sel = contentEl.querySelector(`select[data-ps-page="${pageId}"]`);
+            const sel = contentEl.querySelector('select[data-ps-page="' + pageId + '"]');
+            if (!sel) return;
             btn.disabled = true;
             try {
               const r = await fetch('/api/facebook/postsyncer/link', {
@@ -366,15 +441,11 @@
               });
               const j = await r.json();
               if (!r.ok) throw new Error(j.error || 'Falha ao vincular');
-              alertEl.textContent = 'Página vinculada ao PostSyncer';
-              alertEl.className =
-                'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+              showAlert('Página vinculada ao PostSyncer');
               await load();
               renderPsLinkPanel();
             } catch (err) {
-              alertEl.textContent = 'Erro: ' + err.message;
-              alertEl.className =
-                'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+              showAlert('Erro: ' + err.message, true);
               btn.disabled = false;
             }
           });
@@ -384,7 +455,7 @@
           btn.addEventListener('click', async () => {
             if (
               !confirm(
-                'Remover o PostSyncer desta página?\n\nA publicação deixa de passar pelo PostSyncer (sem limite Free). Se a página só existia via PostSyncer, use “Reconectar” Facebook em seguida.'
+                'Remover o PostSyncer desta página?\n\nA publicação deixa de passar pelo PostSyncer.'
               )
             ) {
               return;
@@ -398,15 +469,11 @@
               });
               const j = await r.json();
               if (!r.ok) throw new Error(j.error || 'Falha ao remover');
-              alertEl.textContent = j.aviso || 'PostSyncer removido desta página.';
-              alertEl.className =
-                'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+              showAlert(j.aviso || 'PostSyncer removido desta página.');
               await load();
               renderPsLinkPanel();
             } catch (err) {
-              alertEl.textContent = 'Erro: ' + err.message;
-              alertEl.className =
-                'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+              showAlert('Erro: ' + err.message, true);
               btn.disabled = false;
             }
           });
@@ -423,7 +490,7 @@
     }
 
     async function loadPostsyncer() {
-      if (useAyrshare || !psStatusEl || !psActionsEl) return;
+      if (!psStatusEl || !psActionsEl) return;
       try {
         const res = await fetch('/api/facebook/postsyncer/status');
         const data = await res.json();
@@ -446,29 +513,27 @@
           (n ? '' : ' — conecte a Página em app.postsyncer.com');
 
         psActionsEl.innerHTML = `
-          <button id="ps-sync" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-sky-500 hover:text-sky-300">
-            Sincronizar / vincular
-          </button>
-          <button id="ps-unlink-all" class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm text-rose-300 hover:bg-rose-500/10">
+          <button type="button" id="ps-unlink-all"
+            class="rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm text-rose-300 hover:bg-rose-500/10">
             Remover PostSyncer de todas
           </button>
           <a href="https://app.postsyncer.com" target="_blank" rel="noopener"
-            class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-sky-500 hover:text-sky-300">
+            class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:border-sky-500">
             Abrir PostSyncer
-          </a>`;
+          </a>
+          <button type="button" id="ps-sync"
+            class="rounded-lg border border-sky-700 px-3 py-1.5 text-sm text-sky-300 hover:border-sky-400">
+            Sincronizar / vincular
+          </button>`;
 
-        renderPsLinkPanel();
-
-        document.getElementById('ps-unlink-all')?.addEventListener('click', async (e) => {
+        document.getElementById('ps-unlink-all')?.addEventListener('click', async () => {
           if (
             !confirm(
-              'Remover o PostSyncer de TODAS as páginas?\n\nNão precisa entrar no PostSyncer. Depois use “Reconectar” Facebook se a publicação pedir.'
+              'Remover o PostSyncer de TODAS as páginas?\n\nNão precisa entrar no PostSyncer.'
             )
           ) {
             return;
           }
-          const btn = e.currentTarget;
-          btn.disabled = true;
           try {
             const r = await fetch('/api/facebook/postsyncer/unlink', {
               method: 'POST',
@@ -476,56 +541,37 @@
               body: JSON.stringify({ all: true }),
             });
             const j = await r.json();
-            if (!r.ok) throw new Error(j.error || 'Falha ao remover');
-            alertEl.textContent = j.aviso || 'PostSyncer removido.';
-            alertEl.className =
-              'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
+            if (!r.ok) throw new Error(j.error || 'Falha');
+            showAlert(j.aviso || 'PostSyncer removido.');
             await load();
             renderPsLinkPanel();
           } catch (err) {
-            alertEl.textContent = 'Erro: ' + err.message;
-            alertEl.className =
-              'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
+            showAlert('Erro: ' + err.message, true);
+          }
+        });
+
+        document.getElementById('ps-sync')?.addEventListener('click', async () => {
+          const btn = document.getElementById('ps-sync');
+          btn.disabled = true;
+          try {
+            const r = await fetch('/api/facebook/postsyncer/sync', { method: 'POST' });
+            const j = await r.json();
+            if (!r.ok) throw new Error(j.error || 'Falha sync');
+            showAlert(
+              'PostSyncer: ' +
+                (j.message || 'sincronizado') +
+                (j.linked != null ? ' · vinculados: ' + j.linked : '')
+            );
+            await load();
+            renderPsLinkPanel();
+          } catch (err) {
+            showAlert('Erro PostSyncer: ' + err.message, true);
           } finally {
             btn.disabled = false;
           }
         });
 
-        document.getElementById('ps-sync')?.addEventListener('click', async (e) => {
-          const btn = e.currentTarget;
-          btn.disabled = true;
-          btn.textContent = 'Sincronizando…';
-          try {
-            const r = await fetch('/api/facebook/postsyncer/sync', { method: 'POST' });
-            const j = await r.json();
-            if (!r.ok) throw new Error(j.error || 'Falha ao sincronizar');
-            window.__psAccounts = j.accounts || [];
-            let msg =
-              'PostSyncer: ' +
-              (j.imported || 0) +
-              ' página(s) importada(s), ' +
-              (j.linked || 0) +
-              ' vinculada(s). Contas FB no PS: ' +
-              (j.accounts || []).length;
-            if (j.hint) msg += ' — ' + j.hint;
-            else if (j.needs_manual) {
-              const names = (j.accounts || []).map((a) => a.label || a.name || a.id).join(' | ');
-              msg += '. Vincule manualmente no painel abaixo (contas: ' + names + ').';
-            }
-            alertEl.textContent = msg;
-            alertEl.className =
-              'mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200';
-            await load();
-            renderPsLinkPanel();
-          } catch (err) {
-            alertEl.textContent = 'Erro PostSyncer: ' + err.message;
-            alertEl.className =
-              'mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200';
-          } finally {
-            btn.disabled = false;
-            btn.textContent = 'Sincronizar / vincular';
-          }
-        });
+        renderPsLinkPanel();
       } catch (err) {
         psStatusEl.textContent = err.message;
         psActionsEl.innerHTML = '';
@@ -534,5 +580,6 @@
 
     loadPostsyncer();
     load();
+    <% } %>
   </script>
 <%- include('partials/app-end') %>
