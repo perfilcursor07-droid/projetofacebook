@@ -4,6 +4,7 @@ const controller = require('../controllers/viralizarController');
 const router = express.Router();
 
 router.get('/perfil', controller.perfil);
+router.get('/desempenho', controller.desempenho);
 router.post('/curar', controller.curar);
 router.post('/gerar', controller.gerar);
 router.post('/sincronizar-usados', controller.sincronizarUsados);

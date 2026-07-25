@@ -94,44 +94,66 @@ async function buscarReelsInstagram(query, opts = {}) {
   const datePosted = opts.datePosted || 'last-week';
   const page = Math.max(1, Number(opts.page) || 1);
   const limit = Math.min(20, Math.max(1, Number(opts.limit) || 10));
+  const tentativas = Math.max(1, Number(opts.retries) || 3);
 
-  const response = await axios.get(REELS_SEARCH_URL, {
-    params: {
-      query: q,
-      date_posted: datePosted,
-      page: String(page),
-    },
-    headers: {
-      'x-api-key': env.scrapeCreatorsApiKey,
-      Accept: 'application/json',
-    },
-    timeout: 45000,
-    validateStatus: () => true,
-  });
+  let ultimoErro = null;
 
-  if (response.status >= 400) {
-    const message =
-      response.data?.message ||
-      response.data?.error ||
-      response.data?.detail ||
-      `HTTP ${response.status}`;
-    const err = new Error(`ScrapeCreators IG search: ${message}`);
-    err.status = response.status === 429 ? 429 : 502;
-    throw err;
+  for (let tentativa = 1; tentativa <= tentativas; tentativa += 1) {
+    const response = await axios.get(REELS_SEARCH_URL, {
+      params: {
+        query: q,
+        date_posted: datePosted,
+        page: String(page),
+      },
+      headers: {
+        'x-api-key': env.scrapeCreatorsApiKey,
+        Accept: 'application/json',
+      },
+      timeout: 45000,
+      validateStatus: () => true,
+    });
+
+    if (response.status >= 400) {
+      const message =
+        response.data?.message ||
+        response.data?.error ||
+        response.data?.detail ||
+        `HTTP ${response.status}`;
+      const err = new Error(`ScrapeCreators IG search: ${message}`);
+      err.status = response.status === 429 ? 429 : 502;
+      throw err;
+    }
+
+    const providerMessage = String(
+      response.data?.message || response.data?.error || ''
+    );
+
+    // O provedor às vezes devolve um desafio temporário (ex.: challenge 202)
+    // em vez dos reels. Isso é transitório: tenta de novo antes de desistir.
+    const desafioTemporario =
+      /challenge|captcha|rate.?limit|try again|temporar/i.test(providerMessage) ||
+      response.status === 202;
+
+    if (response.data?.success === false || desafioTemporario) {
+      ultimoErro = new Error(
+        `ScrapeCreators IG search: ${providerMessage || 'falha desconhecida'}`
+      );
+      ultimoErro.status = 502;
+      if (desafioTemporario && tentativa < tentativas) {
+        await new Promise((r) => setTimeout(r, 1200 * tentativa));
+        continue;
+      }
+      throw ultimoErro;
+    }
+
+    const reels = Array.isArray(response.data?.reels) ? response.data.reels : [];
+    return reels
+      .map((r) => reelParaTopico(r, q))
+      .filter(Boolean)
+      .slice(0, limit);
   }
 
-  if (response.data?.success === false) {
-    const message = response.data?.message || response.data?.error || 'falha desconhecida';
-    const err = new Error(`ScrapeCreators IG search: ${message}`);
-    err.status = 502;
-    throw err;
-  }
-
-  const reels = Array.isArray(response.data?.reels) ? response.data.reels : [];
-  return reels
-    .map((r) => reelParaTopico(r, q))
-    .filter(Boolean)
-    .slice(0, limit);
+  throw ultimoErro || new Error('ScrapeCreators IG search: sem resposta utilizável');
 }
 
 /**

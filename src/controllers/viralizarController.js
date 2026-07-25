@@ -94,6 +94,23 @@ async function sincronizarUsados(req, res, next) {
   }
 }
 
+async function desempenho(req, res, next) {
+  try {
+    const facebookPageId = await resolvePageId(req.session.userId, req.query || {});
+    const result = await viralizarService.analisarDesempenhoPagina({
+      userId: req.session.userId,
+      facebookPageId,
+      limit: req.query?.limit || 30,
+      atualizarViews:
+        String(req.query?.atualizar || req.query?.refresh || '') === '1',
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 async function perfil(req, res) {
   res.json({
     ok: true,
@@ -112,5 +129,6 @@ module.exports = {
   curar,
   gerar,
   sincronizarUsados,
+  desempenho,
   perfil,
 };

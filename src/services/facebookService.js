@@ -475,6 +475,52 @@ async function fetchPostViews(pageAccessToken, postIdOrUrl) {
   }
 }
 
+/**
+ * Curtidas / comentários / compartilhamentos via Graph API do post.
+ * @returns {{ likes: number|null, comments: number|null, shares: number|null, postId: string }}
+ */
+async function fetchPostEngagement(pageAccessToken, postIdOrUrl) {
+  const postId = parseFacebookPostId(postIdOrUrl) || String(postIdOrUrl || '').trim();
+  if (!postId || !pageAccessToken) {
+    return { likes: null, comments: null, shares: null, postId: null };
+  }
+
+  try {
+    const { data } = await axios.get(`${GRAPH}/${encodeURIComponent(postId)}`, {
+      params: {
+        fields: 'id,reactions.summary(true),comments.summary(true),shares',
+        access_token: pageAccessToken,
+      },
+      timeout: 20000,
+      validateStatus: (s) => s < 500,
+    });
+
+    if (data?.error) {
+      const err = new Error(data.error.message || 'Engajamento indisponível');
+      err.status = data.error.code === 100 ? 404 : 400;
+      err.graph = data.error;
+      throw err;
+    }
+
+    const likes = Number(data?.reactions?.summary?.total_count);
+    const comments = Number(data?.comments?.summary?.total_count);
+    const shares = Number(data?.shares?.count);
+
+    return {
+      likes: Number.isFinite(likes) ? likes : null,
+      comments: Number.isFinite(comments) ? comments : null,
+      shares: Number.isFinite(shares) ? shares : null,
+      postId: data?.id || postId,
+    };
+  } catch (err) {
+    if (err.graph) throw err;
+    const msg = graphErrorMessage(err);
+    const e = new Error(msg);
+    e.status = err.response?.status || 502;
+    throw e;
+  }
+}
+
 module.exports = {
   loginUrl,
   exchangeCodeForToken,
@@ -489,6 +535,7 @@ module.exports = {
   graphErrorMessage,
   parseFacebookPostId,
   fetchPostViews,
+  fetchPostEngagement,
   assertConfigured,
   REELS_DAILY_LIMIT,
 };

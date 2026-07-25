@@ -52,6 +52,17 @@ const PERFIL_VIRAL = {
     'escândalo pastor',
   ],
   /**
+   * Perfis gospel no Instagram — coleta direta por perfil (mais estável que a
+   * busca por palavra-chave, que às vezes cai em desafio temporário).
+   */
+  perfisRadarIg: [
+    { nome: 'Silas Malafaia', handle: 'silasmalafaiaoficial' },
+    { nome: 'Gospel Mais', handle: 'gospelmais' },
+    { nome: 'Guiame', handle: 'portalguiame' },
+    { nome: 'Comunhão', handle: 'portalcomunhao' },
+    { nome: 'Folha Gospel', handle: 'folhagospel' },
+  ],
+  /**
    * Páginas FB concorrentes / portais gospel — 1 request (~3 posts) cada, máx. 5.
    */
   paginasRadarFb: [
@@ -444,16 +455,39 @@ async function curarPautasVirais({ userId, facebookPageId, limit = 20 } = {}) {
     const scrapeFb = require('./scrapeCreatorsFacebook');
 
     if (scrapeIg.isConfigured()) {
+      let totalIg = 0;
+
+      // 3a) Perfis gospel do Instagram — fonte estável e sempre no nicho.
+      try {
+        const igRadar = require('./scrapeCreatorsInstagramRadar');
+        const perfisIg = (PERFIL_VIRAL.perfisRadarIg || []).slice(0, 5);
+        if (igRadar.isConfigured() && perfisIg.length) {
+          const perfilResult = await igRadar.coletarTopicosDePerfis(perfisIg, {
+            postsPorPerfil: 4,
+            maxAgeDays: 7,
+          });
+          brutos = brutos.concat(perfilResult.topicos || []);
+          totalIg += (perfilResult.topicos || []).length;
+          if (perfilResult.avisos?.length) avisos.push(...perfilResult.avisos.slice(0, 2));
+        }
+      } catch (err) {
+        avisos.push(`Instagram perfis: ${err.message}`);
+      }
+
+      // 3b) Busca por palavra-chave (complementa com o que está em alta).
       const igQueries = (PERFIL_VIRAL.seedsInstagram || PERFIL_VIRAL.seedsBusca).slice(0, 4);
       const igResult = await scrapeIg.buscarReelsPorQueries(igQueries, {
         datePosted: 'last-week',
         limit: 8,
       });
       brutos = brutos.concat(igResult.topicos || []);
-      totalScrapeCreators += (igResult.topicos || []).length;
-      if (igResult.avisos?.length) avisos.push(...igResult.avisos.slice(0, 3));
-      if ((igResult.topicos || []).length) {
-        avisos.push(`Instagram: ${(igResult.topicos || []).length} reel(s) via ScrapeCreators.`);
+      totalIg += (igResult.topicos || []).length;
+      totalScrapeCreators += totalIg;
+      if (igResult.avisos?.length) avisos.push(...igResult.avisos.slice(0, 2));
+      if (totalIg) {
+        avisos.push(`Instagram: ${totalIg} post(s)/reel(s) via ScrapeCreators.`);
+      } else {
+        avisos.push('Instagram: nenhum post retornado agora (provedor instável). Tente de novo.');
       }
 
       const paginas = (PERFIL_VIRAL.paginasRadarFb || []).slice(0, 5);
@@ -712,6 +746,115 @@ async function sincronizarPautasUsadas({
   };
 }
 
+/**
+ * Desempenho das matérias já publicadas na Página padrão: ranqueia por
+ * visualizações e marca o que viralizou (bem acima da mediana da própria página).
+ * Leitura de banco; só busca views novas nos primeiros itens quando pedido.
+ */
+async function analisarDesempenhoPagina({
+  userId,
+  facebookPageId,
+  limit = 30,
+  atualizarViews = false,
+} = {}) {
+  const AiMatters = require('../models/AiMatters');
+  const { resolvePageForUser } = require('./facebookPageResolver');
+
+  const page = facebookPageId ? await resolvePageForUser(userId, facebookPageId) : null;
+  if (!page) {
+    const err = new Error('Defina a página padrão em /paginas para ver o desempenho.');
+    err.status = 400;
+    throw err;
+  }
+
+  const lim = Math.min(60, Math.max(5, Number(limit) || 30));
+  const todas = await AiMatters.findByUserWithPub(userId, { limit: 100, status: 'publicado' });
+  const daPagina = todas.filter(
+    (m) => Number(m.facebook_page_id) === Number(page.id)
+  );
+
+  // Atualiza views só dos mais recentes, para não estourar a API do Facebook.
+  const avisos = [];
+  if (atualizarViews) {
+    const materiaIa = require('./materiaIaService');
+    for (const m of daPagina.slice(0, 8)) {
+      try {
+        const r = await materiaIa.atualizarViewsDaMateria(userId, m.id, { force: false });
+        if (r?.views != null) m.pub_fb_views = r.views;
+        else if (r?.message && avisos.length < 2) avisos.push(r.message);
+      } catch (err) {
+        if (avisos.length < 2) avisos.push(err.message);
+      }
+    }
+  }
+
+  const itens = daPagina.map((m) => ({
+    matterId: m.id,
+    titulo: m.titulo,
+    tipo: m.tipo_publicacao || 'foto',
+    views: m.pub_fb_views != null ? Number(m.pub_fb_views) : null,
+    viewsAt: m.pub_fb_views_at || null,
+    publicadoEm: m.pub_published_at || m.published_at || m.created_at,
+    postUrl: m.pub_fb_post_url || null,
+    editarUrl: `/materias-ia/${m.id}`,
+    tema: m.fonte_titulo || null,
+  }));
+
+  const comViews = itens.filter((i) => Number.isFinite(i.views) && i.views > 0);
+  const ordenadosViews = [...comViews].sort((a, b) => b.views - a.views);
+  const mediana = ordenadosViews.length
+    ? ordenadosViews[Math.floor(ordenadosViews.length / 2)].views
+    : 0;
+  const media = comViews.length
+    ? Math.round(comViews.reduce((s, i) => s + i.views, 0) / comViews.length)
+    : 0;
+  // Viralizou = pelo menos o dobro da mediana da própria página.
+  const limiarViral = mediana > 0 ? mediana * 2 : 0;
+
+  for (const item of itens) {
+    item.viralizou = Boolean(limiarViral && item.views && item.views >= limiarViral);
+    item.acimaDaMedia = Boolean(media && item.views && item.views > media);
+  }
+
+  const ranking = [...itens].sort((a, b) => {
+    if (b.views !== a.views) return (b.views || -1) - (a.views || -1);
+    return new Date(b.publicadoEm || 0) - new Date(a.publicadoEm || 0);
+  });
+
+  const porTipo = {};
+  for (const i of comViews) {
+    const k = i.tipo || 'foto';
+    porTipo[k] = porTipo[k] || { tipo: k, posts: 0, somaViews: 0 };
+    porTipo[k].posts += 1;
+    porTipo[k].somaViews += i.views;
+  }
+  const desempenhoPorTipo = Object.values(porTipo)
+    .map((t) => ({ ...t, mediaViews: Math.round(t.somaViews / t.posts) }))
+    .sort((a, b) => b.mediaViews - a.mediaViews);
+
+  if (!itens.length) {
+    avisos.push('Nenhuma matéria publicada nesta página ainda.');
+  } else if (!comViews.length) {
+    avisos.push(
+      'Ainda sem visualizações lidas. Conecte o Facebook (OAuth) em /paginas e clique em atualizar.'
+    );
+  }
+
+  return {
+    pagina: { id: page.id, nome: page.page_name },
+    total: itens.length,
+    comViews: comViews.length,
+    mediaViews: media,
+    medianaViews: mediana,
+    limiarViral,
+    viralizaram: itens.filter((i) => i.viralizou).length,
+    desempenhoPorTipo,
+    itens: ranking.slice(0, lim),
+    avisos,
+    geradoEm: new Date().toISOString(),
+  };
+}
+
 module.exports = {
   PERFIL_VIRAL,
   TAXONOMIA,
@@ -719,5 +862,6 @@ module.exports = {
   curarPautasVirais,
   gerarDePautas,
   sincronizarPautasUsadas,
+  analisarDesempenhoPagina,
   proximoSlotSugerido,
 };
