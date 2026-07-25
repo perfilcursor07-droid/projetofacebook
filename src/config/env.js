@@ -56,8 +56,12 @@ const env = {
   scrapeCreatorsApiKey: process.env.SCRAPECREATORS_API_KEY || '',
   /** ElevenLabs — narração humanizada para Reels (imagem + voz) */
   elevenLabsApiKey: process.env.ELEVENLABS_API_KEY || '',
-  /** Voice ID da biblioteca ElevenLabs (padrão: Rachel — multilingual) */
-  elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM',
+  /**
+   * Voice ID de My Voices (https://elevenlabs.io/app/voice-lab).
+   * Vazio = o app escolhe automaticamente uma voz da conta.
+   * Plano Free: NÃO use Voice Library — só My Voices / defaults da conta.
+   */
+  elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID || '',
   elevenLabsModelId: process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2',
   /** Apify — Radar Face (Trends + posts públicos FB) */
   apifyToken: process.env.APIFY_TOKEN || '',
