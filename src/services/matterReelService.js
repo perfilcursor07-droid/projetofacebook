@@ -149,88 +149,44 @@ async function resolveImagemPrincipal(matter) {
 }
 
 /**
- * Busca imagens extras alinhadas ao tema da matéria (SerpApi/Serper/Brave/Pexels via imageSuggest).
- */
-async function buscarUrlsExtras(matter, { limite = 7 } = {}) {
-  const urls = [];
-  const imagemAtual =
-    matter.imagem_fonte_url ||
-    (!matter.imagem_path && /^https?:\/\//i.test(String(matter.imagem_url || ''))
-      ? matter.imagem_url
-      : null);
-
-  try {
-    const { sugerirImagensParaMateria } = require('./imageSuggestService');
-    const result = await sugerirImagensParaMateria({
-      titulo: matter.titulo,
-      materia: matter.materia,
-      fonteTitulo: matter.fonte_titulo,
-      imagemAtual,
-      limite: limite + 1,
-    });
-    for (const img of result.imagens || []) {
-      if (img.origem === 'fonte' || img.id === 'atual') continue;
-      if (img.url && /^https?:\/\//i.test(img.url)) urls.push(img.url);
-    }
-  } catch (err) {
-    console.warn('[matterReel] sugerir imagens:', err.message);
-  }
-
-  // Fallback leve: Pexels com o título
-  if (urls.length < 2 && env.pexelsApiKey) {
-    try {
-      const pexelsService = require('./pexelsService');
-      const termo = String(matter.titulo || '')
-        .replace(/[^\w\sÀ-ÿ]/gi, ' ')
-        .trim()
-        .slice(0, 80);
-      if (termo) {
-        const result = await pexelsService.searchPhotos(termo, {
-          perPage: 6,
-          orientation: 'portrait',
-        });
-        for (const p of result.photos || []) {
-          if (p.urlOriginal) urls.push(p.urlOriginal);
-        }
-      }
-    } catch (err) {
-      console.warn('[matterReel] pexels fallback:', err.message);
-    }
-  }
-
-  return [...new Set(urls)].slice(0, limite);
-}
-
-/**
- * Lista de slides locais: arte principal + extras baixados.
- * Se só houver 1, repete com zooms diferentes (ainda anima).
+ * Imagens do Reel: SOMENTE as da própria matéria (arte Minha marca + foto da fonte).
+ * Nunca busca Google/Pexels/stock — evita pessoas/cenas sem relação (e conteúdo impróprio).
  */
 async function montarSlides(matter, { maxImagens = MAX_SLIDE_IMAGES } = {}) {
   const cleanups = [];
   const paths = [];
+  const seen = new Set();
 
+  function addPath(absPath, cleanup = null) {
+    if (!absPath || !fs.existsSync(absPath)) return;
+    const key = path.resolve(absPath);
+    if (seen.has(key)) return;
+    seen.add(key);
+    paths.push(absPath);
+    if (cleanup) cleanups.push(cleanup);
+  }
+
+  // 1) Arte / capa da matéria (obrigatória)
   const principal = await resolveImagemPrincipal(matter);
-  paths.push(principal.absPath);
-  if (principal.cleanup) cleanups.push(principal.cleanup);
+  addPath(principal.absPath, principal.cleanup);
 
-  const extras = await buscarUrlsExtras(matter, { limite: maxImagens - 1 });
-  const stamp = `${matter.id}_${Date.now()}`;
-  for (const url of extras) {
-    if (paths.length >= maxImagens) break;
+  // 2) Foto original da fonte (se existir e for diferente da arte)
+  const fonteUrl = String(matter.imagem_fonte_url || '').trim();
+  if (/^https?:\/\//i.test(fonteUrl) && paths.length < maxImagens) {
     try {
-      const local = await downloadImageToTemp(url, stamp);
-      if (local) {
-        paths.push(local);
-        cleanups.push(local);
-      }
+      const stamp = `fonte_${matter.id}_${crypto.randomBytes(3).toString('hex')}`;
+      const local = await downloadImageToTemp(fonteUrl, stamp);
+      if (local) addPath(local, local);
     } catch (err) {
-      console.warn('[matterReel] download slide:', err.message);
+      console.warn('[matterReel] imagem fonte:', err.message);
     }
   }
 
-  // Garante pelo menos 3 “batidas” visuais (reusa a principal se faltar foto)
-  while (paths.length < 3) {
-    paths.push(paths[0]);
+  // 3) Variedade visual = reutilizar a(s) imagem(ns) da matéria com zooms diferentes
+  //    (NÃO baixar stock / pessoas aleatórias)
+  const base = [...paths];
+  while (paths.length < Math.min(3, maxImagens) && base.length) {
+    paths.push(base[paths.length % base.length]);
   }
 
   return { paths: paths.slice(0, maxImagens), cleanups };
@@ -290,23 +246,32 @@ function writeSuspenseBgmWav(outputPath, seconds) {
 }
 
 /**
- * Um slide com zoom Ken Burns (entra ou sai).
+ * Um slide com zoom Ken Burns (entra/sai + leve pan).
+ * Variants evitam monotonia quando a mesma foto da matéria se repete.
  */
-function imageToKenBurnsClip({ imagePath, outputPath, durationSec, zoomIn = true }) {
+function imageToKenBurnsClip({ imagePath, outputPath, durationSec, zoomIn = true, variant = 0 }) {
   const w = even(REEL_W);
   const h = even(REEL_H);
   const dur = Math.max(MIN_SLIDE_SEC, Number(durationSec) || MIN_SLIDE_SEC);
   const frames = Math.max(Math.round(dur * OUTPUT_FPS), Math.round(MIN_SLIDE_SEC * OUTPUT_FPS));
 
-  // Zoom suave; zoomIn sobe de 1.0→1.2, zoomOut desce de 1.2→1.0
   const zExpr = zoomIn
     ? `min(1.0+0.00115*on,1.2)`
     : `max(1.2-0.00115*on,1.0)`;
 
+  // Pan leve em direções diferentes (só na foto da matéria — sem pessoas aleatórias)
+  const pans = [
+    { x: `iw/2-(iw/zoom/2)`, y: `ih/2-(ih/zoom/2)` },
+    { x: `iw/2-(iw/zoom/2)+20`, y: `ih/2-(ih/zoom/2)-30` },
+    { x: `iw/2-(iw/zoom/2)-25`, y: `ih/2-(ih/zoom/2)+15` },
+    { x: `(iw-iw/zoom)/2+(on*0.15)`, y: `ih/2-(ih/zoom/2)` },
+  ];
+  const pan = pans[Math.abs(Number(variant) || 0) % pans.length];
+
   const vf = [
     `scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase`,
     `crop=${w * 2}:${h * 2}`,
-    `zoompan=z='${zExpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${OUTPUT_FPS}`,
+    `zoompan=z='${zExpr}':x='${pan.x}':y='${pan.y}':d=${frames}:s=${w}x${h}:fps=${OUTPUT_FPS}`,
     `eq=contrast=1.05:saturation=1.08:brightness=-0.02`,
   ].join(',');
 
@@ -523,6 +488,7 @@ async function gerarReelNarrado({ userId, matterId }) {
           outputPath: clipOut,
           durationSec: durs[i],
           zoomIn: i % 2 === 0,
+          variant: i,
         });
         clipPaths.push(clipOut);
       }

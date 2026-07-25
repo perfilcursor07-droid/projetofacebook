@@ -1113,8 +1113,8 @@
     const btn = document.getElementById('btn-gerar-reel');
     const regenerar = btn?.dataset?.hasVideo === '1';
     const msg = regenerar
-      ? 'Regenerar o Reel narrado?\n\nSlideshow com várias imagens + voz suspense + música de fundo. Pode levar 2–3 minutos.'
-      : 'Gerar Reel narrado?\n\nBusca imagens do tema, anima em slideshow, narra com voz suspense e trilha baixa. Pode levar 2–3 minutos.';
+      ? 'Regenerar o Reel narrado?\n\nAnima a arte/foto da matéria + voz suspense + música. Pode levar 1–2 minutos.'
+      : 'Gerar Reel narrado?\n\nUsa só a imagem desta matéria (sem fotos aleatórias), narração suspense e trilha. Pode levar 1–2 minutos.';
     if (!confirm(msg)) return;
 
     const statusEl = document.getElementById('matter-status');
@@ -1124,7 +1124,7 @@
     }
     if (statusEl) {
       statusEl.classList.remove('hidden');
-      statusEl.textContent = 'Buscando imagens, narrando (suspense) e montando slideshow 9:16…';
+      statusEl.textContent = 'Narrando (suspense) e animando a imagem da matéria…';
     }
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/gerar-reel', {
