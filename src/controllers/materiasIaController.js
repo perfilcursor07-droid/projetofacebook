@@ -526,6 +526,20 @@ async function listMinhasMaterias(req, res, next) {
     const perPage = 10;
     const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
 
+    // Aba Viralizou: sincroniza engajamento das publicadas recentes ANTES de filtrar
+    // (senão posts que viralizaram no FB mas ainda sem dado no banco não aparecem)
+    let engajamentoSync = null;
+    if (statusFilter === 'viralizou') {
+      try {
+        engajamentoSync = await materiaIaService.sincronizarEngajamentoRecentes(req.session.userId, {
+          limit: 35,
+          concurrency: 3,
+        });
+      } catch (err) {
+        console.warn('[minhas-materias] sync engajamento:', err.message);
+      }
+    }
+
     const [statusCounts, total] = await Promise.all([
       AiMatters.countByStatusForUser(req.session.userId, { q }),
       AiMatters.countByUserWithPub(req.session.userId, {
@@ -551,6 +565,7 @@ async function listMinhasMaterias(req, res, next) {
       searchQuery: q,
       statusFilter,
       statusCounts,
+      engajamentoSync,
       pagination: {
         page: safePage,
         perPage,
@@ -645,6 +660,21 @@ async function atualizarViews(req, res, next) {
     const force = req.query.force === '1' || req.body?.force === true;
     const result = await materiaIaService.atualizarViewsDaMateria(req.session.userId, matterId, {
       force,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+/** Sincroniza engajamento das publicadas recentes (lote). */
+async function sincronizarEngajamento(req, res, next) {
+  try {
+    const limit = Math.min(50, Math.max(5, Number(req.body?.limit || req.query?.limit) || 35));
+    const result = await materiaIaService.sincronizarEngajamentoRecentes(req.session.userId, {
+      limit,
+      concurrency: 3,
     });
     res.json({ ok: true, ...result });
   } catch (err) {
@@ -1229,6 +1259,7 @@ module.exports = {
   gerarVariacao,
   gerarReel,
   atualizarViews,
+  sincronizarEngajamento,
   agendar,
   monitorCriar,
   monitorLista,

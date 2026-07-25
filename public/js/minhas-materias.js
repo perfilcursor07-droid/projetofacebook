@@ -15,7 +15,7 @@
     const c = Number(comments) || 0;
     const v = Number(views) || 0;
     const score = l + c * 3 + Math.min(v, 5000) / 50;
-    if (score >= 400 || l >= 200 || c >= 50) {
+    if (score >= 180 || l >= 80 || c >= 25) {
       return { label: 'Viralizou', cls: 'bg-rose-500/20 text-rose-200 ring-rose-500/30' };
     }
     if (score >= 80 || l >= 40 || c >= 10) {
@@ -257,5 +257,17 @@
     });
   } else {
     setTimeout(autoAtualizarEngajamento, 100);
+  }
+
+  // Em outras abas: sync em background das publicadas (alimenta a aba Viralizou)
+  const params = new URLSearchParams(window.location.search || '');
+  if (params.get('status') !== 'viralizou') {
+    setTimeout(() => {
+      fetch('/api/materias-ia/matters/sincronizar-engajamento', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 30 }),
+      }).catch(() => {});
+    }, 1500);
   }
 })();

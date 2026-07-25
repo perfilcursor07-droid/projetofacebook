@@ -28,6 +28,7 @@ router.post('/matters/:id/publicar', controller.publicar);
 router.post('/matters/:id/agendar', controller.agendar);
 router.post('/matters/:id/variacao', controller.gerarVariacao);
 router.post('/matters/:id/gerar-reel', controller.gerarReel);
+router.post('/matters/sincronizar-engajamento', controller.sincronizarEngajamento);
 router.post('/matters/:id/views', controller.atualizarViews);
 router.get('/matters/:id/views', controller.atualizarViews);
 router.post('/matters/:id/sugerir-titulo', controller.sugerirTitulo);

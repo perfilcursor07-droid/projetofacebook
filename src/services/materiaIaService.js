@@ -1929,7 +1929,8 @@ function classificarViral(pub) {
   const shares = Number(pub?.fb_shares) || 0;
   const views = Number(pub?.fb_views) || 0;
   const score = likes + comments * 3 + shares * 5 + Math.min(views, 5000) / 50;
-  if (score >= 400 || likes >= 200 || comments >= 50) {
+  // Ajustado p/ páginas gospel/mid-size (antes: 400 / 200 / 50 — quase ninguém entrava)
+  if (score >= 180 || likes >= 80 || comments >= 25) {
     return { nivel: 'alto', label: 'Viralizou', score: Math.round(score) };
   }
   if (score >= 80 || likes >= 40 || comments >= 10) {
@@ -1939,6 +1940,62 @@ function classificarViral(pub) {
     return { nivel: 'baixo', label: 'Baixo', score: Math.round(score) };
   }
   return { nivel: 'desconhecido', label: 'Sem dado', score: 0 };
+}
+
+/** True se entra na aba Viralizou (Bom + Viralizou). */
+function isDestaqueEngajamento(pubOrViral) {
+  if (pubOrViral?.nivel) {
+    return pubOrViral.nivel === 'alto' || pubOrViral.nivel === 'medio';
+  }
+  const v = classificarViral(pubOrViral);
+  return v.nivel === 'alto' || v.nivel === 'medio';
+}
+
+/**
+ * Sincroniza curtidas/comentários/views das publicações recentes (cache 30 min).
+ * Necessário para a aba Viralizou enxergar posts que ainda não tinham dado no banco.
+ */
+async function sincronizarEngajamentoRecentes(userId, { limit = 30, concurrency = 3 } = {}) {
+  const matters = await AiMatters.findRecentPublishedForSync(userId, limit);
+  if (!matters.length) {
+    return { checked: 0, updated: 0, destaques: 0, items: [] };
+  }
+
+  const items = [];
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < matters.length) {
+      const idx = cursor++;
+      const m = matters[idx];
+      try {
+        const r = await atualizarViewsDaMateria(userId, m.id, { force: false });
+        const destaque = isDestaqueEngajamento(r.viral || r);
+        items[idx] = {
+          matterId: m.id,
+          likes: r.likes,
+          comments: r.comments,
+          views: r.views,
+          viral: r.viral || null,
+          cached: Boolean(r.cached),
+          destaque,
+        };
+      } catch (err) {
+        items[idx] = { matterId: m.id, error: err.message, destaque: false };
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, matters.length) }, () => worker());
+  await Promise.all(workers);
+
+  const ok = items.filter((i) => i && !i.error);
+  return {
+    checked: matters.length,
+    updated: ok.filter((i) => !i.cached).length,
+    destaques: ok.filter((i) => i.destaque).length,
+    items: ok,
+  };
 }
 
 /**
@@ -2273,6 +2330,8 @@ module.exports = {
   gerarVariacaoDeMateria,
   gerarMateriaManual,
   atualizarViewsDaMateria,
+  sincronizarEngajamentoRecentes,
+  classificarViral,
   syncConteudoReelMatter,
   limparTextoReelSocial,
   tituloCurtoReel,

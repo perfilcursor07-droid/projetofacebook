@@ -344,6 +344,7 @@ function imageToKenBurnsClip({ imagePath, outputPath, durationSec, zoomIn = true
 }
 
 function concatClips(clipPaths, outputPath) {
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   const listFile = tempPath(`concat_${crypto.randomBytes(6).toString('hex')}.txt`);
   // concat demuxer: caminhos absolutos com / (funciona no Windows também)
   const body = clipPaths
@@ -376,6 +377,7 @@ function concatClips(clipPaths, outputPath) {
  */
 function mixVideoVoiceBgm({ videoPath, voicePath, bgmPath, outputPath, durationSec }) {
   const dur = Math.min(MAX_AUDIO_SECONDS, Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30));
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
   return new Promise((resolve, reject) => {
     ffmpeg()
@@ -488,6 +490,7 @@ async function gerarReelNarrado({ userId, matterId }) {
   const silentVideoAbs = tempPath(`reel_vid_${stamp}.mp4`);
   const videoRel = path.join('reels', `matter_${matter.id}`, `narrado_${stamp}.mp4`).replace(/\\/g, '/');
   const videoAbs = storageAbs(videoRel);
+  fs.mkdirSync(path.dirname(videoAbs), { recursive: true });
 
   const slides = await montarSlides(matter);
   const clipPaths = [];

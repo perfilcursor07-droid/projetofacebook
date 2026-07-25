@@ -16,17 +16,18 @@ function prepare(data) {
 }
 
 /**
- * Critério "Viralizou" (mesmo de classificarViral nivel alto):
- * score >= 400 OU likes >= 200 OU comments >= 50
- * score = likes + comments*3 + shares*5 + min(views,5000)/50
+ * Critério da aba "Viralizou": posts com Bom OU Viralizou
+ * (score >= 80 OU likes >= 40 OU comments >= 10).
+ * Antes só entrava o nível "alto" (muito restrito) e posts sem engajamento
+ * sincronizado no banco ficavam de fora.
  */
 function applyViralizouFilter(query) {
   return query.where(function viralWhere() {
     this.whereRaw(
-      `(COALESCE(publications.fb_likes, 0) + COALESCE(publications.fb_comments, 0) * 3 + COALESCE(publications.fb_shares, 0) * 5 + LEAST(COALESCE(publications.fb_views, 0), 5000) / 50) >= 400`
+      `(COALESCE(publications.fb_likes, 0) + COALESCE(publications.fb_comments, 0) * 3 + COALESCE(publications.fb_shares, 0) * 5 + LEAST(COALESCE(publications.fb_views, 0), 5000) / 50) >= 80`
     )
-      .orWhere('publications.fb_likes', '>=', 200)
-      .orWhere('publications.fb_comments', '>=', 50);
+      .orWhere('publications.fb_likes', '>=', 40)
+      .orWhere('publications.fb_comments', '>=', 10);
   });
 }
 
@@ -164,6 +165,19 @@ const AiMatters = {
 
   deleteByUser(id, userId) {
     return db(this.table).where({ id, user_id: userId }).del();
+  },
+
+  /** Publicadas recentes (com publication_id) para sincronizar engajamento. */
+  findRecentPublishedForSync(userId, limit = 30) {
+    return db(this.table)
+      .where('user_id', userId)
+      .whereNotNull('publication_id')
+      .where(function statusPub() {
+        this.where('status', 'publicado').orWhereNotNull('published_at');
+      })
+      .orderByRaw('COALESCE(published_at, updated_at, created_at) DESC')
+      .limit(Math.max(1, Math.min(60, Number(limit) || 30)))
+      .select('id', 'publication_id', 'titulo', 'status');
   },
 };
 

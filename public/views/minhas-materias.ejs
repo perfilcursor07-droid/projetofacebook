@@ -42,7 +42,7 @@
     const c = Number(comments) || 0;
     const v = Number(views) || 0;
     const score = l + c * 3 + Math.min(v, 5000) / 50;
-    if (score >= 400 || l >= 200 || c >= 50) {
+    if (score >= 180 || l >= 80 || c >= 25) {
       return { nivel: 'alto', label: 'Viralizou', cls: 'bg-rose-500/20 text-rose-200 ring-rose-500/30' };
     }
     if (score >= 80 || l >= 40 || c >= 10) {
@@ -155,12 +155,22 @@
       <% }) %>
     </div>
 
+    <% if (activeStatus === 'viralizou') { %>
+      <p class="mt-2 text-[11px] text-slate-500">
+        Mostra posts com engajamento <span class="text-rose-300">Viralizou</span> ou <span class="text-amber-300">Bom</span>
+        (a partir de ~10 comentários ou ~40 curtidas). Ao abrir esta aba, o sistema atualiza as publicações recentes no Facebook.
+        <% if (typeof engajamentoSync !== 'undefined' && engajamentoSync) { %>
+          <span class="text-slate-400">· Sync: <%= engajamentoSync.checked || 0 %> posts · <%= engajamentoSync.destaques || 0 %> em destaque</span>
+        <% } %>
+      </p>
+    <% } %>
+
     <% if (!mattersList.length) { %>
       <p class="mt-4 rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
         <%= q
           ? 'Nenhuma matéria encontrada para essa busca.'
           : (activeStatus === 'viralizou'
-            ? 'Nenhuma matéria viralizou ainda (critério: alto engajamento no Facebook).'
+            ? 'Nenhuma matéria com bom engajamento ainda. Abra Publicadas para sincronizar curtidas/comentários, ou aguarde o sync automático desta aba.'
             : (activeStatus !== 'all' ? 'Nenhuma matéria neste status.' : 'Nenhuma matéria gerada ainda.')) %>
         <a href="<%= q || activeStatus !== 'all' ? '/minhas-materias' : '/conteudo' %>" class="mt-2 block text-emerald-400 hover:text-emerald-300">
           <%= q || activeStatus !== 'all' ? 'Ver todas →' : 'Criar conteúdo →' %>
