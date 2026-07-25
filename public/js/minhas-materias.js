@@ -148,10 +148,10 @@
       const msg = regenerar
         ? 'Regenerar o Reel narrado de "' +
           titulo +
-          '"?\n\nA voz (ElevenLabs) + imagem serão montadas de novo. Pode levar 1–2 minutos.'
+          '"?\n\nSlideshow + voz suspense + música. Pode levar 2–3 minutos.'
         : 'Gerar Reel narrado de "' +
           titulo +
-          '"?\n\nUsa a imagem da matéria + narração em voz (ElevenLabs). Pode levar 1–2 minutos.';
+          '"?\n\nVárias imagens do tema animadas + narração suspense + trilha. Pode levar 2–3 minutos.';
       if (!confirm(msg)) return;
 
       reelBtn.disabled = true;

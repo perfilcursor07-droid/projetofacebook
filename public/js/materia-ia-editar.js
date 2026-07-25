@@ -1113,18 +1113,18 @@
     const btn = document.getElementById('btn-gerar-reel');
     const regenerar = btn?.dataset?.hasVideo === '1';
     const msg = regenerar
-      ? 'Regenerar o Reel narrado?\n\nVoz (ElevenLabs) + imagem → vídeo 9:16. Pode levar 1–2 minutos.'
-      : 'Gerar Reel narrado?\n\nUsa a imagem desta matéria + narração em voz (ElevenLabs). Pode levar 1–2 minutos.';
+      ? 'Regenerar o Reel narrado?\n\nSlideshow com várias imagens + voz suspense + música de fundo. Pode levar 2–3 minutos.'
+      : 'Gerar Reel narrado?\n\nBusca imagens do tema, anima em slideshow, narra com voz suspense e trilha baixa. Pode levar 2–3 minutos.';
     if (!confirm(msg)) return;
 
     const statusEl = document.getElementById('matter-status');
     if (btn) {
       btn.disabled = true;
-      btn.textContent = 'Narrando e montando…';
+      btn.textContent = 'Montando Reel…';
     }
     if (statusEl) {
       statusEl.classList.remove('hidden');
-      statusEl.textContent = 'Gerando áudio (ElevenLabs) e montando Reel 9:16…';
+      statusEl.textContent = 'Buscando imagens, narrando (suspense) e montando slideshow 9:16…';
     }
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/gerar-reel', {

@@ -83,7 +83,10 @@ function escolherVozLivre(voices) {
     if (cat === 'cloned' || cat === 'generated' || cat === 'professional') s += 40;
     if (cat === 'premade') s += 25;
     if (/pt|brazil|portugu/.test(lang) || /brazil|portugu|br\b/.test(name)) s += 30;
-    if (/multilingual|narrative|news|radio|anchor/.test(name)) s += 10;
+    if (/suspense|dramatic|dark|deep|grave|narrat|news|radio|anchor|mister|thriller/.test(name)) {
+      s += 35;
+    }
+    if (/multilingual|narrative/.test(name)) s += 10;
     return s;
   };
 
@@ -133,19 +136,31 @@ function mensagemErroAmigavel(raw) {
   return message;
 }
 
-async function ttsRequest(vid, text) {
+/** Config de voz: suspense = mais variação / estilo dramático (Reels gospel/notícia). */
+const VOICE_PRESETS = {
+  suspense: {
+    stability: 0.28,
+    similarity_boost: 0.82,
+    style: 0.72,
+    use_speaker_boost: true,
+  },
+  natural: {
+    stability: 0.45,
+    similarity_boost: 0.75,
+    style: 0.35,
+    use_speaker_boost: true,
+  },
+};
+
+async function ttsRequest(vid, text, { estilo = 'suspense' } = {}) {
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(vid)}`;
+  const voice_settings = VOICE_PRESETS[estilo] || VOICE_PRESETS.suspense;
   const response = await axios.post(
     url,
     {
       text,
       model_id: modelId(),
-      voice_settings: {
-        stability: 0.45,
-        similarity_boost: 0.75,
-        style: 0.35,
-        use_speaker_boost: true,
-      },
+      voice_settings,
     },
     {
       headers: {
@@ -187,7 +202,7 @@ async function ttsRequest(vid, text) {
  * @param {{ texto: string, outputPath?: string }} opts
  * @returns {Promise<{ buffer: Buffer, outputPath: string|null, chars: number, voiceId: string }>}
  */
-async function synthetizar({ texto, outputPath = null } = {}) {
+async function synthetizar({ texto, outputPath = null, estilo = 'suspense' } = {}) {
   if (!isConfigured()) {
     const err = new Error(
       'ELEVENLABS_API_KEY não configurada. Crie em https://elevenlabs.io e adicione no .env'
@@ -214,7 +229,7 @@ async function synthetizar({ texto, outputPath = null } = {}) {
   let buffer;
 
   try {
-    buffer = await ttsRequest(vid, text);
+    buffer = await ttsRequest(vid, text, { estilo });
   } catch (firstErr) {
     // Free + Voice Library: tenta outra voz da conta automaticamente
     if (isLibraryVoiceError(firstErr.message)) {
@@ -229,7 +244,7 @@ async function synthetizar({ texto, outputPath = null } = {}) {
       let last = firstErr;
       for (const alt of unique.slice(0, 5)) {
         try {
-          buffer = await ttsRequest(alt, text);
+          buffer = await ttsRequest(alt, text, { estilo });
           vid = alt;
           last = null;
           break;
