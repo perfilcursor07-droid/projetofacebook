@@ -22,8 +22,9 @@ const MAX_AUDIO_SECONDS = 90;
 const MAX_SLIDE_IMAGES = 8;
 const MIN_SLIDE_SEC = 3.2;
 const MAX_SLIDE_SEC = 7.5;
-/** Volume da trilha de suspense (0–1) — bem abaixo da voz */
-const BGM_VOLUME = 0.11;
+/** Volume da trilha de suspense (0–1). amix com normalize=0 — audível no celular sem cobrir a voz */
+const BGM_VOLUME = 0.32;
+const VOICE_VOLUME = 1.05;
 
 function storageAbs(relative) {
   return path.resolve(env.storagePath, relative);
@@ -193,7 +194,8 @@ async function montarSlides(matter, { maxImagens = MAX_SLIDE_IMAGES } = {}) {
 }
 
 /**
- * Trilha de suspense gerada em PCM (sem lavfi) — drone grave + harmônicos.
+ * Trilha de suspense gerada em PCM (sem lavfi).
+ * Inclui médios (~200–400 Hz) para celular ouvir; só grave some no alto-falante do phone.
  */
 function writeSuspenseBgmWav(outputPath, seconds) {
   const sampleRate = 48000;
@@ -218,29 +220,32 @@ function writeSuspenseBgmWav(outputPath, seconds) {
   buffer.write('data', 36);
   buffer.writeUInt32LE(dataSize, 40);
 
-  const freqs = [48, 72, 96, 144]; // Hz — clima tenso / gospel suspense
-  const amps = [0.22, 0.14, 0.1, 0.06];
+  // Acorde menor tenso (Hz) — graves + médios audíveis no phone
+  const freqs = [55, 82.5, 110, 165, 220, 330, 440];
+  const amps = [0.18, 0.16, 0.14, 0.12, 0.11, 0.08, 0.05];
 
   for (let i = 0; i < numSamples; i++) {
     const t = i / sampleRate;
-    // LFO lento (~0.08 Hz) + segundo LFO para “respiração”
-    const lfo = 0.55 + 0.45 * Math.sin(2 * Math.PI * 0.07 * t);
-    const pulse = 0.85 + 0.15 * Math.sin(2 * Math.PI * 0.35 * t);
+    const lfo = 0.62 + 0.38 * Math.sin(2 * Math.PI * 0.09 * t);
+    const pulse = 0.8 + 0.2 * Math.sin(2 * Math.PI * 0.42 * t);
+    // Hit ritmado leve (~cada 2s) — sensação de trilha, não só zumbido
+    const beat = 1 + 0.35 * Math.max(0, Math.sin(2 * Math.PI * 0.5 * t)) ** 8;
+
     let sample = 0;
     for (let f = 0; f < freqs.length; f++) {
       sample += amps[f] * Math.sin(2 * Math.PI * freqs[f] * t);
     }
-    // Ruído rosa bem baixo
-    sample += (Math.random() * 2 - 1) * 0.012;
-    sample *= lfo * pulse * 0.35;
+    sample += (Math.random() * 2 - 1) * 0.018;
+    sample *= lfo * pulse * beat * 0.55;
 
     let intSample = Math.max(-1, Math.min(1, sample));
-    intSample = Math.round(intSample * 28000);
+    intSample = Math.round(intSample * 30000);
     const offset = 44 + i * blockAlign;
     buffer.writeInt16LE(intSample, offset);
     buffer.writeInt16LE(intSample, offset + 2);
   }
 
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, buffer);
   return outputPath;
 }
@@ -338,7 +343,8 @@ function concatClips(clipPaths, outputPath) {
 }
 
 /**
- * Junta vídeo (sem áudio) + voz + BGM baixa.
+ * Junta vídeo (sem áudio) + voz + BGM.
+ * normalize=0 no amix: sem isso o ffmpeg divide o volume e a trilha some.
  */
 function mixVideoVoiceBgm({ videoPath, voicePath, bgmPath, outputPath, durationSec }) {
   const dur = Math.min(MAX_AUDIO_SECONDS, Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30));
@@ -350,9 +356,9 @@ function mixVideoVoiceBgm({ videoPath, voicePath, bgmPath, outputPath, durationS
       .input(voicePath)
       .input(bgmPath)
       .complexFilter([
-        `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1.0[voice]`,
-        `[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${BGM_VOLUME}[bgm]`,
-        `[voice][bgm]amix=inputs=2:duration=first:dropout_transition=2,alimiter=limit=0.95[aout]`,
+        `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${VOICE_VOLUME}[voice]`,
+        `[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${BGM_VOLUME},afade=t=in:st=0:d=0.8[bgm]`,
+        `[voice][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`,
       ])
       .outputOptions([
         '-map',
@@ -381,6 +387,53 @@ function mixVideoVoiceBgm({ videoPath, voicePath, bgmPath, outputPath, durationS
   });
 }
 
+/** Fallback se amix/afade falhar no build do servidor: mix mais simples. */
+function mixVideoVoiceBgmSimple({ videoPath, voicePath, bgmPath, outputPath, durationSec }) {
+  const dur = Math.min(MAX_AUDIO_SECONDS, Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30));
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(videoPath)
+      .input(voicePath)
+      .input(bgmPath)
+      .complexFilter([
+        `[1:a]volume=${VOICE_VOLUME}[voice]`,
+        `[2:a]volume=${BGM_VOLUME}[bgm]`,
+        `[voice][bgm]amix=inputs=2:duration=first:normalize=0[aout]`,
+      ])
+      .outputOptions([
+        '-map',
+        '0:v:0',
+        '-map',
+        '[aout]',
+        '-c:v',
+        'copy',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-t',
+        String(dur),
+        '-shortest',
+        '-movflags',
+        '+faststart',
+      ])
+      .on('error', reject)
+      .on('end', () => resolve(outputPath))
+      .save(outputPath);
+  });
+}
+
+async function mixVideoVoiceBgmSafe(opts) {
+  try {
+    return await mixVideoVoiceBgm(opts);
+  } catch (err) {
+    console.warn('[matterReel] mix BGM principal falhou, tentando simples:', err.message);
+    return mixVideoVoiceBgmSimple(opts);
+  }
+}
+
 /**
  * Fallback: um Ken Burns longo + mix voz/BGM (se o slideshow multi-clip falhar).
  */
@@ -393,7 +446,7 @@ async function singleImageWithAudio({ imagePath, voicePath, bgmPath, outputPath,
       durationSec,
       zoomIn: true,
     });
-    await mixVideoVoiceBgm({
+    await mixVideoVoiceBgmSafe({
       videoPath: silent,
       voicePath,
       bgmPath,
@@ -494,7 +547,7 @@ async function gerarReelNarrado({ userId, matterId }) {
       }
 
       await concatClips(clipPaths, silentVideoAbs);
-      await mixVideoVoiceBgm({
+      await mixVideoVoiceBgmSafe({
         videoPath: silentVideoAbs,
         voicePath: audioAbs,
         bgmPath: bgmAbs,
