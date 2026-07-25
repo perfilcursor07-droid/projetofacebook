@@ -2,10 +2,10 @@
   let miaTopicos = [];
   const statusMia = document.getElementById('mia-status');
   const listEl = document.getElementById('mia-topicos');
-  const pageSelect = document.getElementById('mia-page');
   const generatingEl = document.getElementById('mia-generating');
   const generatingText = document.getElementById('mia-generating-text');
-  if (!pageSelect) return;
+  // A Página de destino vem da página padrão da conta logada (definida em /paginas).
+  if (!statusMia && !listEl) return;
 
   function escapeHtml(text) {
     return String(text || '')
@@ -39,40 +39,6 @@
     generatingEl.classList.toggle('hidden', !on);
     document.body.style.overflow = on ? 'hidden' : '';
   }
-
-  async function loadPages() {
-    try {
-      const res = await fetch('/api/facebook/pages');
-      const data = await res.json();
-      const pages = data.pages || [];
-      const preferred =
-        Number(data.default_facebook_page_id) ||
-        (pages.find((p) => p.is_default)?.id) ||
-        null;
-      const selects = document.querySelectorAll('.mia-page-select');
-      const html = !pages.length
-        ? '<option value="">Conecte uma página em /paginas</option>'
-        : pages
-            .map((p) => {
-              const selected = Number(p.id) === Number(preferred) ? ' selected' : '';
-              const tag = p.is_default ? ' · padrão' : '';
-              return `<option value="${p.id}"${selected}>${escapeHtml(p.page_name)}${tag}</option>`;
-            })
-            .join('');
-      selects.forEach((el) => {
-        el.innerHTML = html;
-      });
-      if (!selects.length && pageSelect) {
-        pageSelect.innerHTML = html;
-      }
-    } catch {
-      document.querySelectorAll('.mia-page-select').forEach((el) => {
-        el.innerHTML = '<option value="">Erro ao carregar páginas</option>';
-      });
-      if (pageSelect) pageSelect.innerHTML = '<option value="">Erro ao carregar páginas</option>';
-    }
-  }
-  loadPages();
 
   document.querySelectorAll('.mia-modo-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -170,7 +136,6 @@
     const tipoEl = document.getElementById('mia-tipo');
     const payload = {
       topicos: topicos.slice(0, 8),
-      facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
       tipoPublicacao: tipoEl ? tipoEl.value : 'foto',
     };
     try {
@@ -225,7 +190,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topico: sel[0],
-          facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
           tipoPublicacao: tipoEl ? tipoEl.value : 'foto',
           status: 'rascunho',
         }),
@@ -280,7 +244,6 @@
           periodo,
           incluirRedes: onde === 'tudo',
           somenteRedes: onde === 'redes',
-          facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
           filtrarPeriodo: true,
         }),
       });
@@ -307,7 +270,6 @@
         body: JSON.stringify({
           palavrasExtras: document.getElementById('mia-alta-extras').value,
           horas: 24,
-          facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
         }),
       });
       const data = await res.json();
@@ -336,7 +298,6 @@
           palavrasExtras: document.getElementById('mia-radar-extras')?.value || '',
           url,
           force: !!force,
-          facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
         }),
       });
       const data = await res.json();
@@ -399,7 +360,6 @@
   document.getElementById('mia-btn-link')?.addEventListener('click', async () => {
     const st = document.getElementById('mia-link-status');
     const urlEl = document.getElementById('mia-link-url');
-    const pageEl = document.getElementById('mia-link-page');
     const tipoEl = document.getElementById('mia-link-tipo');
     const url = (urlEl?.value || '').trim();
     if (!url) {
@@ -457,7 +417,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url,
-          facebookPageId: pageEl?.value ? Number(pageEl.value) : null,
           tipoPublicacao: tipo,
           status: 'rascunho',
           textoManual: textoManual || undefined,
@@ -565,17 +524,12 @@
 
   document.getElementById('mia-btn-auto')?.addEventListener('click', async () => {
     const st = document.getElementById('mia-auto-status');
-    if (!pageSelect.value) {
-      st.textContent = 'Selecione a Página na aba Buscar';
-      return;
-    }
     st.textContent = 'Criando…';
     try {
       const res = await fetch('/api/materias-ia/monitor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          facebookPageId: Number(pageSelect.value),
           palavrasChave: document.getElementById('mia-auto-kw').value,
           intervaloMinutos: Number(document.getElementById('mia-auto-intervalo').value || 30),
           postsPorCiclo: Number(document.getElementById('mia-auto-qtd').value || 1),
@@ -594,7 +548,6 @@
   document.getElementById('mia-btn-manual')?.addEventListener('click', async () => {
     const st = document.getElementById('mia-manual-status');
     const info = String(document.getElementById('mia-manual-info')?.value || '').trim();
-    const pageEl = document.getElementById('mia-manual-page');
     if (info.length < 20) {
       st.textContent = 'Descreva as informações da matéria (mín. ~20 caracteres)';
       return;
@@ -610,7 +563,6 @@
     if (credito) fd.append('creditoImagem', credito);
     const imagemUrl = String(document.getElementById('mia-manual-imagem-url')?.value || '').trim();
     if (imagemUrl) fd.append('imagemUrl', imagemUrl);
-    if (pageEl?.value) fd.append('facebookPageId', pageEl.value);
     const file = document.getElementById('mia-manual-file')?.files?.[0];
     if (file) fd.append('imagem', file);
 

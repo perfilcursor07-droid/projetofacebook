@@ -22,7 +22,6 @@
       if (!Array.isArray(data?.topicos) || !data.topicos.length) return null;
       return {
         topicos: data.topicos.slice(0, 8),
-        facebookPageId: data.facebookPageId ? Number(data.facebookPageId) : null,
         tipoPublicacao: data.tipoPublicacao === 'texto' ? 'texto' : 'foto',
         progresso: Array.isArray(data.progresso) ? data.progresso : [],
       };
@@ -160,7 +159,6 @@
         credentials: 'same-origin',
         body: JSON.stringify({
           topico: item.topico,
-          facebookPageId: payload.facebookPageId,
           tipoPublicacao: payload.tipoPublicacao,
           status: 'rascunho',
         }),

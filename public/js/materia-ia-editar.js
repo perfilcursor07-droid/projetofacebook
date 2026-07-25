@@ -3,7 +3,6 @@
   if (!cfg?.id) return;
 
   const statusEl = document.getElementById('matter-status');
-  const pageSelect = document.getElementById('matter-page');
   const tituloEl = document.getElementById('matter-titulo');
   const materiaEl = document.getElementById('matter-materia');
   const fonteCreditoEl = document.getElementById('matter-fonte-credito');
@@ -133,56 +132,6 @@
       .replace(/"/g, '&quot;');
   }
 
-  async function loadPages() {
-    const selects = [
-      pageSelect,
-      document.getElementById('matter-nova-link-page'),
-    ].filter(Boolean);
-    if (!selects.length) return;
-    try {
-      const res = await fetch('/api/facebook/pages');
-      const data = await res.json();
-      const pages = data.pages || [];
-      const defaultId =
-        Number(data.default_facebook_page_id) ||
-        Number(pages.find((p) => p.is_default)?.id) ||
-        null;
-
-      // Na publicação da matéria: só a página padrão do perfil (/paginas)
-      let page = defaultId
-        ? pages.find((p) => Number(p.id) === Number(defaultId))
-        : null;
-
-      // Fallback: página já salva na matéria, se não houver padrão definida
-      if (!page && cfg.pageId) {
-        page = pages.find((p) => Number(p.id) === Number(cfg.pageId)) || null;
-      }
-
-      let html;
-      if (!pages.length) {
-        html = '<option value="">Conecte uma página em /paginas</option>';
-      } else if (!page) {
-        html =
-          '<option value="">Defina a página padrão em /paginas</option>';
-      } else {
-        const tag = page.is_default || Number(page.id) === Number(defaultId) ? ' · padrão' : '';
-        html = `<option value="${page.id}" selected>${escapeHtml(page.page_name)}${tag}</option>`;
-      }
-
-      selects.forEach((el) => {
-        el.innerHTML = html;
-        // Uma única opção: trava troca acidental
-        if (page) el.disabled = true;
-        else el.disabled = false;
-      });
-    } catch {
-      selects.forEach((el) => {
-        el.innerHTML = '<option value="">Erro ao carregar páginas</option>';
-        el.disabled = false;
-      });
-    }
-  }
-
   async function salvar() {
     const res = await fetch('/api/materias-ia/matters/' + cfg.id, {
       method: 'PUT',
@@ -192,7 +141,6 @@
         materia: materiaEl.value,
         fonteCredito: fonteCreditoEl ? fonteCreditoEl.value : undefined,
         tipoPublicacao: tipoEl.value,
-        facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
       }),
     });
     const data = await res.json();
@@ -446,11 +394,7 @@
   });
 
   document.getElementById('btn-publicar')?.addEventListener('click', async () => {
-    if (!pageSelect.value) {
-      setStatus('Defina a página padrão em /paginas antes de publicar', true);
-      return;
-    }
-
+    // A Página de destino é sempre a padrão da conta logada, definida em /paginas.
     const publishBtn = document.getElementById('btn-publicar');
     const isRepublish = Boolean(cfg.canRepublish || publishBtn?.dataset.republicar === '1');
     if (isRepublish) {
@@ -477,7 +421,6 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          facebookPageId: Number(pageSelect.value),
           tipoPublicacao: cfg.isReel ? 'reel' : tipoEl.value,
           titulo: tituloEl.value,
           materia: materiaEl.value,
@@ -1046,7 +989,6 @@
 
   document.getElementById('btn-gerar-nova-link')?.addEventListener('click', async () => {
     const url = String(novaLinkUrl?.value || '').trim();
-    const pageEl = document.getElementById('matter-nova-link-page');
     const tipoEl = document.getElementById('matter-nova-link-tipo');
     const st = novaLinkStatus;
     const btn = document.getElementById('btn-gerar-nova-link');
@@ -1097,7 +1039,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url,
-          facebookPageId: pageEl?.value ? Number(pageEl.value) : null,
           tipoPublicacao: tipo,
           status: 'rascunho',
           textoManual: textoManual || undefined,
@@ -1151,7 +1092,6 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          facebookPageId: pageSelect?.value ? Number(pageSelect.value) : null,
           tipoPublicacao: tipoEl?.value || undefined,
         }),
       });
@@ -1202,5 +1142,4 @@
   });
 
   window.addEventListener('beforeunload', releaseImagePreview);
-  loadPages();
 })();

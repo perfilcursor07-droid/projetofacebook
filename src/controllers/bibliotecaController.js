@@ -12,13 +12,17 @@ async function pagesDoUsuario(userId) {
 }
 
 async function defaultPageIdDoUsuario(userId) {
-  const Users = require('../models/Users');
-  return Users.getDefaultFacebookPageId(userId);
+  const { defaultPageIdForUser } = require('../services/facebookPageResolver');
+  return defaultPageIdForUser(userId);
 }
 
 async function resolveFacebookPageId(userId, raw) {
+  const { resolvePageForUser } = require('../services/facebookPageResolver');
   const n = Number(raw);
-  if (Number.isFinite(n) && n > 0) return n;
+  if (Number.isFinite(n) && n > 0) {
+    const page = await resolvePageForUser(userId, n);
+    if (page) return Number(page.id);
+  }
   return defaultPageIdDoUsuario(userId);
 }
 

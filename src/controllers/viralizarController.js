@@ -8,9 +8,13 @@ function pickPageId(body = {}) {
 }
 
 async function resolvePageId(userId, body = {}) {
+  const { defaultPageIdForUser, resolvePageForUser } = require('../services/facebookPageResolver');
   const fromBody = pickPageId(body);
-  if (fromBody) return fromBody;
-  return Users.getDefaultFacebookPageId(userId);
+  if (fromBody) {
+    const page = await resolvePageForUser(userId, fromBody);
+    if (page) return Number(page.id);
+  }
+  return defaultPageIdForUser(userId);
 }
 
 async function page(req, res, next) {

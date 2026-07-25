@@ -17,11 +17,11 @@ const { titulosParecidos, formatFacebookCaption, montarFonteCredito, estiloCredi
 const { applyBrandArtworkToResult } = require('./matterArtworkService');
 
 async function resolvePage(userId, facebookPageId) {
-  const page = await FacebookPages.findById(facebookPageId);
-  if (!page) return null;
-  const account = await FacebookAccounts.findByUser(userId);
-  if (!account || page.facebook_account_id !== account.id) return null;
-  return page;
+  const { resolvePageForUser, defaultPageForUser } = require('./facebookPageResolver');
+  const page = await resolvePageForUser(userId, facebookPageId);
+  if (page) return page;
+  // Sem página válida no pedido, usa a padrão da conta logada (definida em /paginas).
+  return defaultPageForUser(userId);
 }
 
 function parseHashtagsField(raw) {

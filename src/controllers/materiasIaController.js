@@ -10,9 +10,14 @@ function pickPageId(body = {}) {
 }
 
 async function resolvePageId(userId, body = {}) {
+  const { defaultPageIdForUser, resolvePageForUser } = require('../services/facebookPageResolver');
   const fromBody = pickPageId(body);
-  if (fromBody) return fromBody;
-  return Users.getDefaultFacebookPageId(userId);
+  if (fromBody) {
+    // Só aceita página do próprio usuário; caso contrário cai para a padrão dele.
+    const page = await resolvePageForUser(userId, fromBody);
+    if (page) return Number(page.id);
+  }
+  return defaultPageIdForUser(userId);
 }
 
 function pickTipo(body = {}) {

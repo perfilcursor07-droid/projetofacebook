@@ -207,6 +207,51 @@ async function resolveMediaUrl({ filePath, imageUrl }) {
 }
 
 /**
+ * RefId e Profile Key são coisas diferentes na Ayrshare: o painel “Manage Profiles”
+ * mostra o RefId (hex de ~40 chars), mas o header Profile-Key exige a chave do profile.
+ * Colar o RefId faz o post cair no Primary Profile / falhar.
+ */
+function looksLikeRefId(value) {
+  return /^[0-9a-f]{32,64}$/i.test(String(value || '').trim());
+}
+
+/**
+ * Detalhes do profile referente à Profile Key informada (GET /user).
+ * Serve para validar a chave e saber se a Página do Facebook está conectada.
+ */
+async function fetchProfileByKey(profileKey) {
+  assertConfigured();
+  const key = String(profileKey || '').trim();
+  if (!key) {
+    const err = new Error('Profile Key vazia');
+    err.status = 400;
+    throw err;
+  }
+
+  const { data } = await axios.get(`${API}/user`, {
+    headers: authHeaders({}, key),
+    timeout: 30000,
+  });
+
+  const active = Array.isArray(data?.activeSocialAccounts) ? data.activeSocialAccounts : [];
+  const displayNames = Array.isArray(data?.displayNames) ? data.displayNames : [];
+  const facebook = displayNames.find(
+    (d) => String(d?.platform || '').toLowerCase() === 'facebook'
+  );
+
+  return {
+    refId: data?.refId || null,
+    title: data?.title || data?.displayTitle || null,
+    isPrimary: Boolean(data?.primaryProfile ?? data?.isPrimary ?? false),
+    activeSocialAccounts: active,
+    facebookConnected: active.some((p) => String(p).toLowerCase() === 'facebook'),
+    facebookPageName: facebook?.displayName || facebook?.pageName || facebook?.username || null,
+    facebookPageId: facebook?.id || facebook?.pageId || null,
+    raw: data,
+  };
+}
+
+/**
  * Publica na Página Facebook ligada ao perfil Ayrshare (Primary ou User Profile).
  * Com vários profiles (Business): passe profileKey da página.
  */
@@ -310,4 +355,6 @@ module.exports = {
   resolveMediaUrl,
   uploadMediaFile,
   publicMediaUrlFromLocal,
+  looksLikeRefId,
+  fetchProfileByKey,
 };

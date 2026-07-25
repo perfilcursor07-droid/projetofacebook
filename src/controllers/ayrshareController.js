@@ -1,36 +1,101 @@
 const FacebookPages = require('../models/FacebookPages');
-const FacebookAccounts = require('../models/FacebookAccounts');
 const ayrshareService = require('../services/ayrshareService');
+const { resolvePageForUser, pagesForUser } = require('../services/facebookPageResolver');
 
 async function setProfileKey(req, res, next) {
   try {
     ayrshareService.assertConfigured();
     const pageId = Number(req.body?.facebook_page_id || req.body?.facebookPageId || 0);
-    const profileKey = req.body?.ayrshare_profile_key ?? req.body?.profile_key ?? '';
+    const profileKey = String(
+      req.body?.ayrshare_profile_key ?? req.body?.profile_key ?? ''
+    ).trim();
     if (!pageId) {
       const err = new Error('Informe facebook_page_id');
       err.status = 400;
       throw err;
     }
 
-    const account = await FacebookAccounts.findByUser(req.session.userId);
-    if (!account) {
-      const err = new Error(
-        'Nenhuma conta/página no app. Conecte o Facebook uma vez ou importe páginas.'
-      );
-      err.status = 400;
-      throw err;
-    }
-
-    const page = await FacebookPages.findById(pageId);
-    if (!page || Number(page.facebook_account_id) !== Number(account.id)) {
-      const err = new Error('Página não encontrada');
+    const page = await resolvePageForUser(req.session.userId, pageId);
+    if (!page) {
+      const err = new Error('Página não encontrada na sua conta');
       err.status = 404;
       throw err;
     }
 
-    await FacebookPages.setAyrshareProfileKey(pageId, profileKey);
-    const updated = await FacebookPages.findById(pageId);
+    // Remoção explícita da chave: permitida, mas avisa quando há várias páginas.
+    if (!profileKey) {
+      await FacebookPages.setAyrshareProfileKey(page.id, null);
+      const paginas = await pagesForUser(req.session.userId);
+      return res.json({
+        ok: true,
+        page: {
+          id: page.id,
+          page_name: page.page_name,
+          ayrshare_profile_key: null,
+          has_profile_key: false,
+        },
+        aviso:
+          paginas.length > 1
+            ? 'Profile Key removido. Com mais de uma Página, esta não poderá publicar até receber o Profile Key.'
+            : 'Profile Key removido — usará o Primary Profile.',
+      });
+    }
+
+    // O painel "Manage Profiles" mostra o RefId, que não funciona como Profile Key.
+    if (ayrshareService.looksLikeRefId(profileKey)) {
+      const err = new Error(
+        'Esse valor é o RefId do profile, não o Profile Key. O RefId aparece em Manage Profiles, ' +
+          'mas o Profile Key é entregue quando o User Profile é criado (ou pode ser gerado de novo na Ayrshare). ' +
+          'Cole o Profile Key para o post ir na Página certa.'
+      );
+      err.status = 400;
+      err.code = 'AYRSHARE_REFID_INSTEAD_OF_KEY';
+      throw err;
+    }
+
+    // Duas páginas com a mesma chave publicariam sempre no mesmo lugar.
+    const paginas = await pagesForUser(req.session.userId);
+    const conflito = paginas.find(
+      (p) =>
+        Number(p.id) !== Number(page.id) &&
+        String(p.ayrshare_profile_key || '').trim() === profileKey
+    );
+    if (conflito) {
+      const err = new Error(
+        `Este Profile Key já está na Página “${conflito.page_name}”. ` +
+          'Cada Página precisa do Profile Key do seu próprio User Profile.'
+      );
+      err.status = 409;
+      err.code = 'AYRSHARE_PROFILE_KEY_DUPLICATED';
+      throw err;
+    }
+
+    // Valida a chave na Ayrshare antes de salvar e informa qual Página está conectada.
+    let detalhes = null;
+    try {
+      detalhes = await ayrshareService.fetchProfileByKey(profileKey);
+    } catch (validationErr) {
+      const err = new Error(
+        `A Ayrshare recusou este Profile Key: ${ayrshareService.apiErrorMessage(validationErr)}`
+      );
+      err.status = 400;
+      err.code = 'AYRSHARE_PROFILE_KEY_REJECTED';
+      throw err;
+    }
+
+    await FacebookPages.setAyrshareProfileKey(page.id, profileKey);
+    const updated = await FacebookPages.findById(page.id);
+
+    const avisos = [];
+    if (!detalhes.facebookConnected) {
+      avisos.push(
+        'Este profile ainda não tem Página do Facebook conectada. Vincule em Social Accounts na Ayrshare.'
+      );
+    }
+    if (detalhes.facebookPageName) {
+      avisos.push(`Profile conectado à Página do Facebook: ${detalhes.facebookPageName}.`);
+    }
+
     res.json({
       ok: true,
       page: {
@@ -39,6 +104,14 @@ async function setProfileKey(req, res, next) {
         ayrshare_profile_key: updated.ayrshare_profile_key || null,
         has_profile_key: Boolean(updated.ayrshare_profile_key),
       },
+      profile: {
+        title: detalhes.title,
+        ref_id: detalhes.refId,
+        facebook_connected: detalhes.facebookConnected,
+        facebook_page_name: detalhes.facebookPageName,
+        active_social_accounts: detalhes.activeSocialAccounts,
+      },
+      aviso: avisos.join(' ') || null,
     });
   } catch (err) {
     next(err);

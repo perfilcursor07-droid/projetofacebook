@@ -27,7 +27,11 @@
             <a href="https://app.ayrshare.com" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">app.ayrshare.com</a>
             crie um <strong class="font-medium text-slate-300">User Profile</strong> por Página FB e conecte a Página em Social Accounts.<br />
             2) Em cada profile, copie o <strong class="font-medium text-slate-300">Profile Key</strong> e cole abaixo.<br />
-            3) Sem Profile Key, posts vão no <em>Primary Profile</em> (uma página só).
+            3) Atenção: em <em>Manage Profiles</em> aparece o <strong class="font-medium text-amber-300">RefId</strong>,
+            que <strong class="font-medium text-amber-300">não serve</strong>. O Profile Key é entregue na criação do
+            User Profile (ou pode ser gerado de novo na Ayrshare).<br />
+            4) Sem Profile Key, o post iria para o <em>Primary Profile</em>; com mais de uma Página, o ViralizeAI bloqueia
+            a publicação em vez de postar na Página errada.
           </p>
           <p class="mt-2 text-sm text-emerald-200/90">
             <%= ayrshareConfigured ? 'API Key configurada · PUBLISH_PROVIDER=' + provider : 'Configure AYRSHARE_API_KEY no .env' %>
@@ -124,6 +128,9 @@
             const defaultBtn = isDefault
               ? `<span class="rounded-full bg-violet-500/20 px-2.5 py-0.5 text-xs font-semibold text-violet-200">página padrão</span>`
               : `<button type="button" data-set-default="${p.id}" class="ay-default-btn rounded-lg border border-violet-500/40 px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/15">Usar como padrão</button>`;
+            const keyBadge = p.has_ayrshare_profile_key
+              ? `<span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs text-emerald-200">Profile Key ok</span>`
+              : `<span class="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs text-amber-200">sem Profile Key</span>`;
             return `
           <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 ${isDefault ? 'ring-1 ring-violet-500/40' : ''}">
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -131,7 +138,7 @@
                 <p class="text-white">${escapeHtml(p.page_name)}</p>
                 <p class="text-xs text-slate-500">Alvo de publicação no ViralizeAI</p>
               </div>
-              <div class="flex flex-wrap items-center gap-2">${defaultBtn}</div>
+              <div class="flex flex-wrap items-center gap-2">${keyBadge}${defaultBtn}</div>
             </div>
             <label class="mt-3 block text-[11px] text-slate-500">
               Profile Key Ayrshare
@@ -151,8 +158,8 @@
 
         contentEl.innerHTML = `
           <p class="text-xs text-slate-500 mb-4">
-            A <strong class="font-medium text-slate-400">página padrão</strong> e o seletor nas matérias escolhem
-            qual Profile Key (qual Página FB) receberá o post.
+            A <strong class="font-medium text-slate-400">página padrão</strong> desta conta define para onde vão as
+            matérias. As telas de matéria não têm mais seletor de Página: o destino é sempre a padrão marcada aqui.
           </p>
           <div class="space-y-3">${pagesHtml}</div>`;
 
@@ -192,11 +199,10 @@
               });
               const j = await r.json();
               if (!r.ok) throw new Error(j.error || 'Falha ao salvar Profile Key');
-              showAlert(
-                j.page?.has_profile_key
-                  ? 'Profile Key salvo: ' + (j.page.page_name || '')
-                  : 'Profile Key removido — usará o Primary Profile'
-              );
+              const base = j.page?.has_profile_key
+                ? 'Profile Key salvo: ' + (j.page.page_name || '')
+                : 'Profile Key removido';
+              showAlert([base, j.aviso].filter(Boolean).join(' · '), !j.page?.has_profile_key);
               loadAyrshare();
             } catch (err) {
               showAlert(err.message, true);

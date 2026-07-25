@@ -153,8 +153,52 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
       file: localFile ? path.basename(localFile) : null,
     });
 
-    const FacebookPages = require('../models/FacebookPages');
-    const freshPage = await FacebookPages.findById(page.id);
+    const { resolvePageForUser, pagesForUser } = require('./facebookPageResolver');
+
+    // A página precisa pertencer ao usuário logado, senão nem tenta publicar.
+    const freshPage = await resolvePageForUser(userId, page.id);
+    if (!freshPage) {
+      const err = new Error(
+        'Esta Página do Facebook não pertence à conta logada. Selecione a página padrão em /paginas.'
+      );
+      err.status = 403;
+      throw err;
+    }
+
+    const profileKey = String(freshPage.ayrshare_profile_key || '').trim();
+
+    // Sem Profile Key a Ayrshare publica no Primary Profile, ou seja, em outra Página.
+    // Com mais de uma Página cadastrada isso publica no lugar errado — bloqueia.
+    if (!profileKey) {
+      const paginas = await pagesForUser(userId);
+      if (paginas.length > 1) {
+        const err = new Error(
+          `A Página “${freshPage.page_name}” está sem Profile Key da Ayrshare. ` +
+            'Sem ela o post iria para o Primary Profile (outra Página). ' +
+            'Cole o Profile Key desta Página em /paginas e publique de novo.'
+        );
+        err.status = 422;
+        err.code = 'AYRSHARE_PROFILE_KEY_MISSING';
+        throw err;
+      }
+    }
+
+    if (profileKey && ayrshareService.looksLikeRefId(profileKey)) {
+      const err = new Error(
+        `A Página “${freshPage.page_name}” tem um RefId salvo no lugar do Profile Key. ` +
+          'No painel da Ayrshare, o “Manage Profiles” mostra o RefId; o ViralizeAI precisa do Profile Key ' +
+          'do User Profile. Corrija em /paginas.'
+      );
+      err.status = 422;
+      err.code = 'AYRSHARE_PROFILE_KEY_INVALID';
+      throw err;
+    }
+
+    console.log('[publish] ayrshare destino', {
+      pageId: freshPage.id,
+      page: freshPage.page_name,
+      hasProfileKey: Boolean(profileKey),
+    });
 
     const result = await ayrshareService.publishToFacebook({
       post: content,
@@ -162,7 +206,7 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
       imageUrl: localFile ? null : remoteUrl || imageUrl || null,
       isReel: tipo === 'reel',
       title: titulo || null,
-      profileKey: freshPage?.ayrshare_profile_key || page.ayrshare_profile_key || null,
+      profileKey: profileKey || null,
     });
 
     const postId = result.post_id || result.id;

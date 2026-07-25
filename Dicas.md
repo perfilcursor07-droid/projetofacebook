@@ -30,6 +30,7 @@ cd /home/viralizeai/htdocs/www.viralizeai.online
 git checkout -- public/css/app.css
 git pull origin main
 npm install --omit=dev
+npm run migrate
 npm run build:css
 NODE_ENV=production npm run migrate
 pm2 reload viralizeai --update-env
