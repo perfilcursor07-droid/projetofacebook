@@ -351,7 +351,7 @@
                   <%= reelProcessing ? 'disabled' : '' %>>
                   <%= matter.video_path && isReel ? 'Regenerar Reel narrado' : 'Gerar Reel narrado' %>
                 </button>
-                <p class="text-[10px] leading-snug text-slate-500">Arte completa (título legível) + fundo em movimento + voz + trilha. Sem cortar o texto.</p>
+                <p class="text-[10px] leading-snug text-slate-500">Arte completa + voz + trilha (encode leve no servidor). Título não é cortado.</p>
               <% } %>
             <% } else if (canRepublish) { %>
               <% if (matter.published_at) { %>
