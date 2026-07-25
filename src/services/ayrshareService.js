@@ -32,20 +32,58 @@ function authHeaders(extra = {}, profileKey = null) {
   return headers;
 }
 
+function collectAyrshareErrorParts(body) {
+  const parts = [];
+  const push = (item) => {
+    if (!item) return;
+    if (typeof item === 'string' && item.trim()) parts.push(item.trim());
+    else if (item.message) parts.push(String(item.message).trim());
+    else if (item.error) parts.push(String(item.error).trim());
+    if (item.code != null) parts.push(`code:${item.code}`);
+  };
+
+  if (!body || typeof body !== 'object') return parts;
+  push({ message: body.message || body.error, code: body.code ?? body.statusCode });
+  if (Array.isArray(body.errors)) body.errors.forEach(push);
+  if (Array.isArray(body.posts)) {
+    for (const p of body.posts) {
+      push(p);
+      if (Array.isArray(p?.errors)) p.errors.forEach(push);
+    }
+  }
+  return parts.filter(Boolean);
+}
+
 function apiErrorMessage(err) {
   const body = err.response?.data;
   if (!body) return err.message || 'Erro desconhecido na API Ayrshare';
 
-  const code = body.code ?? body.statusCode;
-  const msg = String(body.message || body.error || '').trim();
+  const parts = collectAyrshareErrorParts(body);
+  const msg = parts.filter((p) => !/^code:/i.test(p)).join(' | ');
   const lower = msg.toLowerCase();
+  const codeMatch = parts.find((p) => /^code:/i.test(p));
+  const code = Number(
+    (codeMatch && codeMatch.replace(/^code:/i, '')) || body.code || body.statusCode || NaN
+  );
+
+  if (
+    code === 159 ||
+    lower.includes('@mention') ||
+    lower.includes('same @mention') ||
+    (lower.includes('mention') && lower.includes('once per day'))
+  ) {
+    return (
+      'Facebook: a mesma @menção só pode ser usada 1× por dia. ' +
+      'Troque @usuario por #usuario na legenda (ex.: #trechosgospelof) e publique de novo.'
+    );
+  }
 
   if (
     code === 156 ||
     lower.includes('not linked') ||
     lower.includes('not connected') ||
     lower.includes('no social') ||
-    lower.includes('facebook') && lower.includes('link')
+    (lower.includes('facebook') && lower.includes('link'))
   ) {
     return (
       'Ayrshare: Página do Facebook não está conectada. ' +
@@ -56,7 +94,7 @@ function apiErrorMessage(err) {
   if (
     lower.includes('quota') ||
     lower.includes('rate limit') ||
-    lower.includes('too many') ||
+    (lower.includes('too many') && !lower.includes('mention')) ||
     code === 429
   ) {
     return (
@@ -79,14 +117,7 @@ function apiErrorMessage(err) {
   }
 
   if (typeof body === 'string') return body;
-  if (msg) return msg;
-  if (Array.isArray(body.posts)) {
-    const fails = body.posts
-      .filter((p) => p.status === 'error' || p.status === 'failed')
-      .map((p) => p.message || p.error || JSON.stringify(p))
-      .filter(Boolean);
-    if (fails.length) return fails.join(' | ').slice(0, 400);
-  }
+  if (msg) return msg.slice(0, 400);
   try {
     return JSON.stringify(body).slice(0, 400);
   } catch {
@@ -265,7 +296,11 @@ async function publishToFacebook({
 }) {
   assertConfigured();
 
-  let content = String(post || '');
+  // FB: mesma @menção só 1×/dia — troca @handle por #handle antes do envio.
+  let content = String(post || '').replace(
+    /(^|[^A-Za-z0-9._])@([A-Za-z0-9._]{2,50})\b/g,
+    '$1#$2'
+  );
   const mediaUrl = await resolveMediaUrl({ filePath, imageUrl });
 
   if ((isReel || filePath || imageUrl) && !mediaUrl && isReel) {
@@ -322,9 +357,10 @@ async function publishToFacebook({
 
     const status = String(fb?.status || data?.status || '').toLowerCase();
     if (fb && (status === 'error' || status === 'failed')) {
-      const err = new Error(fb.message || fb.error || 'Falha ao publicar no Facebook via Ayrshare');
+      const wrap = { response: { data, config: { url: `${API}/post` } } };
+      const err = new Error(apiErrorMessage(wrap) || fb.message || fb.error || 'Falha ao publicar no Facebook via Ayrshare');
       err.status = 502;
-      err.response = { data, config: { url: `${API}/post` } };
+      err.response = wrap.response;
       throw err;
     }
 
@@ -340,9 +376,14 @@ async function publishToFacebook({
     };
   } catch (err) {
     if (!err.status && err.response) err.status = err.response.status || 502;
-    if (!err.message || err.message === 'Request failed with status code 400') {
-      err.message = apiErrorMessage(err);
+    const friendly = apiErrorMessage(err);
+    if (friendly && friendly !== 'Erro desconhecido na API Ayrshare') {
+      err.message = friendly;
+    } else if (!err.message || err.message === 'Request failed with status code 400') {
+      err.message = friendly || err.message;
     }
+    // Evita dump enorme do axios no pm2
+    console.error('[ayrshare] publish failed:', err.message, err.response?.data?.status || err.status);
     throw err;
   }
 }

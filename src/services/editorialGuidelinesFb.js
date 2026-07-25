@@ -303,6 +303,17 @@ function quebrarEmParagrafos(texto) {
 }
 
 /**
+ * Facebook só permite a mesma @menção 1× por dia (Ayrshare code 159).
+ * Converte @handles em #hashtags; não altera e-mails (texto antes do @).
+ */
+function sanitizeFacebookMentions(text) {
+  return String(text || '').replace(
+    /(^|[^A-Za-z0-9._])@([A-Za-z0-9._]{2,50})\b/g,
+    '$1#$2'
+  );
+}
+
+/**
  * Monta a legenda final do post: título opcional + corpo + crédito/fonte + hashtags.
  * O título ainda é usado para removê-lo do início do corpo quando incluirTitulo=false.
  */
@@ -343,7 +354,7 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, inclui
   if (body) parts.push(body);
   if (credit) parts.push(credit);
   if (tagsLine) parts.push(tagsLine);
-  return parts.join('\n\n').trim();
+  return sanitizeFacebookMentions(parts.join('\n\n').trim());
 }
 
 /**
@@ -619,13 +630,15 @@ function anexarCreditosFontes(
     });
   } else {
     const linhas = [];
-    if (site) linhas.push(`• Conteúdo: ${site}`);
+    // Evita @menção no crédito (FB limita a mesma menção a 1×/dia).
+    const siteSafe = sanitizeFacebookMentions(site);
+    if (siteSafe) linhas.push(`• Conteúdo: ${siteSafe}`);
     linhas.push(`• Imagem: ${limparCreditoAutor(imagemAutor)}`);
     bloco = `Fontes:\n${linhas.join('\n')}`;
   }
 
   if (!bloco) return anexarHashtagsAoFinal(cleanBody, tags);
-  return anexarHashtagsAoFinal(`${cleanBody}\n\n${bloco}`, tags);
+  return sanitizeFacebookMentions(anexarHashtagsAoFinal(`${cleanBody}\n\n${bloco}`, tags));
 }
 
 function limparCreditoAutor(value) {
@@ -716,6 +729,7 @@ module.exports = {
   blocoEstiloNewsGospel,
   mensagemAvisoQualidade,
   formatFacebookCaption,
+  sanitizeFacebookMentions,
   montarFonteCredito,
   estiloCreditoDaPagina,
   limparAutorArtigo,

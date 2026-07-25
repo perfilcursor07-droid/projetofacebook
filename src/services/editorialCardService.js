@@ -99,16 +99,77 @@ async function fetchImage(url) {
   return Buffer.from(response.data);
 }
 
-function wrapTitle(value, maxChars = 27, maxLines = 5) {
-  const words = String(value || '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR').split(' ');
+function stripWordPunct(word) {
+  return String(word || '').replace(/^[“"'‘]+|[”"'’.,;:!?…]+$/g, '');
+}
+
+/** Token que parece nome próprio (José, Flávio, Bolsonaro…). */
+function isProperNameToken(word) {
+  const w = stripWordPunct(word);
+  if (!w || w.length < 2) return false;
+  if (/^\d+$/.test(w)) return false;
+  if (/^(de|da|do|das|dos|e|a|o|as|os)$/i.test(w)) return false;
+  // Inicia com maiúscula (Unicode)
+  return /^[\p{Lu}]/u.test(w);
+}
+
+function isNameParticle(word) {
+  return /^(de|da|do|das|dos)$/i.test(stripWordPunct(word));
+}
+
+/**
+ * Agrupa nomes compostos numa unidade de quebra
+ * (ex.: "Flávio Bolsonaro", "José Wellington").
+ */
+function glueNameUnits(words) {
+  const units = [];
+  let i = 0;
+  while (i < words.length) {
+    if (isProperNameToken(words[i])) {
+      let j = i + 1;
+      while (j < words.length) {
+        if (isProperNameToken(words[j])) {
+          j += 1;
+          continue;
+        }
+        if (
+          isNameParticle(words[j]) &&
+          j + 1 < words.length &&
+          isProperNameToken(words[j + 1])
+        ) {
+          j += 2;
+          continue;
+        }
+        break;
+      }
+      if (j - i >= 2) {
+        units.push(words.slice(i, j).join(' '));
+        i = j;
+        continue;
+      }
+    }
+    units.push(words[i]);
+    i += 1;
+  }
+  return units;
+}
+
+function wrapByUnits(units, maxChars, maxLines) {
   const lines = [];
   let current = '';
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= maxChars || !current) current = candidate;
-    else {
+  for (const unit of units) {
+    const candidate = current ? `${current} ${unit}` : unit;
+    if (candidate.length <= maxChars || !current) {
+      // Unidade maior que a linha: empurra sozinha (melhor que partir nome)
+      if (!current && unit.length > maxChars) {
+        lines.push(unit);
+        current = '';
+      } else {
+        current = candidate;
+      }
+    } else {
       lines.push(current);
-      current = word;
+      current = unit;
     }
   }
   if (current) lines.push(current);
@@ -119,25 +180,119 @@ function wrapTitle(value, maxChars = 27, maxLines = 5) {
   return limited;
 }
 
+function wrapTitle(value, maxChars = 27, maxLines = 5) {
+  const words = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleUpperCase('pt-BR')
+    .split(' ')
+    .filter(Boolean);
+  return wrapByUnits(glueNameUnits(words), maxChars, maxLines);
+}
+
 /** Quebra de linha sem forçar maiúsculas (modelo citação). */
 function wrapTextLines(value, maxChars = 28, maxLines = 5) {
   const words = String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-  const lines = [];
-  let current = '';
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= maxChars || !current) current = candidate;
-    else {
-      lines.push(current);
-      current = word;
+  return wrapByUnits(glueNameUnits(words), maxChars, maxLines);
+}
+
+/** Spans [start, endInclusive] de nomes compostos no array de palavras. */
+function findNameSpans(words) {
+  const spans = [];
+  let i = 0;
+  while (i < words.length) {
+    if (!isProperNameToken(words[i])) {
+      i += 1;
+      continue;
     }
+    let j = i + 1;
+    while (j < words.length) {
+      if (isProperNameToken(words[j])) {
+        j += 1;
+        continue;
+      }
+      if (
+        isNameParticle(words[j]) &&
+        j + 1 < words.length &&
+        isProperNameToken(words[j + 1])
+      ) {
+        j += 2;
+        continue;
+      }
+      break;
+    }
+    if (j - i >= 2) spans.push({ start: i, end: j - 1 });
+    i = Math.max(j, i + 1);
   }
-  if (current) lines.push(current);
-  const limited = lines.slice(0, maxLines);
-  if (lines.length > maxLines) {
-    limited[maxLines - 1] = `${limited[maxLines - 1].replace(/[.,;:!?]?$/, '')}…`;
+  return spans;
+}
+
+/**
+ * Escolhe o índice de corte (punch começa em cut) sem partir nomes
+ * e sem deixar preposição solta no fim da manchete.
+ */
+function choosePunchCut(words) {
+  const n = words.length;
+  if (n < 5) return n;
+
+  let punchCount = Math.min(6, Math.max(2, Math.round(n * 0.38)));
+  let cut = n - punchCount;
+  if (cut < 2) return n;
+
+  const spans = findNameSpans(words);
+  const moveOutOfNames = (c) => {
+    let next = c;
+    for (const span of spans) {
+      if (next > span.start && next <= span.end) {
+        const after = span.end + 1;
+        const before = span.start;
+        const afterOk = after >= 2 && n - after >= 2 && n - after <= 7;
+        const beforeOk = before >= 2 && n - before >= 2 && n - before <= 8;
+        // Prefere manter o nome inteiro na manchete (após o nome)
+        if (afterOk) next = after;
+        else if (beforeOk) next = before;
+        else if (after >= 2 && n - after >= 2) next = after;
+        else next = before;
+      }
+    }
+    return next;
+  };
+
+  cut = moveOutOfNames(cut);
+
+  // Prefere iniciar o marcador numa conjunção de cláusula (e / mas / que…)
+  const conj = /^(e|mas|porém|porem|que)$/i;
+  let bestConj = -1;
+  for (let i = Math.max(2, cut - 3); i <= Math.min(n - 2, cut + 2); i += 1) {
+    if (conj.test(stripWordPunct(words[i]))) bestConj = i;
   }
-  return limited;
+  // Também procura "e …" um pouco depois do nome (caso clássico: “… Bolsonaro e gera…”)
+  for (let i = cut; i <= Math.min(n - 2, cut + 3); i += 1) {
+    if (conj.test(stripWordPunct(words[i])) && i >= 2) bestConj = i;
+  }
+  if (bestConj >= 2 && n - bestConj >= 2 && n - bestConj <= 8) {
+    cut = bestConj;
+  }
+
+  cut = moveOutOfNames(cut);
+
+  // Não termina manchete com preposição/artigo solto
+  const dangling =
+    /^(a|o|as|os|de|do|da|dos|das|em|no|na|nos|nas|ao|à|às|para|pra|com|por|um|uma|ao)$/i;
+  while (cut > 2 && dangling.test(stripWordPunct(words[cut - 1]))) {
+    // Se a preposição introduz um nome, leva o nome todo para a manchete
+    const nextSpan = spans.find((s) => s.start === cut);
+    if (nextSpan && nextSpan.end + 1 < n && n - (nextSpan.end + 1) >= 2) {
+      cut = nextSpan.end + 1;
+      break;
+    }
+    cut -= 1;
+  }
+
+  cut = moveOutOfNames(cut);
+
+  if (cut < 2 || n - cut < 2) return n;
+  return cut;
 }
 
 /**
@@ -171,10 +326,8 @@ function splitHeadlinePunchline(title) {
   // Sem aspas: mantém o texto da matéria; destaca o final no marcador
   const words = raw.split(' ').filter(Boolean);
   if (words.length >= 5) {
-    // ~últimas 35–40% das palavras (mín. 2, máx. 6)
-    const punchCount = Math.min(6, Math.max(2, Math.round(words.length * 0.38)));
-    const cut = words.length - punchCount;
-    if (cut >= 2) {
+    const cut = choosePunchCut(words);
+    if (cut >= 2 && cut < words.length) {
       return {
         headline: words.slice(0, cut).join(' '),
         punchline: words.slice(cut).join(' '),
@@ -736,6 +889,8 @@ module.exports = {
   composeBrandOverlayOnImage,
   removeEditorialCard,
   wrapTitle,
+  wrapTextLines,
+  splitHeadlinePunchline,
   assertPublicImageUrl,
   ART_WIDTH: WIDTH,
   ART_HEIGHT: HEIGHT,
