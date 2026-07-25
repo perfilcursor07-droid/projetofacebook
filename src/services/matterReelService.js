@@ -251,66 +251,120 @@ function writeSuspenseBgmWav(outputPath, seconds) {
 }
 
 /**
- * Um slide com zoom Ken Burns (entra/sai + leve pan).
- * Variants evitam monotonia quando a mesma foto da matéria se repete.
+ * Slide com movimento SEM cortar o título da arte.
+ * Fundo: mesma imagem em tela cheia, escurecida/desfocada, com zoom lento.
+ * Frente: arte inteira (fit + pad) — título e marca sempre legíveis.
  */
-function imageToKenBurnsClip({ imagePath, outputPath, durationSec, zoomIn = true, variant = 0 }) {
+function imageToMotionClip({ imagePath, outputPath, durationSec, zoomIn = true, variant = 0 }) {
   const w = even(REEL_W);
   const h = even(REEL_H);
   const dur = Math.max(MIN_SLIDE_SEC, Number(durationSec) || MIN_SLIDE_SEC);
   const frames = Math.max(Math.round(dur * OUTPUT_FPS), Math.round(MIN_SLIDE_SEC * OUTPUT_FPS));
 
+  // Zoom só no fundo blur — arte da frente não é cropada
   const zExpr = zoomIn
-    ? `min(1.0+0.00115*on,1.2)`
-    : `max(1.2-0.00115*on,1.0)`;
+    ? `min(1.0+0.0007*on,1.1)`
+    : `max(1.1-0.0007*on,1.0)`;
 
-  // Pan leve em direções diferentes (só na foto da matéria — sem pessoas aleatórias)
   const pans = [
-    { x: `iw/2-(iw/zoom/2)`, y: `ih/2-(ih/zoom/2)` },
-    { x: `iw/2-(iw/zoom/2)+20`, y: `ih/2-(ih/zoom/2)-30` },
-    { x: `iw/2-(iw/zoom/2)-25`, y: `ih/2-(ih/zoom/2)+15` },
-    { x: `(iw-iw/zoom)/2+(on*0.15)`, y: `ih/2-(ih/zoom/2)` },
+    `iw/2-(iw/zoom/2)`,
+    `iw/2-(iw/zoom/2)+12`,
+    `iw/2-(iw/zoom/2)-12`,
   ];
-  const pan = pans[Math.abs(Number(variant) || 0) % pans.length];
-
-  const vf = [
-    `scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase`,
-    `crop=${w * 2}:${h * 2}`,
-    `zoompan=z='${zExpr}':x='${pan.x}':y='${pan.y}':d=${frames}:s=${w}x${h}:fps=${OUTPUT_FPS}`,
-    `eq=contrast=1.05:saturation=1.08:brightness=-0.02`,
-  ].join(',');
+  const xPan = pans[Math.abs(Number(variant) || 0) % pans.length];
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
-  return new Promise((resolve, reject) => {
-    ffmpeg()
-      .input(imagePath)
-      .inputOptions(['-loop', '1'])
-      .outputOptions([
-        '-t',
-        String(dur),
-        '-r',
-        String(OUTPUT_FPS),
-        '-vsync',
-        'cfr',
-        '-pix_fmt',
-        'yuv420p',
-        '-c:v',
-        'libx264',
-        '-preset',
-        'veryfast',
-        '-crf',
-        '23',
-        '-an',
-        '-vf',
-        vf,
-        '-movflags',
-        '+faststart',
-      ])
-      .on('error', reject)
-      .on('end', () => resolve(outputPath))
-      .save(outputPath);
+  const run = (useBlur) =>
+    new Promise((resolve, reject) => {
+      const bgChain = useBlur
+        ? `[0:v]scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase,crop=${w * 2}:${h * 2},eq=brightness=-0.2:saturation=0.7,zoompan=z='${zExpr}':x='${xPan}':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${OUTPUT_FPS},boxblur=18:8[bg]`
+        : `[0:v]scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase,crop=${w * 2}:${h * 2},eq=brightness=-0.25:saturation=0.65,zoompan=z='${zExpr}':x='${xPan}':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${OUTPUT_FPS}[bg]`;
+
+      // Frente: arte completa (decrease + sem crop) — título intacto
+      const fgChain = `[0:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,setsar=1,format=rgba[fg]`;
+      const overlay = `[bg][fg]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p,eq=contrast=1.03:saturation=1.04[vout]`;
+
+      ffmpeg()
+        .input(imagePath)
+        .inputOptions(['-loop', '1'])
+        .complexFilter([bgChain, fgChain, overlay])
+        .outputOptions([
+          '-map',
+          '[vout]',
+          '-t',
+          String(dur),
+          '-r',
+          String(OUTPUT_FPS),
+          '-vsync',
+          'cfr',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:v',
+          'libx264',
+          '-preset',
+          'veryfast',
+          '-crf',
+          '23',
+          '-an',
+          '-movflags',
+          '+faststart',
+        ])
+        .on('error', reject)
+        .on('end', () => resolve(outputPath))
+        .save(outputPath);
+    });
+
+  // Fallback: só arte inteira + pad (zero crop) se blur/overlay falhar
+  const runSafeFit = () =>
+    new Promise((resolve, reject) => {
+      const vf = [
+        `scale=${w}:${h}:force_original_aspect_ratio=decrease`,
+        `pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black`,
+        `eq=contrast=1.04:saturation=1.05:brightness=-0.01`,
+      ].join(',');
+
+      ffmpeg()
+        .input(imagePath)
+        .inputOptions(['-loop', '1'])
+        .outputOptions([
+          '-t',
+          String(dur),
+          '-r',
+          String(OUTPUT_FPS),
+          '-vsync',
+          'cfr',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:v',
+          'libx264',
+          '-preset',
+          'veryfast',
+          '-crf',
+          '23',
+          '-an',
+          '-vf',
+          vf,
+          '-movflags',
+          '+faststart',
+        ])
+        .on('error', reject)
+        .on('end', () => resolve(outputPath))
+        .save(outputPath);
+    });
+
+  return run(true).catch((err) => {
+    console.warn('[matterReel] motion+blur falhou, tentando sem blur:', err.message);
+    return run(false).catch((err2) => {
+      console.warn('[matterReel] motion falhou, fit seguro:', err2.message);
+      return runSafeFit();
+    });
   });
+}
+
+/** @deprecated nome antigo — mantém compat se chamado em algum lugar */
+function imageToKenBurnsClip(opts) {
+  return imageToMotionClip(opts);
 }
 
 function concatClips(clipPaths, outputPath) {
@@ -440,7 +494,7 @@ async function mixVideoVoiceBgmSafe(opts) {
 async function singleImageWithAudio({ imagePath, voicePath, bgmPath, outputPath, durationSec }) {
   const silent = tempPath(`reel_fallback_${crypto.randomBytes(6).toString('hex')}.mp4`);
   try {
-    await imageToKenBurnsClip({
+    await imageToMotionClip({
       imagePath,
       outputPath: silent,
       durationSec,
@@ -536,7 +590,7 @@ async function gerarReelNarrado({ userId, matterId }) {
     try {
       for (let i = 0; i < usedPaths.length; i++) {
         const clipOut = tempPath(`reel_clip_${stamp}_${i}.mp4`);
-        await imageToKenBurnsClip({
+        await imageToMotionClip({
           imagePath: usedPaths[i],
           outputPath: clipOut,
           durationSec: durs[i],
