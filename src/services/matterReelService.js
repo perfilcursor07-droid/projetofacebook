@@ -458,7 +458,7 @@ function buildVideoFilter({ captionsAssPath = null } = {}) {
 }
 
 /**
- * Um único encode leve: arte + legendas (ASS) + voz + BGM.
+ * Um único encode leve: arte + voz + BGM (sem legenda queimada).
  */
 function renderReelLeve({ imagePath, voicePath, bgmPath, outputPath, durationSec, captionsAssPath }) {
   const dur = Math.min(MAX_AUDIO_SECONDS, Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30));
@@ -648,11 +648,11 @@ async function gerarReelNarrado({ userId, matterId }) {
   let rendered = false;
 
   try {
-    const tts = await elevenLabsTts.synthetizar({
+    await elevenLabsTts.synthetizar({
       texto,
       outputPath: audioAbs,
       estilo: 'suspense',
-      withTimestamps: true,
+      withTimestamps: false,
     });
 
     const info = await probe(audioAbs);
@@ -668,27 +668,14 @@ async function gerarReelNarrado({ userId, matterId }) {
     const useDur = Math.min(audioDur, MAX_AUDIO_SECONDS);
     writeSuspenseBgmWav(bgmAbs, useDur + 2);
 
-    const assAbs = tempPath(`reel_legenda_${stamp}.ass`);
-    const { cues, sync } = montarCuesSincronizadas({
-      texto,
+    await renderReelSafe({
+      imagePath: slides.paths[0],
+      voicePath: audioAbs,
+      bgmPath: bgmAbs,
+      outputPath: videoAbs,
       durationSec: useDur,
-      alignment: tts.alignment,
+      captionsAssPath: null,
     });
-    writeAssLegenda(assAbs, cues);
-    console.log(`[matterReel] legendas sync=${sync} cues=${cues.length} dur=${useDur.toFixed(1)}s`);
-
-    try {
-      await renderReelSafe({
-        imagePath: slides.paths[0],
-        voicePath: audioAbs,
-        bgmPath: bgmAbs,
-        outputPath: videoAbs,
-        durationSec: useDur,
-        captionsAssPath: assAbs,
-      });
-    } finally {
-      safeUnlink(assAbs);
-    }
     rendered = true;
 
     if (!fs.existsSync(videoAbs) || fs.statSync(videoAbs).size < 1000) {
@@ -727,8 +714,8 @@ async function gerarReelNarrado({ userId, matterId }) {
       voiceId: elevenLabsTts.voiceId(),
       estilo: 'suspense',
       bgm: true,
-      legendas: true,
-      legendasSync: true,
+      legendas: false,
+      legendasSync: false,
       encode: 'leve',
     };
   } finally {

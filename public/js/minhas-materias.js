@@ -148,10 +148,10 @@
       const msg = regenerar
         ? 'Regenerar o Reel narrado de "' +
           titulo +
-          '"?\n\nResumo até 60s + legendas + voz + música.'
+          '"?\n\nResumo até 60s + voz + música (sem legenda no vídeo).'
         : 'Gerar Reel narrado de "' +
           titulo +
-          '"?\n\nResume a matéria em até 60 segundos (legendas + trilha).';
+          '"?\n\nResume a matéria em até 60 segundos (voz + trilha).';
       if (!confirm(msg)) return;
 
       reelBtn.disabled = true;

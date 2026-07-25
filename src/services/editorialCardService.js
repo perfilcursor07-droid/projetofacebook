@@ -341,15 +341,71 @@ function splitHeadlinePunchline(title) {
 /** Estimativa de largura de texto bold/condensado (px) — folga para não cortar o marcador. */
 function estimateTextWidth(text, fontSize) {
   const s = String(text || '');
-  // Condensed bold costuma ficar perto de 0.58–0.65em; usamos folga alta.
+  // Folga alta: fontes black/condensadas + sombra estouram fácil nas bordas.
   let units = 0;
   for (const ch of s) {
-    if (ch === ' ') units += 0.32;
-    else if (/[ilI|.,:;!'`]/.test(ch)) units += 0.38;
-    else if (/[mwMW@%]/.test(ch)) units += 0.85;
-    else units += 0.68;
+    if (ch === ' ') units += 0.34;
+    else if (/[ilI|.,:;!'`]/.test(ch)) units += 0.4;
+    else if (/[mwMW@%]/.test(ch)) units += 0.9;
+    else units += 0.74;
   }
   return Math.ceil(units * fontSize);
+}
+
+/**
+ * Quebra texto pela largura em px (não só por contagem de chars),
+ * mantendo nomes compostos juntos quando couber.
+ */
+function wrapTextToWidth(value, { maxWidth, fontSize, maxLines = 5, glueNames = true } = {}) {
+  const words = String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  if (!words.length) return [];
+  const units = glueNames ? glueNameUnits(words) : words;
+  const fits = (text) => estimateTextWidth(text, fontSize) <= maxWidth;
+  const lines = [];
+  let current = '';
+
+  const pushUnit = (unit) => {
+    const parts = String(unit).split(' ').filter(Boolean);
+    // Nome composto largo demais: quebra em palavras (último recurso)
+    if (parts.length > 1 && !fits(unit) && !current) {
+      for (const p of parts) {
+        const candidate = current ? `${current} ${p}` : p;
+        if (!current || fits(candidate)) current = candidate;
+        else {
+          lines.push(current);
+          current = p;
+        }
+      }
+      return;
+    }
+    const candidate = current ? `${current} ${unit}` : unit;
+    if (!current || fits(candidate)) {
+      current = candidate;
+      return;
+    }
+    lines.push(current);
+    current = unit;
+    if (!fits(current) && parts.length > 1) {
+      current = '';
+      for (const p of parts) {
+        const c2 = current ? `${current} ${p}` : p;
+        if (!current || fits(c2)) current = c2;
+        else {
+          lines.push(current);
+          current = p;
+        }
+      }
+    }
+  };
+
+  for (const unit of units) pushUnit(unit);
+  if (current) lines.push(current);
+
+  const limited = lines.slice(0, maxLines);
+  if (lines.length > maxLines) {
+    limited[maxLines - 1] = `${limited[maxLines - 1].replace(/[.,;:!?]?$/, '')}…`;
+  }
+  return limited;
 }
 
 function renderHighlightedLines(lines, {
@@ -452,26 +508,67 @@ function buildOverlay({
   const safeFooter = escapeXml(footer || brandName || '');
 
   let layout;
+  // Citação pode reduzir a fonte para caber; CSS precisa acompanhar.
+  let headFontCss = fontSize;
+  let punchFontCss = Math.round(fontSize * (isCitacao ? 0.95 : 1));
 
   if (isCitacao) {
     const split = splitHeadlinePunchline(title);
-    const headLines = wrapTextLines(split.headline, maxChars, 4);
-    const punchLines = split.punchline
-      ? wrapTextLines(split.punchline, Math.max(18, maxChars - 2), 3)
-      : [];
-    const headFont = fontSize;
-    const headLh = Math.round(headFont * 1.16);
-    const punchFont = Math.round(fontSize * 1.02);
-    const punchLh = Math.round(punchFont * 1.24);
-    const centerX = x(540);
-    const textMaxW = W - ww(96);
+    const textMaxW = W - ww(140);
+    let headFont = fontSize;
+    let punchFont = Math.round(fontSize * 1.02);
+    let headLines = [];
+    let punchLines = [];
+    let headLh = 0;
+    let punchLh = 0;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      headLines = wrapTextToWidth(split.headline, {
+        maxWidth: textMaxW,
+        fontSize: headFont,
+        maxLines: 5,
+      });
+      punchLines = split.punchline
+        ? wrapTextToWidth(split.punchline, {
+            maxWidth: Math.max(120, textMaxW - ww(24)),
+            fontSize: punchFont,
+            maxLines: 3,
+          })
+        : [];
+      headLh = Math.round(headFont * 1.18);
+      punchLh = Math.round(punchFont * 1.26);
+
+      const widestHead = headLines.reduce(
+        (m, line) => Math.max(m, estimateTextWidth(line, headFont)),
+        0
+      );
+      const widestPunch = punchLines.reduce(
+        (m, line) => Math.max(m, estimateTextWidth(line, punchFont) + Math.round(36 * sx)),
+        0
+      );
+      if (widestHead <= textMaxW && widestPunch <= textMaxW) break;
+      if (headFont <= Math.round(30 * Math.min(sx, sy))) break;
+      headFont = Math.max(Math.round(30 * Math.min(sx, sy)), Math.round(headFont * 0.92));
+      punchFont = Math.max(Math.round(28 * Math.min(sx, sy)), Math.round(punchFont * 0.92));
+    }
+
+    headFontCss = headFont;
+    punchFontCss = punchFont;
+
     const totalTextH =
       headLines.length * headLh +
-      (punchLines.length ? hh(16) + punchLines.length * punchLh : 0);
-    const textBottomPad = hh(52);
-    const blockTop = H - textBottomPad - totalTextH;
-    const dividerY = Math.max(y(620), blockTop - hh(70));
-    const punchTop = blockTop + headLines.length * headLh + hh(16);
+      (punchLines.length ? hh(18) + punchLines.length * punchLh : 0);
+
+    // Centraliza o bloco na faixa inferior-média (não colado na base).
+    const zoneTop = y(540);
+    const zoneBottom = H - hh(64);
+    const zoneH = Math.max(totalTextH, zoneBottom - zoneTop);
+    let blockTop = zoneTop + Math.round((zoneH - totalTextH) / 2);
+    blockTop = Math.max(zoneTop, Math.min(blockTop, zoneBottom - totalTextH));
+
+    const centerX = x(540);
+    const dividerY = Math.max(y(500), blockTop - hh(72));
+    const punchTop = blockTop + headLines.length * headLh + hh(18);
     const markerBg = primary || '#ffd400';
     const logoGap = ww(70);
 
@@ -491,7 +588,7 @@ function buildOverlay({
             y: punchTop + Math.round(punchFont * 0.85),
             lineHeight: punchLh,
             fontSize: punchFont,
-            padX: Math.round(18 * sx),
+            padX: Math.round(20 * sx),
             padY: Math.round(10 * sy),
             bg: markerBg,
             textFill: '#111111',
@@ -597,17 +694,17 @@ function buildOverlay({
     : modelId === 'citacao_marcador'
     ? `
           <stop offset="0%" stop-color="#000" stop-opacity="0"/>
-          <stop offset="45%" stop-color="#000" stop-opacity="0"/>
-          <stop offset="62%" stop-color="#000" stop-opacity=".28"/>
-          <stop offset="82%" stop-color="#000" stop-opacity=".72"/>
-          <stop offset="100%" stop-color="#000" stop-opacity=".88"/>`
+          <stop offset="32%" stop-color="#000" stop-opacity="0"/>
+          <stop offset="48%" stop-color="#000" stop-opacity=".22"/>
+          <stop offset="68%" stop-color="#000" stop-opacity=".62"/>
+          <stop offset="100%" stop-color="#000" stop-opacity=".86"/>`
     : `
           <stop offset="0%" stop-color="#000" stop-opacity="0"/>
           <stop offset="42%" stop-color="#000" stop-opacity=".08"/>
           <stop offset="68%" stop-color="#000" stop-opacity=".68"/>
           <stop offset="100%" stop-color="#000" stop-opacity=".96"/>`;
 
-  const punchFontCss = Math.round(fontSize * (isCitacao ? 0.95 : 1));
+  const punchFontCssFinal = punchFontCss;
 
   return Buffer.from(`
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
@@ -629,8 +726,8 @@ function buildOverlay({
           .category { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(42 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #fff; filter: url(#shadow); }
           .category-dark { fill: #111827; filter: none; }
           .title { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${fontSize}px; fill: ${titleFill}; filter: url(#shadow); }
-          .title-citacao { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${fontSize}px; fill: #ffffff; filter: url(#shadow); }
-          .title-mark { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${punchFontCss}px; fill: #111111; filter: none; }
+          .title-citacao { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${headFontCss}px; fill: #ffffff; filter: url(#shadow); }
+          .title-mark { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${punchFontCssFinal}px; fill: #111111; filter: none; }
           .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(1 * sx))}px; fill: ${primary}; filter: url(#shadow); }
         </style>
       </defs>
@@ -890,6 +987,8 @@ module.exports = {
   removeEditorialCard,
   wrapTitle,
   wrapTextLines,
+  wrapTextToWidth,
+  estimateTextWidth,
   splitHeadlinePunchline,
   assertPublicImageUrl,
   ART_WIDTH: WIDTH,
