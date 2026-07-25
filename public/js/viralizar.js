@@ -3,10 +3,14 @@
   const statusEl = document.getElementById('vir-status');
   const listaEl = document.getElementById('vir-lista');
   const tabsEl = document.getElementById('vir-tabs');
+  const loteBar = document.getElementById('vir-lote-bar');
+  const selCountEl = document.getElementById('vir-sel-count');
   const excluidosWrap = document.getElementById('vir-excluidos-wrap');
   const excluidosEl = document.getElementById('vir-excluidos');
   const btnCurar = document.getElementById('vir-btn-curar');
   const btnGerar = document.getElementById('vir-btn-gerar');
+  const btnSelTodos = document.getElementById('vir-btn-sel-todos');
+  const btnSelLimpar = document.getElementById('vir-btn-sel-limpar');
   const autoPub = document.getElementById('vir-auto-pub');
   const tipoEl = document.getElementById('vir-tipo');
   const generatingEl = document.getElementById('vir-generating');
@@ -17,6 +21,7 @@
   let abaAtiva = 'todos';
   let excluidosAtuais = [];
   let metaUltimaBusca = null;
+  let gerando = false;
 
   const CACHE_KEY = 'viralizar_curadoria_v1';
   const cacheInfoEl = document.getElementById('vir-cache-info');
@@ -30,10 +35,15 @@
   }
 
   function setGenerating(on, message) {
+    gerando = Boolean(on);
     if (!generatingEl) return;
     if (message && generatingText) generatingText.textContent = message;
     generatingEl.classList.toggle('hidden', !on);
     document.body.style.overflow = on ? 'hidden' : '';
+    document.querySelectorAll('.vir-btn-one').forEach((b) => {
+      b.disabled = on;
+    });
+    if (btnGerar) btnGerar.disabled = on || selecionados().length < 1;
   }
 
   function potencialBadge(p) {
@@ -146,7 +156,6 @@
       if (!raw) return null;
       const data = JSON.parse(raw);
       if (!data || data.v !== 1 || !Array.isArray(data.topicos)) return null;
-      // Descarta cache muito antigo (7 dias)
       if (data.salvoEm) {
         const age = Date.now() - new Date(data.salvoEm).getTime();
         if (age > 7 * 24 * 60 * 60 * 1000) {
@@ -227,10 +236,6 @@
     return true;
   }
 
-  /**
-   * Sem consumir ScrapeCreators/News: só confere no banco o que já virou matéria
-   * (rascunho, agendada ou publicada) e move para “já usadas”.
-   */
   async function sincronizarUsadosDoServidor({ silencioso = false, preservarStatusHtml = null } = {}) {
     if (!topicos.length) return;
     if (!silencioso) {
@@ -272,16 +277,16 @@
       }
       salvarCache();
     } catch (err) {
-      if (!silencioso) {
-        console.warn('viralizar sync:', err.message);
-      }
+      if (!silencioso) console.warn('viralizar sync:', err.message);
     }
   }
 
   function atualizarTabs() {
     if (!tabsEl) return;
     const c = contagens();
-    tabsEl.classList.toggle('hidden', !topicos.length);
+    const show = topicos.length > 0;
+    tabsEl.classList.toggle('hidden', !show);
+    if (loteBar) loteBar.classList.toggle('hidden', !show);
     tabsEl.querySelectorAll('[data-count-for]').forEach((el) => {
       const key = el.getAttribute('data-count-for');
       const n = c[key] || 0;
@@ -325,7 +330,7 @@
     if (!topicos.length) {
       listaEl.innerHTML =
         '<p class="rounded-xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-500">Clique em “Buscar pautas virais agora” — a IA encontra sozinha o que mais engaja o público da página.</p>';
-      btnGerar.disabled = true;
+      syncGerarBtn();
       return;
     }
 
@@ -338,14 +343,14 @@
         alto: 'alto potencial',
       };
       listaEl.innerHTML = `<p class="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-500">Nenhuma pauta nesta aba (${labels[abaAtiva] || abaAtiva}). Troque de aba ou busque de novo.</p>`;
-      btnGerar.disabled = true;
+      syncGerarBtn();
       return;
     }
 
     listaEl.innerHTML = filtrados
       .map(({ t, idx }) => {
         const titulo = escapeHtml(t.titulo);
-        const resumo = escapeHtml(String(t.resumo || '').slice(0, 200));
+        const resumo = escapeHtml(String(t.resumo || '').slice(0, 220));
         const tema = escapeHtml(t.temaLabel || 'Geral');
         const pot = t.potencial || 'medio';
         const eng = engajamentoMeta(t);
@@ -354,24 +359,35 @@
           'score ' + (t.scoreViral || 0),
           t.fonte || t.veiculo || '',
           eng,
-          t.contagemFontes ? t.contagemFontes + ' fontes' : '',
         ]
           .filter(Boolean)
           .join(' · ');
         return `
-        <label class="flex gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-4 cursor-pointer hover:border-rose-500/40">
-          <input type="checkbox" class="vir-check mt-1 accent-rose-500" data-idx="${idx}" ${pot === 'alto' ? 'checked' : ''} />
-          <span class="min-w-0 flex-1">
-            <span class="flex flex-wrap items-center gap-2">
-              <span class="text-sm font-medium text-white">${titulo}</span>
-              <span class="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ${potencialBadge(pot)}">${escapeHtml(pot)}</span>
-              ${origemBadge(t)}
-            </span>
-            <span class="mt-1 block text-xs text-slate-500">${escapeHtml(meta)}</span>
-            ${resumo ? `<span class="mt-1 block text-xs text-slate-400">${resumo}${String(t.resumo || '').length > 200 ? '…' : ''}</span>` : ''}
-            ${t.link ? `<a href="${escapeHtml(t.link)}" target="_blank" rel="noopener" class="mt-2 inline-block text-xs text-sky-400 hover:text-sky-300">Abrir fonte →</a>` : ''}
-          </span>
-        </label>`;
+        <article class="rounded-xl border border-slate-800 bg-slate-950/50 p-4 transition hover:border-rose-500/35">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+            <label class="flex min-w-0 flex-1 cursor-pointer gap-3">
+              <input type="checkbox" class="vir-check mt-1 shrink-0 accent-rose-500" data-idx="${idx}" />
+              <span class="min-w-0 flex-1">
+                <span class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm font-medium leading-snug text-white">${titulo}</span>
+                  <span class="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ${potencialBadge(pot)}">${escapeHtml(pot)}</span>
+                  ${origemBadge(t)}
+                </span>
+                <span class="mt-1.5 block text-xs text-slate-500">${escapeHtml(meta)}</span>
+                ${resumo ? `<span class="mt-1.5 block text-xs leading-relaxed text-slate-400">${resumo}${String(t.resumo || '').length > 220 ? '…' : ''}</span>` : ''}
+                ${t.link ? `<a href="${escapeHtml(t.link)}" target="_blank" rel="noopener" class="mt-2 inline-block text-xs text-sky-400 hover:text-sky-300" onclick="event.stopPropagation()">Abrir fonte →</a>` : ''}
+              </span>
+            </label>
+            <div class="flex shrink-0 flex-row gap-2 sm:flex-col sm:items-stretch">
+              <button type="button"
+                class="vir-btn-one rounded-lg bg-rose-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-rose-400 disabled:opacity-50"
+                data-idx="${idx}">
+                Gerar
+              </button>
+              ${t.link ? `<a href="${escapeHtml(t.link)}" target="_blank" rel="noopener" class="rounded-lg border border-slate-600 px-3 py-2 text-center text-xs text-slate-300 hover:border-slate-400 hover:text-white">Fonte</a>` : ''}
+            </div>
+          </div>
+        </article>`;
       })
       .join('');
 
@@ -403,20 +419,96 @@
       .join('');
   }
 
-  function syncGerarBtn() {
-    const n = listaEl.querySelectorAll('.vir-check:checked').length;
-    btnGerar.disabled = n < 1;
-    btnGerar.textContent = n
-      ? autoPub.checked
-        ? `Gerar e publicar (${n})`
-        : `Gerar rascunhos (${n})`
-      : 'Gerar selecionados';
-  }
-
   function selecionados() {
     return [...listaEl.querySelectorAll('.vir-check:checked')]
       .map((c) => topicos[Number(c.dataset.idx)])
       .filter(Boolean);
+  }
+
+  function syncGerarBtn() {
+    const n = listaEl.querySelectorAll('.vir-check:checked').length;
+    if (btnGerar) {
+      btnGerar.disabled = gerando || n < 1;
+      btnGerar.textContent = n
+        ? autoPub.checked
+          ? `Gerar e publicar (${n})`
+          : `Gerar selecionados (${n})`
+        : 'Gerar selecionados';
+    }
+    if (selCountEl) {
+      selCountEl.textContent = n ? `${n} marcada(s)` : 'Nenhuma marcada';
+    }
+  }
+
+  async function gerarTopicos(lista, { abrirPrimeira = true } = {}) {
+    const sel = (Array.isArray(lista) ? lista : []).filter((t) => t && t.titulo);
+    if (!sel.length) {
+      statusEl.textContent = 'Nenhuma pauta para gerar';
+      return;
+    }
+    if (!pageSelect.value) {
+      statusEl.textContent = 'Selecione a página do Facebook';
+      return;
+    }
+
+    const publicar = Boolean(autoPub.checked);
+    const qtd = Math.min(sel.length, 20);
+    const uma = qtd === 1;
+    setGenerating(
+      true,
+      publicar
+        ? uma
+          ? 'Gerando e publicando esta matéria…'
+          : `Gerando e publicando ${qtd} matéria(s)…`
+        : uma
+          ? 'Gerando rascunho desta matéria…'
+          : `Gerando ${qtd} rascunho(s)…`
+    );
+    statusEl.textContent = uma
+      ? 'Gerando 1 matéria…'
+      : `Gerando ${qtd} de ${sel.length} selecionada(s)…`;
+
+    try {
+      const res = await fetch('/api/viralizar/gerar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          facebookPageId: Number(pageSelect.value),
+          tipoPublicacao: tipoEl?.value || 'foto',
+          publicar,
+          topicos: sel.slice(0, 20),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao gerar');
+
+      setGenerating(false);
+      const links = (data.gerados || [])
+        .filter((g) => g.redirect)
+        .map(
+          (g) =>
+            `<a class="text-emerald-400 underline" href="${escapeHtml(g.redirect)}" target="_blank" rel="noopener">${escapeHtml(g.titulo || 'Matéria')}</a>`
+        )
+        .join(' · ');
+      const msgOk =
+        escapeHtml(data.mensagem || 'Pronto.') +
+        (links ? '<br/><span class="text-xs">Abrir: ' + links + '</span>' : '') +
+        (data.erros?.length
+          ? '<br/><span class="text-xs text-amber-300">' + data.erros.length + ' falha(s)</span>'
+          : '');
+      statusEl.innerHTML = msgOk;
+
+      if (abrirPrimeira && !publicar && data.gerados?.[0]?.redirect) {
+        window.open(data.gerados[0].redirect, '_blank', 'noopener');
+      }
+
+      await sincronizarUsadosDoServidor({ silencioso: true, preservarStatusHtml: msgOk });
+    } catch (err) {
+      setGenerating(false);
+      statusEl.textContent = err.message;
+    } finally {
+      syncGerarBtn();
+    }
   }
 
   tabsEl?.addEventListener('click', (e) => {
@@ -430,9 +522,7 @@
   btnCurar.addEventListener('click', async () => {
     btnCurar.disabled = true;
     statusEl.textContent = 'Buscando pautas alinhadas ao público da página…';
-    if (cacheInfoEl) {
-      cacheInfoEl.classList.add('hidden');
-    }
+    if (cacheInfoEl) cacheInfoEl.classList.add('hidden');
     listaEl.innerHTML = '';
     topicos = [];
     excluidosAtuais = [];
@@ -475,78 +565,38 @@
     }
   });
 
-  btnGerar.addEventListener('click', async () => {
-    const sel = selecionados();
-    if (!sel.length) {
-      statusEl.textContent = 'Marque ao menos 1 pauta';
-      return;
-    }
-    if (!pageSelect.value) {
-      statusEl.textContent = 'Selecione a página do Facebook';
-      return;
-    }
+  btnGerar?.addEventListener('click', () => gerarTopicos(selecionados()));
 
-    const publicar = Boolean(autoPub.checked);
-    const qtd = Math.min(sel.length, 20);
-    setGenerating(
-      true,
-      publicar
-        ? `Gerando e publicando ${qtd} matéria(s)… Isso pode levar vários minutos.`
-        : `Gerando ${qtd} rascunho(s) em Matérias salvas… Pode demorar.`
-    );
-    btnGerar.disabled = true;
-    statusEl.textContent = `Gerando ${qtd} de ${sel.length} selecionada(s)…`;
+  btnSelTodos?.addEventListener('click', () => {
+    listaEl.querySelectorAll('.vir-check').forEach((c) => {
+      c.checked = true;
+    });
+    syncGerarBtn();
+  });
 
-    try {
-      const res = await fetch('/api/viralizar/gerar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          facebookPageId: Number(pageSelect.value),
-          tipoPublicacao: tipoEl?.value || 'foto',
-          publicar,
-          topicos: sel,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Falha ao gerar');
-
-      setGenerating(false);
-      const links = (data.gerados || [])
-        .filter((g) => g.redirect)
-        .map(
-          (g) =>
-            `<a class="text-emerald-400 underline" href="${escapeHtml(g.redirect)}" target="_blank" rel="noopener">${escapeHtml(g.titulo || 'Matéria')}</a>`
-        )
-        .join(' · ');
-      const msgOk =
-        escapeHtml(data.mensagem || 'Pronto.') +
-        (links ? '<br/><span class="text-xs">Abrir: ' + links + '</span>' : '') +
-        (data.erros?.length
-          ? '<br/><span class="text-xs text-amber-300">' +
-            data.erros.length +
-            ' falha(s)</span>'
-          : '');
-      statusEl.innerHTML = msgOk;
-
-      if (!publicar && data.gerados?.[0]?.redirect) {
-        window.open(data.gerados[0].redirect, '_blank', 'noopener');
-      }
-
-      // Atualiza lista salva sem apagar a mensagem de sucesso
-      await sincronizarUsadosDoServidor({ silencioso: true, preservarStatusHtml: msgOk });
-    } catch (err) {
-      setGenerating(false);
-      statusEl.textContent = err.message;
-    } finally {
-      syncGerarBtn();
-    }
+  btnSelLimpar?.addEventListener('click', () => {
+    listaEl.querySelectorAll('.vir-check').forEach((c) => {
+      c.checked = false;
+    });
+    syncGerarBtn();
   });
 
   listaEl.addEventListener('change', (e) => {
     if (e.target.classList.contains('vir-check')) syncGerarBtn();
   });
-  autoPub.addEventListener('change', syncGerarBtn);
+
+  listaEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.vir-btn-one');
+    if (!btn || gerando) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const idx = Number(btn.dataset.idx);
+    const topico = topicos[idx];
+    if (!topico) return;
+    gerarTopicos([topico]);
+  });
+
+  autoPub?.addEventListener('change', syncGerarBtn);
 
   loadPages().then(async () => {
     if (restaurarCache()) {
