@@ -1122,21 +1122,32 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha');
-      if (data.views != null) {
-        const n = Number(data.views);
-        let label = String(n);
-        if (n >= 1000000) label = (n / 1000000).toFixed(1).replace(/\.0$/, '') + ' mi';
-        else if (n >= 1000) label = (n / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
-        alert('Visualizações / impressões: ' + label);
+
+      function fmt(n) {
+        const v = Number(n);
+        if (!Number.isFinite(v)) return null;
+        if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, '') + ' mi';
+        if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
+        return String(Math.round(v));
+      }
+
+      const parts = [];
+      if (data.likes != null) parts.push(fmt(data.likes) + ' curtidas');
+      if (data.comments != null) parts.push(fmt(data.comments) + ' comentários');
+      if (data.shares != null) parts.push(fmt(data.shares) + ' shares');
+      if (data.views != null) parts.push(fmt(data.views) + ' views');
+      const viral = data.viral?.label ? '\n\n' + data.viral.label : '';
+      if (parts.length) {
+        alert(parts.join(' · ') + viral);
       } else {
-        alert(data.message || 'Sem dado de visualizações ainda.');
+        alert(data.message || 'Sem dado de engajamento ainda.');
       }
     } catch (err) {
-      alert(err.message || 'Erro ao buscar views');
+      alert(err.message || 'Erro ao buscar engajamento');
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Atualizar visualizações no Facebook';
+        btn.textContent = 'Atualizar engajamento';
       }
     }
   });

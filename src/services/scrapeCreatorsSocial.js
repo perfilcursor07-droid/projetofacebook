@@ -113,6 +113,12 @@ function normalizarFacebook(payload, url) {
     videoUrl,
     publicadoEm: normalizarData(post.creation_time),
     autorUrl: textoLimpo(author.url) || null,
+    likes:
+      Number(post.reactionCount ?? post.reactions_count ?? post.like_count ?? post.likes) || 0,
+    comments:
+      Number(post.commentCount ?? post.comments_count ?? post.comment_count ?? post.comments) || 0,
+    shares:
+      Number(post.shareCount ?? post.reshareCount ?? post.shares_count ?? post.shares) || 0,
   };
 }
 
@@ -172,6 +178,13 @@ async function extrairPost(url, plataformaInformada = null) {
       : normalizarFacebook(response.data, link);
 
   if (!normalizado || (!normalizado.texto && !normalizado.imagem && !normalizado.videoUrl)) {
+    if (
+      plataforma === 'facebook' &&
+      normalizado &&
+      (normalizado.likes > 0 || normalizado.comments > 0 || normalizado.shares > 0)
+    ) {
+      return normalizado;
+    }
     const err = new Error('ScrapeCreators retornou o post sem legenda ou mídia');
     err.status = 422;
     throw err;

@@ -2,12 +2,54 @@
   const list = document.getElementById('mia-matters-list');
   if (!list) return;
 
-  function formatViews(n) {
+  function formatNum(n) {
     const v = Number(n);
     if (!Number.isFinite(v) || v < 0) return null;
     if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, '') + ' mi';
     if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
     return String(Math.round(v));
+  }
+
+  function viralInfo(likes, comments, views) {
+    const l = Number(likes) || 0;
+    const c = Number(comments) || 0;
+    const v = Number(views) || 0;
+    const score = l + c * 3 + Math.min(v, 5000) / 50;
+    if (score >= 400 || l >= 200 || c >= 50) {
+      return { label: 'Viralizou', cls: 'bg-rose-500/20 text-rose-200 ring-rose-500/30' };
+    }
+    if (score >= 80 || l >= 40 || c >= 10) {
+      return { label: 'Bom', cls: 'bg-amber-500/15 text-amber-200 ring-amber-500/25' };
+    }
+    if (l > 0 || c > 0 || v > 0) {
+      return { label: 'Baixo', cls: 'bg-slate-700/40 text-slate-400 ring-slate-600/40' };
+    }
+    return null;
+  }
+
+  function atualizarBadgeViral(row, likes, comments, views) {
+    if (!row) return;
+    let badge = row.querySelector('.mia-viral-badge');
+    const info = viralInfo(likes, comments, views);
+    if (!info) {
+      if (badge) badge.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className =
+        'mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1';
+      const status = row.querySelector('.min-w-0 .shrink-0');
+      if (status && status.parentNode) {
+        status.insertAdjacentElement('afterend', badge);
+      } else {
+        row.querySelector('.min-w-0')?.prepend(badge);
+      }
+    }
+    badge.className =
+      'mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 ' +
+      info.cls;
+    badge.textContent = info.label;
   }
 
   list.addEventListener('click', async (e) => {
@@ -18,27 +60,60 @@
     if (viewsBtn) {
       e.preventDefault();
       const id = viewsBtn.dataset.id;
-      const label = viewsBtn.querySelector('.mia-views-label');
-      if (!id || !label) return;
-      const prev = label.textContent;
-      label.textContent = '…';
+      const likesEl = viewsBtn.querySelector('.mia-likes-label');
+      const commentsEl = viewsBtn.querySelector('.mia-comments-label');
+      const viewsEl = viewsBtn.querySelector('.mia-views-label');
+      if (!id) return;
+
+      const prev = {
+        likes: likesEl?.textContent,
+        comments: commentsEl?.textContent,
+        views: viewsEl?.textContent,
+      };
+      if (likesEl) likesEl.textContent = '…';
+      if (commentsEl) commentsEl.textContent = '…';
+      if (viewsEl) viewsEl.textContent = '…';
       viewsBtn.disabled = true;
+
       try {
         const res = await fetch('/api/materias-ia/matters/' + id + '/views?force=1', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Falha ao buscar views');
-        if (data.views != null) {
-          label.textContent = formatViews(data.views) + ' views';
-        } else {
-          label.textContent = prev.includes('views') ? prev : 'Sem dado';
-          if (data.message) viewsBtn.title = data.message;
+        if (!res.ok) throw new Error(data.error || 'Falha ao buscar engajamento');
+
+        if (likesEl) {
+          likesEl.textContent =
+            data.likes != null ? formatNum(data.likes) + ' curtidas' : prev.likes || 'curtidas';
+        }
+        if (commentsEl) {
+          commentsEl.textContent =
+            data.comments != null
+              ? formatNum(data.comments) + ' coment.'
+              : prev.comments || 'coment.';
+        }
+        if (viewsEl) {
+          viewsEl.textContent =
+            data.views != null ? formatNum(data.views) + ' views' : prev.views || 'views';
+        }
+
+        const row = viewsBtn.closest('.mia-matter-row');
+        atualizarBadgeViral(row, data.likes, data.comments, data.views);
+
+        if (data.viral?.label) {
+          viewsBtn.title =
+            data.viral.label +
+            (data.fonte ? ' · via ' + data.fonte : '') +
+            (data.message ? ' — ' + data.message : '');
+        } else if (data.message) {
+          viewsBtn.title = data.message;
         }
       } catch (err) {
-        label.textContent = prev;
-        alert(err.message || 'Erro ao buscar visualizações');
+        if (likesEl) likesEl.textContent = prev.likes || 'curtidas';
+        if (commentsEl) commentsEl.textContent = prev.comments || 'coment.';
+        if (viewsEl) viewsEl.textContent = prev.views || 'views';
+        alert(err.message || 'Erro ao buscar engajamento');
       } finally {
         viewsBtn.disabled = false;
       }

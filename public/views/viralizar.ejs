@@ -7,107 +7,110 @@
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
     <%- include('partials/content-nav', { contentTab: 'viralizar' }) %>
 
-    <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-wider text-rose-400">Conteúdo Viralizar</p>
-        <h1 class="mt-1 text-2xl font-semibold text-white">Pautas com potencial de viralizar</h1>
-        <p class="mt-2 max-w-2xl text-sm text-slate-400">
-          A IA busca sozinha assuntos alinhados ao público de <strong class="font-medium text-slate-300"><%= perfilNome %></strong>.
-          Gere <strong class="font-medium text-slate-300">uma pauta</strong> pelo botão de cada card, ou marque várias para lote.
+        <h1 class="text-2xl font-semibold text-white">Viralizar</h1>
+        <p class="mt-1 text-sm text-slate-400">
+          Pautas com potencial de engajar em <strong class="font-medium text-slate-300"><%= perfilNome %></strong>
+          e o desempenho do que você já publicou.
         </p>
       </div>
-      <div class="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-2.5">
-        <p class="text-[11px] uppercase tracking-wide text-rose-300/80">Melhor horário</p>
-        <p class="mt-0.5 text-sm font-semibold text-rose-100"><%= slotLabel %></p>
-      </div>
+      <span class="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-200">
+        Melhor horário: <%= slotLabel %>
+      </span>
     </div>
 
-    <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-      <div class="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-        <div class="grid gap-3 sm:grid-cols-2">
-          <label class="block text-sm">
-            <span class="text-slate-400">Página do Facebook</span>
-            <select id="vir-page" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
-              <option value="">Carregando…</option>
-            </select>
-          </label>
-          <label class="block text-sm">
-            <span class="text-slate-400">Tipo de publicação</span>
-            <select id="vir-tipo" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100">
-              <option value="foto" selected>Foto + legenda (melhor histórico)</option>
-              <option value="texto">Só texto</option>
-            </select>
-          </label>
-        </div>
+    <!-- Abas principais -->
+    <div class="mt-5 inline-flex rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist">
+      <button type="button" id="vir-view-pautas" data-vir-view="pautas"
+        class="vir-view-btn rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white" role="tab">
+        Buscar pautas
+      </button>
+      <button type="button" id="vir-view-desempenho" data-vir-view="desempenho"
+        class="vir-view-btn rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white" role="tab">
+        O que viralizou
+      </button>
+    </div>
+
+    <!-- ABA 1: PAUTAS -->
+    <section id="vir-pane-pautas">
+      <div class="mt-4 flex flex-wrap items-center gap-3">
         <button type="button" id="vir-btn-curar"
           class="rounded-xl bg-rose-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-400 disabled:opacity-50">
-          Buscar pautas virais agora
+          Buscar pautas
         </button>
-      </div>
-
-      <div class="mt-4 flex flex-wrap items-center gap-3">
-        <label class="inline-flex items-center gap-2 text-sm text-slate-300">
+        <select id="vir-tipo" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+          <option value="foto" selected>Foto + legenda</option>
+          <option value="texto">Só texto</option>
+        </select>
+        <label class="inline-flex items-center gap-2 text-sm text-slate-400">
           <input type="checkbox" id="vir-auto-pub" class="accent-rose-500" />
-          Publicar automaticamente após gerar
+          Publicar ao gerar
         </label>
-        <a href="/minhas-materias" class="text-xs text-slate-500 hover:text-emerald-400">Abrir matérias salvas →</a>
+        <span id="vir-status" class="text-xs text-slate-500"></span>
       </div>
 
-      <p class="mt-3 text-[11px] leading-relaxed text-slate-500">
-        Use <strong class="font-medium text-slate-400">Gerar</strong> em cada card para uma matéria.
-        Ou marque várias e use <strong class="font-medium text-slate-400">Gerar selecionados</strong> em lote.
-        A última busca fica salva neste navegador — só consome API de pesquisa ao atualizar a busca.
-      </p>
-      <p id="vir-cache-info" class="mt-2 hidden text-[11px] text-amber-200/80"></p>
-      <p id="vir-status" class="mt-3 text-sm text-slate-400"></p>
-    </div>
+      <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div id="vir-tabs" class="hidden inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist">
+          <button type="button" data-vir-tab="todos" class="vir-tab-btn rounded-lg bg-rose-500 px-3 py-1.5 text-sm font-semibold text-white">
+            Todos <span class="vir-tab-count opacity-80" data-count-for="todos"></span>
+          </button>
+          <button type="button" data-vir-tab="noticia" class="vir-tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
+            Notícias <span class="vir-tab-count opacity-70" data-count-for="noticia"></span>
+          </button>
+          <button type="button" data-vir-tab="instagram" class="vir-tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
+            Instagram <span class="vir-tab-count opacity-70" data-count-for="instagram"></span>
+          </button>
+          <button type="button" data-vir-tab="facebook" class="vir-tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
+            Facebook <span class="vir-tab-count opacity-70" data-count-for="facebook"></span>
+          </button>
+          <button type="button" data-vir-tab="alto" class="vir-tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
+            Alto potencial <span class="vir-tab-count opacity-70" data-count-for="alto"></span>
+          </button>
+        </div>
 
-    <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
-      <div id="vir-tabs" class="hidden inline-flex flex-wrap rounded-xl border border-slate-700 bg-slate-900 p-1" role="tablist" aria-label="Filtrar por origem">
-        <button type="button" data-vir-tab="todos" class="vir-tab-btn rounded-lg bg-rose-500 px-3 py-1.5 text-sm font-semibold text-white">
-          Todos <span class="vir-tab-count opacity-80" data-count-for="todos"></span>
-        </button>
-        <button type="button" data-vir-tab="noticia" class="vir-tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
-          Notícias <span class="vir-tab-count opacity-70" data-count-for="noticia"></span>
-        </button>
-        <button type="button" data-vir-tab="instagram" class="vir-tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
-          Instagram <span class="vir-tab-count opacity-70" data-count-for="instagram"></span>
-        </button>
-        <button type="button" data-vir-tab="facebook" class="vir-tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
-          Facebook <span class="vir-tab-count opacity-70" data-count-for="facebook"></span>
-        </button>
-        <button type="button" data-vir-tab="alto" class="vir-tab-btn rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:text-white">
-          Alto potencial <span class="vir-tab-count opacity-70" data-count-for="alto"></span>
-        </button>
+        <div id="vir-lote-bar" class="hidden flex flex-wrap items-center gap-2">
+          <button type="button" id="vir-btn-sel-todos"
+            class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-400 hover:text-white">
+            Marcar todos
+          </button>
+          <button type="button" id="vir-btn-sel-limpar"
+            class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-400 hover:text-white">
+            Limpar
+          </button>
+          <button type="button" id="vir-btn-gerar" disabled
+            class="rounded-lg border border-violet-500/50 bg-violet-500/15 px-3 py-1.5 text-xs font-medium text-violet-200 hover:border-violet-400 disabled:opacity-40">
+            Gerar selecionados
+          </button>
+          <span id="vir-sel-count" class="text-[11px] text-slate-500"></span>
+        </div>
       </div>
 
-      <div id="vir-lote-bar" class="hidden flex flex-wrap items-center gap-2">
-        <button type="button" id="vir-btn-sel-todos"
-          class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-400 hover:text-white">
-          Marcar todos
+      <div id="vir-lista" class="mt-4 space-y-3"></div>
+
+      <details id="vir-excluidos-wrap" class="mt-6 hidden rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3">
+        <summary class="cursor-pointer text-xs text-slate-400">Pautas já usadas nesta página</summary>
+        <div id="vir-excluidos" class="mt-3 space-y-1.5"></div>
+      </details>
+    </section>
+
+    <!-- ABA 2: DESEMPENHO -->
+    <section id="vir-pane-desempenho" class="hidden">
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <button type="button" id="vir-btn-desempenho"
+          class="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
+          Analisar página
         </button>
-        <button type="button" id="vir-btn-sel-limpar"
-          class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-400 hover:text-white">
-          Limpar
+        <button type="button" id="vir-btn-desempenho-refresh"
+          class="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 hover:border-slate-400 hover:text-white">
+          Atualizar visualizações
         </button>
-        <button type="button" id="vir-btn-gerar" disabled
-          class="rounded-lg border border-violet-500/50 bg-violet-500/15 px-3 py-1.5 text-xs font-medium text-violet-200 hover:border-violet-400 disabled:opacity-40">
-          Gerar selecionados
-        </button>
-        <span id="vir-sel-count" class="text-[11px] text-slate-500"></span>
+        <span id="vir-desempenho-status" class="text-xs text-slate-500"></span>
       </div>
-    </div>
 
-    <div id="vir-lista" class="mt-4 space-y-3"></div>
-
-    <div id="vir-excluidos-wrap" class="mt-8 hidden">
-      <h2 class="text-sm font-semibold text-slate-300">Já geradas, agendadas ou publicadas</h2>
-      <p class="mt-1 text-xs text-slate-500">
-        Essas pautas já viraram matéria nesta página e saem da lista de cima.
-        Ao reabrir, a última busca é restaurada e esta seção atualiza sozinha (sem nova busca na API).
-      </p>
-      <div id="vir-excluidos" class="mt-3 space-y-1.5"></div>
-    </div>
+      <div id="vir-desempenho-resumo" class="mt-4 hidden grid gap-3 sm:grid-cols-2 lg:grid-cols-4"></div>
+      <div id="vir-desempenho-lista" class="mt-4 space-y-2"></div>
+    </section>
   </main>
 
   <div id="vir-generating" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-6 backdrop-blur-sm">

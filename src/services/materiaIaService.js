@@ -1739,7 +1739,9 @@ async function gerarMateriaManual({
 }
 
 /**
- * Atualiza visualizações do post Facebook ligado à matéria.
+ * Atualiza engajamento do post Facebook ligado à matéria (views + curtidas + comentários).
+ * 1) Graph OAuth (Insights + reactions/comments) quando a Página tem token.
+ * 2) Fallback ScrapeCreators no permalink público (sem OAuth).
  */
 async function atualizarViewsDaMateria(userId, matterId, { force = false } = {}) {
   const matter = await AiMatters.findById(matterId);
@@ -1749,59 +1751,38 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
     throw err;
   }
   if (!matter.publication_id) {
-    return { views: null, message: 'Matéria ainda sem publicação no Facebook' };
+    return { views: null, likes: null, comments: null, message: 'Matéria ainda sem publicação no Facebook' };
   }
 
   const pub = await Publications.findById(matter.publication_id);
   if (!pub) {
-    return { views: null, message: 'Publicação não encontrada' };
+    return { views: null, likes: null, comments: null, message: 'Publicação não encontrada' };
   }
 
   const STALE_MS = 30 * 60 * 1000;
+  const hasEng =
+    pub.fb_likes != null || pub.fb_comments != null || pub.fb_views != null;
   if (
     !force &&
-    pub.fb_views != null &&
+    hasEng &&
     pub.fb_views_at &&
     Date.now() - new Date(pub.fb_views_at).getTime() < STALE_MS
   ) {
     return {
-      views: Number(pub.fb_views),
+      views: pub.fb_views != null ? Number(pub.fb_views) : null,
+      likes: pub.fb_likes != null ? Number(pub.fb_likes) : null,
+      comments: pub.fb_comments != null ? Number(pub.fb_comments) : null,
+      shares: pub.fb_shares != null ? Number(pub.fb_shares) : null,
       cached: true,
       viewsAt: pub.fb_views_at,
       postId: pub.fb_native_post_id || pub.fb_post_id,
+      viral: classificarViral(pub),
     };
   }
 
   const page = await resolvePage(userId, pub.facebook_page_id || matter.facebook_page_id);
-  if (!page?.page_access_token || String(page.page_access_token).startsWith('postsyncer:')) {
-    // Sem token Graph (só PostSyncer) — tenta resolver ID nativo via PostSyncer
-    let nativeId = pub.fb_native_post_id || null;
-    const fbPostId = String(pub.fb_post_id || '');
-    if (!nativeId && /^postsyncer:/i.test(fbPostId)) {
-      try {
-        const postsyncerService = require('./postsyncerService');
-        const psPost = await postsyncerService.getPost(fbPostId);
-        const summary = postsyncerService.platformStatusSummary(psPost);
-        nativeId =
-          facebookService.parseFacebookPostId(summary.postedOn) ||
-          facebookService.parseFacebookPostId(psPost?.permalink) ||
-          facebookService.parseFacebookPostId(psPost?.url) ||
-          null;
-        if (nativeId) {
-          await Publications.update(pub.id, { fb_native_post_id: nativeId });
-        }
-      } catch (err) {
-        console.warn('atualizarViews PostSyncer:', err.message);
-      }
-    }
-    return {
-      views: pub.fb_views != null ? Number(pub.fb_views) : null,
-      message:
-        'Conecte o Facebook (OAuth) em /paginas para buscar visualizações. Publicações só via PostSyncer não têm Insights sem token da Página.',
-      needsOauth: true,
-      postId: nativeId,
-    };
-  }
+  const hasGraphToken =
+    page?.page_access_token && !String(page.page_access_token).startsWith('postsyncer:');
 
   let nativeId =
     pub.fb_native_post_id ||
@@ -1819,48 +1800,145 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
         facebookService.parseFacebookPostId(psPost?.permalink) ||
         facebookService.parseFacebookPostId(psPost?.url) ||
         null;
+      if (nativeId) {
+        await Publications.update(pub.id, { fb_native_post_id: nativeId });
+      }
     } catch (err) {
-      console.warn('atualizarViews PostSyncer id:', err.message);
+      console.warn('atualizarEngajamento PostSyncer:', err.message);
     }
   }
 
-  if (!nativeId || /^postsyncer:/i.test(String(nativeId)) || /^postpulse:/i.test(String(nativeId))) {
-    return {
-      views: pub.fb_views != null ? Number(pub.fb_views) : null,
-      message: 'Ainda não temos o ID nativo do post no Facebook para consultar Insights.',
-    };
-  }
+  let views = pub.fb_views != null ? Number(pub.fb_views) : null;
+  let likes = pub.fb_likes != null ? Number(pub.fb_likes) : null;
+  let comments = pub.fb_comments != null ? Number(pub.fb_comments) : null;
+  let shares = pub.fb_shares != null ? Number(pub.fb_shares) : null;
+  let fonte = null;
+  const avisos = [];
 
-  // Graph às vezes precisa pageId_postId
-  let insightId = nativeId;
-  if (/^\d+$/.test(nativeId) && page.page_id) {
-    insightId = `${page.page_id}_${nativeId}`;
-  }
-
-  try {
-    let result = await facebookService.fetchPostViews(page.page_access_token, insightId);
-    if (result.views == null && insightId !== nativeId) {
-      result = await facebookService.fetchPostViews(page.page_access_token, nativeId);
+  // 1) Graph API
+  if (
+    hasGraphToken &&
+    nativeId &&
+    !/^postsyncer:/i.test(String(nativeId)) &&
+    !/^postpulse:/i.test(String(nativeId))
+  ) {
+    let insightId = nativeId;
+    if (/^\d+$/.test(nativeId) && page.page_id) {
+      insightId = `${page.page_id}_${nativeId}`;
     }
-    const views = result.views;
-    await Publications.update(pub.id, {
-      fb_views: views,
-      fb_views_at: db.fn.now(),
-      fb_native_post_id: result.postId || nativeId,
-    });
-    return {
-      views,
-      metrics: result.metrics,
-      postId: result.postId || nativeId,
-      viewsAt: new Date().toISOString(),
-    };
-  } catch (err) {
-    return {
-      views: pub.fb_views != null ? Number(pub.fb_views) : null,
-      message: err.message || 'Não foi possível ler as visualizações',
-      error: true,
-    };
+
+    try {
+      let eng = await facebookService.fetchPostEngagement(page.page_access_token, insightId);
+      if (eng.likes == null && eng.comments == null && insightId !== nativeId) {
+        eng = await facebookService.fetchPostEngagement(page.page_access_token, nativeId);
+      }
+      if (eng.likes != null) likes = eng.likes;
+      if (eng.comments != null) comments = eng.comments;
+      if (eng.shares != null) shares = eng.shares;
+      if (eng.postId) nativeId = eng.postId;
+      fonte = 'graph';
+    } catch (err) {
+      avisos.push(`Graph engajamento: ${err.message}`);
+    }
+
+    try {
+      let result = await facebookService.fetchPostViews(page.page_access_token, insightId);
+      if (result.views == null && insightId !== nativeId) {
+        result = await facebookService.fetchPostViews(page.page_access_token, nativeId);
+      }
+      if (result.views != null) views = result.views;
+      if (result.postId) nativeId = result.postId;
+      fonte = fonte || 'graph';
+    } catch (err) {
+      avisos.push(`Graph views: ${err.message}`);
+    }
+  } else if (!hasGraphToken) {
+    avisos.push(
+      'Sem token OAuth da Página — tentando ScrapeCreators no link público do post.'
+    );
   }
+
+  // 2) ScrapeCreators fallback (curtidas/comentários no permalink)
+  const precisaEng = likes == null || comments == null || force;
+  const permalink =
+    pub.fb_post_url ||
+    (nativeId && String(nativeId).includes('_')
+      ? `https://www.facebook.com/${String(nativeId).replace('_', '/posts/')}`
+      : nativeId && page?.page_id
+        ? `https://www.facebook.com/${page.page_id}/posts/${nativeId}`
+        : null);
+
+  if (precisaEng && permalink) {
+    try {
+      const scrapeCreators = require('./scrapeCreatorsSocial');
+      if (scrapeCreators.isConfigured()) {
+        const sc = await scrapeCreators.extrairPost(permalink, 'facebook');
+        if (sc?.likes != null && (likes == null || force)) likes = Number(sc.likes) || 0;
+        if (sc?.comments != null && (comments == null || force)) comments = Number(sc.comments) || 0;
+        if (sc?.shares != null && (shares == null || force)) shares = Number(sc.shares) || 0;
+        fonte = fonte ? `${fonte}+scrapecreators` : 'scrapecreators';
+      } else {
+        avisos.push('SCRAPECREATORS_API_KEY não configurada para fallback de engajamento.');
+      }
+    } catch (err) {
+      avisos.push(`ScrapeCreators: ${err.message}`);
+    }
+  }
+
+  const patch = {
+    fb_views_at: db.fn.now(),
+  };
+  if (views != null) patch.fb_views = views;
+  if (likes != null) patch.fb_likes = likes;
+  if (comments != null) patch.fb_comments = comments;
+  if (shares != null) patch.fb_shares = shares;
+  if (nativeId && !/^postsyncer:/i.test(String(nativeId))) {
+    patch.fb_native_post_id = nativeId;
+  }
+
+  if (Object.keys(patch).length > 1) {
+    await Publications.update(pub.id, patch);
+  }
+
+  const updated = await Publications.findById(pub.id);
+  const payload = {
+    views: updated.fb_views != null ? Number(updated.fb_views) : null,
+    likes: updated.fb_likes != null ? Number(updated.fb_likes) : null,
+    comments: updated.fb_comments != null ? Number(updated.fb_comments) : null,
+    shares: updated.fb_shares != null ? Number(updated.fb_shares) : null,
+    viewsAt: updated.fb_views_at,
+    postId: updated.fb_native_post_id || nativeId,
+    fonte,
+    viral: classificarViral(updated),
+    avisos,
+  };
+
+  if (payload.likes == null && payload.comments == null && payload.views == null) {
+    payload.message =
+      avisos[0] ||
+      'Não foi possível ler o engajamento. Conecte o Facebook em /paginas ou confira o link do post.';
+    payload.needsOauth = !hasGraphToken;
+  }
+
+  return payload;
+}
+
+function classificarViral(pub) {
+  const likes = Number(pub?.fb_likes) || 0;
+  const comments = Number(pub?.fb_comments) || 0;
+  const shares = Number(pub?.fb_shares) || 0;
+  const views = Number(pub?.fb_views) || 0;
+  const score = likes + comments * 3 + shares * 5 + Math.min(views, 5000) / 50;
+  if (score >= 400 || likes >= 200 || comments >= 50) {
+    return { nivel: 'alto', label: 'Viralizou', score: Math.round(score) };
+  }
+  if (score >= 80 || likes >= 40 || comments >= 10) {
+    return { nivel: 'medio', label: 'Bom engajamento', score: Math.round(score) };
+  }
+  if (likes > 0 || comments > 0 || views > 0) {
+    return { nivel: 'baixo', label: 'Baixo', score: Math.round(score) };
+  }
+  return { nivel: 'desconhecido', label: 'Sem dado', score: 0 };
 }
 
 /**

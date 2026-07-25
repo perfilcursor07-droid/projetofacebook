@@ -1,5 +1,4 @@
 (function initViralizar() {
-  const pageSelect = document.getElementById('vir-page');
   const statusEl = document.getElementById('vir-status');
   const listaEl = document.getElementById('vir-lista');
   const tabsEl = document.getElementById('vir-tabs');
@@ -15,7 +14,7 @@
   const tipoEl = document.getElementById('vir-tipo');
   const generatingEl = document.getElementById('vir-generating');
   const generatingText = document.getElementById('vir-generating-text');
-  if (!pageSelect || !listaEl) return;
+  if (!listaEl) return;
 
   let topicos = [];
   let abaAtiva = 'todos';
@@ -135,7 +134,6 @@
       const payload = {
         v: 1,
         salvoEm: new Date().toISOString(),
-        facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
         abaAtiva,
         topicos,
         excluidos: excluidosAtuais,
@@ -219,9 +217,6 @@
     const cached = lerCache();
     if (!cached || !cached.topicos.length) return false;
 
-    if (cached.facebookPageId && pageSelect.querySelector(`option[value="${cached.facebookPageId}"]`)) {
-      pageSelect.value = String(cached.facebookPageId);
-    }
     if (cached.abaAtiva) abaAtiva = cached.abaAtiva;
 
     aplicarResultado({
@@ -246,7 +241,6 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
           topicos,
           excluidos: excluidosAtuais,
         }),
@@ -299,29 +293,6 @@
       btn.classList.toggle('font-semibold', on);
       btn.classList.toggle('text-slate-300', !on);
     });
-  }
-
-  async function loadPages() {
-    try {
-      const res = await fetch('/api/facebook/pages');
-      const data = await res.json();
-      const pages = data.pages || [];
-      const preferred =
-        Number(data.default_facebook_page_id) ||
-        (pages.find((p) => p.is_default)?.id) ||
-        null;
-      pageSelect.innerHTML = !pages.length
-        ? '<option value="">Conecte uma página em /paginas</option>'
-        : pages
-            .map((p) => {
-              const selected = Number(p.id) === Number(preferred) ? ' selected' : '';
-              const tag = p.is_default ? ' · padrão' : '';
-              return `<option value="${p.id}"${selected}>${escapeHtml(p.page_name)}${tag}</option>`;
-            })
-            .join('');
-    } catch {
-      pageSelect.innerHTML = '<option value="">Erro ao carregar páginas</option>';
-    }
   }
 
   function renderLista() {
@@ -446,11 +417,6 @@
       statusEl.textContent = 'Nenhuma pauta para gerar';
       return;
     }
-    if (!pageSelect.value) {
-      statusEl.textContent = 'Selecione a página do Facebook';
-      return;
-    }
-
     const publicar = Boolean(autoPub.checked);
     const qtd = Math.min(sel.length, 20);
     const uma = qtd === 1;
@@ -473,7 +439,6 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          facebookPageId: Number(pageSelect.value),
           tipoPublicacao: tipoEl?.value || 'foto',
           publicar,
           topicos: sel.slice(0, 20),
@@ -534,7 +499,6 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          facebookPageId: pageSelect.value ? Number(pageSelect.value) : null,
           limit: 20,
         }),
       });
@@ -598,12 +562,137 @@
 
   autoPub?.addEventListener('change', syncGerarBtn);
 
-  loadPages().then(async () => {
+  // ---- Abas principais: pautas x desempenho da página ----
+  const paneP = document.getElementById('vir-pane-pautas');
+  const paneD = document.getElementById('vir-pane-desempenho');
+  const dStatus = document.getElementById('vir-desempenho-status');
+  const dResumo = document.getElementById('vir-desempenho-resumo');
+  const dLista = document.getElementById('vir-desempenho-lista');
+  let desempenhoCarregado = false;
+
+  function formatNum(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return '—';
+    if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, '') + ' mi';
+    if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
+    return String(Math.round(v));
+  }
+
+  function trocarView(view) {
+    const ehDesempenho = view === 'desempenho';
+    paneP?.classList.toggle('hidden', ehDesempenho);
+    paneD?.classList.toggle('hidden', !ehDesempenho);
+    document.querySelectorAll('.vir-view-btn').forEach((b) => {
+      const on = b.dataset.virView === view;
+      b.classList.toggle('bg-rose-500', on);
+      b.classList.toggle('text-white', on);
+      b.classList.toggle('font-semibold', on);
+      b.classList.toggle('text-slate-300', !on);
+    });
+    if (ehDesempenho && !desempenhoCarregado) carregarDesempenho(false);
+  }
+
+  function cardResumo(label, valor, extra) {
+    return `
+      <div class="rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3">
+        <p class="text-[11px] uppercase tracking-wide text-slate-500">${escapeHtml(label)}</p>
+        <p class="mt-1 text-lg font-semibold text-white">${escapeHtml(String(valor))}</p>
+        ${extra ? `<p class="text-[11px] text-slate-500">${escapeHtml(extra)}</p>` : ''}
+      </div>`;
+  }
+
+  async function carregarDesempenho(atualizar) {
+    if (!dLista) return;
+    const btns = [
+      document.getElementById('vir-btn-desempenho'),
+      document.getElementById('vir-btn-desempenho-refresh'),
+    ].filter(Boolean);
+    btns.forEach((b) => {
+      b.disabled = true;
+    });
+    if (dStatus) {
+      dStatus.textContent = atualizar
+        ? 'Lendo visualizações no Facebook…'
+        : 'Analisando publicações da página…';
+    }
+    try {
+      const url = '/api/viralizar/desempenho?limit=30' + (atualizar ? '&atualizar=1' : '');
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao analisar');
+
+      desempenhoCarregado = true;
+      if (dResumo) {
+        dResumo.classList.remove('hidden');
+        dResumo.innerHTML = [
+          cardResumo('Página', data.pagina?.nome || '—', 'padrão em /paginas'),
+          cardResumo('Publicadas', data.total || 0, `${data.comViews || 0} com views`),
+          cardResumo('Média de views', formatNum(data.mediaViews), `mediana ${formatNum(data.medianaViews)}`),
+          cardResumo('Viralizaram', data.viralizaram || 0, data.limiarViral ? `≥ ${formatNum(data.limiarViral)} views` : 'sem base ainda'),
+        ].join('');
+      }
+
+      const itens = data.itens || [];
+      if (!itens.length) {
+        dLista.innerHTML =
+          '<p class="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-500">Nenhuma matéria publicada nesta página ainda.</p>';
+      } else {
+        dLista.innerHTML = itens
+          .map((i, pos) => {
+            const badge = i.viralizou
+              ? '<span class="rounded-md bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-rose-200 ring-1 ring-rose-500/30">viralizou</span>'
+              : i.acimaDaMedia
+                ? '<span class="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-200 ring-1 ring-emerald-500/25">acima da média</span>'
+                : '';
+            const quando = i.publicadoEm ? formatarQuando(i.publicadoEm) : '';
+            return `
+            <article class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3">
+              <span class="w-6 shrink-0 text-xs text-slate-600">${pos + 1}</span>
+              <span class="min-w-0 flex-1">
+                <span class="flex flex-wrap items-center gap-2">
+                  <a href="${escapeHtml(i.editarUrl)}" class="text-sm font-medium text-white hover:text-emerald-300">${escapeHtml(i.titulo || 'Sem título')}</a>
+                  ${badge}
+                </span>
+                <span class="mt-0.5 block text-[11px] text-slate-500">${escapeHtml([i.tipo, quando].filter(Boolean).join(' · '))}</span>
+              </span>
+              <span class="shrink-0 text-right">
+                <span class="block text-sm font-semibold text-slate-100">${escapeHtml(formatNum(i.views))}</span>
+                <span class="block text-[10px] text-slate-600">views</span>
+              </span>
+              ${i.postUrl ? `<a href="${escapeHtml(i.postUrl)}" target="_blank" rel="noopener" class="shrink-0 rounded-lg border border-slate-600 px-2.5 py-1.5 text-[11px] text-slate-300 hover:border-slate-400 hover:text-white">Ver post</a>` : ''}
+            </article>`;
+          })
+          .join('');
+      }
+
+      if (dStatus) {
+        dStatus.textContent = (data.avisos || []).filter(Boolean).join(' ') || '';
+      }
+    } catch (err) {
+      if (dStatus) dStatus.textContent = err.message;
+    } finally {
+      btns.forEach((b) => {
+        b.disabled = false;
+      });
+    }
+  }
+
+  document.querySelectorAll('.vir-view-btn').forEach((b) => {
+    b.addEventListener('click', () => trocarView(b.dataset.virView || 'pautas'));
+  });
+  document
+    .getElementById('vir-btn-desempenho')
+    ?.addEventListener('click', () => carregarDesempenho(false));
+  document
+    .getElementById('vir-btn-desempenho-refresh')
+    ?.addEventListener('click', () => carregarDesempenho(true));
+
+  (async () => {
     if (restaurarCache()) {
       await sincronizarUsadosDoServidor({ silencioso: true });
       atualizarCacheInfo(lerCache()?.salvoEm, true);
     } else {
       renderLista();
     }
-  });
+  })();
 })();

@@ -36,6 +36,22 @@
     if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
     return String(Math.round(v));
   }
+  function viralBadge(likes, comments, views) {
+    const l = Number(likes) || 0;
+    const c = Number(comments) || 0;
+    const v = Number(views) || 0;
+    const score = l + c * 3 + Math.min(v, 5000) / 50;
+    if (score >= 400 || l >= 200 || c >= 50) {
+      return { nivel: 'alto', label: 'Viralizou', cls: 'bg-rose-500/20 text-rose-200 ring-rose-500/30' };
+    }
+    if (score >= 80 || l >= 40 || c >= 10) {
+      return { nivel: 'medio', label: 'Bom', cls: 'bg-amber-500/15 text-amber-200 ring-amber-500/25' };
+    }
+    if (l > 0 || c > 0 || v > 0) {
+      return { nivel: 'baixo', label: 'Baixo', cls: 'bg-slate-700/40 text-slate-400 ring-slate-600/40' };
+    }
+    return null;
+  }
   function formatQuando(value) {
     if (!value) return '';
     try {
@@ -142,7 +158,10 @@
         <% mattersList.forEach((item) => {
           const st = item.status || 'rascunho';
           const viewsLabel = formatViews(item.pub_fb_views);
+          const likesLabel = formatViews(item.pub_fb_likes);
+          const commentsLabel = formatViews(item.pub_fb_comments);
           const isPub = st === 'publicado' || item.publication_id;
+          const viral = isPub ? viralBadge(item.pub_fb_likes, item.pub_fb_comments, item.pub_fb_views) : null;
         %>
           <li class="mia-matter-row group flex items-center gap-2 px-2.5 py-1.5 transition hover:bg-slate-900/70 sm:px-3 sm:py-2"
             data-id="<%= item.id %>"
@@ -150,6 +169,9 @@
             <div class="min-w-0 flex-1">
               <div class="flex min-w-0 items-center gap-1.5">
                 <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+                <% if (viral) { %>
+                  <span class="mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 <%= viral.cls %>"><%= viral.label %></span>
+                <% } %>
                 <a href="/materias-ia/<%= item.id %>" class="min-w-0 truncate text-sm font-medium text-white hover:text-emerald-200">
                   <%= item.titulo || 'Sem título' %>
                 </a>
@@ -167,10 +189,15 @@
                 <% } %>
                 <% if (isPub) { %>
                   <button type="button"
-                    class="mia-matter-views inline-flex items-center gap-0.5 text-slate-400 hover:text-sky-300"
+                    class="mia-matter-views inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-slate-400 hover:text-sky-300"
                     data-id="<%= item.id %>"
-                    title="Atualizar visualizações no Facebook">
+                    title="Atualizar engajamento no Facebook (curtidas, comentários, views)">
+                    <span class="mia-likes-label"><%= likesLabel != null ? likesLabel + ' curtidas' : 'curtidas' %></span>
+                    <span class="text-slate-600">·</span>
+                    <span class="mia-comments-label"><%= commentsLabel != null ? commentsLabel + ' coment.' : 'coment.' %></span>
+                    <span class="text-slate-600">·</span>
                     <span class="mia-views-label"><%= viewsLabel != null ? viewsLabel + ' views' : 'views' %></span>
+                    <span class="text-[9px] text-sky-400/80">↻</span>
                   </button>
                 <% } %>
               </div>

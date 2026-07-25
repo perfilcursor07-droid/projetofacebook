@@ -56,11 +56,11 @@ const PERFIL_VIRAL = {
    * busca por palavra-chave, que às vezes cai em desafio temporário).
    */
   perfisRadarIg: [
-    { nome: 'Silas Malafaia', handle: 'silasmalafaiaoficial' },
-    { nome: 'Gospel Mais', handle: 'gospelmais' },
-    { nome: 'Guiame', handle: 'portalguiame' },
-    { nome: 'Comunhão', handle: 'portalcomunhao' },
     { nome: 'Folha Gospel', handle: 'folhagospel' },
+    { nome: 'Gospel Mais', handle: 'gospelmais' },
+    { nome: 'Guiame', handle: 'guiame' },
+    { nome: 'Notícias Gospel', handle: 'noticiasgospel' },
+    { nome: 'Silas Malafaia', handle: 'silasmalafaia' },
   ],
   /**
    * Páginas FB concorrentes / portais gospel — 1 request (~3 posts) cada, máx. 5.
