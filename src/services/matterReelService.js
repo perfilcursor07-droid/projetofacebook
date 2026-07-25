@@ -18,7 +18,7 @@ const REEL_W = 1080;
 const REEL_H = 1920;
 /** 24fps + 1 thread = bem menos RAM que zoompan/blur em 2× */
 const OUTPUT_FPS = 24;
-const MAX_NARRATION_CHARS = 1100;
+const MAX_NARRATION_CHARS = 700; // ~35–50s — retenção cai muito depois de 10s no FB
 const MIN_AUDIO_SECONDS = 3;
 const MAX_AUDIO_SECONDS = 90;
 const BGM_VOLUME = 0.32;
@@ -192,23 +192,187 @@ function writeSuspenseBgmWav(outputPath, seconds) {
   return outputPath;
 }
 
+function fontsDir() {
+  return path.resolve(__dirname, '../../assets/fonts');
+}
+
+function escapeFilterPath(p) {
+  return String(p)
+    .replace(/\\/g, '/')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'");
+}
+
+function assTime(sec) {
+  const s = Math.max(0, Number(sec) || 0);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const whole = Math.floor(s % 60);
+  const cs = Math.floor((s - Math.floor(s)) * 100);
+  return `${h}:${String(m).padStart(2, '0')}:${String(whole).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+}
+
+function wrapCaptionLines(text, maxPerLine = 26) {
+  const words = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length > maxPerLine && cur) {
+      lines.push(cur);
+      cur = w;
+      if (lines.length >= 2) break;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur && lines.length < 2) lines.push(cur);
+  return lines.join('\\N');
+}
+
 /**
- * Um único encode leve: fit+pad (título intacto) + voz + BGM.
- * Sem zoompan, sem boxblur, sem escala 2× — evita OOM/SIGKILL no VPS.
+ * Quebra a narração em legendas curtas com tempo proporcional ao áudio.
+ * Primeiros ~3s = gancho (título) — crítico para retenção no Facebook.
  */
-function renderReelLeve({ imagePath, voicePath, bgmPath, outputPath, durationSec }) {
+function montarCuesLegenda(textoNarracao, durationSec, tituloMatter) {
+  const dur = Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30);
+  const hookSec = Math.min(3.2, dur * 0.12);
+  const cues = [];
+
+  const hook = String(tituloMatter || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 70);
+  if (hook) {
+    cues.push({
+      start: 0,
+      end: hookSec,
+      text: wrapCaptionLines(hook.toUpperCase(), 22),
+      style: 'Hook',
+    });
+  }
+
+  let body = String(textoNarracao || '')
+    .replace(/…/g, '.')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Remove título do início se já for o gancho
+  if (hook && body.toLowerCase().startsWith(hook.toLowerCase().slice(0, 20).toLowerCase())) {
+    body = body.slice(hook.length).replace(/^[.\s]+/, '');
+  }
+
+  const parts = body
+    .split(/(?<=[.!?])\s+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 8);
+
+  const chunks = [];
+  for (const part of parts) {
+    if (part.length <= 52) {
+      chunks.push(part);
+    } else {
+      const words = part.split(/\s+/);
+      let cur = '';
+      for (const w of words) {
+        if ((cur + ' ' + w).trim().length > 48 && cur) {
+          chunks.push(cur.trim());
+          cur = w;
+        } else {
+          cur = (cur + ' ' + w).trim();
+        }
+      }
+      if (cur) chunks.push(cur);
+    }
+  }
+
+  const usable = chunks.slice(0, 28);
+  const totalChars = usable.reduce((s, c) => s + c.length, 0) || 1;
+  let t = hookSec;
+  const bodyDur = Math.max(0.5, dur - hookSec - 0.15);
+
+  for (let i = 0; i < usable.length; i++) {
+    const share = usable[i].length / totalChars;
+    let len = Math.max(1.4, bodyDur * share);
+    if (i === usable.length - 1) len = Math.max(1.2, dur - t - 0.05);
+    const end = Math.min(dur, t + len);
+    if (end <= t + 0.3) break;
+    cues.push({
+      start: t,
+      end,
+      text: wrapCaptionLines(usable[i].replace(/^[a-zà-ú]/, (c) => c.toUpperCase()), 26),
+      style: 'Default',
+    });
+    t = end;
+  }
+
+  return cues;
+}
+
+function writeAssLegenda(outputPath, cues) {
+  const lines = [
+    '[Script Info]',
+    'ScriptType: v4.00+',
+    'PlayResX: 1080',
+    'PlayResY: 1920',
+    'WrapStyle: 2',
+    'ScaledBorderAndShadow: yes',
+    '',
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+    // Branco + fundo preto (BorderStyle 3) — legível sem áudio
+    'Style: Default,Anton,54,&H00FFFFFF,&H000000FF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,3,5,0,2,50,50,240,1',
+    'Style: Hook,Anton,62,&H0000E5FF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,3,6,0,2,40,40,200,1',
+    '',
+    '[Events]',
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+  ];
+
+  for (const c of cues) {
+    const style = c.style === 'Hook' ? 'Hook' : 'Default';
+    const text = String(c.text || '')
+      .replace(/\r?\n/g, '\\N')
+      .replace(/[{}]/g, '');
+    lines.push(
+      `Dialogue: 0,${assTime(c.start)},${assTime(c.end)},${style},,0,0,0,,${text}`
+    );
+  }
+
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, lines.join('\n'), 'utf8');
+  return outputPath;
+}
+
+function buildVideoFilter({ captionsAssPath = null } = {}) {
   const w = even(REEL_W);
   const h = even(REEL_H);
-  const dur = Math.min(MAX_AUDIO_SECONDS, Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30));
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
-  const vf = [
+  const parts = [
     `scale=${w}:${h}:force_original_aspect_ratio=decrease`,
     `pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black`,
     `setsar=1`,
     `fps=${OUTPUT_FPS}`,
-    `format=yuv420p`,
-  ].join(',');
+  ];
+
+  if (captionsAssPath && fs.existsSync(captionsAssPath)) {
+    const ass = escapeFilterPath(captionsAssPath);
+    const fonts = escapeFilterPath(fontsDir());
+    parts.push(`subtitles='${ass}':fontsdir='${fonts}'`);
+  }
+
+  parts.push('format=yuv420p');
+  return parts.join(',');
+}
+
+/**
+ * Um único encode leve: arte + legendas (ASS) + voz + BGM.
+ */
+function renderReelLeve({ imagePath, voicePath, bgmPath, outputPath, durationSec, captionsAssPath }) {
+  const dur = Math.min(MAX_AUDIO_SECONDS, Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30));
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  const vf = buildVideoFilter({ captionsAssPath });
 
   return new Promise((resolve, reject) => {
     ffmpeg()
@@ -257,13 +421,10 @@ function renderReelLeve({ imagePath, voicePath, bgmPath, outputPath, durationSec
   });
 }
 
-function renderReelLeveSimples({ imagePath, voicePath, bgmPath, outputPath, durationSec }) {
-  const w = even(REEL_W);
-  const h = even(REEL_H);
+function renderReelLeveSimples({ imagePath, voicePath, bgmPath, outputPath, durationSec, captionsAssPath }) {
   const dur = Math.min(MAX_AUDIO_SECONDS, Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30));
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
-  const vf = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=${OUTPUT_FPS},format=yuv420p`;
+  const vf = buildVideoFilter({ captionsAssPath });
   const silent = tempPath(`reel_silent_${crypto.randomBytes(4).toString('hex')}.mp4`);
 
   return new Promise((resolve, reject) => {
@@ -337,8 +498,28 @@ async function renderReelSafe(opts) {
   try {
     return await renderReelLeve(opts);
   } catch (err) {
-    console.warn('[matterReel] encode leve falhou, tentando simples:', err.message);
-    return renderReelLeveSimples(opts);
+    const msg = String(err.message || '');
+    // Sem libass: tenta de novo sem legendas
+    if (opts.captionsAssPath && /subtitle|ass|font|libass/i.test(msg)) {
+      console.warn('[matterReel] legendas falharam (libass?), gerando sem ASS:', msg);
+      const sem = { ...opts, captionsAssPath: null };
+      try {
+        return await renderReelLeve(sem);
+      } catch (err2) {
+        console.warn('[matterReel] encode leve falhou, tentando simples:', err2.message);
+        return renderReelLeveSimples(sem);
+      }
+    }
+    console.warn('[matterReel] encode leve falhou, tentando simples:', msg);
+    try {
+      return await renderReelLeveSimples(opts);
+    } catch (err3) {
+      if (opts.captionsAssPath) {
+        console.warn('[matterReel] simples com legenda falhou, sem legenda:', err3.message);
+        return renderReelLeveSimples({ ...opts, captionsAssPath: null });
+      }
+      throw err3;
+    }
   }
 }
 
@@ -391,13 +572,22 @@ async function gerarReelNarrado({ userId, matterId }) {
     const useDur = Math.min(audioDur, MAX_AUDIO_SECONDS);
     writeSuspenseBgmWav(bgmAbs, useDur + 2);
 
-    await renderReelSafe({
-      imagePath: slides.paths[0],
-      voicePath: audioAbs,
-      bgmPath: bgmAbs,
-      outputPath: videoAbs,
-      durationSec: useDur,
-    });
+    const assAbs = tempPath(`reel_legenda_${stamp}.ass`);
+    const cues = montarCuesLegenda(texto, useDur, matter.titulo);
+    writeAssLegenda(assAbs, cues);
+
+    try {
+      await renderReelSafe({
+        imagePath: slides.paths[0],
+        voicePath: audioAbs,
+        bgmPath: bgmAbs,
+        outputPath: videoAbs,
+        durationSec: useDur,
+        captionsAssPath: assAbs,
+      });
+    } finally {
+      safeUnlink(assAbs);
+    }
     rendered = true;
 
     if (!fs.existsSync(videoAbs) || fs.statSync(videoAbs).size < 1000) {
@@ -436,6 +626,7 @@ async function gerarReelNarrado({ userId, matterId }) {
       voiceId: elevenLabsTts.voiceId(),
       estilo: 'suspense',
       bgm: true,
+      legendas: true,
       encode: 'leve',
     };
   } finally {
