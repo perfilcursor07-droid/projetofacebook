@@ -195,14 +195,112 @@ async function ttsRequest(vid, text, { estilo = 'suspense' } = {}) {
     err.status = 502;
     throw err;
   }
-  return buffer;
+  return { buffer, alignment: null };
 }
 
 /**
- * @param {{ texto: string, outputPath?: string }} opts
- * @returns {Promise<{ buffer: Buffer, outputPath: string|null, chars: number, voiceId: string }>}
+ * TTS com timestamps por caractere — essencial para legendas sincronizadas.
+ * Docs: POST /v1/text-to-speech/{voice_id}/with-timestamps
  */
-async function synthetizar({ texto, outputPath = null, estilo = 'suspense' } = {}) {
+async function ttsRequestWithTimestamps(vid, text, { estilo = 'suspense' } = {}) {
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(vid)}/with-timestamps`;
+  const voice_settings = VOICE_PRESETS[estilo] || VOICE_PRESETS.suspense;
+  const response = await axios.post(
+    url,
+    {
+      text,
+      model_id: modelId(),
+      voice_settings,
+    },
+    {
+      headers: {
+        ...apiHeaders(),
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      timeout: 120000,
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.status >= 400) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const data = response.data;
+      message = data?.detail?.message || data?.message || data?.detail || message;
+      if (typeof message === 'object') message = JSON.stringify(message);
+    } catch {
+      /* ignore */
+    }
+    const err = new Error(String(message));
+    err.status = response.status;
+    err.httpStatus = response.status;
+    throw err;
+  }
+
+  const data = response.data || {};
+  const b64 = data.audio_base64;
+  if (!b64) {
+    const err = new Error('ElevenLabs with-timestamps sem audio_base64');
+    err.status = 502;
+    throw err;
+  }
+  const buffer = Buffer.from(b64, 'base64');
+  if (!buffer.length || buffer.length < 500) {
+    const err = new Error('ElevenLabs retornou áudio vazio (timestamps)');
+    err.status = 502;
+    throw err;
+  }
+
+  const alignment = data.normalized_alignment || data.alignment || null;
+  return { buffer, alignment };
+}
+
+async function ttsComFallbackDeVoz(text, { estilo, withTimestamps }) {
+  let vid = await resolverVoiceId();
+  const request = withTimestamps ? ttsRequestWithTimestamps : ttsRequest;
+
+  const run = async (voiceId) => request(voiceId, text, { estilo });
+
+  try {
+    const result = await run(vid);
+    return { ...result, voiceId: vid };
+  } catch (firstErr) {
+    if (!isLibraryVoiceError(firstErr.message)) {
+      // with-timestamps pode falhar em alguns planos — caller trata
+      throw firstErr;
+    }
+    const voices = await listarVozes({ force: true });
+    const alternativas = voices.map((v) => v.voice_id).filter((id) => id && id !== vid);
+    const pick = escolherVozLivre(voices.filter((v) => v.voice_id !== vid));
+    const tryIds = [...new Set([pick?.voice_id, ...alternativas].filter(Boolean))];
+
+    let last = firstErr;
+    for (const alt of tryIds.slice(0, 5)) {
+      try {
+        const result = await run(alt);
+        return { ...result, voiceId: alt };
+      } catch (err) {
+        last = err;
+        if (!isLibraryVoiceError(err.message)) break;
+      }
+    }
+    const err = new Error(`ElevenLabs TTS: ${mensagemErroAmigavel(last.message)}`);
+    err.status = last.httpStatus === 401 || last.httpStatus === 403 ? 503 : 402;
+    throw err;
+  }
+}
+
+/**
+ * @param {{ texto: string, outputPath?: string, estilo?: string, withTimestamps?: boolean }} opts
+ * @returns {Promise<{ buffer: Buffer, outputPath: string|null, chars: number, voiceId: string, alignment: object|null }>}
+ */
+async function synthetizar({
+  texto,
+  outputPath = null,
+  estilo = 'suspense',
+  withTimestamps = false,
+} = {}) {
   if (!isConfigured()) {
     const err = new Error(
       'ELEVENLABS_API_KEY não configurada. Crie em https://elevenlabs.io e adicione no .env'
@@ -225,50 +323,20 @@ async function synthetizar({ texto, outputPath = null, estilo = 'suspense' } = {
     throw err;
   }
 
-  let vid = await resolverVoiceId();
-  let buffer;
-
-  try {
-    buffer = await ttsRequest(vid, text, { estilo });
-  } catch (firstErr) {
-    // Free + Voice Library: tenta outra voz da conta automaticamente
-    if (isLibraryVoiceError(firstErr.message)) {
-      const voices = await listarVozes({ force: true });
-      const alternativas = voices
-        .map((v) => v.voice_id)
-        .filter((id) => id && id !== vid);
-      const pick = escolherVozLivre(voices.filter((v) => v.voice_id !== vid));
-      const tryIds = [pick?.voice_id, ...alternativas].filter(Boolean);
-      const unique = [...new Set(tryIds)];
-
-      let last = firstErr;
-      for (const alt of unique.slice(0, 5)) {
-        try {
-          buffer = await ttsRequest(alt, text, { estilo });
-          vid = alt;
-          last = null;
-          break;
-        } catch (err) {
-          last = err;
-          if (!isLibraryVoiceError(err.message)) break;
-        }
-      }
-      if (last) {
-        const err = new Error(`ElevenLabs TTS: ${mensagemErroAmigavel(last.message)}`);
-        err.status = last.httpStatus === 401 || last.httpStatus === 403 ? 503 : 402;
-        throw err;
-      }
-    } else {
-      const err = new Error(`ElevenLabs TTS: ${mensagemErroAmigavel(firstErr.message)}`);
-      err.status =
-        firstErr.httpStatus === 401 || firstErr.httpStatus === 403
-          ? 503
-          : firstErr.httpStatus === 402
-            ? 402
-            : 502;
-      throw err;
+  let result;
+  if (withTimestamps) {
+    try {
+      result = await ttsComFallbackDeVoz(text, { estilo, withTimestamps: true });
+    } catch (err) {
+      console.warn('[elevenLabs] with-timestamps falhou, TTS sem alignment:', err.message);
+      result = await ttsComFallbackDeVoz(text, { estilo, withTimestamps: false });
+      result.alignment = null;
     }
+  } else {
+    result = await ttsComFallbackDeVoz(text, { estilo, withTimestamps: false });
   }
+
+  const { buffer, alignment, voiceId: vid } = result;
 
   if (outputPath) {
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -280,6 +348,7 @@ async function synthetizar({ texto, outputPath = null, estilo = 'suspense' } = {
     outputPath: outputPath || null,
     chars: text.length,
     voiceId: vid,
+    alignment: alignment || null,
   };
 }
 

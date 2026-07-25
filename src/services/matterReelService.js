@@ -109,11 +109,10 @@ function prepararTextoNarracao(matter) {
     const slice = texto.slice(0, MAX_NARRATION_CHARS);
     const lastStop = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf('! '), slice.lastIndexOf('? '));
     texto = (lastStop > MAX_NARRATION_CHARS * 0.5 ? slice.slice(0, lastStop + 1) : slice).trim();
-    if (!/[.!?…]$/.test(texto)) texto += '…';
+    if (!/[.!?…]$/.test(texto)) texto += '.';
   }
 
-  // Ritmo leve para TTS (não estoura 60s — o encode corta no teto)
-  texto = texto.replace(/\.(\s+)/g, '… ');
+  // Não troca "." por "…" — isso dessincronizava a legenda do que a voz fala
   return texto;
 }
 
@@ -269,50 +268,99 @@ function wrapCaptionLines(text, maxPerLine = 24) {
 }
 
 /**
- * Quebra a narração em legendas curtas com tempo proporcional ao áudio.
- * Primeiros ~3s = gancho (título) — crítico para retenção no Facebook.
+ * Legendadas a partir do alignment real da ElevenLabs (mesmo texto + mesmos tempos da voz).
  */
-function montarCuesLegenda(textoNarracao, durationSec, tituloMatter) {
-  const dur = Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30);
-  const hookSec = Math.min(3.2, dur * 0.12);
-  const cues = [];
+function cuesFromAlignment(alignment, { durationSec = 60 } = {}) {
+  const dur = Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 60);
+  const chars = alignment?.characters || alignment?.chars || [];
+  const starts =
+    alignment?.character_start_times_seconds ||
+    alignment?.characterStartTimesSeconds ||
+    [];
+  const ends =
+    alignment?.character_end_times_seconds ||
+    alignment?.characterEndTimesSeconds ||
+    [];
 
-  const hook = String(tituloMatter || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 70);
-  if (hook) {
-    cues.push({
-      start: 0,
-      end: hookSec,
-      text: wrapCaptionLines(hook.toUpperCase(), 20),
-      style: 'Hook',
-    });
+  if (!chars.length || chars.length !== starts.length || chars.length !== ends.length) {
+    return null;
   }
 
-  let body = String(textoNarracao || '')
-    .replace(/…/g, '.')
+  const cues = [];
+  let buf = '';
+  let cueStart = null;
+  let lastEnd = 0;
+
+  const flush = () => {
+    const raw = buf.replace(/\s+/g, ' ').trim();
+    if (!raw || cueStart == null) {
+      buf = '';
+      cueStart = null;
+      return;
+    }
+    // Pequeno atraso (80ms) para a legenda não “adiantar” a boca/voz
+    const start = Math.max(0, cueStart + 0.08);
+    const end = Math.min(dur, Math.max(start + 0.7, lastEnd + 0.12));
+    cues.push({
+      start,
+      end,
+      text: wrapCaptionLines(raw, 24),
+      style: cues.length === 0 ? 'Hook' : 'Default',
+    });
+    buf = '';
+    cueStart = null;
+  };
+
+  for (let i = 0; i < chars.length; i++) {
+    const ch = String(chars[i] ?? '');
+    const st = Number(starts[i]);
+    const en = Number(ends[i]);
+    if (!Number.isFinite(st) || !Number.isFinite(en)) continue;
+
+    if (cueStart == null) cueStart = st;
+    buf += ch;
+    lastEnd = en;
+
+    const trimmed = buf.trim();
+    const durCue = en - cueStart;
+    const breakPunct = /[.!?]/.test(ch);
+    const breakLen = trimmed.length >= 40 && /\s/.test(ch);
+    const breakTime = durCue >= 3.8 && /\s/.test(ch);
+
+    if ((breakPunct || breakLen || breakTime) && trimmed.length >= 8) {
+      flush();
+    }
+  }
+  flush();
+
+  return cues.length ? cues : null;
+}
+
+/**
+ * Fallback sem timestamps: mesmas frases do texto narrado, tempo proporcional.
+ * Sem gancho separado (evita legenda de um texto e voz de outro).
+ */
+function montarCuesLegenda(textoNarracao, durationSec) {
+  const dur = Math.max(MIN_AUDIO_SECONDS, Number(durationSec) || 30);
+  const body = String(textoNarracao || '')
     .replace(/\s+/g, ' ')
     .trim();
-  // Remove título do início se já for o gancho
-  if (hook && body.toLowerCase().startsWith(hook.toLowerCase().slice(0, 20).toLowerCase())) {
-    body = body.slice(hook.length).replace(/^[.\s]+/, '');
-  }
+  if (!body) return [];
 
   const parts = body
     .split(/(?<=[.!?])\s+/)
     .map((p) => p.trim())
-    .filter((p) => p.length > 8);
+    .filter((p) => p.length > 2);
 
   const chunks = [];
   for (const part of parts) {
-    if (part.length <= 52) {
+    if (part.length <= 48) {
       chunks.push(part);
     } else {
       const words = part.split(/\s+/);
       let cur = '';
       for (const w of words) {
-        if ((cur + ' ' + w).trim().length > 48 && cur) {
+        if ((cur + ' ' + w).trim().length > 44 && cur) {
           chunks.push(cur.trim());
           cur = w;
         } else {
@@ -323,27 +371,35 @@ function montarCuesLegenda(textoNarracao, durationSec, tituloMatter) {
     }
   }
 
-  const usable = chunks.slice(0, 28);
+  const usable = chunks.slice(0, 24);
   const totalChars = usable.reduce((s, c) => s + c.length, 0) || 1;
-  let t = hookSec;
-  const bodyDur = Math.max(0.5, dur - hookSec - 0.15);
+  // Atraso inicial: proporção costuma “adiantar” a legenda
+  let t = 0.12;
+  const bodyDur = Math.max(0.5, dur - 0.2);
+  const cues = [];
 
   for (let i = 0; i < usable.length; i++) {
     const share = usable[i].length / totalChars;
-    let len = Math.max(1.4, bodyDur * share);
-    if (i === usable.length - 1) len = Math.max(1.2, dur - t - 0.05);
+    let len = Math.max(1.3, bodyDur * share);
+    if (i === usable.length - 1) len = Math.max(1.0, dur - t - 0.05);
     const end = Math.min(dur, t + len);
-    if (end <= t + 0.3) break;
+    if (end <= t + 0.25) break;
     cues.push({
       start: t,
       end,
-      text: wrapCaptionLines(usable[i].replace(/^[a-zà-ú]/, (c) => c.toUpperCase()), 24),
-      style: 'Default',
+      text: wrapCaptionLines(usable[i], 24),
+      style: i === 0 ? 'Hook' : 'Default',
     });
     t = end;
   }
 
   return cues;
+}
+
+function montarCuesSincronizadas({ texto, durationSec, alignment }) {
+  const fromAlign = cuesFromAlignment(alignment, { durationSec });
+  if (fromAlign?.length) return { cues: fromAlign, sync: 'elevenlabs-timestamps' };
+  return { cues: montarCuesLegenda(texto, durationSec), sync: 'proporcional' };
 }
 
 function writeAssLegenda(outputPath, cues) {
@@ -592,7 +648,12 @@ async function gerarReelNarrado({ userId, matterId }) {
   let rendered = false;
 
   try {
-    await elevenLabsTts.synthetizar({ texto, outputPath: audioAbs, estilo: 'suspense' });
+    const tts = await elevenLabsTts.synthetizar({
+      texto,
+      outputPath: audioAbs,
+      estilo: 'suspense',
+      withTimestamps: true,
+    });
 
     const info = await probe(audioAbs);
     const audioDur = Number(info?.format?.duration) || 0;
@@ -608,8 +669,13 @@ async function gerarReelNarrado({ userId, matterId }) {
     writeSuspenseBgmWav(bgmAbs, useDur + 2);
 
     const assAbs = tempPath(`reel_legenda_${stamp}.ass`);
-    const cues = montarCuesLegenda(texto, useDur, matter.titulo);
+    const { cues, sync } = montarCuesSincronizadas({
+      texto,
+      durationSec: useDur,
+      alignment: tts.alignment,
+    });
     writeAssLegenda(assAbs, cues);
+    console.log(`[matterReel] legendas sync=${sync} cues=${cues.length} dur=${useDur.toFixed(1)}s`);
 
     try {
       await renderReelSafe({
@@ -662,6 +728,7 @@ async function gerarReelNarrado({ userId, matterId }) {
       estilo: 'suspense',
       bgm: true,
       legendas: true,
+      legendasSync: true,
       encode: 'leve',
     };
   } finally {
