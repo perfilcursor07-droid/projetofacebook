@@ -18,9 +18,10 @@ const REEL_W = 1080;
 const REEL_H = 1920;
 /** 24fps + 1 thread = bem menos RAM que zoompan/blur em 2× */
 const OUTPUT_FPS = 24;
-const MAX_NARRATION_CHARS = 700; // ~35–50s — retenção cai muito depois de 10s no FB
+/** ~12 chars/s em PT com voz suspense → ~650 chars ≈ 50–55s; hard cap 60s no encode */
+const MAX_NARRATION_CHARS = 650;
 const MIN_AUDIO_SECONDS = 3;
-const MAX_AUDIO_SECONDS = 90;
+const MAX_AUDIO_SECONDS = 60;
 const BGM_VOLUME = 0.32;
 const VOICE_VOLUME = 1.05;
 
@@ -48,6 +49,10 @@ function safeUnlink(filePath) {
   }
 }
 
+/**
+ * Resume a matéria para narração de Reel (máx. ~60s).
+ * Prioriza título + frases iniciais (lead), sem enrolação.
+ */
 function prepararTextoNarracao(matter) {
   const titulo = String(matter.titulo || '')
     .replace(/\s+/g, ' ')
@@ -65,20 +70,49 @@ function prepararTextoNarracao(matter) {
       if (/^#[\w\u00C0-\u024F]+(\s+#[\w\u00C0-\u024F]+)*$/i.test(t)) return false;
       return true;
     })
-    .join('\n')
+    .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  let texto = titulo ? `${titulo}. ${corpo}` : corpo;
+  // Frases do lead (até 5), cabendo no limite de chars do Reel
+  const budget = Math.max(80, MAX_NARRATION_CHARS - (titulo ? titulo.length + 2 : 0));
+  const frases = corpo
+    .split(/(?<=[.!?…])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 12);
+
+  const escolhidas = [];
+  let used = 0;
+  for (const frase of frases) {
+    if (escolhidas.length >= 5) break;
+    const extra = (escolhidas.length ? 1 : 0) + frase.length;
+    if (used + extra > budget) {
+      // tenta encaixar uma frase curta final
+      if (frase.length <= 90 && used + extra <= budget + 40 && escolhidas.length < 4) {
+        const corta = frase.slice(0, budget - used - 1).trim();
+        if (corta.length > 20) {
+          escolhidas.push(/[.!?…]$/.test(corta) ? corta : `${corta}…`);
+        }
+      }
+      break;
+    }
+    escolhidas.push(frase);
+    used += extra;
+  }
+
+  let texto = titulo
+    ? `${titulo}. ${escolhidas.join(' ')}`.trim()
+    : escolhidas.join(' ').trim();
   texto = texto.replace(/\s+/g, ' ').trim();
 
   if (texto.length > MAX_NARRATION_CHARS) {
     const slice = texto.slice(0, MAX_NARRATION_CHARS);
     const lastStop = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf('! '), slice.lastIndexOf('? '));
-    texto = (lastStop > MAX_NARRATION_CHARS * 0.55 ? slice.slice(0, lastStop + 1) : slice).trim();
-    if (!/[.!?]$/.test(texto)) texto += '…';
+    texto = (lastStop > MAX_NARRATION_CHARS * 0.5 ? slice.slice(0, lastStop + 1) : slice).trim();
+    if (!/[.!?…]$/.test(texto)) texto += '…';
   }
 
+  // Ritmo leve para TTS (não estoura 60s — o encode corta no teto)
   texto = texto.replace(/\.(\s+)/g, '… ');
   return texto;
 }
@@ -212,7 +246,7 @@ function assTime(sec) {
   return `${h}:${String(m).padStart(2, '0')}:${String(whole).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
-function wrapCaptionLines(text, maxPerLine = 26) {
+function wrapCaptionLines(text, maxPerLine = 24) {
   const words = String(text || '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -251,7 +285,7 @@ function montarCuesLegenda(textoNarracao, durationSec, tituloMatter) {
     cues.push({
       start: 0,
       end: hookSec,
-      text: wrapCaptionLines(hook.toUpperCase(), 22),
+      text: wrapCaptionLines(hook.toUpperCase(), 20),
       style: 'Hook',
     });
   }
@@ -303,7 +337,7 @@ function montarCuesLegenda(textoNarracao, durationSec, tituloMatter) {
     cues.push({
       start: t,
       end,
-      text: wrapCaptionLines(usable[i].replace(/^[a-zà-ú]/, (c) => c.toUpperCase()), 26),
+      text: wrapCaptionLines(usable[i].replace(/^[a-zà-ú]/, (c) => c.toUpperCase()), 24),
       style: 'Default',
     });
     t = end;
@@ -323,9 +357,10 @@ function writeAssLegenda(outputPath, cues) {
     '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    // Branco + fundo preto (BorderStyle 3) — legível sem áudio
-    'Style: Default,Anton,54,&H00FFFFFF,&H000000FF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,3,5,0,2,50,50,240,1',
-    'Style: Hook,Anton,62,&H0000E5FF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,3,6,0,2,40,40,200,1',
+    // Alignment 5 = centro da tela (meio). Bebas Neue = fonte display limpa p/ Reel.
+    // BorderStyle 3 = caixa atrás do texto; Outline = padding da caixa.
+    'Style: Default,Bebas Neue,68,&H00FFFFFF,&H000000FF,&H00000000,&HC0000000,-1,0,0,0,100,100,1,0,3,8,0,5,60,60,0,1',
+    'Style: Hook,Bebas Neue,78,&H0000F0FF,&H000000FF,&H00000000,&HD0000000,-1,0,0,0,100,100,1.5,0,3,10,0,5,50,50,0,1',
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',

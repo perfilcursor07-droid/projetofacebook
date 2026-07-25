@@ -1113,8 +1113,8 @@
     const btn = document.getElementById('btn-gerar-reel');
     const regenerar = btn?.dataset?.hasVideo === '1';
     const msg = regenerar
-      ? 'Regenerar o Reel narrado?\n\nAnima a arte/foto da matéria + voz suspense + música. Pode levar 1–2 minutos.'
-      : 'Gerar Reel narrado?\n\nUsa só a imagem desta matéria (sem fotos aleatórias), narração suspense e trilha. Pode levar 1–2 minutos.';
+      ? 'Regenerar o Reel narrado?\n\nResumo até 60s + legendas + voz + música.'
+      : 'Gerar Reel narrado?\n\nResume a matéria em até 60 segundos, com legendas e trilha.';
     if (!confirm(msg)) return;
 
     const statusEl = document.getElementById('matter-status');
