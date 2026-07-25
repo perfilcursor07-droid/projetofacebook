@@ -52,6 +52,87 @@
     badge.textContent = info.label;
   }
 
+  /**
+   * Atualiza engajamento de um botão .mia-matter-views.
+   * @param {HTMLElement} viewsBtn
+   * @param {{ force?: boolean, silent?: boolean }} opts
+   */
+  async function fetchEngajamento(viewsBtn, { force = false, silent = false } = {}) {
+    const id = viewsBtn?.dataset?.id;
+    if (!id) return null;
+
+    const likesEl = viewsBtn.querySelector('.mia-likes-label');
+    const commentsEl = viewsBtn.querySelector('.mia-comments-label');
+    const viewsEl = viewsBtn.querySelector('.mia-views-label');
+    const prev = {
+      likes: likesEl?.textContent,
+      comments: commentsEl?.textContent,
+      views: viewsEl?.textContent,
+    };
+
+    if (likesEl) likesEl.textContent = '…';
+    if (commentsEl) commentsEl.textContent = '…';
+    if (viewsEl) viewsEl.textContent = '…';
+    viewsBtn.disabled = true;
+
+    try {
+      const qs = force ? '?force=1' : '';
+      const res = await fetch('/api/materias-ia/matters/' + id + '/views' + qs, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao buscar engajamento');
+
+      if (likesEl) {
+        likesEl.textContent =
+          data.likes != null ? formatNum(data.likes) + ' curtidas' : prev.likes || 'curtidas';
+      }
+      if (commentsEl) {
+        commentsEl.textContent =
+          data.comments != null
+            ? formatNum(data.comments) + ' coment.'
+            : prev.comments || 'coment.';
+      }
+      if (viewsEl) {
+        viewsEl.textContent =
+          data.views != null ? formatNum(data.views) + ' views' : prev.views || 'views';
+      }
+
+      const row = viewsBtn.closest('.mia-matter-row');
+      atualizarBadgeViral(row, data.likes, data.comments, data.views);
+
+      if (data.viral?.label) {
+        viewsBtn.title =
+          data.viral.label +
+          (data.fonte ? ' · via ' + data.fonte : '') +
+          (data.cached ? ' · em cache' : '') +
+          (data.message ? ' — ' + data.message : '');
+      } else if (data.message) {
+        viewsBtn.title = data.message;
+      }
+      return data;
+    } catch (err) {
+      if (likesEl) likesEl.textContent = prev.likes || 'curtidas';
+      if (commentsEl) commentsEl.textContent = prev.comments || 'coment.';
+      if (viewsEl) viewsEl.textContent = prev.views || 'views';
+      if (!silent) alert(err.message || 'Erro ao buscar engajamento');
+      return null;
+    } finally {
+      viewsBtn.disabled = false;
+    }
+  }
+
+  /** Ao abrir a página: atualiza engajamento de todas as publicadas visíveis (respeita cache 30 min no servidor). */
+  async function autoAtualizarEngajamento() {
+    const buttons = Array.from(list.querySelectorAll('.mia-matter-views'));
+    if (!buttons.length) return;
+
+    for (const btn of buttons) {
+      await fetchEngajamento(btn, { force: false, silent: true });
+    }
+  }
+
   list.addEventListener('click', async (e) => {
     const removeBtn = e.target.closest('.mia-matter-remove');
     const variacaoBtn = e.target.closest('.mia-matter-variacao');
@@ -103,64 +184,7 @@
 
     if (viewsBtn) {
       e.preventDefault();
-      const id = viewsBtn.dataset.id;
-      const likesEl = viewsBtn.querySelector('.mia-likes-label');
-      const commentsEl = viewsBtn.querySelector('.mia-comments-label');
-      const viewsEl = viewsBtn.querySelector('.mia-views-label');
-      if (!id) return;
-
-      const prev = {
-        likes: likesEl?.textContent,
-        comments: commentsEl?.textContent,
-        views: viewsEl?.textContent,
-      };
-      if (likesEl) likesEl.textContent = '…';
-      if (commentsEl) commentsEl.textContent = '…';
-      if (viewsEl) viewsEl.textContent = '…';
-      viewsBtn.disabled = true;
-
-      try {
-        const res = await fetch('/api/materias-ia/matters/' + id + '/views?force=1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Falha ao buscar engajamento');
-
-        if (likesEl) {
-          likesEl.textContent =
-            data.likes != null ? formatNum(data.likes) + ' curtidas' : prev.likes || 'curtidas';
-        }
-        if (commentsEl) {
-          commentsEl.textContent =
-            data.comments != null
-              ? formatNum(data.comments) + ' coment.'
-              : prev.comments || 'coment.';
-        }
-        if (viewsEl) {
-          viewsEl.textContent =
-            data.views != null ? formatNum(data.views) + ' views' : prev.views || 'views';
-        }
-
-        const row = viewsBtn.closest('.mia-matter-row');
-        atualizarBadgeViral(row, data.likes, data.comments, data.views);
-
-        if (data.viral?.label) {
-          viewsBtn.title =
-            data.viral.label +
-            (data.fonte ? ' · via ' + data.fonte : '') +
-            (data.message ? ' — ' + data.message : '');
-        } else if (data.message) {
-          viewsBtn.title = data.message;
-        }
-      } catch (err) {
-        if (likesEl) likesEl.textContent = prev.likes || 'curtidas';
-        if (commentsEl) commentsEl.textContent = prev.comments || 'coment.';
-        if (viewsEl) viewsEl.textContent = prev.views || 'views';
-        alert(err.message || 'Erro ao buscar engajamento');
-      } finally {
-        viewsBtn.disabled = false;
-      }
+      await fetchEngajamento(viewsBtn, { force: true, silent: false });
       return;
     }
 
@@ -225,4 +249,13 @@
       alert(err.message || 'Erro ao remover');
     }
   });
+
+  // Dispara após o paint — não bloqueia a lista
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      setTimeout(autoAtualizarEngajamento, 50);
+    });
+  } else {
+    setTimeout(autoAtualizarEngajamento, 100);
+  }
 })();

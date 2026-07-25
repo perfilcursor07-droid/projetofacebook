@@ -520,7 +520,7 @@ async function showLotePage(req, res, next) {
 async function listMinhasMaterias(req, res, next) {
   try {
     const q = String(req.query.q || req.query.busca || '').trim();
-    const allowed = new Set(['all', 'rascunho', 'pronto', 'agendado', 'publicado', 'erro']);
+    const allowed = new Set(['all', 'rascunho', 'pronto', 'agendado', 'publicado', 'erro', 'viralizou']);
     const rawStatus = String(req.query.status || 'all').trim().toLowerCase();
     const statusFilter = allowed.has(rawStatus) ? rawStatus : 'all';
     const perPage = 10;

@@ -15,6 +15,33 @@ function prepare(data) {
   return out;
 }
 
+/**
+ * Critério "Viralizou" (mesmo de classificarViral nivel alto):
+ * score >= 400 OU likes >= 200 OU comments >= 50
+ * score = likes + comments*3 + shares*5 + min(views,5000)/50
+ */
+function applyViralizouFilter(query) {
+  return query.where(function viralWhere() {
+    this.whereRaw(
+      `(COALESCE(publications.fb_likes, 0) + COALESCE(publications.fb_comments, 0) * 3 + COALESCE(publications.fb_shares, 0) * 5 + LEAST(COALESCE(publications.fb_views, 0), 5000) / 50) >= 400`
+    )
+      .orWhere('publications.fb_likes', '>=', 200)
+      .orWhere('publications.fb_comments', '>=', 50);
+  });
+}
+
+function applySearchFilter(query, q) {
+  const term = String(q || '').trim();
+  if (!term) return query;
+  const like = `%${term.replace(/[%_]/g, '')}%`;
+  return query.andWhere(function whereQ() {
+    this.where('ai_matters.titulo', 'like', like)
+      .orWhere('ai_matters.materia', 'like', like)
+      .orWhere('ai_matters.fonte_titulo', 'like', like)
+      .orWhere('facebook_pages.page_name', 'like', like);
+  });
+}
+
 const AiMatters = {
   table: 'ai_matters',
 
@@ -28,8 +55,13 @@ const AiMatters = {
 
   /**
    * Lista matérias com dados da publicação (views, link FB).
+   * @param {object} opts
+   * @param {string|null} [opts.status] status da matéria, ou 'viralizou'
    */
   findByUserWithPub(userId, { limit = 100, offset = 0, q = '', status = null } = {}) {
+    const st = String(status || '').trim().toLowerCase();
+    const viralFilter = st === 'viralizou';
+
     let query = db(this.table)
       .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
       .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
@@ -52,45 +84,32 @@ const AiMatters = {
       .limit(Math.max(1, Math.min(100, Number(limit) || 20)))
       .offset(Math.max(0, Number(offset) || 0));
 
-    const st = String(status || '').trim().toLowerCase();
-    if (st && st !== 'all') {
+    if (viralFilter) {
+      query = applyViralizouFilter(query);
+    } else if (st && st !== 'all') {
       query = query.andWhere('ai_matters.status', st);
     }
 
-    const term = String(q || '').trim();
-    if (term) {
-      const like = `%${term.replace(/[%_]/g, '')}%`;
-      query = query.andWhere(function whereQ() {
-        this.where('ai_matters.titulo', 'like', like)
-          .orWhere('ai_matters.materia', 'like', like)
-          .orWhere('ai_matters.fonte_titulo', 'like', like)
-          .orWhere('facebook_pages.page_name', 'like', like);
-      });
-    }
-
+    query = applySearchFilter(query, q);
     return query;
   },
 
   async countByUserWithPub(userId, { q = '', status = null } = {}) {
+    const st = String(status || '').trim().toLowerCase();
+    const viralFilter = st === 'viralizou';
+
     let query = db(this.table)
       .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
       .where('ai_matters.user_id', userId);
 
-    const st = String(status || '').trim().toLowerCase();
-    if (st && st !== 'all') {
+    if (viralFilter) {
+      query = query.leftJoin('publications', 'ai_matters.publication_id', 'publications.id');
+      query = applyViralizouFilter(query);
+    } else if (st && st !== 'all') {
       query = query.andWhere('ai_matters.status', st);
     }
 
-    const term = String(q || '').trim();
-    if (term) {
-      const like = `%${term.replace(/[%_]/g, '')}%`;
-      query = query.andWhere(function whereQ() {
-        this.where('ai_matters.titulo', 'like', like)
-          .orWhere('ai_matters.materia', 'like', like)
-          .orWhere('ai_matters.fonte_titulo', 'like', like)
-          .orWhere('facebook_pages.page_name', 'like', like);
-      });
-    }
+    query = applySearchFilter(query, q);
 
     const row = await query.count({ total: '*' }).first();
     return Number(row?.total) || 0;
@@ -101,16 +120,7 @@ const AiMatters = {
       .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
       .where('ai_matters.user_id', userId);
 
-    const term = String(q || '').trim();
-    if (term) {
-      const like = `%${term.replace(/[%_]/g, '')}%`;
-      query = query.andWhere(function whereQ() {
-        this.where('ai_matters.titulo', 'like', like)
-          .orWhere('ai_matters.materia', 'like', like)
-          .orWhere('ai_matters.fonte_titulo', 'like', like)
-          .orWhere('facebook_pages.page_name', 'like', like);
-      });
-    }
+    query = applySearchFilter(query, q);
 
     const rows = await query
       .select('ai_matters.status')
@@ -126,6 +136,17 @@ const AiMatters = {
       all += n;
     }
     out.all = all;
+
+    // Contagem da aba Viralizou (critério de engajamento, não status)
+    let viralQuery = db(this.table)
+      .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
+      .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
+      .where('ai_matters.user_id', userId);
+    viralQuery = applySearchFilter(viralQuery, q);
+    viralQuery = applyViralizouFilter(viralQuery);
+    const viralRow = await viralQuery.count({ total: '*' }).first();
+    out.viralizou = Number(viralRow?.total) || 0;
+
     return out;
   },
 
