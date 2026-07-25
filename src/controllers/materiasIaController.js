@@ -613,6 +613,29 @@ async function gerarVariacao(req, res, next) {
   }
 }
 
+/** Reel narrado: imagem da matéria + voz ElevenLabs → MP4 9:16 */
+async function gerarReel(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+    const { gerarReelNarrado } = require('../services/matterReelService');
+    const result = await gerarReelNarrado({
+      userId: req.session.userId,
+      matterId,
+    });
+    res.json({
+      ok: true,
+      ...result,
+      redirect: result.matter?.id ? `/materias-ia/${result.matter.id}` : '/minhas-materias',
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 async function atualizarViews(req, res, next) {
   try {
     const matterId = Number(req.params.id);
@@ -1204,6 +1227,7 @@ module.exports = {
   listMinhasMaterias,
   gerarManual,
   gerarVariacao,
+  gerarReel,
   atualizarViews,
   agendar,
   monitorCriar,

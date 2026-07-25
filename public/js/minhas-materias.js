@@ -55,7 +55,51 @@
   list.addEventListener('click', async (e) => {
     const removeBtn = e.target.closest('.mia-matter-remove');
     const variacaoBtn = e.target.closest('.mia-matter-variacao');
+    const reelBtn = e.target.closest('.mia-matter-reel');
     const viewsBtn = e.target.closest('.mia-matter-views');
+
+    if (reelBtn) {
+      e.preventDefault();
+      const id = reelBtn.dataset.id;
+      const titulo = reelBtn.dataset.titulo || 'esta matéria';
+      if (!id) return;
+      const regenerar = reelBtn.dataset.hasVideo === '1';
+      const msg = regenerar
+        ? 'Regenerar o Reel narrado de "' +
+          titulo +
+          '"?\n\nA voz (ElevenLabs) + imagem serão montadas de novo. Pode levar 1–2 minutos.'
+        : 'Gerar Reel narrado de "' +
+          titulo +
+          '"?\n\nUsa a imagem da matéria + narração em voz (ElevenLabs). Pode levar 1–2 minutos.';
+      if (!confirm(msg)) return;
+
+      reelBtn.disabled = true;
+      const old = reelBtn.textContent;
+      reelBtn.textContent = '…';
+      try {
+        const res = await fetch('/api/materias-ia/matters/' + id + '/gerar-reel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Falha ao gerar Reel');
+        const dest =
+          data.redirect || (data.matter?.id ? '/materias-ia/' + data.matter.id : null);
+        if (dest) {
+          window.location.href = dest;
+          return;
+        }
+        alert('Reel gerado.');
+        window.location.reload();
+      } catch (err) {
+        alert(err.message || 'Erro ao gerar Reel');
+      } finally {
+        reelBtn.disabled = false;
+        reelBtn.textContent = old;
+      }
+      return;
+    }
 
     if (viewsBtn) {
       e.preventDefault();

@@ -203,6 +203,19 @@
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-1">
+              <%
+                const hasImg = Boolean(item.imagem_path) || /^https?:\/\//i.test(String(item.imagem_url || '')) || /^https?:\/\//i.test(String(item.imagem_fonte_url || ''));
+              %>
+              <% if (hasImg) { %>
+                <button type="button"
+                  class="mia-matter-reel rounded-md border border-sky-500/30 px-2 py-1 text-[10px] text-sky-200 transition hover:bg-sky-500/15 sm:text-[11px]"
+                  data-id="<%= item.id %>"
+                  data-titulo="<%= item.titulo || 'Sem título' %>"
+                  data-has-video="<%= item.video_path ? '1' : '0' %>"
+                  title="Gera Reel 9:16 com narração (imagem + voz)">
+                  Reel
+                </button>
+              <% } %>
               <button type="button"
                 class="mia-matter-variacao rounded-md border border-violet-500/30 px-2 py-1 text-[10px] text-violet-200 transition hover:bg-violet-500/15 sm:text-[11px]"
                 data-id="<%= item.id %>"

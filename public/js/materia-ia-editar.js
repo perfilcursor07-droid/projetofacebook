@@ -1109,6 +1109,51 @@
     }
   });
 
+  document.getElementById('btn-gerar-reel')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-gerar-reel');
+    const regenerar = btn?.dataset?.hasVideo === '1';
+    const msg = regenerar
+      ? 'Regenerar o Reel narrado?\n\nVoz (ElevenLabs) + imagem → vídeo 9:16. Pode levar 1–2 minutos.'
+      : 'Gerar Reel narrado?\n\nUsa a imagem desta matéria + narração em voz (ElevenLabs). Pode levar 1–2 minutos.';
+    if (!confirm(msg)) return;
+
+    const statusEl = document.getElementById('matter-status');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Narrando e montando…';
+    }
+    if (statusEl) {
+      statusEl.classList.remove('hidden');
+      statusEl.textContent = 'Gerando áudio (ElevenLabs) e montando Reel 9:16…';
+    }
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/gerar-reel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao gerar Reel');
+      if (statusEl) {
+        statusEl.textContent =
+          'Reel pronto' +
+          (data.duracao ? ' (~' + Math.round(data.duracao) + 's)' : '') +
+          '. Recarregando…';
+      }
+      window.location.reload();
+    } catch (err) {
+      alert(err.message || 'Erro ao gerar Reel');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = regenerar ? 'Regenerar Reel narrado' : 'Gerar Reel narrado';
+      }
+      if (statusEl) {
+        statusEl.textContent = '';
+        statusEl.classList.add('hidden');
+      }
+    }
+  });
+
   document.getElementById('btn-matter-views')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-matter-views');
     if (btn) {

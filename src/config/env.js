@@ -54,6 +54,11 @@ const env = {
   appPublicUrl: String(process.env.APP_PUBLIC_URL || '').replace(/\/$/, ''),
   brightdataApiToken: process.env.BRIGHTDATA_API_TOKEN || '',
   scrapeCreatorsApiKey: process.env.SCRAPECREATORS_API_KEY || '',
+  /** ElevenLabs — narração humanizada para Reels (imagem + voz) */
+  elevenLabsApiKey: process.env.ELEVENLABS_API_KEY || '',
+  /** Voice ID da biblioteca ElevenLabs (padrão: Rachel — multilingual) */
+  elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM',
+  elevenLabsModelId: process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2',
   /** Apify — Radar Face (Trends + posts públicos FB) */
   apifyToken: process.env.APIFY_TOKEN || '',
   apifyFbSearchActor:
