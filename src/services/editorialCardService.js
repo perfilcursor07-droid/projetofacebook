@@ -120,35 +120,50 @@ function isNameParticle(word) {
 /**
  * Agrupa nomes compostos numa unidade de quebra
  * (ex.: "Flávio Bolsonaro", "José Wellington").
+ * Em CAIXA ALTA não agrupa — senão o título inteiro vira uma linha e corta.
  */
+function isMostlyAllCaps(words) {
+  const alpha = (words || []).filter((w) => /[\p{L}]/u.test(stripWordPunct(w)));
+  if (!alpha.length) return false;
+  const caps = alpha.filter((w) => {
+    const s = stripWordPunct(w);
+    return s.length >= 2 && s === s.toLocaleUpperCase('pt-BR');
+  });
+  return caps.length / alpha.length >= 0.6;
+}
+
 function glueNameUnits(words) {
+  const list = Array.isArray(words) ? words : [];
+  if (isMostlyAllCaps(list)) return list.slice();
+
   const units = [];
   let i = 0;
-  while (i < words.length) {
-    if (isProperNameToken(words[i])) {
+  while (i < list.length) {
+    if (isProperNameToken(list[i])) {
       let j = i + 1;
-      while (j < words.length) {
-        if (isProperNameToken(words[j])) {
+      while (j < list.length) {
+        if (isProperNameToken(list[j])) {
           j += 1;
           continue;
         }
         if (
-          isNameParticle(words[j]) &&
-          j + 1 < words.length &&
-          isProperNameToken(words[j + 1])
+          isNameParticle(list[j]) &&
+          j + 1 < list.length &&
+          isProperNameToken(list[j + 1])
         ) {
           j += 2;
           continue;
         }
         break;
       }
-      if (j - i >= 2) {
-        units.push(words.slice(i, j).join(' '));
+      // Só cola 2–4 tokens (nome), nunca um bloco enorme
+      if (j - i >= 2 && j - i <= 4) {
+        units.push(list.slice(i, j).join(' '));
         i = j;
         continue;
       }
     }
-    units.push(words[i]);
+    units.push(list[i]);
     i += 1;
   }
   return units;
@@ -157,19 +172,37 @@ function glueNameUnits(words) {
 function wrapByUnits(units, maxChars, maxLines) {
   const lines = [];
   let current = '';
+
+  const pushWord = (word) => {
+    const w = String(word || '');
+    if (!w) return;
+    const candidate = current ? `${current} ${w}` : w;
+    if (!current || candidate.length <= maxChars) {
+      current = candidate;
+      return;
+    }
+    lines.push(current);
+    current = w;
+  };
+
   for (const unit of units) {
-    const candidate = current ? `${current} ${unit}` : unit;
-    if (candidate.length <= maxChars || !current) {
-      // Unidade maior que a linha: empurra sozinha (melhor que partir nome)
-      if (!current && unit.length > maxChars) {
-        lines.push(unit);
+    const u = String(unit || '');
+    if (!u) continue;
+    // Unidade maior que a linha: quebra em palavras (nunca uma linha gigante)
+    if (u.length > maxChars && /\s/.test(u)) {
+      if (current) {
+        lines.push(current);
         current = '';
-      } else {
-        current = candidate;
       }
+      for (const part of u.split(/\s+/)) pushWord(part);
+      continue;
+    }
+    const candidate = current ? `${current} ${u}` : u;
+    if (!current || candidate.length <= maxChars) {
+      current = candidate;
     } else {
       lines.push(current);
-      current = unit;
+      current = u;
     }
   }
   if (current) lines.push(current);
@@ -181,13 +214,14 @@ function wrapByUnits(units, maxChars, maxLines) {
 }
 
 function wrapTitle(value, maxChars = 27, maxLines = 5) {
-  const words = String(value || '')
+  const rawWords = String(value || '')
     .replace(/\s+/g, ' ')
     .trim()
-    .toLocaleUpperCase('pt-BR')
     .split(' ')
     .filter(Boolean);
-  return wrapByUnits(glueNameUnits(words), maxChars, maxLines);
+  // Cola nomes na capitalização original; depois passa para CAIXA ALTA
+  const units = glueNameUnits(rawWords).map((u) => u.toLocaleUpperCase('pt-BR'));
+  return wrapByUnits(units, maxChars, maxLines);
 }
 
 /** Quebra de linha sem forçar maiúsculas (modelo citação). */
@@ -500,12 +534,31 @@ function buildOverlay({
     : 24;
   const maxChars = Math.max(16, baseMaxChars + (sizeMeta?.maxCharsBonus || 0));
   const isCitacao = modelId === 'citacao_marcador';
-  const lines = isCitacao ? [] : wrapTitle(title, maxChars, 5);
   // tamanho escolhido em Minha marca (30–50, padrão 43), escalado ao canvas
-  const fontSize = Math.round((sizeMeta?.px || 43) * Math.min(sx, sy) * (isCitacao ? 1.12 : 1));
-  const lineHeight = Math.round(fontSize * (modelId === 'estilo_fatos' || isCitacao ? 1.14 : 1.08));
+  let fontSize = Math.round((sizeMeta?.px || 43) * Math.min(sx, sy) * (isCitacao ? 1.12 : 1));
+  let lineHeight = Math.round(fontSize * (modelId === 'estilo_fatos' || isCitacao ? 1.14 : 1.08));
   const safeCategory = escapeXml(category || 'ÚLTIMAS');
   const safeFooter = escapeXml(footer || brandName || '');
+
+  // Quebra por largura real + reduz fonte se ainda passar (evita corte nas laterais).
+  const textMaxW = W - ww(modelId === 'bloco_inferior' || modelId === 'barra_lateral' || modelId === 'canto_solido' || modelId === 'minimalista' ? 160 : 120);
+  let lines = [];
+  if (!isCitacao) {
+    const titleUpper = String(title || '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      lines = wrapTextToWidth(titleUpper, {
+        maxWidth: textMaxW,
+        fontSize,
+        maxLines: 5,
+        glueNames: false,
+      });
+      if (!lines.length) lines = wrapTitle(title, maxChars, 5);
+      const widest = lines.reduce((m, line) => Math.max(m, estimateTextWidth(line, fontSize)), 0);
+      if (widest <= textMaxW || fontSize <= Math.round(28 * Math.min(sx, sy))) break;
+      fontSize = Math.max(Math.round(28 * Math.min(sx, sy)), Math.round(fontSize * 0.9));
+      lineHeight = Math.round(fontSize * (modelId === 'estilo_fatos' ? 1.14 : 1.08));
+    }
+  }
 
   let layout;
   // Citação pode reduzir a fonte para caber; CSS precisa acompanhar.
@@ -656,10 +709,16 @@ function buildOverlay({
       ${renderTitleLines(lines, { x: x(58), y: y(970), lineHeight, anchor: 'start' })}
       <text x="${x(58)}" y="${y(1305)}" text-anchor="start" class="footer">${safeFooter}</text>`;
   } else {
+    // faixa_classica (padrão): sobe o bloco se houver várias linhas
     const accentY = y(882);
     const accentHeight = Math.max(8, hh(14));
     const titleGap = Math.round(30 * sy);
-    const titleTop = accentY + accentHeight + titleGap + Math.round(fontSize * 0.78);
+    const blockH = Math.max(lineHeight, lines.length * lineHeight);
+    const maxBottom = H - hh(88);
+    let titleTop = accentY + accentHeight + titleGap + Math.round(fontSize * 0.78);
+    if (titleTop + blockH > maxBottom) {
+      titleTop = Math.max(y(760), maxBottom - blockH);
+    }
     layout = `
       <text x="${x(540)}" y="${y(844)}" text-anchor="middle" class="category">${safeCategory}</text>
       <rect x="${x(58)}" y="${accentY}" width="${ww(964)}" height="${accentHeight}" rx="${Math.round(7 * sx)}" fill="url(#accent)"/>
