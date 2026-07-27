@@ -205,6 +205,34 @@ function nextAutopilotRun(intervaloMinutos) {
   return new Date(Date.now() + clampAutopilotInterval(intervaloMinutos) * 60 * 1000);
 }
 
+/** publicar | aguardar_aprovacao */
+function normalizeAutopilotModo(value, fallback = 'publicar') {
+  const v = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (v === 'aguardar_aprovacao' || v === 'aguardar' || v === 'aprovacao') {
+    return 'aguardar_aprovacao';
+  }
+  if (v === 'publicar' || v === 'publicar_agora') return 'publicar';
+  return fallback === 'aguardar_aprovacao' ? 'aguardar_aprovacao' : 'publicar';
+}
+
+function isAutopilotAguardar(cfg) {
+  return normalizeAutopilotModo(cfg?.modo) === 'aguardar_aprovacao';
+}
+
+/** Em modo aprovação sempre só sites; senão respeita o flag. */
+function isAutopilotSomenteSites(cfg) {
+  if (isAutopilotAguardar(cfg)) return true;
+  return Boolean(cfg?.somente_sites);
+}
+
+function filtrarCandidatosPorPlataforma(candidatos, cfg) {
+  const list = Array.isArray(candidatos) ? candidatos : [];
+  if (!isAutopilotSomenteSites(cfg)) return list;
+  return list.filter((p) => String(p.fonte_plataforma || '').toLowerCase() === 'site');
+}
+
 function normalizeUrl(raw) {
   const u = String(raw || '').trim();
   if (!/^https?:\/\//i.test(u)) {
@@ -2216,12 +2244,20 @@ async function obterAutopilot(userId) {
       intervalo_minutos: 30,
       posts_por_ciclo: 1,
       tipo_publicacao: 'foto',
+      modo: 'aguardar_aprovacao',
+      somente_sites: true,
       proxima_execucao: null,
       total_publicados: 0,
+      total_gerados: 0,
     });
     row = await BibliotecaAutopilot.findById(id);
   }
-  return row;
+  return {
+    ...row,
+    modo: normalizeAutopilotModo(row.modo, 'publicar'),
+    somente_sites: Boolean(row.somente_sites) || normalizeAutopilotModo(row.modo) === 'aguardar_aprovacao',
+    total_gerados: Number(row.total_gerados || 0),
+  };
 }
 
 async function salvarAutopilot(userId, body = {}) {
@@ -2230,6 +2266,26 @@ async function salvarAutopilot(userId, body = {}) {
     body.ativo === true || body.ativo === '1' || body.ativo === 'on' || body.ativo === 1;
   const intervalo = clampAutopilotInterval(body.intervalo_minutos ?? body.intervaloMinutos ?? atual.intervalo_minutos);
   const postsPorCiclo = clampAutopilotPosts(body.posts_por_ciclo ?? body.postsPorCiclo ?? atual.posts_por_ciclo);
+  const modo = normalizeAutopilotModo(
+    body.modo ?? body.mode ?? atual.modo,
+    'aguardar_aprovacao'
+  );
+  let somenteSites =
+    body.somente_sites === true ||
+    body.somente_sites === '1' ||
+    body.somente_sites === 'on' ||
+    body.somenteSites === true ||
+    body.somenteSites === '1';
+  if (body.somente_sites === false || body.somente_sites === '0' || body.somenteSites === false) {
+    somenteSites = false;
+  } else if (
+    body.somente_sites == null &&
+    body.somenteSites == null
+  ) {
+    somenteSites = Boolean(atual.somente_sites);
+  }
+  // Aguardar aprovação = sempre só sites da biblioteca
+  if (modo === 'aguardar_aprovacao') somenteSites = true;
 
   let facebookPageId = body.facebook_page_id ?? body.facebookPageId;
   if (facebookPageId === '' || facebookPageId === undefined) {
@@ -2261,6 +2317,8 @@ async function salvarAutopilot(userId, body = {}) {
     intervalo_minutos: intervalo,
     posts_por_ciclo: postsPorCiclo,
     tipo_publicacao: 'foto',
+    modo,
+    somente_sites: Boolean(somenteSites),
     ultimo_erro: null,
   };
 
@@ -2276,6 +2334,24 @@ async function salvarAutopilot(userId, body = {}) {
 
   await BibliotecaAutopilot.update(atual.id, patch);
   return obterAutopilot(userId);
+}
+
+/**
+ * Gera matéria (foto + Minha marca) em rascunho — autor confirma antes de publicar.
+ */
+async function gerarRascunhoAutopilot({ userId, post, facebookPageId }) {
+  const gerado = await gerarTextoDePost({
+    userId,
+    postId: post.id,
+    facebookPageId,
+    tipoPublicacao: 'foto',
+    publicarAgora: false,
+  });
+  return {
+    gerado,
+    matterId: gerado.matter?.id || null,
+    status: gerado.matter?.status || 'rascunho',
+  };
 }
 
 /**
@@ -2371,25 +2447,31 @@ async function tickAutopilot() {
         continue;
       }
 
-      // Retoma Reels cujo processamento terminou após um reinício ou entre ciclos.
       const qtd = clampAutopilotPosts(cfg.posts_por_ciclo);
       const proxima = nextAutopilotRun(cfg.intervalo_minutos);
-      const reelAutopilot = require('./bibliotecaReelAutopilotService');
-      const retomados = await reelAutopilot.publicarPendentesDoUsuario(cfg.user_id, qtd);
+      const aguardar = isAutopilotAguardar(cfg);
+      const somenteSites = isAutopilotSomenteSites(cfg);
 
-      if (retomados >= qtd) {
-        await BibliotecaAutopilot.update(cfg.id, {
-          ultimo_tick: new Date(),
-          proxima_execucao: proxima,
-          ultimo_erro: null,
-        });
-        continue;
+      // Retoma Reels só no modo publicar (e quando não está restrito a sites).
+      let retomados = 0;
+      if (!aguardar && !somenteSites) {
+        const reelAutopilot = require('./bibliotecaReelAutopilotService');
+        retomados = await reelAutopilot.publicarPendentesDoUsuario(cfg.user_id, qtd);
+        if (retomados >= qtd) {
+          await BibliotecaAutopilot.update(cfg.id, {
+            ultimo_tick: new Date(),
+            proxima_execucao: proxima,
+            ultimo_erro: null,
+          });
+          continue;
+        }
       }
 
       assertDeepseek();
 
       const candidatosBrutos = await BibliotecaPosts.findCandidatosAutopilot(cfg.user_id, 30);
-      const candidatos = await filtrarPostsNaoPublicados(cfg.user_id, candidatosBrutos);
+      let candidatos = await filtrarPostsNaoPublicados(cfg.user_id, candidatosBrutos);
+      candidatos = filtrarCandidatosPorPlataforma(candidatos, cfg);
 
       if (!candidatos.length) {
         await BibliotecaAutopilot.update(cfg.id, {
@@ -2397,6 +2479,11 @@ async function tickAutopilot() {
           proxima_execucao: proxima,
           ultimo_erro: null,
         });
+        if (somenteSites) {
+          console.log(
+            `[biblioteca-autopilot] user #${cfg.user_id}: nenhum post de site pendente`
+          );
+        }
         continue;
       }
 
@@ -2415,15 +2502,13 @@ async function tickAutopilot() {
         })),
         qtd
       );
-      // Não sobrescreve a lista manual "Melhores para publicar" do usuário.
-      // O ranking do autopilot fica só em memória para decidir o que publicar.
 
       const byId = new Map(candidatos.map((p) => [Number(p.id), p]));
       let processados = retomados;
       let publicadosNaoContabilizados = 0;
+      let geradosAguardando = 0;
       const erros = [];
 
-      // Ordem do ranking + fallback se algum candidato falhar.
       const filaIds = ranking.map((r) => r.id);
       for (const c of candidatos) {
         if (!filaIds.includes(Number(c.id))) filaIds.push(Number(c.id));
@@ -2434,17 +2519,26 @@ async function tickAutopilot() {
         const post = byId.get(Number(postId));
         if (!post) continue;
         try {
-          const result = await publicarPostAutopilot({
-            userId: cfg.user_id,
-            post,
-            facebookPageId: page.id,
-          });
-          processados += 1;
-          if (result.publicado && !result.contabilizado) {
-            publicadosNaoContabilizados += 1;
-          } else if (!result.publicado && !result.enfileirado) {
-            // Gerou rascunho (ex.: sem arte); ocupa a vaga, mas exige revisão.
-            erros.push(`#${post.id}: gerado sem publicação (verifique imagem/arte)`);
+          if (aguardar) {
+            await gerarRascunhoAutopilot({
+              userId: cfg.user_id,
+              post,
+              facebookPageId: page.id,
+            });
+            processados += 1;
+            geradosAguardando += 1;
+          } else {
+            const result = await publicarPostAutopilot({
+              userId: cfg.user_id,
+              post,
+              facebookPageId: page.id,
+            });
+            processados += 1;
+            if (result.publicado && !result.contabilizado) {
+              publicadosNaoContabilizados += 1;
+            } else if (!result.publicado && !result.enfileirado) {
+              erros.push(`#${post.id}: gerado sem publicação (verifique imagem/arte)`);
+            }
           }
         } catch (err) {
           erros.push(`#${post.id}: ${err.message}`);
@@ -2456,12 +2550,19 @@ async function tickAutopilot() {
         }
       }
 
+      if (geradosAguardando) {
+        await BibliotecaAutopilot.incrementGeneratedByUser(cfg.user_id, geradosAguardando);
+        console.log(
+          `[biblioteca-autopilot] user #${cfg.user_id}: ${geradosAguardando} rascunho(s) de site aguardando aprovação`
+        );
+      }
       if (publicadosNaoContabilizados) {
         await BibliotecaAutopilot.incrementPublishedByUser(
           cfg.user_id,
           publicadosNaoContabilizados
         );
       }
+
       await BibliotecaAutopilot.update(cfg.id, {
         ultimo_tick: new Date(),
         proxima_execucao: proxima,

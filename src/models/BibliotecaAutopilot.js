@@ -37,6 +37,16 @@ const BibliotecaAutopilot = {
       });
   },
 
+  incrementGeneratedByUser(userId, amount = 1) {
+    const delta = Math.max(1, Number(amount) || 1);
+    return db(this.table)
+      .where({ user_id: userId })
+      .update({
+        total_gerados: db.raw('COALESCE(total_gerados, 0) + ?', [delta]),
+        updated_at: db.fn.now(),
+      });
+  },
+
   updateByUser(userId, data) {
     return db(this.table).where({ user_id: userId }).update({ ...data, updated_at: db.fn.now() });
   },

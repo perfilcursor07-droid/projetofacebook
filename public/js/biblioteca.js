@@ -131,6 +131,29 @@
 
   const autoForm = document.getElementById('bib-auto-form');
   const autoMsg = document.getElementById('bib-auto-msg');
+  const modoAguardar = document.getElementById('bib-auto-modo-aguardar');
+  const modoPublicar = document.getElementById('bib-auto-modo-publicar');
+  const somenteSitesEl = document.getElementById('bib-auto-somente-sites');
+  const somenteSitesWrap = document.getElementById('bib-auto-somente-sites-wrap');
+
+  function syncAutopilotModoUi() {
+    const aguardar = Boolean(modoAguardar?.checked);
+    if (somenteSitesEl) {
+      if (aguardar) {
+        somenteSitesEl.checked = true;
+        somenteSitesEl.disabled = true;
+      } else {
+        somenteSitesEl.disabled = false;
+      }
+    }
+    if (somenteSitesWrap) {
+      somenteSitesWrap.classList.toggle('opacity-60', aguardar);
+    }
+  }
+  modoAguardar?.addEventListener('change', syncAutopilotModoUi);
+  modoPublicar?.addEventListener('change', syncAutopilotModoUi);
+  syncAutopilotModoUi();
+
   if (autoForm) {
     autoForm.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -138,6 +161,8 @@
       const page = document.getElementById('bib-auto-page')?.value || '';
       const posts = Number(document.getElementById('bib-auto-posts')?.value || 1);
       const intervalo = Number(document.getElementById('bib-auto-intervalo')?.value || 30);
+      const modo = modoAguardar?.checked ? 'aguardar_aprovacao' : 'publicar';
+      const somenteSites = modo === 'aguardar_aprovacao' ? true : Boolean(somenteSitesEl?.checked);
       if (ativo && !page) {
         if (autoMsg) {
           autoMsg.textContent = 'Selecione a Página do Facebook para ativar o piloto.';
@@ -155,6 +180,8 @@
             facebook_page_id: page || null,
             posts_por_ciclo: posts,
             intervalo_minutos: intervalo,
+            modo,
+            somente_sites: somenteSites,
           }),
         });
         location.reload();

@@ -471,7 +471,7 @@
                   <span class="rounded-md bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">desligado</span>
                 <% } %>
               </div>
-              <p class="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">Configure a IA para selecionar os melhores posts, criar matérias e publicar automaticamente.</p>
+              <p class="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">A cada ciclo a IA escolhe posts da biblioteca, gera a matéria e — no modo recomendado — deixa pronta para você confirmar antes de publicar.</p>
             </div>
           </div>
           <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-500 transition group-open:rotate-180 group-hover:text-white">
@@ -480,14 +480,48 @@
         </summary>
 
         <div class="border-t border-slate-800 p-4 sm:p-5">
+          <% const modoAuto = String(auto.modo || 'publicar'); const aguardarAuto = modoAuto === 'aguardar_aprovacao'; %>
           <div class="rounded-xl border border-slate-800 bg-slate-950/30 p-4 text-xs leading-relaxed text-slate-500">
-            A IA analisa os posts de <strong class="font-medium text-slate-300">todas as fontes</strong>, escolhe os que têm mais chance de viralizar no Facebook e usa o modelo definido em <a href="/minha-marca" class="font-medium text-emerald-400 hover:text-emerald-300">Minha marca</a> para criar e publicar a matéria.
+            <% if (aguardarAuto) { %>
+              Modo atual: <strong class="font-medium text-amber-300">aguardar sua confirmação</strong>.
+              Só posts de <strong class="font-medium text-slate-300">sites</strong> da biblioteca.
+              A cada <%= Number(auto.intervalo_minutos) || 30 %> min gera matéria(s) em <a href="/minhas-materias?status=rascunho" class="font-medium text-emerald-400 hover:text-emerald-300">Minhas matérias</a> — você revisa e publica.
+            <% } else { %>
+              Modo atual: <strong class="font-medium text-emerald-300">publicar na hora</strong>.
+              A IA analisa posts<%= auto.somente_sites ? ' de <strong class="font-medium text-slate-300">sites</strong>' : ' de <strong class="font-medium text-slate-300">todas as fontes</strong>' %>,
+              cria a arte com <a href="/minha-marca" class="font-medium text-emerald-400 hover:text-emerald-300">Minha marca</a> e publica.
+            <% } %>
           </div>
 
           <form id="bib-auto-form" class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
             <label class="flex items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5 sm:col-span-2 lg:col-span-12">
               <input id="bib-auto-ativo" type="checkbox" class="rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500/30" <%= auto.ativo ? 'checked' : '' %> />
               <span class="text-sm font-medium text-slate-200">Ativar piloto automático</span>
+            </label>
+
+            <fieldset class="sm:col-span-2 lg:col-span-12">
+              <legend class="text-xs font-medium text-slate-400">Modo de operação</legend>
+              <div class="mt-1.5 grid gap-2 sm:grid-cols-2">
+                <label class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 peer-checked:border-amber-500/50">
+                  <input type="radio" name="bib-auto-modo" id="bib-auto-modo-aguardar" value="aguardar_aprovacao" class="peer mt-0.5 border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500/30" <%= aguardarAuto ? 'checked' : '' %> />
+                  <span>
+                    <span class="block text-sm font-medium text-slate-200">Aguardar minha confirmação</span>
+                    <span class="mt-0.5 block text-[11px] leading-snug text-slate-500">Só sites · gera rascunho a cada ciclo · você publica depois</span>
+                  </span>
+                </label>
+                <label class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5">
+                  <input type="radio" name="bib-auto-modo" id="bib-auto-modo-publicar" value="publicar" class="mt-0.5 border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500/30" <%= !aguardarAuto ? 'checked' : '' %> />
+                  <span>
+                    <span class="block text-sm font-medium text-slate-200">Publicar automaticamente</span>
+                    <span class="mt-0.5 block text-[11px] leading-snug text-slate-500">Gera e envia para o Facebook sem pedir confirmação</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <label id="bib-auto-somente-sites-wrap" class="flex items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5 sm:col-span-2 lg:col-span-12 <%= aguardarAuto ? 'opacity-60' : '' %>">
+              <input id="bib-auto-somente-sites" type="checkbox" class="rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500/30" <%= (auto.somente_sites || aguardarAuto) ? 'checked' : '' %> <%= aguardarAuto ? 'disabled' : '' %> />
+              <span class="text-sm font-medium text-slate-200">Somente fontes do tipo <span class="text-slate-400">Site</span> (não Instagram/Facebook/YouTube)</span>
             </label>
 
             <label class="block sm:col-span-2 lg:col-span-5">
@@ -515,7 +549,7 @@
               <span class="text-xs font-medium text-slate-400">Intervalo em minutos</span>
               <input id="bib-auto-intervalo" type="number" min="5" max="1440" step="1" value="<%= Number(auto.intervalo_minutos) || 30 %>"
                 class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30" />
-              <span class="mt-1 block text-[10px] text-slate-600">De 5 a 1.440 min</span>
+              <span class="mt-1 block text-[10px] text-slate-600">Padrão 30 · de 5 a 1.440</span>
             </label>
 
             <button type="submit" class="w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 lg:col-span-3">
@@ -524,7 +558,7 @@
             <p id="bib-auto-msg" class="hidden text-sm sm:col-span-2 lg:col-span-12"></p>
           </form>
 
-          <div class="mt-5 grid gap-px overflow-hidden rounded-xl border border-slate-800 bg-slate-800 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="mt-5 grid gap-px overflow-hidden rounded-xl border border-slate-800 bg-slate-800 sm:grid-cols-2 lg:grid-cols-5">
             <div class="bg-slate-950/70 p-3.5">
               <p class="text-[10px] font-medium uppercase tracking-wider text-slate-600">Último ciclo</p>
               <p class="mt-1.5 text-xs text-slate-300"><%= auto.ultimo_tick ? fmtQuando(auto.ultimo_tick) : '—' %></p>
@@ -534,10 +568,14 @@
               <p class="mt-1.5 text-xs text-slate-300"><%= auto.ativo && auto.proxima_execucao ? fmtQuando(auto.proxima_execucao) : (auto.ativo ? 'Em breve' : '—') %></p>
             </div>
             <div class="bg-slate-950/70 p-3.5">
+              <p class="text-[10px] font-medium uppercase tracking-wider text-slate-600">Geradas p/ revisão</p>
+              <p class="mt-1.5 text-xs tabular-nums text-slate-300"><%= Number(auto.total_gerados || 0) %></p>
+            </div>
+            <div class="bg-slate-950/70 p-3.5">
               <p class="text-[10px] font-medium uppercase tracking-wider text-slate-600">Total publicado</p>
               <p class="mt-1.5 text-xs tabular-nums text-slate-300"><%= Number(auto.total_publicados || 0) %></p>
             </div>
-            <div class="bg-slate-950/70 p-3.5">
+            <div class="bg-slate-950/70 p-3.5 sm:col-span-2 lg:col-span-1">
               <p class="text-[10px] font-medium uppercase tracking-wider text-slate-600">Último status</p>
               <% if (auto.ultimo_erro) { %>
                 <p class="mt-1.5 line-clamp-2 text-xs text-rose-300" title="<%= auto.ultimo_erro %>"><%= auto.ultimo_erro %></p>
@@ -548,6 +586,12 @@
               <% } %>
             </div>
           </div>
+          <% if (aguardarAuto) { %>
+            <p class="mt-3 text-xs text-slate-500">
+              Revisar rascunhos:
+              <a href="/minhas-materias?status=rascunho" class="font-medium text-emerald-400 hover:text-emerald-300">Minhas matérias → Rascunhos</a>
+            </p>
+          <% } %>
         </div>
       </details>
     </section>
