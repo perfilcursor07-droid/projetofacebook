@@ -396,11 +396,129 @@ async function putAutopilot(req, res, next) {
   }
 }
 
+async function agendarPage(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const itens = await agendaService.listarAgenda(req.session.userId);
+    const pages = await pagesDoUsuario(req.session.userId);
+    const defaultPageId = await defaultPageIdDoUsuario(req.session.userId);
+    return res.render('biblioteca-agendar', {
+      title: 'Agendar',
+      itens,
+      pages,
+      defaultPageId,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function listarAgenda(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const status = req.query.status || 'all';
+    const itens = await agendaService.listarAgenda(req.session.userId, { status });
+    res.json({ ok: true, itens });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function montarAgenda(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const body = req.body || {};
+    const facebookPageId = await resolveFacebookPageId(
+      req.session.userId,
+      body.facebook_page_id ?? body.facebookPageId
+    );
+    const result = await agendaService.montarAgendaAmanha({
+      userId: req.session.userId,
+      facebookPageId,
+      maxItens: body.max_itens ?? body.maxItens ?? 30,
+      startHour: body.start_hour ?? body.startHour ?? 7,
+      endHour: body.end_hour ?? body.endHour ?? 22,
+      somenteSites: body.somente_sites !== false && body.somenteSites !== false,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function atualizarAgendaItem(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const id = Number(req.params.id);
+    const proposedAt = req.body?.proposed_at ?? req.body?.proposedAt;
+    if (!proposedAt) {
+      const err = new Error('Informe proposed_at');
+      err.status = 400;
+      throw err;
+    }
+    const result = await agendaService.atualizarHorario(req.session.userId, id, proposedAt);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function confirmarAgendaItem(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const result = await agendaService.confirmarAgendamento(
+      req.session.userId,
+      Number(req.params.id)
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function publicarAgendaItem(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const result = await agendaService.publicarAgora(req.session.userId, Number(req.params.id));
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function excluirAgendaItem(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const apagarMateria =
+      req.body?.apagar_materia === true || req.query.apagar_materia === '1';
+    const result = await agendaService.excluirItem(req.session.userId, Number(req.params.id), {
+      apagarMateria,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function loteAgenda(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const result = await agendaService.acaoEmLote(req.session.userId, {
+      ids: req.body?.ids,
+      acao: req.body?.acao,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listPage,
   fontePage,
   postPage,
   prepararPage,
+  agendarPage,
   listar,
   criar,
   atualizar,
@@ -419,4 +537,11 @@ module.exports = {
   ocultarMelhor,
   getAutopilot,
   putAutopilot,
+  listarAgenda,
+  montarAgenda,
+  atualizarAgendaItem,
+  confirmarAgendaItem,
+  publicarAgendaItem,
+  excluirAgendaItem,
+  loteAgenda,
 };

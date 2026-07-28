@@ -21,5 +21,12 @@ router.post('/melhores/analisar', controller.analisarMelhores);
 router.delete('/melhores/:postId', controller.ocultarMelhor);
 router.get('/autopilot', controller.getAutopilot);
 router.put('/autopilot', controller.putAutopilot);
+router.get('/agenda', controller.listarAgenda);
+router.post('/agenda/montar', controller.montarAgenda);
+router.post('/agenda/lote', controller.loteAgenda);
+router.patch('/agenda/:id', controller.atualizarAgendaItem);
+router.post('/agenda/:id/confirmar', controller.confirmarAgendaItem);
+router.post('/agenda/:id/publicar', controller.publicarAgendaItem);
+router.delete('/agenda/:id', controller.excluirAgendaItem);
 
 module.exports = router;

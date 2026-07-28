@@ -87,6 +87,7 @@ app.get('/viralizar', requireAuth, require('./controllers/viralizarController').
 app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Vídeo e imagem'));
 app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController').listPage);
 app.get('/biblioteca', requireAuth, require('./controllers/bibliotecaController').listPage);
+app.get('/biblioteca/agendar', requireAuth, require('./controllers/bibliotecaController').agendarPage);
 app.get('/biblioteca/fontes/:id', requireAuth, require('./controllers/bibliotecaController').fontePage);
 app.get('/biblioteca/posts/:postId', requireAuth, require('./controllers/bibliotecaController').postPage);
 app.get('/biblioteca/preparar/:postId', requireAuth, require('./controllers/bibliotecaController').prepararPage);

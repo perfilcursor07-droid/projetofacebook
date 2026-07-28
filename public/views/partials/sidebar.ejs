@@ -49,9 +49,13 @@
       <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
       <span class="sidebar-text">Viralizar</span>
     </a>
-    <a href="/biblioteca" title="Biblioteca de fontes" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= itemClass('/biblioteca') %>">
+    <a href="/biblioteca" title="Biblioteca de fontes" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= (path === '/biblioteca' || (path.startsWith('/biblioteca/') && !path.startsWith('/biblioteca/agendar'))) ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400 hover:bg-slate-800/80 hover:text-white' %>">
       <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h6"/></svg>
       <span class="sidebar-text">Biblioteca</span>
+    </a>
+    <a href="/biblioteca/agendar" title="Agendar posts da biblioteca" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= path.startsWith('/biblioteca/agendar') ? 'bg-amber-500/15 text-amber-300' : 'text-slate-400 hover:bg-slate-800/80 hover:text-white' %>">
+      <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
+      <span class="sidebar-text">Agendar</span>
     </a>
     <a href="/paginas" title="Páginas" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= itemClass('/paginas') %>">
       <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>

@@ -1,0 +1,147 @@
+<%- include('partials/app-start') %>
+<%
+  const lista = typeof itens !== 'undefined' && Array.isArray(itens) ? itens : [];
+  const statusLabels = {
+    pendente: 'Pré-agendado',
+    confirmado: 'Confirmado',
+    publicado: 'Publicado',
+    cancelado: 'Cancelado',
+  };
+  const statusClass = {
+    pendente: 'bg-amber-500/15 text-amber-300',
+    confirmado: 'bg-sky-500/15 text-sky-300',
+    publicado: 'bg-emerald-500/15 text-emerald-300',
+    cancelado: 'bg-slate-800 text-slate-500',
+  };
+  function fmtQuando(v) {
+    if (!v) return '—';
+    try {
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return String(v);
+      return d.toLocaleString('pt-BR', { timeZone: 'America/Araguaina', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return String(v);
+    }
+  }
+%>
+  <main class="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+    <header class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-amber-400/80">Biblioteca</p>
+        <h1 class="mt-1 text-xl font-semibold text-white sm:text-2xl">Agendar</h1>
+        <p class="mt-1 max-w-2xl text-sm text-slate-400">
+          Puxa posts de <strong class="font-medium text-slate-300">sites</strong> da biblioteca, gera as matérias e pré-agenda para
+          <strong class="font-medium text-slate-300">amanhã</strong>, de meia em meia hora (7h–22h). Você confirma, edita ou publica.
+        </p>
+      </div>
+      <a href="/biblioteca" class="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 hover:text-white">← Biblioteca</a>
+    </header>
+
+    <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 sm:p-5">
+      <form id="agenda-montar-form" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
+        <label class="block sm:col-span-2 lg:col-span-5">
+          <span class="text-xs font-medium text-slate-400">Página do Facebook</span>
+          <select id="agenda-page" required
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30">
+            <option value="">Selecione uma página</option>
+            <% (pages || []).forEach(function (p) {
+              const sel = Number(defaultPageId) === Number(p.id);
+            %>
+              <option value="<%= p.id %>" <%= sel ? 'selected' : '' %>><%= p.page_name %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="block lg:col-span-2">
+          <span class="text-xs font-medium text-slate-400">Máx. itens</span>
+          <input id="agenda-max" type="number" min="1" max="48" value="20"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30" />
+        </label>
+        <button type="submit" class="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-amber-400 lg:col-span-3">
+          Montar agenda de amanhã
+        </button>
+        <p id="agenda-msg" class="hidden text-sm sm:col-span-2 lg:col-span-12"></p>
+      </form>
+    </section>
+
+    <section class="mt-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-sm font-semibold text-white">Lista pré-agendada <span id="agenda-count" class="font-normal text-slate-500">(<%= lista.length %>)</span></h2>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" id="agenda-lote-confirmar" class="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-40" disabled>Confirmar selecionados</button>
+          <button type="button" id="agenda-lote-publicar" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40" disabled>Publicar selecionados</button>
+          <button type="button" id="agenda-lote-excluir" class="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-40" disabled>Excluir selecionados</button>
+        </div>
+      </div>
+
+      <div class="mt-3 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+        <div class="flex items-center gap-3 border-b border-slate-800 px-3 py-2 text-xs text-slate-500">
+          <label class="inline-flex items-center gap-2">
+            <input type="checkbox" id="agenda-check-all" class="rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500/30" />
+            Selecionar todos
+          </label>
+        </div>
+        <ul id="agenda-list" class="divide-y divide-slate-800/80">
+          <% if (!lista.length) { %>
+            <li id="agenda-empty" class="px-4 py-10 text-center text-sm text-slate-500">
+              Nenhuma pré-agenda ainda. Clique em <strong class="text-slate-300">Montar agenda de amanhã</strong>.
+            </li>
+          <% } %>
+          <% lista.forEach(function (item) {
+            const st = item.status || 'pendente';
+            const thumb = item.thumb || item.post_thumbnail || '';
+            const titulo = item.titulo || item.matter_titulo || item.post_titulo || 'Sem título';
+          %>
+            <li class="agenda-row flex flex-wrap items-start gap-3 px-3 py-3 sm:flex-nowrap sm:items-center" data-id="<%= item.id %>" data-status="<%= st %>">
+              <label class="mt-1 shrink-0">
+                <input type="checkbox" class="agenda-check rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500/30" value="<%= item.id %>" />
+              </label>
+              <% if (thumb) { %>
+                <img src="<%= thumb %>" alt="" class="h-14 w-14 shrink-0 rounded-lg object-cover ring-1 ring-slate-700" />
+              <% } else { %>
+                <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-[10px] text-slate-500">sem foto</div>
+              <% } %>
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.pendente %>"><%= statusLabels[st] || st %></span>
+                  <% if (item.fonte_nome) { %>
+                    <span class="truncate text-[11px] text-slate-500"><%= item.fonte_nome %></span>
+                  <% } %>
+                </div>
+                <p class="mt-0.5 truncate text-sm font-medium text-slate-100"><%= titulo %></p>
+                <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                  <label class="inline-flex items-center gap-1.5">
+                    Horário
+                    <input type="datetime-local" class="agenda-hora rounded border border-slate-700 bg-slate-950 px-1.5 py-0.5 text-[11px] text-slate-200" value="<%= item.proposed_at_local || '' %>" <%= st !== 'pendente' ? 'disabled' : '' %> data-id="<%= item.id %>" />
+                  </label>
+                  <span class="hidden sm:inline"><%= fmtQuando(item.proposed_at) %></span>
+                </div>
+              </div>
+              <div class="flex w-full flex-wrap gap-1.5 sm:w-auto sm:justify-end">
+                <% if (item.matter_id) { %>
+                  <a href="/materias-ia/<%= item.matter_id %>" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white">Editar</a>
+                  <a href="/materias-ia/<%= item.matter_id %>" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white">Ver</a>
+                <% } else if (item.post_id) { %>
+                  <a href="/biblioteca/posts/<%= item.post_id %>" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white">Ver</a>
+                <% } %>
+                <% if (st === 'pendente') { %>
+                  <button type="button" class="agenda-btn-confirmar rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20" data-id="<%= item.id %>">Confirmar</button>
+                  <button type="button" class="agenda-btn-publicar rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20" data-id="<%= item.id %>">Publicar agora</button>
+                <% } %>
+                <button type="button" class="agenda-btn-excluir rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20" data-id="<%= item.id %>">Excluir</button>
+              </div>
+            </li>
+          <% }) %>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="agenda-busy" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
+    <div class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
+      <div class="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-amber-400/30 border-t-amber-300"></div>
+      <p id="agenda-busy-text" class="mt-4 text-sm text-slate-300">Processando…</p>
+    </div>
+  </div>
+
+  <script src="/js/biblioteca-agendar.js"></script>
+<%- include('partials/app-end') %>

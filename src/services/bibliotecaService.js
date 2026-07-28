@@ -2632,4 +2632,5 @@ module.exports = {
   obterAutopilot,
   salvarAutopilot,
   resolvePage,
+  filtrarPostsNaoPublicados,
 };
