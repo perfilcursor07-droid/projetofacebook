@@ -300,7 +300,7 @@
 
     if (!topicos.length) {
       listaEl.innerHTML =
-        '<p class="rounded-xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-500">Clique em “Buscar pautas virais agora” — a IA encontra sozinha o que mais engaja o público da página.</p>';
+        '<p class="rounded-xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-500">Clique em <strong class="font-medium text-slate-400">Buscar agora</strong> — a IA encontra o que mais engaja o público da página.</p>';
       syncGerarBtn();
       return;
     }
@@ -582,12 +582,17 @@
     const ehDesempenho = view === 'desempenho';
     paneP?.classList.toggle('hidden', ehDesempenho);
     paneD?.classList.toggle('hidden', !ehDesempenho);
+    document.getElementById('vir-toolbar-pautas')?.classList.toggle('hidden', ehDesempenho);
+    document.getElementById('vir-toolbar-desempenho')?.classList.toggle('hidden', !ehDesempenho);
+    document.getElementById('vir-meta-pautas')?.classList.toggle('hidden', ehDesempenho);
+    dStatus?.classList.toggle('hidden', !ehDesempenho);
     document.querySelectorAll('.vir-view-btn').forEach((b) => {
       const on = b.dataset.virView === view;
       b.classList.toggle('bg-rose-500', on);
       b.classList.toggle('text-white', on);
       b.classList.toggle('font-semibold', on);
       b.classList.toggle('text-slate-300', !on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
     if (ehDesempenho && !desempenhoCarregado) carregarDesempenho(false);
   }
