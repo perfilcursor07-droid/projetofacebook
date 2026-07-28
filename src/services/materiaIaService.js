@@ -13,7 +13,7 @@ const facebookService = require('./facebookService');
 const { enqueue } = require('../workers/queue');
 const { env } = require('../config/env');
 const db = require('../config/db');
-const { titulosParecidos, formatFacebookCaption, montarFonteCredito, estiloCreditoDaPagina } = require('./editorialGuidelinesFb');
+const { titulosParecidos, mesmoAssuntoNoticia, formatFacebookCaption, montarFonteCredito, estiloCreditoDaPagina } = require('./editorialGuidelinesFb');
 const { applyBrandArtworkToResult } = require('./matterArtworkService');
 
 async function resolvePage(userId, facebookPageId) {
@@ -65,10 +65,19 @@ function creditoPadraoDaMateria({ topico, gerado, tipoPublicacao, pageName }) {
  */
 async function checarDuplicidade({ userId, facebookPageId, titulo, materia }) {
   const avisos = [];
-  const recentes = await AiMatters.findByUser(userId, 25);
+  const recentes = await AiMatters.findByUser(userId, 80);
   for (const m of recentes) {
-    if (titulosParecidos(titulo, m.titulo) || titulosParecidos(materia?.slice(0, 180), m.materia?.slice(0, 180))) {
-      avisos.push(`Possível duplicata de matéria #${m.id}: “${m.titulo || 'sem título'}”`);
+    const status = String(m.status || '');
+    if (!['rascunho', 'pronto', 'agendado', 'publicado'].includes(status) && !m.publication_id) {
+      continue;
+    }
+    if (
+      mesmoAssuntoNoticia(titulo, m.titulo) ||
+      mesmoAssuntoNoticia(titulo, m.fonte_titulo) ||
+      titulosParecidos(titulo, m.titulo) ||
+      titulosParecidos(materia?.slice(0, 180), m.materia?.slice(0, 180))
+    ) {
+      avisos.push(`Possível duplicata de matéria #${m.id} (${status}): “${m.titulo || 'sem título'}”`);
       break;
     }
   }
@@ -78,7 +87,7 @@ async function checarDuplicidade({ userId, facebookPageId, titulo, materia }) {
       const pubs = await Publications.recent(userId, 20);
       for (const p of pubs) {
         const texto = p.texto || p.legenda_sugerida || '';
-        if (titulosParecidos(titulo, texto.slice(0, 120))) {
+        if (mesmoAssuntoNoticia(titulo, texto.slice(0, 160)) || titulosParecidos(titulo, texto.slice(0, 120))) {
           avisos.push(`Possível duplicata de publicação recente na Página (${p.page_name || 'FB'})`);
           break;
         }
@@ -161,10 +170,12 @@ async function marcarJaPublicados(userId, facebookPageId, topicos) {
     if (facebookPageId && m.facebook_page_id && Number(m.facebook_page_id) !== Number(facebookPageId)) {
       continue;
     }
-    // Publicado, agendado ou já com publication_id
+    // Qualquer matéria já gerada (rascunho → agendado → publicado)
     const usado =
       m.status === 'publicado' ||
       m.status === 'agendado' ||
+      m.status === 'pronto' ||
+      m.status === 'rascunho' ||
       Boolean(m.publication_id);
     if (!usado) continue;
     if (m.fonte_url) urls.add(String(m.fonte_url).split(/[?#]/)[0].toLowerCase());
@@ -177,7 +188,9 @@ async function marcarJaPublicados(userId, facebookPageId, topicos) {
       .split(/[?#]/)[0]
       .toLowerCase();
     const jaPorUrl = Boolean(link && urls.has(link));
-    const jaPorTitulo = titulos.some((x) => titulosParecidos(t.titulo, x));
+    const jaPorTitulo = titulos.some(
+      (x) => mesmoAssuntoNoticia(t.titulo, x) || titulosParecidos(t.titulo, x)
+    );
     return { ...t, jaPublicado: jaPorUrl || jaPorTitulo };
   });
 }

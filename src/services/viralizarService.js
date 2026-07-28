@@ -669,7 +669,7 @@ async function sincronizarPautasUsadas({
   topicos = [],
   excluidos = [],
 } = {}) {
-  const { titulosParecidos } = require('./editorialGuidelinesFb');
+  const { titulosParecidos, mesmoAssuntoNoticia } = require('./editorialGuidelinesFb');
   const AiMatters = require('../models/AiMatters');
 
   const pool = Array.isArray(topicos) ? topicos.filter((t) => t && t.titulo) : [];
@@ -709,7 +709,10 @@ async function sincronizarPautasUsadas({
     const link = normalizarLink(t.link);
     const jaPorUrl = Boolean(link && urlsUsadas.has(link));
     const jaPorTitulo = titulosUsados.some(
-      (x) => titulosParecidos(t.titulo, x) || titulosParecidos(String(t.resumo || '').slice(0, 120), x)
+      (x) =>
+        mesmoAssuntoNoticia(t.titulo, x) ||
+        titulosParecidos(t.titulo, x) ||
+        mesmoAssuntoNoticia(String(t.resumo || '').slice(0, 120), x)
     );
     if (jaPorUrl || jaPorTitulo) {
       acabaramDeUsar.push({

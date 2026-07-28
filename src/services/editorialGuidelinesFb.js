@@ -186,19 +186,55 @@ function detectarCitacoesInventadas(materia, contextoApuracao) {
   return [...suspeitos];
 }
 
+const STOP_ASSUNTO = new Set([
+  'para', 'com', 'sobre', 'apos', 'apos', 'ainda', 'mais', 'menos', 'quando', 'onde',
+  'como', 'tambem', 'depois', 'antes', 'hoje', 'ontem', 'agora', 'muito', 'muita',
+  'deixam', 'deixou', 'deixam', 'mostra', 'mostram', 'video', 'videos', 'foto',
+  'fotos', 'veja', 'veja', 'confira', 'saiba', 'entenda', 'alerta', 'ultimas',
+  'noticias', 'gospel', 'cristaos', 'cristao', 'fieis', 'oracao', 'oracoes',
+  'clamam', 'clamor', 'unem', 'meio', 'caos', 'entre', 'sobre', 'pelos', 'pelas',
+]);
+
+/** Tokens úteis para comparar se duas manchetes são o mesmo fato. */
+function tokensAssunto(texto) {
+  const raw = normalizarBusca(texto);
+  const nums = (raw.match(/\d+[.,]\d+/g) || []).map((n) => `n${n.replace(/[.,]/g, '')}`);
+  const words = raw
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !STOP_ASSUNTO.has(w));
+  return [...nums, ...words];
+}
+
 function titulosParecidos(a, b) {
-  const na = normalizarBusca(a)
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 3);
-  const nb = normalizarBusca(b)
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 3);
+  const na = tokensAssunto(a);
+  const nb = tokensAssunto(b);
   if (!na.length || !nb.length) return false;
   const setB = new Set(nb);
   const inter = na.filter((w) => setB.has(w)).length;
   return inter >= Math.min(4, Math.ceil(Math.min(na.length, nb.length) * 0.55));
+}
+
+/**
+ * Detecta a mesma notícia mesmo com títulos reescritos pela IA
+ * (ex.: várias versões de “terremoto 7,1 no Japão”).
+ */
+function mesmoAssuntoNoticia(a, b) {
+  if (titulosParecidos(a, b)) return true;
+  const na = tokensAssunto(a);
+  const nb = tokensAssunto(b);
+  if (!na.length || !nb.length) return false;
+  const setB = new Set(nb);
+  const inter = [...new Set(na.filter((w) => setB.has(w)))];
+  if (inter.length < 2) return false;
+
+  const forte =
+    /^(terremoto|tsunami|incendio|tiroteio|enchente|desabamento|acidente|atentado|sequestro|prisao|eleicao|morte|assassinato|desabou|evacuados|shopping|japao|israel|gaza|ucrania|china|russia|bahia|brasilia|kumamoto)/;
+  const fortes = inter.filter((w) => forte.test(w) || /^n\d+$/.test(w) || w.length >= 8);
+  // Ex.: terremoto + japao, ou n71 + japao, ou terremoto + n71
+  if (fortes.length >= 2) return true;
+  // 3+ tokens em comum já basta (manchetes longas reescritas)
+  return inter.length >= 3;
 }
 
 function normalizeHashtagToken(raw) {
@@ -724,6 +760,8 @@ module.exports = {
   detectarMuletasIa,
   detectarCitacoesInventadas,
   titulosParecidos,
+  mesmoAssuntoNoticia,
+  tokensAssunto,
   normalizarBusca,
   blocoRegrasFacebook,
   blocoEstiloNewsGospel,

@@ -15,7 +15,7 @@ const {
 } = require('./deepseekService');
 const { env } = require('../config/env');
 const axios = require('axios');
-const { titulosParecidos } = require('./editorialGuidelinesFb');
+const { titulosParecidos, mesmoAssuntoNoticia } = require('./editorialGuidelinesFb');
 
 /** external_id é VARCHAR(191); URLs do Google News passam disso → hash estável. */
 function stableExternalId(raw) {
@@ -120,16 +120,20 @@ async function traduzirItemBrutoSeEstrangeiro(fonte, item) {
 }
 
 /**
- * Índice de matérias já publicadas do usuário (URL + títulos).
- * Usado para não recomendar nem republicar a mesma pauta.
+ * Índice de matérias já geradas do usuário (URL + títulos).
+ * Inclui rascunho/agendado/publicado — evita o autopilot gerar 5x a mesma notícia.
  */
 async function carregarIndiceJaPublicados(userId) {
   const AiMatters = require('../models/AiMatters');
-  const matters = await AiMatters.findByUser(userId, 200);
+  const matters = await AiMatters.findByUser(userId, 300);
   const urls = new Set();
   const titulos = [];
   for (const m of matters || []) {
-    if (m.status !== 'publicado' && !m.publication_id) continue;
+    const status = String(m.status || '');
+    const usado =
+      ['rascunho', 'pronto', 'agendado', 'publicado'].includes(status) ||
+      Boolean(m.publication_id);
+    if (!usado) continue;
     if (m.fonte_url) urls.add(normalizarUrlBiblioteca(m.fonte_url));
     if (m.fonte_titulo) titulos.push(String(m.fonte_titulo));
     if (m.titulo) titulos.push(String(m.titulo));
@@ -142,7 +146,16 @@ function postJaFoiPublicado(post, indice) {
   const url = normalizarUrlBiblioteca(post.url);
   if (url && indice.urls.has(url)) return true;
   const titulo = String(post.titulo || '').trim();
-  if (titulo && indice.titulos.some((t) => titulosParecidos(titulo, t))) return true;
+  const resumo = String(post.resumo || '').trim().slice(0, 160);
+  if (titulo) {
+    const hit = indice.titulos.some(
+      (t) =>
+        mesmoAssuntoNoticia(titulo, t) ||
+        titulosParecidos(titulo, t) ||
+        (resumo && mesmoAssuntoNoticia(resumo, t))
+    );
+    if (hit) return true;
+  }
   return false;
 }
 
@@ -150,10 +163,15 @@ async function assertPostNaoPublicado(userId, post) {
   if (post.matter_id) {
     const AiMatters = require('../models/AiMatters');
     const existing = await AiMatters.findById(post.matter_id);
-    if (existing?.status === 'publicado' || existing?.publication_id) {
-      const err = new Error('Esta matéria já foi publicada. Escolha outra pauta.');
-      err.status = 409;
-      throw err;
+    if (existing) {
+      const st = String(existing.status || '');
+      if (['rascunho', 'pronto', 'agendado', 'publicado'].includes(st) || existing.publication_id) {
+        const err = new Error(
+          `Esta pauta já virou matéria (#${existing.id}, ${st || 'salva'}). Abra em Matérias salvas em vez de gerar de novo.`
+        );
+        err.status = 409;
+        throw err;
+      }
     }
   }
   const indice = await carregarIndiceJaPublicados(userId);
@@ -164,7 +182,9 @@ async function assertPostNaoPublicado(userId, post) {
       viral_reason: null,
       viral_analyzed_at: null,
     }).catch(() => null);
-    const err = new Error('Esta matéria já foi publicada. Escolha outra pauta.');
+    const err = new Error(
+      'Já existe matéria sobre este assunto (rascunho, agendada ou publicada). Evite duplicar — use Matérias salvas.'
+    );
     err.status = 409;
     throw err;
   }
@@ -1676,10 +1696,15 @@ async function gerarTextoDePost({
     err.status = 404;
     throw err;
   }
-  await assertPostNaoPublicado(userId, post);
   const fonte = await BibliotecaFontes.findById(post.fonte_id);
-  // Fonte em inglês/outro idioma → traduz título/resumo antes de gerar a matéria
+  // Fonte em inglês/outro idioma → traduz título/resumo antes de checar duplicata e gerar
   const postPt = await garantirPostEmPortugues(fonte, post);
+  await assertPostNaoPublicado(userId, {
+    ...post,
+    titulo: postPt.titulo || post.titulo,
+    resumo: postPt.resumo || post.resumo,
+    url: postPt.url || post.url,
+  });
   let pageId = facebookPageId || fonte?.facebook_page_id || null;
   if (!pageId) {
     try {
@@ -2541,11 +2566,19 @@ async function tickAutopilot() {
             }
           }
         } catch (err) {
+          const duplicata = err.status === 409 || /já existe matéria|já virou matéria|duplic/i.test(err.message || '');
           erros.push(`#${post.id}: ${err.message}`);
           try {
-            await BibliotecaPosts.update(post.id, { status: 'visto' });
+            await BibliotecaPosts.update(post.id, {
+              status: duplicata ? 'ignorado' : 'visto',
+            });
           } catch {
             /* ignore */
+          }
+          if (duplicata) {
+            console.log(
+              `[biblioteca-autopilot] user #${cfg.user_id}: post #${post.id} ignorado (assunto já gerado)`
+            );
           }
         }
       }
