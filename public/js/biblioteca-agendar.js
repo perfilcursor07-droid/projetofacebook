@@ -146,7 +146,12 @@
 
   listEl?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-id]');
-    if (!btn || !btn.className.includes('agenda-btn-')) return;
+    if (!btn) return;
+    const isAgendaAction =
+      btn.classList.contains('agenda-btn-confirmar') ||
+      btn.classList.contains('agenda-btn-publicar') ||
+      btn.classList.contains('agenda-btn-excluir');
+    if (!isAgendaAction) return;
     const id = Number(btn.dataset.id);
     if (!id) return;
 
@@ -189,6 +194,310 @@
         alert(err.message);
       }
     }, 400);
+  });
+
+  /* ——— Título + imagem (mesmas APIs de /materias-ia) ——— */
+  const tituloSugestoesPorMatter = {};
+
+  function setArteStatus(matterId, text, isError) {
+    const el = listEl?.querySelector('.agenda-arte-status[data-matter-id="' + matterId + '"]');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className =
+      'agenda-arte-status text-[10px] ' + (isError ? 'text-rose-300' : 'text-emerald-300/90');
+  }
+
+  function cacheBust(url) {
+    if (!url) return url;
+    const sep = url.includes('?') ? '&' : '?';
+    return url + sep + 't=' + Date.now();
+  }
+
+  function updateRowArt(matterId, { titulo, imagemUrl } = {}) {
+    const mid = String(matterId);
+    if (titulo != null) {
+      const label = listEl.querySelector('.agenda-titulo-label[data-matter-id="' + mid + '"]');
+      const input = listEl.querySelector('.agenda-titulo-input[data-matter-id="' + mid + '"]');
+      if (label) label.textContent = titulo;
+      if (input && document.activeElement !== input) input.value = titulo;
+    }
+    if (imagemUrl) {
+      const bust = cacheBust(imagemUrl);
+      const row = listEl.querySelector('.agenda-row[data-matter-id="' + mid + '"]');
+      if (!row) return;
+      let img = row.querySelector('img.agenda-thumb');
+      const empty = row.querySelector('.agenda-thumb-empty');
+      if (img) {
+        img.src = bust;
+      } else if (empty) {
+        img = document.createElement('img');
+        img.className =
+          'agenda-thumb h-14 w-14 shrink-0 rounded-lg object-cover ring-1 ring-slate-700';
+        img.alt = '';
+        img.dataset.matterId = mid;
+        img.src = bust;
+        empty.replaceWith(img);
+      }
+    }
+  }
+
+  function suggestCacheKey(matterId) {
+    return 'agenda-img-suggest:' + matterId;
+  }
+
+  function saveSuggestCache(matterId, data) {
+    try {
+      sessionStorage.setItem(
+        suggestCacheKey(matterId),
+        JSON.stringify({
+          aviso: data.aviso || null,
+          pessoa: data.pessoa || null,
+          imagens: data.imagens || [],
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function loadSuggestCache(matterId) {
+    try {
+      const raw = sessionStorage.getItem(suggestCacheKey(matterId));
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      return data?.imagens?.length ? data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function renderSuggestStrip(matterId, data) {
+    const mid = String(matterId);
+    const strip = listEl.querySelector('.agenda-img-strip[data-matter-id="' + mid + '"]');
+    const meta = listEl.querySelector('.agenda-img-meta[data-matter-id="' + mid + '"]');
+    const imgs = data.imagens || [];
+    if (!window.__AGENDA_IMG_SUGESTOES__) window.__AGENDA_IMG_SUGESTOES__ = {};
+    window.__AGENDA_IMG_SUGESTOES__[mid] = imgs;
+
+    if (meta) {
+      const parts = [];
+      if (data.aviso) parts.push(data.aviso);
+      if (data.pessoa) parts.push(data.pessoa);
+      parts.push('Clique numa miniatura para trocar a arte');
+      meta.textContent = parts.join(' · ');
+    }
+    if (!strip) return;
+    if (!imgs.length) {
+      strip.innerHTML = '<p class="text-[11px] text-slate-500">Nenhuma sugestão encontrada.</p>';
+      return;
+    }
+    strip.innerHTML = imgs
+      .map((img, i) => {
+        const thumb = String(img.thumbnail || img.url || '').replace(/"/g, '&quot;');
+        const isAtual = img.origem === 'fonte';
+        const label =
+          isAtual
+            ? 'Post'
+            : img.origem === 'serpapi'
+              ? 'Google'
+              : img.origem === 'brave'
+                ? 'Brave'
+                : img.origem === 'google'
+                  ? 'Serper'
+                  : img.origem || '';
+        const border = isAtual ? 'border-emerald-400' : 'border-slate-700 hover:border-violet-400';
+        return (
+          '<button type="button" data-agenda-suggest="' +
+          mid +
+          '" data-suggest-idx="' +
+          i +
+          '" title="' +
+          String(img.titulo || '').replace(/"/g, '&quot;') +
+          '" class="relative shrink-0 overflow-hidden rounded-md border bg-slate-950 focus:outline-none focus:ring-1 focus:ring-violet-400 ' +
+          border +
+          '" style="width:48px;height:64px;padding:0;flex:0 0 48px">' +
+          '<img src="' +
+          thumb +
+          '" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block" />' +
+          '<span class="absolute bottom-0 left-0 right-0 bg-black/75 py-px text-center text-[8px] leading-tight text-slate-200">' +
+          label +
+          '</span></button>'
+        );
+      })
+      .join('');
+  }
+
+  async function carregarSugestoesImagem(matterId, { force } = {}) {
+    const mid = String(matterId);
+    if (!force) {
+      const cached = loadSuggestCache(mid);
+      if (cached) {
+        renderSuggestStrip(mid, cached);
+        return;
+      }
+    }
+    const meta = listEl.querySelector('.agenda-img-meta[data-matter-id="' + mid + '"]');
+    if (meta) meta.textContent = 'Buscando fotos relacionadas…';
+    setArteStatus(mid, 'Buscando fotos (Brave / Serper)…');
+    const data = await api('/api/materias-ia/matters/' + mid + '/sugerir-imagens', {
+      method: 'POST',
+      body: '{}',
+    });
+    saveSuggestCache(mid, data);
+    renderSuggestStrip(mid, data);
+    setArteStatus(mid, (data.imagens || []).length + ' sugestões — clique numa miniatura');
+  }
+
+  async function aplicarImagemSugerida(matterId, chosen) {
+    const mid = String(matterId);
+    if (!chosen?.url) return;
+    const titulo =
+      listEl.querySelector('.agenda-titulo-input[data-matter-id="' + mid + '"]')?.value || '';
+    setArteStatus(mid, 'Alterando a arte…');
+    setBusy(true, 'Gerando arte com o novo título/imagem…');
+    try {
+      const data = await api('/api/materias-ia/matters/' + mid + '/aplicar-imagem-url', {
+        method: 'POST',
+        body: JSON.stringify({
+          imageUrl: chosen.url,
+          titulo,
+          autor: chosen.autor || null,
+          fonte: chosen.fonte || null,
+          imagemTitulo: chosen.titulo || null,
+          origem: chosen.origem || null,
+        }),
+      });
+      updateRowArt(mid, { imagemUrl: data.imagemUrl });
+      setArteStatus(mid, 'Arte atualizada ✓');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  listEl?.addEventListener('toggle', (e) => {
+    const details = e.target.closest('details.agenda-arte');
+    if (!details || !details.open) return;
+    const row = details.closest('.agenda-row');
+    const matterId = row?.dataset?.matterId;
+    if (!matterId) return;
+    carregarSugestoesImagem(matterId, { force: false }).catch((err) => {
+      setArteStatus(matterId, err.message, true);
+    });
+  }, true);
+
+  listEl?.addEventListener('click', async (e) => {
+    const suggestBtn = e.target.closest('[data-agenda-suggest]');
+    if (suggestBtn) {
+      const mid = suggestBtn.dataset.agendaSuggest;
+      const idx = Number(suggestBtn.dataset.suggestIdx);
+      const chosen = (window.__AGENDA_IMG_SUGESTOES__?.[mid] || [])[idx];
+      try {
+        await aplicarImagemSugerida(mid, chosen);
+      } catch (err) {
+        setArteStatus(mid, err.message, true);
+        alert(err.message);
+      }
+      return;
+    }
+
+    const btnTitulo = e.target.closest('.agenda-btn-sugerir-titulo');
+    if (btnTitulo) {
+      const mid = btnTitulo.dataset.matterId;
+      const tom =
+        listEl.querySelector('.agenda-titulo-tom[data-matter-id="' + mid + '"]')?.value ||
+        'natural';
+      const input = listEl.querySelector('.agenda-titulo-input[data-matter-id="' + mid + '"]');
+      const original = btnTitulo.textContent;
+      btnTitulo.disabled = true;
+      btnTitulo.textContent = 'Gerando…';
+      setArteStatus(mid, 'A IA está sugerindo outro título…');
+      setBusy(true, 'Sugerindo título e regenerando arte…');
+      try {
+        if (!tituloSugestoesPorMatter[mid]) tituloSugestoesPorMatter[mid] = [];
+        const data = await api('/api/materias-ia/matters/' + mid + '/sugerir-titulo', {
+          method: 'POST',
+          body: JSON.stringify({
+            tom,
+            evitar: tituloSugestoesPorMatter[mid].slice(-8),
+            tituloAtual: String(input?.value || '').trim(),
+          }),
+        });
+        if (data.titulo) {
+          tituloSugestoesPorMatter[mid].push(data.titulo);
+          updateRowArt(mid, { titulo: data.titulo, imagemUrl: data.imagemUrl });
+        }
+        setArteStatus(
+          mid,
+          data.aviso ||
+            (data.imagemUrl
+              ? 'Novo título aplicado e arte atualizada ✓'
+              : 'Novo título aplicado ✓')
+        );
+      } catch (err) {
+        setArteStatus(mid, err.message, true);
+        alert(err.message);
+      } finally {
+        btnTitulo.disabled = false;
+        btnTitulo.textContent = original || 'Sugerir título';
+        setBusy(false);
+      }
+      return;
+    }
+
+    const btnSalvar = e.target.closest('.agenda-btn-salvar-titulo');
+    if (btnSalvar) {
+      const mid = btnSalvar.dataset.matterId;
+      const input = listEl.querySelector('.agenda-titulo-input[data-matter-id="' + mid + '"]');
+      const titulo = String(input?.value || '').trim();
+      if (!titulo) {
+        setArteStatus(mid, 'Informe um título.', true);
+        return;
+      }
+      const original = btnSalvar.textContent;
+      btnSalvar.disabled = true;
+      btnSalvar.textContent = 'Salvando…';
+      setBusy(true, 'Salvando título e regenerando arte…');
+      try {
+        const data = await api('/api/materias-ia/matters/' + mid, {
+          method: 'PATCH',
+          body: JSON.stringify({ titulo }),
+        });
+        updateRowArt(mid, {
+          titulo: data.matter?.titulo || titulo,
+          imagemUrl: data.imagemUrl,
+        });
+        setArteStatus(
+          mid,
+          data.aviso ||
+            (data.imagemUrl ? 'Título salvo e arte atualizada ✓' : 'Título salvo ✓')
+        );
+      } catch (err) {
+        setArteStatus(mid, err.message, true);
+        alert(err.message);
+      } finally {
+        btnSalvar.disabled = false;
+        btnSalvar.textContent = original || 'Salvar título';
+        setBusy(false);
+      }
+      return;
+    }
+
+    const btnBuscar = e.target.closest('.agenda-btn-buscar-imgs');
+    if (btnBuscar) {
+      const mid = btnBuscar.dataset.matterId;
+      const original = btnBuscar.textContent;
+      btnBuscar.disabled = true;
+      btnBuscar.textContent = 'Buscando…';
+      try {
+        await carregarSugestoesImagem(mid, { force: true });
+      } catch (err) {
+        setArteStatus(mid, err.message, true);
+        alert(err.message);
+      } finally {
+        btnBuscar.disabled = false;
+        btnBuscar.textContent = original || 'Buscar fotos (Brave / Serper)';
+      }
+    }
   });
 
   syncLoteButtons();

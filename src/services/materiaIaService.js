@@ -837,6 +837,16 @@ async function agendarMateria({ userId, matterId, runAt }) {
     throw err;
   }
   await AiMatters.update(matter.id, { status: 'agendado', scheduled_at: when });
+
+  const existing = await db('ai_fila_jobs')
+    .where({ matter_id: matter.id, status: 'pendente' })
+    .orderBy('id', 'desc')
+    .first();
+  if (existing) {
+    await AiFilaJobs.update(existing.id, { run_at: when });
+    return { jobId: existing.id, matterId: matter.id, runAt: when };
+  }
+
   const [jobId] = await AiFilaJobs.create({
     user_id: userId,
     matter_id: matter.id,
