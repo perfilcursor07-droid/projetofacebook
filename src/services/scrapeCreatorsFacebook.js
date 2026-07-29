@@ -162,7 +162,11 @@ async function listarPostsPerfilRadar(pageUrl, opts = {}) {
   return out;
 }
 
-async function listarPostsPerfil(pageUrl, limit = 10) {
+/**
+ * Lista posts da página para a Biblioteca.
+ * API ScrapeCreators devolve ~3 posts por request — pagina com cursor.
+ */
+async function listarPostsPerfil(pageUrl, limit = 20) {
   if (!isConfigured()) {
     throw new Error('SCRAPECREATORS_API_KEY não configurada');
   }
@@ -170,10 +174,37 @@ async function listarPostsPerfil(pageUrl, limit = 10) {
   const url = String(pageUrl || '').trim();
   if (!url) throw new Error('URL da página do Facebook inválida');
 
-  const data = await fetchPostsPage({ url });
-  const max = Math.min(30, Math.max(1, Number(limit) || 10));
-  const posts = Array.isArray(data.posts) ? data.posts : [];
-  return posts.map(normalizarItem).filter(Boolean).slice(0, max);
+  const max = Math.min(40, Math.max(1, Number(limit) || 20));
+  // ~3 posts/request → precisa de várias páginas para encher o limite
+  const maxRequests = Math.min(12, Math.ceil(max / 3) + 1);
+  const out = [];
+  const seen = new Set();
+  let cursor = null;
+
+  for (let i = 0; i < maxRequests && out.length < max; i++) {
+    const params = { url };
+    if (cursor) params.cursor = cursor;
+
+    const data = await fetchPostsPage(params);
+    const batch = Array.isArray(data.posts) ? data.posts : [];
+    cursor = data.cursor || null;
+
+    for (const raw of batch) {
+      const post = normalizarItem(raw);
+      if (!post) continue;
+      const key = String(post.url || post.externalId || '')
+        .split(/[?#]/)[0]
+        .toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(post);
+      if (out.length >= max) break;
+    }
+
+    if (!batch.length || !cursor) break;
+  }
+
+  return out;
 }
 
 /**

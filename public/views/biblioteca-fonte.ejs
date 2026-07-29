@@ -93,7 +93,12 @@
       <div class="mb-3 flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <h2 class="text-base font-semibold text-white">Posts detectados</h2>
-          <p class="mt-0.5 text-xs text-slate-500">Conteúdo encontrado nesta fonte. Gere matéria a partir de cada item.</p>
+          <p class="mt-0.5 text-xs text-slate-500">
+            Conteúdo encontrado nesta fonte. Gere matéria a partir de cada item.
+            <% if (String(f.plataforma || '').toLowerCase() === 'facebook') { %>
+              <span class="text-slate-600">· Facebook: cada scan busca os posts mais recentes (até ~25), não o feed inteiro.</span>
+            <% } %>
+          </p>
         </div>
         <span class="text-xs text-slate-500"><%= postsList.length %> de <%= Number(f.posts_count || postsList.length) %> item(ns)</span>
       </div>

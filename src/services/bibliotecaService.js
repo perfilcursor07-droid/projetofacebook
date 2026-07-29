@@ -332,6 +332,8 @@ function nextRun(intervaloMinutos) {
 }
 
 const SCAN_LIMIT = 10;
+/** Facebook: API devolve poucos por página — pedimos mais e paginamos. */
+const SCAN_LIMIT_FACEBOOK = 25;
 const SCAN_LIMIT_SITE = 20;
 
 function dataPublicacaoValida(value) {
@@ -453,10 +455,10 @@ async function coletarItensFonte(fonte) {
 
     if (scrapeCreatorsFb.isConfigured()) {
       try {
-        const itens = await scrapeCreatorsFb.listarPostsPerfil(url, SCAN_LIMIT);
+        const itens = await scrapeCreatorsFb.listarPostsPerfil(url, SCAN_LIMIT_FACEBOOK);
         if (itens.length) {
           console.log(`[scrapecreators-fb] ${url}: ${itens.length} post(s)`);
-          return dedupeItens(itens);
+          return dedupeItens(itens, SCAN_LIMIT_FACEBOOK);
         }
       } catch (err) {
         console.warn('[biblioteca] scrapecreators-fb:', err.message);
@@ -487,7 +489,7 @@ async function coletarItensFonte(fonte) {
       }
     }
 
-    const itens = dedupeItens(collected);
+    const itens = dedupeItens(collected, SCAN_LIMIT_FACEBOOK);
     if (!itens.length) {
       const err = new Error(
         [
@@ -1442,7 +1444,12 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
 
 async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
   const jaTemPosts = (await BibliotecaPosts.findByFonte(fonte.id, 1)).length > 0;
-  const limite = fonte.plataforma === 'site' ? SCAN_LIMIT_SITE : SCAN_LIMIT;
+  const limite =
+    fonte.plataforma === 'site'
+      ? SCAN_LIMIT_SITE
+      : fonte.plataforma === 'facebook'
+        ? SCAN_LIMIT_FACEBOOK
+        : SCAN_LIMIT;
   const lote = dedupeItens(itens, limite);
 
   // Primeira varredura automática: cria uma base sem inundar os alertas.
