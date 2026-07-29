@@ -413,12 +413,19 @@ async function putAutopilot(req, res, next) {
 async function agendarPage(req, res, next) {
   try {
     const agendaService = require('../services/bibliotecaAgendaService');
-    const itens = await agendaService.listarAgenda(req.session.userId);
-    const pages = await pagesDoUsuario(req.session.userId);
-    const defaultPageId = await defaultPageIdDoUsuario(req.session.userId);
+    const rawAba = String(req.query.aba || 'agendada').toLowerCase();
+    const aba = rawAba === 'publicadas' || rawAba === 'publicado' ? 'publicadas' : 'agendada';
+    const [itens, contagens, pages, defaultPageId] = await Promise.all([
+      agendaService.listarAgenda(req.session.userId, { aba }),
+      agendaService.contagensAgenda(req.session.userId),
+      pagesDoUsuario(req.session.userId),
+      defaultPageIdDoUsuario(req.session.userId),
+    ]);
     return res.render('biblioteca-agendar', {
       title: 'Agendar',
       itens,
+      contagens,
+      aba,
       pages,
       defaultPageId,
     });
@@ -430,9 +437,12 @@ async function agendarPage(req, res, next) {
 async function listarAgenda(req, res, next) {
   try {
     const agendaService = require('../services/bibliotecaAgendaService');
-    const status = req.query.status || 'all';
-    const itens = await agendaService.listarAgenda(req.session.userId, { status });
-    res.json({ ok: true, itens });
+    const aba = req.query.aba || req.query.status || 'agendada';
+    const [itens, contagens] = await Promise.all([
+      agendaService.listarAgenda(req.session.userId, { aba }),
+      agendaService.contagensAgenda(req.session.userId),
+    ]);
+    res.json({ ok: true, itens, contagens, aba });
   } catch (err) {
     next(err);
   }

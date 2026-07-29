@@ -220,7 +220,7 @@ async function repararHorariosSobrepostos(userId) {
   return compactarHorariosDoDia(userId);
 }
 
-async function listarAgenda(userId, { status = 'all', reparar = true } = {}) {
+async function listarAgenda(userId, { status = 'all', aba = null, reparar = true } = {}) {
   if (reparar) {
     try {
       await compactarHorariosDoDia(userId);
@@ -228,8 +228,37 @@ async function listarAgenda(userId, { status = 'all', reparar = true } = {}) {
       /* não bloqueia listagem */
     }
   }
-  const itens = await BibliotecaAgenda.findByUser(userId, { status, limit: 120 });
+
+  const tab = String(aba || status || 'agendada').toLowerCase();
+  let statuses = null;
+  let order = 'asc';
+  let filterStatus = status;
+
+  if (tab === 'agendada' || tab === 'agendadas' || tab === 'pendente') {
+    statuses = ['pendente', 'confirmado'];
+    order = 'asc';
+    filterStatus = null;
+  } else if (tab === 'publicadas' || tab === 'publicado') {
+    statuses = ['publicado'];
+    order = 'desc';
+    filterStatus = null;
+  } else if (tab === 'confirmado') {
+    filterStatus = 'confirmado';
+  } else if (tab === 'all') {
+    filterStatus = 'all';
+  }
+
+  const itens = await BibliotecaAgenda.findByUser(userId, {
+    status: filterStatus,
+    statuses,
+    limit: 120,
+    order,
+  });
   return (itens || []).map(mapItem);
+}
+
+async function contagensAgenda(userId) {
+  return BibliotecaAgenda.countByStatus(userId);
 }
 
 /**
@@ -694,6 +723,7 @@ async function tickAgendaPre() {
 
 module.exports = {
   listarAgenda,
+  contagensAgenda,
   montarAgendaAmanha,
   atualizarHorario,
   confirmarAgendamento,

@@ -9,6 +9,17 @@
   const btnLoteConfirmar = document.getElementById('agenda-lote-confirmar');
   const btnLotePublicar = document.getElementById('agenda-lote-publicar');
   const btnLoteExcluir = document.getElementById('agenda-lote-excluir');
+  const mainEl = document.querySelector('main[data-agenda-aba]');
+  const abaAtual =
+    (mainEl && mainEl.dataset.agendaAba) ||
+    new URLSearchParams(location.search).get('aba') ||
+    'agendada';
+
+  function reloadAgenda() {
+    const params = new URLSearchParams(location.search);
+    params.set('aba', abaAtual === 'publicadas' ? 'publicadas' : 'agendada');
+    location.href = '/biblioteca/agendar?' + params.toString();
+  }
 
   function setBusy(on, text) {
     if (!busyEl) return;
@@ -113,7 +124,7 @@
           (data.erros?.length ? ` ${data.erros.length} aviso(s)/falha(s).` : ''),
         false
       );
-      location.reload();
+      reloadAgenda();
     } catch (err) {
       setMsg(err.message, true);
     } finally {
@@ -132,7 +143,7 @@
       });
       const fail = data.erros?.length || 0;
       setMsg(`${data.ok || 0} ok` + (fail ? `, ${fail} erro(s)` : ''), fail > 0);
-      location.reload();
+      reloadAgenda();
     } catch (err) {
       setMsg(err.message, true);
     } finally {
@@ -168,7 +179,7 @@
       } else {
         return;
       }
-      location.reload();
+      reloadAgenda();
     } catch (err) {
       alert(err.message);
     } finally {

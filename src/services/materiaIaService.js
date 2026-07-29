@@ -578,7 +578,10 @@ async function publicarMateria(userId, matterId, overrides = {}) {
         status: 'erro',
         error_message: String(msg).slice(0, 500),
       });
-      throw err;
+      const out = new Error(msg || err.message || 'Falha ao publicar');
+      out.status = err.status || err.response?.status || 502;
+      out.cause = err;
+      throw out;
     }
   }
 
@@ -597,7 +600,9 @@ async function publicarMateria(userId, matterId, overrides = {}) {
         status: 'erro',
         error_message: String(msg).slice(0, 500),
       });
-      throw err;
+      const out = new Error(msg || err.message || 'Falha ao publicar');
+      out.status = err.status || err.response?.status || 502;
+      throw out;
     }
   });
 

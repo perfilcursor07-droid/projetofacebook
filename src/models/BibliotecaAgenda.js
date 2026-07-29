@@ -7,13 +7,13 @@ const BibliotecaAgenda = {
     return db(this.table).where({ id }).first();
   },
 
-  findByUser(userId, { status = null, limit = 100 } = {}) {
+  findByUser(userId, { status = null, statuses = null, limit = 100, order = 'asc' } = {}) {
     const q = db(`${this.table} as a`)
       .leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id')
       .leftJoin('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
       .leftJoin('ai_matters as m', 'm.id', 'a.matter_id')
       .where('a.user_id', userId)
-      .orderBy('a.proposed_at', 'asc')
+      .orderBy('a.proposed_at', order === 'desc' ? 'desc' : 'asc')
       .limit(Math.min(200, Math.max(1, Number(limit) || 100)))
       .select(
         'a.id',
@@ -36,15 +36,36 @@ const BibliotecaAgenda = {
         'm.imagem_path as matter_imagem_path',
         'm.imagem_url as matter_imagem_url',
         'm.scheduled_at as matter_scheduled_at',
+        'm.published_at as matter_published_at',
         'm.tipo_publicacao as matter_tipo'
       );
 
-    if (status && status !== 'all') {
+    if (Array.isArray(statuses) && statuses.length) {
+      q.whereIn('a.status', statuses);
+    } else if (status && status !== 'all') {
       q.andWhere('a.status', status);
     } else {
       q.whereNot('a.status', 'cancelado');
     }
     return q;
+  },
+
+  async countByStatus(userId) {
+    const rows = await db(this.table)
+      .where({ user_id: userId })
+      .whereNot('status', 'cancelado')
+      .groupBy('status')
+      .select('status')
+      .count('* as total');
+    const out = { pendente: 0, confirmado: 0, publicado: 0, agendada: 0, publicadas: 0 };
+    for (const r of rows || []) {
+      const n = Number(r.total) || 0;
+      const st = String(r.status || '');
+      if (st in out) out[st] = n;
+    }
+    out.agendada = out.pendente + out.confirmado;
+    out.publicadas = out.publicado;
+    return out;
   },
 
   findActivePostIds(userId) {

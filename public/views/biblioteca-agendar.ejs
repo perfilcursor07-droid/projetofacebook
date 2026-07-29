@@ -1,6 +1,8 @@
 <%- include('partials/app-start') %>
 <%
   const lista = typeof itens !== 'undefined' && Array.isArray(itens) ? itens : [];
+  const abaAtual = (typeof aba !== 'undefined' && aba === 'publicadas') ? 'publicadas' : 'agendada';
+  const counts = typeof contagens === 'object' && contagens ? contagens : { agendada: 0, publicadas: 0 };
   const statusLabels = {
     pendente: 'Pré-agendado',
     confirmado: 'Confirmado',
@@ -24,7 +26,7 @@
     }
   }
 %>
-  <main class="mx-auto max-w-9xl px-4 py-6 sm:px-6">
+  <main class="mx-auto max-w-9xl px-4 py-6 sm:px-6" data-agenda-aba="<%= abaAtual %>">
     <header class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <p class="text-[10px] font-semibold uppercase tracking-wider text-amber-400/80">Biblioteca</p>
@@ -43,7 +45,7 @@
       <a href="/biblioteca" class="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 hover:text-white">← Biblioteca</a>
     </header>
 
-    <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 sm:p-5">
+    <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 sm:p-5 <%= abaAtual === 'publicadas' ? 'hidden' : '' %>" id="agenda-montar-wrap">
       <form id="agenda-montar-form" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
         <label class="block sm:col-span-2 lg:col-span-5">
           <span class="text-xs font-medium text-slate-400">Página do Facebook</span>
@@ -70,26 +72,56 @@
     </section>
 
     <section class="mt-6">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 class="text-sm font-semibold text-white">Lista pré-agendada <span id="agenda-count" class="font-normal text-slate-500">(<%= lista.length %>)</span></h2>
-        <div class="flex flex-wrap items-center gap-2">
-          <button type="button" id="agenda-lote-confirmar" class="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-40" disabled>Confirmar selecionados</button>
-          <button type="button" id="agenda-lote-publicar" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40" disabled>Publicar selecionados</button>
-          <button type="button" id="agenda-lote-excluir" class="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-40" disabled>Excluir selecionados</button>
+      <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div class="inline-flex rounded-lg border border-slate-700 bg-slate-950 p-0.5" role="tablist" aria-label="Filtrar agenda">
+          <a href="/biblioteca/agendar?aba=agendada"
+            class="rounded-md px-3.5 py-2 text-sm <%= abaAtual === 'agendada' ? 'bg-amber-500 font-semibold text-slate-950' : 'text-slate-300 hover:text-white' %>"
+            role="tab" aria-selected="<%= abaAtual === 'agendada' ? 'true' : 'false' %>">
+            Agendada
+            <span class="ml-1 opacity-80">(<%= Number(counts.agendada) || 0 %>)</span>
+          </a>
+          <a href="/biblioteca/agendar?aba=publicadas"
+            class="rounded-md px-3.5 py-2 text-sm <%= abaAtual === 'publicadas' ? 'bg-emerald-500 font-semibold text-slate-950' : 'text-slate-300 hover:text-white' %>"
+            role="tab" aria-selected="<%= abaAtual === 'publicadas' ? 'true' : 'false' %>">
+            Publicadas
+            <span class="ml-1 opacity-80">(<%= Number(counts.publicadas) || 0 %>)</span>
+          </a>
         </div>
+
+        <% if (abaAtual === 'agendada') { %>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="agenda-lote-confirmar" class="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-40" disabled>Confirmar selecionados</button>
+            <button type="button" id="agenda-lote-publicar" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40" disabled>Publicar selecionados</button>
+            <button type="button" id="agenda-lote-excluir" class="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-40" disabled>Excluir selecionados</button>
+          </div>
+        <% } %>
       </div>
 
+      <p class="mt-3 text-xs text-slate-500">
+        <% if (abaAtual === 'agendada') { %>
+          Pré-agendadas e confirmadas — próximas a sair. <span id="agenda-count" class="text-slate-400">(<%= lista.length %> nesta lista)</span>
+        <% } else { %>
+          Já publicadas no Facebook. <span id="agenda-count" class="text-slate-400">(<%= lista.length %> nesta lista)</span>
+        <% } %>
+      </p>
+
       <div class="mt-3 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
-        <div class="flex items-center gap-3 border-b border-slate-800 px-3 py-2 text-xs text-slate-500">
-          <label class="inline-flex items-center gap-2">
-            <input type="checkbox" id="agenda-check-all" class="rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500/30" />
-            Selecionar todos
-          </label>
-        </div>
+        <% if (abaAtual === 'agendada') { %>
+          <div class="flex items-center gap-3 border-b border-slate-800 px-3 py-2 text-xs text-slate-500">
+            <label class="inline-flex items-center gap-2">
+              <input type="checkbox" id="agenda-check-all" class="rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500/30" />
+              Selecionar todos
+            </label>
+          </div>
+        <% } %>
         <ul id="agenda-list" class="divide-y divide-slate-800/80">
           <% if (!lista.length) { %>
             <li id="agenda-empty" class="px-4 py-10 text-center text-sm text-slate-500">
-              Nenhuma pré-agenda ainda. Clique em <strong class="text-slate-300">Montar agenda de amanhã</strong>.
+              <% if (abaAtual === 'publicadas') { %>
+                Nenhuma publicação ainda nesta agenda.
+              <% } else { %>
+                Nenhuma pré-agenda ainda. Clique em <strong class="text-slate-300">Montar agenda de amanhã</strong>.
+              <% } %>
             </li>
           <% } %>
           <% lista.forEach(function (item) {
@@ -100,9 +132,11 @@
             const matterId = item.matter_id || '';
           %>
             <li class="agenda-row flex flex-wrap items-start gap-3 px-3 py-3" data-id="<%= item.id %>" data-status="<%= st %>" data-matter-id="<%= matterId %>">
-              <label class="mt-1 shrink-0">
-                <input type="checkbox" class="agenda-check rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500/30" value="<%= item.id %>" />
-              </label>
+              <% if (abaAtual === 'agendada') { %>
+                <label class="mt-1 shrink-0">
+                  <input type="checkbox" class="agenda-check rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500/30" value="<%= item.id %>" />
+                </label>
+              <% } %>
               <% if (thumb) { %>
                 <img src="<%= thumb %>" alt="" class="agenda-thumb h-14 w-14 shrink-0 rounded-lg object-cover ring-1 ring-slate-700" data-matter-id="<%= matterId %>" />
               <% } else { %>
@@ -146,11 +180,12 @@
                     </label>
                     <span class="agenda-hora-status text-[10px] text-slate-600" data-id="<%= item.id %>"></span>
                   <% } else { %>
-                    <span><%= fmtQuando(item.proposed_at) %></span>
+                    <span class="font-medium text-slate-400"><%= st === 'publicado' ? 'Publicado em' : 'Quando' %>:</span>
+                    <span><%= fmtQuando(item.matter_published_at || item.proposed_at) %></span>
                   <% } %>
                 </div>
 
-                <% if (canArte) { %>
+                <% if (canArte && abaAtual === 'agendada') { %>
                   <details class="agenda-arte group rounded-lg border border-slate-800/80 bg-slate-950/40">
                     <summary class="cursor-pointer list-none px-2.5 py-1.5 text-[11px] font-semibold text-violet-200 hover:text-violet-100 [&::-webkit-details-marker]:hidden">
                       Ajustar título e imagem ▾
@@ -188,7 +223,7 @@
               </div>
               <div class="flex w-full flex-wrap gap-1.5 sm:w-auto sm:justify-end">
                 <% if (item.matter_id) { %>
-                  <a href="/materias-ia/<%= item.matter_id %>" target="_blank" rel="noopener noreferrer" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white">Editar</a>
+                  <a href="/materias-ia/<%= item.matter_id %>" target="_blank" rel="noopener noreferrer" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white"><%= abaAtual === 'publicadas' ? 'Ver' : 'Editar' %></a>
                   <% if (st === 'pendente' || st === 'confirmado') { %>
                     <button type="button" class="agenda-btn-publicar rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20" data-id="<%= item.id %>">Publicar</button>
                   <% } %>
@@ -233,5 +268,5 @@
       /* cobre o campo inteiro — clique abre o picker; o ícone branco é o SVG por cima */
     }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260729c"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260729d"></script>
 <%- include('partials/app-end') %>

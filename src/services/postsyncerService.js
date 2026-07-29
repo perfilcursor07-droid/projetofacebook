@@ -70,7 +70,21 @@ function apiErrorMessage(err) {
   }
 
   if (typeof body === 'string') return body;
-  if (typeof body.message === 'string') return body.message;
+  if (typeof body.message === 'string') {
+    const lowerMsg = body.message.toLowerCase();
+    if (
+      lowerMsg.includes('duplicate or similar content') ||
+      lowerMsg.includes('duplicate content') ||
+      lowerMsg.includes('similar content posted') ||
+      lowerMsg.includes('same two day')
+    ) {
+      return (
+        'Facebook: já existe post igual ou muito parecido nas últimas 48 horas. ' +
+        'Edite o texto/imagem ou espere 2 dias antes de publicar de novo.'
+      );
+    }
+    return body.message;
+  }
   if (typeof body.error === 'string') return body.error;
   if (body.errors) {
     try {

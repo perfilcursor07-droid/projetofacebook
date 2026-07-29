@@ -92,13 +92,28 @@ function apiErrorMessage(err) {
   }
 
   if (
-    lower.includes('quota') ||
-    lower.includes('rate limit') ||
-    (lower.includes('too many') && !lower.includes('mention')) ||
     code === 429
+    || lower.includes('quota')
+    || lower.includes('rate limit')
+    || (lower.includes('too many') && !lower.includes('mention'))
   ) {
     return (
       'Ayrshare: limite/quota atingido. Aguarde o reset do plano ou verifique o uso no dashboard.'
+    );
+  }
+
+  if (
+    lower.includes('duplicate or similar content') ||
+    lower.includes('duplicate content') ||
+    lower.includes('similar content posted') ||
+    lower.includes('same two day') ||
+    lower.includes('two day period') ||
+    lower.includes('dealing_with_duplicate')
+  ) {
+    return (
+      'Facebook/Ayrshare: já existe post igual ou muito parecido nas últimas 48 horas. ' +
+      'Não publique de novo — edite o texto/imagem ou espere 2 dias. ' +
+      'Confira em Matérias salvas se essa pauta já foi publicada.'
     );
   }
 
