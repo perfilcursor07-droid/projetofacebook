@@ -122,7 +122,7 @@
                       <span class="font-medium text-slate-400">Data e horário</span>
                       <input
                         type="datetime-local"
-                        class="agenda-hora rounded-lg border border-slate-600 bg-slate-950 px-2 py-1 text-[12px] text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
+                        class="agenda-hora rounded-lg border border-slate-600 bg-slate-950 px-2 py-1 text-[12px] text-slate-100 [color-scheme:dark] focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
                         value="<%= item.proposed_at_local || '' %>"
                         data-id="<%= item.id %>"
                         data-status="<%= st %>"
@@ -201,5 +201,16 @@
     </div>
   </div>
 
-  <script src="/js/biblioteca-agendar.js?v=20260729a"></script>
+  <style>
+    /* Ícone do calendário nativo (Chrome/Edge) — branco no tema escuro */
+    .agenda-hora::-webkit-calendar-picker-indicator {
+      cursor: pointer;
+      opacity: 1;
+      filter: invert(1) brightness(1.15);
+    }
+    .agenda-hora::-webkit-calendar-picker-indicator:hover {
+      opacity: 0.85;
+    }
+  </style>
+  <script src="/js/biblioteca-agendar.js?v=20260729b"></script>
 <%- include('partials/app-end') %>
