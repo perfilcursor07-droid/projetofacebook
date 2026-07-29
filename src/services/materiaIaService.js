@@ -265,6 +265,7 @@ async function gerarPreviewDeTopico(
     anexarCreditosFontes,
     estiloCreditoDaPagina,
     CREDITO_IMAGEM_FALLBACK,
+    removerFechamentoOracao,
   } = require('./editorialGuidelinesFb');
 
   let pageName = null;
@@ -309,13 +310,15 @@ async function gerarPreviewDeTopico(
 
   const semImagemFoto = tipoPublicacao === 'foto' && !imagemUrl;
 
-  const materiaComFontes = anexarCreditosFontes(gerado.materia, {
-    fonteNome: apurado.veiculo || apurado.fonte || null,
-    fonteUrl: apurado.link || null,
-    imagemAutor,
-    autorArtigo: apurado.autor || null,
-    estilo: estiloCredito,
-  });
+  const materiaComFontes = removerFechamentoOracao(
+    anexarCreditosFontes(gerado.materia, {
+      fonteNome: apurado.veiculo || apurado.fonte || null,
+      fonteUrl: apurado.link || null,
+      imagemAutor,
+      autorArtigo: apurado.autor || null,
+      estilo: estiloCredito,
+    })
+  );
 
   return {
     ...gerado,
@@ -352,15 +355,7 @@ async function salvarMateria({ userId, facebookPageId, gerado, topico, tipoPubli
     fonte_titulo: topico?.titulo || null,
     fonte_url: topico?.link || null,
     fonte_resumo: topico?.resumo || null,
-    fonte_credito:
-      gerado.fonteCredito
-      || creditoPadraoDaMateria({
-        topico,
-        gerado,
-        tipoPublicacao,
-        pageName: gerado.pageName,
-      })
-      || null,
+    fonte_credito: null, // crédito fica só no corpo (materia); evita repetir no campo Fonte/crédito
     contexto_apuracao: topico?.contextoApuracao || null,
     status: finalStatus,
     tipo_publicacao: tipoPublicacao === 'foto' ? 'foto' : 'texto',
@@ -406,7 +401,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       });
     })(),
     hashtags: overrides.hashtags || matter.hashtags,
-    fonteCredito: overrides.fonte_credito != null ? overrides.fonte_credito : matter.fonte_credito,
+    fonteCredito: '', // crédito só no corpo da matéria
     incluirTitulo: tipo !== 'foto',
   });
 
@@ -1184,11 +1179,7 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
       fonte_titulo: titulo,
       fonte_url: link,
       fonte_resumo: textoLimpo.slice(0, 1500) || null,
-      fonte_credito: montarFonteCredito({
-        veiculo: meta.autor || meta.channel || video.autor || null,
-        host: link,
-        tipoPublicacao: 'reel',
-      }),
+      fonte_credito: null,
       status: 'rascunho',
       tipo_publicacao: 'reel',
       imagem_url: meta.thumbnail || video.thumbnail || null,
@@ -1643,7 +1634,7 @@ async function gerarMateriaManual({
   const {
     anexarCreditosFontes,
     estiloCreditoDaPagina,
-    montarFonteCredito,
+    removerFechamentoOracao,
   } = require('./editorialGuidelinesFb');
 
   const gerado = await gerarMateriaImagem({
@@ -1665,21 +1656,15 @@ async function gerarMateriaManual({
   }
   const estilo = estiloCreditoDaPagina(pageName);
   const nomeConteudo = String(pageName || '').trim() || 'Informações do editor';
-  const materiaComFontes = anexarCreditosFontes(gerado.materia, {
-    fonteNome: nomeConteudo,
-    fonteUrl: null,
-    imagemAutor: creditoImagem || 'Reprodução/Internet',
-    autorArtigo: null,
-    estilo,
-  });
-
-  const fonteCredito = montarFonteCredito({
-    veiculo: pageName || null,
-    autorArtigo: null,
-    estilo,
-    tipoPublicacao: 'foto',
-    imagemOrigem: { tipo: 'fonte', autor: creditoImagem || null },
-  });
+  const materiaComFontes = removerFechamentoOracao(
+    anexarCreditosFontes(gerado.materia, {
+      fonteNome: nomeConteudo,
+      fonteUrl: null,
+      imagemAutor: creditoImagem || 'Reprodução/Internet',
+      autorArtigo: null,
+      estilo,
+    })
+  );
 
   const [matterId] = await AiMatters.create({
     user_id: userId,
@@ -1692,7 +1677,7 @@ async function gerarMateriaManual({
     fonte_titulo: 'Matéria manual',
     fonte_url: null,
     fonte_resumo: fatos.slice(0, 1500),
-    fonte_credito: fonteCredito,
+    fonte_credito: null,
     status: 'rascunho',
     tipo_publicacao: 'foto',
     imagem_url: imagemUrl && /^https?:\/\//i.test(imagemUrl) ? imagemUrl : null,

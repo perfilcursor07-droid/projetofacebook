@@ -376,11 +376,19 @@ async function atualizarMateria(req, res, next) {
 
     const body = req.body || {};
     const patch = {};
+    const { materiaJaTemCredito, removerFechamentoOracao } = require('../services/editorialGuidelinesFb');
     if (body.titulo != null) patch.titulo = String(body.titulo).trim().slice(0, 300);
-    if (body.materia != null) patch.materia = String(body.materia);
+    if (body.materia != null) {
+      patch.materia = removerFechamentoOracao(String(body.materia));
+    }
     if (body.fonteCredito != null || body.fonte_credito != null) {
       const raw = body.fonteCredito != null ? body.fonteCredito : body.fonte_credito;
       patch.fonte_credito = String(raw || '').trim().slice(0, 400) || null;
+    }
+    // Crédito só no Conteúdo — não duplicar em Fonte / crédito
+    const materiaFinal = patch.materia != null ? patch.materia : matter.materia;
+    if (materiaJaTemCredito(materiaFinal)) {
+      patch.fonte_credito = null;
     }
     if (body.hashtags != null) patch.hashtags = JSON.stringify(parseHashtags(body.hashtags));
     if (body.tipoPublicacao != null || body.tipo_publicacao != null) {
@@ -478,9 +486,34 @@ async function showMatter(req, res, next) {
       hashtags = [];
     }
 
-    const { anexarHashtagsAoFinal } = require('../services/editorialGuidelinesFb');
+    const {
+      anexarHashtagsAoFinal,
+      materiaJaTemCredito,
+      removerFechamentoOracao,
+    } = require('../services/editorialGuidelinesFb');
     if (Array.isArray(hashtags) && hashtags.length) {
       matter.materia = anexarHashtagsAoFinal(matter.materia || '', hashtags);
+    }
+
+    // Crédito só no Conteúdo: limpa campo Fonte/crédito se já estiver no corpo
+    const patchShow = {};
+    const materiaLimpa = removerFechamentoOracao(matter.materia || '');
+    if (materiaLimpa !== String(matter.materia || '').trim()) {
+      matter.materia = materiaLimpa;
+      if (['rascunho', 'pronto', 'erro', 'agendado'].includes(matter.status)) {
+        patchShow.materia = materiaLimpa;
+      }
+    }
+    if (materiaJaTemCredito(matter.materia) && matter.fonte_credito) {
+      matter.fonte_credito = null;
+      patchShow.fonte_credito = null;
+    }
+    if (Object.keys(patchShow).length) {
+      try {
+        await AiMatters.update(matter.id, patchShow);
+      } catch {
+        /* não bloqueia a tela */
+      }
     }
 
     return res.render('materia-ia-editar', {

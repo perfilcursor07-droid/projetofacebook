@@ -365,22 +365,9 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, inclui
 
   body = quebrarEmParagrafos(body);
 
-  const creditRaw = String(fonteCredito || '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-
-  let credit = '';
-  if (creditRaw) {
-    // Com crédito externo: remove qualquer Fontes/Fonte do corpo (evita repetir)
-    body = removerBlocoCreditosDoCorpo(body);
-    credit = creditRaw;
-  } else {
-    body = dedupeBlocosCredito(body);
-  }
+  // Crédito fica SÓ no conteúdo (materia). Campo fonte_credito não é anexado de novo.
+  body = dedupeBlocosCredito(body);
+  const credit = '';
 
   const tagsLine = formatHashtagsLine(
     Array.isArray(hashtags) && hashtags.length ? hashtags : extracted.tags
@@ -615,6 +602,17 @@ function removerBlocoCreditosDoCorpo(cleanBody) {
     .trim();
 }
 
+function materiaJaTemCredito(materia) {
+  const t = String(materia || '');
+  return (
+    /Fontes:\s*\n/i.test(t) ||
+    /[•\*]\s*Conte[uú]do\s*:/i.test(t) ||
+    /^Fonte:\s.+/m.test(t) ||
+    /Por\s+.+\s*[—\-–]\s*Site\s*:/i.test(t) ||
+    /\(Foto:\s*[^)]+\)/i.test(t)
+  );
+}
+
 /**
  * Remove oração / fechamento de fé típico das 1–2 últimas linhas do corpo.
  */
@@ -623,22 +621,34 @@ function removerFechamentoOracao(texto) {
   let clean = String(body || '').trim();
   if (!clean) return String(texto || '').trim();
 
+  // Também separa créditos JM/Fontes para não misturar com o último parágrafo
+  const creditoMatch = clean.match(
+    /\n\n((?:Fontes:\s*\n(?:[•\-*].+\n?)+)|(?:Por\s+.+\s*[—\-–]\s*Site\s*:[\s\S]*?)|(?:Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?)|(?:\(Foto:[^\n]+\)))\s*$/i
+  );
+  let creditoTail = '';
+  if (creditoMatch) {
+    creditoTail = creditoMatch[1].trim();
+    clean = clean.slice(0, creditoMatch.index).trim();
+  }
+
   const paras = clean.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
   const pareceOracao = (p) => {
     const t = String(p || '').trim();
-    if (!t || t.length > 320) return false;
+    if (!t || t.length > 480) return false;
     if (
-      /^(que\s+(deus|o\s+senhor|possamos)|seguimos\s+em\s+ora|oremos|em\s+ora[cç][aã]o|gl[oó]ria\s+a\s+deus|senhor\s+nos\s+guarde|que\s+o\s+senhor)/i.test(
+      /^(que\s+(deus|o\s+senhor|o\s+esp[ií]rito|possamos)|seguimos\s+em\s+ora|oremos|oramos|em\s+ora[cç][aã]o|gl[oó]ria\s+a\s+deus|senhor\s+nos\s+guarde|que\s+o\s+senhor)/i.test(
         t
       )
     ) {
       return true;
     }
-    if (/am[eé]m\.?\s*$/i.test(t)) return true;
+    if (/am[eé]m\.?\s*$/i.test(t) || /🙏/.test(t)) return true;
     if (
-      t.length < 220 &&
-      /ora[cç][aã]o|am[eé]m|que\s+deus|que\s+o\s+senhor|seguimos\s+em\s+ora/i.test(t) &&
-      !/[“"]/.test(t)
+      /(?:ora[cç][aã]o|oramos|oremos|que\s+deus|que\s+o\s+senhor|esp[ií]rito\s+santo|seguimos\s+em\s+ora)/i.test(
+        t
+      ) &&
+      !/[“"]/.test(t) &&
+      t.length < 400
     ) {
       return true;
     }
@@ -651,7 +661,9 @@ function removerFechamentoOracao(texto) {
     removed += 1;
   }
 
-  return anexarHashtagsAoFinal(paras.join('\n\n'), tags);
+  let out = paras.join('\n\n');
+  if (creditoTail) out = `${out}\n\n${creditoTail}`;
+  return anexarHashtagsAoFinal(out, tags);
 }
 
 /**
@@ -853,6 +865,7 @@ module.exports = {
   atualizarCreditoImagemNaMateria,
   extrairAutorImagemHeuristico,
   limparCreditoAutor,
+  materiaJaTemCredito,
   removerFechamentoOracao,
   removerBlocoCreditosDoCorpo,
   CREDITO_IMAGEM_FALLBACK,

@@ -56,7 +56,13 @@
       }
       if (body) parts.push(body);
     }
-    if (credito) parts.push(credito);
+    // Só anexa Fonte/crédito se ainda não estiver no corpo da matéria
+    const jaTemCredito =
+      /Por\s+.+\s*[—\-–]\s*Site\s*:/i.test(materia) ||
+      /Fontes:\s*\n/i.test(materia) ||
+      /^Fonte:\s.+/m.test(materia) ||
+      /\(Foto:\s*[^)]+\)/i.test(materia);
+    if (credito && !jaTemCredito) parts.push(credito);
     if (tags) parts.push(tags);
     return parts.join('\n\n').trim();
   }
