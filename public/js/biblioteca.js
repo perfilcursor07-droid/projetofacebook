@@ -383,7 +383,29 @@
 
   document.getElementById('bib-mark-all')?.addEventListener('click', async () => {
     try {
-      await api('/api/biblioteca/alertas/lidos', { method: 'POST', body: '{}' });
+      const kws = parseKeywordsClient(alertasAside?.dataset?.keywordsSalvas || '');
+      await api('/api/biblioteca/alertas/lidos', {
+        method: 'POST',
+        body: JSON.stringify({
+          keywords: kws.length ? kws.join(', ') : undefined,
+        }),
+      });
+      location.reload();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  document.getElementById('bib-mark-all-fora')?.addEventListener('click', async () => {
+    try {
+      const kws = parseKeywordsClient(alertasAside?.dataset?.keywordsSalvas || '');
+      await api('/api/biblioteca/alertas/lidos', {
+        method: 'POST',
+        body: JSON.stringify({
+          keywords: kws.length ? kws.join(', ') : undefined,
+          fora: true,
+        }),
+      });
       location.reload();
     } catch (err) {
       alert(err.message);
@@ -392,6 +414,7 @@
 
   // --- Lista de palavras-chave dos alertas (salva na conta) ---
   const alertasBox = document.getElementById('bib-alertas');
+  const alertasForaBox = document.getElementById('bib-alertas-fora');
   const alertasAside = document.getElementById('bib-secao-alertas');
   const keywordInput = document.getElementById('bib-alertas-keyword-input');
   const keywordAddBtn = document.getElementById('bib-alertas-keyword-add');
@@ -399,6 +422,23 @@
   const keywordsClearBtn = document.getElementById('bib-alertas-keywords-clear');
   const filterStatus = document.getElementById('bib-alertas-filter-status');
   const markAllBtn = document.getElementById('bib-mark-all');
+  const markAllForaBtn = document.getElementById('bib-mark-all-fora');
+
+  function parseKeywordsClient(raw) {
+    const parts = Array.isArray(raw) ? raw : String(raw || '').split(/[,;\n]+/);
+    const seen = new Set();
+    const out = [];
+    for (const item of parts) {
+      const k = String(item || '').trim().replace(/\s+/g, ' ');
+      if (k.length < 2) continue;
+      const key = k.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(k);
+      if (out.length >= 40) break;
+    }
+    return out;
+  }
 
   /** Abre URL em nova aba (processamento) e tenta manter o foco nesta. */
   function abrirAbaEmSegundoPlano(url) {
@@ -422,8 +462,16 @@
     a.remove();
   }
 
+  function isListaFora(item) {
+    return (
+      item?.dataset?.lista === 'fora' ||
+      Boolean(item?.closest?.('#bib-alertas-fora'))
+    );
+  }
+
   function marcarAlertaVisualComoLido(item) {
     if (!item || item.dataset.lido === '1') return false;
+    const fora = isListaFora(item);
     item.dataset.lido = '1';
     item.classList.add('opacity-55');
     const dot = item.querySelector('[title="Não lido"], .h-2.w-2');
@@ -432,6 +480,40 @@
       dot.title = 'Lido';
     }
     item.querySelector('.bib-alerta-marcar-lido')?.closest('div')?.remove();
+
+    if (fora) {
+      const cNao = document.getElementById('bib-fora-tab-count-nao-lidos');
+      const cLid = document.getElementById('bib-fora-tab-count-lidos');
+      const novoNao = Math.max(0, Number(cNao?.textContent || 0) - 1);
+      const lidosAtual = Number(cLid?.textContent || 0) + 1;
+      if (cNao) cNao.textContent = String(novoNao);
+      if (cLid) cLid.textContent = String(lidosAtual);
+      const unread = document.getElementById('bib-alertas-fora-unread-count');
+      if (unread) {
+        if (novoNao <= 0) unread.classList.add('hidden');
+        else {
+          unread.classList.remove('hidden');
+          unread.textContent = `${novoNao} novo${novoNao === 1 ? '' : 's'}`;
+        }
+      }
+      const box = alertasForaBox;
+      const tab = box?.dataset?.tabAtual || 'nao-lidos';
+      if (tab === 'nao-lidos') {
+        item.remove();
+        const restam = box?.querySelectorAll('.bib-alerta-item').length || 0;
+        const visibleCount = document.getElementById('bib-alertas-fora-visible-count');
+        if (visibleCount) visibleCount.textContent = String(restam);
+        if (!restam && box) {
+          box.innerHTML = `
+            <div class="px-5 py-10 text-center">
+              <p class="text-sm font-medium text-slate-400">Nenhum outro alerta não lido</p>
+              <p class="mt-1 text-xs text-slate-600">Os que você marcar ou abrir passam para a aba Lidos.</p>
+            </div>`;
+        }
+      }
+      return true;
+    }
+
     const app = document.getElementById('biblioteca-app');
     const atual = Number(app?.dataset?.alertasNaoLidos || 0);
     const novoNao = Math.max(0, atual - 1);
@@ -454,7 +536,6 @@
     const cNao = document.getElementById('bib-tab-count-nao-lidos');
     if (cNao) cNao.textContent = String(novoNao);
     if (cLid) cLid.textContent = String(lidosAtual);
-    // Na aba "Não lidos", some o item da lista
     const tab = alertasBox?.dataset?.tabAtual || 'nao-lidos';
     if (tab === 'nao-lidos') {
       item.remove();
@@ -472,53 +553,43 @@
     return true;
   }
 
-  alertasBox?.addEventListener('click', (e) => {
+  function onAlertaListaClick(box, e) {
+    if (!box || !box.contains(e.target)) return false;
     const marcarBtn = e.target.closest('.bib-alerta-marcar-lido');
-    if (marcarBtn && alertasBox.contains(marcarBtn)) {
+    if (marcarBtn && box.contains(marcarBtn)) {
       e.preventDefault();
       e.stopPropagation();
       const item = marcarBtn.closest('.bib-alerta-item');
-      if (!item) return;
+      if (!item) return true;
       const alertaId = item.dataset.alerta;
       const eraNovo = marcarAlertaVisualComoLido(item);
       if (eraNovo && alertaId) {
         api(`/api/biblioteca/alertas/${alertaId}/lido`, { method: 'POST', body: '{}' }).catch(() => {});
       }
-      return;
+      return true;
     }
 
     const link = e.target.closest('.bib-alerta-link');
-    if (!link || !alertasBox.contains(link) || link.tagName !== 'A') return;
+    if (!link || !box.contains(link) || link.tagName !== 'A') return false;
     const href = link.getAttribute('href') || '';
-    if (!href || href.startsWith('#')) return;
-    // Já com Ctrl/Cmd/Shift: deixa o navegador agir
-    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (!href || href.startsWith('#')) return false;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return false;
     e.preventDefault();
     abrirAbaEmSegundoPlano(href);
     const item = link.closest('.bib-alerta-item');
-    if (!item) return;
+    if (!item) return true;
     const eraNovo = marcarAlertaVisualComoLido(item);
     const alertaId = item.dataset.alerta;
     if (eraNovo && alertaId) {
       api(`/api/biblioteca/alertas/${alertaId}/lido`, { method: 'POST', body: '{}' }).catch(() => {});
     }
-  });
-
-  function parseKeywordsClient(raw) {
-    const parts = Array.isArray(raw) ? raw : String(raw || '').split(/[,;\n]+/);
-    const seen = new Set();
-    const out = [];
-    for (const item of parts) {
-      const k = String(item || '').trim().replace(/\s+/g, ' ');
-      if (k.length < 2) continue;
-      const key = k.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(k);
-      if (out.length >= 30) break;
-    }
-    return out;
+    return true;
   }
+
+  alertasAside?.addEventListener('click', (e) => {
+    if (onAlertaListaClick(alertasBox, e)) return;
+    onAlertaListaClick(alertasForaBox, e);
+  });
 
   let keywordsList = parseKeywordsClient(alertasAside?.dataset?.keywordsSalvas || '');
 
@@ -765,6 +836,106 @@
     carregarAlertasTab(tab);
   });
 
+  let alertasForaTabAtual = alertasForaBox?.dataset?.tabAtual || 'nao-lidos';
+  const foraTabActiveCls =
+    'bib-alerta-fora-tab inline-flex items-center gap-1.5 rounded-lg border border-slate-500/40 bg-slate-700/30 px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition';
+  const foraTabIdleCls =
+    'bib-alerta-fora-tab inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/40 px-2.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-600 hover:text-slate-200';
+
+  function pintarTabsAlertasFora(tab) {
+    document.querySelectorAll('#bib-alertas-fora-tabs .bib-alerta-fora-tab').forEach((btn) => {
+      const on = btn.dataset.tab === tab;
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      btn.className = on ? foraTabActiveCls : foraTabIdleCls;
+    });
+    if (alertasForaBox) alertasForaBox.dataset.tabAtual = tab;
+    if (markAllForaBtn) {
+      markAllForaBtn.classList.toggle('invisible', tab !== 'nao-lidos');
+    }
+  }
+
+  function renderAlertasForaEmpty(tab) {
+    const isLidos = tab === 'lidos';
+    return `
+      <div class="px-5 py-10 text-center">
+        <p class="text-sm font-medium text-slate-400">${
+          isLidos ? 'Nenhum outro alerta lido' : 'Nenhum outro alerta não lido'
+        }</p>
+        <p class="mt-1 text-xs leading-relaxed text-slate-600">${
+          isLidos
+            ? 'Alertas fora das palavras-chave que você marcou como lidos aparecem aqui.'
+            : 'Tudo o que chegou bateu com suas palavras-chave, ou ainda não há novidades fora da lista.'
+        }</p>
+      </div>`;
+  }
+
+  function renderAlertaItemFora(a) {
+    return renderAlertaItem(a)
+      .replace('data-lido=', 'data-lista="fora" data-lido=')
+      .replace(
+        'bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.15)]',
+        'bg-slate-400 shadow-[0_0_0_3px_rgba(148,163,184,0.15)]'
+      );
+  }
+
+  function aplicarListaAlertasFora(list, meta = {}) {
+    if (!alertasForaBox) return;
+    const tab = meta.tab || alertasForaTabAtual;
+    if (!list.length) {
+      alertasForaBox.innerHTML = renderAlertasForaEmpty(tab);
+    } else {
+      alertasForaBox.innerHTML = list.map(renderAlertaItemFora).join('');
+    }
+    const visibleCount = document.getElementById('bib-alertas-fora-visible-count');
+    if (visibleCount) visibleCount.textContent = String(list.length);
+    if (markAllForaBtn) {
+      markAllForaBtn.classList.toggle('invisible', tab !== 'nao-lidos' || !list.length);
+    }
+    const cNao = document.getElementById('bib-fora-tab-count-nao-lidos');
+    const cLid = document.getElementById('bib-fora-tab-count-lidos');
+    if (cNao && typeof meta.alertasNaoLidos === 'number') cNao.textContent = String(meta.alertasNaoLidos);
+    if (cLid && typeof meta.alertasLidos === 'number') cLid.textContent = String(meta.alertasLidos);
+    const unread = document.getElementById('bib-alertas-fora-unread-count');
+    if (unread && typeof meta.alertasNaoLidos === 'number') {
+      if (meta.alertasNaoLidos <= 0) unread.classList.add('hidden');
+      else {
+        unread.classList.remove('hidden');
+        unread.textContent = `${meta.alertasNaoLidos} novo${meta.alertasNaoLidos === 1 ? '' : 's'}`;
+      }
+    }
+  }
+
+  async function carregarAlertasForaTab(tab) {
+    alertasForaTabAtual = tab === 'lidos' ? 'lidos' : 'nao-lidos';
+    pintarTabsAlertasFora(alertasForaTabAtual);
+    if (!alertasForaBox || !keywordsList.length) return;
+    alertasForaBox.innerHTML =
+      '<div class="px-5 py-10 text-center text-xs text-slate-500">Carregando…</div>';
+    try {
+      const qs = new URLSearchParams();
+      qs.set('fora', '1');
+      if (alertasForaTabAtual === 'lidos') qs.set('lido', '1');
+      else qs.set('unread', '1');
+      const data = await api(`/api/biblioteca/alertas?${qs.toString()}`);
+      aplicarListaAlertasFora(Array.isArray(data.alertas) ? data.alertas : [], {
+        tab: alertasForaTabAtual,
+        alertasNaoLidos: Number(data.alertasNaoLidos || 0),
+        alertasLidos: Number(data.alertasLidos || 0),
+      });
+    } catch (err) {
+      alertasForaBox.innerHTML = `<div class="px-5 py-10 text-center text-xs text-rose-300">${escHtml(err.message || 'Falha ao carregar')}</div>`;
+    }
+  }
+
+  document.getElementById('bib-alertas-fora-tabs')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.bib-alerta-fora-tab');
+    if (!btn) return;
+    e.preventDefault();
+    const tab = btn.dataset.tab || 'nao-lidos';
+    if (tab === alertasForaTabAtual) return;
+    carregarAlertasForaTab(tab);
+  });
+
   async function persistirListaKeywords(nextList) {
     const list = parseKeywordsClient(nextList);
     if (keywordAddBtn) {
@@ -790,6 +961,13 @@
         alertasNaoLidos: Number(data.alertasNaoLidos || 0),
         alertasLidos: Number(data.alertasLidos || 0),
       });
+      // Seção "Outros alertas" depende de ter palavras — recarrega se sumiu/apareceu
+      const foraSec = document.getElementById('bib-secao-alertas-fora');
+      if (keywordsList.length && alertasForaBox) {
+        await carregarAlertasForaTab('nao-lidos');
+      } else if (Boolean(foraSec) !== Boolean(keywordsList.length)) {
+        location.reload();
+      }
     } catch (err) {
       setFilterStatus(err.message || 'Falha ao salvar lista', true);
       renderKeywordsList();

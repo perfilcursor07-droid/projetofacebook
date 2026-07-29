@@ -78,13 +78,27 @@ function filterByKeywords(rows, keywords) {
   });
 }
 
+/** Alertas que NÃO batem com nenhuma palavra-chave. */
+function filterExcludingKeywords(rows, keywords) {
+  const patterns = parseKeywords(keywords)
+    .map((k) => stripAccents(k).trim().toLowerCase().replace(/\s+/g, ' '))
+    .filter((k) => k.length >= 2);
+  if (!patterns.length) return Array.isArray(rows) ? rows : [];
+  const matchedIds = new Set(filterByKeywords(rows, keywords).map((r) => r.id));
+  return (rows || []).filter((row) => !matchedIds.has(row.id));
+}
+
 const BibliotecaAlertas = {
   table: 'biblioteca_alertas',
 
-  findByUser(userId, { apenasNaoLidos = false, apenasLidos = false, limit = 40, keywords = null } = {}) {
+  findByUser(
+    userId,
+    { apenasNaoLidos = false, apenasLidos = false, limit = 40, keywords = null, excludeKeywords = false } = {}
+  ) {
     const lim = Math.min(500, Math.max(1, Number(limit) || 40));
-    // Com palavras-chave: busca pool maior sem filtro SQL e filtra em JS (muito mais rápido).
-    const poolLimit = parseKeywords(keywords).length ? Math.min(500, Math.max(lim * 4, 200)) : lim;
+    const hasKw = parseKeywords(keywords).length > 0;
+    // Com palavras-chave (match ou exclusão): pool maior e filtra em JS.
+    const poolLimit = hasKw ? Math.min(500, Math.max(lim * 5, 250)) : lim;
     return baseQuery(userId, { apenasNaoLidos, apenasLidos })
       .leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id')
       .orderBy('a.created_at', 'desc')
@@ -98,12 +112,15 @@ const BibliotecaAlertas = {
         'p.resumo as post_resumo'
       )
       .then((rows) => {
-        const filtered = parseKeywords(keywords).length ? filterByKeywords(rows, keywords) : rows;
+        if (!hasKw) return (rows || []).slice(0, lim);
+        const filtered = excludeKeywords
+          ? filterExcludingKeywords(rows, keywords)
+          : filterByKeywords(rows, keywords);
         return filtered.slice(0, lim);
       });
   },
 
-  async countNaoLidos(userId, keywords = null) {
+  async countNaoLidos(userId, keywords = null, { excludeKeywords = false } = {}) {
     if (!parseKeywords(keywords).length) {
       const row = await baseQuery(userId, { apenasNaoLidos: true })
         .count({ total: 'a.id' })
@@ -114,11 +131,12 @@ const BibliotecaAlertas = {
       apenasNaoLidos: true,
       limit: 500,
       keywords,
+      excludeKeywords,
     });
     return { total: rows.length };
   },
 
-  async countLidos(userId, keywords = null) {
+  async countLidos(userId, keywords = null, { excludeKeywords = false } = {}) {
     if (!parseKeywords(keywords).length) {
       const row = await baseQuery(userId, { apenasLidos: true })
         .count({ total: 'a.id' })
@@ -129,6 +147,7 @@ const BibliotecaAlertas = {
       apenasLidos: true,
       limit: 200,
       keywords,
+      excludeKeywords,
     });
     return { total: rows.length };
   },
@@ -161,7 +180,7 @@ const BibliotecaAlertas = {
       .update({ lido: true, updated_at: db.fn.now() });
   },
 
-  async marcarTodosLidos(userId, keywords = null) {
+  async marcarTodosLidos(userId, keywords = null, { excludeKeywords = false } = {}) {
     if (!parseKeywords(keywords).length) {
       return db(this.table)
         .where({ user_id: userId, lido: false })
@@ -171,6 +190,7 @@ const BibliotecaAlertas = {
       apenasNaoLidos: true,
       limit: 500,
       keywords,
+      excludeKeywords,
     });
     const ids = rows.map((r) => r.id).filter(Boolean);
     if (!ids.length) return 0;
@@ -185,6 +205,7 @@ module.exports = BibliotecaAlertas;
 module.exports.parseKeywords = parseKeywords;
 module.exports.serializeKeywords = serializeKeywords;
 module.exports.filterByKeywords = filterByKeywords;
+module.exports.filterExcludingKeywords = filterExcludingKeywords;
 module.exports.keywordLikePatterns = (keyword) => {
   const pattern = keywordLikePattern(keyword);
   return pattern ? [pattern] : [];

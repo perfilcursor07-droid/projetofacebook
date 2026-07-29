@@ -2204,29 +2204,48 @@ async function dashboardUsuario(userId) {
   const hasKeywords = alertasKeywords.length > 0;
 
   // Alertas: sem filtro SQL pesado. Com keywords, um pool recente + filtro em JS.
-  const [fontes, postsPorFonte, alertasNaoLidosRows, alertasLidosRows, autopilot] = await Promise.all([
-    BibliotecaFontes.findByUser(userId),
-    BibliotecaPosts.countsByUser(userId),
-    BibliotecaAlertas.findByUser(userId, {
-      apenasNaoLidos: true,
-      limit: hasKeywords ? 200 : 50,
-      keywords: hasKeywords ? alertasKeywords : null,
-    }),
-    hasKeywords
-      ? BibliotecaAlertas.findByUser(userId, {
-          apenasLidos: true,
-          limit: 80,
-          keywords: alertasKeywords,
-        })
-      : Promise.resolve([]),
-    obterAutopilot(userId),
-  ]);
+  const [fontes, postsPorFonte, alertasNaoLidosRows, alertasLidosRows, alertasForaRows, autopilot] =
+    await Promise.all([
+      BibliotecaFontes.findByUser(userId),
+      BibliotecaPosts.countsByUser(userId),
+      BibliotecaAlertas.findByUser(userId, {
+        apenasNaoLidos: true,
+        limit: hasKeywords ? 200 : 50,
+        keywords: hasKeywords ? alertasKeywords : null,
+      }),
+      hasKeywords
+        ? BibliotecaAlertas.findByUser(userId, {
+            apenasLidos: true,
+            limit: 80,
+            keywords: alertasKeywords,
+          })
+        : Promise.resolve([]),
+      hasKeywords
+        ? BibliotecaAlertas.findByUser(userId, {
+            apenasNaoLidos: true,
+            limit: 80,
+            keywords: alertasKeywords,
+            excludeKeywords: true,
+          })
+        : Promise.resolve([]),
+      obterAutopilot(userId),
+    ]);
 
   let alertasNaoLidos;
   let alertasLidos;
+  let alertasForaNaoLidos = 0;
+  let alertasForaLidos = 0;
   if (hasKeywords) {
     alertasNaoLidos = alertasNaoLidosRows.length;
     alertasLidos = alertasLidosRows.length;
+    alertasForaNaoLidos = alertasForaRows.length;
+    const foraLidosRows = await BibliotecaAlertas.findByUser(userId, {
+      apenasLidos: true,
+      limit: 80,
+      keywords: alertasKeywords,
+      excludeKeywords: true,
+    });
+    alertasForaLidos = foraLidosRows.length;
   } else {
     const [countRow, countLidosRow] = await Promise.all([
       BibliotecaAlertas.countNaoLidos(userId, null),
@@ -2243,8 +2262,11 @@ async function dashboardUsuario(userId) {
   return {
     fontes: fontesComContagem,
     alertas: hasKeywords ? alertasNaoLidosRows.slice(0, 50) : alertasNaoLidosRows,
+    alertasFora: hasKeywords ? alertasForaRows.slice(0, 40) : [],
     alertasNaoLidos,
     alertasLidos,
+    alertasForaNaoLidos,
+    alertasForaLidos,
     alertasKeywords,
     autopilot,
   };

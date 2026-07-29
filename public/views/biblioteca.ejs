@@ -449,6 +449,96 @@
             <% }) %>
           </div>
         </section>
+
+        <% if (alertasFiltrados) {
+          const alertasForaList = typeof alertasFora !== 'undefined' && Array.isArray(alertasFora) ? alertasFora : [];
+          const foraNaoLidos = Number(typeof alertasForaNaoLidos !== 'undefined' ? alertasForaNaoLidos : alertasForaList.length);
+          const foraLidosCount = Number(typeof alertasForaLidos !== 'undefined' ? alertasForaLidos : 0);
+        %>
+        <section id="bib-secao-alertas-fora" class="overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/40" aria-labelledby="bib-alertas-fora-title">
+          <div class="flex items-start justify-between gap-3 border-b border-slate-800 p-4 sm:p-5">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 id="bib-alertas-fora-title" class="text-sm font-semibold text-white">Outros alertas</h2>
+                <span id="bib-alertas-fora-visible-count" class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-slate-300"><%= alertasForaList.length %></span>
+                <% if (foraNaoLidos) { %>
+                  <span id="bib-alertas-fora-unread-count" class="rounded-full bg-slate-500/20 px-2 py-0.5 text-[10px] font-semibold text-slate-300"><%= foraNaoLidos %> novo<%= foraNaoLidos === 1 ? '' : 's' %></span>
+                <% } else { %>
+                  <span id="bib-alertas-fora-unread-count" class="hidden rounded-full bg-slate-500/20 px-2 py-0.5 text-[10px] font-semibold text-slate-300"></span>
+                <% } %>
+              </div>
+              <p class="mt-1 text-xs text-slate-500">Fora das palavras-chave — para revisar e criar se quiser.</p>
+            </div>
+            <button type="button" id="bib-mark-all-fora" class="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-slate-500 transition hover:bg-slate-700/40 hover:text-slate-200 <%= foraNaoLidos ? '' : 'invisible' %>">
+              Marcar exibidos como lidos
+            </button>
+          </div>
+
+          <div id="bib-alertas-fora-tabs" class="flex gap-1.5 border-b border-slate-800 px-4 py-2.5 sm:px-5" role="tablist" aria-label="Filtrar outros alertas">
+            <button type="button" role="tab" aria-selected="true" data-tab="nao-lidos"
+              class="bib-alerta-fora-tab inline-flex items-center gap-1.5 rounded-lg border border-slate-500/40 bg-slate-700/30 px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition">
+              Não lidos
+              <span id="bib-fora-tab-count-nao-lidos" class="rounded-md bg-slate-950/40 px-1.5 py-0.5 text-[10px] tabular-nums"><%= foraNaoLidos %></span>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-tab="lidos"
+              class="bib-alerta-fora-tab inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/40 px-2.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-600 hover:text-slate-200">
+              Lidos
+              <span id="bib-fora-tab-count-lidos" class="rounded-md bg-slate-950/40 px-1.5 py-0.5 text-[10px] tabular-nums"><%= foraLidosCount %></span>
+            </button>
+          </div>
+
+          <div id="bib-alertas-fora" class="max-h-[min(56vh,36rem)] divide-y divide-slate-800/80 overflow-y-auto" data-tab-atual="nao-lidos" data-lista="fora">
+            <% if (!alertasForaList.length) { %>
+              <div class="px-5 py-10 text-center">
+                <p class="text-sm font-medium text-slate-400">Nenhum outro alerta não lido</p>
+                <p class="mt-1 text-xs leading-relaxed text-slate-600">Tudo o que chegou bateu com suas palavras-chave, ou ainda não há novidades fora da lista.</p>
+              </div>
+            <% } %>
+            <% alertasForaList.forEach(function (a) { %>
+              <%
+                const destFora = a.post_id
+                  ? '/biblioteca/posts/' + a.post_id
+                  : (a.fonte_id ? '/biblioteca/fontes/' + a.fonte_id : null);
+              %>
+              <article
+                class="bib-alerta-item group flex gap-3 px-4 py-4 transition hover:bg-slate-800/30 sm:px-5 <%= a.lido ? 'opacity-55' : '' %>"
+                data-alerta="<%= a.id %>" data-lido="<%= a.lido ? '1' : '0' %>" data-lista="fora">
+                <div class="mt-1.5 shrink-0">
+                  <span class="block h-2 w-2 rounded-full <%= a.lido ? 'bg-slate-700' : 'bg-slate-400 shadow-[0_0_0_3px_rgba(148,163,184,0.15)]' %>" title="<%= a.lido ? 'Lido' : 'Não lido' %>"></span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <% if (destFora) { %>
+                    <a href="<%= destFora %>" class="bib-alerta-link block rounded-md outline-none focus-visible:ring-2 focus-visible:ring-slate-500/40">
+                  <% } else { %>
+                    <div class="bib-alerta-link pointer-events-none">
+                  <% } %>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <% if (a.fonte_plataforma) { %>
+                          <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset <%= platClass(a.fonte_plataforma) %>"><%= a.fonte_plataforma %></span>
+                        <% } %>
+                        <% if (a.fonte_nome) { %><span class="max-w-[9rem] truncate text-[11px] text-slate-500"><%= a.fonte_nome %></span><% } %>
+                        <time class="ml-auto shrink-0 text-[11px] tabular-nums text-slate-600"><%= fmtQuando(a.created_at) %></time>
+                      </div>
+                      <h3 class="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-white transition group-hover:text-slate-200"><%= a.titulo %></h3>
+                      <% if (a.resumo) { %><p class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400"><%= a.resumo %></p><% } %>
+                  <% if (destFora) { %>
+                    </a>
+                  <% } else { %>
+                    </div>
+                  <% } %>
+                  <% if (!a.lido) { %>
+                    <div class="mt-2.5">
+                      <button type="button" class="bib-alerta-marcar-lido inline-flex items-center rounded-md border border-slate-700 bg-slate-900/60 px-2.5 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-slate-500 hover:bg-slate-700/30 hover:text-white">
+                        Marcar como lido
+                      </button>
+                    </div>
+                  <% } %>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        </section>
+        <% } %>
       </aside>
     </div>
 
@@ -607,5 +697,5 @@
   <script>
     window.__BIB_PAGES__ = <%- JSON.stringify((pages || []).map(function (p) { return { id: p.id, name: p.page_name }; })) %>;
   </script>
-  <script src="/js/biblioteca.js"></script>
+  <script src="/js/biblioteca.js?v=20260729g"></script>
 <%- include('partials/app-end') %>

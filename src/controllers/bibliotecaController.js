@@ -279,15 +279,26 @@ async function listarAlertas(req, res, next) {
         : savedKeywords;
     const keywords = String(keywordsRaw || '').trim();
     const hasKeywords = keywords.length > 0;
+    const fora =
+      req.query.fora === '1' ||
+      req.query.exclude === '1' ||
+      req.query.modo === 'fora' ||
+      req.query.modo === 'outros';
+    const excludeKeywords = Boolean(hasKeywords && fora);
     const alertas = await BibliotecaAlertas.findByUser(req.session.userId, {
       apenasNaoLidos: filtrarNaoLidos,
       apenasLidos: filtrarLidos,
       keywords: hasKeywords ? keywords : null,
+      excludeKeywords,
       limit: hasKeywords ? 100 : 50,
     });
     const [countRow, countLidosRow] = await Promise.all([
-      BibliotecaAlertas.countNaoLidos(req.session.userId, hasKeywords ? keywords : null),
-      BibliotecaAlertas.countLidos(req.session.userId, hasKeywords ? keywords : null),
+      BibliotecaAlertas.countNaoLidos(req.session.userId, hasKeywords ? keywords : null, {
+        excludeKeywords,
+      }),
+      BibliotecaAlertas.countLidos(req.session.userId, hasKeywords ? keywords : null, {
+        excludeKeywords,
+      }),
     ]);
     res.json({
       ok: true,
@@ -297,6 +308,7 @@ async function listarAlertas(req, res, next) {
       keywords,
       keywordsSalvas: savedKeywords,
       keywordsList: require('../models/BibliotecaAlertas').parseKeywords(savedKeywords),
+      fora: excludeKeywords,
     });
   } catch (err) {
     next(err);
@@ -347,8 +359,25 @@ async function marcarAlertaLido(req, res, next) {
 
 async function marcarTodosLidos(req, res, next) {
   try {
-    await BibliotecaAlertas.marcarTodosLidos(req.session.userId);
-    res.json({ ok: true });
+    const Users = require('../models/Users');
+    const user = await Users.findById(req.session.userId);
+    const savedKeywords = String(user?.biblioteca_alertas_keywords || '').trim();
+    const body = req.body || {};
+    const keywordsRaw =
+      body.keywords != null || body.palavras != null
+        ? body.keywords ?? body.palavras
+        : savedKeywords;
+    const keywords = String(keywordsRaw || '').trim();
+    const fora =
+      body.fora === true ||
+      body.fora === 1 ||
+      body.fora === '1' ||
+      body.exclude === true ||
+      body.modo === 'fora';
+    await BibliotecaAlertas.marcarTodosLidos(req.session.userId, keywords || null, {
+      excludeKeywords: Boolean(keywords && fora),
+    });
+    res.json({ ok: true, fora: Boolean(keywords && fora) });
   } catch (err) {
     next(err);
   }
