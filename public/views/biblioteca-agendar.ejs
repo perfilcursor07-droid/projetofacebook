@@ -24,7 +24,7 @@
     }
   }
 %>
-  <main class="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+  <main class="mx-auto max-w-8xl px-4 py-6 sm:px-6">
     <header class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <p class="text-[10px] font-semibold uppercase tracking-wider text-amber-400/80">Biblioteca</p>
@@ -33,6 +33,11 @@
           Puxa posts de <strong class="font-medium text-slate-300">sites</strong> da biblioteca, gera as matérias e pré-agenda para
           <strong class="font-medium text-slate-300">amanhã</strong>, de meia em meia hora (7h–22h).
           Novas listas <strong class="font-medium text-slate-300">continuam após o último horário já agendado/confirmado</strong>.
+        </p>
+        <p class="mt-2 max-w-2xl rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs leading-relaxed text-sky-100/90">
+          <strong class="font-semibold text-sky-200">Automático:</strong> com pelo menos uma matéria
+          <strong class="font-semibold">confirmada</strong>, o sistema completa sozinho os horários livres de amanhã
+          (a cada ~20 min, até 5 por vez) e também começa a montar o dia seguinte. Confirme as que quiser; exclua as demais.
         </p>
       </div>
       <a href="/biblioteca" class="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 hover:text-white">← Biblioteca</a>

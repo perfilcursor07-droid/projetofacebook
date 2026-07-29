@@ -583,6 +583,94 @@ async function acaoEmLote(userId, { ids = [], acao } = {}) {
   return { ok: ok.length, erros, itens: await listarAgenda(userId) };
 }
 
+function diaHojeKey() {
+  const amanha = startOfTomorrowAraguaina();
+  const hoje = new Date(amanha.getTime() - 24 * 60 * 60 * 1000);
+  return toDatetimeLocal(hoje).slice(0, 10);
+}
+
+/** Evita martelar o mesmo usuário a cada minuto do tick. */
+const agendaAutoLastTick = new Map();
+const AGENDA_AUTO_COOLDOWN_MS = 20 * 60 * 1000;
+const AGENDA_AUTO_MAX_POR_CICLO = 5;
+const AGENDA_AUTO_MAX_PENDENTES = 8;
+
+/**
+ * Continua a pré-agenda sozinho:
+ * - Se já tem CONFIRMADO amanhã → preenche horários livres seguintes
+ * - Se tem CONFIRMADO hoje e amanhã ainda está vazio → começa a montar amanhã (7h–22h)
+ */
+async function tickAgendaPre() {
+  const dayAmanha = diaAmanhaKey();
+  const dayHoje = diaHojeKey();
+  const rows = await db(BibliotecaAgenda.table)
+    .whereNotIn('status', ['cancelado'])
+    .select('user_id', 'facebook_page_id', 'proposed_at', 'status');
+
+  const amanhaPorUser = new Map();
+  const hojeConfirmado = new Map(); // userId -> pageId
+
+  for (const r of rows || []) {
+    const uid = Number(r.user_id);
+    const day = toDatetimeLocal(r.proposed_at).slice(0, 10);
+    if (day === dayAmanha) {
+      if (!amanhaPorUser.has(uid)) amanhaPorUser.set(uid, []);
+      amanhaPorUser.get(uid).push(r);
+    }
+    if (day === dayHoje && r.status === 'confirmado') {
+      const pageId = r.facebook_page_id != null ? Number(r.facebook_page_id) : null;
+      if (pageId && !hojeConfirmado.has(uid)) hojeConfirmado.set(uid, pageId);
+    }
+  }
+
+  const candidatos = new Set([
+    ...[...amanhaPorUser.entries()]
+      .filter(([, itens]) => itens.some((i) => i.status === 'confirmado'))
+      .map(([uid]) => uid),
+    ...[...hojeConfirmado.keys()].filter((uid) => !(amanhaPorUser.get(uid) || []).length),
+  ]);
+
+  let processados = 0;
+  for (const userId of candidatos) {
+    const itensAmanha = amanhaPorUser.get(userId) || [];
+    const pendentes = itensAmanha.filter((i) => i.status === 'pendente').length;
+    if (pendentes >= AGENDA_AUTO_MAX_PENDENTES) continue;
+
+    const pageId =
+      itensAmanha.map((i) => i.facebook_page_id).find((id) => id != null && Number(id) > 0) ||
+      hojeConfirmado.get(userId);
+    if (!pageId) continue;
+
+    const last = agendaAutoLastTick.get(userId) || 0;
+    if (Date.now() - last < AGENDA_AUTO_COOLDOWN_MS) continue;
+
+    const maxItens = Math.min(AGENDA_AUTO_MAX_POR_CICLO, AGENDA_AUTO_MAX_PENDENTES - pendentes);
+    if (maxItens < 1) continue;
+
+    try {
+      const result = await montarAgendaAmanha({
+        userId,
+        facebookPageId: Number(pageId),
+        maxItens,
+        somenteSites: true,
+      });
+      agendaAutoLastTick.set(userId, Date.now());
+      processados += 1;
+      if (result.criados > 0) {
+        console.log(
+          `[agenda-auto] user #${userId}: +${result.criados} pré-agendada(s)` +
+            (result.de && result.ate ? ` (${result.de} → ${result.ate})` : '')
+        );
+      }
+    } catch (err) {
+      agendaAutoLastTick.set(userId, Date.now());
+      if (err.status === 422) continue;
+      console.warn(`[agenda-auto] user #${userId}:`, err.message);
+    }
+  }
+  return { processados };
+}
+
 module.exports = {
   listarAgenda,
   montarAgendaAmanha,
@@ -593,6 +681,7 @@ module.exports = {
   readequarHorariosPendentes,
   repararHorariosSobrepostos,
   compactarHorariosDoDia,
+  tickAgendaPre,
   acaoEmLote,
   toDatetimeLocal,
   buildSlots,

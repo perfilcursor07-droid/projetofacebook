@@ -63,6 +63,12 @@ app.listen(env.port, async () => {
       } catch (err) {
         console.error('[biblioteca tick]', err.message);
       }
+      try {
+        const agendaService = require('./services/bibliotecaAgendaService');
+        await agendaService.tickAgendaPre();
+      } catch (err) {
+        console.error('[agenda-auto tick]', err.message);
+      }
     };
     setInterval(tick, 60_000);
     setTimeout(tick, 15_000);
