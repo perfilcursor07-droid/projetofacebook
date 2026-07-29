@@ -31,7 +31,8 @@
         <h1 class="mt-1 text-xl font-semibold text-white sm:text-2xl">Agendar</h1>
         <p class="mt-1 max-w-2xl text-sm text-slate-400">
           Puxa posts de <strong class="font-medium text-slate-300">sites</strong> da biblioteca, gera as matérias e pré-agenda para
-          <strong class="font-medium text-slate-300">amanhã</strong>, de meia em meia hora (7h–22h). Você confirma, edita ou publica.
+          <strong class="font-medium text-slate-300">amanhã</strong>, de meia em meia hora (7h–22h).
+          Novas listas <strong class="font-medium text-slate-300">continuam após o último horário já agendado/confirmado</strong>.
         </p>
       </div>
       <a href="/biblioteca" class="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 hover:text-white">← Biblioteca</a>
@@ -52,7 +53,7 @@
           </select>
         </label>
         <label class="block lg:col-span-2">
-          <span class="text-xs font-medium text-slate-400">Máx. itens</span>
+          <span class="text-xs font-medium text-slate-400">Máx. novos itens</span>
           <input id="agenda-max" type="number" min="1" max="48" value="20"
             class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30" />
         </label>
@@ -143,5 +144,5 @@
     </div>
   </div>
 
-  <script src="/js/biblioteca-agendar.js?v=20260728b"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260728c"></script>
 <%- include('partials/app-end') %>

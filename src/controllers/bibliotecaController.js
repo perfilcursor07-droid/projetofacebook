@@ -435,7 +435,7 @@ async function montarAgenda(req, res, next) {
     const result = await agendaService.montarAgendaAmanha({
       userId: req.session.userId,
       facebookPageId,
-      maxItens: body.max_itens ?? body.maxItens ?? 30,
+      maxItens: body.max_itens ?? body.maxItens ?? 20,
       startHour: body.start_hour ?? body.startHour ?? 7,
       endHour: body.end_hour ?? body.endHour ?? 22,
       somenteSites: body.somente_sites !== false && body.somenteSites !== false,

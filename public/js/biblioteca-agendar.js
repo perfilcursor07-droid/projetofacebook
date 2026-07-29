@@ -33,9 +33,24 @@
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       ...opts,
     });
-    const data = await res.json().catch(() => ({}));
+    const text = await res.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = {};
+    }
     if (!res.ok) {
-      const err = new Error(data.error || data.message || res.statusText || 'Erro');
+      const msg =
+        data.error ||
+        data.message ||
+        (res.status === 504 || res.status === 502
+          ? 'Tempo esgotado no servidor. Tente com menos itens (ex.: 10–20) e rode de novo — a agenda continua do último horário.'
+          : null) ||
+        (text && text.length < 200 && !text.trim().startsWith('<') ? text.trim() : null) ||
+        res.statusText ||
+        'Erro ao montar a agenda';
+      const err = new Error(msg);
       err.status = res.status;
       throw err;
     }
@@ -86,9 +101,16 @@
           somente_sites: true,
         }),
       });
+      const de = data.de ? String(data.de).replace('T', ' ') : null;
+      const ate = data.ate ? String(data.ate).replace('T', ' ') : null;
+      const cont = data.continuidade
+        ? ` (após ${String(data.continuidade).replace('T', ' ')})`
+        : '';
       setMsg(
-        `${data.criados || 0} item(ns) pré-agendado(s) para ${data.dia || 'amanhã'}.` +
-          (data.erros?.length ? ` ${data.erros.length} falha(s).` : ''),
+        `${data.criados || 0} item(ns) pré-agendado(s)${cont}` +
+          (de && ate ? `: ${de} → ${ate}` : data.dia ? ` para ${data.dia}` : '') +
+          '.' +
+          (data.erros?.length ? ` ${data.erros.length} aviso(s)/falha(s).` : ''),
         false
       );
       location.reload();
