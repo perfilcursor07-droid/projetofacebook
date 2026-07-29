@@ -51,8 +51,8 @@ const BibliotecaPosts = {
    * Evita que a mesma base antiga monopolize “Melhores para publicar”.
    */
   async findCandidatosAutopilot(userId, limit = 30) {
-    const alvo = Math.min(40, Math.max(1, Number(limit) || 30));
-    const maxPorFonte = 4;
+    const alvo = Math.min(200, Math.max(1, Number(limit) || 30));
+    const maxPorFonte = Math.max(4, Math.ceil(alvo / 8));
     const corteRecente = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
     const baseSelect = [

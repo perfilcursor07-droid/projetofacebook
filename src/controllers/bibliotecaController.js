@@ -413,14 +413,18 @@ async function putAutopilot(req, res, next) {
 async function agendarPage(req, res, next) {
   try {
     const agendaService = require('../services/bibliotecaAgendaService');
+    const Users = require('../models/Users');
     const rawAba = String(req.query.aba || 'agendada').toLowerCase();
     const aba = rawAba === 'publicadas' || rawAba === 'publicado' ? 'publicadas' : 'agendada';
-    const [itens, contagens, pages, defaultPageId] = await Promise.all([
+    const [itens, contagens, pages, defaultPageId, user] = await Promise.all([
       agendaService.listarAgenda(req.session.userId, { aba }),
       agendaService.contagensAgenda(req.session.userId),
       pagesDoUsuario(req.session.userId),
       defaultPageIdDoUsuario(req.session.userId),
+      Users.findById(req.session.userId),
     ]);
+    const keywordsRaw = String(user?.biblioteca_alertas_keywords || '').trim();
+    const keywordsList = BibliotecaAlertas.parseKeywords(keywordsRaw);
     return res.render('biblioteca-agendar', {
       title: 'Agendar',
       itens,
@@ -428,6 +432,8 @@ async function agendarPage(req, res, next) {
       aba,
       pages,
       defaultPageId,
+      keywordsList,
+      keywordsSalvas: keywordsRaw,
     });
   } catch (err) {
     return next(err);
@@ -463,6 +469,12 @@ async function montarAgenda(req, res, next) {
       startHour: body.start_hour ?? body.startHour ?? 7,
       endHour: body.end_hour ?? body.endHour ?? 22,
       somenteSites: body.somente_sites !== false && body.somenteSites !== false,
+      usarKeywords:
+        body.usar_keywords === true ||
+        body.usarKeywords === true ||
+        body.usar_keywords === 1 ||
+        body.usar_keywords === '1' ||
+        body.filtrar_keywords === true,
     });
     res.json({ ok: true, ...result });
   } catch (err) {

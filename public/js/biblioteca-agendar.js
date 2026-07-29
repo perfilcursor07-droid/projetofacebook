@@ -97,12 +97,18 @@
     e.preventDefault();
     const page = document.getElementById('agenda-page')?.value || '';
     const max = Number(document.getElementById('agenda-max')?.value || 20);
+    const usarKeywords = Boolean(document.getElementById('agenda-usar-keywords')?.checked);
     if (!page) {
       setMsg('Selecione a Página do Facebook.', true);
       return;
     }
     try {
-      setBusy(true, 'Montando agenda de amanhã (pode demorar se for gerar várias matérias)…');
+      setBusy(
+        true,
+        usarKeywords
+          ? 'Montando agenda só com posts das suas palavras-chave…'
+          : 'Montando agenda de amanhã (pode demorar se for gerar várias matérias)…'
+      );
       setMsg('');
       const data = await api('/api/biblioteca/agenda/montar', {
         method: 'POST',
@@ -110,6 +116,7 @@
           facebook_page_id: page,
           max_itens: max,
           somente_sites: true,
+          usar_keywords: usarKeywords,
         }),
       });
       const de = data.de ? String(data.de).replace('T', ' ') : null;
@@ -117,8 +124,11 @@
       const cont = data.continuidade
         ? ` (após ${String(data.continuidade).replace('T', ' ')})`
         : '';
+      const kwHint = data.filtroKeywords
+        ? ` (filtro: ${data.keywordsUsadas || 0} palavra(s)-chave)`
+        : '';
       setMsg(
-        `${data.criados || 0} item(ns) pré-agendado(s)${cont}` +
+        `${data.criados || 0} item(ns) pré-agendado(s)${kwHint}${cont}` +
           (de && ate ? `: ${de} → ${ate}` : data.dia ? ` para ${data.dia}` : '') +
           '.' +
           (data.erros?.length ? ` ${data.erros.length} aviso(s)/falha(s).` : ''),

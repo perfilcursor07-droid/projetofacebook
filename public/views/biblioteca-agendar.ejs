@@ -46,6 +46,10 @@
     </header>
 
     <section class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 sm:p-5 <%= abaAtual === 'publicadas' ? 'hidden' : '' %>" id="agenda-montar-wrap">
+      <%
+        const kwList = typeof keywordsList !== 'undefined' && Array.isArray(keywordsList) ? keywordsList : [];
+        const kwCount = kwList.length;
+      %>
       <form id="agenda-montar-form" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
         <label class="block sm:col-span-2 lg:col-span-5">
           <span class="text-xs font-medium text-slate-400">Página do Facebook</span>
@@ -67,6 +71,40 @@
         <button type="submit" class="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-amber-400 lg:col-span-3">
           Montar agenda de amanhã
         </button>
+
+        <div class="sm:col-span-2 lg:col-span-12 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3 py-3">
+          <label class="flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              id="agenda-usar-keywords"
+              class="mt-0.5 rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500/30"
+              <%= kwCount ? 'checked' : 'disabled' %>
+            />
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium text-emerald-100">Só posts com minhas palavras-chave</span>
+              <span class="mt-0.5 block text-xs text-slate-400">
+                Usa as mesmas palavras de <a href="/biblioteca" class="text-emerald-300/90 underline-offset-2 hover:underline">Biblioteca → Palavras-chave</a>
+                (qualquer uma da lista).
+                <% if (kwCount) { %>
+                  <span class="text-slate-300"><%= kwCount %>/40 ativas.</span>
+                <% } else { %>
+                  <span class="text-amber-300/90">Nenhuma cadastrada — adicione em Biblioteca.</span>
+                <% } %>
+              </span>
+            </span>
+          </label>
+          <% if (kwCount) { %>
+            <details class="mt-2">
+              <summary class="cursor-pointer text-[11px] font-medium text-slate-400 hover:text-slate-200">Ver palavras (<%= kwCount %>)</summary>
+              <div class="mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                <% kwList.forEach(function (kw) { %>
+                  <span class="rounded-md bg-slate-800/80 px-1.5 py-0.5 text-[10px] text-slate-300"><%= kw %></span>
+                <% }) %>
+              </div>
+            </details>
+          <% } %>
+        </div>
+
         <p id="agenda-msg" class="hidden text-sm sm:col-span-2 lg:col-span-12"></p>
       </form>
     </section>
@@ -268,5 +306,5 @@
       /* cobre o campo inteiro — clique abre o picker; o ícone branco é o SVG por cima */
     }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260729d"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260729e"></script>
 <%- include('partials/app-end') %>

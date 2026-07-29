@@ -272,6 +272,8 @@ async function montarAgendaAmanha({
   startHour = DEFAULT_START_HOUR,
   endHour = DEFAULT_END_HOUR,
   somenteSites = true,
+  usarKeywords = false,
+  keywords = null,
 } = {}) {
   const page = await bibliotecaService.resolvePage(userId, facebookPageId);
   if (!page) {
@@ -279,6 +281,22 @@ async function montarAgendaAmanha({
     err.status = 400;
     throw err;
   }
+
+  const BibliotecaAlertas = require('../models/BibliotecaAlertas');
+  let keywordsList = BibliotecaAlertas.parseKeywords(keywords);
+  if (usarKeywords && !keywordsList.length) {
+    const Users = require('../models/Users');
+    const user = await Users.findById(userId);
+    keywordsList = BibliotecaAlertas.parseKeywords(user?.biblioteca_alertas_keywords);
+  }
+  if (usarKeywords && !keywordsList.length) {
+    const err = new Error(
+      'Nenhuma palavra-chave salva. Cadastre em Biblioteca → Palavras-chave e tente de novo.'
+    );
+    err.status = 400;
+    throw err;
+  }
+  const keywordsFiltro = usarKeywords ? keywordsList.join(', ') : null;
 
   const maxPedidos = Math.min(48, Math.max(1, Number(maxItens) || DEFAULT_MAX_ITENS));
   // Corrige buracos e overbooking antes de encaixar novos
@@ -310,7 +328,12 @@ async function montarAgendaAmanha({
     (await BibliotecaAgenda.findActivePostIds(userId)).map((id) => Number(id))
   );
 
-  let candidatos = await BibliotecaPosts.findCandidatosAutopilot(userId, Math.max(40, slots.length * 2));
+  // Com filtro de palavras-chave, busca pool maior — muitos posts não vão bater
+  const poolMult = keywordsFiltro ? 10 : 2;
+  let candidatos = await BibliotecaPosts.findCandidatosAutopilot(
+    userId,
+    Math.max(80, slots.length * poolMult)
+  );
   candidatos = await bibliotecaService.filtrarPostsNaoPublicados(userId, candidatos || []);
   candidatos = candidatos.filter((p) => {
     if (jaNaAgenda.has(Number(p.id))) return false;
@@ -318,18 +341,22 @@ async function montarAgendaAmanha({
     return true;
   });
 
-  if (candidatos.length < slots.length) {
+  if (keywordsFiltro || candidatos.length < slots.length) {
     const extras = await db('biblioteca_posts as p')
       .leftJoin('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
       .leftJoin('ai_matters as m', 'm.id', 'p.matter_id')
       .where('p.user_id', userId)
-      .whereNotNull('p.matter_id')
-      .whereIn('m.status', ['rascunho', 'pronto'])
       .modify((qb) => {
         if (somenteSites) qb.andWhere('f.plataforma', 'site');
+        if (keywordsFiltro) {
+          // Pool amplo (com ou sem matéria) para o filtro em JS
+          qb.whereIn('p.status', ['novo', 'visto', 'usado']);
+        } else {
+          qb.whereNotNull('p.matter_id').whereIn('m.status', ['rascunho', 'pronto']);
+        }
       })
       .orderByRaw('COALESCE(p.publicado_em, p.created_at) DESC')
-      .limit(slots.length * 3)
+      .limit(keywordsFiltro ? Math.max(300, slots.length * 15) : slots.length * 3)
       .select(
         'p.id',
         'p.fonte_id',
@@ -353,6 +380,12 @@ async function montarAgendaAmanha({
     }
   }
 
+  candidatos = await bibliotecaService.filtrarPostsNaoPublicados(userId, candidatos || []);
+
+  if (keywordsFiltro) {
+    candidatos = BibliotecaAlertas.filterByKeywords(candidatos, keywordsFiltro);
+  }
+
   // Prefere posts que já têm matéria (mais rápido; evita timeout na rodada)
   candidatos.sort((a, b) => {
     const am = a.matter_id ? 0 : 1;
@@ -363,7 +396,9 @@ async function montarAgendaAmanha({
 
   if (!candidatos.length) {
     const err = new Error(
-      'Nenhum post de site disponível na biblioteca para novos horários. Escaneie fontes tipo Site (ou exclua itens da agenda) e tente de novo.'
+      keywordsFiltro
+        ? 'Nenhum post de site bate com suas palavras-chave da Biblioteca. Escaneie mais fontes, ajuste as palavras-chave ou desmarque o filtro.'
+        : 'Nenhum post de site disponível na biblioteca para novos horários. Escaneie fontes tipo Site (ou exclua itens da agenda) e tente de novo.'
     );
     err.status = 422;
     throw err;
@@ -448,7 +483,9 @@ async function montarAgendaAmanha({
     de: toDatetimeLocal(primeiro),
     ate: toDatetimeLocal(ultimo),
     dia: toDatetimeLocal(primeiro).slice(0, 10),
-    itens: await listarAgenda(userId),
+    filtroKeywords: Boolean(keywordsFiltro),
+    keywordsUsadas: keywordsList.length,
+    itens: await listarAgenda(userId, { aba: 'agendada' }),
   };
 }
 
