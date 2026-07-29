@@ -245,8 +245,8 @@
 
     applyMinToHoraInputs();
     if (input.min && value < input.min) {
-      setHoraStatus(id, 'Não pode ser no passado', true);
-      input.value = input.min;
+      setHoraStatus(id, 'Horário no passado — escolha outra data/hora', true);
+      // Não força "agora" no campo (isso confundia com o horário salvo)
       return;
     }
 

@@ -107,16 +107,64 @@ function mapItem(row) {
   if (row.matter_imagem_path) {
     thumb = `/media/${String(row.matter_imagem_path).replace(/\\/g, '/')}`;
   }
+  // Confirmado/agendado: horário de publicação da matéria é a fonte da verdade (igual /minhas-materias)
+  const st = String(row.status || '');
+  const matterSt = String(row.matter_status || '');
+  const scheduled =
+    (st === 'confirmado' || matterSt === 'agendado') && row.matter_scheduled_at
+      ? row.matter_scheduled_at
+      : row.proposed_at;
   return {
     ...row,
-    proposed_at_local: toDatetimeLocal(row.proposed_at),
+    proposed_at: scheduled || row.proposed_at,
+    proposed_at_local: toDatetimeLocal(scheduled || row.proposed_at),
     titulo: row.matter_titulo || row.post_titulo || 'Sem título',
     thumb,
+    ui_status:
+      st === 'confirmado' || matterSt === 'agendado'
+        ? 'agendada'
+        : st === 'publicado' || matterSt === 'publicado'
+          ? 'publicado'
+          : st || 'pendente',
     can_edit_arte:
       Boolean(row.matter_id) &&
-      !['publicado'].includes(String(row.status || '')) &&
-      !['publicado'].includes(String(row.matter_status || '')),
+      !['publicado'].includes(st) &&
+      !['publicado'].includes(matterSt),
   };
+}
+
+/** Alinha status/horário da agenda com a matéria (evita Confirmado ≠ Agendada). */
+async function sincronizarComMaterias(userId, itens) {
+  const lista = Array.isArray(itens) ? itens : [];
+  for (const row of lista) {
+    if (!row.matter_id) continue;
+    const agendaSt = String(row.status || '');
+    const matterSt = String(row.matter_status || '');
+    try {
+      if (matterSt === 'agendado' && agendaSt === 'pendente') {
+        await BibliotecaAgenda.update(row.id, { status: 'confirmado' });
+        row.status = 'confirmado';
+      }
+      if (matterSt === 'publicado' && agendaSt !== 'publicado') {
+        await BibliotecaAgenda.update(row.id, { status: 'publicado' });
+        row.status = 'publicado';
+      }
+      if (
+        (agendaSt === 'confirmado' || matterSt === 'agendado') &&
+        row.matter_scheduled_at
+      ) {
+        const a = new Date(row.proposed_at).getTime();
+        const b = new Date(row.matter_scheduled_at).getTime();
+        if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > 60_000) {
+          await BibliotecaAgenda.update(row.id, { proposed_at: new Date(row.matter_scheduled_at) });
+          row.proposed_at = row.matter_scheduled_at;
+        }
+      }
+    } catch {
+      /* não bloqueia listagem */
+    }
+  }
+  return lista;
 }
 
 /** Itens ativos do dia (filtra por chave local — evita erro de fuso no WHERE). */
@@ -254,6 +302,7 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
     limit: 120,
     order,
   });
+  await sincronizarComMaterias(userId, itens || []);
   return (itens || []).map(mapItem);
 }
 
@@ -299,9 +348,8 @@ async function montarAgendaAmanha({
   const keywordsFiltro = usarKeywords ? keywordsList.join(', ') : null;
 
   const maxPedidos = Math.min(48, Math.max(1, Number(maxItens) || DEFAULT_MAX_ITENS));
-  // Corrige buracos e overbooking antes de encaixar novos
-  await compactarHorariosDoDia(userId);
-
+  // NÃO compacta/remarca o que já está pré-agendado ou confirmado —
+  // só encaixa novos itens nos horários livres depois do último ocupado.
   const itensDia = await itensAgendaDoDia(userId);
   const ocupadosKeys = new Set(itensDia.map((r) => chaveHorario(r.proposed_at)));
   const ultimoOcupado = await ultimoHorarioOcupadoAmanha(userId);
@@ -547,10 +595,22 @@ async function confirmarAgendamento(userId, id) {
   if (item.status === 'confirmado' || item.status === 'publicado') {
     return { ok: true, already: true };
   }
-  const runAt =
-    item.proposed_at instanceof Date
-      ? item.proposed_at.toISOString()
-      : new Date(item.proposed_at).toISOString();
+  const runAtDate =
+    item.proposed_at instanceof Date ? item.proposed_at : new Date(item.proposed_at);
+  if (Number.isNaN(runAtDate.getTime())) {
+    const err = new Error('Horário inválido neste item — ajuste a data/hora antes de confirmar');
+    err.status = 400;
+    throw err;
+  }
+  // Evita “agendar pra agora” por engano (ex.: 15:42 quando são 15:41)
+  if (runAtDate.getTime() < Date.now() + 5 * 60_000) {
+    const err = new Error(
+      'Horário muito próximo ou no passado. Ajuste a data/hora (ex.: amanhã 7h–22h) e confirme de novo.'
+    );
+    err.status = 400;
+    throw err;
+  }
+  const runAt = runAtDate.toISOString();
   const result = await materiaIaService.agendarMateria({
     userId,
     matterId: item.matter_id,

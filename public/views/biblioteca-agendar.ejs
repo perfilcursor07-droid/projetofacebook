@@ -5,13 +5,15 @@
   const counts = typeof contagens === 'object' && contagens ? contagens : { agendada: 0, publicadas: 0 };
   const statusLabels = {
     pendente: 'Pré-agendado',
-    confirmado: 'Confirmado',
+    confirmado: 'Agendada',
+    agendada: 'Agendada',
     publicado: 'Publicado',
     cancelado: 'Cancelado',
   };
   const statusClass = {
     pendente: 'bg-amber-500/15 text-amber-300',
-    confirmado: 'bg-sky-500/15 text-sky-300',
+    confirmado: 'bg-amber-500/15 text-amber-300',
+    agendada: 'bg-amber-500/15 text-amber-300',
     publicado: 'bg-emerald-500/15 text-emerald-300',
     cancelado: 'bg-slate-800 text-slate-500',
   };
@@ -137,7 +139,7 @@
 
       <p class="mt-3 text-xs text-slate-500">
         <% if (abaAtual === 'agendada') { %>
-          Pré-agendadas e confirmadas — próximas a sair. <span id="agenda-count" class="text-slate-400">(<%= lista.length %> nesta lista)</span>
+          Pré-agendadas e já agendadas (confirmadas) — mesmas que aparecem em Matérias salvas. <span id="agenda-count" class="text-slate-400">(<%= lista.length %> nesta lista)</span>
         <% } else { %>
           Já publicadas no Facebook. <span id="agenda-count" class="text-slate-400">(<%= lista.length %> nesta lista)</span>
         <% } %>
@@ -164,6 +166,7 @@
           <% } %>
           <% lista.forEach(function (item) {
             const st = item.status || 'pendente';
+            const uiSt = item.ui_status || (st === 'confirmado' ? 'agendada' : st);
             const thumb = item.thumb || item.post_thumbnail || '';
             const titulo = item.titulo || item.matter_titulo || item.post_titulo || 'Sem título';
             const canArte = Boolean(item.can_edit_arte && item.matter_id);
@@ -182,7 +185,7 @@
               <% } %>
               <div class="min-w-0 flex-1 space-y-2">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.pendente %>"><%= statusLabels[st] || st %></span>
+                  <span class="rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[uiSt] || statusClass[st] || statusClass.pendente %>"><%= statusLabels[uiSt] || statusLabels[st] || st %></span>
                   <% if (item.fonte_nome) { %>
                     <span class="truncate text-[11px] text-slate-500"><%= item.fonte_nome %></span>
                   <% } %>
@@ -216,6 +219,9 @@
                         </button>
                       </span>
                     </label>
+                    <% if (st === 'confirmado') { %>
+                      <span class="font-medium text-amber-300/90">Agendada: <%= fmtQuando(item.matter_scheduled_at || item.proposed_at) %></span>
+                    <% } %>
                     <span class="agenda-hora-status text-[10px] text-slate-600" data-id="<%= item.id %>"></span>
                   <% } else { %>
                     <span class="font-medium text-slate-400"><%= st === 'publicado' ? 'Publicado em' : 'Quando' %>:</span>
@@ -306,5 +312,5 @@
       /* cobre o campo inteiro — clique abre o picker; o ícone branco é o SVG por cima */
     }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260729e"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260729f"></script>
 <%- include('partials/app-end') %>
