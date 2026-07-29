@@ -435,8 +435,8 @@ async function getItemOwned(userId, id) {
 
 async function atualizarHorario(userId, id, proposedAt) {
   const item = await getItemOwned(userId, id);
-  if (item.status !== 'pendente') {
-    const err = new Error('Só é possível alterar horário de itens pendentes');
+  if (!['pendente', 'confirmado'].includes(String(item.status || ''))) {
+    const err = new Error('Só é possível alterar horário de itens pré-agendados ou confirmados');
     err.status = 400;
     throw err;
   }
@@ -446,8 +446,29 @@ async function atualizarHorario(userId, id, proposedAt) {
     err.status = 400;
     throw err;
   }
+  // Nunca no passado (margem de 1 minuto)
+  if (parsed.getTime() < Date.now() - 60_000) {
+    const err = new Error('Escolha uma data e hora a partir de agora — não é possível agendar no passado');
+    err.status = 400;
+    throw err;
+  }
   await BibliotecaAgenda.update(item.id, { proposed_at: parsed });
-  return { ok: true, itens: await listarAgenda(userId) };
+
+  // Confirmado: atualiza também o job da matéria (scheduled_at)
+  if (item.status === 'confirmado' && item.matter_id) {
+    await materiaIaService.agendarMateria({
+      userId,
+      matterId: item.matter_id,
+      runAt: parsed.toISOString(),
+    });
+  }
+
+  return {
+    ok: true,
+    proposed_at: parsed,
+    proposed_at_local: toDatetimeLocal(parsed),
+    status: item.status,
+  };
 }
 
 async function confirmarAgendamento(userId, id) {

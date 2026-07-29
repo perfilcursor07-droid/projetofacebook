@@ -32,7 +32,7 @@
         <p class="mt-1 max-w-2xl text-sm text-slate-400">
           Puxa posts de <strong class="font-medium text-slate-300">sites</strong> da biblioteca, gera as matérias e pré-agenda para
           <strong class="font-medium text-slate-300">amanhã</strong>, de meia em meia hora (7h–22h).
-          Novas listas <strong class="font-medium text-slate-300">continuam após o último horário já agendado/confirmado</strong>.
+          Você pode <strong class="font-medium text-slate-300">alterar data e horário</strong> (pré-agendado ou confirmado) — só não no passado.
         </p>
         <p class="mt-2 max-w-2xl rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs leading-relaxed text-sky-100/90">
           <strong class="font-semibold text-sky-200">Automático:</strong> com pelo menos uma matéria
@@ -117,11 +117,22 @@
                 </div>
                 <p class="agenda-titulo-label mt-0.5 truncate text-sm font-medium text-slate-100" data-matter-id="<%= matterId %>"><%= titulo %></p>
                 <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                  <label class="inline-flex items-center gap-1.5">
-                    Horário
-                    <input type="datetime-local" class="agenda-hora rounded border border-slate-700 bg-slate-950 px-1.5 py-0.5 text-[11px] text-slate-200" value="<%= item.proposed_at_local || '' %>" <%= st !== 'pendente' ? 'disabled' : '' %> data-id="<%= item.id %>" />
-                  </label>
-                  <span class="hidden sm:inline"><%= fmtQuando(item.proposed_at) %></span>
+                  <% if (st === 'pendente' || st === 'confirmado') { %>
+                    <label class="inline-flex flex-wrap items-center gap-1.5">
+                      <span class="font-medium text-slate-400">Data e horário</span>
+                      <input
+                        type="datetime-local"
+                        class="agenda-hora rounded-lg border border-slate-600 bg-slate-950 px-2 py-1 text-[12px] text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
+                        value="<%= item.proposed_at_local || '' %>"
+                        data-id="<%= item.id %>"
+                        data-status="<%= st %>"
+                        step="60"
+                      />
+                    </label>
+                    <span class="agenda-hora-status text-[10px] text-slate-600" data-id="<%= item.id %>"></span>
+                  <% } else { %>
+                    <span><%= fmtQuando(item.proposed_at) %></span>
+                  <% } %>
                 </div>
 
                 <% if (canArte) { %>
@@ -163,15 +174,18 @@
               <div class="flex w-full flex-wrap gap-1.5 sm:w-auto sm:justify-end">
                 <% if (item.matter_id) { %>
                   <a href="/materias-ia/<%= item.matter_id %>" target="_blank" rel="noopener noreferrer" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white">Editar</a>
-                  <a href="/materias-ia/<%= item.matter_id %>" target="_blank" rel="noopener noreferrer" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white">Ver</a>
+                  <% if (st === 'pendente' || st === 'confirmado') { %>
+                    <button type="button" class="agenda-btn-publicar rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20" data-id="<%= item.id %>">Publicar</button>
+                  <% } %>
                 <% } else if (item.post_id) { %>
                   <a href="/biblioteca/posts/<%= item.post_id %>" target="_blank" rel="noopener noreferrer" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white">Ver</a>
                 <% } %>
                 <% if (st === 'pendente') { %>
                   <button type="button" class="agenda-btn-confirmar rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20" data-id="<%= item.id %>">Confirmar</button>
-                  <button type="button" class="agenda-btn-publicar rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20" data-id="<%= item.id %>">Publicar agora</button>
                 <% } %>
-                <button type="button" class="agenda-btn-excluir rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20" data-id="<%= item.id %>">Excluir</button>
+                <% if (st !== 'publicado') { %>
+                  <button type="button" class="agenda-btn-excluir rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20" data-id="<%= item.id %>">Excluir</button>
+                <% } %>
               </div>
             </li>
           <% }) %>
@@ -187,5 +201,5 @@
     </div>
   </div>
 
-  <script src="/js/biblioteca-agendar.js?v=20260728d"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260729a"></script>
 <%- include('partials/app-end') %>

@@ -177,20 +177,69 @@
   });
 
   let horaTimer = null;
+
+  /** datetime-local no fuso America/Araguaina (UTC−3). */
+  function nowLocalMin() {
+    const ms = Date.now() - 3 * 60 * 60 * 1000;
+    const x = new Date(ms);
+    const pad = (n) => String(n).padStart(2, '0');
+    return (
+      x.getUTCFullYear() +
+      '-' +
+      pad(x.getUTCMonth() + 1) +
+      '-' +
+      pad(x.getUTCDate()) +
+      'T' +
+      pad(x.getUTCHours()) +
+      ':' +
+      pad(x.getUTCMinutes())
+    );
+  }
+
+  function applyMinToHoraInputs() {
+    const min = nowLocalMin();
+    document.querySelectorAll('.agenda-hora').forEach((input) => {
+      input.min = min;
+    });
+  }
+
+  function setHoraStatus(id, text, isError) {
+    const el = listEl?.querySelector('.agenda-hora-status[data-id="' + id + '"]');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className =
+      'agenda-hora-status text-[10px] ' + (isError ? 'text-rose-300' : 'text-emerald-300/90');
+  }
+
+  applyMinToHoraInputs();
+  // Atualiza o mínimo a cada minuto (evita escolher horário que acabou de passar)
+  setInterval(applyMinToHoraInputs, 60_000);
+
   listEl?.addEventListener('change', async (e) => {
     const input = e.target.closest('.agenda-hora');
     if (!input) return;
     const id = Number(input.dataset.id);
     const value = input.value;
     if (!id || !value) return;
+
+    applyMinToHoraInputs();
+    if (input.min && value < input.min) {
+      setHoraStatus(id, 'Não pode ser no passado', true);
+      input.value = input.min;
+      return;
+    }
+
     clearTimeout(horaTimer);
+    setHoraStatus(id, 'Salvando…');
     horaTimer = setTimeout(async () => {
       try {
         await api('/api/biblioteca/agenda/' + id, {
           method: 'PATCH',
           body: JSON.stringify({ proposed_at: value }),
         });
+        setHoraStatus(id, 'Horário atualizado ✓');
       } catch (err) {
+        setHoraStatus(id, err.message, true);
         alert(err.message);
       }
     }, 400);
