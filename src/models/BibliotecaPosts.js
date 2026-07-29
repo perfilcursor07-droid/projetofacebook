@@ -25,13 +25,14 @@ const BibliotecaPosts = {
     return db(this.table).where({ fonte_id: fonteId }).count({ total: '*' }).first();
   },
 
-  /** Contagem de posts por fonte_id para um usuário (mapa { [fonteId]: n }). */
+  /** Contagem de posts por fonte_id (parte das fontes — evita full scan de todos os posts). */
   async countsByUser(userId) {
-    const rows = await db(this.table)
-      .where({ user_id: userId })
-      .groupBy('fonte_id')
-      .select('fonte_id')
-      .count({ total: '*' });
+    const rows = await db('biblioteca_fontes as f')
+      .leftJoin('biblioteca_posts as p', 'p.fonte_id', 'f.id')
+      .where('f.user_id', userId)
+      .groupBy('f.id')
+      .select('f.id as fonte_id')
+      .count({ total: 'p.id' });
     const map = {};
     for (const r of rows) {
       map[Number(r.fonte_id)] = Number(r.total || 0);

@@ -28,9 +28,23 @@ async function resolveFacebookPageId(userId, raw) {
 
 async function listPage(req, res, next) {
   try {
-    const data = await bibliotecaService.dashboardUsuario(req.session.userId);
-    const pages = await pagesDoUsuario(req.session.userId);
-    const defaultPageId = await defaultPageIdDoUsuario(req.session.userId);
+    const userId = req.session.userId;
+    const [data, pages] = await Promise.all([
+      bibliotecaService.dashboardUsuario(userId),
+      pagesDoUsuario(userId),
+    ]);
+    let defaultPageId = null;
+    try {
+      const Users = require('../models/Users');
+      const stored = await Users.getDefaultFacebookPageId(userId);
+      if (stored && pages.some((p) => Number(p.id) === Number(stored))) {
+        defaultPageId = Number(stored);
+      } else if (pages.length === 1) {
+        defaultPageId = Number(pages[0].id);
+      }
+    } catch {
+      defaultPageId = pages[0] ? Number(pages[0].id) : null;
+    }
     return res.render('biblioteca', {
       title: 'Biblioteca',
       ...data,

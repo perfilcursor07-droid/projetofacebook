@@ -45,95 +45,92 @@ function stripAccents(value) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-/**
- * Normaliza acentos e separadores no próprio SQL para comparar palavras ou frases inteiras.
- * Ex.: "fé" casa com "Fé-em-Deus", mas não com "férias".
- */
-function paddedTextExpr(columnSql) {
-  let expression = `LOWER(COALESCE(${columnSql}, ''))`;
-  const accents = [
-    ['á', 'a'], ['à', 'a'], ['â', 'a'], ['ã', 'a'], ['ä', 'a'],
-    ['é', 'e'], ['è', 'e'], ['ê', 'e'], ['ë', 'e'],
-    ['í', 'i'], ['ì', 'i'], ['î', 'i'], ['ï', 'i'],
-    ['ó', 'o'], ['ò', 'o'], ['ô', 'o'], ['õ', 'o'], ['ö', 'o'],
-    ['ú', 'u'], ['ù', 'u'], ['û', 'u'], ['ü', 'u'], ['ç', 'c'],
-  ];
-  for (const [from, to] of accents) {
-    expression = `REPLACE(${expression}, '${from}', '${to}')`;
-  }
-  const separators = [
-    "'.'", "','", "':'", "';'", "'!'", 'CHAR(63)', 'CHAR(34)', 'CHAR(39)',
-    "'('", "')'", "'['", "']'", "'{'", "'}'", "'-'", "'–'", "'—'", "'/'",
-    "'|'", 'CHAR(92)', 'CHAR(10)', 'CHAR(13)', 'CHAR(9)',
-  ];
-  for (const separator of separators) {
-    expression = `REPLACE(${expression}, ${separator}, ' ')`;
-  }
-  // Compacta espaços repetidos para que frases também funcionem após hífens/quebras de linha.
-  for (let i = 0; i < 4; i += 1) {
-    expression = `REPLACE(${expression}, '  ', ' ')`;
-  }
-  return `CONCAT(' ', ${expression}, ' ')`;
-}
-
 function keywordLikePattern(keyword) {
   const normalized = stripAccents(keyword).trim().toLowerCase().replace(/\s+/g, ' ');
   return normalized.length >= 2 ? `% ${escapeLike(normalized)} %` : null;
 }
 
-function applyKeywordFilter(query, keywords) {
-  const patterns = parseKeywords(keywords).map(keywordLikePattern).filter(Boolean);
-  if (!patterns.length) return query;
-  const columns = ['a.titulo', 'a.resumo', 'p.titulo', 'p.resumo', 'f.nome'];
-  return query.andWhere(function matchAnyKeyword() {
-    patterns.forEach((pattern) => {
-      this.orWhere(function matchOneKeyword() {
-        columns.forEach((column) => {
-          this.orWhereRaw(`${paddedTextExpr(column)} LIKE ?`, [pattern]);
-        });
-      });
-    });
-  });
-}
-
-function baseQuery(userId, { apenasNaoLidos = false, apenasLidos = false, keywords = null } = {}) {
+function baseQuery(userId, { apenasNaoLidos = false, apenasLidos = false } = {}) {
   const query = db('biblioteca_alertas as a')
     .innerJoin('biblioteca_fontes as f', 'f.id', 'a.fonte_id')
     .where('a.user_id', userId);
   if (apenasNaoLidos) query.andWhere('a.lido', false);
   if (apenasLidos) query.andWhere('a.lido', true);
-  if (parseKeywords(keywords).length) {
-    query.leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id');
-    applyKeywordFilter(query, keywords);
-  }
   return query;
+}
+
+/** Filtra alertas em memória (evita REPLACE/LIKE pesado no MySQL). */
+function filterByKeywords(rows, keywords) {
+  const patterns = parseKeywords(keywords)
+    .map((k) => stripAccents(k).trim().toLowerCase().replace(/\s+/g, ' '))
+    .filter((k) => k.length >= 2);
+  if (!patterns.length) return Array.isArray(rows) ? rows : [];
+  return (rows || []).filter((row) => {
+    const raw = [row.titulo, row.resumo, row.fonte_nome, row.post_titulo, row.post_resumo]
+      .filter(Boolean)
+      .join(' ');
+    const text = ` ${stripAccents(raw)
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()} `;
+    return patterns.some((p) => text.includes(` ${p} `));
+  });
 }
 
 const BibliotecaAlertas = {
   table: 'biblioteca_alertas',
 
   findByUser(userId, { apenasNaoLidos = false, apenasLidos = false, limit = 40, keywords = null } = {}) {
-    return baseQuery(userId, { apenasNaoLidos, apenasLidos, keywords })
+    const lim = Math.min(500, Math.max(1, Number(limit) || 40));
+    // Com palavras-chave: busca pool maior sem filtro SQL e filtra em JS (muito mais rápido).
+    const poolLimit = parseKeywords(keywords).length ? Math.min(500, Math.max(lim * 4, 200)) : lim;
+    return baseQuery(userId, { apenasNaoLidos, apenasLidos })
+      .leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id')
       .orderBy('a.created_at', 'desc')
-      .limit(limit)
+      .limit(poolLimit)
       .select(
         'a.*',
         'f.nome as fonte_nome',
         'f.plataforma as fonte_plataforma',
-        'f.url as fonte_url'
-      );
+        'f.url as fonte_url',
+        'p.titulo as post_titulo',
+        'p.resumo as post_resumo'
+      )
+      .then((rows) => {
+        const filtered = parseKeywords(keywords).length ? filterByKeywords(rows, keywords) : rows;
+        return filtered.slice(0, lim);
+      });
   },
 
-  countNaoLidos(userId, keywords = null) {
-    return baseQuery(userId, { apenasNaoLidos: true, keywords })
-      .countDistinct({ total: 'a.id' })
-      .first();
+  async countNaoLidos(userId, keywords = null) {
+    if (!parseKeywords(keywords).length) {
+      const row = await baseQuery(userId, { apenasNaoLidos: true })
+        .count({ total: 'a.id' })
+        .first();
+      return row;
+    }
+    const rows = await this.findByUser(userId, {
+      apenasNaoLidos: true,
+      limit: 500,
+      keywords,
+    });
+    return { total: rows.length };
   },
 
-  countLidos(userId, keywords = null) {
-    return baseQuery(userId, { apenasLidos: true, keywords })
-      .countDistinct({ total: 'a.id' })
-      .first();
+  async countLidos(userId, keywords = null) {
+    if (!parseKeywords(keywords).length) {
+      const row = await baseQuery(userId, { apenasLidos: true })
+        .count({ total: 'a.id' })
+        .first();
+      return row;
+    }
+    const rows = await this.findByUser(userId, {
+      apenasLidos: true,
+      limit: 200,
+      keywords,
+    });
+    return { total: rows.length };
   },
 
   /** Remove alertas cuja fonte já foi apagada (lixo órfão). */
@@ -165,7 +162,17 @@ const BibliotecaAlertas = {
   },
 
   async marcarTodosLidos(userId, keywords = null) {
-    const ids = await baseQuery(userId, { apenasNaoLidos: true, keywords }).pluck('a.id');
+    if (!parseKeywords(keywords).length) {
+      return db(this.table)
+        .where({ user_id: userId, lido: false })
+        .update({ lido: true, updated_at: db.fn.now() });
+    }
+    const rows = await this.findByUser(userId, {
+      apenasNaoLidos: true,
+      limit: 500,
+      keywords,
+    });
+    const ids = rows.map((r) => r.id).filter(Boolean);
     if (!ids.length) return 0;
     return db(this.table)
       .where({ user_id: userId, lido: false })
@@ -177,6 +184,7 @@ const BibliotecaAlertas = {
 module.exports = BibliotecaAlertas;
 module.exports.parseKeywords = parseKeywords;
 module.exports.serializeKeywords = serializeKeywords;
+module.exports.filterByKeywords = filterByKeywords;
 module.exports.keywordLikePatterns = (keyword) => {
   const pattern = keywordLikePattern(keyword);
   return pattern ? [pattern] : [];

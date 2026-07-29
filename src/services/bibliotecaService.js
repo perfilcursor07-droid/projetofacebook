@@ -2065,7 +2065,9 @@ async function tickBrightDataSnapshots() {
 
 async function tickFontes() {
   const due = await BibliotecaFontes.findDue();
+  const userIds = new Set();
   for (const fonte of due) {
+    if (fonte.user_id) userIds.add(Number(fonte.user_id));
     try {
       await escanearFonte(fonte, { silentFirst: true });
     } catch (err) {
@@ -2076,6 +2078,10 @@ async function tickFontes() {
         ultimo_scan: new Date(),
       });
     }
+  }
+  // Limpeza de alertas órfãos fora do carregamento da página
+  for (const uid of userIds) {
+    await BibliotecaAlertas.limparOrfaos(uid).catch(() => 0);
   }
 }
 
@@ -2185,33 +2191,53 @@ async function analisarMelhoresParaPublicar(userId, limit = 30) {
 }
 
 async function dashboardUsuario(userId) {
-  await BibliotecaAlertas.limparOrfaos(userId).catch(() => 0);
   const Users = require('../models/Users');
   const user = await Users.findById(userId);
   const alertasKeywords = String(user?.biblioteca_alertas_keywords || '').trim();
   const hasKeywords = alertasKeywords.length > 0;
 
-  const [fontes, postsPorFonte, alertas, countRow, countLidosRow, autopilot] = await Promise.all([
+  // Alertas: sem filtro SQL pesado. Com keywords, um pool recente + filtro em JS.
+  const [fontes, postsPorFonte, alertasNaoLidosRows, alertasLidosRows, autopilot] = await Promise.all([
     BibliotecaFontes.findByUser(userId),
     BibliotecaPosts.countsByUser(userId),
     BibliotecaAlertas.findByUser(userId, {
       apenasNaoLidos: true,
-      limit: hasKeywords ? 100 : 50,
+      limit: hasKeywords ? 200 : 50,
       keywords: hasKeywords ? alertasKeywords : null,
     }),
-    BibliotecaAlertas.countNaoLidos(userId, hasKeywords ? alertasKeywords : null),
-    BibliotecaAlertas.countLidos(userId, hasKeywords ? alertasKeywords : null),
+    hasKeywords
+      ? BibliotecaAlertas.findByUser(userId, {
+          apenasLidos: true,
+          limit: 80,
+          keywords: alertasKeywords,
+        })
+      : Promise.resolve([]),
     obterAutopilot(userId),
   ]);
+
+  let alertasNaoLidos;
+  let alertasLidos;
+  if (hasKeywords) {
+    alertasNaoLidos = alertasNaoLidosRows.length;
+    alertasLidos = alertasLidosRows.length;
+  } else {
+    const [countRow, countLidosRow] = await Promise.all([
+      BibliotecaAlertas.countNaoLidos(userId, null),
+      BibliotecaAlertas.countLidos(userId, null),
+    ]);
+    alertasNaoLidos = Number(countRow?.total || 0);
+    alertasLidos = Number(countLidosRow?.total || 0);
+  }
+
   const fontesComContagem = (fontes || []).map((f) => ({
     ...f,
     posts_count: Number(postsPorFonte[Number(f.id)] || 0),
   }));
   return {
     fontes: fontesComContagem,
-    alertas,
-    alertasNaoLidos: Number(countRow?.total || 0),
-    alertasLidos: Number(countLidosRow?.total || 0),
+    alertas: hasKeywords ? alertasNaoLidosRows.slice(0, 50) : alertasNaoLidosRows,
+    alertasNaoLidos,
+    alertasLidos,
     alertasKeywords,
     autopilot,
   };
