@@ -1,3 +1,4 @@
+/* Agenda biblioteca — sem window.confirm (ações diretas) */
 (function () {
   const msgEl = document.getElementById('agenda-msg');
   const busyEl = document.getElementById('agenda-busy');
@@ -101,12 +102,6 @@
   async function runLote(acao) {
     const ids = selectedIds();
     if (!ids.length) return;
-    const labels = {
-      confirmar: 'Confirmar agendamento dos selecionados?',
-      publicar: 'Publicar agora os selecionados no Facebook?',
-      excluir: 'Excluir os selecionados da agenda?',
-    };
-    if (!confirm(labels[acao] || 'Continuar?')) return;
     try {
       setBusy(true, 'Aplicando ação em lote…');
       const data = await api('/api/biblioteca/agenda/lote', {
@@ -135,15 +130,12 @@
 
     try {
       if (btn.classList.contains('agenda-btn-confirmar')) {
-        if (!confirm('Confirmar este horário na fila de publicação?')) return;
         setBusy(true, 'Confirmando agendamento…');
         await api('/api/biblioteca/agenda/' + id + '/confirmar', { method: 'POST', body: '{}' });
       } else if (btn.classList.contains('agenda-btn-publicar')) {
-        if (!confirm('Publicar agora no Facebook?')) return;
         setBusy(true, 'Publicando…');
         await api('/api/biblioteca/agenda/' + id + '/publicar', { method: 'POST', body: '{}' });
       } else if (btn.classList.contains('agenda-btn-excluir')) {
-        if (!confirm('Excluir este item da agenda?')) return;
         setBusy(true, 'Excluindo…');
         await api('/api/biblioteca/agenda/' + id, { method: 'DELETE' });
       } else {

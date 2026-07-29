@@ -100,11 +100,11 @@ function sortearEstiloTitulo() {
 
 function sortearVozRedator() {
   const vozes = [
-    'Redator de portal gospel (estilo News Gospel): jornalístico, claro e caloroso; apresenta a pessoa, conta o fato e fecha com fé — sem sensacionalismo barato.',
+    'Redator de portal gospel (estilo News Gospel): jornalístico, claro e caloroso; apresenta a pessoa, conta o fato e fecha no fato — sem sensacionalismo e sem oração final.',
     'Repórter de testemunho cristão: prioriza nomes, contexto (igreja, cidade, carreira) e falas reais entre aspas; tom respeitoso e próximo do leitor.',
-    'Redator de notícia com esperança: narra o fato com precisão e encerra com oração, gratidão ou reflexão espiritual natural.',
+    'Redator de notícia com esperança: narra o fato com precisão e encerra no desenvolvimento jornalístico — sem oração, sem “amém”, sem pedido de fé no fechamento.',
     'Cronista gospel leve: frases médias bem encadeadas, linguagem acessível, sem muletas de IA nem pedido de like.',
-    'Repórter de fé e cultura: situar quem é a pessoa (TV, ministério, cargo), o que mudou e por que isso importa para a fé.',
+    'Repórter de fé e cultura: situar quem é a pessoa (TV, ministério, cargo), o que mudou e por que isso importa — sem oração nas últimas linhas.',
   ];
   return vozes[Math.floor(Math.random() * vozes.length)];
 }
@@ -118,11 +118,11 @@ ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
 1) LEAD: apresente quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
 2) DESENVOLVIMENTO: minimatéria do conteúdo original. Se a fonte for grande, condense preservando os dados principais; se for pequena, complete com contexto real da apuração — sempre no tamanho máximo Face/Insta.
 3) Use 1 a 3 FALAS LITERAIS entre aspas ("…") quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
-4) FECHAMENTO DE FÉ: reflexão espiritual, oração, gratidão ou esperança. NUNCA peça like/comentário/compartilhamento.
+4) FECHAMENTO: encerre no fato / última informação jornalística. PROIBIDO terminar com oração, “Que Deus…”, “Seguimos em oração”, “Amém”, pedido de fé ou as 1–2 últimas linhas só de reflexão espiritual.
 5) TOM: jornalístico + evangélico caloroso. Sem clickbait.
-6) FORMATO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML/markdown. Emojis só no fechamento (máx. 1–2).
+6) FORMATO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML/markdown. Sem emoji obrigatório no final.
 7) PROIBIDO: colar a fonte inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
-8) NÃO coloque bloco de "Fontes:" no JSON — o sistema anexa créditos automaticamente.`;
+8) NÃO coloque bloco de "Fontes:" / "Fonte:" / créditos no JSON — o sistema anexa créditos automaticamente (uma vez só).`;
 }
 
 function sortearTemperatura(investigativa = false) {
@@ -355,7 +355,8 @@ function sanitizeFacebookMentions(text) {
  */
 function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, incluirTitulo = true } = {}) {
   const title = String(titulo || '').replace(/\s+/g, ' ').trim();
-  const extracted = extrairHashtagsDoTexto(materia);
+  let working = removerFechamentoOracao(String(materia || ''));
+  const extracted = extrairHashtagsDoTexto(working);
   let body = extracted.body;
 
   if (title && body.toLowerCase().startsWith(title.toLowerCase())) {
@@ -364,22 +365,22 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, inclui
 
   body = quebrarEmParagrafos(body);
 
-  // Evita duplicar se o corpo já tem créditos (Apocalipse ou JM).
-  const temFontesNoCorpo =
-    /Fontes:\s*\n/i.test(body) ||
-    /^Fonte:\s.+/m.test(body) ||
-    /^Por\s+.+\s+-\s+Site:\s.+/m.test(body) ||
-    /^Por\s+.+/m.test(body) ||
-    /\(Foto:\s/i.test(body);
-  const credit = temFontesNoCorpo
-    ? ''
-    : String(fonteCredito || '')
-      .replace(/\r\n/g, '\n')
-      .split('\n')
-      .map((line) => line.replace(/\s+/g, ' ').trim())
-      .filter(Boolean)
-      .join('\n')
-      .trim();
+  const creditRaw = String(fonteCredito || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+
+  let credit = '';
+  if (creditRaw) {
+    // Com crédito externo: remove qualquer Fontes/Fonte do corpo (evita repetir)
+    body = removerBlocoCreditosDoCorpo(body);
+    credit = creditRaw;
+  } else {
+    body = dedupeBlocosCredito(body);
+  }
 
   const tagsLine = formatHashtagsLine(
     Array.isArray(hashtags) && hashtags.length ? hashtags : extracted.tags
@@ -391,6 +392,23 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, inclui
   if (credit) parts.push(credit);
   if (tagsLine) parts.push(tagsLine);
   return sanitizeFacebookMentions(parts.join('\n\n').trim());
+}
+
+/** Mantém no máximo um bloco de créditos no texto. */
+function dedupeBlocosCredito(texto) {
+  let body = String(texto || '');
+  const reFontes = /\n*Fontes:\s*\n(?:[•\-*].+\n?)+/gi;
+  const matches = [...body.matchAll(reFontes)];
+  if (matches.length > 1) {
+    for (let i = 0; i < matches.length - 1; i += 1) {
+      body = body.replace(matches[i][0], '\n');
+    }
+  }
+  // Se sobrou Fonte: solta + Fontes:, remove a solta
+  if (/Fontes:\s*\n/i.test(body)) {
+    body = body.replace(/\n*Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?/gi, '');
+  }
+  return body.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**
@@ -588,11 +606,52 @@ function nomeSiteDeUrl(url) {
 
 function removerBlocoCreditosDoCorpo(cleanBody) {
   return String(cleanBody || '')
-    .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+$/i, '')
-    .replace(/\n*Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?$/i, '')
-    .replace(/\n*Por\s+.+(?:\n\(Foto:[^\n]+\))?$/i, '')
-    .replace(/\n*\(Foto:[^\n]+\)$/i, '')
+    .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+/gi, '')
+    .replace(/\n*Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?/gi, '')
+    .replace(/\n*Por\s+.+\s*[—\-–]\s*Site:\s*.+(?:\n\(Foto:[^\n]+\))?/gi, '')
+    .replace(/\n*Por\s+.+(?:\n\(Foto:[^\n]+\))?/gi, '')
+    .replace(/\n*\(Foto:[^\n]+\)/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * Remove oração / fechamento de fé típico das 1–2 últimas linhas do corpo.
+ */
+function removerFechamentoOracao(texto) {
+  const { body, tags } = extrairHashtagsDoTexto(texto);
+  let clean = String(body || '').trim();
+  if (!clean) return String(texto || '').trim();
+
+  const paras = clean.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+  const pareceOracao = (p) => {
+    const t = String(p || '').trim();
+    if (!t || t.length > 320) return false;
+    if (
+      /^(que\s+(deus|o\s+senhor|possamos)|seguimos\s+em\s+ora|oremos|em\s+ora[cç][aã]o|gl[oó]ria\s+a\s+deus|senhor\s+nos\s+guarde|que\s+o\s+senhor)/i.test(
+        t
+      )
+    ) {
+      return true;
+    }
+    if (/am[eé]m\.?\s*$/i.test(t)) return true;
+    if (
+      t.length < 220 &&
+      /ora[cç][aã]o|am[eé]m|que\s+deus|que\s+o\s+senhor|seguimos\s+em\s+ora/i.test(t) &&
+      !/[“"]/.test(t)
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  let removed = 0;
+  while (paras.length > 2 && removed < 2 && pareceOracao(paras[paras.length - 1])) {
+    paras.pop();
+    removed += 1;
+  }
+
+  return anexarHashtagsAoFinal(paras.join('\n\n'), tags);
 }
 
 /**
@@ -668,8 +727,22 @@ function anexarCreditosFontes(
     const linhas = [];
     // Evita @menção no crédito (FB limita a mesma menção a 1×/dia).
     const siteSafe = sanitizeFacebookMentions(site);
+    const imgCredito = limparCreditoAutor(imagemAutor);
+    const imgNorm = String(imgCredito || '')
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const siteNorm = String(siteSafe || '')
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
     if (siteSafe) linhas.push(`• Conteúdo: ${siteSafe}`);
-    linhas.push(`• Imagem: ${limparCreditoAutor(imagemAutor)}`);
+    // Não repetir o mesmo nome do site na linha de imagem
+    const imgFinal =
+      siteNorm && imgNorm && (imgNorm === siteNorm || imgNorm.includes(siteNorm) || siteNorm.includes(imgNorm))
+        ? CREDITO_IMAGEM_FALLBACK
+        : imgCredito;
+    linhas.push(`• Imagem: ${imgFinal}`);
     bloco = `Fontes:\n${linhas.join('\n')}`;
   }
 
@@ -725,7 +798,8 @@ DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
 - Gancho forte nos primeiros ~120 caracteres (quem + fato).
 - 3 a 5 hashtags no campo hashtags, SEM espaços internos, sem # no valor.
 - Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 22).map((f) => `"${f}"`).join(', ')}…
-- FECHAMENTO: fé/oração/gratidão — nunca CTA de engajamento.
+- FECHAMENTO: no fato jornalístico — PROIBIDO oração / “Que Deus…” / “Seguimos em oração” / “Amém” nas últimas linhas.
+- NÃO inclua bloco Fontes:/Fonte: no corpo — o sistema anexa créditos uma única vez.
 
 ${blocoRegraTamanhoAdaptativo(faixa, volumeFonte)}
 
@@ -779,6 +853,8 @@ module.exports = {
   atualizarCreditoImagemNaMateria,
   extrairAutorImagemHeuristico,
   limparCreditoAutor,
+  removerFechamentoOracao,
+  removerBlocoCreditosDoCorpo,
   CREDITO_IMAGEM_FALLBACK,
   extrairHashtagsDoTexto,
 };

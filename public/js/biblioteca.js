@@ -362,7 +362,23 @@
       }, 1500);
       return;
     }
-    if (v) gerarVideo(v.dataset.id);
+    if (v) {
+      e.preventDefault();
+      const postId = v.dataset.id;
+      if (!postId) return;
+      const qs = new URLSearchParams();
+      qs.set('media', 'video');
+      const page = pageId();
+      if (page) qs.set('facebook_page_id', page);
+      abrirAbaEmSegundoPlano(`/biblioteca/preparar/${postId}?${qs}`);
+      const original = v.textContent;
+      v.textContent = 'Abrindo…';
+      v.disabled = true;
+      setTimeout(() => {
+        v.textContent = original || 'Gerar Reel';
+        v.disabled = false;
+      }, 1500);
+    }
   });
 
   document.getElementById('bib-mark-all')?.addEventListener('click', async () => {
@@ -384,23 +400,26 @@
   const filterStatus = document.getElementById('bib-alertas-filter-status');
   const markAllBtn = document.getElementById('bib-mark-all');
 
-  /** Abre URL em nova aba sem tirar o foco de /biblioteca. */
+  /** Abre URL em nova aba (processamento) e tenta manter o foco nesta. */
   function abrirAbaEmSegundoPlano(url) {
     if (!url || url.startsWith('#')) return;
+    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    if (win) {
+      try {
+        win.opener = null;
+        window.focus();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     const a = document.createElement('a');
     a.href = url;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
-    // Ctrl/Cmd+click costuma abrir em segundo plano (sem mudar de aba)
-    a.dispatchEvent(
-      new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        ctrlKey: true,
-        metaKey: true,
-      })
-    );
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   function marcarAlertaVisualComoLido(item) {

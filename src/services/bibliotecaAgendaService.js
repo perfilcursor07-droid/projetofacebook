@@ -270,8 +270,35 @@ async function publicarAgora(userId, id) {
   return { ok: true, publication: pub };
 }
 
+async function readequarHorariosPendentes(userId, { fromDate = null } = {}) {
+  const itens = await BibliotecaAgenda.findByUser(userId, { status: 'pendente', limit: 200 });
+  let lista = (itens || []).filter((row) => row.status === 'pendente');
+  if (fromDate) {
+    const day = toDatetimeLocal(fromDate).slice(0, 10);
+    lista = lista.filter((row) => toDatetimeLocal(row.proposed_at).slice(0, 10) === day);
+  }
+  lista.sort((a, b) => new Date(a.proposed_at) - new Date(b.proposed_at));
+  if (lista.length < 1) return { ajustados: 0 };
+
+  let base = fromDate ? new Date(fromDate) : new Date(lista[0].proposed_at);
+  const first = new Date(lista[0].proposed_at);
+  if (first.getTime() < base.getTime()) base = first;
+
+  let ajustados = 0;
+  for (let i = 0; i < lista.length; i += 1) {
+    const next = new Date(base.getTime() + i * SLOT_MINUTES * 60 * 1000);
+    const cur = new Date(lista[i].proposed_at).getTime();
+    if (cur !== next.getTime()) {
+      await BibliotecaAgenda.update(lista[i].id, { proposed_at: next });
+      ajustados += 1;
+    }
+  }
+  return { ajustados };
+}
+
 async function excluirItem(userId, id, { apagarMateria = false } = {}) {
   const item = await getItemOwned(userId, id);
+  const slotLiberado = item.proposed_at;
   await BibliotecaAgenda.deleteById(item.id, userId);
   if (apagarMateria && item.matter_id) {
     try {
@@ -280,7 +307,9 @@ async function excluirItem(userId, id, { apagarMateria = false } = {}) {
       /* ignore */
     }
   }
-  return { ok: true };
+  // Reagenda pendentes do mesmo dia sem buracos de 30 min
+  await readequarHorariosPendentes(userId, { fromDate: slotLiberado });
+  return { ok: true, itens: await listarAgenda(userId) };
 }
 
 async function acaoEmLote(userId, { ids = [], acao } = {}) {
@@ -308,6 +337,17 @@ async function acaoEmLote(userId, { ids = [], acao } = {}) {
       erros.push({ id, erro: err.message });
     }
   }
+  // Após exclusões em lote, cada excluirItem já compacta; reforço final no dia.
+  if (acao === 'excluir' && ok.length) {
+    const restantes = await listarAgenda(userId, { status: 'pendente' });
+    if (restantes.length) {
+      const earliest = restantes.reduce(
+        (min, row) => (new Date(row.proposed_at) < new Date(min) ? row.proposed_at : min),
+        restantes[0].proposed_at
+      );
+      await readequarHorariosPendentes(userId, { fromDate: earliest });
+    }
+  }
   return { ok: ok.length, erros, itens: await listarAgenda(userId) };
 }
 
@@ -318,6 +358,7 @@ module.exports = {
   confirmarAgendamento,
   publicarAgora,
   excluirItem,
+  readequarHorariosPendentes,
   acaoEmLote,
   toDatetimeLocal,
   buildSlots,
