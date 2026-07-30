@@ -491,6 +491,18 @@ async function montarAgendaAmanha({
   }
   const keywordsFiltro = usarKeywords ? keywordsList.join(', ') : null;
 
+  // Com filtro: remove itens abertos fora das palavras-chave ANTES de checar slots
+  // (o auto-preenchimento antigo enchia a agenda sem filtro).
+  let removidosSemKw = 0;
+  if (keywordsFiltro) {
+    const limpeza = await limparItensSemPalavraChave(userId, {
+      keywords: keywordsFiltro,
+      statuses: ['pendente', 'confirmado'],
+      compactar: true,
+    });
+    removidosSemKw = limpeza.removidos || 0;
+  }
+
   const maxPedidos = Math.min(48, Math.max(1, Number(maxItens) || DEFAULT_MAX_ITENS));
   // Fecha buracos (ex. 08:30 → 10:30) antes de encaixar novos
   await compactarHorariosDoDia(userId, { dayKey: diaAmanhaKey() });
@@ -508,6 +520,17 @@ async function montarAgendaAmanha({
   });
 
   if (!slots.length) {
+    if (removidosSemKw > 0) {
+      return {
+        criados: 0,
+        erros: [],
+        removidosSemKw,
+        filtroKeywords: true,
+        keywordsUsadas: keywordsList.length,
+        mensagem: `Removidos ${removidosSemKw} item(ns) fora das palavras-chave. Sem horários livres restantes — rode de novo ou exclua mais itens.`,
+        itens: await listarAgenda(userId, { aba: 'agendada' }),
+      };
+    }
     const ate = ultimoOcupado ? toDatetimeLocal(ultimoOcupado).replace('T', ' ') : null;
     const err = new Error(
       ate
@@ -605,6 +628,15 @@ async function montarAgendaAmanha({
 
   for (const post of candidatos) {
     if (slotIdx >= slots.length) break;
+
+    // Dupla checagem: nunca agenda sem match quando o filtro está ligado
+    let matchedKeyword = null;
+    if (keywordsFiltro) {
+      const matchedHits = BibliotecaAlertas.findMatchingKeywords(post, keywordsFiltro);
+      if (!matchedHits.length) continue;
+      matchedKeyword = matchedHits.slice(0, 3).join(', ').slice(0, 60);
+    }
+
     try {
       let matterId = post.matter_id ? Number(post.matter_id) : null;
       if (matterId) {
@@ -636,13 +668,6 @@ async function montarAgendaAmanha({
       const proposedAt = slots[slotIdx];
       slotIdx += 1;
 
-      const matchedHits = keywordsFiltro
-        ? BibliotecaAlertas.findMatchingKeywords(post, keywordsFiltro)
-        : [];
-      const matchedKeyword = matchedHits.length
-        ? matchedHits.slice(0, 3).join(', ').slice(0, 60)
-        : null;
-
       try {
         const [id] = await BibliotecaAgenda.create({
           user_id: userId,
@@ -672,6 +697,17 @@ async function montarAgendaAmanha({
   }
 
   if (!criados.length) {
+    if (removidosSemKw > 0) {
+      return {
+        criados: 0,
+        erros,
+        removidosSemKw,
+        filtroKeywords: Boolean(keywordsFiltro),
+        keywordsUsadas: keywordsList.length,
+        mensagem: `Removidos ${removidosSemKw} item(ns) fora das palavras-chave. Nenhum post novo encaixado nesta rodada — tente de novo.`,
+        itens: await listarAgenda(userId, { aba: 'agendada' }),
+      };
+    }
     const detalhe = erros[0]?.erro || 'não foi possível gerar ou encaixar matérias';
     const err = new Error(
       `Nenhum item foi pré-agendado (${detalhe}). Verifique posts disponíveis e tente de novo.`
@@ -687,6 +723,7 @@ async function montarAgendaAmanha({
     criados: criados.length,
     erros,
     slotsUsados: criados.length,
+    removidosSemKw,
     continuidade: ultimoOcupado ? toDatetimeLocal(ultimoOcupado) : null,
     de: toDatetimeLocal(primeiro),
     ate: toDatetimeLocal(ultimo),
@@ -858,6 +895,68 @@ async function excluirItem(userId, id, { apagarMateria = false } = {}) {
   return { ok: true, itens: await listarAgenda(userId) };
 }
 
+/**
+ * Remove da agenda itens que não batem nas palavras-chave do usuário
+ * (pendente/confirmado). Usado ao montar com filtro e no botão de limpeza.
+ */
+async function limparItensSemPalavraChave(
+  userId,
+  { keywords = null, statuses = ['pendente', 'confirmado'], compactar = true } = {}
+) {
+  const BibliotecaAlertas = require('../models/BibliotecaAlertas');
+  const Users = require('../models/Users');
+
+  let kw = BibliotecaAlertas.parseKeywords(keywords);
+  if (!kw.length) {
+    const user = await Users.findById(userId);
+    kw = BibliotecaAlertas.parseKeywords(user?.biblioteca_alertas_keywords);
+  }
+  if (!kw.length) {
+    const err = new Error(
+      'Nenhuma palavra-chave salva. Cadastre em Biblioteca → Palavras-chave.'
+    );
+    err.status = 400;
+    throw err;
+  }
+  const keywordsStr = kw.join(', ');
+
+  const itens = await BibliotecaAgenda.findByUser(userId, {
+    statuses: Array.isArray(statuses) && statuses.length ? statuses : ['pendente', 'confirmado'],
+    limit: 200,
+    order: 'asc',
+  });
+
+  const remover = [];
+  for (const row of itens || []) {
+    const hits = BibliotecaAlertas.findMatchingKeywords(row, keywordsStr);
+    if (hits.length) {
+      // Garante chip gravado
+      const label = hits.slice(0, 3).join(', ').slice(0, 60);
+      if (String(row.matched_keyword || '').trim() !== label) {
+        await BibliotecaAgenda.update(row.id, { matched_keyword: label }).catch(() => {});
+      }
+      continue;
+    }
+    remover.push(row);
+  }
+
+  for (const row of remover) {
+    await BibliotecaAgenda.deleteById(row.id, userId);
+  }
+
+  if (compactar && remover.length) {
+    await compactarHorariosAbertos(userId).catch((err) => {
+      console.warn('[agenda] compactar após limpeza kw:', err.message);
+    });
+  }
+
+  return {
+    removidos: remover.length,
+    keywordsUsadas: kw.length,
+    ids: remover.map((r) => r.id),
+  };
+}
+
 async function acaoEmLote(userId, { ids = [], acao } = {}) {
   const list = (Array.isArray(ids) ? ids : []).map(Number).filter((n) => n > 0);
   if (!list.length) {
@@ -956,17 +1055,28 @@ async function tickAgendaPre() {
 
     try {
       await compactarHorariosDoDia(userId, { dayKey: dayAmanha });
+
+      // Se o usuário tem palavras-chave, o auto também respeita (igual ao checkbox).
+      const BibliotecaAlertas = require('../models/BibliotecaAlertas');
+      const Users = require('../models/Users');
+      const user = await Users.findById(userId);
+      const keywordsList = BibliotecaAlertas.parseKeywords(user?.biblioteca_alertas_keywords);
+      const usarKeywords = keywordsList.length > 0;
+
       const result = await montarAgendaAmanha({
         userId,
         facebookPageId: Number(pageId),
         maxItens,
         somenteSites: true,
+        usarKeywords,
       });
       agendaAutoLastTick.set(userId, Date.now());
       processados += 1;
-      if (result.criados > 0) {
+      if (result.criados > 0 || result.removidosSemKw > 0) {
         console.log(
-          `[agenda-auto] user #${userId}: +${result.criados} pré-agendada(s)` +
+          `[agenda-auto] user #${userId}: +${result.criados || 0} pré-agendada(s)` +
+            (result.removidosSemKw ? ` −${result.removidosSemKw} fora do filtro` : '') +
+            (usarKeywords ? ' [keywords]' : '') +
             (result.de && result.ate ? ` (${result.de} → ${result.ate})` : '')
         );
       }
@@ -993,6 +1103,7 @@ module.exports = {
   compactarHorariosAbertos,
   tickAgendaPre,
   acaoEmLote,
+  limparItensSemPalavraChave,
   toDatetimeLocal,
   buildSlots,
   buildAllDaySlots,

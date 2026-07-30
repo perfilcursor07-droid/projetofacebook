@@ -24,6 +24,7 @@ router.put('/autopilot', controller.putAutopilot);
 router.get('/agenda', controller.listarAgenda);
 router.post('/agenda/montar', controller.montarAgenda);
 router.post('/agenda/compactar', controller.compactarAgenda);
+router.post('/agenda/limpar-sem-keyword', controller.limparAgendaSemKeyword);
 router.post('/agenda/lote', controller.loteAgenda);
 router.patch('/agenda/:id', controller.atualizarAgendaItem);
 router.post('/agenda/:id/confirmar', controller.confirmarAgendaItem);

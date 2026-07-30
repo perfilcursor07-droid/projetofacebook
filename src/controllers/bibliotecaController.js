@@ -533,12 +533,40 @@ async function compactarAgenda(req, res, next) {
     res.json({
       ok: true,
       ajustados: result.ajustados || 0,
-      days: result.days || [],
-      detalhes: result.detalhes || [],
-      itens,
       mensagem,
+      itens,
+      contagens: await agendaService.contagensAgenda(req.session.userId),
     });
   } catch (err) {
+    return next(err);
+  }
+}
+
+async function limparAgendaSemKeyword(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const result = await agendaService.limparItensSemPalavraChave(req.session.userId, {
+      statuses: ['pendente', 'confirmado'],
+      compactar: true,
+    });
+    const itens = await agendaService.listarAgenda(req.session.userId, {
+      aba: 'agendada',
+      reparar: false,
+    });
+    res.json({
+      ok: true,
+      ...result,
+      mensagem:
+        result.removidos > 0
+          ? `Removidos ${result.removidos} item(ns) que não batem nas suas palavras-chave.`
+          : 'Nenhum item fora das palavras-chave na agenda.',
+      itens,
+      contagens: await agendaService.contagensAgenda(req.session.userId),
+    });
+  } catch (err) {
+    if (err.status === 400) {
+      return res.status(400).json({ error: err.message, ok: false });
+    }
     return next(err);
   }
 }
@@ -637,6 +665,7 @@ module.exports = {
   listarAgenda,
   montarAgenda,
   compactarAgenda,
+  limparAgendaSemKeyword,
   atualizarAgendaItem,
   confirmarAgendaItem,
   publicarAgendaItem,

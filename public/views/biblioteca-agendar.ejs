@@ -94,8 +94,9 @@
         </p>
         <p>
           <strong class="font-semibold text-sky-300">Automático:</strong> com pelo menos uma matéria confirmada, o
-          sistema completa sozinho os horários livres de amanhã (a cada ~20 min, até 5 por vez) e já começa a montar o
-          dia seguinte. Confirme as que quiser; exclua as demais.
+          sistema completa sozinho os horários livres (a cada ~20 min, até 5 por vez). Se você tem palavras-chave
+          salvas, o automático <strong class="font-medium text-emerald-300">só puxa posts que batem nelas</strong>.
+          Confirme as que quiser; exclua as demais.
         </p>
       </div>
     </details>
@@ -144,6 +145,14 @@
             <span class="text-[13px] font-medium text-emerald-100">Só posts com minhas palavras-chave</span>
           </label>
           <% if (kwCount) { %>
+            <button
+              type="button"
+              id="agenda-btn-limpar-kw"
+              class="rounded-md border border-rose-500/40 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/20"
+              title="Remove da agenda itens que não batem nas suas palavras-chave"
+            >
+              Remover sem palavra-chave
+            </button>
             <details class="min-w-0">
               <summary class="cursor-pointer list-none text-[11px] text-slate-400 hover:text-slate-200 [&::-webkit-details-marker]:hidden"><%= kwCount %>/40 ativas · ver lista ▾</summary>
               <div class="mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto">

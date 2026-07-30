@@ -198,14 +198,45 @@
       const kwHint = data.filtroKeywords
         ? ` (filtro: ${data.keywordsUsadas || 0} palavra(s)-chave)`
         : '';
+      const limpezaHint =
+        data.removidosSemKw > 0 ? ` Removidos ${data.removidosSemKw} fora do filtro.` : '';
       setMsg(
-        `${data.criados || 0} item(ns) pré-agendado(s)${kwHint}${cont}` +
-          (de && ate ? `: ${de} → ${ate}` : data.dia ? ` para ${data.dia}` : '') +
-          '.' +
+        (data.mensagem
+          ? data.mensagem
+          : `${data.criados || 0} item(ns) pré-agendado(s)${kwHint}${cont}` +
+            (de && ate ? `: ${de} → ${ate}` : data.dia ? ` para ${data.dia}` : '') +
+            '.') +
+          limpezaHint +
           (data.erros?.length ? ` ${data.erros.length} aviso(s)/falha(s).` : ''),
         false
       );
       reloadAgenda();
+    } catch (err) {
+      setMsg(err.message, true);
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  document.getElementById('agenda-btn-limpar-kw')?.addEventListener('click', async () => {
+    if (
+      !confirm(
+        'Remover da agenda todos os itens (pré-agendados e confirmados) que NÃO batem nas suas palavras-chave?'
+      )
+    ) {
+      return;
+    }
+    try {
+      setBusy(true, 'Removendo itens fora das palavras-chave…');
+      setMsg('');
+      const data = await api('/api/biblioteca/agenda/limpar-sem-keyword', {
+        method: 'POST',
+        body: '{}',
+      });
+      setMsg(data.mensagem || `${data.removidos || 0} removido(s).`, false);
+      setTimeout(() => {
+        window.location.href = '/biblioteca/agendar?aba=agendada&t=' + Date.now();
+      }, 400);
     } catch (err) {
       setMsg(err.message, true);
     } finally {
