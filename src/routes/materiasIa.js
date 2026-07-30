@@ -31,6 +31,7 @@ router.post('/matters/:id/gerar-reel', controller.gerarReel);
 router.post('/matters/sincronizar-engajamento', controller.sincronizarEngajamento);
 router.post('/matters/:id/views', controller.atualizarViews);
 router.get('/matters/:id/views', controller.atualizarViews);
+router.get('/matters/:id/engajamento-debug', controller.engajamentoDebug);
 router.post('/matters/:id/sugerir-titulo', controller.sugerirTitulo);
 router.post('/matters/:id/reescrever-com-info', controller.reescreverComInfo);
 router.post('/matters/:id/enriquecer-fontes', controller.enriquecerFontes);

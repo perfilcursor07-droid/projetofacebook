@@ -2150,6 +2150,141 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
   return payload;
 }
 
+/**
+ * Diagnóstico do engajamento: mostra IDs gravados, tentativas na Ayrshare e
+ * resposta bruta de cada provedor. Não grava nada no banco.
+ */
+async function diagnosticarEngajamento(userId, matterId) {
+  const matter = await AiMatters.findById(matterId);
+  if (!matter || Number(matter.user_id) !== Number(userId)) {
+    const err = new Error('Matéria não encontrada');
+    err.status = 404;
+    throw err;
+  }
+  if (!matter.publication_id) {
+    return { erro: 'Matéria sem publicação ligada' };
+  }
+
+  const pub = await Publications.findById(matter.publication_id);
+  if (!pub) return { erro: 'Publicação não encontrada' };
+
+  const page = await resolvePage(userId, pub.facebook_page_id || matter.facebook_page_id);
+  const token = String(page?.page_access_token || '');
+  const profileKey = String(page?.ayrshare_profile_key || '').trim() || null;
+  const ayrshareService = require('./ayrshareService');
+
+  const out = {
+    matterId,
+    publicationId: pub.id,
+    banco: {
+      fb_post_id: pub.fb_post_id || null,
+      fb_native_post_id: pub.fb_native_post_id || null,
+      fb_post_url: pub.fb_post_url || null,
+      fb_likes: pub.fb_likes,
+      fb_comments: pub.fb_comments,
+      fb_views: pub.fb_views,
+      fb_views_at: pub.fb_views_at,
+    },
+    pagina: {
+      id: page?.id || null,
+      nome: page?.page_name || null,
+      page_id: page?.page_id || null,
+      tem_token_graph:
+        Boolean(token) &&
+        !token.startsWith('ayrshare:') &&
+        !token.startsWith('postsyncer:') &&
+        !token.startsWith('postpulse:'),
+      tem_profile_key: Boolean(profileKey),
+      profile_key_tamanho: profileKey ? profileKey.length : 0,
+    },
+    ayrshare: { configurado: ayrshareService.isConfigured(), tentativas: [] },
+    scrapecreators: null,
+  };
+
+  if (ayrshareService.isConfigured()) {
+    const tentativas = [];
+    const add = (id, searchPlatformId, comProfileKey) => {
+      const s = String(id || '').trim();
+      if (!s) return;
+      if (tentativas.some((t) => t.id === s && t.searchPlatformId === searchPlatformId && t.comProfileKey === comProfileKey)) {
+        return;
+      }
+      tentativas.push({ id: s, searchPlatformId, comProfileKey });
+    };
+
+    const uuid = ayrshareService.looksLikeAyrshareId(pub.fb_post_id)
+      ? pub.fb_post_id
+      : ayrshareService.looksLikeAyrshareId(pub.fb_native_post_id)
+        ? pub.fb_native_post_id
+        : null;
+    if (uuid) {
+      add(uuid, false, Boolean(profileKey));
+      if (profileKey) add(uuid, false, false);
+    }
+
+    const nativo =
+      (pub.fb_native_post_id && /^\d+_\d+$/.test(String(pub.fb_native_post_id))
+        ? pub.fb_native_post_id
+        : null) ||
+      facebookService.parseFacebookPostId(pub.fb_post_url) ||
+      null;
+    if (nativo) {
+      const full = /^\d+_\d+$/.test(String(nativo))
+        ? nativo
+        : page?.page_id
+          ? `${page.page_id}_${nativo}`
+          : nativo;
+      add(full, true, Boolean(profileKey));
+      if (profileKey) add(full, true, false);
+    }
+
+    for (const t of tentativas) {
+      try {
+        const ay = await ayrshareService.fetchFacebookPostAnalytics({
+          postId: t.id,
+          profileKey: t.comProfileKey ? profileKey : null,
+          searchPlatformId: t.searchPlatformId,
+        });
+        out.ayrshare.tentativas.push({
+          ...t,
+          likes: ay.likes,
+          comments: ay.comments,
+          views: ay.views,
+          error: ay.error || null,
+          raw: ay.raw ? JSON.stringify(ay.raw).slice(0, 1200) : null,
+        });
+      } catch (err) {
+        out.ayrshare.tentativas.push({ ...t, excecao: err.message });
+      }
+    }
+    if (!tentativas.length) {
+      out.ayrshare.aviso = 'Nenhum ID utilizável gravado (nem UUID Ayrshare nem ID nativo do Facebook).';
+    }
+  }
+
+  const permalink = pub.fb_post_url || null;
+  try {
+    const scrapeCreators = require('./scrapeCreatorsSocial');
+    if (!scrapeCreators.isConfigured()) {
+      out.scrapecreators = { erro: 'SCRAPECREATORS_API_KEY não configurada' };
+    } else if (!permalink) {
+      out.scrapecreators = { erro: 'Sem fb_post_url para raspar' };
+    } else {
+      const sc = await scrapeCreators.extrairPost(permalink, 'facebook');
+      out.scrapecreators = {
+        url: permalink,
+        likes: sc?.likes ?? null,
+        comments: sc?.comments ?? null,
+        shares: sc?.shares ?? null,
+      };
+    }
+  } catch (err) {
+    out.scrapecreators = { url: permalink, erro: err.message };
+  }
+
+  return out;
+}
+
 function classificarViral(pub) {
   const likes = Number(pub?.fb_likes) || 0;
   const comments = Number(pub?.fb_comments) || 0;
@@ -2557,6 +2692,7 @@ module.exports = {
   gerarVariacaoDeMateria,
   gerarMateriaManual,
   atualizarViewsDaMateria,
+  diagnosticarEngajamento,
   sincronizarEngajamentoRecentes,
   classificarViral,
   syncConteudoReelMatter,

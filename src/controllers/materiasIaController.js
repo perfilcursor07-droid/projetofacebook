@@ -739,6 +739,23 @@ async function atualizarViews(req, res, next) {
   }
 }
 
+/** Diagnóstico: por que o engajamento não aparece nesta matéria. */
+async function engajamentoDebug(req, res) {
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+    const result = await materiaIaService.diagnosticarEngajamento(
+      req.session.userId,
+      matterId
+    );
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+}
+
 /** Sincroniza engajamento das publicadas recentes (lote). */
 async function sincronizarEngajamento(req, res, next) {
   try {
@@ -1398,6 +1415,7 @@ module.exports = {
   gerarVariacao,
   gerarReel,
   atualizarViews,
+  engajamentoDebug,
   sincronizarEngajamento,
   agendar,
   monitorCriar,
