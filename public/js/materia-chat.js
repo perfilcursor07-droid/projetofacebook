@@ -87,7 +87,7 @@
 
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'min-w-0 flex-1 truncate text-left text-sm';
+      btn.className = 'min-w-0 flex-1 truncate text-left text-xs sm:text-sm';
       btn.textContent = c.titulo || 'Nova conversa';
       btn.title = c.titulo || 'Nova conversa';
       btn.addEventListener('click', () => abrirConversa(c.id));
@@ -149,7 +149,7 @@
     wrap.className = 'flex justify-end';
     const bolha = document.createElement('div');
     bolha.className =
-      'max-w-[85%] whitespace-pre-wrap rounded-2xl bg-emerald-500/15 px-4 py-2.5 text-sm text-emerald-50';
+      'max-w-[92%] whitespace-pre-wrap rounded-2xl bg-emerald-500/15 px-3 py-2 text-sm text-emerald-50 sm:max-w-[85%] sm:px-4 sm:py-2.5';
     bolha.textContent = mensagem.content || '';
     wrap.appendChild(bolha);
     return wrap;
@@ -158,7 +158,7 @@
   /** Bloco "raciocínio" recolhível, como o do DeepSeek. */
   function criarPassos(passos = []) {
     const box = document.createElement('details');
-    box.className = 'rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs';
+    box.className = 'rounded-xl border border-slate-800 bg-slate-950/60 px-2.5 py-2 text-[11px] sm:px-3 sm:text-xs';
     box.open = true;
 
     const resumo = document.createElement('summary');
@@ -233,9 +233,9 @@
       const ehTitulo =
         podeTerTitulo && container.childElementCount === 0 && texto.length <= 200 && !texto.includes('\n');
       p.className = ehHashtags
-        ? 'text-sm font-medium text-emerald-300'
+        ? 'text-xs font-medium text-emerald-300 sm:text-sm'
         : ehTitulo
-          ? 'text-base font-semibold leading-snug text-white'
+          ? 'text-sm font-semibold leading-snug text-white sm:text-base'
           : 'whitespace-pre-wrap text-sm leading-relaxed text-slate-200';
       p.textContent = texto.replace(/\*\*(.+?)\*\*/g, '$1');
       container.appendChild(p);
@@ -262,7 +262,7 @@
   function blocoFontes(fontes = []) {
     if (!fontes.length) return null;
     const box = document.createElement('details');
-    box.className = 'rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs';
+    box.className = 'rounded-xl border border-slate-800 bg-slate-950/60 px-2.5 py-2 text-[11px] sm:px-3 sm:text-xs';
     const resumo = document.createElement('summary');
     resumo.className = 'cursor-pointer list-none text-slate-400 hover:text-slate-200';
     resumo.textContent = `Fontes da apuração (${fontes.length})`;
@@ -292,7 +292,7 @@
 
   function areaSalvar(mensagem, container) {
     const box = document.createElement('div');
-    box.className = 'mt-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3';
+    box.className = 'mt-3 rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 sm:p-3';
 
     const info = document.createElement('p');
     info.className = 'text-xs text-slate-400';
@@ -300,7 +300,7 @@
     box.appendChild(info);
 
     const grid = document.createElement('div');
-    grid.className = 'mt-2 grid gap-2 sm:grid-cols-2';
+    grid.className = 'mt-2 grid gap-2 md:grid-cols-2';
     const imagem = document.createElement('input');
     imagem.type = 'url';
     imagem.placeholder = 'URL da imagem da capa (opcional)';
@@ -315,7 +315,7 @@
     box.appendChild(grid);
 
     const acoes = document.createElement('div');
-    acoes.className = 'mt-2 flex flex-wrap items-center gap-2';
+    acoes.className = 'mt-2 grid gap-2 sm:flex sm:flex-wrap sm:items-center';
 
     const salvar = criarBotao(
       'Salvar como rascunho',
