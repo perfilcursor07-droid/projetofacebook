@@ -566,17 +566,14 @@ async function agendarViralizada({
     throw err;
   }
 
-  const { resolvePageForUser, defaultPageForUser, pagesForUser } = require('./facebookPageResolver');
-  const pagesConta = await pagesForUser(userId);
-  const pageIdsConta = new Set((pagesConta || []).map((p) => Number(p.id)));
-  const origemDoUser = Number(origem.user_id) === Number(userId);
-  const origemDaConta = pageIdsConta.has(Number(origem.facebook_page_id));
-  if (!origemDoUser && !origemDaConta) {
+  const acessivel = await AiMatters.matterAcessivelPelaConta(userId, origem);
+  if (!acessivel) {
     const err = new Error('Matéria não encontrada nesta conta');
     err.status = 404;
     throw err;
   }
 
+  const { resolvePageForUser, defaultPageForUser } = require('./facebookPageResolver');
   let page = null;
   if (facebookPageId) {
     page = await resolvePageForUser(userId, facebookPageId);

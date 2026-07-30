@@ -54,6 +54,51 @@ async function pageIdsDaConta(userId) {
     .filter(Boolean);
 }
 
+/**
+ * IDs internos de facebook_pages que compartilham o mesmo page_id social (FB)
+ * OU o mesmo nome de Página — inclui histórico de outros logins do ViralizeAI.
+ */
+async function pageRowIdsComMesmoSocial(userId) {
+  const próprios = await pageIdsDaConta(userId);
+  if (!próprios.length) return [];
+
+  const rows = await db('facebook_pages')
+    .whereIn('id', próprios)
+    .select('id', 'page_id', 'page_name');
+
+  const ids = new Set(próprios.map(Number));
+
+  const sociais = [
+    ...new Set(
+      (rows || [])
+        .map((r) => String(r.page_id || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (sociais.length) {
+    const porSocial = await db('facebook_pages').whereIn('page_id', sociais).pluck('id');
+    for (const id of porSocial || []) ids.add(Number(id));
+  }
+
+  // Fallback por nome (ex.: "Apocalipse Gospel" em outra conta sem page_id igual)
+  const norm = (s) =>
+    String(s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const nomes = new Set((rows || []).map((r) => norm(r.page_name)).filter(Boolean));
+  if (nomes.size) {
+    const todas = await db('facebook_pages').select('id', 'page_name');
+    for (const r of todas || []) {
+      if (nomes.has(norm(r.page_name))) ids.add(Number(r.id));
+    }
+  }
+
+  return [...ids].filter(Boolean);
+}
+
 function applySearchFilter(query, q) {
   const term = String(q || '').trim();
   if (!term) return query;
@@ -189,12 +234,12 @@ const AiMatters = {
   },
 
   /**
-   * Viralizadas p/ agenda: publicadas de TODAS as Páginas da conta
-   * com qualquer engajamento, ordenadas pelo score.
-   * Critério mais brando que a aba Viralizou — serve páginas mid-size.
+   * Viralizadas p/ agenda: publicadas de TODAS as Páginas FB da conta
+   * (bate pelo page_id social — pega Apocalipse mesmo se o histórico
+   * estiver em outro login do ViralizeAI).
    */
   async findViralizadasDaConta(userId, { limit = 40 } = {}) {
-    const pageIds = await pageIdsDaConta(userId);
+    const pageIds = await pageRowIdsComMesmoSocial(userId);
     const lim = Math.min(80, Math.max(1, Number(limit) || 40));
 
     let query = db(this.table)
@@ -232,7 +277,7 @@ const AiMatters = {
   },
 
   async countViralizadasDaConta(userId) {
-    const pageIds = await pageIdsDaConta(userId);
+    const pageIds = await pageRowIdsComMesmoSocial(userId);
 
     let query = db(this.table)
       .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
@@ -248,19 +293,27 @@ const AiMatters = {
     return Number(row?.total) || 0;
   },
 
-  /** Diagnóstico: engajamento por Página da conta. */
+  /** Diagnóstico: engajamento por Página (próprias + mesmo page_id social em outras contas). */
   async diagnosticoEngajamentoConta(userId) {
-    const pageIds = await pageIdsDaConta(userId);
-    const pages = pageIds.length
-      ? await db('facebook_pages').whereIn('id', pageIds).select('id', 'page_name', 'page_id')
+    const próprios = await pageIdsDaConta(userId);
+    const pageIdsExpandido = await pageRowIdsComMesmoSocial(userId);
+    const pages = próprios.length
+      ? await db('facebook_pages').whereIn('id', próprios).select('id', 'page_name', 'page_id')
       : [];
 
     const porPagina = [];
     for (const p of pages) {
+      // Todas as rows facebook_pages com o mesmo page_id social
+      let rowIds = [Number(p.id)];
+      if (p.page_id) {
+        const irmaos = await db('facebook_pages').where({ page_id: String(p.page_id) }).pluck('id');
+        rowIds = [...new Set([...(irmaos || []).map(Number), Number(p.id)])];
+      }
+
       const base = () =>
         db(this.table)
           .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
-          .where('ai_matters.facebook_page_id', p.id)
+          .whereIn('ai_matters.facebook_page_id', rowIds)
           .whereNotNull('ai_matters.publication_id');
 
       const [{ total: publicadas }] = await base().count({ total: '*' });
@@ -271,6 +324,8 @@ const AiMatters = {
         .select(
           'ai_matters.id',
           'ai_matters.titulo',
+          'ai_matters.user_id',
+          'ai_matters.facebook_page_id',
           'publications.fb_likes',
           'publications.fb_comments',
           'publications.fb_views',
@@ -279,16 +334,20 @@ const AiMatters = {
         .orderByRaw(
           `(COALESCE(publications.fb_likes, 0) + COALESCE(publications.fb_comments, 0) * 3) DESC`
         )
-        .limit(3);
+        .limit(5);
 
       porPagina.push({
         page_id: p.id,
         page_name: p.page_name,
+        fb_page_id: p.page_id,
+        rows_equivalentes: rowIds,
         publicadas: Number(publicadas) || 0,
         com_engajamento: Number(comEng) || 0,
         viralizou_estrito: Number(viralStrict) || 0,
         top: (top || []).map((t) => ({
           id: t.id,
+          user_id: t.user_id,
+          facebook_page_id: t.facebook_page_id,
           titulo: String(t.titulo || '').slice(0, 80),
           likes: t.fb_likes,
           comments: t.fb_comments,
@@ -298,7 +357,12 @@ const AiMatters = {
       });
     }
 
-    return { userId: Number(userId), pageIds, porPagina };
+    return {
+      userId: Number(userId),
+      pageIds: próprios,
+      pageIdsExpandido,
+      porPagina,
+    };
   },
 
   async countByStatusForUser(userId, { q = '' } = {}) {
@@ -383,9 +447,9 @@ const AiMatters = {
       .select('id', 'publication_id', 'titulo', 'status');
   },
 
-  /** Publicadas recentes de todas as Páginas da conta (sync engajamento). */
+  /** Publicadas recentes de todas as Páginas FB equivalentes (mesmo page_id social). */
   async findRecentPublishedDaContaForSync(userId, limit = 40) {
-    const pageIds = await pageIdsDaConta(userId);
+    const pageIds = await pageRowIdsComMesmoSocial(userId);
     const lim = Math.max(1, Math.min(80, Number(limit) || 40));
     return db(this.table)
       .where(function ownership() {
@@ -399,6 +463,14 @@ const AiMatters = {
       .orderByRaw('COALESCE(published_at, updated_at, created_at) DESC')
       .limit(lim)
       .select('id', 'publication_id', 'titulo', 'status', 'user_id', 'facebook_page_id');
+  },
+
+  /** True se a matéria é do user ou de Página FB equivalente à conta dele. */
+  async matterAcessivelPelaConta(userId, matter) {
+    if (!matter) return false;
+    if (Number(matter.user_id) === Number(userId)) return true;
+    const pageIds = await pageRowIdsComMesmoSocial(userId);
+    return pageIds.includes(Number(matter.facebook_page_id));
   },
 };
 

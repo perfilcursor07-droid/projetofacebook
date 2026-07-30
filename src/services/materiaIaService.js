@@ -1579,13 +1579,8 @@ async function gerarVariacaoDeMateria({
     throw err;
   }
   if (Number(matter.user_id) !== Number(userId)) {
-    const FacebookAccounts = require('../models/FacebookAccounts');
-    const FacebookPages = require('../models/FacebookPages');
-    const account = await FacebookAccounts.findByUser(userId);
-    const pageIds = account
-      ? (await FacebookPages.findByAccount(account.id)).map((p) => Number(p.id))
-      : [];
-    if (!pageIds.includes(Number(matter.facebook_page_id))) {
+    const ok = await AiMatters.matterAcessivelPelaConta(userId, matter);
+    if (!ok) {
       const err = new Error('Matéria não encontrada');
       err.status = 404;
       throw err;
