@@ -642,9 +642,17 @@ function removerBlocoCreditosDoCorpo(cleanBody) {
   // NÃO usar /Por\s+.+/gi solto — apaga "conhecida por …" no meio da matéria.
   return String(cleanBody || '')
     .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+/gi, '')
+    .replace(/(?:^|\n+)Fonte:\s*\n(?:[•\-*].+\n?)+/gi, '\n')
     .replace(/(?:^|\n+)Fonte:\s*[^\n]+(?:\n\(Foto:[^\n]+\))?/gi, '\n')
-    .replace(/(?:^|\n+)Por\s+[^\n]+?\s*[—\-–]\s*Site:\s*[^\n]+(?:\n\(Foto:[^\n]+\))?/gi, '\n')
+    // JM em 2 linhas OU colado numa linha: Por … Site: … (Foto: …) #tags
+    .replace(
+      /(?:^|\n+)Por\s+[^\n]+?\s*[—\-–]\s*Site:\s*[^\n]+/gi,
+      '\n'
+    )
     .replace(/(?:^|\n+)\(Foto:\s*[^\n]+\)/gi, '\n')
+    .replace(/(?:^|\n+)Foto:\s*[^\n]+/gi, '\n')
+    // URLs soltas / "Veículo — https://…" deixados no fim pela IA
+    .replace(/(?:^|\n+)[^\n—\-–]+?\s*[—\-–]\s*https?:\/\/[^\s\n]+/gi, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -654,9 +662,10 @@ function materiaJaTemCredito(materia) {
   return (
     /Fontes:\s*\n/i.test(t) ||
     /[•\*]\s*Conte[uú]do\s*:/i.test(t) ||
-    /^Fonte:\s.+/m.test(t) ||
+    /^Fonte:\s/m.test(t) ||
     /Por\s+.+\s*[—\-–]\s*Site\s*:/i.test(t) ||
-    /\(Foto:\s*[^)]+\)/i.test(t)
+    /\(Foto:\s*[^)]+\)/i.test(t) ||
+    /^Foto:\s.+/m.test(t)
   );
 }
 
@@ -670,7 +679,7 @@ function removerFechamentoOracao(texto) {
 
   // Também separa créditos JM/Fontes para não misturar com o último parágrafo
   const creditoMatch = clean.match(
-    /\n\n((?:Fontes:\s*\n(?:[•\-*].+\n?)+)|(?:Por\s+.+\s*[—\-–]\s*Site\s*:[\s\S]*?)|(?:Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?)|(?:\(Foto:[^\n]+\)))\s*$/i
+    /\n\n((?:Fontes:\s*\n(?:[•\-*].+\n?)+)|(?:Fonte:\s*\n(?:[•\-*].+\n?)+\n+Foto:\s*[^\n]+)|(?:Fonte:\s*\n(?:[•\-*].+\n?)+)|(?:Foto:\s*[^\n]+)|(?:Por\s+.+\s*[—\-–]\s*Site\s*:[\s\S]*?)|(?:Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?)|(?:\(Foto:[^\n]+\)))\s*$/i
   );
   let creditoTail = '';
   if (creditoMatch) {
@@ -735,6 +744,64 @@ function converterCreditosParaJm(materia, { fonteUrl, autorArtigo } = {}) {
     autorArtigo: autorArtigo || null,
     estilo: 'jm',
   });
+}
+
+/**
+ * Rodapé organizado p/ matéria manual com pesquisa:
+ * corpo + Fonte: (lista) + Foto: + hashtags — sem colar tudo numa linha.
+ */
+function montarRodapeMateriaComFontes({
+  materia,
+  fontes = [],
+  creditoImagem = null,
+  hashtags = [],
+} = {}) {
+  const { body, tags } = extrairHashtagsDoTexto(materia);
+  let cleanBody = removerBlocoCreditosDoCorpo(body);
+  // Remove linhas soltas de URL/crédito que a IA às vezes deixa no fim
+  cleanBody = cleanBody
+    .replace(/(?:^|\n+)(?:Fonte|Fontes|Foto)\s*:\s*[^\n]*/gi, '\n')
+    .replace(/(?:^|\n+)Por\s+[^\n]+?\s*[—\-–]\s*Site\s*:[^\n]*/gi, '\n')
+    .replace(/(?:^|\n+)[•\*]\s*[^\n]+?\s*[—\-–]\s*https?:\/\/[^\n]+/gi, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const lista = Array.isArray(fontes) ? fontes.filter(Boolean) : [];
+  const linhasFonte = [];
+  const vistos = new Set();
+  for (const f of lista.slice(0, 5)) {
+    const url = String(f.url || '').trim();
+    let nome = String(f.veiculo || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!nome || /^(web|fonte|site|noticia|notícias|noticias)$/i.test(nome)) {
+      nome = nomeSiteDeUrl(url) || nome || 'Web';
+    }
+    const key = (url || nome).toLowerCase();
+    if (!key || vistos.has(key)) continue;
+    vistos.add(key);
+    linhasFonte.push(url ? `• ${nome} — ${url}` : `• ${nome}`);
+  }
+
+  const fotoRaw = limparCreditoAutor(creditoImagem);
+  const foto =
+    !fotoRaw || fotoRaw === CREDITO_IMAGEM_FALLBACK || /reprodu[cç][aã]o/i.test(fotoRaw)
+      ? 'Reprodução'
+      : fotoRaw;
+
+  const parts = [];
+  if (cleanBody) parts.push(cleanBody);
+  if (linhasFonte.length) {
+    parts.push(`Fonte:\n${linhasFonte.join('\n')}`);
+  }
+  parts.push(`Foto: ${foto}`);
+
+  const tagLine = formatHashtagsLine(
+    Array.isArray(hashtags) && hashtags.length ? hashtags : tags
+  );
+  if (tagLine) parts.push(tagLine);
+
+  return sanitizeFacebookMentions(parts.join('\n\n').trim());
 }
 
 function anexarCreditosFontes(
@@ -831,6 +898,15 @@ function atualizarCreditoImagemNaMateria(materia, imagemAutor) {
     return anexarHashtagsAoFinal(cleanBody, tags);
   }
 
+  // Manual / rodapé novo: Foto: …
+  if (/^Foto:\s*.+/m.test(cleanBody)) {
+    cleanBody = cleanBody.replace(
+      /^Foto:\s*.+$/m,
+      `Foto: ${credito === CREDITO_IMAGEM_FALLBACK ? 'Reprodução' : credito}`
+    );
+    return anexarHashtagsAoFinal(cleanBody, tags);
+  }
+
   if (/Fontes:\s*\n(?:[•\-*].+\n?)+$/i.test(cleanBody)) {
     if (/[•\*]\s*Imagem\s*:/i.test(cleanBody)) {
       cleanBody = cleanBody.replace(/([•\*]\s*Imagem\s*:\s*)([^\n]+)/i, `$1${credito}`);
@@ -909,6 +985,7 @@ module.exports = {
   formatHashtagsLine,
   anexarHashtagsAoFinal,
   anexarCreditosFontes,
+  montarRodapeMateriaComFontes,
   converterCreditosParaJm,
   atualizarCreditoImagemNaMateria,
   extrairAutorImagemHeuristico,

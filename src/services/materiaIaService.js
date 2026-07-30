@@ -1782,8 +1782,7 @@ async function gerarMateriaManual({
 
   const deepseekService = require('./deepseekService');
   const {
-    anexarCreditosFontes,
-    estiloCreditoDaPagina,
+    montarRodapeMateriaComFontes,
     removerFechamentoOracao,
   } = require('./editorialGuidelinesFb');
 
@@ -1864,28 +1863,21 @@ async function gerarMateriaManual({
       /* ignore */
     }
   }
-  const estilo = estiloCreditoDaPagina(pageName);
   const fontePrincipal = fontesPesquisa[0] || null;
-  const nomeConteudo = fontePrincipal
-    ? fontePrincipal.veiculo || 'Web'
-    : String(pageName || '').trim() || 'Informações do editor';
+  const fontesRodape = fontesPesquisa.length
+    ? fontesPesquisa
+    : pageName
+      ? [{ veiculo: pageName, url: null }]
+      : [];
+
   let materiaComFontes = removerFechamentoOracao(
-    anexarCreditosFontes(gerado.materia, {
-      fonteNome: nomeConteudo,
-      fonteUrl: fontePrincipal?.url || null,
-      imagemAutor: creditoImagem || 'Reprodução/Internet',
-      autorArtigo: null,
-      estilo,
+    montarRodapeMateriaComFontes({
+      materia: gerado.materia,
+      fontes: fontesRodape,
+      creditoImagem: creditoImagem || 'Reprodução',
+      hashtags: gerado.hashtags || [],
     })
   );
-
-  if (fontesPesquisa.length > 1) {
-    const extras = fontesPesquisa
-      .slice(1, 4)
-      .map((f) => `${f.veiculo || 'Web'}${f.url ? ` — ${f.url}` : ''}`)
-      .join('\n');
-    if (extras) materiaComFontes = `${materiaComFontes}\n${extras}`;
-  }
 
   const [matterId] = await AiMatters.create({
     user_id: userId,
