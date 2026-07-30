@@ -220,7 +220,7 @@
                       </span>
                     </label>
                     <% if (st === 'confirmado') { %>
-                      <span class="font-medium text-amber-300/90">Agendada: <%= fmtQuando(item.matter_scheduled_at || item.proposed_at) %></span>
+                      <span class="font-medium text-amber-300/90">Agendada: <%= fmtQuando(item.proposed_at) %></span>
                     <% } %>
                     <span class="agenda-hora-status text-[10px] text-slate-600" data-id="<%= item.id %>"></span>
                   <% } else { %>
@@ -312,5 +312,5 @@
       /* cobre o campo inteiro — clique abre o picker; o ícone branco é o SVG por cima */
     }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260729g"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260729h"></script>
 <%- include('partials/app-end') %>
