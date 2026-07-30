@@ -275,8 +275,84 @@ async function sugerirImagensParaMateria({
   };
 }
 
+/**
+ * Busca fotos por palavra-chave digitada (sem IA).
+ * Mesma cadeia: SerpApi → Serper → Brave → Pexels.
+ */
+async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
+  const consulta = String(consultaRaw || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 120);
+  if (consulta.length < 2) {
+    const err = new Error('Digite pelo menos 2 caracteres para buscar.');
+    err.status = 400;
+    throw err;
+  }
+
+  const serperEsgotadoRef = { value: false };
+  const batch = await buscarImagensConsulta(consulta, {
+    temPessoa: false,
+    serperEsgotadoRef,
+  });
+
+  const vistos = new Set();
+  const imagens = [];
+  let fonteUsada = null;
+
+  for (const img of batch) {
+    const key = String(img.url || '')
+      .split('?')[0]
+      .toLowerCase();
+    if (!key || vistos.has(key)) continue;
+    if (img.largura && img.altura && (img.largura < 350 || img.altura < 350)) continue;
+    vistos.add(key);
+    imagens.push({ ...img, consulta });
+    if (!fonteUsada && img.origem) fonteUsada = img.origem;
+    if (imagens.length >= limite) break;
+  }
+
+  if (!imagens.length) {
+    const fallback = await buscarPexelsImagens(consulta, { perPage: limite });
+    for (const img of fallback) {
+      const key = String(img.url || '')
+        .split('?')[0]
+        .toLowerCase();
+      if (!key || vistos.has(key)) continue;
+      vistos.add(key);
+      imagens.push({ ...img, consulta });
+      fonteUsada = fonteUsada || 'pexels';
+      if (imagens.length >= limite) break;
+    }
+  }
+
+  if (!imagens.length) {
+    const err = new Error(`Nenhuma imagem encontrada para “${consulta}”.`);
+    err.status = 422;
+    throw err;
+  }
+
+  const avisoParts = [];
+  if (fonteUsada === 'serpapi') avisoParts.push('Fotos via SerpApi (Google Images)');
+  else if (fonteUsada === 'brave') avisoParts.push('Fotos via Brave Images');
+  else if (fonteUsada === 'google') avisoParts.push('Fotos via Serper');
+  else if (fonteUsada === 'pexels') avisoParts.push('Fotos via Pexels');
+  if (serperEsgotadoRef.value) avisoParts.push('Serper.dev sem créditos');
+  avisoParts.push(`Busca: ${consulta}`);
+
+  return {
+    pessoa: null,
+    motivo: `Busca manual: ${consulta}`,
+    consultas: [consulta],
+    imagens: imagens.slice(0, limite),
+    fontePreferida: fonteUsada || 'brave',
+    aviso: avisoParts.join(' · '),
+  };
+}
+
 module.exports = {
   sugerirImagensParaMateria,
+  buscarImagensPorPalavra,
   buscarSerpApiImagens,
   buscarSerperImagens,
   buscarBraveImagens,

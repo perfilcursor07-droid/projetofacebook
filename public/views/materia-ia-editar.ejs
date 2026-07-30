@@ -467,6 +467,28 @@
                 <input id="matter-image-input" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" />
               </label>
 
+              <div class="space-y-1.5 rounded-lg border border-slate-700/80 bg-slate-950/50 p-2">
+                <label for="matter-img-busca-q" class="block text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                  Digite a palavra para buscar imagem
+                </label>
+                <div class="flex gap-1.5">
+                  <input
+                    id="matter-img-busca-q"
+                    type="search"
+                    maxlength="120"
+                    placeholder="Ex.: Ester Bezerra, pastor, culto…"
+                    class="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-[12px] text-slate-100 placeholder:text-slate-600 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500/30"
+                  />
+                  <button
+                    type="button"
+                    id="btn-buscar-img-palavra"
+                    class="shrink-0 rounded border border-violet-500/50 bg-violet-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-500/25"
+                  >
+                    Buscar
+                  </button>
+                </div>
+              </div>
+
               <div id="matter-image-preview-wrap" class="hidden">
                 <img id="matter-image-preview" src="" alt="Pré-visualização" class="block max-h-48 w-full rounded border border-slate-800 bg-slate-900/50 object-contain" />
                 <div class="mt-2 flex gap-1.5">

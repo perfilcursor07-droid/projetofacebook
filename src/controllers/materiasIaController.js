@@ -985,7 +985,9 @@ async function buscarImagemFonte(req, res, next) {
   }
 }
 
-/** IA analisa a matéria e sugere fotos reais (Google Images via Serper). */
+/** IA analisa a matéria e sugere fotos reais (Google Images via Serper).
+ *  Com body.q / consulta: busca direta pela palavra digitada (sem IA).
+ */
 async function sugerirImagens(req, res, next) {
   try {
     const matterId = Number(req.params.id);
@@ -994,7 +996,20 @@ async function sugerirImagens(req, res, next) {
       return res.status(404).json({ error: 'Matéria não encontrada' });
     }
 
-    const { sugerirImagensParaMateria } = require('../services/imageSuggestService');
+    const {
+      sugerirImagensParaMateria,
+      buscarImagensPorPalavra,
+    } = require('../services/imageSuggestService');
+    const limite = Math.min(Number(req.body?.limite) || 12, 18);
+    const consultaManual = String(
+      req.body?.q ?? req.body?.consulta ?? req.body?.busca ?? req.body?.query ?? ''
+    ).trim();
+
+    if (consultaManual) {
+      const result = await buscarImagensPorPalavra(consultaManual, { limite });
+      return res.json({ ok: true, ...result });
+    }
+
     const imagemAtual =
       matter.imagem_fonte_url ||
       (!matter.imagem_path && /^https?:\/\//i.test(String(matter.imagem_url || ''))
@@ -1006,7 +1021,7 @@ async function sugerirImagens(req, res, next) {
       materia: matter.materia,
       fonteTitulo: matter.fonte_titulo,
       imagemAtual,
-      limite: Math.min(Number(req.body?.limite) || 12, 18),
+      limite,
     });
 
     return res.json({ ok: true, ...result });

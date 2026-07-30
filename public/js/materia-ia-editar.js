@@ -824,12 +824,14 @@
     });
   }
 
-  async function carregarSugestoesImagem({ silent, force } = {}) {
+  async function carregarSugestoesImagem({ silent, force, consulta } = {}) {
     const meta = document.getElementById('matter-img-suggest-meta');
     const strip = document.getElementById('matter-img-suggest-strip');
     if (!cfg.canEdit || !strip) return;
 
-    if (!force) {
+    const q = String(consulta || '').trim();
+
+    if (!force && !q) {
       const cached = loadSuggestCache();
       if (cached) {
         renderSuggestStrip(cached);
@@ -838,13 +840,18 @@
       }
     }
 
-    if (!silent) setStatus('Buscando fotos relacionadas à matéria…');
-    if (meta) meta.textContent = 'Buscando fotos relacionadas…';
+    if (!silent) {
+      setStatus(q ? 'Buscando fotos de “' + q + '”…' : 'Buscando fotos relacionadas à matéria…');
+    }
+    if (meta) {
+      meta.textContent = q ? 'Buscando “' + q + '”…' : 'Buscando fotos relacionadas…';
+    }
     try {
+      const body = q ? { q } : {};
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/sugerir-imagens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao sugerir imagens');
@@ -876,6 +883,42 @@
         btn.disabled = false;
         btn.textContent = original || 'Buscar novas sugestões';
       }
+    }
+  });
+
+  async function buscarPorPalavraDigitada() {
+    const input = document.getElementById('matter-img-busca-q');
+    const btn = document.getElementById('btn-buscar-img-palavra');
+    const q = String(input?.value || '').trim();
+    if (q.length < 2) {
+      setStatus('Digite pelo menos 2 caracteres para buscar a imagem.', true);
+      input?.focus();
+      return;
+    }
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '…';
+    }
+    if (input) input.disabled = true;
+    try {
+      await carregarSugestoesImagem({ silent: false, force: true, consulta: q });
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original || 'Buscar';
+      }
+      if (input) input.disabled = false;
+    }
+  }
+
+  document.getElementById('btn-buscar-img-palavra')?.addEventListener('click', () => {
+    buscarPorPalavraDigitada();
+  });
+  document.getElementById('matter-img-busca-q')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscarPorPalavraDigitada();
     }
   });
 
