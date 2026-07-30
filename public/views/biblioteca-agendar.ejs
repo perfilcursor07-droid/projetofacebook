@@ -371,10 +371,22 @@
                 </div>
                 <div class="flex min-w-0 items-center gap-2">
                   <a href="<%= matterId ? '/materias-ia/' + matterId : (item.post_id ? '/biblioteca/posts/' + item.post_id : '#') %>" class="min-w-0 flex-1 truncate text-sm font-medium text-white hover:text-amber-200"><%= titulo %></a>
-                  <input type="datetime-local" class="agenda-hora w-[10.75rem] shrink-0 rounded-md border border-slate-700 bg-slate-950 px-1.5 py-1 text-[11px] text-slate-100 sm:w-[11.5rem] sm:px-2 sm:text-xs <%= st === 'publicado' ? 'opacity-50' : '' %>"
-                    value="<%= String(item.proposed_at_local || '').slice(0, 16) %>"
+                  <% const horaVal = String(item.proposed_at_local || '').slice(0, 16); %>
+                  <% const horaLabel = horaVal.length >= 16
+                    ? (horaVal.slice(8, 10) + '/' + horaVal.slice(5, 7) + ' ' + horaVal.slice(11, 16))
+                    : '--/-- --:--'; %>
+                  <button type="button"
+                    class="agenda-hora-btn inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[11px] font-medium text-slate-100 hover:border-amber-500/50 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50 sm:text-xs"
                     data-id="<%= item.id %>"
-                    <%= st === 'publicado' ? 'disabled' : '' %> />
+                    data-value="<%= horaVal %>"
+                    title="Alterar data e horário"
+                    <%= st === 'publicado' ? 'disabled' : '' %>>
+                    <svg class="h-3.5 w-3.5 shrink-0 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <rect x="3" y="4" width="18" height="18" rx="2" />
+                      <path d="M16 2v4M8 2v4M3 10h18" />
+                    </svg>
+                    <span class="agenda-hora-label tabular-nums"><%= horaLabel %></span>
+                  </button>
                 </div>
                 <p class="agenda-hora-status hidden text-[10px] text-slate-500" data-id="<%= item.id %>"></p>
 
@@ -446,26 +458,42 @@
     </div>
   </div>
 
+  <!-- Seletor de data/hora próprio (substitui datetime-local nativo) -->
+  <div id="agenda-hora-picker" class="fixed z-[70] hidden w-[18.5rem] rounded-xl border border-slate-600 bg-slate-900 p-3 shadow-2xl shadow-black/50" role="dialog" aria-label="Escolher data e horário">
+    <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-amber-300/90">Data e horário</p>
+    <label class="block text-[11px] text-slate-400">
+      Data
+      <input type="date" id="ahp-date" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-slate-100 focus:border-amber-500 focus:outline-none" />
+    </label>
+    <div class="mt-2 grid grid-cols-2 gap-2">
+      <label class="block text-[11px] text-slate-400">
+        Hora
+        <select id="ahp-hour" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"></select>
+      </label>
+      <label class="block text-[11px] text-slate-400">
+        Minutos
+        <select id="ahp-min" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"></select>
+      </label>
+    </div>
+    <div class="mt-3 flex items-center justify-end gap-2">
+      <button type="button" id="ahp-cancel" class="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-400 hover:text-white">Cancelar</button>
+      <button type="button" id="ahp-ok" class="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-amber-400">OK</button>
+    </div>
+  </div>
+
   <style>
-    /* Ícone do calendário branco no tema escuro (Chrome/Edge) */
-    .agenda-hora,
-    .viral-hora {
-      color-scheme: dark;
-      color: #e2e8f0;
-      accent-color: #fbbf24;
-    }
-    .agenda-hora::-webkit-calendar-picker-indicator,
+    .viral-hora { color-scheme: dark; color: #e2e8f0; }
     .viral-hora::-webkit-calendar-picker-indicator {
       cursor: pointer;
+      filter: invert(1) brightness(1.4);
       opacity: 1;
-      filter: invert(1) brightness(1.35);
     }
-    /* Firefox */
-    .agenda-hora::-moz-calendar-picker-indicator,
-    .viral-hora::-moz-calendar-picker-indicator {
+    #ahp-date { color-scheme: dark; }
+    #ahp-date::-webkit-calendar-picker-indicator {
       cursor: pointer;
-      filter: invert(1) brightness(1.35);
+      filter: invert(1) brightness(1.4);
+      opacity: 1;
     }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260730h"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260730i"></script>
 <%- include('partials/app-end') %>

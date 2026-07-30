@@ -83,8 +83,15 @@
           item.proposed_at_local || (item.proposed_at ? item.proposed_at : '')
         ).slice(0, 16);
         if (local.length < 16) return;
-        const horaInput = row.querySelector('.agenda-hora');
-        if (horaInput) horaInput.value = local;
+        const btn = row.querySelector('.agenda-hora-btn');
+        if (btn) {
+          btn.dataset.value = local;
+          const label = btn.querySelector('.agenda-hora-label');
+          if (label) {
+            label.textContent =
+              local.slice(8, 10) + '/' + local.slice(5, 7) + ' ' + local.slice(11, 16);
+          }
+        }
         const badge = row.querySelector('.agenda-hora-badge');
         if (badge) badge.textContent = local.slice(11, 16);
       });
@@ -301,6 +308,8 @@
   btnLoteExcluir?.addEventListener('click', () => runLote('excluir'));
 
   listEl?.addEventListener('click', async (e) => {
+    // Não intercepta o botão de horário (tem data-id, mas não é ação de agenda)
+    if (e.target.closest('.agenda-hora-btn')) return;
     const btn = e.target.closest('[data-id]');
     if (!btn) return;
     const isAgendaAction =
@@ -333,9 +342,7 @@
     }
   });
 
-  let horaTimer = null;
-
-  /** datetime-local no fuso America/Araguaina (UTC−3). */
+  /** datetime no fuso America/Araguaina (UTC−3). */
   function nowLocalMin() {
     const ms = Date.now() - 3 * 60 * 60 * 1000;
     const x = new Date(ms);
@@ -353,11 +360,14 @@
     );
   }
 
-  function applyMinToHoraInputs() {
-    const min = nowLocalMin();
-    document.querySelectorAll('.agenda-hora').forEach((input) => {
-      input.min = min;
-    });
+  function pad2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function formatHoraLabel(value) {
+    const v = String(value || '').slice(0, 16);
+    if (v.length < 16) return '--/-- --:--';
+    return v.slice(8, 10) + '/' + v.slice(5, 7) + ' ' + v.slice(11, 16);
   }
 
   function setHoraStatus(id, text, isError) {
@@ -370,56 +380,175 @@
       (isError ? 'text-rose-300' : 'text-emerald-300/90');
   }
 
-  applyMinToHoraInputs();
-  // Atualiza o mínimo a cada minuto (evita escolher horário que acabou de passar)
-  setInterval(applyMinToHoraInputs, 60_000);
-
-  listEl?.addEventListener('change', async (e) => {
-    const input = e.target.closest('.agenda-hora');
-    if (!input) return;
-    const id = Number(input.dataset.id);
-    const value = input.value;
-    if (!id || !value) return;
-
-    // Fecha o popup nativo do datetime-local após escolher (Chrome/Edge deixam aberto)
-    try {
-      input.blur();
-    } catch {
-      /* ignore */
+  function syncHoraBtn(id, value) {
+    const btn = listEl?.querySelector('.agenda-hora-btn[data-id="' + id + '"]');
+    if (btn) {
+      btn.dataset.value = value;
+      const label = btn.querySelector('.agenda-hora-label');
+      if (label) label.textContent = formatHoraLabel(value);
     }
+    const badge = listEl?.querySelector('.agenda-hora-badge[data-id="' + id + '"]');
+    if (badge) badge.textContent = String(value).slice(11, 16);
+  }
 
-    applyMinToHoraInputs();
-    if (input.min && value < input.min) {
+  async function salvarHorarioAgenda(id, value) {
+    const min = nowLocalMin();
+    if (value < min) {
       setHoraStatus(id, 'Horário no passado — escolha outra data/hora', true);
-      // Não força "agora" no campo (isso confundia com o horário salvo)
+      return false;
+    }
+    setHoraStatus(id, 'Salvando…');
+    try {
+      await api('/api/biblioteca/agenda/' + id, {
+        method: 'PATCH',
+        body: JSON.stringify({ proposed_at: value }),
+      });
+      syncHoraBtn(id, value);
+      setHoraStatus(id, 'Horário atualizado ✓');
+      return true;
+    } catch (err) {
+      setHoraStatus(id, err.message, true);
+      alert(err.message);
+      return false;
+    }
+  }
+
+  /* ——— Seletor próprio de data/hora (com OK) ——— */
+  const pickerEl = document.getElementById('agenda-hora-picker');
+  const ahpDate = document.getElementById('ahp-date');
+  const ahpHour = document.getElementById('ahp-hour');
+  const ahpMin = document.getElementById('ahp-min');
+  const ahpOk = document.getElementById('ahp-ok');
+  const ahpCancel = document.getElementById('ahp-cancel');
+  let pickerTargetId = null;
+  let pickerAnchorBtn = null;
+
+  function fillHourMinSelects() {
+    if (!ahpHour || ahpHour.options.length) return;
+    for (let h = 0; h < 24; h += 1) {
+      const opt = document.createElement('option');
+      opt.value = pad2(h);
+      opt.textContent = pad2(h);
+      ahpHour.appendChild(opt);
+    }
+    for (let m = 0; m < 60; m += 5) {
+      const opt = document.createElement('option');
+      opt.value = pad2(m);
+      opt.textContent = pad2(m);
+      ahpMin.appendChild(opt);
+    }
+  }
+
+  function closeHoraPicker() {
+    if (!pickerEl) return;
+    pickerEl.classList.add('hidden');
+    pickerTargetId = null;
+    pickerAnchorBtn = null;
+  }
+
+  function positionHoraPicker(anchor) {
+    if (!pickerEl || !anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const width = pickerEl.offsetWidth || 296;
+    const height = pickerEl.offsetHeight || 220;
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    if (left + width > window.innerWidth - 8) left = window.innerWidth - width - 8;
+    if (left < 8) left = 8;
+    if (top + height > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - height - 6);
+    }
+    pickerEl.style.left = left + 'px';
+    pickerEl.style.top = top + 'px';
+  }
+
+  function openHoraPicker(btn) {
+    if (!pickerEl || !ahpDate || !ahpHour || !ahpMin) return;
+    fillHourMinSelects();
+    pickerTargetId = Number(btn.dataset.id);
+    pickerAnchorBtn = btn;
+    const value = String(btn.dataset.value || nowLocalMin()).slice(0, 16);
+    const day = value.slice(0, 10);
+    let hour = value.slice(11, 13);
+    let min = value.slice(14, 16);
+    // Arredonda minutos para o passo de 5
+    const minN = Math.round(Number(min || 0) / 5) * 5;
+    min = pad2(minN >= 60 ? 55 : minN);
+
+    ahpDate.value = day;
+    ahpHour.value = hour;
+    if (![...ahpHour.options].some((o) => o.value === hour)) ahpHour.value = '08';
+    ahpMin.value = min;
+    if (![...ahpMin.options].some((o) => o.value === min)) ahpMin.value = '00';
+
+    pickerEl.classList.remove('hidden');
+    positionHoraPicker(btn);
+  }
+
+  listEl?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.agenda-hora-btn');
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (pickerTargetId && Number(btn.dataset.id) === pickerTargetId && !pickerEl?.classList.contains('hidden')) {
+      closeHoraPicker();
       return;
     }
-
-    clearTimeout(horaTimer);
-    setHoraStatus(id, 'Salvando…');
-    horaTimer = setTimeout(async () => {
-      try {
-        await api('/api/biblioteca/agenda/' + id, {
-          method: 'PATCH',
-          body: JSON.stringify({ proposed_at: value }),
-        });
-        const badge = listEl?.querySelector('.agenda-hora-badge[data-id="' + id + '"]');
-        if (badge) badge.textContent = String(value).slice(11, 16);
-        setHoraStatus(id, 'Horário atualizado ✓');
-      } catch (err) {
-        setHoraStatus(id, err.message, true);
-        alert(err.message);
-      }
-    }, 400);
+    openHoraPicker(btn);
   });
 
-  // Fecha o picker também ao pressionar Enter / Escape
-  listEl?.addEventListener('keydown', (e) => {
-    const input = e.target.closest?.('.agenda-hora');
-    if (!input) return;
-    if (e.key === 'Enter' || e.key === 'Escape') {
+  ahpCancel?.addEventListener('click', (e) => {
+    e.preventDefault();
+    closeHoraPicker();
+  });
+
+  ahpOk?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const id = pickerTargetId;
+    if (!id || !ahpDate?.value) return;
+    const value = ahpDate.value + 'T' + (ahpHour?.value || '00') + ':' + (ahpMin?.value || '00');
+    ahpOk.disabled = true;
+    ahpOk.textContent = '…';
+    try {
+      const ok = await salvarHorarioAgenda(id, value);
+      if (ok) closeHoraPicker();
+    } finally {
+      ahpOk.disabled = false;
+      ahpOk.textContent = 'OK';
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (!pickerEl || pickerEl.classList.contains('hidden')) return;
+    if (e.key === 'Escape') {
+      closeHoraPicker();
+      return;
+    }
+    if (e.key === 'Enter' && e.target && pickerEl.contains(e.target)) {
       e.preventDefault();
-      input.blur();
+      ahpOk?.click();
+    }
+  });
+
+  document.addEventListener('mousedown', (e) => {
+    if (!pickerEl || pickerEl.classList.contains('hidden')) return;
+    if (pickerEl.contains(e.target)) return;
+    if (e.target.closest?.('.agenda-hora-btn')) return;
+    closeHoraPicker();
+  });
+
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (pickerAnchorBtn && pickerEl && !pickerEl.classList.contains('hidden')) {
+        positionHoraPicker(pickerAnchorBtn);
+      }
+    },
+    true
+  );
+  window.addEventListener('resize', () => {
+    if (pickerAnchorBtn && pickerEl && !pickerEl.classList.contains('hidden')) {
+      positionHoraPicker(pickerAnchorBtn);
     }
   });
 
