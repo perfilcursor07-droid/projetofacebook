@@ -1808,6 +1808,57 @@ Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosU
 }
 
 /**
+ * Antes de escrever: confere se as fontes achadas na web realmente confirmam
+ * o que o editor pediu. Sem isso a IA "completa" a história e inventa falas.
+ */
+async function checarPedidoNasFontes({ pedido, fatosFontes }) {
+  assertDeepseek();
+  const texto = String(pedido || '').trim();
+  const blocoFatos = String(fatosFontes || '').trim();
+  if (!texto || !blocoFatos) {
+    return { confirmado: false, oQueAsFontesDizem: '', oQueFalta: 'Não houve apuração na web.', sugestao: '' };
+  }
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é checador de fatos de uma redação. Recebe o PEDIDO do editor e os TRECHOS das fontes apuradas na web.
+Sua única tarefa é dizer se as fontes CONFIRMAM o fato central do pedido.
+
+Regras:
+- "confirmado": true SOMENTE se algum trecho afirmar claramente o fato central do pedido (o mesmo acontecimento, com as mesmas pessoas).
+- Fontes que só falam do assunto em volta, de outra data ou de outra pessoa NÃO confirmam. Nesse caso, false.
+- Se o pedido cita uma declaração/frase, só confirme se a declaração aparecer nos trechos.
+- NÃO complete lacunas, não suponha, não deduza.
+
+Responda APENAS JSON:
+{"confirmado":true|false,"oQueAsFontesDizem":"1 a 3 frases com o que de fato está nas fontes, citando o veículo","oQueFalta":"o que não foi confirmado","sugestao":"ângulo de matéria que as fontes sustentam, ou vazio"}`,
+      },
+      {
+        role: 'user',
+        content: `PEDIDO DO EDITOR:\n${texto.slice(0, 2000)}\n\nTRECHOS DAS FONTES:\n${blocoFatos.slice(0, 9000)}\n\nAs fontes confirmam o fato central do pedido?`,
+      },
+    ],
+    { temperature: 0.1, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+
+  return {
+    confirmado: parsed.confirmado === true,
+    oQueAsFontesDizem: String(parsed.oQueAsFontesDizem || '').replace(/\s+/g, ' ').trim().slice(0, 700),
+    oQueFalta: String(parsed.oQueFalta || '').replace(/\s+/g, ' ').trim().slice(0, 400),
+    sugestao: String(parsed.sugestao || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+  };
+}
+
+/**
  * Conversa do chat de matérias (/conteudo → Matéria manual).
  * Mantém o histórico, usa os fatos pesquisados na web e responde em texto
  * corrido (streaming), do jeito que o usuário lê na tela — sem JSON.
@@ -1818,6 +1869,7 @@ async function conversarMateria({
   fatosFontes = null,
   tom = 'natural',
   onDelta = null,
+  permitirSemConfirmacao = false,
 }) {
   assertDeepseek();
   const texto = String(pedido || '').trim();
@@ -1845,11 +1897,14 @@ COMO RESPONDER:
 - Se o editor fizer uma PERGUNTA (ex.: "onde ele falou isso?", "qual a fonte?"): responda direto e curto, citando os veículos das fontes. Não escreva matéria nesse caso.
 - Se o editor pedir um ajuste ("deixe mais curto", "acrescente X", "troque o título"): reescreva a MATÉRIA INTEIRA já ajustada, não só o trecho.
 
-REGRA DE OURO — só fato real:
-- Use apenas o que estiver no pedido do editor, no histórico da conversa e nos TRECHOS DAS FONTES.
-- É PROIBIDO inventar números, pesquisas, datas, cargos ou falas.
-- Todo dado numérico ou fala entre aspas precisa vir de uma fonte; atribua ("segundo o G1", "pesquisa Quaest de julho").
-- Se as fontes não confirmarem o que foi pedido, diga isso com clareza em vez de inventar.
+REGRA DE OURO — só fato real (a mais importante de todas):
+- O pedido do editor é uma HIPÓTESE, não um fato. Só trate como fato o que estiver nos TRECHOS DAS FONTES.
+- É PROIBIDO inventar números, pesquisas, datas, cargos, bastidores ou falas.
+- Aspas: só use frase entre aspas se ela aparecer LITERALMENTE nos trechos das fontes. Nunca escreva uma fala "provável", "em tom de" ou reconstruída.
+- Nunca atribua informação a jornalista, coluna, veículo ou programa que não esteja nos trechos (ex.: não invente "segundo a coluna de X" ou "conforme a reportagem").
+- Nunca escreva que alguém "não se manifestou", "não deu detalhes" ou "segue em silêncio" se isso não estiver nas fontes.
+- Se as fontes NÃO confirmarem o fato central do pedido: NÃO escreva a matéria. Responda em 2 ou 3 frases dizendo o que as fontes realmente trazem, o que não foi confirmado, e ofereça o ângulo que dá para sustentar. Aguarde o editor decidir.
+- Preferir matéria curta e 100% checada a matéria completa com achismo.
 
 ANTI-PLÁGIO:
 - Não copie frases nem a estrutura das fontes; extraia os fatos e reescreva 100% com suas palavras.
@@ -1872,6 +1927,9 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
       blocoFatos
         ? `TRECHOS DAS FONTES PESQUISADAS AGORA (use só fato verificável):\n${blocoFatos.slice(0, 9000)}`
         : 'SEM PESQUISA NOVA: use o que já está na conversa e o que o editor informou.',
+      permitirSemConfirmacao
+        ? 'O EDITOR ASSUME A RESPONSABILIDADE e pediu a matéria mesmo sem confirmação nas fontes: escreva, mas continua PROIBIDO inventar falas entre aspas, números, datas e atribuições a veículos. Deixe claro no texto que a informação é atribuída ao que o editor relatou e que não há confirmação oficial.'
+        : null,
     ]
       .filter(Boolean)
       .join('\n\n'),
@@ -2070,6 +2128,7 @@ module.exports = {
   sugerirConsultasPesquisa,
   gerarMateriaComPesquisa,
   conversarMateria,
+  checarPedidoNasFontes,
   chatCompletionStream,
   sugerirConsultasImagem,
   identificarAutorImagem,
