@@ -42,19 +42,68 @@ function buildAllDaySlots({ startHour = DEFAULT_START_HOUR, endHour = DEFAULT_EN
   return slots;
 }
 
-/** Interpreta valor do MySQL como instante (DATETIME = horário de Araguaína). */
+/**
+ * Modelo de horário da agenda:
+ * - MySQL DATETIME guarda o relógio de America/Araguaina (UTC−3), sem conversão.
+ * - Instantes JS usam offset −03:00 via parseProposedAt.
+ *
+ * Bug anterior: gravava componentes UTC (09:00 Ara → "12:00:00") e o MySQL
+ * no servidor −3 lia como 12:00 local → tela mostrava 12:00 (+3 a cada compactação).
+ */
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+/** Formata instante absoluto → chave parede Araguaína YYYY-MM-DDTHH:mm */
+function toDatetimeLocal(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  const ms = d.getTime() - 3 * 60 * 60 * 1000;
+  const x = new Date(ms);
+  return `${x.getUTCFullYear()}-${pad2(x.getUTCMonth() + 1)}-${pad2(x.getUTCDate())}T${pad2(x.getUTCHours())}:${pad2(x.getUTCMinutes())}`;
+}
+
+/** String/Date do MySQL → instante (DATETIME = parede Araguaína). */
+function parseProposedAt(runAt) {
+  if (runAt instanceof Date && !Number.isNaN(runAt.getTime())) {
+    // mysql2 devolve DATETIME no fuso local do Node: os campos locais = parede no banco
+    const key = `${runAt.getFullYear()}-${pad2(runAt.getMonth() + 1)}-${pad2(runAt.getDate())}T${pad2(runAt.getHours())}:${pad2(runAt.getMinutes())}`;
+    return parseProposedAt(key);
+  }
+  const raw = String(runAt || '').trim();
+  if (!raw) return new Date(NaN);
+  if (/Z$|[+-]\d{2}:\d{2}$/.test(raw)) return new Date(raw);
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const sec = m[6] || '00';
+    return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${sec}-03:00`);
+  }
+  return new Date(raw);
+}
+
 function asAgendaDate(value) {
   if (value == null || value === '') return new Date(NaN);
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    // Reconstroi pelo wall-clock Araguaína para evitar drift de fuso do mysql2
-    return parseProposedAt(toDatetimeLocal(value));
-  }
   return parseProposedAt(value);
 }
 
-/** Chave estável do horário na TZ Araguaina: YYYY-MM-DDTHH:mm */
+/** Chave estável Araguaína: YYYY-MM-DDTHH:mm */
 function chaveHorario(date) {
-  return toDatetimeLocal(asAgendaDate(date)).slice(0, 16);
+  const d = asAgendaDate(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return toDatetimeLocal(d).slice(0, 16);
+}
+
+/** Grava no MySQL a parede Araguaína (não UTC!). */
+function toMysqlAgendaDatetime(dateOrKey) {
+  let key;
+  if (typeof dateOrKey === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dateOrKey)) {
+    key = dateOrKey.slice(0, 16);
+  } else {
+    key = chaveHorario(dateOrKey);
+  }
+  if (!key) return null;
+  return `${key.replace('T', ' ')}:00`;
 }
 
 function diaAmanhaKey() {
@@ -74,7 +123,7 @@ function buildSlots({
   ocupadosKeys = null,
 } = {}) {
   const all = buildAllDaySlots({ startHour, endHour });
-  const afterMs = afterDate ? new Date(afterDate).getTime() : 0;
+  const afterMs = afterDate ? asAgendaDate(afterDate).getTime() : 0;
   const ocupados =
     ocupadosKeys instanceof Set
       ? ocupadosKeys
@@ -84,32 +133,11 @@ function buildSlots({
     if (Number.isFinite(afterMs) && afterMs > 0 && s.getTime() <= afterMs) return false;
     return true;
   });
-  // Se afterDate falhou por fuso mas ocupadosKeys existe, free já está correto só pelos ocupados
   if (!free.length && ocupados.size) {
     free = all.filter((s) => !ocupados.has(chaveHorario(s)));
   }
   const lim = Math.min(48, Math.max(1, Number(max) || DEFAULT_MAX_ITENS));
   return free.slice(0, lim);
-}
-
-function toDatetimeLocal(date) {
-  const d = new Date(date);
-  const ms = d.getTime() - 3 * 60 * 60 * 1000;
-  const x = new Date(ms);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${x.getUTCFullYear()}-${pad(x.getUTCMonth() + 1)}-${pad(x.getUTCDate())}T${pad(x.getUTCHours())}:${pad(x.getUTCMinutes())}`;
-}
-
-function parseProposedAt(runAt) {
-  const raw = String(runAt || '').trim();
-  if (!raw) return new Date(NaN);
-  if (/Z$|[+-]\d{2}:\d{2}$/.test(raw)) return new Date(raw);
-  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
-  if (m) {
-    const sec = m[6] || '00';
-    return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${sec}-03:00`);
-  }
-  return new Date(raw);
 }
 
 function mapItem(row) {
@@ -295,10 +323,8 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
     const novoKey = chaveHorario(slot);
     if (atualKey === novoKey) continue;
 
-    // Persiste o instante do slot em UTC (DATETIME naive) — alinhado com toDatetimeLocal (−3h)
-    const d = slot;
-    const pad = (n) => String(n).padStart(2, '0');
-    const mysqlDt = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00`;
+    // Parede Araguaína no DATETIME (ex. 09:00 → "09:00:00"), NÃO componentes UTC
+    const mysqlDt = toMysqlAgendaDatetime(novoKey);
     await BibliotecaAgenda.update(itens[i].id, { proposed_at: mysqlDt });
     itens[i].proposed_at = slot;
     if (itens[i].matter_id) {
@@ -322,9 +348,7 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
       `\n  depois: ${depois.join(', ')}`
     );
   } else {
-    console.log(
-      `[agenda] compactar user #${userId} ${day}: ok (já contínuo) ${antes.join(', ')}`
-    );
+    // silencioso quando já contínuo — evita flood no pm2 a cada reload da página
   }
   return { ajustados, day, antes, depois: itens.map((r) => chaveHorario(r.proposed_at)) };
 }
@@ -385,17 +409,10 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
       order,
     });
 
-  if (reparar) {
-    try {
-      await compactarHorariosAbertos(userId);
-    } catch (err) {
-      console.warn('[agenda] compactar:', err.message);
-    }
-  }
-
   let itens = await fetchItens();
   await sincronizarComMaterias(userId, itens || []);
 
+  // Compacta no máximo 1× por listagem (antes rodava 2× e, com write UTC, +3h a cada passada)
   if (reparar) {
     try {
       const r = await compactarHorariosAbertos(userId);
@@ -404,7 +421,7 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
         await sincronizarComMaterias(userId, itens || []);
       }
     } catch (err) {
-      console.warn('[agenda] compactar pós-sync:', err.message);
+      console.warn('[agenda] compactar:', err.message);
     }
   }
 
@@ -603,7 +620,7 @@ async function montarAgendaAmanha({
           facebook_page_id: page.id,
           post_id: post.id,
           matter_id: matterId,
-          proposed_at: proposedAt,
+          proposed_at: toMysqlAgendaDatetime(proposedAt),
           status: 'pendente',
         });
         criados.push({ id, postId: post.id, matterId, proposedAt });
@@ -673,7 +690,9 @@ async function atualizarHorario(userId, id, proposedAt) {
     err.status = 400;
     throw err;
   }
-  await BibliotecaAgenda.update(item.id, { proposed_at: parsed });
+  await BibliotecaAgenda.update(item.id, {
+    proposed_at: toMysqlAgendaDatetime(parsed),
+  });
 
   // Confirmado: atualiza também o job da matéria (scheduled_at)
   if (item.status === 'confirmado' && item.matter_id) {
@@ -702,8 +721,7 @@ async function confirmarAgendamento(userId, id) {
   if (item.status === 'confirmado' || item.status === 'publicado') {
     return { ok: true, already: true };
   }
-  const runAtDate =
-    item.proposed_at instanceof Date ? item.proposed_at : new Date(item.proposed_at);
+  const runAtDate = asAgendaDate(item.proposed_at);
   if (Number.isNaN(runAtDate.getTime())) {
     const err = new Error('Horário inválido neste item — ajuste a data/hora antes de confirmar');
     err.status = 400;
@@ -778,9 +796,12 @@ async function readequarHorariosPendentes(userId, { fromDate = null } = {}) {
   let ajustados = 0;
   for (let i = 0; i < lista.length; i += 1) {
     const next = new Date(base.getTime() + i * SLOT_MINUTES * 60 * 1000);
-    const cur = new Date(lista[i].proposed_at).getTime();
-    if (cur !== next.getTime()) {
-      await BibliotecaAgenda.update(lista[i].id, { proposed_at: next });
+    const curKey = chaveHorario(lista[i].proposed_at);
+    const nextKey = chaveHorario(next);
+    if (curKey !== nextKey) {
+      await BibliotecaAgenda.update(lista[i].id, {
+        proposed_at: toMysqlAgendaDatetime(nextKey),
+      });
       ajustados += 1;
     }
   }
@@ -800,7 +821,7 @@ async function excluirItem(userId, id, { apagarMateria = false } = {}) {
   }
   // Reagenda pendentes + confirmados do mesmo dia sem buracos de 30 min
   await compactarHorariosDoDia(userId, {
-    dayKey: toDatetimeLocal(slotLiberado).slice(0, 10),
+    dayKey: chaveHorario(asAgendaDate(slotLiberado)).slice(0, 10) || diaAmanhaKey(),
   });
   return { ok: true, itens: await listarAgenda(userId) };
 }
