@@ -165,6 +165,75 @@ const AiMatters = {
     return Number(row?.total) || 0;
   },
 
+  /**
+   * Viralizadas de TODAS as Páginas da conta Facebook do usuário
+   * (não só a página padrão). Inclui matérias ligadas às páginas da conta
+   * mesmo se user_id divergir por migração antiga.
+   */
+  async findViralizadasDaConta(userId, { limit = 40 } = {}) {
+    const FacebookAccounts = require('./FacebookAccounts');
+    const FacebookPages = require('./FacebookPages');
+    const account = await FacebookAccounts.findByUser(userId);
+    const pageIds = account
+      ? (await FacebookPages.findByAccount(account.id)).map((p) => Number(p.id)).filter(Boolean)
+      : [];
+
+    const lim = Math.min(80, Math.max(1, Number(limit) || 40));
+
+    let query = db(this.table)
+      .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
+      .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
+      .where(function ownership() {
+        this.where('ai_matters.user_id', userId);
+        if (pageIds.length) {
+          this.orWhereIn('ai_matters.facebook_page_id', pageIds);
+        }
+      })
+      .select(
+        'ai_matters.*',
+        'publications.fb_post_id as pub_fb_post_id',
+        'publications.fb_post_url as pub_fb_post_url',
+        'publications.fb_views as pub_fb_views',
+        'publications.fb_views_at as pub_fb_views_at',
+        'publications.fb_likes as pub_fb_likes',
+        'publications.fb_comments as pub_fb_comments',
+        'publications.fb_shares as pub_fb_shares',
+        'publications.fb_native_post_id as pub_fb_native_post_id',
+        'publications.status as pub_status',
+        'publications.published_at as pub_published_at',
+        'facebook_pages.page_name as page_name'
+      )
+      .limit(lim);
+
+    query = applyViralizouFilter(query);
+    query = query.orderByRaw(
+      `(COALESCE(publications.fb_likes, 0) + COALESCE(publications.fb_comments, 0) * 3 + COALESCE(publications.fb_shares, 0) * 5 + LEAST(COALESCE(publications.fb_views, 0), 5000) / 50) DESC`
+    );
+
+    return query;
+  },
+
+  async countViralizadasDaConta(userId) {
+    const FacebookAccounts = require('./FacebookAccounts');
+    const FacebookPages = require('./FacebookPages');
+    const account = await FacebookAccounts.findByUser(userId);
+    const pageIds = account
+      ? (await FacebookPages.findByAccount(account.id)).map((p) => Number(p.id)).filter(Boolean)
+      : [];
+
+    let query = db(this.table)
+      .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
+      .where(function ownership() {
+        this.where('ai_matters.user_id', userId);
+        if (pageIds.length) {
+          this.orWhereIn('ai_matters.facebook_page_id', pageIds);
+        }
+      });
+    query = applyViralizouFilter(query);
+    const row = await query.count({ total: '*' }).first();
+    return Number(row?.total) || 0;
+  },
+
   async countByStatusForUser(userId, { q = '' } = {}) {
     let query = db(this.table)
       .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')

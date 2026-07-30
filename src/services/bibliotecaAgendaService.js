@@ -458,61 +458,87 @@ async function contagensAgenda(userId) {
   const base = await BibliotecaAgenda.countByStatus(userId);
   let viralizadas = 0;
   try {
-    viralizadas = await AiMatters.countByUserWithPub(userId, { status: 'viralizou' });
+    viralizadas = await AiMatters.countViralizadasDaConta(userId);
   } catch (err) {
     console.warn('[agenda] contagem viralizadas:', err.message);
+    try {
+      viralizadas = await AiMatters.countByUserWithPub(userId, { status: 'viralizou' });
+    } catch {
+      /* ignore */
+    }
   }
   return { ...base, viralizadas: Number(viralizadas) || 0 };
 }
 
 /**
- * Matérias que viralizaram em qualquer Página do usuário
- * (mesma regra da aba Viralizou em /minhas-materias).
- * Já usadas como origem viral na agenda (ativa) saem da lista.
+ * Matérias que viralizaram em QUALQUER Página da conta (Apocalipse, JM, etc.).
+ * Sincroniza engajamento antes — sem isso a lista fica vazia mesmo com posts bons no FB.
  */
-async function listarViralizadas(userId, { limit = 40 } = {}) {
+async function listarViralizadas(userId, { limit = 40, sync = true } = {}) {
+  if (sync) {
+    try {
+      await materiaIaService.sincronizarEngajamentoRecentes(userId, {
+        limit: 45,
+        concurrency: 2,
+      });
+    } catch (err) {
+      console.warn('[agenda] sync engajamento viralizadas:', err.message);
+    }
+  }
+
   const lim = Math.min(80, Math.max(1, Number(limit) || 40));
-  const [rows, jaUsadas] = await Promise.all([
-    AiMatters.findByUserWithPub(userId, { status: 'viralizou', limit: lim }),
-    BibliotecaAgenda.findActiveSourceMatterIds(userId),
-  ]);
-  const usadas = new Set((jaUsadas || []).map((id) => Number(id)));
+  let rows = [];
+  try {
+    rows = await AiMatters.findViralizadasDaConta(userId, { limit: lim });
+  } catch (err) {
+    console.warn('[agenda] findViralizadasDaConta:', err.message);
+    rows = await AiMatters.findByUserWithPub(userId, { status: 'viralizou', limit: lim });
+  }
+
+  let usadas = [];
+  try {
+    usadas = await BibliotecaAgenda.findActiveSourceMatterIds(userId);
+  } catch (err) {
+    // Coluna source_matter_id pode ainda não existir se a migration não rodou
+    console.warn('[agenda] source_matter_id:', err.message);
+  }
+  const usadasSet = new Set((usadas || []).map((id) => Number(id)));
 
   return (rows || []).map((r) => {
-      let thumb = r.imagem_url || null;
-      if (r.imagem_path) {
-        thumb = `/media/${String(r.imagem_path).replace(/\\/g, '/')}`;
-      }
-      const likes = r.pub_fb_likes != null ? Number(r.pub_fb_likes) : null;
-      const comments = r.pub_fb_comments != null ? Number(r.pub_fb_comments) : null;
-      const views = r.pub_fb_views != null ? Number(r.pub_fb_views) : null;
-      const shares = r.pub_fb_shares != null ? Number(r.pub_fb_shares) : null;
-      const score =
-        (Number(likes) || 0) +
-        (Number(comments) || 0) * 3 +
-        (Number(shares) || 0) * 5 +
-        Math.min(Number(views) || 0, 5000) / 50;
-      let viralLabel = 'Bom';
-      if (score >= 180 || (likes || 0) >= 80 || (comments || 0) >= 25) {
-        viralLabel = 'Viralizou';
-      }
-      return {
-        id: r.id,
-        titulo: r.titulo || 'Sem título',
-        page_name: r.page_name || null,
-        facebook_page_id: r.facebook_page_id || null,
-        tipo_publicacao: r.tipo_publicacao || 'foto',
-        thumb,
-        fb_post_url: r.pub_fb_post_url || null,
-        likes,
-        comments,
-        views,
-        shares,
-        viral_label: viralLabel,
-        published_at: r.published_at || r.pub_published_at || null,
-        ja_na_agenda: usadas.has(Number(r.id)),
-      };
-    });
+    let thumb = r.imagem_url || null;
+    if (r.imagem_path) {
+      thumb = `/media/${String(r.imagem_path).replace(/\\/g, '/')}`;
+    }
+    const likes = r.pub_fb_likes != null ? Number(r.pub_fb_likes) : null;
+    const comments = r.pub_fb_comments != null ? Number(r.pub_fb_comments) : null;
+    const views = r.pub_fb_views != null ? Number(r.pub_fb_views) : null;
+    const shares = r.pub_fb_shares != null ? Number(r.pub_fb_shares) : null;
+    const score =
+      (Number(likes) || 0) +
+      (Number(comments) || 0) * 3 +
+      (Number(shares) || 0) * 5 +
+      Math.min(Number(views) || 0, 5000) / 50;
+    let viralLabel = 'Bom';
+    if (score >= 180 || (likes || 0) >= 80 || (comments || 0) >= 25) {
+      viralLabel = 'Viralizou';
+    }
+    return {
+      id: r.id,
+      titulo: r.titulo || 'Sem título',
+      page_name: r.page_name || null,
+      facebook_page_id: r.facebook_page_id || null,
+      tipo_publicacao: r.tipo_publicacao || 'foto',
+      thumb,
+      fb_post_url: r.pub_fb_post_url || null,
+      likes,
+      comments,
+      views,
+      shares,
+      viral_label: viralLabel,
+      published_at: r.published_at || r.pub_published_at || null,
+      ja_na_agenda: usadasSet.has(Number(r.id)),
+    };
+  });
 }
 
 /**
@@ -534,13 +560,23 @@ async function agendarViralizada({
   }
 
   const origem = await AiMatters.findById(origemId);
-  if (!origem || Number(origem.user_id) !== Number(userId)) {
+  if (!origem) {
     const err = new Error('Matéria não encontrada');
     err.status = 404;
     throw err;
   }
 
-  const { resolvePageForUser, defaultPageForUser } = require('./facebookPageResolver');
+  const { resolvePageForUser, defaultPageForUser, pagesForUser } = require('./facebookPageResolver');
+  const pagesConta = await pagesForUser(userId);
+  const pageIdsConta = new Set((pagesConta || []).map((p) => Number(p.id)));
+  const origemDoUser = Number(origem.user_id) === Number(userId);
+  const origemDaConta = pageIdsConta.has(Number(origem.facebook_page_id));
+  if (!origemDoUser && !origemDaConta) {
+    const err = new Error('Matéria não encontrada nesta conta');
+    err.status = 404;
+    throw err;
+  }
+
   let page = null;
   if (facebookPageId) {
     page = await resolvePageForUser(userId, facebookPageId);

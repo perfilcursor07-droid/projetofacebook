@@ -238,7 +238,10 @@
           <ul id="agenda-viral-list" class="divide-y divide-slate-800/80">
             <% if (!viralList.length) { %>
               <li class="px-4 py-10 text-center text-sm text-slate-500">
-                Nenhuma viralizada disponível. Abra <a href="/minhas-materias?status=viralizou" class="text-rose-300 hover:underline">Matérias → Viralizou</a> para sincronizar engajamento, ou as já agendadas saíram desta lista.
+                Nenhuma viralizada com engajamento no banco ainda.
+                Abra <a href="/minhas-materias?status=viralizou" class="text-rose-300 hover:underline">Matérias → Viralizou</a>
+                (isso sincroniza curtidas/comentários de <strong class="text-slate-300">todas</strong> as Páginas: Apocalipse, JM, etc.) e volte aqui.
+                Recarregar esta aba também sincroniza — pode levar alguns segundos.
               </li>
             <% } %>
             <% viralList.forEach(function (v) {
@@ -447,5 +450,5 @@
     }
     .viral-hora { color-scheme: dark; }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260730f"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260730g"></script>
 <%- include('partials/app-end') %>
