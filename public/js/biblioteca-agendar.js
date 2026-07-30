@@ -142,6 +142,23 @@
     }
   });
 
+  document.getElementById('agenda-btn-compactar')?.addEventListener('click', async () => {
+    try {
+      setBusy(true, 'Reorganizando horários de 30 em 30 min…');
+      setMsg('');
+      const data = await api('/api/biblioteca/agenda/compactar', {
+        method: 'POST',
+        body: '{}',
+      });
+      setMsg(data.mensagem || `${data.ajustados || 0} horário(s) ajustado(s).`, false);
+      reloadAgenda();
+    } catch (err) {
+      setMsg(err.message, true);
+    } finally {
+      setBusy(false);
+    }
+  });
+
   async function runLote(acao) {
     const ids = selectedIds();
     if (!ids.length) return;

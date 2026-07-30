@@ -507,7 +507,33 @@ async function montarAgenda(req, res, next) {
     });
     res.json({ ok: true, ...result });
   } catch (err) {
-    next(err);
+    if (err.status === 422) {
+      return res.status(422).json({ error: err.message, ok: false });
+    }
+    return next(err);
+  }
+}
+
+async function compactarAgenda(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const result = await agendaService.compactarHorariosAbertos(req.session.userId);
+    const itens = await agendaService.listarAgenda(req.session.userId, {
+      aba: 'agendada',
+      reparar: false,
+    });
+    res.json({
+      ok: true,
+      ajustados: result.ajustados || 0,
+      days: result.days || [],
+      itens,
+      mensagem:
+        (result.ajustados || 0) > 0
+          ? `${result.ajustados} horário(s) reorganizado(s) de 30 em 30 min.`
+          : 'Horários já estavam em sequência de 30 em 30 min.',
+    });
+  } catch (err) {
+    return next(err);
   }
 }
 
@@ -604,6 +630,7 @@ module.exports = {
   putAutopilot,
   listarAgenda,
   montarAgenda,
+  compactarAgenda,
   atualizarAgendaItem,
   confirmarAgendaItem,
   publicarAgendaItem,
