@@ -1601,7 +1601,7 @@ Regras de saída:
 - Título: pode ajustar levemente (máx. 110 chars) se um fato novo fortalecer o gancho; senão mantenha próximo.
 - Matéria: português do Brasil, parágrafos curtos com \\n\\n, ideal 1700–2100 chars (sem hashtags).
 - Integre os fatos de forma natural no fluxo (não faça lista "segundo o site X").
-- Pode citar o veículo só se ajudar (ex.: "segundo o G1"), sem colar texto deles.
+- Pode citar o veículo só pelo nome (ex.: "segundo o G1", "pesquisa Quaest") — NUNCA cole URL no campo materia.
 - Preserve bloco "Fontes:" se já existir; se não houver, não invente lista longa de URLs.
 - 3 a 5 hashtags sem # no JSON.
 - fatosUsados: lista curta (2–6) dos fatos novos realmente incorporados (para auditoria).`,
@@ -1765,7 +1765,7 @@ ESTRUTURA:
 - Título próprio, curto e chamativo (máx. 110 chars), sem clickbait mentiroso.
 - Lead com o fato central → desenvolvimento com os dados e falas apuradas → fechamento no fato (sem oração final).
 - Parágrafos curtos separados por linha em branco. Alvo: 1700–2100 caracteres.
-- NÃO inclua bloco "Fontes:" no campo materia — o sistema anexa depois.
+- NÃO inclua bloco "Fontes:" nem URLs no campo materia — o sistema anexa "Fonte: Globo, UOL" depois.
 
 Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosUsados":["fato + veículo"],"aviso":""}`,
       },
@@ -1832,8 +1832,12 @@ Regras:
 - Se o pedido cita uma declaração/frase, só confirme se a declaração aparecer nos trechos.
 - NÃO complete lacunas, não suponha, não deduza.
 
+Classifique também o tipo do pedido:
+- "fato": o editor AFIRMA um acontecimento específico (alguém disse/fez algo, um número, um documento). Precisa de confirmação.
+- "tema": o editor só pede matéria sobre um assunto/instituição/período, sem afirmar um fato específico. Não precisa de confirmação.
+
 Responda APENAS JSON:
-{"confirmado":true|false,"oQueAsFontesDizem":"1 a 3 frases com o que de fato está nas fontes, citando o veículo","oQueFalta":"o que não foi confirmado","sugestao":"ângulo de matéria que as fontes sustentam, ou vazio"}`,
+{"tipoPedido":"fato"|"tema","confirmado":true|false,"oQueAsFontesDizem":"1 a 3 frases com o que de fato está nas fontes, citando o veículo","oQueFalta":"o que não foi confirmado","sugestao":"ângulo de matéria que as fontes sustentam, ou vazio"}`,
       },
       {
         role: 'user',
@@ -1851,11 +1855,87 @@ Responda APENAS JSON:
   }
 
   return {
+    tipoPedido: parsed.tipoPedido === 'fato' ? 'fato' : 'tema',
     confirmado: parsed.confirmado === true,
     oQueAsFontesDizem: String(parsed.oQueAsFontesDizem || '').replace(/\s+/g, ' ').trim().slice(0, 700),
     oQueFalta: String(parsed.oQueFalta || '').replace(/\s+/g, ' ').trim().slice(0, 400),
     sugestao: String(parsed.sugestao || '').replace(/\s+/g, ' ').trim().slice(0, 300),
   };
+}
+
+/**
+ * Revisão final obrigatória quando houve pesquisa: confere o texto gerado
+ * frase por frase contra os trechos das fontes e devolve a versão limpa,
+ * sem bastidor inventado, sem fala que não existe e sem número sem lastro.
+ */
+async function revisarMateriaContraFontes({ texto, fatosFontes, pedido = null, suspeitas = [] }) {
+  assertDeepseek();
+  const materia = String(texto || '').trim();
+  const blocoFatos = String(fatosFontes || '').trim();
+  if (!materia || !blocoFatos) return { problemas: [], texto: materia };
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é o editor de checagem da redação. Recebe uma matéria escrita por outro redator e os TRECHOS DAS FONTES que ele tinha.
+Sua tarefa: devolver a matéria SEM nada que as fontes não sustentem.
+
+Corte ou reescreva obrigatoriamente:
+- Fala entre aspas que não apareça literalmente nas fontes (inclusive título de artigo apresentado como fala).
+- Bastidor, clima interno, "nos bastidores", "interlocutores", "uma ala/outra ala", "aliados afirmam", "pastores reclamam", "segundo apuração" — só se estiver nas fontes.
+- Afirmação de que alguém "não se manifestou", "não tem posição oficial", "não deu detalhes" ou "segue em silêncio" sem fonte.
+- Número, data, cargo, pesquisa ou percentual que não esteja nas fontes.
+- Atribuição a jornalista, coluna, programa ou veículo que não esteja nas fontes.
+- Título que afirme algo mais forte do que as fontes sustentam (ex.: dizer que houve "racha" quando as fontes só falam de divergência).
+
+Regras da devolução:
+- NÃO acrescente informação nova, nem "para completar".
+- Mantenha o formato: 1ª linha título, corpo em parágrafos curtos, última linha as hashtags.
+- Se sobrar pouco conteúdo, entregue a matéria mais curta — texto curto e checado é melhor que texto grande e furado.
+- Mantenha o tom e o estilo do original no que for verdadeiro.
+
+Responda APENAS JSON:
+{"problemas":["trecho cortado/ajustado — motivo em poucas palavras"],"texto":"matéria revisada completa"}`,
+      },
+      {
+        role: 'user',
+        content: [
+          pedido ? `PEDIDO ORIGINAL DO EDITOR:\n${String(pedido).slice(0, 1200)}` : null,
+          `MATÉRIA A REVISAR:\n${materia.slice(0, 9000)}`,
+          `TRECHOS DAS FONTES (única base permitida):\n${blocoFatos.slice(0, 9000)}`,
+          suspeitas.length
+            ? `TRECHOS QUE O SISTEMA JÁ MARCOU COMO SUSPEITOS:\n- ${suspeitas.slice(0, 8).join('\n- ')}`
+            : null,
+          'Revise e devolva o JSON.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+    { temperature: 0.15, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { problemas: [], texto: materia };
+  }
+
+  const revisado = String(parsed.texto || '')
+    .replace(/\r\n/g, '\n')
+    .trim();
+  const problemas = (Array.isArray(parsed.problemas) ? parsed.problemas : [])
+    .map((p) => String(p || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  // Revisão que devolve quase nada provavelmente falhou — mantém o original
+  if (revisado.length < Math.min(300, materia.length * 0.35)) {
+    return { problemas, texto: materia, revisaoDescartada: true };
+  }
+  return { problemas, texto: revisado };
 }
 
 /**
@@ -1905,6 +1985,15 @@ REGRA DE OURO — só fato real (a mais importante de todas):
 - Nunca escreva que alguém "não se manifestou", "não deu detalhes" ou "segue em silêncio" se isso não estiver nas fontes.
 - Se as fontes NÃO confirmarem o fato central do pedido: NÃO escreva a matéria. Responda em 2 ou 3 frases dizendo o que as fontes realmente trazem, o que não foi confirmado, e ofereça o ângulo que dá para sustentar. Aguarde o editor decidir.
 - Preferir matéria curta e 100% checada a matéria completa com achismo.
+
+PROIBIDO INVENTAR SITUAÇÃO (erro mais comum):
+- Nada de bastidor imaginado: "nos bastidores", "segundo interlocutores", "fontes ouvidas", "aliados afirmam", "uma ala defende / outra prefere", "pastores reclamam", "cresce a insatisfação" — só se estiver escrito nas fontes.
+- Não descreva clima, reunião, conversa, briga interna, pressão ou reação que as fontes não relatem.
+- Título de artigo, manchete ou nome de coluna NÃO é declaração: nunca coloque entre aspas como se a pessoa tivesse falado.
+- Não afirme ausência de fato ("não há posição oficial", "ninguém comentou") sem fonte dizendo isso.
+- Não suba o tom do que as fontes dizem: divergência não é "racha", crítica não é "guerra", 2 pastores não são "a igreja".
+- FURO DE REPORTAGEM = escolher o melhor ângulo e o detalhe mais forte que ESTÁ nas fontes, com título afiado. Nunca é acrescentar fato novo.
+- Cada parágrafo precisa ter origem identificável nas fontes. Se você não sabe de onde veio, não escreva.
 
 ANTI-PLÁGIO:
 - Não copie frases nem a estrutura das fontes; extraia os fatos e reescreva 100% com suas palavras.
@@ -2129,6 +2218,7 @@ module.exports = {
   gerarMateriaComPesquisa,
   conversarMateria,
   checarPedidoNasFontes,
+  revisarMateriaContraFontes,
   chatCompletionStream,
   sugerirConsultasImagem,
   identificarAutorImagem,

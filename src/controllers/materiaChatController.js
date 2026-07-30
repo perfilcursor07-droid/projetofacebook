@@ -93,7 +93,7 @@ async function enviar(req, res, next) {
       texto: body.texto || body.mensagem || '',
       pesquisarWeb: body.pesquisarWeb !== false && body.pesquisarWeb !== '0',
       tom: body.tom || 'natural',
-      periodo: body.periodo || '30d',
+      periodo: body.periodo || undefined,
       palavrasChave: body.palavrasChave || null,
       onEvent: enviarEvento,
     });

@@ -333,12 +333,16 @@
                 <option value="emocional">Tom: emocional</option>
                 <option value="factual">Tom: factual</option>
               </select>
-              <select id="chat-periodo" title="Período das notícias"
+              <select id="chat-periodo" title="Só busca notícias publicadas nesse período"
                 class="rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 focus:border-emerald-500 focus:outline-none">
-                <option value="7d">7 dias</option>
-                <option value="30d" selected>30 dias</option>
-                <option value="90d">90 dias</option>
-                <option value="180d">180 dias</option>
+                <option value="24h">Hoje (24h)</option>
+                <option value="3d">Últimos 3 dias</option>
+                <option value="7d" selected>Últimos 7 dias</option>
+                <option value="15d">Últimos 15 dias</option>
+                <option value="30d">Últimos 30 dias</option>
+                <option value="60d">Últimos 60 dias</option>
+                <option value="90d">Últimos 90 dias</option>
+                <option value="180d">Últimos 180 dias</option>
               </select>
               <span id="chat-status" class="text-xs text-slate-500"></span>
               <div class="ml-auto flex items-center gap-2">

@@ -342,21 +342,21 @@
             const canArte = Boolean(item.can_edit_arte && item.matter_id);
             const matterId = item.matter_id || '';
           %>
-            <li class="agenda-row flex flex-wrap items-start gap-3 px-3 py-3 transition-colors hover:bg-slate-900/50" data-id="<%= item.id %>" data-day="<%= g.dia %>" data-status="<%= st %>" data-matter-id="<%= matterId %>">
+            <li class="agenda-row flex items-center gap-2 px-3 py-2.5 transition-colors hover:bg-slate-900/50 sm:gap-3" data-id="<%= item.id %>" data-day="<%= g.dia %>" data-status="<%= st %>" data-matter-id="<%= matterId %>">
               <% if (abaAtual === 'agendada') { %>
-                <label class="mt-5 shrink-0">
+                <label class="shrink-0 self-center">
                   <input type="checkbox" class="agenda-check rounded border-slate-600 bg-slate-950 text-amber-500 focus:ring-amber-500/30" value="<%= item.id %>" />
                 </label>
               <% } %>
-              <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border <%= st === 'publicado' ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10' %>">
-                <span class="agenda-hora-badge text-[15px] font-semibold tabular-nums <%= st === 'publicado' ? 'text-emerald-200' : 'text-amber-200' %>" data-id="<%= item.id %>"><%= horaCurta(item) %></span>
+              <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border sm:h-14 sm:w-14 <%= st === 'publicado' ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10' %>">
+                <span class="agenda-hora-badge text-[14px] font-semibold tabular-nums sm:text-[15px] <%= st === 'publicado' ? 'text-emerald-200' : 'text-amber-200' %>" data-id="<%= item.id %>"><%= horaCurta(item) %></span>
               </div>
               <% if (thumb) { %>
-                <img src="<%= thumb %>" alt="" class="agenda-thumb h-14 w-14 shrink-0 rounded-lg object-cover ring-1 ring-slate-700" data-matter-id="<%= matterId %>" />
+                <img src="<%= thumb %>" alt="" class="agenda-thumb h-12 w-12 shrink-0 rounded-lg object-cover ring-1 ring-slate-700 sm:h-14 sm:w-14" data-matter-id="<%= matterId %>" />
               <% } else { %>
-                <div class="agenda-thumb-empty flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-[10px] text-slate-500" data-matter-id="<%= matterId %>">sem foto</div>
+                <div class="agenda-thumb-empty flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-[10px] text-slate-500 sm:h-14 sm:w-14" data-matter-id="<%= matterId %>">sem foto</div>
               <% } %>
-              <div class="min-w-0 flex-1 space-y-1.5">
+              <div class="min-w-0 flex-1 space-y-1">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[uiSt] || statusClass[st] || statusClass.pendente %>"><%= statusLabels[uiSt] || statusLabels[st] || st %></span>
                   <% if (item.is_viral_origem || item.source_matter_id) { %>
@@ -369,13 +369,14 @@
                     <span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300"><%= item.matched_keyword %></span>
                   <% } %>
                 </div>
-                <a href="<%= matterId ? '/materias-ia/' + matterId : (item.post_id ? '/biblioteca/posts/' + item.post_id : '#') %>" class="block truncate text-sm font-medium text-white hover:text-amber-200"><%= titulo %></a>
-                <div class="flex flex-wrap items-center gap-2">
-                  <input type="datetime-local" class="agenda-hora rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200 <%= st === 'publicado' ? 'opacity-50' : '' %>"
+                <div class="flex min-w-0 items-center gap-2">
+                  <a href="<%= matterId ? '/materias-ia/' + matterId : (item.post_id ? '/biblioteca/posts/' + item.post_id : '#') %>" class="min-w-0 flex-1 truncate text-sm font-medium text-white hover:text-amber-200"><%= titulo %></a>
+                  <input type="datetime-local" class="agenda-hora w-[10.75rem] shrink-0 rounded-md border border-slate-700 bg-slate-950 px-1.5 py-1 text-[11px] text-slate-100 sm:w-[11.5rem] sm:px-2 sm:text-xs <%= st === 'publicado' ? 'opacity-50' : '' %>"
                     value="<%= String(item.proposed_at_local || '').slice(0, 16) %>"
                     data-id="<%= item.id %>"
                     <%= st === 'publicado' ? 'disabled' : '' %> />
                 </div>
+                <p class="agenda-hora-status hidden text-[10px] text-slate-500" data-id="<%= item.id %>"></p>
 
                 <% if (canArte && abaAtual === 'agendada') { %>
                   <details class="agenda-arte group rounded-lg border border-slate-800/80 bg-slate-950/40">
@@ -413,7 +414,7 @@
                   </details>
                 <% } %>
               </div>
-              <div class="flex w-full shrink-0 flex-wrap gap-1.5 sm:w-auto sm:justify-end">
+              <div class="flex shrink-0 flex-col flex-wrap items-end gap-1.5 self-center sm:flex-row sm:justify-end">
                 <% if (item.matter_id) { %>
                   <a href="/materias-ia/<%= item.matter_id %>" target="_blank" rel="noopener noreferrer" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white"><%= abaAtual === 'publicadas' ? 'Ver' : 'Editar' %></a>
                   <% if (st === 'pendente' || st === 'confirmado') { %>
@@ -446,11 +447,25 @@
   </div>
 
   <style>
-    .agenda-hora { color-scheme: dark; }
-    .agenda-hora::-webkit-calendar-picker-indicator {
-      position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer;
+    /* Ícone do calendário branco no tema escuro (Chrome/Edge) */
+    .agenda-hora,
+    .viral-hora {
+      color-scheme: dark;
+      color: #e2e8f0;
+      accent-color: #fbbf24;
     }
-    .viral-hora { color-scheme: dark; }
+    .agenda-hora::-webkit-calendar-picker-indicator,
+    .viral-hora::-webkit-calendar-picker-indicator {
+      cursor: pointer;
+      opacity: 1;
+      filter: invert(1) brightness(1.35);
+    }
+    /* Firefox */
+    .agenda-hora::-moz-calendar-picker-indicator,
+    .viral-hora::-moz-calendar-picker-indicator {
+      cursor: pointer;
+      filter: invert(1) brightness(1.35);
+    }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260730g"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260730h"></script>
 <%- include('partials/app-end') %>

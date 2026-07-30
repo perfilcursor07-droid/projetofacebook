@@ -1870,14 +1870,13 @@ async function gerarMateriaManual({
       ? [{ veiculo: pageName, url: null }]
       : [];
 
-  let materiaComFontes = removerFechamentoOracao(
-    montarRodapeMateriaComFontes({
-      materia: gerado.materia,
-      fontes: fontesRodape,
-      creditoImagem: creditoImagem || 'Reprodução',
-      hashtags: gerado.hashtags || [],
-    })
-  );
+  const rodape = montarRodapeMateriaComFontes({
+    materia: gerado.materia,
+    fontes: fontesRodape,
+    creditoImagem: creditoImagem || 'Reprodução',
+    hashtags: gerado.hashtags || [],
+  });
+  let materiaComFontes = removerFechamentoOracao(rodape.materia);
 
   const [matterId] = await AiMatters.create({
     user_id: userId,
@@ -1893,7 +1892,7 @@ async function gerarMateriaManual({
     contexto_apuracao: fontesPesquisa.length
       ? montarBlocoFatos(fontesPesquisa).slice(0, 8000)
       : null,
-    fonte_credito: null,
+    fonte_credito: rodape.fonteCredito || null,
     status: 'rascunho',
     tipo_publicacao: 'foto',
     imagem_url: imagemUrl && /^https?:\/\//i.test(imagemUrl) ? imagemUrl : null,
@@ -2653,10 +2652,13 @@ async function coletarFatosNaWeb({
     buscarGoogleNewsRss,
     whenParaGoogle,
     normalizarPeriodo,
+    itemDentroDoPeriodo,
+    rotuloPeriodo,
   } = require('./newsResearch');
 
   const cfgPeriodo = normalizarPeriodo(periodo || '180d');
-  const diasBrave = cfgPeriodo.horas ? Math.ceil(cfgPeriodo.horas / 24) : cfgPeriodo.dias || 180;
+  const rotulo = rotuloPeriodo(cfgPeriodo);
+  let foraDoPeriodo = 0;
 
   const queries = (Array.isArray(consultas) ? consultas : [consultas])
     .map((q) => String(q || '').replace(/\s+/g, ' ').trim())
@@ -2697,13 +2699,24 @@ async function coletarFatosNaWeb({
   for (const q of queries.slice(0, 2)) {
     if (fontes.length >= limite) break;
     try {
-      const when = whenParaGoogle(periodo || '180d');
-      emitir({ tipo: 'buscando', consulta: q });
-      const encontrados = [
+      const when = whenParaGoogle(cfgPeriodo);
+      emitir({ tipo: 'buscando', consulta: q, periodo: rotulo });
+      const brutos = [
         ...(await buscarGoogleNewsRss(q, { when })),
-        ...(await buscarBraveNews(q, diasBrave)),
+        ...(await buscarBraveNews(q, cfgPeriodo)),
       ];
-      emitir({ tipo: 'encontrados', consulta: q, total: encontrados.length });
+      const encontrados = brutos.filter((t) => {
+        if (itemDentroDoPeriodo(t, cfgPeriodo)) return true;
+        foraDoPeriodo += 1;
+        return false;
+      });
+      emitir({
+        tipo: 'encontrados',
+        consulta: q,
+        total: encontrados.length,
+        descartados: brutos.length - encontrados.length,
+        periodo: rotulo,
+      });
       for (const t of encontrados.slice(0, 12)) {
         if (fontes.length >= limite) break;
         const url = t.link;
@@ -2731,9 +2744,9 @@ async function coletarFatosNaWeb({
   // 1b) Se ainda vazio, pipeline completo (com apuração) como em Pautas com IA
   if (!fontes.length && queries[0]) {
     try {
-      emitir({ tipo: 'buscando', consulta: queries[0], profunda: true });
+      emitir({ tipo: 'buscando', consulta: queries[0], profunda: true, periodo: rotulo });
       const topicos = await pesquisarNichos(queries[0], 6, {
-        periodo: periodo || '180d',
+        periodo: cfgPeriodo,
         incluirRedesSociais: false,
         filtrarPeriodo: true,
       });
@@ -2761,7 +2774,7 @@ async function coletarFatosNaWeb({
   if (fontes.length < 2) {
     for (const q of queries.slice(0, 2)) {
       try {
-        emitir({ tipo: 'buscando', consulta: q, complementar: true });
+        emitir({ tipo: 'buscando', consulta: q, complementar: true, periodo: rotulo });
         const mais = await coletarFontesComplementares({
           titulo: q,
           resumo: String(resumoContexto || q).slice(0, 160),
@@ -2778,11 +2791,15 @@ async function coletarFatosNaWeb({
   // 3) Snippets brutos se ainda faltar volume
   if (fontes.length < 2 && queries[0]) {
     try {
-      const when = whenParaGoogle(periodo || '180d');
+      const when = whenParaGoogle(cfgPeriodo);
       const brutos = [
-        ...(await buscarBraveNews(queries[0], diasBrave)),
+        ...(await buscarBraveNews(queries[0], cfgPeriodo)),
         ...(await buscarGoogleNewsRss(queries[0], { when })),
-      ];
+      ].filter((r) => {
+        if (itemDentroDoPeriodo(r, cfgPeriodo)) return true;
+        foraDoPeriodo += 1;
+        return false;
+      });
       for (const r of brutos.slice(0, 10)) {
         if (fontes.length >= limite) break;
         const url = r.link;
@@ -2807,7 +2824,13 @@ async function coletarFatosNaWeb({
   }
 
   const resultado = fontes.slice(0, limite);
-  emitir({ tipo: 'fontes', total: resultado.length, fontes: resultado.map((f) => ({ veiculo: f.veiculo, url: f.url, titulo: f.titulo })) });
+  emitir({
+    tipo: 'fontes',
+    total: resultado.length,
+    periodo: rotulo,
+    foraDoPeriodo,
+    fontes: resultado.map((f) => ({ veiculo: f.veiculo, url: f.url, titulo: f.titulo })),
+  });
   return resultado;
 }
 

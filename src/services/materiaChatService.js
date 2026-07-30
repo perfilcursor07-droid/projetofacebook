@@ -2,7 +2,8 @@ const AiChats = require('../models/AiChats');
 const AiChatMessages = require('../models/AiChatMessages');
 const AiMatters = require('../models/AiMatters');
 
-const PERIODOS = ['7d', '30d', '90d', '180d'];
+const PERIODOS = ['24h', '3d', '7d', '15d', '30d', '60d', '90d', '180d'];
+const PERIODO_PADRAO = '7d';
 
 function erro(mensagem, status = 400) {
   const err = new Error(mensagem);
@@ -51,8 +52,15 @@ function interpretarResposta(conteudo) {
     .replace(/^["“”']+|["“”']+$/g, '')
     .trim();
 
+  // Recado da checagem nunca é matéria (não pode virar rascunho)
+  const ehRecadoDeChecagem = /^n[ãa]o achei confirma/i.test(tituloLimpo);
+
   const ehMateria =
-    restoTexto.length >= 500 && paragrafos.length >= 2 && tituloLimpo.length >= 15 && tituloLimpo.length <= 200;
+    !ehRecadoDeChecagem &&
+    restoTexto.length >= 400 &&
+    paragrafos.length >= 2 &&
+    tituloLimpo.length >= 15 &&
+    tituloLimpo.length <= 200;
 
   return {
     ehMateria,
@@ -98,6 +106,57 @@ function citacoesSemFonte(resposta, contexto) {
   return suspeitas.slice(0, 3);
 }
 
+/** Muletas de bastidor inventado — só passam se aparecerem nas fontes. */
+const EXPRESSOES_BASTIDOR = [
+  'nos bastidores',
+  'segundo interlocutores',
+  'fontes ouvidas',
+  'aliados afirmam',
+  'aliados dizem',
+  'uma ala',
+  'outra ala',
+  'reclamam',
+  'cresce a insatisfacao',
+  'nao tem posicao oficial',
+  'nao ha posicao oficial',
+  'nao se manifestou',
+  'nao deu detalhes',
+  'segue em silencio',
+  'segundo apuracao',
+  'de acordo com apuracao',
+  'conforme apurado',
+  'segundo pessoas',
+];
+
+function expressoesSemFonte(resposta, contexto) {
+  const texto = normalizarTexto(resposta);
+  const ctx = normalizarTexto(contexto);
+  return EXPRESSOES_BASTIDOR.filter((e) => texto.includes(e) && !ctx.includes(e));
+}
+
+/**
+ * Manchete de fonte usada como se fosse fala da pessoa — erro clássico
+ * (o título do artigo de opinião vira "declarou X").
+ */
+function citacoesQueSaoTitulos(resposta, fontes = []) {
+  const titulos = (Array.isArray(fontes) ? fontes : [])
+    .map((f) => normalizarTexto(f?.titulo))
+    .filter((t) => t.length >= 25);
+  if (!titulos.length) return [];
+
+  const suspeitas = [];
+  const rx = /[“"]([^”"]{25,400})[”"]/g;
+  let match;
+  while ((match = rx.exec(String(resposta || ''))) !== null) {
+    const frase = match[1].replace(/\s+/g, ' ').trim();
+    const norm = normalizarTexto(frase);
+    if (norm.length < 25) continue;
+    const bate = titulos.some((t) => t.includes(norm) || norm.includes(t));
+    if (bate) suspeitas.push(frase.length > 90 ? `${frase.slice(0, 90)}…` : frase);
+  }
+  return suspeitas.slice(0, 3);
+}
+
 function serializarMensagem(row) {
   const conteudo = String(row.content || '');
   const info = row.role === 'assistant' ? interpretarResposta(conteudo) : null;
@@ -123,7 +182,7 @@ async function listarConversas(userId) {
     titulo: c.titulo || 'Nova conversa',
     pesquisarWeb: Boolean(c.pesquisar_web),
     tom: c.tom || 'natural',
-    periodo: c.periodo || '30d',
+    periodo: c.periodo || PERIODO_PADRAO,
     totalMensagens: Number(c.total_mensagens || 0),
     lastMessageAt: c.last_message_at || c.created_at,
   }));
@@ -148,7 +207,7 @@ async function obterConversa({ userId, chatId }) {
     titulo: chat.titulo || 'Nova conversa',
     pesquisarWeb: Boolean(chat.pesquisar_web),
     tom: chat.tom || 'natural',
-    periodo: chat.periodo || '30d',
+    periodo: chat.periodo || PERIODO_PADRAO,
     mensagens: rows.map(serializarMensagem),
   };
 }
@@ -179,7 +238,7 @@ async function responder({
   texto,
   pesquisarWeb = true,
   tom = 'natural',
-  periodo = '30d',
+  periodo = PERIODO_PADRAO,
   palavrasChave = null,
   onEvent = () => {},
 }) {
@@ -190,7 +249,7 @@ async function responder({
   const pedido = String(texto || '').replace(/\s+$/g, '').trim();
   if (pedido.length < 3) throw erro('Escreva o que você quer que a IA faça', 400);
 
-  const periodoFinal = PERIODOS.includes(String(periodo)) ? String(periodo) : '30d';
+  const periodoFinal = PERIODOS.includes(String(periodo)) ? String(periodo) : PERIODO_PADRAO;
 
   let chat = chatId ? await AiChats.findByIdForUser(chatId, userId) : null;
   if (chatId && !chat) throw erro('Conversa não encontrada', 404);
@@ -300,7 +359,12 @@ async function responder({
   let blocoFatos = null;
 
   if (usarPesquisa) {
-    registrarPasso({ kind: 'pensando', texto: 'Analisando o pedido e montando as buscas…' });
+    const { rotuloPeriodo } = require('./newsResearch');
+    const janela = rotuloPeriodo(periodoFinal);
+    registrarPasso({
+      kind: 'pensando',
+      texto: `Analisando o pedido e montando as buscas (${janela})…`,
+    });
 
     let consultas = [];
     try {
@@ -329,12 +393,15 @@ async function responder({
           if (evento.tipo === 'buscando') {
             registrarPasso({
               kind: 'busca',
-              texto: `Pesquisando na web: “${evento.consulta}”`,
+              texto: `Pesquisando na web (${evento.periodo || janela}): “${evento.consulta}”`,
             });
           } else if (evento.tipo === 'encontrados') {
+            const descartados = Number(evento.descartados || 0);
             registrarPasso({
               kind: 'encontrados',
-              texto: `${evento.total} resultado(s) encontrados`,
+              texto: descartados
+                ? `${evento.total} resultado(s) no período (${descartados} fora da janela, descartados)`
+                : `${evento.total} resultado(s) encontrados`,
             });
           } else if (evento.tipo === 'lendo') {
             lidas += 1;
@@ -355,22 +422,24 @@ async function responder({
     if (fontes.length) {
       registrarPasso({
         kind: 'fontes',
-        texto: `${fontes.length} fonte(s) aproveitadas na apuração`,
+        texto: `${fontes.length} fonte(s) aproveitadas na apuração (${janela})`,
       });
-      blocoFatos = materiaIaService.montarBlocoFatos(fontes);
+      blocoFatos = `Janela da apuração: ${janela}. Não trate fato antigo como novidade.\n\n${materiaIaService.montarBlocoFatos(
+        fontes
+      )}`;
     } else {
       registrarPasso({
         kind: 'aviso',
-        texto: 'Não achei fontes novas na web para esse pedido.',
+        texto: `Não achei fontes na web nesse período (${janela}). Aumente o período ou cole o link da fonte.`,
       });
       usarPesquisa = false;
     }
 
-    // Portão anti-invenção: pedido de matéria só passa se a apuração confirmar
-    if (pedeMateria && !usuarioInsiste) {
+    // Portão anti-invenção: pedido que AFIRMA um fato só passa se a apuração confirmar
+    if (!pedidoDeAjuste && !usuarioInsiste) {
       let checagem = null;
       if (blocoFatos) {
-        registrarPasso({ kind: 'checagem', texto: 'Checando se as fontes confirmam o pedido…' });
+        registrarPasso({ kind: 'checagem', texto: 'Checando o pedido contra as fontes…' });
         try {
           checagem = await deepseekService.checarPedidoNasFontes({ pedido, fatosFontes: blocoFatos });
         } catch (err) {
@@ -378,8 +447,9 @@ async function responder({
         }
       }
 
+      const afirmaFato = !checagem || checagem.tipoPedido === 'fato';
       const naoConfirmado = !blocoFatos || (checagem && checagem.confirmado === false);
-      if (naoConfirmado) {
+      if (afirmaFato && naoConfirmado && pedeMateria) {
         registrarPasso({
           kind: 'aviso',
           texto: 'A apuração não confirmou o fato do pedido — matéria não escrita.',
@@ -391,7 +461,12 @@ async function responder({
       }
 
       if (checagem?.confirmado) {
-        registrarPasso({ kind: 'fontes', texto: 'Fato confirmado na apuração' });
+        registrarPasso({ kind: 'fontes', texto: 'Fato do pedido confirmado na apuração' });
+      } else if (checagem?.tipoPedido === 'tema') {
+        registrarPasso({
+          kind: 'checagem',
+          texto: 'Pedido de tema: a matéria vai sair só com o que está nas fontes',
+        });
       }
     }
   }
@@ -422,30 +497,83 @@ async function responder({
     throw err;
   }
 
-  // Aspas e nomes que não aparecem na apuração = risco de fala inventada
-  try {
-    const { detectarCitacoesInventadas } = require('./editorialGuidelinesFb');
-    const contexto = [blocoFatos || '', pedido, ...historico.map((h) => h.content || '')].join('\n');
+  const contexto = [blocoFatos || '', pedido, ...historico.map((h) => h.content || '')].join('\n');
 
-    const falasSemFonte = citacoesSemFonte(resposta, contexto);
-    if (falasSemFonte.length) {
+  /** Trechos que a checagem local considera sem lastro nas fontes. */
+  const levantarSuspeitas = (texto) => {
+    const lista = [];
+    try {
+      const { detectarCitacoesInventadas } = require('./editorialGuidelinesFb');
+      for (const fala of citacoesSemFonte(texto, contexto)) lista.push(`fala sem fonte: “${fala}”`);
+      for (const expr of expressoesSemFonte(texto, contexto)) {
+        lista.push(`bastidor sem fonte: "${expr}"`);
+      }
+      for (const titulo of citacoesQueSaoTitulos(texto, fontes)) {
+        lista.push(`manchete usada como fala (não é declaração): “${titulo}”`);
+      }
+      for (const nome of detectarCitacoesInventadas(texto, contexto)) {
+        lista.push(`nome citado fora da apuração: ${nome}`);
+      }
+    } catch (err) {
+      console.warn('[materia-chat] checagem local:', err.message);
+    }
+    return lista;
+  };
+
+  const ehMateriaGerada = interpretarResposta(resposta).ehMateria;
+
+  // Rede de segurança: matéria sem nenhuma fonte, com pesquisa pedida, não vale
+  if (ehMateriaGerada && pesquisarWeb && !pediuSemPesquisa && !blocoFatos && !usuarioInsiste) {
+    registrarPasso({
+      kind: 'aviso',
+      texto: 'Matéria descartada: a IA escreveu sem nenhuma fonte apurada.',
+    });
+    const aviso = respostaSemConfirmacao(null, []);
+    onEvent({ tipo: 'delta', texto: `\n\n${aviso}` });
+    return finalizar(aviso, { fontesUsadas: [], usouWeb: false });
+  }
+
+  // Revisão obrigatória do texto contra as fontes quando houve pesquisa
+  if (ehMateriaGerada && blocoFatos) {
+    registrarPasso({ kind: 'checagem', texto: 'Revisando a matéria frase por frase contra as fontes…' });
+    try {
+      const revisao = await deepseekService.revisarMateriaContraFontes({
+        texto: resposta,
+        fatosFontes: blocoFatos,
+        pedido,
+        suspeitas: levantarSuspeitas(resposta),
+      });
+      if (revisao.revisaoDescartada) {
+        registrarPasso({
+          kind: 'aviso',
+          texto: 'A revisão devolveu texto incompleto — mantive o original, confira com atenção.',
+        });
+      } else if (revisao.texto && revisao.texto !== resposta) {
+        resposta = revisao.texto;
+        registrarPasso({
+          kind: 'checagem',
+          texto: revisao.problemas.length
+            ? `Revisão aplicada — ${revisao.problemas.length} trecho(s) sem lastro corrigidos`
+            : 'Revisão aplicada no texto final',
+        });
+        for (const p of revisao.problemas.slice(0, 5)) {
+          registrarPasso({ kind: 'aviso', texto: `Cortado na checagem: ${p}` });
+        }
+      } else {
+        registrarPasso({ kind: 'checagem', texto: 'Revisão sem correções: texto bate com as fontes' });
+      }
+    } catch (err) {
+      console.warn('[materia-chat] revisão:', err.message);
       registrarPasso({
         kind: 'aviso',
-        texto: `Fala(s) que não achei nas fontes — confira antes de publicar: ${falasSemFonte
-          .map((f) => `“${f}”`)
-          .join(' / ')}`,
+        texto: 'Não consegui rodar a revisão contra as fontes — confira o texto antes de publicar.',
       });
     }
+  }
 
-    const nomesSuspeitos = detectarCitacoesInventadas(resposta, contexto);
-    if (nomesSuspeitos.length) {
-      registrarPasso({
-        kind: 'aviso',
-        texto: `Nome(s) citados que não estão na apuração: ${nomesSuspeitos.join(', ')}`,
-      });
-    }
-  } catch (err) {
-    console.warn('[materia-chat] checagem de citações:', err.message);
+  // Última passada local no texto que vai ficar salvo
+  for (const suspeita of levantarSuspeitas(resposta)) {
+    registrarPasso({ kind: 'aviso', texto: `Confira antes de publicar — ${suspeita}` });
   }
 
   return finalizar(resposta, { fontesUsadas: fontes, usouWeb: usarPesquisa });
@@ -493,12 +621,13 @@ async function salvarMateriaDoChat({
     pageId = page?.id || null;
   }
 
-  const materia = montarRodapeMateriaComFontes({
+  const rodape = montarRodapeMateriaComFontes({
     materia: corpo,
     fontes,
     creditoImagem: creditoImagem || 'Reprodução',
     hashtags: info.hashtags || parseJson(row.hashtags, []),
   });
+  const materia = rodape.materia;
 
   const titulo = info.titulo || row.titulo || 'Matéria do chat';
   const fontePrincipal = Array.isArray(fontes) ? fontes[0] : null;
@@ -517,7 +646,7 @@ async function salvarMateriaDoChat({
     contexto_apuracao: fontes.length
       ? fontes.map((f) => `${f.veiculo || 'Web'} — ${f.url || ''}`).join('\n').slice(0, 8000)
       : null,
-    fonte_credito: null,
+    fonte_credito: rodape.fonteCredito || null,
     status: 'rascunho',
     tipo_publicacao: 'foto',
     imagem_url: imagemUrl && /^https?:\/\//i.test(imagemUrl) ? imagemUrl : null,

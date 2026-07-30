@@ -24,7 +24,7 @@ exports.up = async function up(knex) {
       table.string('titulo', 180).nullable();
       table.boolean('pesquisar_web').notNullable().defaultTo(true);
       table.string('tom', 30).notNullable().defaultTo('natural');
-      table.string('periodo', 10).notNullable().defaultTo('30d');
+      table.string('periodo', 10).notNullable().defaultTo('7d');
       table.datetime('last_message_at').nullable();
       table.timestamps(true, true);
       table.index(['user_id', 'last_message_at'], 'ai_chats_user_last_msg_idx');

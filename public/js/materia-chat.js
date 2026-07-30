@@ -480,7 +480,7 @@
       state.pesquisarWeb = chat.pesquisarWeb !== false;
       aplicarToggleWeb();
       if (el.tom) el.tom.value = chat.tom || 'natural';
-      if (el.periodo) el.periodo.value = chat.periodo || '30d';
+      if (el.periodo) el.periodo.value = chat.periodo || '7d';
       renderMensagens(chat.mensagens || []);
       renderConversas();
       setStatus('');
@@ -501,6 +501,8 @@
     el.toggleWeb.firstElementChild.className = on
       ? 'h-1.5 w-1.5 rounded-full bg-emerald-400'
       : 'h-1.5 w-1.5 rounded-full bg-slate-600';
+    // Período só faz sentido com a busca ligada
+    el.periodo?.classList.toggle('hidden', !on);
   }
 
   function setEnviando(on) {
@@ -522,7 +524,12 @@
     el.input.value = '';
     el.input.placeholder = 'Peça a matéria, tire uma dúvida ou peça um ajuste (Enter envia, Shift+Enter pula linha)';
     setEnviando(true);
-    setStatus(state.pesquisarWeb ? 'Pesquisando na internet…' : 'Escrevendo…');
+    const janela = el.periodo?.selectedOptions?.[0]?.textContent?.trim() || '';
+    setStatus(
+      state.pesquisarWeb
+        ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''}…`
+        : 'Escrevendo…'
+    );
 
     el.mensagens.appendChild(blocoUsuario({ content: texto }));
     scrollFim();
@@ -549,7 +556,7 @@
           texto,
           pesquisarWeb: state.pesquisarWeb,
           tom: el.tom?.value || 'natural',
-          periodo: el.periodo?.value || '30d',
+          periodo: el.periodo?.value || '7d',
         }),
       });
 

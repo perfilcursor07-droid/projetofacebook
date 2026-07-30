@@ -65,54 +65,116 @@ function extrairItensRss(xml) {
   return itens;
 }
 
+const PERIODO_MAX_DIAS = 365;
+
 function normalizarPeriodo(valor) {
+  // Aceita já-normalizado ({ dias } / { horas }) para poder repassar entre serviços
+  if (valor && typeof valor === 'object') {
+    const horas = Number(valor.horas) || 0;
+    const dias = Number(valor.dias) || 0;
+    if (horas > 0) {
+      return {
+        horas: Math.min(horas, 24 * PERIODO_MAX_DIAS),
+        dias: dias || Math.ceil(horas / 24),
+      };
+    }
+    if (dias > 0) return { dias: Math.min(dias, PERIODO_MAX_DIAS) };
+    return { dias: 1 };
+  }
   const str = String(valor ?? '24h').toLowerCase().trim();
-  if (str === '24h' || str === '24') return { horas: 24, dias: 1 };
+  if (str === 'hoje' || str === '24h' || str === '24' || str === '1d') return { horas: 24, dias: 1 };
+  if (str === '48h') return { horas: 48, dias: 2 };
   if (str === '3d' || str === '3') return { dias: 3 };
-  if (str === '7d' || str === '7') return { dias: 7 };
+  if (str === '7d' || str === '7' || str === '1s') return { dias: 7 };
+  if (str === '15d' || str === '15') return { dias: 15 };
   if (str === '30d' || str === '1m' || str === '30') return { dias: 30 };
+  if (str === '60d' || str === '2m' || str === '60') return { dias: 60 };
   if (str === '90d' || str === '3m' || str === '90') return { dias: 90 };
   if (str === '180d' || str === '6m' || str === '180') return { dias: 180 };
+  if (str === '365d' || str === '1a' || str === '1y' || str === '12m') return { dias: 365 };
   const m = str.match(/^(\d+)\s*(d|h|m)?$/);
   if (m) {
     const n = parseInt(m[1], 10);
-    if (m[2] === 'h') return { horas: Math.min(Math.max(n, 1), 24 * 180), dias: Math.ceil(n / 24) };
-    if (m[2] === 'm') return { dias: Math.min(Math.max(n * 30, 1), 180) };
-    return { dias: Math.min(Math.max(n || 1, 1), 180) };
+    if (m[2] === 'h') {
+      return { horas: Math.min(Math.max(n, 1), 24 * PERIODO_MAX_DIAS), dias: Math.ceil(n / 24) };
+    }
+    if (m[2] === 'm') return { dias: Math.min(Math.max(n * 30, 1), PERIODO_MAX_DIAS) };
+    return { dias: Math.min(Math.max(n || 1, 1), PERIODO_MAX_DIAS) };
   }
   return { dias: 1 };
 }
 
-/** Operador when: do Google News conforme o período (máx. ~1 ano na query; filtro fino depois). */
-function whenParaGoogle(periodo) {
+/** Dias equivalentes do período (usa horas quando for janela curta). */
+function diasDoPeriodo(periodo) {
   const cfg = typeof periodo === 'object' ? periodo : normalizarPeriodo(periodo);
-  const dias = cfg.horas ? Math.ceil(cfg.horas / 24) : cfg.dias || 1;
+  return cfg.horas ? Math.max(1, Math.ceil(cfg.horas / 24)) : cfg.dias || 1;
+}
+
+/** Momento mais antigo aceito para uma notícia dentro do período. */
+function limiteDoPeriodo(periodo) {
+  const cfg = typeof periodo === 'object' ? periodo : normalizarPeriodo(periodo);
+  return cfg.horas
+    ? Date.now() - cfg.horas * 3600000
+    : Date.now() - (cfg.dias || 1) * MS_DIA;
+}
+
+/** Texto do período para status/prompt (ex.: "últimas 24h", "últimos 60 dias"). */
+function rotuloPeriodo(periodo) {
+  const cfg = typeof periodo === 'object' ? periodo : normalizarPeriodo(periodo);
+  if (cfg.horas && cfg.horas <= 24) return 'últimas 24h';
+  if (cfg.horas && cfg.horas < 48) return `últimas ${cfg.horas}h`;
+  const dias = diasDoPeriodo(cfg);
+  if (dias === 1) return 'últimas 24h';
+  if (dias === 7) return 'últimos 7 dias';
+  return `últimos ${dias} dias`;
+}
+
+/** Operador when: do Google News conforme o período. */
+function whenParaGoogle(periodo) {
+  const dias = diasDoPeriodo(periodo);
   if (dias <= 1) return '1d';
   if (dias <= 3) return '3d';
   if (dias <= 7) return '7d';
+  if (dias <= 16) return '15d';
   if (dias <= 31) return '1m';
-  if (dias <= 180) return '1y';
+  if (dias <= 62) return '2m';
+  if (dias <= 93) return '3m';
+  if (dias <= 186) return '6m';
   return '1y';
 }
 
-/** Freshness da Brave News API. */
+function dataIso(ts) {
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+/**
+ * Freshness da Brave News API. Acima de 1 mês usa intervalo de datas
+ * (pd/pw/pm/py são grosseiros e "py" traria notícia de 1 ano).
+ */
 function freshnessBrave(periodo) {
-  const cfg = typeof periodo === 'object' ? periodo : normalizarPeriodo(periodo);
-  const dias = cfg.horas ? Math.ceil(cfg.horas / 24) : cfg.dias || 1;
+  const dias = diasDoPeriodo(periodo);
   if (dias <= 1) return 'pd';
   if (dias <= 7) return 'pw';
   if (dias <= 31) return 'pm';
-  return 'py';
+  if (dias >= 360) return 'py';
+  return `${dataIso(Date.now() - dias * MS_DIA)}to${dataIso(Date.now())}`;
 }
 
 function itemEhRecente(item, periodo) {
-  const cfg = typeof periodo === 'object' ? periodo : normalizarPeriodo(periodo);
-  const limite = cfg.horas
-    ? Date.now() - cfg.horas * 3600000
-    : Date.now() - (cfg.dias || 1) * MS_DIA;
+  const limite = limiteDoPeriodo(periodo);
   const ts = item.dataTimestamp || parsearDataPub(item.data);
   if (!ts) return Boolean(item.recente || item.emAlta);
   return ts >= limite;
+}
+
+/**
+ * Filtro tolerante: só descarta quando a data é conhecida e está fora da janela.
+ * Item sem data continua valendo (muitos portais não expõem pubDate).
+ */
+function itemDentroDoPeriodo(item, periodo) {
+  const ts = item?.dataTimestamp || parsearDataPub(item?.data);
+  if (!ts) return true;
+  return ts >= limiteDoPeriodo(periodo);
 }
 
 function titulosSimilares(a, b) {
@@ -195,10 +257,10 @@ async function buscarGoogleNewsEmAlta(termo) {
   }
 }
 
-async function buscarBraveNews(termo, dias = 1) {
+async function buscarBraveNews(termo, periodo = 1) {
   if (!env.braveSearchApiKey) return [];
   try {
-    const freshness = freshnessBrave({ dias });
+    const freshness = freshnessBrave(periodo);
     const { data } = await axios.get('https://api.search.brave.com/res/v1/news/search', {
       params: { q: termo, count: 20, freshness, country: 'BR', search_lang: 'pt-br' },
       headers: {
@@ -212,8 +274,8 @@ async function buscarBraveNews(termo, dias = 1) {
       titulo: limparTitulo(r.title),
       link: r.url,
       resumo: limparResumo(r.description),
-      data: r.age || r.page_age || null,
-      dataTimestamp: 0,
+      data: r.page_age || r.age || null,
+      dataTimestamp: parsearDataPub(r.page_age),
       nicho: termo,
       fonte: 'Brave News',
       veiculo: r.meta_url?.hostname || 'Brave',
@@ -238,8 +300,8 @@ async function buscarBraveNews(termo, dias = 1) {
           titulo: limparTitulo(r.title),
           link: r.url,
           resumo: limparResumo(r.description),
-          data: r.age || r.page_age || null,
-          dataTimestamp: 0,
+          data: r.page_age || r.age || null,
+          dataTimestamp: parsearDataPub(r.page_age),
           nicho: termo,
           fonte: 'Brave News',
           veiculo: r.meta_url?.hostname || 'Brave',
@@ -332,7 +394,7 @@ async function pesquisarNichos(palavrasChave, quantidadePorNicho = 8, opcoes = {
     }
     lotes.push(buscarGoogleNewsRss(termo, { when }));
     lotes.push(buscarGoogleNewsEmAlta(termo));
-    lotes.push(buscarBraveNews(termo, periodo.dias || 1));
+    lotes.push(buscarBraveNews(termo, periodo));
     if (incluirRedes) lotes.push(buscarSerperRedes(termo));
   }
 
@@ -384,9 +446,13 @@ module.exports = {
   buscarBraveNews,
   buscarSerperRedes,
   itemEhRecente,
+  itemDentroDoPeriodo,
   titulosSimilares,
   deduplicarTopicos,
   normalizarPeriodo,
+  diasDoPeriodo,
+  limiteDoPeriodo,
+  rotuloPeriodo,
   whenParaGoogle,
   freshnessBrave,
 };

@@ -365,7 +365,9 @@
     if (!el) return;
     el.textContent = text || '';
     el.className =
-      'agenda-hora-status text-[10px] ' + (isError ? 'text-rose-300' : 'text-emerald-300/90');
+      'agenda-hora-status text-[10px] ' +
+      (text ? '' : 'hidden ') +
+      (isError ? 'text-rose-300' : 'text-emerald-300/90');
   }
 
   applyMinToHoraInputs();
@@ -378,6 +380,13 @@
     const id = Number(input.dataset.id);
     const value = input.value;
     if (!id || !value) return;
+
+    // Fecha o popup nativo do datetime-local após escolher (Chrome/Edge deixam aberto)
+    try {
+      input.blur();
+    } catch {
+      /* ignore */
+    }
 
     applyMinToHoraInputs();
     if (input.min && value < input.min) {
@@ -402,6 +411,16 @@
         alert(err.message);
       }
     }, 400);
+  });
+
+  // Fecha o picker também ao pressionar Enter / Escape
+  listEl?.addEventListener('keydown', (e) => {
+    const input = e.target.closest?.('.agenda-hora');
+    if (!input) return;
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault();
+      input.blur();
+    }
   });
 
   /* ——— Título + imagem (mesmas APIs de /materias-ia) ——— */

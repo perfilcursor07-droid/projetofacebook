@@ -747,8 +747,51 @@ function converterCreditosParaJm(materia, { fonteUrl, autorArtigo } = {}) {
 }
 
 /**
+ * Nome curto do veículo para o rodapé "Fonte: Globo, UOL" (sem domínio/URL).
+ */
+function nomeCurtoFonte(veiculo, url) {
+  const v = String(veiculo || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  let host = '';
+  try {
+    host = new URL(String(url || '').trim()).hostname.replace(/^www\d*\./i, '').toLowerCase();
+  } catch {
+    if (/\./.test(v)) host = v.replace(/^https?:\/\//i, '').replace(/^www\d*\./i, '').toLowerCase();
+  }
+  const blob = `${host} ${v}`.toLowerCase();
+
+  if (/\bg1\b/.test(blob) || host.startsWith('g1.')) return 'G1';
+  if (/folha/.test(blob)) return 'Folha';
+  if (/\buol\b/.test(blob) || /(^|\.)uol\./.test(host)) return 'UOL';
+  if (/oglobo|globo\.com/.test(blob) || /\bglobo\b/.test(blob)) return 'Globo';
+  if (/estadao|estadão/.test(blob)) return 'Estadão';
+  if (/\bcnn\b/.test(blob)) return 'CNN';
+  if (/\bbbc\b/.test(blob)) return 'BBC';
+  if (/veja\.abril|\bveja\b/.test(blob)) return 'Veja';
+  if (/gazetadopovo|gazeta do povo/.test(blob)) return 'Gazeta do Povo';
+  if (/brasil247|brasil\s*247/.test(blob)) return 'Brasil 247';
+  if (/metropoles|metr[oó]poles/.test(blob)) return 'Metrópoles';
+  if (/poder360/.test(blob)) return 'Poder360';
+  if (/exame/.test(blob)) return 'Exame';
+  if (/terra\.com|\bterra\b/.test(blob)) return 'Terra';
+  if (/r7\.com|\br7\b/.test(blob)) return 'R7';
+  if (/band\.|bandnews/.test(blob)) return 'Band';
+  if (/jetss/.test(blob)) return 'Jetss';
+
+  const fromUrl = nomeSiteDeUrl(url);
+  if (fromUrl && !/\.(com|br|org|net|online)\b/i.test(fromUrl)) return fromUrl;
+
+  if (v && !/\.(com|br|org|net)\b/i.test(v) && !/^https?:\/\//i.test(v)) {
+    return v.replace(/^O\s+/i, '').slice(0, 40);
+  }
+  return fromUrl || v.slice(0, 40) || 'Web';
+}
+
+/**
  * Rodapé organizado p/ matéria manual com pesquisa:
- * corpo + Fonte: (lista) + Foto: + hashtags — sem colar tudo numa linha.
+ * - no conteúdo: "Fonte: Globo, UOL" (só nomes) + Foto + hashtags — sem URL
+ * - em fonteCredito: lista com links para o campo Fonte/crédito
  */
 function montarRodapeMateriaComFontes({
   materia,
@@ -763,24 +806,33 @@ function montarRodapeMateriaComFontes({
     .replace(/(?:^|\n+)(?:Fonte|Fontes|Foto)\s*:\s*[^\n]*/gi, '\n')
     .replace(/(?:^|\n+)Por\s+[^\n]+?\s*[—\-–]\s*Site\s*:[^\n]*/gi, '\n')
     .replace(/(?:^|\n+)[•\*]\s*[^\n]+?\s*[—\-–]\s*https?:\/\/[^\n]+/gi, '\n')
+    .replace(/https?:\/\/[^\s)\]>,"']+/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
   const lista = Array.isArray(fontes) ? fontes.filter(Boolean) : [];
-  const linhasFonte = [];
-  const vistos = new Set();
+  const nomes = [];
+  const linhasCredito = [];
+  const vistosNome = new Set();
+  const vistosUrl = new Set();
+
   for (const f of lista.slice(0, 5)) {
     const url = String(f.url || '').trim();
-    let nome = String(f.veiculo || '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!nome || /^(web|fonte|site|noticia|notícias|noticias)$/i.test(nome)) {
-      nome = nomeSiteDeUrl(url) || nome || 'Web';
+    const nome = nomeCurtoFonte(f.veiculo, url);
+    const nomeKey = nome.toLowerCase();
+    if (nome && !vistosNome.has(nomeKey)) {
+      vistosNome.add(nomeKey);
+      nomes.push(nome);
     }
-    const key = (url || nome).toLowerCase();
-    if (!key || vistos.has(key)) continue;
-    vistos.add(key);
-    linhasFonte.push(url ? `• ${nome} — ${url}` : `• ${nome}`);
+    if (url && /^https?:\/\//i.test(url)) {
+      const urlKey = url.replace(/\/$/, '').toLowerCase();
+      if (!vistosUrl.has(urlKey)) {
+        vistosUrl.add(urlKey);
+        linhasCredito.push(`• ${nome} — ${url}`);
+      }
+    } else if (nome && !linhasCredito.some((l) => l === `• ${nome}`)) {
+      linhasCredito.push(`• ${nome}`);
+    }
   }
 
   const fotoRaw = limparCreditoAutor(creditoImagem);
@@ -791,8 +843,8 @@ function montarRodapeMateriaComFontes({
 
   const parts = [];
   if (cleanBody) parts.push(cleanBody);
-  if (linhasFonte.length) {
-    parts.push(`Fonte:\n${linhasFonte.join('\n')}`);
+  if (nomes.length) {
+    parts.push(`Fonte: ${nomes.join(', ')}`);
   }
   parts.push(`Foto: ${foto}`);
 
@@ -801,7 +853,16 @@ function montarRodapeMateriaComFontes({
   );
   if (tagLine) parts.push(tagLine);
 
-  return sanitizeFacebookMentions(parts.join('\n\n').trim());
+  const fonteCreditoParts = [];
+  if (linhasCredito.length) {
+    fonteCreditoParts.push(`Fonte:\n${linhasCredito.join('\n')}`);
+  }
+  fonteCreditoParts.push(`(Foto: ${foto})`);
+
+  return {
+    materia: sanitizeFacebookMentions(parts.join('\n\n').trim()),
+    fonteCredito: fonteCreditoParts.join('\n').trim().slice(0, 2000),
+  };
 }
 
 function anexarCreditosFontes(
