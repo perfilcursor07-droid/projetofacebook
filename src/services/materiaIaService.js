@@ -2634,7 +2634,17 @@ async function coletarFatosNaWeb({
   max = 5,
   resumoContexto = null,
   logPrefix = '[pesquisa-web]',
+  onProgress = null,
 } = {}) {
+  // Usado pelo chat de matérias para mostrar "buscando / encontrados / lendo".
+  const emitir = (evento) => {
+    if (typeof onProgress !== 'function') return;
+    try {
+      onProgress(evento);
+    } catch {
+      /* nunca quebrar a pesquisa por causa do log */
+    }
+  };
   const { coletarFontesComplementares, extrairMetadadosArtigo } = require('./articleSource');
   const {
     pesquisarNichos,
@@ -2688,16 +2698,19 @@ async function coletarFatosNaWeb({
     if (fontes.length >= limite) break;
     try {
       const when = whenParaGoogle(periodo || '180d');
+      emitir({ tipo: 'buscando', consulta: q });
       const encontrados = [
         ...(await buscarGoogleNewsRss(q, { when })),
         ...(await buscarBraveNews(q, diasBrave)),
       ];
+      emitir({ tipo: 'encontrados', consulta: q, total: encontrados.length });
       for (const t of encontrados.slice(0, 12)) {
         if (fontes.length >= limite) break;
         const url = t.link;
         if (!url || normalizarUrlFonte(url) === urlExcluida) continue;
         let meta = null;
         try {
+          emitir({ tipo: 'lendo', url, veiculo: t.veiculo || t.fonte || null, titulo: t.titulo || null });
           meta = await extrairMetadadosArtigo(url);
         } catch {
           /* ignore */
@@ -2718,6 +2731,7 @@ async function coletarFatosNaWeb({
   // 1b) Se ainda vazio, pipeline completo (com apuração) como em Pautas com IA
   if (!fontes.length && queries[0]) {
     try {
+      emitir({ tipo: 'buscando', consulta: queries[0], profunda: true });
       const topicos = await pesquisarNichos(queries[0], 6, {
         periodo: periodo || '180d',
         incluirRedesSociais: false,
@@ -2747,6 +2761,7 @@ async function coletarFatosNaWeb({
   if (fontes.length < 2) {
     for (const q of queries.slice(0, 2)) {
       try {
+        emitir({ tipo: 'buscando', consulta: q, complementar: true });
         const mais = await coletarFontesComplementares({
           titulo: q,
           resumo: String(resumoContexto || q).slice(0, 160),
@@ -2791,7 +2806,9 @@ async function coletarFatosNaWeb({
     }
   }
 
-  return fontes.slice(0, limite);
+  const resultado = fontes.slice(0, limite);
+  emitir({ tipo: 'fontes', total: resultado.length, fontes: resultado.map((f) => ({ veiculo: f.veiculo, url: f.url, titulo: f.titulo })) });
+  return resultado;
 }
 
 /** Bloco de fatos que vai no prompt do DeepSeek. */
@@ -2981,4 +2998,5 @@ module.exports = {
   resolvePage,
   enriquecerMateriaComWeb,
   coletarFatosNaWeb,
+  montarBlocoFatos,
 };

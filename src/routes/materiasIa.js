@@ -1,8 +1,18 @@
 const express = require('express');
 const controller = require('../controllers/materiasIaController');
+const chatController = require('../controllers/materiaChatController');
 const { uploadMatterImage } = require('../middleware/uploadMatterImage');
 
 const router = express.Router();
+
+// Chat de matérias (/conteudo → Matéria manual)
+router.get('/chat/conversas', chatController.listar);
+router.post('/chat/conversas', chatController.criar);
+router.get('/chat/conversas/:id', chatController.obter);
+router.patch('/chat/conversas/:id', chatController.renomear);
+router.delete('/chat/conversas/:id', chatController.excluir);
+router.post('/chat/conversas/:id/mensagens', chatController.enviar);
+router.post('/chat/mensagens/:messageId/materia', chatController.salvarMateria);
 
 router.post('/pesquisar', controller.pesquisar);
 router.post('/em-alta', controller.emAlta);

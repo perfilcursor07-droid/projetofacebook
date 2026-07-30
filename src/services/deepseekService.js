@@ -60,6 +60,77 @@ async function chatCompletion(messages, { temperature = 0.78, json = true, think
   return raw;
 }
 
+/**
+ * Igual ao chatCompletion, mas em streaming (SSE da DeepSeek).
+ * Chama onDelta(pedaco) a cada token e devolve o texto completo.
+ * Em qualquer falha de stream, cai para a chamada normal.
+ */
+async function chatCompletionStream(
+  messages,
+  { temperature = 0.75, onDelta = null, thinking = false, timeout = 180_000 } = {}
+) {
+  assertDeepseek();
+  const body = {
+    model: DEEPSEEK_MODEL,
+    temperature,
+    messages,
+    stream: true,
+  };
+  if (String(DEEPSEEK_MODEL).includes('v4')) {
+    body.thinking = { type: thinking ? 'enabled' : 'disabled' };
+    if (thinking) body.reasoning_effort = 'high';
+  }
+
+  let full = '';
+  try {
+    const response = await axios.post(DEEPSEEK_URL, body, {
+      headers: {
+        Authorization: `Bearer ${env.deepseekApiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      responseType: 'stream',
+      timeout,
+    });
+
+    await new Promise((resolve, reject) => {
+      let buffer = '';
+      response.data.on('data', (chunk) => {
+        buffer += chunk.toString('utf8');
+        const linhas = buffer.split('\n');
+        buffer = linhas.pop() || '';
+        for (const linha of linhas) {
+          const l = linha.trim();
+          if (!l.startsWith('data:')) continue;
+          const payload = l.slice(5).trim();
+          if (!payload || payload === '[DONE]') continue;
+          try {
+            const json = JSON.parse(payload);
+            const delta = json?.choices?.[0]?.delta?.content || '';
+            if (delta) {
+              full += delta;
+              if (typeof onDelta === 'function') onDelta(delta);
+            }
+          } catch {
+            /* pedaço incompleto — ignora */
+          }
+        }
+      });
+      response.data.on('end', resolve);
+      response.data.on('error', reject);
+    });
+  } catch (err) {
+    console.warn('[deepseek-stream] falhou, usando modo normal:', err.message);
+    full = '';
+  }
+
+  if (full.trim()) return full.trim();
+
+  const raw = await chatCompletion(messages, { temperature, json: false, thinking });
+  if (typeof onDelta === 'function') onDelta(raw);
+  return String(raw || '').trim();
+}
+
 function parseArtigoJson(raw) {
   let parsed;
   try {
@@ -1737,6 +1808,88 @@ Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosU
 }
 
 /**
+ * Conversa do chat de matérias (/conteudo → Matéria manual).
+ * Mantém o histórico, usa os fatos pesquisados na web e responde em texto
+ * corrido (streaming), do jeito que o usuário lê na tela — sem JSON.
+ */
+async function conversarMateria({
+  pedido,
+  historico = [],
+  fatosFontes = null,
+  tom = 'natural',
+  onDelta = null,
+}) {
+  assertDeepseek();
+  const texto = String(pedido || '').trim();
+  if (!texto) {
+    const err = new Error('Escreva o que você quer que a IA faça');
+    err.status = 400;
+    throw err;
+  }
+
+  const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
+  const tomDesc = TITULO_TOMES[tomKey];
+  const blocoFatos = String(fatosFontes || '').trim();
+
+  const system = `Você é repórter e redator de uma Página de notícias no Facebook/Instagram, conversando com o editor num chat.
+
+${blocoEstiloNewsGospel()}
+
+COMO RESPONDER:
+- Se o editor pedir uma MATÉRIA (ou pedir para ajustar/refazer a matéria anterior): entregue a matéria pronta em texto puro.
+  · 1ª linha = TÍTULO (máx. 110 caracteres), sem "Título:" e sem aspas em volta.
+  · Depois o corpo em parágrafos curtos separados por linha em branco.
+  · Pode usar subtítulos curtos para organizar blocos (ex.: "O que diz o decreto", "A reação do governo").
+  · Feche com uma linha de hashtags (3 a 6), começando com #.
+  · NÃO escreva bloco "Fontes:", "Fonte:", "Foto:" nem URLs no fim — o sistema monta isso ao salvar.
+- Se o editor fizer uma PERGUNTA (ex.: "onde ele falou isso?", "qual a fonte?"): responda direto e curto, citando os veículos das fontes. Não escreva matéria nesse caso.
+- Se o editor pedir um ajuste ("deixe mais curto", "acrescente X", "troque o título"): reescreva a MATÉRIA INTEIRA já ajustada, não só o trecho.
+
+REGRA DE OURO — só fato real:
+- Use apenas o que estiver no pedido do editor, no histórico da conversa e nos TRECHOS DAS FONTES.
+- É PROIBIDO inventar números, pesquisas, datas, cargos ou falas.
+- Todo dado numérico ou fala entre aspas precisa vir de uma fonte; atribua ("segundo o G1", "pesquisa Quaest de julho").
+- Se as fontes não confirmarem o que foi pedido, diga isso com clareza em vez de inventar.
+
+ANTI-PLÁGIO:
+- Não copie frases nem a estrutura das fontes; extraia os fatos e reescreva 100% com suas palavras.
+
+FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.`;
+
+  const messages = [{ role: 'system', content: system }];
+
+  for (const m of (Array.isArray(historico) ? historico : []).slice(-8)) {
+    const role = m?.role === 'assistant' ? 'assistant' : 'user';
+    const content = String(m?.content || '').trim();
+    if (content) messages.push({ role, content: content.slice(0, 6000) });
+  }
+
+  messages.push({
+    role: 'user',
+    content: [
+      texto.slice(0, 5000),
+      `Tom editorial: ${tomDesc} [chave: ${tomKey}]`,
+      blocoFatos
+        ? `TRECHOS DAS FONTES PESQUISADAS AGORA (use só fato verificável):\n${blocoFatos.slice(0, 9000)}`
+        : 'SEM PESQUISA NOVA: use o que já está na conversa e o que o editor informou.',
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+  });
+
+  const raw = await chatCompletionStream(messages, {
+    temperature: sortearTemperatura(tomKey === 'polemico'),
+    onDelta,
+  });
+
+  return String(raw || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/^```[a-z]*\n?/i, '')
+    .replace(/```$/i, '')
+    .trim();
+}
+
+/**
  * Gera consultas de busca de imagem alinhadas à matéria (prioriza pessoa/fato específico).
  */
 async function sugerirConsultasImagem({ titulo, materia, fonteTitulo }) {
@@ -1916,6 +2069,8 @@ module.exports = {
   enriquecerMateriaComFatos,
   sugerirConsultasPesquisa,
   gerarMateriaComPesquisa,
+  conversarMateria,
+  chatCompletionStream,
   sugerirConsultasImagem,
   identificarAutorImagem,
   extrairTermosRadar,
