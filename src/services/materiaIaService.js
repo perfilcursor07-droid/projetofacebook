@@ -541,13 +541,16 @@ async function publicarMateria(userId, matterId, overrides = {}) {
 
     const postId = result.post_id || result.id;
     const fbPostUrl = result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId);
-    await Publications.update(pubId, {
+    const nativeId = result.fb_native_post_id || null;
+    const pubPatch = {
       status: 'publicado',
       fb_post_id: postId,
       fb_post_url: fbPostUrl,
       published_at: new Date(),
       erro_mensagem: null,
-    });
+    };
+    if (nativeId) pubPatch.fb_native_post_id = nativeId;
+    await Publications.update(pubId, pubPatch);
     await AiMatters.update(matter.id, {
       status: 'publicado',
       published_at: new Date(),
@@ -1773,13 +1776,21 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
   }
 
   const STALE_MS = 30 * 60 * 1000;
+  const STALE_ZERO_MS = 5 * 60 * 1000;
+  // Só considera "tem engajamento" se pelo menos um valor foi gravado (inclui 0 real).
+  // Antes Number(null) na UI fingia 0 e o cache de zeros impedia nova leitura.
   const hasEng =
     pub.fb_likes != null || pub.fb_comments != null || pub.fb_views != null;
+  const allZero =
+    (pub.fb_likes == null || Number(pub.fb_likes) === 0) &&
+    (pub.fb_comments == null || Number(pub.fb_comments) === 0) &&
+    (pub.fb_views == null || Number(pub.fb_views) === 0);
+  const staleLimit = allZero ? STALE_ZERO_MS : STALE_MS;
   if (
     !force &&
     hasEng &&
     pub.fb_views_at &&
-    Date.now() - new Date(pub.fb_views_at).getTime() < STALE_MS
+    Date.now() - new Date(pub.fb_views_at).getTime() < staleLimit
   ) {
     return {
       views: pub.fb_views != null ? Number(pub.fb_views) : null,
@@ -1794,8 +1805,15 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
   }
 
   const page = await resolvePage(userId, pub.facebook_page_id || matter.facebook_page_id);
+  const token = String(page?.page_access_token || '');
   const hasGraphToken =
-    page?.page_access_token && !String(page.page_access_token).startsWith('postsyncer:');
+    Boolean(token) &&
+    !token.startsWith('postsyncer:') &&
+    !token.startsWith('postpulse:') &&
+    !token.startsWith('ayrshare:');
+
+  const ayrshareService = require('./ayrshareService');
+  const profileKey = String(page?.ayrshare_profile_key || '').trim() || null;
 
   let nativeId =
     pub.fb_native_post_id ||
@@ -1821,6 +1839,11 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
     }
   }
 
+  // UUID Ayrshare não é ID do Graph — limpa nativeId falso
+  if (nativeId && ayrshareService.looksLikeAyrshareId(nativeId)) {
+    nativeId = null;
+  }
+
   let views = pub.fb_views != null ? Number(pub.fb_views) : null;
   let likes = pub.fb_likes != null ? Number(pub.fb_likes) : null;
   let comments = pub.fb_comments != null ? Number(pub.fb_comments) : null;
@@ -1833,7 +1856,8 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
     hasGraphToken &&
     nativeId &&
     !/^postsyncer:/i.test(String(nativeId)) &&
-    !/^postpulse:/i.test(String(nativeId))
+    !/^postpulse:/i.test(String(nativeId)) &&
+    !/^ayrshare:/i.test(String(nativeId))
   ) {
     let insightId = nativeId;
     if (/^\d+$/.test(nativeId) && page.page_id) {
@@ -1867,11 +1891,77 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
     }
   } else if (!hasGraphToken) {
     avisos.push(
-      'Sem token OAuth da Página — tentando ScrapeCreators no link público do post.'
+      'Sem token OAuth da Página — tentando Ayrshare/ScrapeCreators.'
     );
   }
 
-  // 2) ScrapeCreators fallback (curtidas/comentários no permalink)
+  // 2) Ayrshare analytics (posts publicados via Ayrshare ou quando Graph falhou)
+  // Se o banco já tem 0/0/0 de uma sync falha, ainda tenta Ayrshare (exceto Graph ok).
+  const precisaEngAyr =
+    force ||
+    likes == null ||
+    comments == null ||
+    views == null ||
+    (fonte !== 'graph' &&
+      Number(likes || 0) === 0 &&
+      Number(comments || 0) === 0 &&
+      Number(views || 0) === 0);
+  if (precisaEngAyr && ayrshareService.isConfigured()) {
+    const candidates = [];
+    const pushCand = (id, searchPlatformId) => {
+      const s = String(id || '').trim();
+      if (!s) return;
+      if (candidates.some((c) => c.id === s && c.searchPlatformId === searchPlatformId)) return;
+      candidates.push({ id: s, searchPlatformId: Boolean(searchPlatformId) });
+    };
+
+    if (ayrshareService.looksLikeAyrshareId(fbPostId)) {
+      pushCand(fbPostId, false);
+    }
+    if (nativeId && /^\d+_\d+$/.test(String(nativeId))) {
+      pushCand(nativeId, true);
+    } else if (nativeId && /^\d+$/.test(String(nativeId)) && page?.page_id) {
+      pushCand(`${page.page_id}_${nativeId}`, true);
+    }
+    if (/^\d+_\d+$/.test(fbPostId)) {
+      pushCand(fbPostId, true);
+    }
+    const parsedUrl = facebookService.parseFacebookPostId(pub.fb_post_url);
+    if (parsedUrl && /^\d+_\d+$/.test(parsedUrl)) {
+      pushCand(parsedUrl, true);
+    } else if (parsedUrl && page?.page_id && /^\d+$/.test(parsedUrl)) {
+      pushCand(`${page.page_id}_${parsedUrl}`, true);
+    }
+
+    for (const cand of candidates) {
+      try {
+        const ay = await ayrshareService.fetchFacebookPostAnalytics({
+          postId: cand.id,
+          profileKey,
+          searchPlatformId: cand.searchPlatformId,
+        });
+        if (ay.likes != null && (likes == null || force)) likes = ay.likes;
+        if (ay.comments != null && (comments == null || force)) comments = ay.comments;
+        if (ay.shares != null && (shares == null || force)) shares = ay.shares;
+        if (ay.views != null && (views == null || force)) views = ay.views;
+        if (ay.postId) {
+          nativeId = ay.postId;
+        }
+        if (ay.postUrl && !pub.fb_post_url) {
+          await Publications.update(pub.id, { fb_post_url: ay.postUrl });
+          pub.fb_post_url = ay.postUrl;
+        }
+        if (ay.likes != null || ay.comments != null || ay.views != null) {
+          fonte = fonte ? `${fonte}+ayrshare` : 'ayrshare';
+          break;
+        }
+      } catch (err) {
+        avisos.push(`Ayrshare analytics: ${err.message}`);
+      }
+    }
+  }
+
+  // 3) ScrapeCreators fallback (curtidas/comentários no permalink)
   const precisaEng = likes == null || comments == null || force;
   const permalink =
     pub.fb_post_url ||
@@ -1905,7 +1995,12 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
   if (likes != null) patch.fb_likes = likes;
   if (comments != null) patch.fb_comments = comments;
   if (shares != null) patch.fb_shares = shares;
-  if (nativeId && !/^postsyncer:/i.test(String(nativeId))) {
+  if (
+    nativeId &&
+    !/^postsyncer:/i.test(String(nativeId)) &&
+    !/^ayrshare:/i.test(String(nativeId)) &&
+    !ayrshareService.looksLikeAyrshareId(nativeId)
+  ) {
     patch.fb_native_post_id = nativeId;
   }
 
@@ -1929,7 +2024,7 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
   if (payload.likes == null && payload.comments == null && payload.views == null) {
     payload.message =
       avisos[0] ||
-      'Não foi possível ler o engajamento. Conecte o Facebook em /paginas ou confira o link do post.';
+      'Não foi possível ler o engajamento. Confira o Profile Key Ayrshare em /paginas ou o link do post.';
     payload.needsOauth = !hasGraphToken;
   }
 

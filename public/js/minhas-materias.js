@@ -3,6 +3,8 @@
   if (!list) return;
 
   function formatNum(n) {
+    // Number(null) === 0 — não tratar null/undefined/'' como zero
+    if (n == null || n === '') return null;
     const v = Number(n);
     if (!Number.isFinite(v) || v < 0) return null;
     if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, '') + ' mi';

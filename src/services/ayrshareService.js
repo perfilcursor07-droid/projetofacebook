@@ -379,12 +379,17 @@ async function publishToFacebook({
       throw err;
     }
 
-    const postId = fb?.id || data?.id || null;
+    const ayrshareId = data?.id ? String(data.id) : null;
+    const socialId = fb?.id ? String(fb.id) : null;
     const postUrl = fb?.postUrl || null;
+    // Preferir ID nativo do Facebook; guardar Ayrshare com prefixo quando só houver UUID.
+    const postId = socialId || (ayrshareId ? `ayrshare:${ayrshareId}` : null);
 
     return {
       id: postId,
       post_id: postId,
+      ayrshare_id: ayrshareId,
+      fb_native_post_id: socialId || null,
       postUrl,
       provider: 'ayrshare',
       raw: data,
@@ -403,6 +408,66 @@ async function publishToFacebook({
   }
 }
 
+function looksLikeAyrshareId(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return false;
+  if (/^ayrshare:/i.test(s)) return true;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+}
+
+function stripAyrsharePrefix(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/^ayrshare:/i, '');
+}
+
+/**
+ * Analytics do post via Ayrshare (curtidas / comentários / views).
+ * Aceita Ayrshare Post ID ou Social Post ID do Facebook (searchPlatformId).
+ */
+async function fetchFacebookPostAnalytics({ postId, profileKey = null, searchPlatformId = false } = {}) {
+  assertConfigured();
+  const id = stripAyrsharePrefix(postId);
+  if (!id) {
+    return { likes: null, comments: null, shares: null, views: null, postId: null, postUrl: null };
+  }
+
+  const body = {
+    id,
+    platforms: ['facebook'],
+  };
+  if (searchPlatformId) body.searchPlatformId = true;
+
+  const pk = profileKey != null ? String(profileKey).trim() : '';
+  const { data } = await axios.post(`${API}/analytics/post`, body, {
+    headers: authHeaders({ 'Content-Type': 'application/json' }, pk || null),
+    timeout: 45000,
+  });
+
+  const fb = data?.facebook || data?.Facebook || null;
+  const analytics = fb?.analytics || fb || {};
+  const likes = Number(analytics.likeCount ?? analytics.likes);
+  const comments = Number(analytics.commentsCount ?? analytics.commentCount ?? analytics.comments);
+  const shares = Number(analytics.shareCount ?? analytics.shares);
+  const views = Number(
+    analytics.mediaView ??
+      analytics.videoViews ??
+      analytics.blueReelsPlayCount ??
+      analytics.impressions ??
+      analytics.views
+  );
+
+  return {
+    likes: Number.isFinite(likes) ? likes : null,
+    comments: Number.isFinite(comments) ? comments : null,
+    shares: Number.isFinite(shares) ? shares : null,
+    views: Number.isFinite(views) ? views : null,
+    postId: fb?.id ? String(fb.id) : null,
+    postUrl: fb?.postUrl || null,
+    raw: data,
+  };
+}
+
 module.exports = {
   isConfigured,
   assertConfigured,
@@ -412,5 +477,7 @@ module.exports = {
   uploadMediaFile,
   publicMediaUrlFromLocal,
   looksLikeRefId,
+  looksLikeAyrshareId,
   fetchProfileByKey,
+  fetchFacebookPostAnalytics,
 };

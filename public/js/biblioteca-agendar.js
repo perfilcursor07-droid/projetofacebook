@@ -21,22 +21,20 @@
     location.href = '/biblioteca/agendar?' + params.toString();
   }
 
-  function fmtQuandoLocal(v) {
-    if (!v) return '—';
-    try {
-      const d = new Date(v);
-      if (Number.isNaN(d.getTime())) return String(v);
-      return d.toLocaleString('pt-BR', {
-        timeZone: 'America/Araguaina',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return String(v);
-    }
+  /** Remove cabeçalhos de dia sem itens e atualiza a contagem de cada grupo. */
+  function syncGruposDeDia() {
+    listEl?.querySelectorAll('li.agenda-day').forEach((header) => {
+      const dia = header.dataset.day;
+      const n = listEl.querySelectorAll(
+        'li.agenda-row[data-day="' + CSS.escape(dia || '') + '"]'
+      ).length;
+      if (!n) {
+        header.remove();
+        return;
+      }
+      const badge = header.querySelector('.agenda-day-count');
+      if (badge) badge.textContent = String(n);
+    });
   }
 
   function updateAgendaCount() {
@@ -74,17 +72,17 @@
         if (!id || removidos.has(id)) return;
         const row = listEl?.querySelector('li.agenda-row[data-id="' + id + '"]');
         if (!row) return;
-        const local =
-          item.proposed_at_local ||
-          (item.proposed_at ? String(item.proposed_at).slice(0, 16) : '');
+        const local = String(
+          item.proposed_at_local || (item.proposed_at ? item.proposed_at : '')
+        ).slice(0, 16);
+        if (local.length < 16) return;
         const horaInput = row.querySelector('.agenda-hora');
-        if (horaInput && local) horaInput.value = local.slice(0, 16);
-        const label = row.querySelector('.agenda-agendada-label');
-        if (label && item.proposed_at) {
-          label.textContent = 'Agendada: ' + fmtQuandoLocal(item.proposed_at);
-        }
+        if (horaInput) horaInput.value = local;
+        const badge = row.querySelector('.agenda-hora-badge');
+        if (badge) badge.textContent = local.slice(11, 16);
       });
     }
+    syncGruposDeDia();
     updateAgendaCount();
     requestAnimationFrame(() => window.scrollTo(0, y));
   }
@@ -148,6 +146,11 @@
     [btnLoteConfirmar, btnLotePublicar, btnLoteExcluir].forEach((btn) => {
       if (btn) btn.disabled = disabled;
     });
+    const chip = document.getElementById('agenda-selecao');
+    if (chip) {
+      chip.textContent = n === 1 ? '1 selecionado' : n + ' selecionados';
+      chip.classList.toggle('hidden', n === 0);
+    }
   }
 
   checkAll?.addEventListener('change', () => {
@@ -353,6 +356,8 @@
           method: 'PATCH',
           body: JSON.stringify({ proposed_at: value }),
         });
+        const badge = listEl?.querySelector('.agenda-hora-badge[data-id="' + id + '"]');
+        if (badge) badge.textContent = String(value).slice(11, 16);
         setHoraStatus(id, 'Horário atualizado ✓');
       } catch (err) {
         setHoraStatus(id, err.message, true);

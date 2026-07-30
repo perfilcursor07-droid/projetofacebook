@@ -210,11 +210,15 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
     });
 
     const postId = result.post_id || result.id;
+    const nativeId = result.fb_native_post_id || null;
     return {
       ...result,
       id: postId,
       post_id: postId,
-      fb_post_url: result.postUrl || buildFbPostUrl(page, postId),
+      fb_native_post_id: nativeId,
+      fb_post_url:
+        result.postUrl ||
+        buildFbPostUrl(page, nativeId || postId),
       provider: 'ayrshare',
     };
   }
