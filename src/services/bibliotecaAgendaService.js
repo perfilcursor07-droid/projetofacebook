@@ -107,15 +107,14 @@ function mapItem(row) {
   if (row.matter_imagem_path) {
     thumb = `/media/${String(row.matter_imagem_path).replace(/\\/g, '/')}`;
   }
-  // Agenda manda no horário da lista (proposed_at). Não usar matter_scheduled_at aqui —
-  // senão a UI mostra buracos antigos depois da compactação 30 em 30.
   const st = String(row.status || '');
   const matterSt = String(row.matter_status || '');
-  const when = row.proposed_at;
+  // Horário da AGENDA (proposed_at) é a fonte da verdade — não substituir por matter_scheduled_at
+  const horario = row.proposed_at;
   return {
     ...row,
-    proposed_at: when,
-    proposed_at_local: toDatetimeLocal(when),
+    proposed_at: horario,
+    proposed_at_local: toDatetimeLocal(horario),
     titulo: row.matter_titulo || row.post_titulo || 'Sem título',
     thumb,
     ui_status:
@@ -129,36 +128,6 @@ function mapItem(row) {
       !['publicado'].includes(st) &&
       !['publicado'].includes(matterSt),
   };
-}
-
-/** Converte chave YYYY-MM-DDTHH:mm (Araguaina) em Date UTC. */
-function dateFromChaveHorario(chave) {
-  const m = String(chave || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-  if (!m) return new Date(NaN);
-  return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00-03:00`);
-}
-
-/** Atualiza scheduled_at da matéria + job da fila (sem depender só do agendarMateria). */
-async function sincronizarHorarioMateria(userId, matterId, when) {
-  if (!matterId || !when) return;
-  const whenDate = when instanceof Date ? when : new Date(when);
-  if (Number.isNaN(whenDate.getTime())) return;
-  try {
-    await materiaIaService.agendarMateria({
-      userId,
-      matterId,
-      runAt: whenDate.toISOString(),
-    });
-  } catch {
-    try {
-      await AiMatters.update(matterId, { scheduled_at: whenDate, status: 'agendado' });
-      await db('ai_fila_jobs')
-        .where({ matter_id: matterId, status: 'pendente' })
-        .update({ run_at: whenDate, updated_at: db.fn.now() });
-    } catch {
-      /* ignore */
-    }
-  }
 }
 
 /** Alinha status da agenda com a matéria. Horário: agenda é a fonte da verdade. */
@@ -177,16 +146,27 @@ async function sincronizarComMaterias(userId, itens) {
         await BibliotecaAgenda.update(row.id, { status: 'publicado' });
         row.status = 'publicado';
       }
+      // NÃO sobrescrever proposed_at com matter_scheduled_at — isso desfaz a compactação 30 em 30.
+      // Se confirmado e o horário da matéria divergir, empurra a agenda → matéria.
       if (
         (row.status === 'confirmado' || agendaSt === 'confirmado') &&
         row.matter_id &&
-        row.proposed_at
+        row.proposed_at &&
+        row.matter_scheduled_at
       ) {
         const a = new Date(row.proposed_at).getTime();
-        const b = row.matter_scheduled_at ? new Date(row.matter_scheduled_at).getTime() : NaN;
-        if (!Number.isFinite(b) || Math.abs(a - b) > 60_000) {
-          await sincronizarHorarioMateria(userId, row.matter_id, row.proposed_at);
-          row.matter_scheduled_at = row.proposed_at;
+        const b = new Date(row.matter_scheduled_at).getTime();
+        if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > 60_000) {
+          try {
+            await materiaIaService.agendarMateria({
+              userId,
+              matterId: row.matter_id,
+              runAt: new Date(row.proposed_at).toISOString(),
+            });
+            row.matter_scheduled_at = row.proposed_at;
+          } catch {
+            /* mantém horário da agenda mesmo se a fila falhar */
+          }
         }
       }
     } catch {
@@ -242,101 +222,76 @@ async function ultimoHorarioOcupadoAmanha(userId) {
   return max != null ? new Date(max) : null;
 }
 
+/** Dias com itens pendente/confirmado (compacta todos, não só hoje/amanhã). */
+async function diasAtivosAgenda(userId) {
+  const rows = await db(BibliotecaAgenda.table)
+    .where({ user_id: userId })
+    .whereIn('status', ['pendente', 'confirmado'])
+    .select('proposed_at');
+  const days = new Set();
+  for (const r of rows || []) {
+    if (!r.proposed_at) continue;
+    days.add(toDatetimeLocal(r.proposed_at).slice(0, 10));
+  }
+  return [...days];
+}
+
 /**
  * Compacta pendentes + confirmados do dia em horários contínuos de 30 em 30 min.
- * Usa a chave local do 1º item + passos de 30 min (não depende de match frágil com slots UTC).
+ * Sempre reencaixa (sem pular slots) a partir do horário do 1º item.
  */
 async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
   const day = dayKey || diaAmanhaKey();
   const todos = await itensAgendaDoDia(userId, day);
+  const publicadosKeys = new Set(
+    todos.filter((r) => r.status === 'publicado').map((r) => chaveHorario(r.proposed_at))
+  );
   const itens = todos
     .filter((r) => r.status === 'pendente' || r.status === 'confirmado')
     .sort((a, b) => new Date(a.proposed_at) - new Date(b.proposed_at));
   if (itens.length < 1) return { ajustados: 0 };
 
-  // Grade do dia, sem horários já tomados por publicados
-  const publicadosKeys = new Set(
-    todos.filter((r) => r.status === 'publicado').map((r) => chaveHorario(r.proposed_at))
+  const slotsLivres = buildAllDaySlotsForDay(day).filter(
+    (s) => !publicadosKeys.has(chaveHorario(s))
   );
-  const grade = buildAllDaySlotsForDay(day).filter((s) => !publicadosKeys.has(chaveHorario(s)));
-  if (!grade.length) return { ajustados: 0 };
+  if (!slotsLivres.length) return { ajustados: 0 };
 
-  let firstChave = chaveHorario(itens[0].proposed_at);
-  // Snap minutos para 00 ou 30
-  const fm = firstChave.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/);
-  if (fm) {
-    const min = Number(fm[3]);
-    const snapped = min < 15 ? '00' : min < 45 ? '30' : '00';
-    let hour = Number(fm[2]);
-    if (min >= 45) hour = Math.min(23, hour + 1);
-    firstChave = `${fm[1]}T${String(hour).padStart(2, '0')}:${snapped}`;
+  const firstMs = new Date(itens[0].proposed_at).getTime();
+  let startIdx = 0;
+  for (let i = 0; i < slotsLivres.length; i += 1) {
+    if (slotsLivres[i].getTime() <= firstMs) startIdx = i;
+    else break;
   }
-
-  let startIdx = grade.findIndex((s) => chaveHorario(s) === firstChave);
-  if (startIdx < 0) {
-    const firstMs = dateFromChaveHorario(firstChave).getTime();
-    startIdx = 0;
-    for (let i = 0; i < grade.length; i += 1) {
-      if (grade[i].getTime() <= firstMs) startIdx = i;
-      else break;
-    }
-  }
-
-  // Cadeia contínua a partir do startIdx
-  const alvos = [];
-  for (let i = 0; i < itens.length; i += 1) {
-    const slot = grade[startIdx + i];
-    if (!slot) break;
-    alvos.push(slot);
-  }
-  if (alvos.length < itens.length) {
-    // Sem espaço na grade — compacta o que couber
-  }
-
-  let precisa = false;
-  for (let i = 0; i < alvos.length; i += 1) {
-    if (chaveHorario(itens[i].proposed_at) !== chaveHorario(alvos[i])) {
-      precisa = true;
-      break;
-    }
-  }
-  if (!precisa) {
-    const seen = new Set();
-    for (const r of itens) {
-      const k = chaveHorario(r.proposed_at);
-      if (seen.has(k)) {
-        precisa = true;
-        break;
-      }
-      seen.add(k);
-    }
-  }
-  if (!precisa) return { ajustados: 0 };
 
   let ajustados = 0;
-  for (let i = 0; i < alvos.length; i += 1) {
-    const slot = alvos[i];
+  for (let i = 0; i < itens.length; i += 1) {
+    const slot = slotsLivres[startIdx + i];
+    if (!slot) break;
     if (chaveHorario(itens[i].proposed_at) === chaveHorario(slot)) continue;
+
     await BibliotecaAgenda.update(itens[i].id, { proposed_at: slot });
     itens[i].proposed_at = slot;
-    if (itens[i].status === 'confirmado' && itens[i].matter_id) {
-      await sincronizarHorarioMateria(userId, itens[i].matter_id, slot);
+    if (itens[i].matter_id) {
+      try {
+        await materiaIaService.agendarMateria({
+          userId,
+          matterId: itens[i].matter_id,
+          runAt: slot.toISOString(),
+        });
+      } catch {
+        /* mantém horário da agenda */
+      }
     }
     ajustados += 1;
   }
   return { ajustados };
 }
 
-/** Compacta todos os dias que ainda têm pendente/confirmado. */
+/** Compacta todos os dias com itens abertos na agenda. */
 async function compactarHorariosAbertos(userId) {
-  const rows = await db(BibliotecaAgenda.table)
-    .where({ user_id: userId })
-    .whereIn('status', ['pendente', 'confirmado'])
-    .select('proposed_at');
-  const days = new Set([diaHojeKey(), diaAmanhaKey()]);
-  for (const r of rows || []) {
-    const d = toDatetimeLocal(r.proposed_at).slice(0, 10);
-    if (d) days.add(d);
+  const days = await diasAtivosAgenda(userId);
+  if (!days.length) {
+    days.push(diaHojeKey(), diaAmanhaKey());
   }
   let total = 0;
   for (const day of days) {
@@ -352,14 +307,6 @@ async function repararHorariosSobrepostos(userId) {
 }
 
 async function listarAgenda(userId, { status = 'all', aba = null, reparar = true } = {}) {
-  if (reparar) {
-    try {
-      await compactarHorariosAbertos(userId);
-    } catch {
-      /* não bloqueia listagem */
-    }
-  }
-
   const tab = String(aba || status || 'agendada').toLowerCase();
   let statuses = null;
   let order = 'asc';
@@ -379,13 +326,37 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
     filterStatus = 'all';
   }
 
-  const itens = await BibliotecaAgenda.findByUser(userId, {
-    status: filterStatus,
-    statuses,
-    limit: 120,
-    order,
-  });
+  const fetchItens = () =>
+    BibliotecaAgenda.findByUser(userId, {
+      status: filterStatus,
+      statuses,
+      limit: 120,
+      order,
+    });
+
+  if (reparar) {
+    try {
+      await compactarHorariosAbertos(userId);
+    } catch (err) {
+      console.warn('[agenda] compactar:', err.message);
+    }
+  }
+
+  let itens = await fetchItens();
   await sincronizarComMaterias(userId, itens || []);
+
+  if (reparar) {
+    try {
+      const r = await compactarHorariosAbertos(userId);
+      if (r.ajustados > 0) {
+        itens = await fetchItens();
+        await sincronizarComMaterias(userId, itens || []);
+      }
+    } catch (err) {
+      console.warn('[agenda] compactar pós-sync:', err.message);
+    }
+  }
+
   return (itens || []).map(mapItem);
 }
 
