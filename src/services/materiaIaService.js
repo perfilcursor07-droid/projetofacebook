@@ -1978,16 +1978,17 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
   }
 
   // 2) Ayrshare analytics (posts publicados via Ayrshare ou quando Graph falhou)
-  // Se o banco já tem 0/0/0 de uma sync falha, ainda tenta Ayrshare (exceto Graph ok).
+  const allZerado =
+    (likes == null || Number(likes) === 0) &&
+    (comments == null || Number(comments) === 0) &&
+    (views == null || Number(views) === 0);
   const precisaEngAyr =
     force ||
     likes == null ||
     comments == null ||
     views == null ||
-    (fonte !== 'graph' &&
-      Number(likes || 0) === 0 &&
-      Number(comments || 0) === 0 &&
-      Number(views || 0) === 0);
+    (fonte === 'graph' && allZerado) ||
+    (fonte !== 'graph' && allZerado);
   if (precisaEngAyr && ayrshareService.isConfigured()) {
     const candidates = [];
     const pushCand = (id, searchPlatformId) => {
@@ -1997,13 +1998,19 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
       candidates.push({ id: s, searchPlatformId: Boolean(searchPlatformId) });
     };
 
+    // Preferir ID Ayrshare (UUID) — analytics mais estável
     if (ayrshareService.looksLikeAyrshareId(fbPostId)) {
       pushCand(fbPostId, false);
     }
-    if (nativeId && /^\d+_\d+$/.test(String(nativeId))) {
-      pushCand(nativeId, true);
-    } else if (nativeId && /^\d+$/.test(String(nativeId)) && page?.page_id) {
-      pushCand(`${page.page_id}_${nativeId}`, true);
+    if (ayrshareService.looksLikeAyrshareId(pub.fb_native_post_id)) {
+      pushCand(pub.fb_native_post_id, false);
+    }
+    // ID nativo Facebook (pageId_postId)
+    const nativeForAy = nativeId || pub.fb_native_post_id || null;
+    if (nativeForAy && /^\d+_\d+$/.test(String(nativeForAy))) {
+      pushCand(nativeForAy, true);
+    } else if (nativeForAy && /^\d+$/.test(String(nativeForAy)) && page?.page_id) {
+      pushCand(`${page.page_id}_${nativeForAy}`, true);
     }
     if (/^\d+_\d+$/.test(fbPostId)) {
       pushCand(fbPostId, true);
@@ -2015,6 +2022,22 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
       pushCand(`${page.page_id}_${parsedUrl}`, true);
     }
 
+    if (!candidates.length) {
+      avisos.push(
+        'Sem ID Ayrshare/Facebook para analytics. Republish ou confira o Profile Key em /paginas.'
+      );
+    }
+
+    const applyAy = (ay) => {
+      // Sobrescreve nulls e zeros (Graph sem permissão costuma devolver 0)
+      if (ay.likes != null && (likes == null || force || Number(likes) === 0)) likes = ay.likes;
+      if (ay.comments != null && (comments == null || force || Number(comments) === 0)) {
+        comments = ay.comments;
+      }
+      if (ay.shares != null && (shares == null || force || Number(shares) === 0)) shares = ay.shares;
+      if (ay.views != null && (views == null || force || Number(views) === 0)) views = ay.views;
+    };
+
     for (const cand of candidates) {
       try {
         const ay = await ayrshareService.fetchFacebookPostAnalytics({
@@ -2022,11 +2045,8 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
           profileKey,
           searchPlatformId: cand.searchPlatformId,
         });
-        if (ay.likes != null && (likes == null || force)) likes = ay.likes;
-        if (ay.comments != null && (comments == null || force)) comments = ay.comments;
-        if (ay.shares != null && (shares == null || force)) shares = ay.shares;
-        if (ay.views != null && (views == null || force)) views = ay.views;
-        if (ay.postId) {
+        applyAy(ay);
+        if (ay.postId && !ayrshareService.looksLikeAyrshareId(ay.postId)) {
           nativeId = ay.postId;
         }
         if (ay.postUrl && !pub.fb_post_url) {
@@ -2034,12 +2054,23 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
           pub.fb_post_url = ay.postUrl;
         }
         if (ay.likes != null || ay.comments != null || ay.views != null) {
-          fonte = fonte ? `${fonte}+ayrshare` : 'ayrshare';
+          fonte = fonte && fonte !== 'graph' ? `${fonte}+ayrshare` : 'ayrshare';
           break;
         }
       } catch (err) {
         avisos.push(`Ayrshare analytics: ${err.message}`);
       }
+    }
+
+    // Sem Profile Key em User Profile → analytics não acha o post
+    if (
+      !profileKey &&
+      (likes == null || comments == null) &&
+      candidates.length
+    ) {
+      avisos.push(
+        'Página sem Profile Key Ayrshare — cole em /paginas o Profile Key desta Página para ler curtidas.'
+      );
     }
   }
 

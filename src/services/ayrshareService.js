@@ -382,8 +382,10 @@ async function publishToFacebook({
     const ayrshareId = data?.id ? String(data.id) : null;
     const socialId = fb?.id ? String(fb.id) : null;
     const postUrl = fb?.postUrl || null;
-    // Preferir ID nativo do Facebook; guardar Ayrshare com prefixo quando só houver UUID.
-    const postId = socialId || (ayrshareId ? `ayrshare:${ayrshareId}` : null);
+    // Guardar sempre o ID Ayrshare (analytics confiável). O ID nativo FB fica em fb_native_post_id.
+    const postId = ayrshareId
+      ? `ayrshare:${ayrshareId}`
+      : socialId || null;
 
     return {
       id: postId,
@@ -442,19 +444,46 @@ async function fetchFacebookPostAnalytics({ postId, profileKey = null, searchPla
   const { data } = await axios.post(`${API}/analytics/post`, body, {
     headers: authHeaders({ 'Content-Type': 'application/json' }, pk || null),
     timeout: 45000,
+    validateStatus: () => true,
   });
 
+  if (data?.status === 'error' || data?.code >= 400 || (data?.errors && !data?.facebook)) {
+    const wrap = { response: { data, config: { url: `${API}/analytics/post` } } };
+    const err = new Error(apiErrorMessage(wrap) || data?.message || 'Falha no analytics Ayrshare');
+    err.status = Number(data?.code) || 502;
+    err.response = wrap.response;
+    throw err;
+  }
+
   const fb = data?.facebook || data?.Facebook || null;
-  const analytics = fb?.analytics || fb || {};
-  const likes = Number(analytics.likeCount ?? analytics.likes);
-  const comments = Number(analytics.commentsCount ?? analytics.commentCount ?? analytics.comments);
-  const shares = Number(analytics.shareCount ?? analytics.shares);
+  if (!fb) {
+    return { likes: null, comments: null, shares: null, views: null, postId: null, postUrl: null, raw: data };
+  }
+
+  const analytics = fb.analytics && typeof fb.analytics === 'object' ? fb.analytics : fb;
+  const reactions = analytics.reactions && typeof analytics.reactions === 'object' ? analytics.reactions : null;
+  const reactionsTotal = Number(
+    reactions?.total ??
+      (reactions
+        ? ['like', 'love', 'care', 'haha', 'wow', 'sad', 'angry', 'sorry']
+            .reduce((sum, k) => sum + (Number(reactions[k]) || 0), 0)
+        : NaN)
+  );
+
+  const likes = Number(
+    analytics.likeCount ?? analytics.likes ?? analytics.reactionCount ?? reactionsTotal
+  );
+  const comments = Number(
+    analytics.commentsCount ?? analytics.commentCount ?? analytics.comments
+  );
+  const shares = Number(analytics.shareCount ?? analytics.shares ?? analytics.sharesCount);
   const views = Number(
     analytics.mediaView ??
       analytics.videoViews ??
       analytics.blueReelsPlayCount ??
       analytics.impressions ??
-      analytics.views
+      analytics.views ??
+      analytics.postImpressions
   );
 
   return {

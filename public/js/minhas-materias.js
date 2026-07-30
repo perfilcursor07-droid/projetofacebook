@@ -86,32 +86,50 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao buscar engajamento');
 
+      const semDado =
+        data.likes == null && data.comments == null && data.views == null;
+
       if (likesEl) {
         likesEl.textContent =
-          data.likes != null ? formatNum(data.likes) + ' curtidas' : prev.likes || 'curtidas';
+          data.likes != null
+            ? formatNum(data.likes) + ' curtidas'
+            : semDado
+              ? '— curtidas'
+              : prev.likes || 'curtidas';
       }
       if (commentsEl) {
         commentsEl.textContent =
           data.comments != null
             ? formatNum(data.comments) + ' coment.'
-            : prev.comments || 'coment.';
+            : semDado
+              ? '— coment.'
+              : prev.comments || 'coment.';
       }
       if (viewsEl) {
         viewsEl.textContent =
-          data.views != null ? formatNum(data.views) + ' views' : prev.views || 'views';
+          data.views != null
+            ? formatNum(data.views) + ' views'
+            : semDado
+              ? '— views'
+              : prev.views || 'views';
       }
 
       const row = viewsBtn.closest('.mia-matter-row');
       atualizarBadgeViral(row, data.likes, data.comments, data.views);
 
+      const aviso = Array.isArray(data.avisos) && data.avisos.length ? data.avisos[0] : '';
       if (data.viral?.label) {
         viewsBtn.title =
           data.viral.label +
           (data.fonte ? ' · via ' + data.fonte : '') +
           (data.cached ? ' · em cache' : '') +
-          (data.message ? ' — ' + data.message : '');
-      } else if (data.message) {
-        viewsBtn.title = data.message;
+          (data.message ? ' — ' + data.message : '') +
+          (aviso ? ' — ' + aviso : '');
+      } else if (data.message || aviso) {
+        viewsBtn.title = data.message || aviso;
+      } else if (semDado) {
+        viewsBtn.title =
+          'Sem engajamento ainda. Confira o Profile Key Ayrshare em /paginas e clique em ↻.';
       }
       return data;
     } catch (err) {
@@ -131,7 +149,17 @@
     if (!buttons.length) return;
 
     for (const btn of buttons) {
-      await fetchEngajamento(btn, { force: false, silent: true });
+      const data = await fetchEngajamento(btn, { force: false, silent: true });
+      // Se veio vazio, tenta 1x forçado (quebra cache de falha antiga)
+      if (
+        data &&
+        data.likes == null &&
+        data.comments == null &&
+        data.views == null &&
+        !data.cached
+      ) {
+        await fetchEngajamento(btn, { force: true, silent: true });
+      }
     }
   }
 
