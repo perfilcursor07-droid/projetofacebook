@@ -545,6 +545,53 @@
     }
   });
 
+  const manualPesquisarEl = document.getElementById('mia-manual-pesquisar');
+  const manualCamposEl = document.getElementById('mia-manual-pesquisa-campos');
+
+  function toggleCamposPesquisaManual() {
+    if (!manualCamposEl) return;
+    manualCamposEl.classList.toggle('hidden', !manualPesquisarEl?.checked);
+  }
+  manualPesquisarEl?.addEventListener('change', toggleCamposPesquisaManual);
+  toggleCamposPesquisaManual();
+
+  function renderFontesManual(pesquisa) {
+    const box = document.getElementById('mia-manual-fontes');
+    if (!box) return;
+    box.replaceChildren();
+    const fontes = pesquisa?.fontes || [];
+    if (!fontes.length) {
+      box.classList.add('hidden');
+      return;
+    }
+    const titulo = document.createElement('p');
+    titulo.className = 'font-semibold text-emerald-300';
+    titulo.textContent = 'Fontes usadas na pesquisa';
+    box.appendChild(titulo);
+
+    const lista = document.createElement('ul');
+    lista.className = 'mt-2 space-y-1';
+    for (const f of fontes) {
+      const li = document.createElement('li');
+      const nome = f.veiculo || 'Web';
+      if (f.url) {
+        const a = document.createElement('a');
+        a.href = f.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.className = 'text-emerald-400 underline hover:text-emerald-300';
+        a.textContent = nome;
+        li.appendChild(a);
+        li.appendChild(document.createTextNode(' — ' + (f.titulo || '')));
+      } else {
+        li.textContent = nome + ' — ' + (f.titulo || '');
+      }
+      lista.appendChild(li);
+    }
+    box.appendChild(lista);
+    box.classList.remove('hidden');
+  }
+
   document.getElementById('mia-btn-manual')?.addEventListener('click', async () => {
     const st = document.getElementById('mia-manual-status');
     const info = String(document.getElementById('mia-manual-info')?.value || '').trim();
@@ -553,8 +600,15 @@
       return;
     }
 
+    const pesquisar = Boolean(manualPesquisarEl?.checked);
     const fd = new FormData();
     fd.append('informacoes', info);
+    fd.append('pesquisarWeb', pesquisar ? '1' : '0');
+    if (pesquisar) {
+      const kw = String(document.getElementById('mia-manual-keywords')?.value || '').trim();
+      if (kw) fd.append('palavrasChave', kw);
+      fd.append('periodo', document.getElementById('mia-manual-periodo')?.value || '30d');
+    }
     const tom = String(document.getElementById('mia-manual-tom')?.value || 'natural').trim();
     if (tom) fd.append('tom', tom);
     const angulo = String(document.getElementById('mia-manual-angulo')?.value || '').trim();
@@ -568,11 +622,14 @@
 
     setGenerating(
       true,
-      file || imagemUrl
-        ? 'Escrevendo título e matéria e montando a capa com a Minha marca…'
-        : 'Escrevendo título e matéria com as informações que você passou…'
+      pesquisar
+        ? 'Pesquisando na internet, lendo as reportagens e escrevendo a matéria…'
+        : file || imagemUrl
+          ? 'Escrevendo título e matéria e montando a capa com a Minha marca…'
+          : 'Escrevendo título e matéria com as informações que você passou…'
     );
-    st.textContent = 'Gerando matéria…';
+    st.textContent = pesquisar ? 'Pesquisando na web e gerando matéria…' : 'Gerando matéria…';
+    document.getElementById('mia-manual-fontes')?.classList.add('hidden');
 
     try {
       const res = await fetch('/api/materias-ia/gerar-manual', {
@@ -590,9 +647,13 @@
       setGenerating(false);
       // Abre a matéria em nova aba e permanece em /conteudo
       abrirMateriaEmNovaAba(dest);
+      renderFontesManual(data.pesquisa);
       st.replaceChildren();
+      const nFontes = data.pesquisa?.fontes?.length || 0;
       const msg = document.createElement('span');
-      msg.textContent = 'Matéria pronta. ';
+      msg.textContent = nFontes
+        ? 'Matéria pronta com ' + nFontes + ' fonte(s) da web. '
+        : 'Matéria pronta. ';
       st.appendChild(msg);
       const a = document.createElement('a');
       a.href = dest;
@@ -602,6 +663,13 @@
       a.textContent = 'Abrir matéria';
       st.appendChild(a);
       st.appendChild(document.createTextNode(' · você continua em /conteudo.'));
+      const avisos = (data.avisos || []).filter(Boolean);
+      if (avisos.length) {
+        const p = document.createElement('span');
+        p.className = 'block text-xs text-amber-300';
+        p.textContent = avisos.join(' ');
+        st.appendChild(p);
+      }
     } catch (err) {
       setGenerating(false);
       st.textContent = err.message;

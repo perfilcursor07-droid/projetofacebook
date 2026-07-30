@@ -1597,6 +1597,146 @@ Regras de saída:
 }
 
 /**
+ * Transforma o pedido do usuário ("faça uma matéria sobre X") em consultas de busca
+ * na web, como um repórter faria antes de escrever.
+ */
+async function sugerirConsultasPesquisa({ pedido, angulo = null, palavrasChave = null }) {
+  assertDeepseek();
+  const texto = String(pedido || '').trim();
+  if (!texto) return { consultas: [], tema: '' };
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é repórter e vai PESQUISAR na web antes de escrever a matéria.
+Retorne APENAS JSON: {"tema":"assunto central em 1 frase","consultas":["consulta 1","consulta 2","consulta 3"]}
+Regras:
+- consultas: 2 a 4 buscas em português do Brasil, do jeito que se digita no Google Notícias.
+- Cada consulta com 3 a 8 palavras: nomes próprios, cargos, lugares, ano/data se o pedido citar.
+- Varie o ângulo entre as consultas (fato principal, reação/repercussão, dados/pesquisa).
+- NÃO invente nomes ou fatos que não estejam no pedido.
+- Sem aspas, sem operadores (site:, "", OR).`,
+      },
+      {
+        role: 'user',
+        content: [
+          `Pedido do usuário:\n${texto.slice(0, 3000)}`,
+          angulo ? `Ângulo desejado: ${String(angulo).slice(0, 200)}` : null,
+          palavrasChave ? `Palavras-chave sugeridas pelo usuário: ${String(palavrasChave).slice(0, 200)}` : null,
+          'Monte as consultas de busca.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+    { temperature: 0.3, json: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+
+  const consultas = (Array.isArray(parsed.consultas) ? parsed.consultas : [])
+    .map((c) => String(c || '').replace(/["']/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter((c) => c.length >= 8)
+    .slice(0, 4);
+  const tema = String(parsed.tema || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+  return { consultas, tema };
+}
+
+/**
+ * Escreve a matéria a partir do pedido/infos do usuário + fatos reais coletados na web.
+ * Sem fontes vira matéria só com o que o usuário informou.
+ */
+async function gerarMateriaComPesquisa({
+  pedido,
+  fatosFontes = null,
+  angulo = null,
+  tom = 'natural',
+  autor = null,
+}) {
+  assertDeepseek();
+  const infos = String(pedido || '').trim();
+  const blocoFatos = String(fatosFontes || '').trim();
+  if (!infos && !blocoFatos) {
+    const err = new Error('Informe o assunto ou as informações da matéria');
+    err.status = 400;
+    throw err;
+  }
+
+  const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
+  const tomDesc = TITULO_TOMES[tomKey];
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é repórter de uma Página de notícias no Facebook/Instagram e acabou de PESQUISAR na web.
+
+${blocoEstiloNewsGospel()}
+
+REGRA DE OURO — só fato real:
+- Use apenas o que estiver no pedido do usuário e nos TRECHOS DAS FONTES.
+- É PROIBIDO inventar números, pesquisas, datas, cargos ou falas.
+- Todo dado numérico ou fala entre aspas precisa vir de uma fonte; atribua ("segundo o G1", "pesquisa Quaest de julho").
+- PROIBIDO texto de exemplo: nada de "(nome fictício)", "(dados ilustrativos)", nomes ou falas inventados para ilustrar.
+- Se o pedido citar uma pessoa que as fontes não confirmam, fale só do que as fontes trazem e registre isso no campo "aviso".
+- Se as fontes forem fracas ou não cobrirem o pedido, escreva só o que dá para sustentar e diga no campo "aviso" o que faltou.
+
+ANTI-PLÁGIO:
+- Não copie frases nem a estrutura das fontes; extraia os fatos e reescreva 100% com suas palavras.
+
+ESTRUTURA:
+- Título próprio, curto e chamativo (máx. 110 chars), sem clickbait mentiroso.
+- Lead com o fato central → desenvolvimento com os dados e falas apuradas → fechamento no fato (sem oração final).
+- Parágrafos curtos separados por linha em branco. Alvo: 1700–2100 caracteres.
+- NÃO inclua bloco "Fontes:" no campo materia — o sistema anexa depois.
+
+Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosUsados":["fato + veículo"],"aviso":""}`,
+      },
+      {
+        role: 'user',
+        content: [
+          `PEDIDO / INFORMAÇÕES DO USUÁRIO (base obrigatória):\n${infos.slice(0, 5000)}`,
+          angulo ? `Ângulo pedido: ${String(angulo).slice(0, 300)}` : null,
+          `Tom editorial obrigatório (título e corpo): ${tomDesc} [chave: ${tomKey}]`,
+          autor ? `Crédito da foto: ${autor}` : null,
+          blocoFatos
+            ? `TRECHOS DAS FONTES PESQUISADAS (use só o que for fato verificável):\n${blocoFatos.slice(0, 9000)}`
+            : 'SEM PESQUISA NA WEB: use somente as informações do usuário e não acrescente dados externos.',
+          'Escreva a matéria.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+    { temperature: sortearTemperatura(tomKey === 'polemico'), json: true }
+  );
+
+  const artigo = parseArtigoJson(raw);
+  let extras = {};
+  try {
+    extras = JSON.parse(raw) || {};
+  } catch {
+    extras = {};
+  }
+  const fatosUsados = Array.isArray(extras.fatosUsados)
+    ? extras.fatosUsados.map((f) => String(f || '').trim()).filter(Boolean).slice(0, 8)
+    : [];
+
+  return {
+    ...artigo,
+    titulo: String(artigo.titulo || '').slice(0, 120),
+    fatosUsados,
+    aviso: String(extras.aviso || '').replace(/\s+/g, ' ').trim().slice(0, 300) || null,
+  };
+}
+
+/**
  * Gera consultas de busca de imagem alinhadas à matéria (prioriza pessoa/fato específico).
  */
 async function sugerirConsultasImagem({ titulo, materia, fonteTitulo }) {
@@ -1774,6 +1914,8 @@ module.exports = {
   sugerirTituloMateria,
   reescreverMateriaComInfo,
   enriquecerMateriaComFatos,
+  sugerirConsultasPesquisa,
+  gerarMateriaComPesquisa,
   sugerirConsultasImagem,
   identificarAutorImagem,
   extrairTermosRadar,

@@ -444,19 +444,58 @@ async function agendarPage(req, res, next) {
     const agendaService = require('../services/bibliotecaAgendaService');
     const Users = require('../models/Users');
     const rawAba = String(req.query.aba || 'agendada').toLowerCase();
-    const aba = rawAba === 'publicadas' || rawAba === 'publicado' ? 'publicadas' : 'agendada';
-    const [itens, contagens, pages, defaultPageId, user] = await Promise.all([
+    const aba =
+      rawAba === 'publicadas' || rawAba === 'publicado'
+        ? 'publicadas'
+        : rawAba === 'viralizadas' || rawAba === 'viralizou' || rawAba === 'viral'
+          ? 'viralizadas'
+          : 'agendada';
+
+    const UsersFind = Users.findById(req.session.userId);
+    const pagesP = pagesDoUsuario(req.session.userId);
+    const defaultPageP = defaultPageIdDoUsuario(req.session.userId);
+    const contagensP = agendaService.contagensAgenda(req.session.userId);
+
+    let itens = [];
+    let viralizadas = [];
+    if (aba === 'viralizadas') {
+      const [, contagens, pages, defaultPageId, user] = await Promise.all([
+        Promise.resolve(null),
+        contagensP,
+        pagesP,
+        defaultPageP,
+        UsersFind,
+      ]);
+      viralizadas = await agendaService.listarViralizadas(req.session.userId, { limit: 40 });
+      const keywordsRaw = String(user?.biblioteca_alertas_keywords || '').trim();
+      const keywordsList = BibliotecaAlertas.parseKeywords(keywordsRaw);
+      return res.render('biblioteca-agendar', {
+        title: 'Agendar',
+        itens: [],
+        viralizadas,
+        contagens,
+        aba,
+        pages,
+        defaultPageId,
+        keywordsList,
+        keywordsSalvas: keywordsRaw,
+      });
+    }
+
+    const [itensAgenda, contagens, pages, defaultPageId, user] = await Promise.all([
       agendaService.listarAgenda(req.session.userId, { aba }),
-      agendaService.contagensAgenda(req.session.userId),
-      pagesDoUsuario(req.session.userId),
-      defaultPageIdDoUsuario(req.session.userId),
-      Users.findById(req.session.userId),
+      contagensP,
+      pagesP,
+      defaultPageP,
+      UsersFind,
     ]);
+    itens = itensAgenda;
     const keywordsRaw = String(user?.biblioteca_alertas_keywords || '').trim();
     const keywordsList = BibliotecaAlertas.parseKeywords(keywordsRaw);
     return res.render('biblioteca-agendar', {
       title: 'Agendar',
       itens,
+      viralizadas: [],
       contagens,
       aba,
       pages,
@@ -638,6 +677,44 @@ async function loteAgenda(req, res, next) {
   }
 }
 
+/** Lista matérias viralizadas (qualquer Página) prontas para agendar com variação. */
+async function listarViralizadasAgenda(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const itens = await agendaService.listarViralizadas(req.session.userId, {
+      limit: Number(req.query.limit) || 40,
+    });
+    res.json({ ok: true, itens });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Reescreve a viralizada (anti-plágio + marca do perfil) e pré-agenda na Página escolhida.
+ */
+async function agendarViralizada(req, res, next) {
+  try {
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const body = req.body || {};
+    const matterId = Number(req.params.matterId || body.matter_id || body.origem_matter_id);
+    const facebookPageId = await resolveFacebookPageId(
+      req.session.userId,
+      body.facebook_page_id ?? body.facebookPageId
+    );
+    const result = await agendaService.agendarViralizada({
+      userId: req.session.userId,
+      origemMatterId: matterId,
+      facebookPageId,
+      proposedAt: body.proposed_at ?? body.proposedAt ?? null,
+      confirmar: body.confirmar === true || body.confirmar === 1 || body.confirmar === '1',
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listPage,
   fontePage,
@@ -671,4 +748,6 @@ module.exports = {
   publicarAgendaItem,
   excluirAgendaItem,
   loteAgenda,
+  listarViralizadasAgenda,
+  agendarViralizada,
 };

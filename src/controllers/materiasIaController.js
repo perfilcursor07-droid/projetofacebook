@@ -347,6 +347,32 @@ async function removerMateria(req, res, next) {
   }
 }
 
+/** Exclusão em lote — só rascunhos do usuário (ids ou todos os rascunhos). */
+async function removerMateriasLote(req, res, next) {
+  try {
+    const userId = req.session.userId;
+    const body = req.body || {};
+    const allDrafts = body.allDrafts === true || body.all === true;
+
+    if (allDrafts) {
+      const deleted = await AiMatters.deleteAllByUserStatus(userId, 'rascunho');
+      return res.json({ ok: true, deleted: Number(deleted) || 0, allDrafts: true });
+    }
+
+    const ids = (Array.isArray(body.ids) ? body.ids : [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (!ids.length) {
+      return res.status(400).json({ error: 'Nenhuma matéria selecionada' });
+    }
+    // Só apaga rascunhos — evita excluir publicadas por engano
+    const deleted = await AiMatters.deleteManyByUser(ids, userId, { status: 'rascunho' });
+    res.json({ ok: true, deleted: Number(deleted) || 0, requested: ids.length });
+  } catch (err) {
+    next(err);
+  }
+}
+
 function parseHashtags(value) {
   if (Array.isArray(value)) return value.map((t) => String(t).trim()).filter(Boolean);
   if (typeof value === 'string') {
@@ -647,6 +673,7 @@ async function gerarManual(req, res, next) {
     const body = req.body || {};
     const informacoes = body.informacoes || body.info || body.texto || body.fatos;
     const facebookPageId = await resolvePageId(req.session.userId, body);
+    const pesquisarRaw = body.pesquisarWeb ?? body.pesquisar_web;
     const result = await materiaIaService.gerarMateriaManual({
       userId: req.session.userId,
       informacoes,
@@ -656,6 +683,9 @@ async function gerarManual(req, res, next) {
       imagemBuffer: req.file?.buffer || null,
       imagemUrl: body.imagemUrl || body.imagem_url || null,
       creditoImagem: body.creditoImagem || body.credito_imagem || null,
+      pesquisarWeb: ['1', 'true', 'on', 'sim'].includes(String(pesquisarRaw ?? '').toLowerCase()),
+      palavrasChave: body.palavrasChave || body.palavras_chave || null,
+      periodo: body.periodo || '30d',
     });
     res.status(201).json({
       ok: true,
@@ -1399,6 +1429,7 @@ module.exports = {
   listarMaterias,
   obterMateria,
   removerMateria,
+  removerMateriasLote,
   atualizarMateria,
   sugerirTitulo,
   reescreverComInfo,

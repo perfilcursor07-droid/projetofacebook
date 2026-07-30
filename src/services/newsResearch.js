@@ -200,7 +200,7 @@ async function buscarBraveNews(termo, dias = 1) {
   try {
     const freshness = freshnessBrave({ dias });
     const { data } = await axios.get('https://api.search.brave.com/res/v1/news/search', {
-      params: { q: termo, count: 20, freshness, country: 'BR', search_lang: 'pt' },
+      params: { q: termo, count: 20, freshness, country: 'BR', search_lang: 'pt-br' },
       headers: {
         Accept: 'application/json',
         'X-Subscription-Token': env.braveSearchApiKey,
@@ -226,7 +226,7 @@ async function buscarBraveNews(termo, dias = 1) {
     if (err.response?.status === 422) {
       try {
         const { data } = await axios.get('https://api.search.brave.com/res/v1/news/search', {
-          params: { q: termo, count: 10, country: 'BR', search_lang: 'pt' },
+          params: { q: termo, count: 10, country: 'BR', search_lang: 'pt-br' },
           headers: {
             Accept: 'application/json',
             'X-Subscription-Token': env.braveSearchApiKey,

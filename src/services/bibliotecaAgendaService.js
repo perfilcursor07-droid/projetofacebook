@@ -132,6 +132,10 @@ function mapItem(row) {
     thumb,
     matched_keyword: matchedKeyword,
     palavra_chave: matchedKeyword,
+    is_viral_origem: Boolean(row.source_matter_id),
+    source_matter_id: row.source_matter_id || null,
+    source_matter_titulo: row.source_matter_titulo || null,
+    source_page_name: row.source_page_name || null,
     ui_status:
       st === 'confirmado' || matterSt === 'agendado'
         ? 'agendada'
@@ -451,7 +455,187 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
 }
 
 async function contagensAgenda(userId) {
-  return BibliotecaAgenda.countByStatus(userId);
+  const base = await BibliotecaAgenda.countByStatus(userId);
+  let viralizadas = 0;
+  try {
+    viralizadas = await AiMatters.countByUserWithPub(userId, { status: 'viralizou' });
+  } catch (err) {
+    console.warn('[agenda] contagem viralizadas:', err.message);
+  }
+  return { ...base, viralizadas: Number(viralizadas) || 0 };
+}
+
+/**
+ * Matérias que viralizaram em qualquer Página do usuário
+ * (mesma regra da aba Viralizou em /minhas-materias).
+ * Já usadas como origem viral na agenda (ativa) saem da lista.
+ */
+async function listarViralizadas(userId, { limit = 40 } = {}) {
+  const lim = Math.min(80, Math.max(1, Number(limit) || 40));
+  const [rows, jaUsadas] = await Promise.all([
+    AiMatters.findByUserWithPub(userId, { status: 'viralizou', limit: lim }),
+    BibliotecaAgenda.findActiveSourceMatterIds(userId),
+  ]);
+  const usadas = new Set((jaUsadas || []).map((id) => Number(id)));
+
+  return (rows || []).map((r) => {
+      let thumb = r.imagem_url || null;
+      if (r.imagem_path) {
+        thumb = `/media/${String(r.imagem_path).replace(/\\/g, '/')}`;
+      }
+      const likes = r.pub_fb_likes != null ? Number(r.pub_fb_likes) : null;
+      const comments = r.pub_fb_comments != null ? Number(r.pub_fb_comments) : null;
+      const views = r.pub_fb_views != null ? Number(r.pub_fb_views) : null;
+      const shares = r.pub_fb_shares != null ? Number(r.pub_fb_shares) : null;
+      const score =
+        (Number(likes) || 0) +
+        (Number(comments) || 0) * 3 +
+        (Number(shares) || 0) * 5 +
+        Math.min(Number(views) || 0, 5000) / 50;
+      let viralLabel = 'Bom';
+      if (score >= 180 || (likes || 0) >= 80 || (comments || 0) >= 25) {
+        viralLabel = 'Viralizou';
+      }
+      return {
+        id: r.id,
+        titulo: r.titulo || 'Sem título',
+        page_name: r.page_name || null,
+        facebook_page_id: r.facebook_page_id || null,
+        tipo_publicacao: r.tipo_publicacao || 'foto',
+        thumb,
+        fb_post_url: r.pub_fb_post_url || null,
+        likes,
+        comments,
+        views,
+        shares,
+        viral_label: viralLabel,
+        published_at: r.published_at || r.pub_published_at || null,
+        ja_na_agenda: usadas.has(Number(r.id)),
+      };
+    });
+}
+
+/**
+ * Gera variação anti-plágio (estilo/marca do perfil logado) e pré-agenda.
+ * A matéria original permanece; a nova vai para a página escolhida.
+ */
+async function agendarViralizada({
+  userId,
+  origemMatterId,
+  facebookPageId,
+  proposedAt = null,
+  confirmar = false,
+} = {}) {
+  const origemId = Number(origemMatterId);
+  if (!Number.isInteger(origemId) || origemId < 1) {
+    const err = new Error('Matéria viral inválida');
+    err.status = 400;
+    throw err;
+  }
+
+  const origem = await AiMatters.findById(origemId);
+  if (!origem || Number(origem.user_id) !== Number(userId)) {
+    const err = new Error('Matéria não encontrada');
+    err.status = 404;
+    throw err;
+  }
+
+  const { resolvePageForUser, defaultPageForUser } = require('./facebookPageResolver');
+  let page = null;
+  if (facebookPageId) {
+    page = await resolvePageForUser(userId, facebookPageId);
+  }
+  if (!page) page = await defaultPageForUser(userId);
+  if (!page) {
+    const err = new Error('Selecione uma Página do Facebook em /paginas');
+    err.status = 400;
+    throw err;
+  }
+
+  // Evita agendar a mesma origem de novo para a mesma página
+  const ja = await db('biblioteca_agenda')
+    .where({
+      user_id: userId,
+      source_matter_id: origemId,
+      facebook_page_id: page.id,
+    })
+    .whereNotIn('status', ['cancelado'])
+    .first();
+  if (ja) {
+    const err = new Error(
+      'Essa viralizada já está na agenda desta Página. Exclua o item ou escolha outra Página.'
+    );
+    err.status = 409;
+    throw err;
+  }
+
+  // Mesma página da original → ainda reescreve (anti-plágio), mas avisa
+  const mesmaPagina = Number(origem.facebook_page_id) === Number(page.id);
+
+  const gerado = await materiaIaService.gerarVariacaoDeMateria({
+    userId,
+    matterId: origemId,
+    facebookPageId: page.id,
+    tipoPublicacao: origem.tipo_publicacao === 'texto' ? 'texto' : 'foto',
+  });
+  const novaMatter = gerado.matter || gerado.payload?.matter || null;
+  const matterId = novaMatter?.id || null;
+  if (!matterId) {
+    const err = new Error('Falha ao gerar a variação da matéria viral');
+    err.status = 502;
+    throw err;
+  }
+
+  let when = proposedAt ? parseProposedAt(proposedAt) : null;
+  if (!when || Number.isNaN(when.getTime())) {
+    const slots = buildSlots({
+      max: 1,
+      ocupadosKeys: await (async () => {
+        const amanhaItens = await itensAgendaDoDia(userId);
+        return new Set(
+          (amanhaItens || []).map((i) => chaveHorario(i.proposed_at)).filter(Boolean)
+        );
+      })(),
+    });
+    when = slots[0] || new Date(Date.now() + 60 * 60 * 1000);
+  }
+  if (when.getTime() < Date.now() + 5 * 60_000) {
+    const err = new Error(
+      'Horário muito próximo ou no passado. Escolha um horário com pelo menos 5 minutos de antecedência.'
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  const [agendaId] = await BibliotecaAgenda.create({
+    user_id: userId,
+    facebook_page_id: page.id,
+    post_id: null,
+    matter_id: matterId,
+    source_matter_id: origemId,
+    proposed_at: when,
+    status: 'pendente',
+    matched_keyword: 'viralizada',
+  });
+
+  let confirmado = null;
+  if (confirmar) {
+    confirmado = await confirmarAgendamento(userId, agendaId);
+  }
+
+  return {
+    agendaId,
+    matterId,
+    origemMatterId: origemId,
+    facebookPageId: page.id,
+    pageName: page.page_name,
+    proposedAt: when,
+    proposed_at_local: toDatetimeLocal(when),
+    mesmaPagina,
+    angulo: gerado.angulo || null,
+    titulo: novaMatter?.titulo || null,
+    confirmado: Boolean(confirmado),
+  };
 }
 
 /**
@@ -928,6 +1112,8 @@ async function limparItensSemPalavraChave(
 
   const remover = [];
   for (const row of itens || []) {
+    // Variações de viralizadas não entram no filtro de palavras-chave da biblioteca
+    if (row.source_matter_id) continue;
     const hits = BibliotecaAlertas.findMatchingKeywords(row, keywordsStr);
     if (hits.length) {
       // Garante chip gravado
@@ -1091,6 +1277,8 @@ async function tickAgendaPre() {
 
 module.exports = {
   listarAgenda,
+  listarViralizadas,
+  agendarViralizada,
   contagensAgenda,
   montarAgendaAmanha,
   atualizarHorario,

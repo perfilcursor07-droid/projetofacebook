@@ -540,8 +540,47 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     });
 
     const postId = result.post_id || result.id;
-    const fbPostUrl = result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId);
-    const nativeId = result.fb_native_post_id || null;
+    let fbPostUrl = result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId);
+    let nativeId = result.fb_native_post_id || null;
+
+    if (!postId) {
+      console.warn('[publicar] provedor não devolveu ID do post', {
+        matterId: matter.id,
+        pubId,
+        provider: result.provider || null,
+        chaves: Object.keys(result || {}),
+      });
+    }
+
+    // Sem ID nativo (provedor externo), busca o post no feed da Página para
+    // não deixar a publicação órfã — é o ID que a leitura de engajamento usa.
+    if (!nativeId) {
+      const tokenPage = String(page.page_access_token || '');
+      const podeGraph =
+        Boolean(tokenPage) &&
+        !tokenPage.startsWith('ayrshare:') &&
+        !tokenPage.startsWith('postsyncer:') &&
+        !tokenPage.startsWith('postpulse:');
+      const doPostId = facebookService.parseFacebookPostId(postId);
+      if (doPostId && /^\d+_\d+$/.test(String(doPostId))) {
+        nativeId = doPostId;
+      } else if (podeGraph && page.page_id) {
+        try {
+          const found = await facebookService.findPagePostByContent(
+            tokenPage,
+            page.page_id,
+            { message: mensagem, publishedAt: new Date() }
+          );
+          if (found?.id) {
+            nativeId = found.id;
+            fbPostUrl = fbPostUrl || found.permalink || null;
+          }
+        } catch (err) {
+          console.warn('[publicar] busca do post no feed falhou:', err.message);
+        }
+      }
+    }
+
     const pubPatch = {
       status: 'publicado',
       fb_post_id: postId,
@@ -1711,6 +1750,9 @@ async function gerarMateriaManual({
   imagemBuffer = null,
   imagemUrl = null,
   creditoImagem = null,
+  pesquisarWeb = false,
+  palavrasChave = null,
+  periodo = '30d',
 }) {
   assertDeepseek();
   const fatos = String(informacoes || '').trim();
@@ -1730,20 +1772,80 @@ async function gerarMateriaManual({
     }
   }
 
-  const { gerarMateriaImagem } = require('./deepseekService');
+  const deepseekService = require('./deepseekService');
   const {
     anexarCreditosFontes,
     estiloCreditoDaPagina,
     removerFechamentoOracao,
   } = require('./editorialGuidelinesFb');
 
-  const gerado = await gerarMateriaImagem({
-    informacoes: fatos,
-    promptUsuario: angulo || 'notícia gospel a partir das informações do usuário',
-    descricaoImagem: null,
-    autor: creditoImagem || null,
-    tom,
-  });
+  const avisos = [];
+  let fontesPesquisa = [];
+  let consultasUsadas = [];
+
+  // O pedido pode desligar a busca no próprio texto ("não pesquise na internet")
+  const pediuSemPesquisa =
+    /\b(n[ãa]o\s+(pesquis|busqu|procur)|sem\s+(pesquis|busca|buscar|internet)|apenas\s+com\s+(essas|estas)\s+informa)/i.test(
+      fatos
+    );
+  let usarPesquisa = Boolean(pesquisarWeb);
+  if (usarPesquisa && pediuSemPesquisa) {
+    usarPesquisa = false;
+    avisos.push('Você pediu para não pesquisar na internet — usei só as suas informações.');
+  }
+
+  if (usarPesquisa) {
+    const manual = String(palavrasChave || '').trim();
+    let sugeridas = [];
+    try {
+      const sug = await deepseekService.sugerirConsultasPesquisa({
+        pedido: fatos,
+        angulo,
+        palavrasChave: manual || null,
+      });
+      sugeridas = sug.consultas || [];
+    } catch (err) {
+      console.warn('[materia-manual] consultas IA:', err.message);
+    }
+    consultasUsadas = [manual, ...sugeridas, consultaDeTexto(fatos), fatos.slice(0, 120)]
+      .map((q) => String(q || '').replace(/\s+/g, ' ').trim())
+      .filter((q, i, arr) => q.length >= 8 && arr.indexOf(q) === i)
+      .slice(0, 4);
+
+    fontesPesquisa = await coletarFatosNaWeb({
+      consultas: consultasUsadas,
+      periodo: periodo || '30d',
+      resumoContexto: fatos.replace(/\s+/g, ' ').trim().slice(0, 160),
+      max: 6,
+      logPrefix: '[materia-manual]',
+    });
+
+    if (!fontesPesquisa.length) {
+      const err = new Error(
+        'A pesquisa na web não achou reportagens sobre isso. Ajuste as palavras-chave, aumente o período ou desmarque "Pesquisar na internet" para gerar só com as suas informações.'
+      );
+      err.status = 422;
+      throw err;
+    }
+  }
+
+  const gerado = usarPesquisa
+    ? await deepseekService.gerarMateriaComPesquisa({
+        pedido: fatos,
+        fatosFontes: fontesPesquisa.length ? montarBlocoFatos(fontesPesquisa) : null,
+        angulo,
+        tom,
+        autor: creditoImagem || null,
+      })
+    : await deepseekService.gerarMateriaImagem({
+        informacoes: fatos,
+        promptUsuario: angulo || 'notícia gospel a partir das informações do usuário',
+        descricaoImagem: null,
+        autor: creditoImagem || null,
+        tom,
+      });
+
+  if (gerado.aviso) avisos.push(gerado.aviso);
 
   let pageName = null;
   if (pageId) {
@@ -1755,16 +1857,27 @@ async function gerarMateriaManual({
     }
   }
   const estilo = estiloCreditoDaPagina(pageName);
-  const nomeConteudo = String(pageName || '').trim() || 'Informações do editor';
-  const materiaComFontes = removerFechamentoOracao(
+  const fontePrincipal = fontesPesquisa[0] || null;
+  const nomeConteudo = fontePrincipal
+    ? fontePrincipal.veiculo || 'Web'
+    : String(pageName || '').trim() || 'Informações do editor';
+  let materiaComFontes = removerFechamentoOracao(
     anexarCreditosFontes(gerado.materia, {
       fonteNome: nomeConteudo,
-      fonteUrl: null,
+      fonteUrl: fontePrincipal?.url || null,
       imagemAutor: creditoImagem || 'Reprodução/Internet',
       autorArtigo: null,
       estilo,
     })
   );
+
+  if (fontesPesquisa.length > 1) {
+    const extras = fontesPesquisa
+      .slice(1, 4)
+      .map((f) => `${f.veiculo || 'Web'}${f.url ? ` — ${f.url}` : ''}`)
+      .join('\n');
+    if (extras) materiaComFontes = `${materiaComFontes}\n${extras}`;
+  }
 
   const [matterId] = await AiMatters.create({
     user_id: userId,
@@ -1774,9 +1887,12 @@ async function gerarMateriaManual({
     titulo_ia: gerado.titulo || null,
     materia_ia: materiaComFontes,
     hashtags: JSON.stringify(gerado.hashtags || []),
-    fonte_titulo: 'Matéria manual',
-    fonte_url: null,
+    fonte_titulo: usarPesquisa ? 'Matéria manual + pesquisa na web' : 'Matéria manual',
+    fonte_url: fontePrincipal?.url || null,
     fonte_resumo: fatos.slice(0, 1500),
+    contexto_apuracao: fontesPesquisa.length
+      ? montarBlocoFatos(fontesPesquisa).slice(0, 8000)
+      : null,
     fonte_credito: null,
     status: 'rascunho',
     tipo_publicacao: 'foto',
@@ -1822,6 +1938,10 @@ async function gerarMateriaManual({
     }
   }
 
+  if (!matter.imagem_path && !matter.imagem_url) {
+    avisos.push('Matéria gerada sem capa. Envie uma imagem na edição para criar a arte.');
+  }
+
   return {
     matter,
     artigo: {
@@ -1830,9 +1950,17 @@ async function gerarMateriaManual({
       hashtags: gerado.hashtags || [],
       imagemUrl: matter.imagem_url,
     },
-    avisos: !matter.imagem_path && !matter.imagem_url
-      ? ['Matéria gerada sem capa. Envie uma imagem na edição para criar a arte.']
-      : [],
+    pesquisa: {
+      ativa: usarPesquisa,
+      consultas: consultasUsadas,
+      fontes: fontesPesquisa.map((f) => ({
+        veiculo: f.veiculo,
+        titulo: f.titulo,
+        url: f.url,
+      })),
+      fatosUsados: gerado.fatosUsados || [],
+    },
+    avisos,
   };
 }
 
@@ -2453,6 +2581,222 @@ async function sincronizarEngajamentoRecentes(userId, { limit = 30, concurrency 
  * Enriquece matéria buscando reportagens com o MESMO pipeline de /conteudo
  * (Google News + Brave News via pesquisarNichos) e incorpora só fatos sem plágio.
  */
+const STOPWORDS_CONSULTA = new Set([
+  'para', 'com', 'sobre', 'apos', 'após', 'durante', 'sendo', 'filmada', 'filmado',
+  'confusao', 'confusão', 'entre', 'pela', 'pelo', 'pelos', 'pelas', 'uma', 'uns',
+  'umas', 'este', 'esta', 'esse', 'essa', 'aquele', 'aquela', 'como', 'mais', 'menos',
+  'muito', 'muita', 'quando', 'onde', 'quais', 'qual', 'quem', 'porque', 'porquê',
+  'ainda', 'tambem', 'também', 'depois', 'antes', 'agora', 'hoje', 'ontem',
+  'materia', 'matéria', 'faca', 'faça', 'quero', 'preciso', 'favor',
+]);
+
+/** Consulta de busca a partir de texto livre (título da matéria ou pedido do usuário). */
+function consultaDeTexto(texto, maxPalavras = 7) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length > 3 && !STOPWORDS_CONSULTA.has(w.toLowerCase()))
+    .slice(0, maxPalavras)
+    .join(' ');
+}
+
+function normalizarUrlFonte(url) {
+  try {
+    const u = new URL(String(url || '').trim());
+    u.hash = '';
+    return u.href.replace(/\/$/, '').toLowerCase();
+  } catch {
+    return String(url || '')
+      .split(/[?#]/)[0]
+      .replace(/\/$/, '')
+      .toLowerCase();
+  }
+}
+
+/**
+ * Pesquisa na web (Google News + Brave + leitura das páginas) e devolve fatos reais
+ * com veículo, URL e trecho. Base do enriquecimento e da matéria manual pesquisada.
+ */
+async function coletarFatosNaWeb({
+  consultas = [],
+  periodo = '180d',
+  excluirUrl = null,
+  max = 5,
+  resumoContexto = null,
+  logPrefix = '[pesquisa-web]',
+} = {}) {
+  const { coletarFontesComplementares, extrairMetadadosArtigo } = require('./articleSource');
+  const {
+    pesquisarNichos,
+    titulosSimilares,
+    buscarBraveNews,
+    buscarGoogleNewsRss,
+    whenParaGoogle,
+    normalizarPeriodo,
+  } = require('./newsResearch');
+
+  const cfgPeriodo = normalizarPeriodo(periodo || '180d');
+  const diasBrave = cfgPeriodo.horas ? Math.ceil(cfgPeriodo.horas / 24) : cfgPeriodo.dias || 180;
+
+  const queries = (Array.isArray(consultas) ? consultas : [consultas])
+    .map((q) => String(q || '').replace(/\s+/g, ' ').trim())
+    .filter((q, i, arr) => q.length >= 8 && arr.indexOf(q) === i);
+  if (!queries.length) return [];
+
+  const limite = Math.max(1, Math.min(8, Number(max) || 5));
+  const urlExcluida = excluirUrl ? normalizarUrlFonte(excluirUrl) : '';
+  const fontes = [];
+  const vistosUrl = new Set(urlExcluida ? [urlExcluida] : []);
+  const vistosTitulo = [];
+
+  function adicionarFonte(f) {
+    if (!f) return;
+    // Sem link não dá para checar o fato — evita "fonte" genérica virar dado na matéria
+    const urlBruta = String(f.url || f.link || '');
+    if (!/^https?:\/\//i.test(urlBruta)) return;
+    // Redirect do Google News que não abriu: fica sem veículo nem texto real
+    if (/news\.google\.com\/rss\//i.test(urlBruta)) return;
+    const urlKey = normalizarUrlFonte(f.url || f.link);
+    if (urlKey && vistosUrl.has(urlKey)) return;
+    const tit = String(f.titulo || '').trim();
+    if (tit && vistosTitulo.some((x) => titulosSimilares(x, tit))) return;
+    const trecho = String(f.trecho || f.contextoApuracao || f.resumo || f.snippet || '').trim();
+    if (trecho.length < 40) return;
+    if (urlKey) vistosUrl.add(urlKey);
+    if (tit) vistosTitulo.push(tit);
+    fontes.push({
+      veiculo: f.veiculo || f.fonte || 'Web',
+      url: f.url || f.link || null,
+      titulo: tit || queries[0],
+      resumo: String(f.resumo || '').slice(0, 500),
+      trecho: trecho.slice(0, 2500),
+    });
+  }
+
+  // 1) Mesmas fontes de /conteudo (Google News + Brave), sem apurar tudo (mais rápido)
+  for (const q of queries.slice(0, 2)) {
+    if (fontes.length >= limite) break;
+    try {
+      const when = whenParaGoogle(periodo || '180d');
+      const encontrados = [
+        ...(await buscarGoogleNewsRss(q, { when })),
+        ...(await buscarBraveNews(q, diasBrave)),
+      ];
+      for (const t of encontrados.slice(0, 12)) {
+        if (fontes.length >= limite) break;
+        const url = t.link;
+        if (!url || normalizarUrlFonte(url) === urlExcluida) continue;
+        let meta = null;
+        try {
+          meta = await extrairMetadadosArtigo(url);
+        } catch {
+          /* ignore */
+        }
+        adicionarFonte({
+          titulo: meta?.titulo || t.titulo,
+          url: meta?.url || url,
+          veiculo: meta?.veiculo || t.veiculo || t.fonte,
+          resumo: meta?.resumo || t.resumo,
+          trecho: meta?.trecho || t.resumo,
+        });
+      }
+    } catch (err) {
+      console.warn(`${logPrefix} busca noticias:`, err.message);
+    }
+  }
+
+  // 1b) Se ainda vazio, pipeline completo (com apuração) como em Pautas com IA
+  if (!fontes.length && queries[0]) {
+    try {
+      const topicos = await pesquisarNichos(queries[0], 6, {
+        periodo: periodo || '180d',
+        incluirRedesSociais: false,
+        filtrarPeriodo: true,
+      });
+      for (const t of topicos || []) {
+        if (fontes.length >= limite) break;
+        const fontesAp = Array.isArray(t.fontesApuracao) ? t.fontesApuracao : [];
+        if (fontesAp.length) {
+          for (const fa of fontesAp) adicionarFonte(fa);
+        } else {
+          adicionarFonte({
+            titulo: t.titulo,
+            link: t.link,
+            veiculo: t.veiculo || t.fonte,
+            resumo: t.resumo,
+            trecho: t.contextoApuracao || t.resumo,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`${logPrefix} pesquisarNichos:`, err.message);
+    }
+  }
+
+  // 2) Fallback: busca complementar (Brave/Serper + scrape)
+  if (fontes.length < 2) {
+    for (const q of queries.slice(0, 2)) {
+      try {
+        const mais = await coletarFontesComplementares({
+          titulo: q,
+          resumo: String(resumoContexto || q).slice(0, 160),
+          linkExcluir: excluirUrl || null,
+          max: 4,
+        });
+        for (const f of mais) adicionarFonte(f);
+      } catch (err) {
+        console.warn(`${logPrefix} complementares:`, err.message);
+      }
+    }
+  }
+
+  // 3) Snippets brutos se ainda faltar volume
+  if (fontes.length < 2 && queries[0]) {
+    try {
+      const when = whenParaGoogle(periodo || '180d');
+      const brutos = [
+        ...(await buscarBraveNews(queries[0], diasBrave)),
+        ...(await buscarGoogleNewsRss(queries[0], { when })),
+      ];
+      for (const r of brutos.slice(0, 10)) {
+        if (fontes.length >= limite) break;
+        const url = r.link;
+        if (!url || normalizarUrlFonte(url) === urlExcluida) continue;
+        let meta = null;
+        try {
+          meta = await extrairMetadadosArtigo(url);
+        } catch {
+          /* ignore */
+        }
+        adicionarFonte({
+          titulo: meta?.titulo || r.titulo,
+          url: meta?.url || url,
+          veiculo: meta?.veiculo || r.veiculo || r.fonte,
+          resumo: meta?.resumo || r.resumo,
+          trecho: meta?.trecho || r.resumo,
+        });
+      }
+    } catch (err) {
+      console.warn(`${logPrefix} fallback bruto:`, err.message);
+    }
+  }
+
+  return fontes.slice(0, limite);
+}
+
+/** Bloco de fatos que vai no prompt do DeepSeek. */
+function montarBlocoFatos(fontes) {
+  return (fontes || [])
+    .map(
+      (f, i) =>
+        `Fonte ${i + 1} — ${f.veiculo || 'Web'}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo || ''}\nTrecho factual:\n${String(f.trecho || f.resumo || '').slice(0, 1800)}`
+    )
+    .join('\n\n---\n\n');
+}
+
 async function enriquecerMateriaComWeb({
   userId,
   matterId,
@@ -2484,181 +2828,16 @@ async function enriquecerMateriaComWeb({
     throw err;
   }
 
-  const { coletarFontesComplementares, extrairMetadadosArtigo } = require('./articleSource');
-  const { pesquisarNichos, titulosSimilares, buscarBraveNews, buscarGoogleNewsRss, whenParaGoogle } = require('./newsResearch');
-
-  const stop = new Set([
-    'para', 'com', 'sobre', 'apos', 'após', 'durante', 'sendo', 'filmada', 'filmado',
-    'confusao', 'confusão', 'entre', 'pela', 'pelo', 'pelos', 'pelas', 'uma', 'uns',
-    'umas', 'este', 'esta', 'esse', 'essa', 'aquele', 'aquela', 'como', 'mais', 'menos',
-    'muito', 'muita', 'quando', 'onde', 'quais', 'qual', 'quem', 'porque', 'porquê',
-    'ainda', 'tambem', 'também', 'depois', 'antes', 'agora', 'hoje', 'ontem',
-  ]);
-
-  function keywordsDoTitulo(t) {
-    return String(t || '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .split(/\s+/)
-      .map((w) => w.trim())
-      .filter((w) => w.length > 3 && !stop.has(w.toLowerCase()))
-      .slice(0, 7)
-      .join(' ');
-  }
-
   const queryManual = String(palavrasChave || '').trim();
-  const queryTitulo = keywordsDoTitulo(titulo) || titulo.slice(0, 100);
-  const queries = [queryManual, queryTitulo, titulo.slice(0, 120)]
-    .map((q) => String(q || '').replace(/\s+/g, ' ').trim())
-    .filter((q, i, arr) => q.length >= 8 && arr.indexOf(q) === i);
-
-  function normalizarUrl(url) {
-    try {
-      const u = new URL(String(url || '').trim());
-      u.hash = '';
-      return u.href.replace(/\/$/, '').toLowerCase();
-    } catch {
-      return String(url || '')
-        .split(/[?#]/)[0]
-        .replace(/\/$/, '')
-        .toLowerCase();
-    }
-  }
-
-  const excluirUrl = normalizarUrl(matter.fonte_url);
-  const fontes = [];
-  const vistosUrl = new Set(excluirUrl ? [excluirUrl] : []);
-  const vistosTitulo = [];
-
-  function adicionarFonte(f) {
-    if (!f) return;
-    const urlKey = normalizarUrl(f.url || f.link);
-    if (urlKey && vistosUrl.has(urlKey)) return;
-    const tit = String(f.titulo || '').trim();
-    if (tit && vistosTitulo.some((x) => titulosSimilares(x, tit))) return;
-    const trecho = String(f.trecho || f.contextoApuracao || f.resumo || f.snippet || '').trim();
-    if (trecho.length < 40) return;
-    if (urlKey) vistosUrl.add(urlKey);
-    if (tit) vistosTitulo.push(tit);
-    fontes.push({
-      veiculo: f.veiculo || f.fonte || 'Web',
-      url: f.url || f.link || null,
-      titulo: tit || queryTitulo,
-      resumo: String(f.resumo || '').slice(0, 500),
-      trecho: trecho.slice(0, 2500),
-    });
-  }
-
-  // 1) Mesmas fontes de /conteudo (Google News + Brave), sem apurar tudo (mais rápido)
-  for (const q of queries.slice(0, 2)) {
-    if (fontes.length >= 5) break;
-    try {
-      const when = whenParaGoogle(periodo || '180d');
-      const encontrados = [
-        ...(await buscarGoogleNewsRss(q, { when })),
-        ...(await buscarBraveNews(q, 180)),
-      ];
-      for (const t of encontrados.slice(0, 12)) {
-        if (fontes.length >= 5) break;
-        const url = t.link;
-        if (!url || normalizarUrl(url) === excluirUrl) continue;
-        let meta = null;
-        try {
-          meta = await extrairMetadadosArtigo(url);
-        } catch {
-          /* ignore */
-        }
-        adicionarFonte({
-          titulo: meta?.titulo || t.titulo,
-          url: meta?.url || url,
-          veiculo: meta?.veiculo || t.veiculo || t.fonte,
-          resumo: meta?.resumo || t.resumo,
-          trecho: meta?.trecho || t.resumo,
-        });
-      }
-    } catch (err) {
-      console.warn('[enriquecer] busca noticias:', err.message);
-    }
-  }
-
-  // 1b) Se ainda vazio, pipeline completo (com apuração) como em Pautas com IA
-  if (!fontes.length && queries[0]) {
-    try {
-      const topicos = await pesquisarNichos(queries[0], 6, {
-        periodo: periodo || '180d',
-        incluirRedesSociais: false,
-        filtrarPeriodo: true,
-      });
-      for (const t of topicos || []) {
-        if (fontes.length >= 5) break;
-        const fontesAp = Array.isArray(t.fontesApuracao) ? t.fontesApuracao : [];
-        if (fontesAp.length) {
-          for (const fa of fontesAp) adicionarFonte(fa);
-        } else {
-          adicionarFonte({
-            titulo: t.titulo,
-            link: t.link,
-            veiculo: t.veiculo || t.fonte,
-            resumo: t.resumo,
-            trecho: t.contextoApuracao || t.resumo,
-          });
-        }
-      }
-    } catch (err) {
-      console.warn('[enriquecer] pesquisarNichos:', err.message);
-    }
-  }
-
-  // 2) Fallback: busca complementar (Brave/Serper + scrape)
-  if (fontes.length < 2) {
-    for (const q of queries.slice(0, 2)) {
-      try {
-        const mais = await coletarFontesComplementares({
-          titulo: q,
-          resumo: materia.replace(/\s+/g, ' ').trim().slice(0, 160),
-          linkExcluir: matter.fonte_url,
-          max: 4,
-        });
-        for (const f of mais) adicionarFonte(f);
-      } catch (err) {
-        console.warn('[enriquecer] complementares:', err.message);
-      }
-    }
-  }
-
-  // 3) Snippets brutos se ainda faltar volume
-  if (fontes.length < 2 && queries[0]) {
-    try {
-      const when = whenParaGoogle(periodo || '180d');
-      const brutos = [
-        ...(await buscarBraveNews(queries[0], 180)),
-        ...(await buscarGoogleNewsRss(queries[0], { when })),
-      ];
-      for (const r of brutos.slice(0, 10)) {
-        if (fontes.length >= 5) break;
-        const url = r.link;
-        if (!url || normalizarUrl(url) === excluirUrl) continue;
-        let meta = null;
-        try {
-          meta = await extrairMetadadosArtigo(url);
-        } catch {
-          /* ignore */
-        }
-        adicionarFonte({
-          titulo: meta?.titulo || r.titulo,
-          url: meta?.url || url,
-          veiculo: meta?.veiculo || r.veiculo || r.fonte,
-          resumo: meta?.resumo || r.resumo,
-          trecho: meta?.trecho || r.resumo,
-        });
-      }
-    } catch (err) {
-      console.warn('[enriquecer] fallback bruto:', err.message);
-    }
-  }
-
-  const fontesFinais = fontes.slice(0, 5);
+  const queryTitulo = consultaDeTexto(titulo) || titulo.slice(0, 100);
+  const fontesFinais = await coletarFatosNaWeb({
+    consultas: [queryManual, queryTitulo, titulo.slice(0, 120)],
+    periodo,
+    excluirUrl: matter.fonte_url,
+    resumoContexto: materia.replace(/\s+/g, ' ').trim().slice(0, 160),
+    max: 5,
+    logPrefix: '[enriquecer]',
+  });
 
   if (!fontesFinais.length) {
     const err = new Error(
@@ -2668,12 +2847,7 @@ async function enriquecerMateriaComWeb({
     throw err;
   }
 
-  const blocoFatos = fontesFinais
-    .map(
-      (f, i) =>
-        `Fonte ${i + 1} — ${f.veiculo || 'Web'}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo || ''}\nTrecho factual:\n${String(f.trecho || f.resumo || '').slice(0, 1800)}`
-    )
-    .join('\n\n---\n\n');
+  const blocoFatos = montarBlocoFatos(fontesFinais);
 
   let hashtags = [];
   try {
@@ -2799,4 +2973,5 @@ module.exports = {
   tickFilaJobs,
   resolvePage,
   enriquecerMateriaComWeb,
+  coletarFatosNaWeb,
 };

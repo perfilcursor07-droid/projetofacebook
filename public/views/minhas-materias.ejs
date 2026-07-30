@@ -183,6 +183,30 @@
         <%= fromItem %>–<%= toItem %> de <span id="mia-visible-count"><%= pag.total %></span> matéria(s)<%= q ? ' encontrada(s)' : '' %>
       </p>
 
+      <% if (activeStatus === 'rascunho') { %>
+        <div id="mia-bulk-bar" class="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-2.5 py-2 sm:px-3">
+          <label class="inline-flex cursor-pointer items-center gap-2 text-[11px] text-slate-300">
+            <input type="checkbox" id="mia-select-all" class="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500/40" />
+            <span>Selecionar todas nesta página</span>
+          </label>
+          <span id="mia-selected-count" class="text-[11px] text-slate-500">0 selecionada(s)</span>
+          <div class="ml-auto flex flex-wrap items-center gap-1.5">
+            <button type="button" id="mia-bulk-delete" disabled
+              class="rounded-md border border-rose-500/35 bg-rose-500/10 px-2.5 py-1 text-[11px] font-medium text-rose-200 transition enabled:hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40">
+              Excluir selecionadas
+            </button>
+            <% if (pag.total > 0) { %>
+              <button type="button" id="mia-bulk-delete-all"
+                class="rounded-md border border-rose-500/20 px-2.5 py-1 text-[11px] text-rose-300/80 transition hover:border-rose-400/50 hover:bg-rose-500/10 hover:text-rose-200"
+                data-total="<%= pag.total %>"
+                title="Apaga todos os rascunhos, inclusive das outras páginas">
+                Excluir todos (<%= pag.total %>)
+              </button>
+            <% } %>
+          </div>
+        </div>
+      <% } %>
+
       <ul id="mia-matters-list" class="mt-2 divide-y divide-slate-800/80 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
         <% mattersList.forEach((item) => {
           const st = item.status || 'rascunho';
@@ -195,6 +219,15 @@
           <li class="mia-matter-row group flex items-center gap-2 px-2.5 py-1.5 transition hover:bg-slate-900/70 sm:px-3 sm:py-2"
             data-id="<%= item.id %>"
             data-status="<%= st %>">
+            <% if (activeStatus === 'rascunho') { %>
+              <label class="flex shrink-0 cursor-pointer items-center self-center">
+                <input type="checkbox"
+                  class="mia-matter-check h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500/40"
+                  value="<%= item.id %>"
+                  data-id="<%= item.id %>"
+                  aria-label="Selecionar rascunho" />
+              </label>
+            <% } %>
             <div class="min-w-0 flex-1">
               <div class="flex min-w-0 items-center gap-1.5">
                 <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
@@ -306,5 +339,5 @@
     <% } %>
   </main>
 
-  <script src="/js/minhas-materias.js?v=20260730c"></script>
+  <script src="/js/minhas-materias.js?v=20260730d"></script>
 <%- include('partials/app-end') %>

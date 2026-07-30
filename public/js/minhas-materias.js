@@ -291,4 +291,124 @@
       }).catch(() => {});
     }, 4000);
   }
+
+  /** Seleção em lote — só na aba Rascunhos */
+  (function initBulkRascunhos() {
+    if (st !== 'rascunho') return;
+    const selectAll = document.getElementById('mia-select-all');
+    const bulkDelete = document.getElementById('mia-bulk-delete');
+    const bulkDeleteAll = document.getElementById('mia-bulk-delete-all');
+    const selectedCountEl = document.getElementById('mia-selected-count');
+    if (!list || !selectAll || !bulkDelete) return;
+
+    function checks() {
+      return Array.from(list.querySelectorAll('.mia-matter-check'));
+    }
+
+    function selectedIds() {
+      return checks()
+        .filter((c) => c.checked)
+        .map((c) => Number(c.dataset.id || c.value))
+        .filter((id) => Number.isInteger(id) && id > 0);
+    }
+
+    function syncBulkUi() {
+      const all = checks();
+      const ids = selectedIds();
+      if (selectedCountEl) {
+        selectedCountEl.textContent = ids.length + ' selecionada(s)';
+      }
+      bulkDelete.disabled = ids.length === 0;
+      if (all.length) {
+        selectAll.checked = ids.length === all.length;
+        selectAll.indeterminate = ids.length > 0 && ids.length < all.length;
+      } else {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+      }
+    }
+
+    selectAll.addEventListener('change', () => {
+      const on = selectAll.checked;
+      checks().forEach((c) => {
+        c.checked = on;
+      });
+      syncBulkUi();
+    });
+
+    list.addEventListener('change', (e) => {
+      if (e.target && e.target.classList.contains('mia-matter-check')) syncBulkUi();
+    });
+
+    async function postExcluir(body) {
+      const res = await fetch('/api/materias-ia/matters/excluir-lote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao excluir');
+      return data;
+    }
+
+    bulkDelete.addEventListener('click', async () => {
+      const ids = selectedIds();
+      if (!ids.length) return;
+      if (
+        !confirm(
+          'Excluir ' +
+            ids.length +
+            ' rascunho(s) selecionado(s)?\n\nEssa ação não pode ser desfeita.'
+        )
+      ) {
+        return;
+      }
+      bulkDelete.disabled = true;
+      const old = bulkDelete.textContent;
+      bulkDelete.textContent = 'Excluindo…';
+      try {
+        const data = await postExcluir({ ids });
+        if (!data.deleted) {
+          alert('Nenhum rascunho foi excluído.');
+          bulkDelete.textContent = old;
+          syncBulkUi();
+          return;
+        }
+        window.location.reload();
+      } catch (err) {
+        alert(err.message || 'Erro ao excluir');
+        bulkDelete.textContent = old;
+        syncBulkUi();
+      }
+    });
+
+    if (bulkDeleteAll) {
+      bulkDeleteAll.addEventListener('click', async () => {
+        const total = Number(bulkDeleteAll.dataset.total) || 0;
+        if (
+          !confirm(
+            'Excluir TODOS os ' +
+              total +
+              ' rascunhos?\n\nInclui as outras páginas. Essa ação não pode ser desfeita.'
+          )
+        ) {
+          return;
+        }
+        if (!confirm('Confirma mesmo? Todos os rascunhos serão apagados.')) return;
+        bulkDeleteAll.disabled = true;
+        const old = bulkDeleteAll.textContent;
+        bulkDeleteAll.textContent = 'Excluindo…';
+        try {
+          await postExcluir({ allDrafts: true });
+          window.location.href = '/minhas-materias?status=rascunho';
+        } catch (err) {
+          alert(err.message || 'Erro ao excluir');
+          bulkDeleteAll.disabled = false;
+          bulkDeleteAll.textContent = old;
+        }
+      });
+    }
+
+    syncBulkUi();
+  })();
 })();

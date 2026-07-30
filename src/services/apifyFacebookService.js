@@ -596,7 +596,7 @@ async function buscarPostsPaginaViaWeb(pageUrl, opts = {}) {
           q,
           count: Math.min(20, limit + 5),
           country: 'BR',
-          search_lang: 'pt',
+          search_lang: 'pt-br',
         });
       } catch (err422) {
         if (err422.response?.status !== 422) throw err422;

@@ -20,6 +20,8 @@ router.post('/gerar-manual', (req, res, next) => {
   });
 });
 router.get('/matters', controller.listarMaterias);
+router.post('/matters/excluir-lote', controller.removerMateriasLote);
+router.post('/matters/sincronizar-engajamento', controller.sincronizarEngajamento);
 router.get('/matters/:id', controller.obterMateria);
 router.put('/matters/:id', controller.atualizarMateria);
 router.patch('/matters/:id', controller.atualizarMateria);
@@ -28,7 +30,6 @@ router.post('/matters/:id/publicar', controller.publicar);
 router.post('/matters/:id/agendar', controller.agendar);
 router.post('/matters/:id/variacao', controller.gerarVariacao);
 router.post('/matters/:id/gerar-reel', controller.gerarReel);
-router.post('/matters/sincronizar-engajamento', controller.sincronizarEngajamento);
 router.post('/matters/:id/views', controller.atualizarViews);
 router.get('/matters/:id/views', controller.atualizarViews);
 router.get('/matters/:id/engajamento-debug', controller.engajamentoDebug);

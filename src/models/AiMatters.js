@@ -216,6 +216,24 @@ const AiMatters = {
     return db(this.table).where({ id, user_id: userId }).del();
   },
 
+  /** Exclui várias matérias do usuário. Opcionalmente restringe ao status (ex.: rascunho). */
+  deleteManyByUser(ids, userId, { status = null } = {}) {
+    const list = (Array.isArray(ids) ? ids : [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (!list.length) return Promise.resolve(0);
+    let q = db(this.table).where({ user_id: userId }).whereIn('id', list);
+    if (status) q = q.andWhere({ status: String(status) });
+    return q.del();
+  },
+
+  /** Exclui todas as matérias do usuário com o status informado. */
+  deleteAllByUserStatus(userId, status) {
+    const st = String(status || '').trim();
+    if (!st) return Promise.resolve(0);
+    return db(this.table).where({ user_id: userId, status: st }).del();
+  },
+
   /** Publicadas recentes (com publication_id) para sincronizar engajamento. */
   findRecentPublishedForSync(userId, limit = 30) {
     return db(this.table)

@@ -666,7 +666,7 @@ async function coletarViaBraveWeb(fonte) {
 
   try {
     const { data } = await axios.get('https://api.search.brave.com/res/v1/web/search', {
-      params: { q, count: SCAN_LIMIT, country: 'BR', search_lang: 'pt' },
+      params: { q, count: SCAN_LIMIT, country: 'BR', search_lang: 'pt-br' },
       headers: {
         Accept: 'application/json',
         'X-Subscription-Token': env.braveSearchApiKey,

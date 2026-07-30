@@ -388,7 +388,7 @@ async function buscarFontesPorTitulo(titulo) {
   if (env.braveSearchApiKey) {
     try {
       const { data } = await axios.get('https://api.search.brave.com/res/v1/news/search', {
-        params: { q, count: 8, country: 'BR', search_lang: 'pt' },
+        params: { q, count: 8, country: 'BR', search_lang: 'pt-br' },
         headers: {
           Accept: 'application/json',
           'X-Subscription-Token': env.braveSearchApiKey,

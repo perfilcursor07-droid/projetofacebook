@@ -1,8 +1,16 @@
 <%- include('partials/app-start') %>
 <%
   const lista = typeof itens !== 'undefined' && Array.isArray(itens) ? itens : [];
-  const abaAtual = (typeof aba !== 'undefined' && aba === 'publicadas') ? 'publicadas' : 'agendada';
-  const counts = typeof contagens === 'object' && contagens ? contagens : { agendada: 0, publicadas: 0 };
+  const viralList = typeof viralizadas !== 'undefined' && Array.isArray(viralizadas) ? viralizadas : [];
+  const abaAtual =
+    typeof aba !== 'undefined' && (aba === 'publicadas' || aba === 'viralizadas')
+      ? aba
+      : 'agendada';
+  const counts = typeof contagens === 'object' && contagens
+    ? contagens
+    : { agendada: 0, publicadas: 0, viralizadas: 0 };
+  const pagesList = typeof pages !== 'undefined' && Array.isArray(pages) ? pages : [];
+  const defPageId = typeof defaultPageId !== 'undefined' ? Number(defaultPageId) : null;
   const statusLabels = {
     pendente: 'Pré-agendado',
     confirmado: 'Agendada',
@@ -27,8 +35,14 @@
       return String(v);
     }
   }
+  function fmtNum(n) {
+    if (n == null || n === '') return '—';
+    const v = Number(n);
+    if (!Number.isFinite(v)) return '—';
+    if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
+    return String(Math.round(v));
+  }
 
-  // Chave/hora no fuso de Araguaina, a partir do valor já convertido pelo serviço
   function chaveDia(item) {
     const local = String(item.proposed_at_local || '');
     if (local.length >= 10) return local.slice(0, 10);
@@ -46,26 +60,27 @@
 
   const hojeKey = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
   const amanhaKey = new Date(Date.now() - 3 * 3600 * 1000 + 86400000).toISOString().slice(0, 10);
+  const defaultProposedLocal = amanhaKey + 'T08:00';
 
   function rotuloDia(diaKey) {
-    if (!diaKey || diaKey === 'sem-data') return 'Sem data definida';
-    const [y, m, d] = diaKey.split('-').map(Number);
-    const dt = new Date(Date.UTC(y, m - 1, d, 12));
-    const txt = dt.toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' });
-    const cap = txt.charAt(0).toUpperCase() + txt.slice(1);
-    if (diaKey === hojeKey) return 'Hoje · ' + cap;
-    if (diaKey === amanhaKey) return 'Amanhã · ' + cap;
-    return cap;
+    if (diaKey === hojeKey) return 'Hoje';
+    if (diaKey === amanhaKey) return 'Amanhã';
+    try {
+      const [y, m, d] = String(diaKey).split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d, 15, 0, 0));
+      return dt.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'America/Araguaina' });
+    } catch {
+      return diaKey;
+    }
   }
 
-  // Agrupa a lista por dia preservando a ordem que veio do serviço
   const grupos = [];
   const idxPorDia = new Map();
   lista.forEach(function (item) {
     const dia = chaveDia(item);
     if (!idxPorDia.has(dia)) {
       idxPorDia.set(dia, grupos.length);
-      grupos.push({ dia: dia, itens: [] });
+      grupos.push({ dia, itens: [] });
     }
     grupos[idxPorDia.get(dia)].itens.push(item);
   });
@@ -76,12 +91,17 @@
         <p class="text-[10px] font-semibold uppercase tracking-wider text-amber-400/80">Biblioteca</p>
         <h1 class="mt-1 text-xl font-semibold text-white sm:text-2xl">Agendar</h1>
         <p class="mt-1 text-sm text-slate-400">
-          Matérias geradas dos sites da biblioteca, pré-agendadas de 30 em 30 minutos (7h–22h).
+          <% if (abaAtual === 'viralizadas') { %>
+            Matérias que viralizaram em qualquer Página — reescreve no estilo da sua marca e pré-agenda (sem copiar o post original).
+          <% } else { %>
+            Matérias geradas dos sites da biblioteca, pré-agendadas de 30 em 30 minutos (7h–22h).
+          <% } %>
         </p>
       </div>
       <a href="/biblioteca" class="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 hover:text-white">← Biblioteca</a>
     </header>
 
+    <% if (abaAtual !== 'viralizadas') { %>
     <details class="mt-3 rounded-lg border border-slate-800 bg-slate-900/40">
       <summary class="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 [&::-webkit-details-marker]:hidden">
         Como funciona ▾
@@ -113,8 +133,8 @@
             <select id="agenda-page" required
               class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30">
               <option value="">Selecione uma página</option>
-              <% (pages || []).forEach(function (p) {
-                const sel = Number(defaultPageId) === Number(p.id);
+              <% pagesList.forEach(function (p) {
+                const sel = Number(defPageId) === Number(p.id);
               %>
                 <option value="<%= p.id %>" <%= sel ? 'selected' : '' %>><%= p.page_name %></option>
               <% }) %>
@@ -145,17 +165,9 @@
             <span class="text-[13px] font-medium text-emerald-100">Só posts com minhas palavras-chave</span>
           </label>
           <% if (kwCount) { %>
-            <button
-              type="button"
-              id="agenda-btn-limpar-kw"
-              class="rounded-md border border-rose-500/40 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/20"
-              title="Remove da agenda itens que não batem nas suas palavras-chave"
-            >
-              Remover sem palavra-chave
-            </button>
-            <details class="min-w-0">
-              <summary class="cursor-pointer list-none text-[11px] text-slate-400 hover:text-slate-200 [&::-webkit-details-marker]:hidden"><%= kwCount %>/40 ativas · ver lista ▾</summary>
-              <div class="mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+            <details class="w-full sm:w-auto">
+              <summary class="cursor-pointer text-[11px] text-emerald-300/90 underline-offset-2 hover:underline">Ver palavras (<%= kwCount %>)</summary>
+              <div class="mt-1.5 flex flex-wrap gap-1">
                 <% kwList.forEach(function (kw) { %>
                   <span class="rounded-md bg-slate-800/80 px-1.5 py-0.5 text-[10px] text-slate-300"><%= kw %></span>
                 <% }) %>
@@ -169,17 +181,26 @@
         <p id="agenda-msg" class="hidden text-sm"></p>
       </form>
     </section>
+    <% } else { %>
+      <p id="agenda-msg" class="mt-3 hidden text-sm"></p>
+    <% } %>
 
     <section class="mt-5">
       <div class="sticky top-14 z-20 -mx-4 border-y border-slate-800 bg-slate-950/95 px-4 py-2.5 backdrop-blur md:top-0 sm:-mx-6 sm:px-6">
         <div class="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div class="flex flex-wrap items-center gap-3">
-            <div class="inline-flex rounded-lg border border-slate-700 bg-slate-950 p-0.5" role="tablist" aria-label="Filtrar agenda">
+            <div class="inline-flex flex-wrap rounded-lg border border-slate-700 bg-slate-950 p-0.5" role="tablist" aria-label="Filtrar agenda">
               <a href="/biblioteca/agendar?aba=agendada"
                 class="rounded-md px-3.5 py-1.5 text-sm <%= abaAtual === 'agendada' ? 'bg-amber-500 font-semibold text-slate-950' : 'text-slate-300 hover:text-white' %>"
                 role="tab" aria-selected="<%= abaAtual === 'agendada' ? 'true' : 'false' %>">
                 Agendada
                 <span class="ml-1 opacity-80">(<%= Number(counts.agendada) || 0 %>)</span>
+              </a>
+              <a href="/biblioteca/agendar?aba=viralizadas"
+                class="rounded-md px-3.5 py-1.5 text-sm <%= abaAtual === 'viralizadas' ? 'bg-rose-500 font-semibold text-slate-950' : 'text-slate-300 hover:text-white' %>"
+                role="tab" aria-selected="<%= abaAtual === 'viralizadas' ? 'true' : 'false' %>">
+                Viralizadas
+                <span class="ml-1 opacity-80">(<%= Number(counts.viralizadas) || viralList.length || 0 %>)</span>
               </a>
               <a href="/biblioteca/agendar?aba=publicadas"
                 class="rounded-md px-3.5 py-1.5 text-sm <%= abaAtual === 'publicadas' ? 'bg-emerald-500 font-semibold text-slate-950' : 'text-slate-300 hover:text-white' %>"
@@ -207,6 +228,83 @@
         </div>
       </div>
 
+      <% if (abaAtual === 'viralizadas') { %>
+        <p class="mt-3 text-xs text-slate-500">
+          Mesmas matérias de <a href="/minhas-materias?status=viralizou" class="text-rose-300 hover:underline">Matérias → Viralizou</a>
+          (todas as Páginas). Ao agendar, a IA cria uma <strong class="text-slate-300">nova matéria</strong> no estilo da sua marca — sem plagiar o post original.
+          <span id="agenda-count" class="text-slate-400">(<%= viralList.length %> nesta lista)</span>
+        </p>
+        <div class="mt-2 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+          <ul id="agenda-viral-list" class="divide-y divide-slate-800/80">
+            <% if (!viralList.length) { %>
+              <li class="px-4 py-10 text-center text-sm text-slate-500">
+                Nenhuma viralizada disponível. Abra <a href="/minhas-materias?status=viralizou" class="text-rose-300 hover:underline">Matérias → Viralizou</a> para sincronizar engajamento, ou as já agendadas saíram desta lista.
+              </li>
+            <% } %>
+            <% viralList.forEach(function (v) {
+              const origemPageId = Number(v.facebook_page_id) || 0;
+              let preferId = defPageId;
+              if (preferId && Number(preferId) === origemPageId && pagesList.length > 1) {
+                const other = pagesList.find(function (p) { return Number(p.id) !== origemPageId; });
+                if (other) preferId = other.id;
+              } else if (!preferId && pagesList.length) {
+                const other = pagesList.find(function (p) { return Number(p.id) !== origemPageId; });
+                preferId = other ? other.id : pagesList[0].id;
+              }
+            %>
+              <li class="viral-row flex flex-wrap items-start gap-3 px-3 py-3 hover:bg-slate-900/50" data-matter-id="<%= v.id %>">
+                <% if (v.thumb) { %>
+                  <img src="<%= v.thumb %>" alt="" class="h-14 w-14 shrink-0 rounded-lg object-cover ring-1 ring-slate-700" />
+                <% } else { %>
+                  <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-[10px] text-slate-500">sem foto</div>
+                <% } %>
+                <div class="min-w-0 flex-1 space-y-1.5">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide <%= v.viral_label === 'Viralizou' ? 'bg-rose-500/20 text-rose-200 ring-1 ring-rose-500/30' : 'bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/25' %>"><%= v.viral_label || 'Bom' %></span>
+                    <% if (v.page_name) { %>
+                      <span class="truncate text-[11px] text-slate-400">Origem: <%= v.page_name %></span>
+                    <% } %>
+                    <% if (v.ja_na_agenda) { %>
+                      <span class="rounded px-1.5 py-0.5 text-[9px] text-slate-400 ring-1 ring-slate-600">Já na agenda (pode agendar em outra Página)</span>
+                    <% } %>
+                  </div>
+                  <a href="/materias-ia/<%= v.id %>" class="block truncate text-sm font-medium text-white hover:text-rose-200"><%= v.titulo %></a>
+                  <p class="text-[11px] text-slate-500">
+                    <%= fmtNum(v.likes) %> curtidas · <%= fmtNum(v.comments) %> coment. · <%= fmtNum(v.views) %> views
+                    <% if (v.published_at) { %> · <%= fmtQuando(v.published_at) %><% } %>
+                    <% if (v.fb_post_url) { %>
+                      · <a href="<%= v.fb_post_url %>" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">Ver no FB</a>
+                    <% } %>
+                  </p>
+                  <div class="flex flex-wrap items-end gap-2 pt-1">
+                    <label class="block min-w-[10rem] flex-1">
+                      <span class="text-[10px] font-medium uppercase tracking-wide text-slate-500">Publicar em</span>
+                      <select class="viral-page mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white"
+                        data-origem-page="<%= origemPageId %>">
+                        <% pagesList.forEach(function (p) {
+                          const sel = Number(preferId) === Number(p.id);
+                        %>
+                          <option value="<%= p.id %>" <%= sel ? 'selected' : '' %>><%= p.page_name %></option>
+                        <% }) %>
+                      </select>
+                    </label>
+                    <label class="block">
+                      <span class="text-[10px] font-medium uppercase tracking-wide text-slate-500">Horário</span>
+                      <input type="datetime-local" class="viral-hora mt-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white"
+                        value="<%= defaultProposedLocal %>" />
+                    </label>
+                    <button type="button"
+                      class="viral-btn-agendar rounded-md border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-[11px] font-semibold text-rose-100 hover:bg-rose-500/25"
+                      data-id="<%= v.id %>">
+                      Reescrever e agendar
+                    </button>
+                  </div>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        </div>
+      <% } else { %>
       <p class="mt-3 text-xs text-slate-500">
         <% if (abaAtual === 'agendada') { %>
           Pré-agendadas e já agendadas (confirmadas) — mesmas que aparecem em Matérias salvas. <span id="agenda-count" class="text-slate-400">(<%= lista.length %> nesta lista)</span>
@@ -222,7 +320,7 @@
               <% if (abaAtual === 'publicadas') { %>
                 Nenhuma publicação ainda nesta agenda.
               <% } else { %>
-                Nenhuma pré-agenda ainda. Clique em <strong class="text-slate-300">Montar agenda de amanhã</strong>.
+                Nenhuma pré-agenda ainda. Clique em <strong class="text-slate-300">Montar agenda de amanhã</strong> ou use a aba <strong class="text-rose-300">Viralizadas</strong>.
               <% } %>
             </li>
           <% } %>
@@ -256,47 +354,22 @@
               <div class="min-w-0 flex-1 space-y-1.5">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[uiSt] || statusClass[st] || statusClass.pendente %>"><%= statusLabels[uiSt] || statusLabels[st] || st %></span>
+                  <% if (item.is_viral_origem || item.source_matter_id) { %>
+                    <span class="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-rose-500/15 text-rose-200 ring-1 ring-rose-500/25" title="<%= item.source_matter_titulo || '' %>">Variação viral<%= item.source_page_name ? ' · ' + item.source_page_name : '' %></span>
+                  <% } %>
                   <% if (item.fonte_nome) { %>
                     <span class="truncate text-[11px] text-slate-500"><%= item.fonte_nome %></span>
                   <% } %>
-                  <% if (item.matched_keyword || item.palavra_chave) { %>
-                    <span class="max-w-[220px] truncate rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-200 ring-1 ring-sky-500/25" title="Palavra-chave: <%= String(item.matched_keyword || item.palavra_chave).replace(/"/g, '&quot;') %>"><%= item.matched_keyword || item.palavra_chave %></span>
+                  <% if (item.matched_keyword && item.matched_keyword !== 'viralizada') { %>
+                    <span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300"><%= item.matched_keyword %></span>
                   <% } %>
                 </div>
-                <p class="agenda-titulo-label truncate text-sm font-medium text-slate-100" data-matter-id="<%= matterId %>"><%= titulo %></p>
-                <div class="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                  <% if (st === 'pendente' || st === 'confirmado') { %>
-                    <label class="inline-flex flex-wrap items-center gap-1.5">
-                      <span class="text-slate-500">Alterar</span>
-                      <span class="agenda-hora-wrap relative inline-flex items-center">
-                        <input
-                          type="datetime-local"
-                          class="agenda-hora relative rounded-lg border border-slate-700 bg-slate-950 py-1 pl-2 pr-8 text-[12px] text-slate-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
-                          style="color-scheme: dark;"
-                          value="<%= item.proposed_at_local || '' %>"
-                          data-id="<%= item.id %>"
-                          data-status="<%= st %>"
-                          step="60"
-                        />
-                        <button
-                          type="button"
-                          class="agenda-hora-btn pointer-events-none absolute right-1.5 top-1/2 z-[1] -translate-y-1/2 text-white"
-                          tabindex="-1"
-                          aria-hidden="true"
-                          title="Abrir calendário"
-                        >
-                          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <rect x="3" y="4" width="18" height="18" rx="2" />
-                            <path d="M16 2v4M8 2v4M3 10h18" />
-                          </svg>
-                        </button>
-                      </span>
-                    </label>
-                    <span class="agenda-hora-status text-[10px] text-slate-600" data-id="<%= item.id %>"></span>
-                  <% } else { %>
-                    <span class="text-slate-500"><%= st === 'publicado' ? 'Publicado em' : 'Quando' %>:</span>
-                    <span><%= fmtQuando(item.matter_published_at || item.proposed_at) %></span>
-                  <% } %>
+                <a href="<%= matterId ? '/materias-ia/' + matterId : (item.post_id ? '/biblioteca/posts/' + item.post_id : '#') %>" class="block truncate text-sm font-medium text-white hover:text-amber-200"><%= titulo %></a>
+                <div class="flex flex-wrap items-center gap-2">
+                  <input type="datetime-local" class="agenda-hora rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200 <%= st === 'publicado' ? 'opacity-50' : '' %>"
+                    value="<%= String(item.proposed_at_local || '').slice(0, 16) %>"
+                    data-id="<%= item.id %>"
+                    <%= st === 'publicado' ? 'disabled' : '' %> />
                 </div>
 
                 <% if (canArte && abaAtual === 'agendada') { %>
@@ -356,6 +429,7 @@
           <% }) %>
         </ul>
       </div>
+      <% } %>
     </section>
   </main>
 
@@ -367,21 +441,11 @@
   </div>
 
   <style>
-    /* Esconde o ícone nativo (costuma ficar preto no Windows) e usa o SVG branco à direita */
-    .agenda-hora {
-      color-scheme: dark;
-    }
+    .agenda-hora { color-scheme: dark; }
     .agenda-hora::-webkit-calendar-picker-indicator {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      opacity: 0;
-      cursor: pointer;
-      /* cobre o campo inteiro — clique abre o picker; o ícone branco é o SVG por cima */
+      position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer;
     }
+    .viral-hora { color-scheme: dark; }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260730e"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260730f"></script>
 <%- include('partials/app-end') %>

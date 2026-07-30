@@ -275,15 +275,47 @@
     <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
       <p class="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">Matéria a partir das suas infos</p>
       <p class="mt-2 text-sm text-slate-400">
-        Informe os fatos (quem, o quê, onde, detalhes). A IA gera título e matéria; se enviar imagem, monta a capa com a Minha marca.
+        Escreva os fatos (quem, o quê, onde) ou só peça o assunto. Com a pesquisa ligada, a IA busca
+        na internet, lê as reportagens e escreve com dados e fontes reais.
       </p>
 
       <label class="mt-4 block text-sm">
-        <span class="text-slate-400">Informações da matéria</span>
+        <span class="text-slate-400">Informações ou pedido da matéria</span>
         <textarea id="mia-manual-info" rows="7"
-          placeholder="Ex.: Pastora Helena Raquel declarou ontem em culto em SP que… Nomes, números e falas literais que devem aparecer."
+          placeholder="Ex. com pesquisa: faça uma matéria sobre católicos e evangélicos juntos na política em 2026&#10;Ex. sem pesquisa: Pastora Helena Raquel declarou ontem em culto em SP que… (nomes, números e falas literais)"
           class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
       </label>
+
+      <div class="mt-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+        <label class="flex cursor-pointer items-start gap-3">
+          <input id="mia-manual-pesquisar" type="checkbox" checked
+            class="mt-0.5 h-4 w-4 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500" />
+          <span>
+            <span class="block text-sm font-medium text-emerald-100">Pesquisar na internet (dados e fontes reais)</span>
+            <span class="block text-xs text-slate-500">
+              Desmarque para a IA usar só o que você escreveu, sem buscar nada fora.
+            </span>
+          </span>
+        </label>
+
+        <div id="mia-manual-pesquisa-campos" class="mt-3 grid gap-3 sm:grid-cols-2">
+          <label class="block text-sm">
+            <span class="text-slate-400">Palavras-chave da busca (opcional)</span>
+            <input id="mia-manual-keywords" type="text" placeholder="ex.: pesquisa Quaest evangélicos católicos 2026"
+              class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+          </label>
+          <label class="block text-sm">
+            <span class="text-slate-400">Período das notícias</span>
+            <select id="mia-manual-periodo"
+              class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-emerald-500 focus:outline-none">
+              <option value="7d">7 dias</option>
+              <option value="30d" selected>30 dias</option>
+              <option value="90d">90 dias</option>
+              <option value="180d">180 dias</option>
+            </select>
+          </label>
+        </div>
+      </div>
 
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
         <label class="block text-sm">
@@ -326,6 +358,7 @@
         <button type="button" id="mia-btn-manual" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Gerar matéria</button>
       </div>
       <p id="mia-manual-status" class="mt-3 text-sm text-slate-400"></p>
+      <div id="mia-manual-fontes" class="mt-3 hidden rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300"></div>
     </div>
   </div>
 </section>

@@ -15,9 +15,16 @@
     new URLSearchParams(location.search).get('aba') ||
     'agendada';
 
-  function reloadAgenda() {
+  function reloadAgenda(forceAba) {
     const params = new URLSearchParams(location.search);
-    params.set('aba', abaAtual === 'publicadas' ? 'publicadas' : 'agendada');
+    const next =
+      forceAba ||
+      (abaAtual === 'publicadas'
+        ? 'publicadas'
+        : abaAtual === 'viralizadas'
+          ? 'viralizadas'
+          : 'agendada');
+    params.set('aba', next);
     location.href = '/biblioteca/agendar?' + params.toString();
   }
 
@@ -698,6 +705,48 @@
         btnBuscar.disabled = false;
         btnBuscar.textContent = original || 'Buscar fotos (Brave / Serper)';
       }
+    }
+  });
+
+  // Aba Viralizadas: reescreve (anti-plágio + marca) e pré-agenda
+  document.getElementById('agenda-viral-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.viral-btn-agendar');
+    if (!btn) return;
+    const row = btn.closest('.viral-row');
+    const id = btn.dataset.id || row?.dataset.matterId;
+    if (!id) return;
+    const page = row?.querySelector('.viral-page')?.value || '';
+    const hora = row?.querySelector('.viral-hora')?.value || '';
+    if (!page) {
+      setMsg('Selecione a Página de destino.', true);
+      return;
+    }
+    const old = btn.textContent;
+    btn.disabled = true;
+    try {
+      setBusy(true, 'Reescrevendo no estilo da sua marca (sem plagiar) e pré-agendando…');
+      setMsg('');
+      const data = await api('/api/biblioteca/agenda/viralizadas/' + id, {
+        method: 'POST',
+        body: JSON.stringify({
+          facebook_page_id: page,
+          proposed_at: hora || null,
+        }),
+      });
+      setBusy(false);
+      setMsg(
+        'Variação pronta' +
+          (data.titulo ? ': “' + data.titulo + '”' : '') +
+          ' — foi para Agendada. Confirme o horário quando quiser.',
+        false
+      );
+      setTimeout(() => reloadAgenda('agendada'), 900);
+    } catch (err) {
+      setBusy(false);
+      btn.disabled = false;
+      btn.textContent = old;
+      setMsg(err.message || 'Falha ao agendar viralizada', true);
+      alert(err.message || 'Falha ao agendar viralizada');
     }
   });
 
