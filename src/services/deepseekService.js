@@ -1207,7 +1207,10 @@ async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, sni
 
 const TITULO_TOMES = {
   natural: 'Natural e jornalístico: claro, fluido, sem exagero.',
-  polemico: 'Mais polêmico e provocativo: tensão e contraste, sem fake news nem ofensa gratuita.',
+  polemico:
+    'POLEMICO DE VERDADE (não “um pouco mais forte”): manchete de briga, tensão e contraste. ' +
+    'Deve parecer que vai gerar comentário/raiva/defesa. Use confronto, cobrança ou divisão explícita. ' +
+    'Sem fake news, sem xingamento gratuito, sem Caps Lock e sem !!!.',
   direto: 'Direto e seco: sujeito + verbo + fato, manchete de portal.',
   curiosidade: 'Curiosidade: abre lacuna ou pergunta implícita que faz a pessoa querer ler.',
   emocional: 'Emocional e humano: ângulo de sentimento/fé, sem melodramático falso.',
@@ -1305,19 +1308,43 @@ Regras:
 - NÃO use clickbait mentiroso, Caps Lock excessivo nem pontos de exclamação em série.
 - Tom pedido: ${tomDesc}
 - OBRIGATÓRIO: a manchete deve ser SUBSTANCIALMENTE diferente do título atual (mude ângulo, sujeito ou formulação).
-${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastante a estrutura da frase.' : ''}`,
+${
+  tomKey === 'polemico'
+    ? `
+REGRAS EXTRA — TOM POLÊMICO (obrigatório):
+- NÃO entregue manchete "neutra de portal". Se soar só informativa, está ERRADO.
+- Priorize briga, cobrança, confronto ou divisão (ex.: rebate, explode, causa revolta, divide, provoca, desafia, nega com força).
+- Coloque o CONFLITO no começo ou no centro da frase (não enterre a polêmica no final).
+- Prefira estrutura com contraste ou frase de impacto (aspas curtas só se existir no texto).
+- Exemplos de vibe (adapte aos FATOS do texto, não copie):
+  · "Hernandes explode e rebate críticas ao Legendários: 'não tem misticismo'"
+  · "Críticas ao Legendários inflam: Hernandes Dias Lopes reage e nega acusação"
+  · "Legendários sob fogo: Hernandes Dias Lopes rebate e nega misticismo no programa"
+- PROIBIDO soar como: "X rebate críticas e nega Y" (muito morno). Reescreva com tensão.
+`
+    : ''
+}
+${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastante a estrutura da frase.' : ''}${
+        attempt > 1 && tomKey === 'polemico'
+          ? '\n- Ainda está fraco: aumente o confronto e mude completamente a formulação.'
+          : ''
+      }`,
     },
     {
       role: 'user',
       content: [
-        `Tom: ${tomKey}`,
+        `Tom: ${tomKey}${tomKey === 'polemico' ? ' (POLÊMICO FORTE — não suavize)' : ''}`,
         tituloAtual ? `Título atual (NÃO repetir):\n${tituloAtual}` : null,
         evitarList.length ? `Também NÃO use estes:\n- ${evitarList.join('\n- ')}` : null,
         fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
         materia ? `Texto da matéria:\n${String(materia).slice(0, 2500)}` : null,
         attempt > 1
-          ? 'Gere UMA manchete NOVA, com palavras e estrutura bem diferentes.'
-          : 'Gere UMA manchete nova nesse tom.',
+          ? tomKey === 'polemico'
+            ? 'Gere UMA manchete NOVA, bem mais polêmica e com estrutura diferente.'
+            : 'Gere UMA manchete NOVA, com palavras e estrutura bem diferentes.'
+          : tomKey === 'polemico'
+            ? 'Gere UMA manchete polêmica de verdade (tensão/confronto), fiel aos fatos.'
+            : 'Gere UMA manchete nova nesse tom.',
       ]
         .filter(Boolean)
         .join('\n\n'),
@@ -1330,9 +1357,11 @@ ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastan
     const temp =
       attempt === 1
         ? tomKey === 'polemico'
-          ? 0.95
+          ? 1.05
           : 0.88
-        : 1.05;
+        : tomKey === 'polemico'
+          ? 1.2
+          : 1.05;
     const raw = await chatCompletion(baseMessages(attempt), {
       temperature: Math.min(temp, 1.3),
       json: true,
