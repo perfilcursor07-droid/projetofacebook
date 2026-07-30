@@ -462,6 +462,10 @@ async function contagensAgenda(userId) {
   let viralizadas = 0;
   try {
     viralizadas = await AiMatters.countViralizadasDaConta(userId);
+    const usadas = await BibliotecaAgenda.findPublishedSourceMatterIds(userId);
+    if (usadas.length) {
+      viralizadas = Math.max(0, Number(viralizadas) - usadas.length);
+    }
   } catch (err) {
     console.warn('[agenda] contagem viralizadas:', err.message);
     try {
@@ -499,15 +503,42 @@ async function listarViralizadas(userId, { limit = 40, sync = true } = {}) {
   }
 
   let usadas = [];
+  let jaPublicadas = [];
   try {
-    usadas = await BibliotecaAgenda.findActiveSourceMatterIds(userId);
+    [usadas, jaPublicadas] = await Promise.all([
+      BibliotecaAgenda.findActiveSourceMatterIds(userId),
+      BibliotecaAgenda.findPublishedSourceMatterIds(userId),
+    ]);
   } catch (err) {
     // Coluna source_matter_id pode ainda não existir se a migration não rodou
     console.warn('[agenda] source_matter_id:', err.message);
   }
   const usadasSet = new Set((usadas || []).map((id) => Number(id)));
+  const publicadasSet = new Set((jaPublicadas || []).map((id) => Number(id)));
 
-  return (rows || []).map((r) => {
+  // Já publicou a variação → some da aba (foi usada naquele perfil)
+  const filtradas = (rows || []).filter((r) => !publicadasSet.has(Number(r.id)));
+
+  // Busca mais se o filtro tirou muitas (pool era limitado)
+  if (filtradas.length < lim && publicadasSet.size > 0) {
+    try {
+      const mais = await AiMatters.findViralizadasDaConta(userId, {
+        limit: Math.min(80, lim + publicadasSet.size),
+      });
+      const visto = new Set(filtradas.map((r) => Number(r.id)));
+      for (const r of mais || []) {
+        const id = Number(r.id);
+        if (visto.has(id) || publicadasSet.has(id)) continue;
+        filtradas.push(r);
+        visto.add(id);
+        if (filtradas.length >= lim) break;
+      }
+    } catch {
+      /* mantém filtradas */
+    }
+  }
+
+  return filtradas.slice(0, lim).map((r) => {
     let thumb = r.imagem_url || null;
     if (r.imagem_path) {
       thumb = `/media/${String(r.imagem_path).replace(/\\/g, '/')}`;

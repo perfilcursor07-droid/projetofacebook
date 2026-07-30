@@ -92,6 +92,28 @@ const BibliotecaAgenda = {
     return q.pluck('source_matter_id');
   },
 
+  /**
+   * Origens virais cuja variação já foi PUBLICADA nesta conta
+   * (somem da aba Viralizadas — já foram usadas naquele perfil).
+   */
+  async findPublishedSourceMatterIds(userId) {
+    const byAgenda = await db(this.table)
+      .where({ user_id: userId, status: 'publicado' })
+      .whereNotNull('source_matter_id')
+      .pluck('source_matter_id');
+
+    // Variação publicada pela matéria (sync pode atrasar o status da agenda)
+    const byMatter = await db(`${this.table} as a`)
+      .join('ai_matters as m', 'm.id', 'a.matter_id')
+      .where('a.user_id', userId)
+      .whereNotNull('a.source_matter_id')
+      .whereNotIn('a.status', ['cancelado'])
+      .where('m.status', 'publicado')
+      .pluck('a.source_matter_id');
+
+    return [...new Set([...(byAgenda || []), ...(byMatter || [])].map(Number).filter(Boolean))];
+  },
+
   create(data) {
     return db(this.table).insert(data);
   },
