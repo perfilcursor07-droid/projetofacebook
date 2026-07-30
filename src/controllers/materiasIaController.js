@@ -527,9 +527,14 @@ async function showMatter(req, res, next) {
     let ultimoAgendamento = null;
     let proximoSlotLocal = null;
     let proximoSlotLabel = null;
+    let horarioAtualAgendado = null;
     try {
+      const jaAgendada = String(matter.status) === 'agendado' && matter.scheduled_at;
+      if (jaAgendada) {
+        horarioAtualAgendado = materiaIaService.formatarHorarioAgendamento(matter.scheduled_at);
+      }
       const info = await materiaIaService.obterUltimoAgendamento(req.session.userId, {
-        excludeMatterId: matter.status === 'agendado' ? matter.id : null,
+        excludeMatterId: jaAgendada ? matter.id : null,
       });
       ultimoAgendamento = info.ultimo || null;
       proximoSlotLocal = info.proximoSlotLocal || null;
@@ -545,6 +550,7 @@ async function showMatter(req, res, next) {
       ultimoAgendamento,
       proximoSlotLocal,
       proximoSlotLabel,
+      horarioAtualAgendado,
       success: req.query.success || null,
       error: req.query.error || null,
     });

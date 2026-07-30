@@ -524,20 +524,26 @@
   }
 
   const scheduleInput = document.getElementById('matter-schedule');
-  if (scheduleInput && !scheduleInput.value) {
-    // Prefere próximo slot (+30 após o último); senão agora + 10 min
-    scheduleInput.value = cfg.proximoSlotLocal || defaultScheduleAraguainaPlus10();
+  if (scheduleInput) {
+    // Já agendada: mantém o horário dela. Senão: +30 após a última, ou agora+10.
+    if (!scheduleInput.value) {
+      if (cfg.horarioAtualAgendado?.local) {
+        scheduleInput.value = cfg.horarioAtualAgendado.local;
+      } else {
+        scheduleInput.value = cfg.proximoSlotLocal || defaultScheduleAraguainaPlus10();
+      }
+    }
   }
 
   document.getElementById('btn-agendar-mais-30')?.addEventListener('click', () => {
     const btn = document.getElementById('btn-agendar-mais-30');
     const slot = btn?.dataset?.slot || cfg.proximoSlotLocal;
     if (!slot || !scheduleInput) {
-      setStatus('Não há último agendamento para calcular +30 min.', true);
+      setStatus('Não há matéria agendada para calcular +30 min.', true);
       return;
     }
     scheduleInput.value = slot;
-    setStatus('Horário preenchido: 30 min após o último agendamento');
+    setStatus('Horário preenchido: 30 min após a última matéria agendada');
     scheduleInput.focus();
   });
 
@@ -549,7 +555,6 @@
     }
     setStatus('Salvando e agendando…');
     try {
-      // Envia o valor do datetime-local; o servidor interpreta como Araguaína (UTC−3)
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/agendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -561,7 +566,9 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao agendar');
-      setStatus('Agendada ✓ (horário de Araguaína)');
+      setStatus(
+        cfg.horarioAtualAgendado ? 'Remarcada ✓ (horário de Araguaína)' : 'Agendada ✓ (horário de Araguaína)'
+      );
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {
       setStatus(err.message, true);

@@ -897,8 +897,19 @@ function formatLabelAraguaina(date) {
   });
 }
 
+function formatarHorarioAgendamento(scheduledAt) {
+  const at = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+  if (Number.isNaN(at.getTime())) return null;
+  return {
+    at: at.toISOString(),
+    local: toDatetimeLocalAraguaina(at),
+    label: formatLabelAraguaina(at),
+  };
+}
+
 /**
- * Último horário agendado do usuário (matérias + agenda da biblioteca).
+ * Último horário entre matérias AGENDADAS (Minhas matérias).
+ * Não usa Agenda da Biblioteca — evita misturar filas diferentes.
  * Retorna também o próximo slot sugerido (+30 min), nunca no passado.
  */
 async function obterUltimoAgendamento(userId, { excludeMatterId = null } = {}) {
@@ -913,55 +924,23 @@ async function obterUltimoAgendamento(userId, { excludeMatterId = null } = {}) {
     .select('id', 'titulo', 'scheduled_at')
     .first();
 
-  let agendaRow = null;
-  try {
-    agendaRow = await db('biblioteca_agenda')
-      .where({ user_id: userId })
-      .whereIn('status', ['pendente', 'confirmado'])
-      .whereNotNull('proposed_at')
-      .orderBy('proposed_at', 'desc')
-      .select('id', 'proposed_at', 'matter_id')
-      .first();
-  } catch {
-    agendaRow = null;
+  if (!matterRow?.scheduled_at) {
+    return { ultimo: null, proximoSlotLocal: null, proximoSlotLabel: null };
   }
 
-  const candidates = [];
-  if (matterRow?.scheduled_at) {
-    candidates.push({
-      at: new Date(matterRow.scheduled_at),
-      titulo: matterRow.titulo || null,
-      fonte: 'materia',
-      id: matterRow.id,
-    });
-  }
-  if (agendaRow?.proposed_at) {
-    candidates.push({
-      at: new Date(agendaRow.proposed_at),
-      titulo: null,
-      fonte: 'biblioteca',
-      id: agendaRow.id,
-    });
-  }
-  if (!candidates.length) {
-    return { ultimo: null, proximoSlotLocal: null };
-  }
-
-  candidates.sort((a, b) => b.at.getTime() - a.at.getTime());
-  const best = candidates[0];
-
-  // +30 min; se cair no passado, sobe para agora + 10 min
-  let proximo = new Date(best.at.getTime() + 30 * 60 * 1000);
+  const at = new Date(matterRow.scheduled_at);
+  let proximo = new Date(at.getTime() + 30 * 60 * 1000);
   const minFuture = new Date(Date.now() + 10 * 60 * 1000);
   if (proximo.getTime() < minFuture.getTime()) proximo = minFuture;
 
   return {
     ultimo: {
-      at: best.at.toISOString(),
-      local: toDatetimeLocalAraguaina(best.at),
-      label: formatLabelAraguaina(best.at),
-      titulo: best.titulo,
-      fonte: best.fonte,
+      at: at.toISOString(),
+      local: toDatetimeLocalAraguaina(at),
+      label: formatLabelAraguaina(at),
+      titulo: matterRow.titulo || null,
+      fonte: 'materia',
+      id: matterRow.id,
     },
     proximoSlotLocal: toDatetimeLocalAraguaina(proximo),
     proximoSlotLabel: formatLabelAraguaina(proximo),
@@ -2553,6 +2532,8 @@ module.exports = {
   tickMonitores,
   agendarMateria,
   obterUltimoAgendamento,
+  formatarHorarioAgendamento,
+  toDatetimeLocalAraguaina,
   tickFilaJobs,
   resolvePage,
   enriquecerMateriaComWeb,
