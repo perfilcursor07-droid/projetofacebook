@@ -43,6 +43,55 @@ function applySearchFilter(query, q) {
   });
 }
 
+/**
+ * Ordenação da lista Minhas matérias:
+ * - Aba Agendadas: horário de agendamento (mais cedo → mais tarde)
+ * - Aba Todas: Agendadas (por horário) → Rascunhos → Prontas → Erros → Publicadas
+ * - Demais abas: mais recentes primeiro
+ */
+function applyListOrder(query, status) {
+  const st = String(status || '').trim().toLowerCase();
+
+  if (st === 'agendado') {
+    return query.orderByRaw(
+      'COALESCE(ai_matters.scheduled_at, ai_matters.created_at) ASC, ai_matters.id ASC'
+    );
+  }
+
+  if (st === 'rascunho' || st === 'pronto' || st === 'erro') {
+    return query.orderBy('ai_matters.created_at', 'desc');
+  }
+
+  if (st === 'publicado' || st === 'viralizou') {
+    return query.orderByRaw(
+      'COALESCE(ai_matters.published_at, publications.published_at, ai_matters.created_at) DESC'
+    );
+  }
+
+  // Todas: agendadas primeiro (por horário), depois rascunhos, resto por data
+  return query.orderByRaw(`
+    CASE ai_matters.status
+      WHEN 'agendado' THEN 0
+      WHEN 'rascunho' THEN 1
+      WHEN 'pronto' THEN 2
+      WHEN 'erro' THEN 3
+      WHEN 'publicado' THEN 4
+      ELSE 5
+    END ASC,
+    CASE
+      WHEN ai_matters.status = 'agendado'
+      THEN COALESCE(ai_matters.scheduled_at, '9999-12-31 23:59:59')
+      ELSE NULL
+    END ASC,
+    CASE
+      WHEN ai_matters.status <> 'agendado'
+      THEN COALESCE(ai_matters.published_at, ai_matters.created_at)
+      ELSE NULL
+    END DESC,
+    ai_matters.id ASC
+  `);
+}
+
 const AiMatters = {
   table: 'ai_matters',
 
@@ -81,7 +130,6 @@ const AiMatters = {
         'publications.published_at as pub_published_at',
         'facebook_pages.page_name as page_name'
       )
-      .orderBy('ai_matters.created_at', 'desc')
       .limit(Math.max(1, Math.min(100, Number(limit) || 20)))
       .offset(Math.max(0, Number(offset) || 0));
 
@@ -92,6 +140,7 @@ const AiMatters = {
     }
 
     query = applySearchFilter(query, q);
+    query = applyListOrder(query, viralFilter ? 'viralizou' : st || 'all');
     return query;
   },
 
