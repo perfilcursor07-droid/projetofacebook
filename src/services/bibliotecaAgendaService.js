@@ -133,7 +133,7 @@ function mapItem(row) {
   };
 }
 
-/** Alinha status/horário da agenda com a matéria (evita Confirmado ≠ Agendada). */
+/** Alinha status da agenda com a matéria. Horário: agenda é a fonte da verdade. */
 async function sincronizarComMaterias(userId, itens) {
   const lista = Array.isArray(itens) ? itens : [];
   for (const row of lista) {
@@ -149,15 +149,27 @@ async function sincronizarComMaterias(userId, itens) {
         await BibliotecaAgenda.update(row.id, { status: 'publicado' });
         row.status = 'publicado';
       }
+      // NÃO sobrescrever proposed_at com matter_scheduled_at — isso desfaz a compactação 30 em 30.
+      // Se confirmado e o horário da matéria divergir, empurra a agenda → matéria.
       if (
-        (agendaSt === 'confirmado' || matterSt === 'agendado') &&
+        (row.status === 'confirmado' || agendaSt === 'confirmado') &&
+        row.matter_id &&
+        row.proposed_at &&
         row.matter_scheduled_at
       ) {
         const a = new Date(row.proposed_at).getTime();
         const b = new Date(row.matter_scheduled_at).getTime();
         if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > 60_000) {
-          await BibliotecaAgenda.update(row.id, { proposed_at: new Date(row.matter_scheduled_at) });
-          row.proposed_at = row.matter_scheduled_at;
+          try {
+            await materiaIaService.agendarMateria({
+              userId,
+              matterId: row.matter_id,
+              runAt: new Date(row.proposed_at).toISOString(),
+            });
+            row.matter_scheduled_at = row.proposed_at;
+          } catch {
+            /* mantém horário da agenda mesmo se a fila falhar */
+          }
         }
       }
     } catch {
@@ -165,6 +177,29 @@ async function sincronizarComMaterias(userId, itens) {
     }
   }
   return lista;
+}
+
+/** Meia-noite Araguaina (UTC−3) do dia YYYY-MM-DD. */
+function startOfDayAraguaina(dayKey) {
+  const m = String(dayKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return startOfTomorrowAraguaina();
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 3, 0, 0, 0));
+}
+
+/** Slots 7h–22h de um dia específico (chave local Araguaina). */
+function buildAllDaySlotsForDay(
+  dayKey,
+  { startHour = DEFAULT_START_HOUR, endHour = DEFAULT_END_HOUR } = {}
+) {
+  const base = startOfDayAraguaina(dayKey);
+  const slots = [];
+  for (let h = startHour; h <= endHour; h += 1) {
+    for (const min of [0, SLOT_MINUTES]) {
+      if (h === endHour && min > 0) break;
+      slots.push(new Date(base.getTime() + (h * 60 + min) * 60 * 1000));
+    }
+  }
+  return slots;
 }
 
 /** Itens ativos do dia (filtra por chave local — evita erro de fuso no WHERE). */
@@ -192,7 +227,7 @@ async function ultimoHorarioOcupadoAmanha(userId) {
 
 /**
  * Compacta pendentes + confirmados do dia em horários contínuos de 30 em 30 min
- * (preenche buracos tipo 09:00 → 10:30). Publicados ficam fixos.
+ * (preenche buracos tipo 08:30 → 10:30). Publicados ficam fixos.
  */
 async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
   const day = dayKey || diaAmanhaKey();
@@ -205,28 +240,31 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
     .sort((a, b) => new Date(a.proposed_at) - new Date(b.proposed_at));
   if (itens.length < 1) return { ajustados: 0 };
 
-  const slotsLivres = buildAllDaySlots().filter((s) => !publicadosKeys.has(chaveHorario(s)));
+  const slotsLivres = buildAllDaySlotsForDay(day).filter(
+    (s) => !publicadosKeys.has(chaveHorario(s))
+  );
   if (!slotsLivres.length) return { ajustados: 0 };
 
   const firstKey = chaveHorario(itens[0].proposed_at);
   let startIdx = slotsLivres.findIndex((s) => chaveHorario(s) === firstKey);
   if (startIdx < 0) {
+    // Encaixa no slot de grade mais próximo (00/30) em vez de pular horários
     const firstMs = new Date(itens[0].proposed_at).getTime();
-    startIdx = slotsLivres.findIndex((s) => s.getTime() >= firstMs);
-    if (startIdx < 0) startIdx = 0;
-  }
-
-  let precisa = itens.length > slotsLivres.length - startIdx;
-  if (!precisa) {
-    for (let i = 0; i < itens.length; i += 1) {
-      const expected = slotsLivres[startIdx + i];
-      if (!expected || chaveHorario(itens[i].proposed_at) !== chaveHorario(expected)) {
-        precisa = true;
-        break;
-      }
+    startIdx = 0;
+    for (let i = 0; i < slotsLivres.length; i += 1) {
+      if (slotsLivres[i].getTime() <= firstMs) startIdx = i;
+      else break;
     }
   }
-  // Também detecta choque (dois no mesmo horário)
+
+  let precisa = false;
+  for (let i = 0; i < itens.length; i += 1) {
+    const expected = slotsLivres[startIdx + i];
+    if (!expected || chaveHorario(itens[i].proposed_at) !== chaveHorario(expected)) {
+      precisa = true;
+      break;
+    }
+  }
   if (!precisa) {
     const seen = new Set();
     for (const r of itens) {
@@ -247,6 +285,7 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
     if (chaveHorario(itens[i].proposed_at) === chaveHorario(slot)) continue;
 
     await BibliotecaAgenda.update(itens[i].id, { proposed_at: slot });
+    itens[i].proposed_at = slot;
     if (itens[i].status === 'confirmado' && itens[i].matter_id) {
       try {
         await materiaIaService.agendarMateria({
@@ -263,15 +302,26 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
   return { ajustados };
 }
 
+/** Compacta hoje e amanhã (e o dayKey pedido). */
+async function compactarHorariosAbertos(userId) {
+  const days = new Set([diaHojeKey(), diaAmanhaKey()]);
+  let total = 0;
+  for (const day of days) {
+    const r = await compactarHorariosDoDia(userId, { dayKey: day });
+    total += r.ajustados || 0;
+  }
+  return { ajustados: total };
+}
+
 /** @deprecated use compactarHorariosDoDia — mantido como alias */
 async function repararHorariosSobrepostos(userId) {
-  return compactarHorariosDoDia(userId);
+  return compactarHorariosAbertos(userId);
 }
 
 async function listarAgenda(userId, { status = 'all', aba = null, reparar = true } = {}) {
   if (reparar) {
     try {
-      await compactarHorariosDoDia(userId);
+      await compactarHorariosAbertos(userId);
     } catch {
       /* não bloqueia listagem */
     }
@@ -829,11 +879,13 @@ module.exports = {
   readequarHorariosPendentes,
   repararHorariosSobrepostos,
   compactarHorariosDoDia,
+  compactarHorariosAbertos,
   tickAgendaPre,
   acaoEmLote,
   toDatetimeLocal,
   buildSlots,
   buildAllDaySlots,
+  buildAllDaySlotsForDay,
   parseProposedAt,
   ultimoHorarioOcupadoAmanha,
   chaveHorario,
