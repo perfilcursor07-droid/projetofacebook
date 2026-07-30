@@ -142,6 +142,29 @@ function filterExcludingKeywords(rows, keywords) {
   return (rows || []).filter((row) => !matchedIds.has(row.id));
 }
 
+function dedupeAlertasRows(rows) {
+  const seenPost = new Set();
+  const seenTitulo = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    if (row.post_id && seenPost.has(Number(row.post_id))) continue;
+    const tKey = `${row.fonte_id || 0}|${String(row.titulo || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/^[^:]+:\s*/, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 140)}`;
+    if (tKey.length > 28 && seenTitulo.has(tKey)) continue;
+    if (row.post_id) seenPost.add(Number(row.post_id));
+    if (tKey.length > 28) seenTitulo.add(tKey);
+    out.push(row);
+  }
+  return out;
+}
+
 const BibliotecaAlertas = {
   table: 'biblioteca_alertas',
 
@@ -152,7 +175,7 @@ const BibliotecaAlertas = {
     const lim = Math.min(500, Math.max(1, Number(limit) || 40));
     const hasKw = parseKeywords(keywords).length > 0;
     // Com palavras-chave (match ou exclusão): pool maior e filtra em JS.
-    const poolLimit = hasKw ? Math.min(500, Math.max(lim * 5, 250)) : lim;
+    const poolLimit = hasKw ? Math.min(500, Math.max(lim * 5, 250)) : Math.min(500, Math.max(lim * 3, lim));
     return baseQuery(userId, { apenasNaoLidos, apenasLidos })
       .leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id')
       .orderBy('a.created_at', 'desc')
@@ -166,11 +189,12 @@ const BibliotecaAlertas = {
         'p.resumo as post_resumo'
       )
       .then((rows) => {
-        if (!hasKw) return (rows || []).slice(0, lim);
+        let list = dedupeAlertasRows(rows || []);
+        if (!hasKw) return list.slice(0, lim);
         const filtered = excludeKeywords
-          ? filterExcludingKeywords(rows, keywords)
-          : filterByKeywords(rows, keywords);
-        return filtered.slice(0, lim);
+          ? filterExcludingKeywords(list, keywords)
+          : filterByKeywords(list, keywords);
+        return dedupeAlertasRows(filtered).slice(0, lim);
       });
   },
 
@@ -222,6 +246,50 @@ const BibliotecaAlertas = {
 
   create(data) {
     return db(this.table).insert(data);
+  },
+
+  findByPostId(postId, userId = null) {
+    if (!postId) return null;
+    const q = db(this.table).where({ post_id: postId }).orderBy('id', 'asc');
+    if (userId) q.andWhere({ user_id: userId });
+    return q.first();
+  },
+
+  /**
+   * Remove alertas duplicados (mesmo post_id ou mesmo título+fonte).
+   * Mantém o mais antigo; marca os extras como lidos ou apaga os não lidos extras.
+   */
+  async limparDuplicados(userId) {
+    const rows = await db(this.table)
+      .where({ user_id: userId })
+      .orderBy('id', 'asc')
+      .select('id', 'post_id', 'fonte_id', 'titulo', 'lido');
+    const seenPost = new Set();
+    const seenTitulo = new Set();
+    const idsLixo = [];
+    for (const row of rows || []) {
+      let dup = false;
+      if (row.post_id) {
+        if (seenPost.has(Number(row.post_id))) dup = true;
+        else seenPost.add(Number(row.post_id));
+      }
+      const tKey = `${row.fonte_id || 0}|${String(row.titulo || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/^[^:]+:\s*/, '')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 140)}`;
+      if (tKey.length > 28) {
+        if (seenTitulo.has(tKey)) dup = true;
+        else seenTitulo.add(tKey);
+      }
+      if (dup) idsLixo.push(row.id);
+    }
+    if (!idsLixo.length) return 0;
+    return db(this.table).whereIn('id', idsLixo).del();
   },
 
   marcarLido(id, userId) {

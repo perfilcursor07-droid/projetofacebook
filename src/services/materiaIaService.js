@@ -205,10 +205,26 @@ async function gerarPreviewDeTopico(
     furoReportagem = false,
     variacaoViral = false,
     textoEvitar = null,
+    factualEstrito = false,
+    exigirFonteDocumentada = false,
   } = {}
 ) {
   assertDeepseek();
   const apurado = await apurarTopico(topico || {});
+
+  if (exigirFonteDocumentada) {
+    const fontes = Array.isArray(apurado.fontesApuracao) ? apurado.fontesApuracao : [];
+    const temTrechoForte = fontes.some((f) => String(f?.trecho || f?.resumo || '').trim().length >= 180);
+    const contexto = String(apurado.contextoApuracao || '').trim();
+    const socialComTexto = Boolean(apurado.redeSocial || apurado.tipoFonte === 'rede_social') && contexto.length >= 120;
+    if (!temTrechoForte && !socialComTexto) {
+      const err = new Error(
+        'Não consegui extrair texto suficiente da notícia/post original. Para evitar invenção, abra a fonte, cole o texto manualmente ou tente novamente depois.'
+      );
+      err.status = 422;
+      throw err;
+    }
+  }
 
   let contextoAprendizado = null;
   if (userId) {
@@ -242,6 +258,7 @@ async function gerarPreviewDeTopico(
           `${apurado.titulo || ''} ${apurado.resumo || ''}`
         )
     ),
+    factualEstrito,
   });
 
   const capa = await escolherImagemCapa(apurado, gerado);
@@ -664,6 +681,8 @@ async function gerarCompleto({
   furoReportagem = false,
   variacaoViral = false,
   textoEvitar = null,
+  factualEstrito = false,
+  exigirFonteDocumentada = false,
 }) {
   const tipo = tipoPublicacao === 'foto' ? 'foto' : 'texto';
   const gerado = await gerarPreviewDeTopico(topico, {
@@ -674,6 +693,8 @@ async function gerarCompleto({
     furoReportagem,
     variacaoViral,
     textoEvitar,
+    factualEstrito,
+    exigirFonteDocumentada,
   });
   const topicoApurado = gerado.topico || topico;
 

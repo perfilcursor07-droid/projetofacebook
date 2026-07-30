@@ -202,13 +202,69 @@ async function resolverUrlNoticia(url) {
   return null;
 }
 
+function limparTextoArtigo(texto) {
+  return decodificarHtml(texto)
+    .replace(/\b(leia também|veja também|publicidade|continua após a publicidade)\b.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extrairArticleBodyJsonLd(html) {
+  const ldBlocks = String(html || '').match(
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  ) || [];
+  for (const block of ldBlocks) {
+    const raw = block.replace(/^[\s\S]*?>/, '').replace(/<\/script>$/i, '');
+    try {
+      const data = JSON.parse(raw);
+      const nodes = Array.isArray(data) ? data : [data, ...(Array.isArray(data?.['@graph']) ? data['@graph'] : [])];
+      for (const node of nodes) {
+        const body = node?.articleBody || node?.text;
+        if (typeof body === 'string' && body.replace(/\s+/g, ' ').trim().length >= 180) {
+          return limparTextoArtigo(body);
+        }
+      }
+    } catch {
+      /* ignore json */
+    }
+  }
+  return null;
+}
+
+function htmlPrincipal(html) {
+  return (
+    html.match(/<article\b[^>]*>[\s\S]*?<\/article>/i)?.[0] ||
+    html.match(/<main\b[^>]*>[\s\S]*?<\/main>/i)?.[0] ||
+    html.match(/class=["'][^"']*(?:entry-content|post-content|article-content|materia|content-text|story-content)[^"']*["'][\s\S]{0,35000}/i)?.[0] ||
+    html
+  );
+}
+
+function paragrafoUtil(t) {
+  if (t.length < 40) return false;
+  if (/^(publicidade|continua após a publicidade|leia também|veja também|compartilhe|siga-nos|newsletter)$/i.test(t)) return false;
+  if (/cookies?|termos de uso|política de privacidade|assine|login|cadastre-se/i.test(t)) return false;
+  const letras = (t.match(/\p{L}/gu) || []).length;
+  return letras >= 28;
+}
+
 function extrairParagrafos(html) {
-  const blocos = html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+  const bodyJson = extrairArticleBodyJsonLd(html);
+  if (bodyJson) {
+    return bodyJson
+      .split(/(?:\n{2,}|(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ]))/)
+      .map((p) => limparTextoArtigo(p))
+      .filter(paragrafoUtil)
+      .slice(0, 10);
+  }
+
+  const principal = htmlPrincipal(html);
+  const blocos = principal.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
   const textos = [];
   for (const bloco of blocos) {
-    const t = decodificarHtml(bloco);
-    if (t.length >= 40) textos.push(t);
-    if (textos.join(' ').length > 4500) break;
+    const t = limparTextoArtigo(bloco);
+    if (paragrafoUtil(t)) textos.push(t);
+    if (textos.join(' ').length > 6000) break;
   }
   return textos;
 }

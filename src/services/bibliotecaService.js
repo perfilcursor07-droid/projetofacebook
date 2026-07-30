@@ -29,12 +29,35 @@ function normalizarUrlBiblioteca(url) {
   try {
     const u = new URL(String(url || '').trim());
     u.hash = '';
-    return u.href.replace(/\/$/, '').toLowerCase();
+    // Remove tracking / variantes que geram o mesmo artigo duas vezes
+    [
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'utm_term',
+      'utm_content',
+      'utm_id',
+      'fbclid',
+      'gclid',
+      'mc_cid',
+      'mc_eid',
+      'ref',
+      's',
+      'oc',
+      'hl',
+      'gl',
+      'ceid',
+    ].forEach((k) => u.searchParams.delete(k));
+    // Google News redirect: mantém só o path estável quando possível
+    let href = u.href.replace(/\/$/, '').toLowerCase();
+    href = href.replace(/^https?:\/\/(www\.)?/, 'https://');
+    return href;
   } catch {
     return String(url || '')
       .split(/[?#]/)[0]
       .replace(/\/$/, '')
-      .toLowerCase();
+      .toLowerCase()
+      .replace(/^https?:\/\/(www\.)?/, 'https://');
   }
 }
 
@@ -348,10 +371,8 @@ function dedupeItens(itens, limite = SCAN_LIMIT) {
   const max = Math.min(40, Math.max(1, Number(limite) || SCAN_LIMIT));
   for (const item of itens) {
     if (!item?.url) continue;
-    const key = String(item.externalId || item.url)
-      .split('?')[0]
-      .toLowerCase();
-    if (seen.has(key)) continue;
+    const key = normalizarUrlBiblioteca(item.externalId || item.url);
+    if (!key || seen.has(key)) continue;
     seen.add(key);
     unicos.push({
       ...item,
@@ -1379,21 +1400,34 @@ async function atualizarFonte(userId, fonteId, patch = {}) {
 
 async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) {
   const novos = [];
+  // Pool recente da fonte p/ dedupe por URL normalizada e título parecido
+  const recentes = await BibliotecaPosts.findByFonte(fonte.id, 120);
+  const urlsVistas = new Set(
+    (recentes || []).map((p) => normalizarUrlBiblioteca(p.url)).filter(Boolean)
+  );
+  const titulosVistos = (recentes || []).map((p) => String(p.titulo || ''));
+
   for (const item of itens) {
     const url = String(item.url || '').trim();
     if (!url) continue;
+    const urlNorm = normalizarUrlBiblioteca(url);
     const externalId = stableExternalId(item.externalId || url);
     const exists = await BibliotecaPosts.findByExternal(fonte.id, externalId);
     if (exists) continue;
+    if (urlNorm && urlsVistas.has(urlNorm)) continue;
 
-    // também evita URL duplicada sem external_id estável
-    const byUrl = await BibliotecaPosts.findByFonte(fonte.id, 50);
-    if (byUrl.some((p) => p.url === url)) continue;
+    const tituloBruto = String(item.titulo || 'Sem título').slice(0, 500);
+    if (
+      tituloBruto.length >= 24 &&
+      titulosVistos.some((t) => titulosParecidos(t, tituloBruto) || mesmoAssuntoNoticia(t, tituloBruto))
+    ) {
+      continue;
+    }
 
     const estrangeiro =
       pareceTextoEstrangeiro(item.titulo) || pareceTextoEstrangeiro(item.resumo);
     // Sempre traduz/resume em PT quando for língua estrangeira; senão só se gerarResumoIa
-    let tituloFinal = String(item.titulo || 'Sem título').slice(0, 500);
+    let tituloFinal = tituloBruto;
     let resumoFinal = item.resumo ? String(item.resumo).slice(0, 2000) : null;
 
     if ((gerarResumoIa || estrangeiro) && env.deepseekApiKey) {
@@ -1415,27 +1449,52 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
       }
     }
 
-    const [postId] = await BibliotecaPosts.create({
-      fonte_id: fonte.id,
-      user_id: fonte.user_id,
-      external_id: externalId,
-      titulo: tituloFinal,
-      url,
-      resumo: resumoFinal,
-      thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
-      media_type: normalizarTipoMidia(item),
-      publicado_em: item.publicadoEm || null,
-      status: 'novo',
-    });
+    // Re-checa título após IA (às vezes a IA padroniza e bate com alerta anterior)
+    if (
+      tituloFinal.length >= 24 &&
+      titulosVistos.some((t) => titulosParecidos(t, tituloFinal) || mesmoAssuntoNoticia(t, tituloFinal))
+    ) {
+      continue;
+    }
 
-    await BibliotecaAlertas.create({
-      user_id: fonte.user_id,
-      fonte_id: fonte.id,
-      post_id: postId,
-      titulo: `${fonte.nome}: ${tituloFinal}`.slice(0, 300),
-      resumo: resumoFinal || `Novo conteúdo em ${fonte.plataforma}: ${item.url}`,
-      lido: false,
-    });
+    let postId;
+    try {
+      [postId] = await BibliotecaPosts.create({
+        fonte_id: fonte.id,
+        user_id: fonte.user_id,
+        external_id: externalId,
+        titulo: tituloFinal,
+        url,
+        resumo: resumoFinal,
+        thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
+        media_type: normalizarTipoMidia(item),
+        publicado_em: item.publicadoEm || null,
+        status: 'novo',
+      });
+    } catch (err) {
+      // unique (fonte_id, external_id) — corrida entre ticks
+      if (String(err.code) === 'ER_DUP_ENTRY' || /duplicate/i.test(err.message)) continue;
+      throw err;
+    }
+
+    urlsVistas.add(urlNorm);
+    titulosVistos.push(tituloFinal);
+
+    const jaTemAlerta = await BibliotecaAlertas.findByPostId(postId, fonte.user_id);
+    if (!jaTemAlerta) {
+      try {
+        await BibliotecaAlertas.create({
+          user_id: fonte.user_id,
+          fonte_id: fonte.id,
+          post_id: postId,
+          titulo: `${fonte.nome}: ${tituloFinal}`.slice(0, 300),
+          resumo: resumoFinal || `Novo conteúdo em ${fonte.plataforma}: ${item.url}`,
+          lido: false,
+        });
+      } catch (err) {
+        if (String(err.code) !== 'ER_DUP_ENTRY' && !/duplicate/i.test(err.message)) throw err;
+      }
+    }
 
     novos.push(await BibliotecaPosts.findById(postId));
   }
@@ -1743,6 +1802,25 @@ async function gerarTextoDePost({
     fonte: fonte?.nome,
     veiculo: fonte?.nome || fonte?.plataforma,
     imagemFonte: postPt.thumbnail,
+    contextoApuracao: [
+      postPt.titulo ? `Título capturado da fonte:\n${postPt.titulo}` : null,
+      postPt.resumo ? `Texto/resumo capturado da fonte:\n${postPt.resumo}` : null,
+      urlPost ? `URL original:\n${urlPost}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    fontesApuracao: postPt.resumo
+      ? [
+          {
+            veiculo: fonte?.nome || fonte?.plataforma || 'Biblioteca',
+            url: postPt.url,
+            titulo: postPt.titulo,
+            resumo: postPt.resumo,
+            trecho: postPt.resumo,
+            ehRedeSocial: ehRedeSocialUrl,
+          },
+        ]
+      : [],
     // Só trata como rede social se a URL for IG/FB/TikTok/YT —
     // sites de notícia (ex.: fuxicogospel) precisam de scrape de autor + capa.
     redeSocial: ehRedeSocialUrl,
@@ -1757,6 +1835,8 @@ async function gerarTextoDePost({
     topico,
     tipoPublicacao,
     status: publicarAgora ? 'publicado' : 'rascunho',
+    factualEstrito: true,
+    exigirFonteDocumentada: true,
   });
 
   await BibliotecaPosts.update(post.id, {
@@ -2086,9 +2166,11 @@ async function tickFontes() {
       });
     }
   }
-  // Limpeza de alertas órfãos fora do carregamento da página
+  // Limpeza de alertas órfãos / duplicados fora do carregamento da página
   for (const uid of userIds) {
     await BibliotecaAlertas.limparOrfaos(uid).catch(() => 0);
+    const n = await BibliotecaAlertas.limparDuplicados(uid).catch(() => 0);
+    if (n > 0) console.log(`[biblioteca] user #${uid}: removidos ${n} alerta(s) duplicado(s)`);
   }
 }
 
@@ -2200,6 +2282,8 @@ async function analisarMelhoresParaPublicar(userId, limit = 30) {
 async function dashboardUsuario(userId) {
   const Users = require('../models/Users');
   const user = await Users.findById(userId);
+  // Limpa duplicatas já gravadas (mesmo post / mesmo título) antes de listar
+  await BibliotecaAlertas.limparDuplicados(userId).catch(() => 0);
   const alertasKeywords = String(user?.biblioteca_alertas_keywords || '').trim();
   const hasKeywords = alertasKeywords.length > 0;
 

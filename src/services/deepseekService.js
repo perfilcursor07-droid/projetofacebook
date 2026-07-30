@@ -419,6 +419,7 @@ async function gerarMateriaNoticiaFacebook({
   textoEvitar = null,
   contextoAprendizado = null,
   traduzirFonte = false,
+  factualEstrito = false,
 }) {
   assertDeepseek();
 
@@ -430,7 +431,9 @@ async function gerarMateriaNoticiaFacebook({
   const estiloTitulo = variacaoViral
     ? 'Título curioso tipo portal (pergunta ou tensão), sem copiar a manchete de referência.'
     : sortearEstiloTitulo();
-  const temperature = variacaoViral
+  const temperature = factualEstrito
+    ? 0.25
+    : variacaoViral
     ? 0.88 + Math.random() * 0.08
     : furoReportagem
       ? 0.72 + Math.random() * 0.08
@@ -485,6 +488,16 @@ async function gerarMateriaNoticiaFacebook({
     'Crie uma MINIMATÉRIA ORIGINAL estilo News Gospel para Facebook/Instagram (foto + legenda).',
     blocoAprendizado,
     `VOZ DO REDATOR (obrigatório): ${voz}`,
+    factualEstrito
+      ? [
+          'MODO FACTUAL ESTRITO (Biblioteca):',
+          '- Escreva SOMENTE com fatos presentes nos trechos documentados abaixo.',
+          '- Não acrescente contexto, histórico, reação, desdobramento, números, cidade, cargo ou fala que não estejam escritos na fonte.',
+          '- Se a fonte for curta, faça uma matéria curta. NÃO complete para bater tamanho.',
+          '- Aspas somente se a frase exata estiver na apuração.',
+          '- Proibido usar fórmulas como "segundo informações", "teria", "nos bastidores" se isso não estiver na fonte.',
+        ].join('\n')
+      : null,
     `ESTILO DO LEAD: ${lead}`,
     `ESTILO DO TÍTULO: ${estiloTitulo}`,
     `VOLUME DA FONTE: ${volumeFonte.toUpperCase()}.`,
@@ -580,7 +593,7 @@ async function gerarMateriaNoticiaFacebook({
 
   let qualidade = avaliarComprimentoFb(artigo.materia, faixa);
 
-  if (qualidade.curto) {
+  if (qualidade.curto && !factualEstrito) {
     try {
       const expandido = await chatCompletion(
         [

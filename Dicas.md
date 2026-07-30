@@ -35,4 +35,4 @@ npm run build:css
 NODE_ENV=production npm run migrate
 pm2 reload viralizeai --update-env
 pm2 save
-pm2 logs viralizeai --lines 30
+pm2 logs viralizeai --lines 200
