@@ -21,6 +21,74 @@
     location.href = '/biblioteca/agendar?' + params.toString();
   }
 
+  function fmtQuandoLocal(v) {
+    if (!v) return '—';
+    try {
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return String(v);
+      return d.toLocaleString('pt-BR', {
+        timeZone: 'America/Araguaina',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return String(v);
+    }
+  }
+
+  function updateAgendaCount() {
+    const n = listEl ? listEl.querySelectorAll('li.agenda-row').length : 0;
+    if (countEl) countEl.textContent = '(' + n + ' nesta lista)';
+    const tab = document.querySelector('a[href*="aba=agendada"] span');
+    if (tab && abaAtual !== 'publicadas') tab.textContent = '(' + n + ')';
+    let empty = document.getElementById('agenda-empty');
+    if (n === 0 && listEl && !empty) {
+      empty = document.createElement('li');
+      empty.id = 'agenda-empty';
+      empty.className = 'px-4 py-10 text-center text-sm text-slate-500';
+      empty.textContent =
+        abaAtual === 'publicadas'
+          ? 'Nenhuma publicação ainda nesta agenda.'
+          : 'Nenhuma pré-agenda ainda. Clique em Montar agenda de amanhã.';
+      listEl.appendChild(empty);
+    } else if (n > 0 && empty) {
+      empty.remove();
+    }
+    if (checkAll) checkAll.checked = false;
+    syncLoteButtons();
+  }
+
+  /** Remove linhas e aplica horários já compactados — sem reload (mantém o scroll). */
+  function applyAgendaAposExcluir(idsRemovidos, itens) {
+    const y = window.scrollY;
+    const removidos = new Set((idsRemovidos || []).map(Number));
+    removidos.forEach((id) => {
+      listEl?.querySelector('li.agenda-row[data-id="' + id + '"]')?.remove();
+    });
+    if (Array.isArray(itens)) {
+      itens.forEach((item) => {
+        const id = Number(item.id);
+        if (!id || removidos.has(id)) return;
+        const row = listEl?.querySelector('li.agenda-row[data-id="' + id + '"]');
+        if (!row) return;
+        const local =
+          item.proposed_at_local ||
+          (item.proposed_at ? String(item.proposed_at).slice(0, 16) : '');
+        const horaInput = row.querySelector('.agenda-hora');
+        if (horaInput && local) horaInput.value = local.slice(0, 16);
+        const label = row.querySelector('.agenda-agendada-label');
+        if (label && item.proposed_at) {
+          label.textContent = 'Agendada: ' + fmtQuandoLocal(item.proposed_at);
+        }
+      });
+    }
+    updateAgendaCount();
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  }
+
   function setBusy(on, text) {
     if (!busyEl) return;
     busyEl.classList.toggle('hidden', !on);
@@ -173,7 +241,13 @@
       });
       const fail = data.erros?.length || 0;
       setMsg(`${data.ok || 0} ok` + (fail ? `, ${fail} erro(s)` : ''), fail > 0);
-      reloadAgenda();
+      if (acao === 'excluir') {
+        const falhas = new Set((data.erros || []).map((e) => Number(e.id)));
+        const removidos = ids.filter((id) => !falhas.has(Number(id)));
+        applyAgendaAposExcluir(removidos, data.itens);
+      } else {
+        reloadAgenda();
+      }
     } catch (err) {
       setMsg(err.message, true);
     } finally {
@@ -200,16 +274,17 @@
       if (btn.classList.contains('agenda-btn-confirmar')) {
         setBusy(true, 'Confirmando agendamento…');
         await api('/api/biblioteca/agenda/' + id + '/confirmar', { method: 'POST', body: '{}' });
+        reloadAgenda();
       } else if (btn.classList.contains('agenda-btn-publicar')) {
         setBusy(true, 'Publicando…');
         await api('/api/biblioteca/agenda/' + id + '/publicar', { method: 'POST', body: '{}' });
+        reloadAgenda();
       } else if (btn.classList.contains('agenda-btn-excluir')) {
         setBusy(true, 'Excluindo…');
-        await api('/api/biblioteca/agenda/' + id, { method: 'DELETE' });
-      } else {
-        return;
+        const data = await api('/api/biblioteca/agenda/' + id, { method: 'DELETE' });
+        applyAgendaAposExcluir([id], data.itens);
+        setMsg('Item excluído. Horários reorganizados de 30 em 30.', false);
       }
-      reloadAgenda();
     } catch (err) {
       alert(err.message);
     } finally {
