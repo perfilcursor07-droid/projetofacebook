@@ -43,67 +43,18 @@ function buildAllDaySlots({ startHour = DEFAULT_START_HOUR, endHour = DEFAULT_EN
 }
 
 /**
- * Modelo de horário da agenda:
- * - MySQL DATETIME guarda o relógio de America/Araguaina (UTC−3), sem conversão.
- * - Instantes JS usam offset −03:00 via parseProposedAt.
- *
- * Bug anterior: gravava componentes UTC (09:00 Ara → "12:00:00") e o MySQL
- * no servidor −3 lia como 12:00 local → tela mostrava 12:00 (+3 a cada compactação).
+ * Interpreta valor vindo do banco. O driver já devolve Date no fuso do processo;
+ * reconverter aqui causava deslocamento de horas (09:00 virava 12:00).
  */
-
-function pad2(n) {
-  return String(n).padStart(2, '0');
-}
-
-/** Formata instante absoluto → chave parede Araguaína YYYY-MM-DDTHH:mm */
-function toDatetimeLocal(date) {
-  const d = date instanceof Date ? date : new Date(date);
-  if (Number.isNaN(d.getTime())) return '';
-  const ms = d.getTime() - 3 * 60 * 60 * 1000;
-  const x = new Date(ms);
-  return `${x.getUTCFullYear()}-${pad2(x.getUTCMonth() + 1)}-${pad2(x.getUTCDate())}T${pad2(x.getUTCHours())}:${pad2(x.getUTCMinutes())}`;
-}
-
-/** String/Date do MySQL → instante (DATETIME = parede Araguaína). */
-function parseProposedAt(runAt) {
-  if (runAt instanceof Date && !Number.isNaN(runAt.getTime())) {
-    // mysql2 devolve DATETIME no fuso local do Node: os campos locais = parede no banco
-    const key = `${runAt.getFullYear()}-${pad2(runAt.getMonth() + 1)}-${pad2(runAt.getDate())}T${pad2(runAt.getHours())}:${pad2(runAt.getMinutes())}`;
-    return parseProposedAt(key);
-  }
-  const raw = String(runAt || '').trim();
-  if (!raw) return new Date(NaN);
-  if (/Z$|[+-]\d{2}:\d{2}$/.test(raw)) return new Date(raw);
-  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
-  if (m) {
-    const sec = m[6] || '00';
-    return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${sec}-03:00`);
-  }
-  return new Date(raw);
-}
-
 function asAgendaDate(value) {
   if (value == null || value === '') return new Date(NaN);
+  if (value instanceof Date) return value;
   return parseProposedAt(value);
 }
 
-/** Chave estável Araguaína: YYYY-MM-DDTHH:mm */
+/** Chave estável do horário na TZ Araguaina: YYYY-MM-DDTHH:mm */
 function chaveHorario(date) {
-  const d = asAgendaDate(date);
-  if (Number.isNaN(d.getTime())) return '';
-  return toDatetimeLocal(d).slice(0, 16);
-}
-
-/** Grava no MySQL a parede Araguaína (não UTC!). */
-function toMysqlAgendaDatetime(dateOrKey) {
-  let key;
-  if (typeof dateOrKey === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dateOrKey)) {
-    key = dateOrKey.slice(0, 16);
-  } else {
-    key = chaveHorario(dateOrKey);
-  }
-  if (!key) return null;
-  return `${key.replace('T', ' ')}:00`;
+  return toDatetimeLocal(asAgendaDate(date)).slice(0, 16);
 }
 
 function diaAmanhaKey() {
@@ -123,7 +74,7 @@ function buildSlots({
   ocupadosKeys = null,
 } = {}) {
   const all = buildAllDaySlots({ startHour, endHour });
-  const afterMs = afterDate ? asAgendaDate(afterDate).getTime() : 0;
+  const afterMs = afterDate ? new Date(afterDate).getTime() : 0;
   const ocupados =
     ocupadosKeys instanceof Set
       ? ocupadosKeys
@@ -133,11 +84,32 @@ function buildSlots({
     if (Number.isFinite(afterMs) && afterMs > 0 && s.getTime() <= afterMs) return false;
     return true;
   });
+  // Se afterDate falhou por fuso mas ocupadosKeys existe, free já está correto só pelos ocupados
   if (!free.length && ocupados.size) {
     free = all.filter((s) => !ocupados.has(chaveHorario(s)));
   }
   const lim = Math.min(48, Math.max(1, Number(max) || DEFAULT_MAX_ITENS));
   return free.slice(0, lim);
+}
+
+function toDatetimeLocal(date) {
+  const d = new Date(date);
+  const ms = d.getTime() - 3 * 60 * 60 * 1000;
+  const x = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${x.getUTCFullYear()}-${pad(x.getUTCMonth() + 1)}-${pad(x.getUTCDate())}T${pad(x.getUTCHours())}:${pad(x.getUTCMinutes())}`;
+}
+
+function parseProposedAt(runAt) {
+  const raw = String(runAt || '').trim();
+  if (!raw) return new Date(NaN);
+  if (/Z$|[+-]\d{2}:\d{2}$/.test(raw)) return new Date(raw);
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const sec = m[6] || '00';
+    return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${sec}-03:00`);
+  }
+  return new Date(raw);
 }
 
 function mapItem(row) {
@@ -323,9 +295,8 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
     const novoKey = chaveHorario(slot);
     if (atualKey === novoKey) continue;
 
-    // Parede Araguaína no DATETIME (ex. 09:00 → "09:00:00"), NÃO componentes UTC
-    const mysqlDt = toMysqlAgendaDatetime(novoKey);
-    await BibliotecaAgenda.update(itens[i].id, { proposed_at: mysqlDt });
+    // Grava o Date direto: o driver serializa/lê no mesmo fuso, mantendo o round-trip estável
+    await BibliotecaAgenda.update(itens[i].id, { proposed_at: slot });
     itens[i].proposed_at = slot;
     if (itens[i].matter_id) {
       try {
@@ -348,32 +319,49 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
       `\n  depois: ${depois.join(', ')}`
     );
   } else {
-    // silencioso quando já contínuo — evita flood no pm2 a cada reload da página
+    console.log(
+      `[agenda] compactar user #${userId} ${day}: ok (já contínuo) ${antes.join(', ')}`
+    );
   }
   return { ajustados, day, antes, depois: itens.map((r) => chaveHorario(r.proposed_at)) };
 }
 
+/** Serializa compactações do mesmo usuário (a página dispara várias em paralelo). */
+const compactacoesEmCurso = new Map();
+
 /** Compacta todos os dias com itens abertos na agenda. */
 async function compactarHorariosAbertos(userId) {
-  let days = await diasAtivosAgenda(userId);
-  if (!days.length) {
-    days = [diaHojeKey(), diaAmanhaKey()];
-  }
-  let total = 0;
-  const detalhes = [];
-  for (const day of days) {
-    const r = await compactarHorariosDoDia(userId, { dayKey: day });
-    total += r.ajustados || 0;
-    if (r.antes) {
-      detalhes.push({
-        day,
-        ajustados: r.ajustados || 0,
-        antes: r.antes,
-        depois: r.depois,
-      });
+  const emCurso = compactacoesEmCurso.get(userId);
+  if (emCurso) return emCurso;
+
+  const run = (async () => {
+    let days = await diasAtivosAgenda(userId);
+    if (!days.length) {
+      days = [diaHojeKey(), diaAmanhaKey()];
     }
+    let total = 0;
+    const detalhes = [];
+    for (const day of days) {
+      const r = await compactarHorariosDoDia(userId, { dayKey: day });
+      total += r.ajustados || 0;
+      if (r.antes) {
+        detalhes.push({
+          day,
+          ajustados: r.ajustados || 0,
+          antes: r.antes,
+          depois: r.depois,
+        });
+      }
+    }
+    return { ajustados: total, days, detalhes };
+  })();
+
+  compactacoesEmCurso.set(userId, run);
+  try {
+    return await run;
+  } finally {
+    compactacoesEmCurso.delete(userId);
   }
-  return { ajustados: total, days, detalhes };
 }
 
 /** @deprecated use compactarHorariosDoDia — mantido como alias */
@@ -412,14 +400,10 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
   let itens = await fetchItens();
   await sincronizarComMaterias(userId, itens || []);
 
-  // Compacta no máximo 1× por listagem (antes rodava 2× e, com write UTC, +3h a cada passada)
   if (reparar) {
     try {
       const r = await compactarHorariosAbertos(userId);
-      if (r.ajustados > 0) {
-        itens = await fetchItens();
-        await sincronizarComMaterias(userId, itens || []);
-      }
+      if (r.ajustados > 0) itens = await fetchItens();
     } catch (err) {
       console.warn('[agenda] compactar:', err.message);
     }
@@ -620,7 +604,7 @@ async function montarAgendaAmanha({
           facebook_page_id: page.id,
           post_id: post.id,
           matter_id: matterId,
-          proposed_at: toMysqlAgendaDatetime(proposedAt),
+          proposed_at: proposedAt,
           status: 'pendente',
         });
         criados.push({ id, postId: post.id, matterId, proposedAt });
@@ -690,9 +674,7 @@ async function atualizarHorario(userId, id, proposedAt) {
     err.status = 400;
     throw err;
   }
-  await BibliotecaAgenda.update(item.id, {
-    proposed_at: toMysqlAgendaDatetime(parsed),
-  });
+  await BibliotecaAgenda.update(item.id, { proposed_at: parsed });
 
   // Confirmado: atualiza também o job da matéria (scheduled_at)
   if (item.status === 'confirmado' && item.matter_id) {
@@ -721,7 +703,8 @@ async function confirmarAgendamento(userId, id) {
   if (item.status === 'confirmado' || item.status === 'publicado') {
     return { ok: true, already: true };
   }
-  const runAtDate = asAgendaDate(item.proposed_at);
+  const runAtDate =
+    item.proposed_at instanceof Date ? item.proposed_at : new Date(item.proposed_at);
   if (Number.isNaN(runAtDate.getTime())) {
     const err = new Error('Horário inválido neste item — ajuste a data/hora antes de confirmar');
     err.status = 400;
@@ -796,12 +779,9 @@ async function readequarHorariosPendentes(userId, { fromDate = null } = {}) {
   let ajustados = 0;
   for (let i = 0; i < lista.length; i += 1) {
     const next = new Date(base.getTime() + i * SLOT_MINUTES * 60 * 1000);
-    const curKey = chaveHorario(lista[i].proposed_at);
-    const nextKey = chaveHorario(next);
-    if (curKey !== nextKey) {
-      await BibliotecaAgenda.update(lista[i].id, {
-        proposed_at: toMysqlAgendaDatetime(nextKey),
-      });
+    const cur = new Date(lista[i].proposed_at).getTime();
+    if (cur !== next.getTime()) {
+      await BibliotecaAgenda.update(lista[i].id, { proposed_at: next });
       ajustados += 1;
     }
   }
@@ -821,7 +801,7 @@ async function excluirItem(userId, id, { apagarMateria = false } = {}) {
   }
   // Reagenda pendentes + confirmados do mesmo dia sem buracos de 30 min
   await compactarHorariosDoDia(userId, {
-    dayKey: chaveHorario(asAgendaDate(slotLiberado)).slice(0, 10) || diaAmanhaKey(),
+    dayKey: toDatetimeLocal(slotLiberado).slice(0, 10),
   });
   return { ok: true, itens: await listarAgenda(userId) };
 }
