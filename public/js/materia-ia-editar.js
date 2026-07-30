@@ -525,8 +525,21 @@
 
   const scheduleInput = document.getElementById('matter-schedule');
   if (scheduleInput && !scheduleInput.value) {
-    scheduleInput.value = defaultScheduleAraguainaPlus10();
+    // Prefere próximo slot (+30 após o último); senão agora + 10 min
+    scheduleInput.value = cfg.proximoSlotLocal || defaultScheduleAraguainaPlus10();
   }
+
+  document.getElementById('btn-agendar-mais-30')?.addEventListener('click', () => {
+    const btn = document.getElementById('btn-agendar-mais-30');
+    const slot = btn?.dataset?.slot || cfg.proximoSlotLocal;
+    if (!slot || !scheduleInput) {
+      setStatus('Não há último agendamento para calcular +30 min.', true);
+      return;
+    }
+    scheduleInput.value = slot;
+    setStatus('Horário preenchido: 30 min após o último agendamento');
+    scheduleInput.focus();
+  });
 
   document.getElementById('btn-agendar')?.addEventListener('click', async () => {
     const runAt = document.getElementById('matter-schedule')?.value;

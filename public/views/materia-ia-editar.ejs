@@ -330,11 +330,38 @@
                 </button>
               </div>
 
-              <div class="border-t border-slate-800 pt-3">
+              <div class="border-t border-slate-800 pt-3 space-y-2">
                 <label class="block text-[11px] text-slate-500">Agendar (Araguaína −03)
                   <input id="matter-schedule" type="datetime-local" class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-2 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none" />
                 </label>
-                <button type="button" id="btn-agendar" class="mt-2 w-full rounded border border-slate-600 px-3 py-1.5 text-[11px] text-slate-300 hover:border-slate-400">
+                <%
+                  const ult = typeof ultimoAgendamento !== 'undefined' ? ultimoAgendamento : null;
+                  const proxLocal = typeof proximoSlotLocal !== 'undefined' ? proximoSlotLocal : null;
+                  const proxLabel = typeof proximoSlotLabel !== 'undefined' ? proximoSlotLabel : null;
+                %>
+                <% if (ult && ult.label) { %>
+                  <button
+                    type="button"
+                    id="btn-agendar-mais-30"
+                    class="w-full rounded border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20"
+                    data-slot="<%= proxLocal || '' %>"
+                    title="Preenche o horário com 30 minutos após o último agendamento"
+                  >
+                    +30 min após o último<%= proxLabel ? ' → ' + proxLabel : '' %>
+                  </button>
+                  <p id="matter-ultimo-agendamento" class="text-[10px] leading-snug text-slate-500">
+                    Último no sistema:
+                    <span class="font-medium text-slate-300"><%= ult.label %></span>
+                    <% if (ult.titulo) { %>
+                      · <span class="text-slate-400"><%= String(ult.titulo).slice(0, 60) %><%= String(ult.titulo).length > 60 ? '…' : '' %></span>
+                    <% } else if (ult.fonte === 'biblioteca') { %>
+                      · <span class="text-slate-400">Agenda da Biblioteca</span>
+                    <% } %>
+                  </p>
+                <% } else { %>
+                  <p class="text-[10px] text-slate-600">Nenhum outro agendamento no sistema ainda.</p>
+                <% } %>
+                <button type="button" id="btn-agendar" class="w-full rounded border border-slate-600 px-3 py-1.5 text-[11px] text-slate-300 hover:border-slate-400">
                   Agendar
                 </button>
               </div>
@@ -556,6 +583,8 @@
       reelProcessing: <%= reelProcessing ? 'true' : 'false' %>,
       videoUrl: <%- JSON.stringify(videoUrl || null) %>,
       listUrl: '/minhas-materias',
+      ultimoAgendamento: <%- JSON.stringify(typeof ultimoAgendamento !== 'undefined' ? ultimoAgendamento : null) %>,
+      proximoSlotLocal: <%- JSON.stringify(typeof proximoSlotLocal !== 'undefined' ? proximoSlotLocal : null) %>,
     };
     (function () {
       const ta = document.getElementById('matter-materia');

@@ -865,6 +865,109 @@ async function agendarMateria({ userId, matterId, runAt }) {
   return { jobId, matterId: matter.id, runAt: when };
 }
 
+/** Formata Date → YYYY-MM-DDTHH:mm no fuso America/Araguaina. */
+function toDatetimeLocalAraguaina(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Araguaina',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '00';
+  let hour = get('hour');
+  if (hour === '24') hour = '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`;
+}
+
+function formatLabelAraguaina(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString('pt-BR', {
+    timeZone: 'America/Araguaina',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * Último horário agendado do usuário (matérias + agenda da biblioteca).
+ * Retorna também o próximo slot sugerido (+30 min), nunca no passado.
+ */
+async function obterUltimoAgendamento(userId, { excludeMatterId = null } = {}) {
+  let matterQuery = db('ai_matters')
+    .where({ user_id: userId, status: 'agendado' })
+    .whereNotNull('scheduled_at');
+  if (excludeMatterId) {
+    matterQuery = matterQuery.whereNot('id', Number(excludeMatterId));
+  }
+  const matterRow = await matterQuery
+    .orderBy('scheduled_at', 'desc')
+    .select('id', 'titulo', 'scheduled_at')
+    .first();
+
+  let agendaRow = null;
+  try {
+    agendaRow = await db('biblioteca_agenda')
+      .where({ user_id: userId })
+      .whereIn('status', ['pendente', 'confirmado'])
+      .whereNotNull('proposed_at')
+      .orderBy('proposed_at', 'desc')
+      .select('id', 'proposed_at', 'matter_id')
+      .first();
+  } catch {
+    agendaRow = null;
+  }
+
+  const candidates = [];
+  if (matterRow?.scheduled_at) {
+    candidates.push({
+      at: new Date(matterRow.scheduled_at),
+      titulo: matterRow.titulo || null,
+      fonte: 'materia',
+      id: matterRow.id,
+    });
+  }
+  if (agendaRow?.proposed_at) {
+    candidates.push({
+      at: new Date(agendaRow.proposed_at),
+      titulo: null,
+      fonte: 'biblioteca',
+      id: agendaRow.id,
+    });
+  }
+  if (!candidates.length) {
+    return { ultimo: null, proximoSlotLocal: null };
+  }
+
+  candidates.sort((a, b) => b.at.getTime() - a.at.getTime());
+  const best = candidates[0];
+
+  // +30 min; se cair no passado, sobe para agora + 10 min
+  let proximo = new Date(best.at.getTime() + 30 * 60 * 1000);
+  const minFuture = new Date(Date.now() + 10 * 60 * 1000);
+  if (proximo.getTime() < minFuture.getTime()) proximo = minFuture;
+
+  return {
+    ultimo: {
+      at: best.at.toISOString(),
+      local: toDatetimeLocalAraguaina(best.at),
+      label: formatLabelAraguaina(best.at),
+      titulo: best.titulo,
+      fonte: best.fonte,
+    },
+    proximoSlotLocal: toDatetimeLocalAraguaina(proximo),
+    proximoSlotLabel: formatLabelAraguaina(proximo),
+  };
+}
+
 /** Interpreta agendamento no fuso America/Araguaina (UTC−3, sem horário de verão). */
 function parseScheduleDate(runAt) {
   const raw = String(runAt || '').trim();
@@ -2449,6 +2552,7 @@ module.exports = {
   criarMonitor,
   tickMonitores,
   agendarMateria,
+  obterUltimoAgendamento,
   tickFilaJobs,
   resolvePage,
   enriquecerMateriaComWeb,

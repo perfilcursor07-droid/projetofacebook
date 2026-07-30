@@ -524,10 +524,27 @@ async function showMatter(req, res, next) {
       }
     }
 
+    let ultimoAgendamento = null;
+    let proximoSlotLocal = null;
+    let proximoSlotLabel = null;
+    try {
+      const info = await materiaIaService.obterUltimoAgendamento(req.session.userId, {
+        excludeMatterId: matter.status === 'agendado' ? matter.id : null,
+      });
+      ultimoAgendamento = info.ultimo || null;
+      proximoSlotLocal = info.proximoSlotLocal || null;
+      proximoSlotLabel = info.proximoSlotLabel || null;
+    } catch (err) {
+      console.warn('[showMatter] ultimo agendamento:', err.message);
+    }
+
     return res.render('materia-ia-editar', {
       title: matter.titulo || 'Matéria IA',
       matter,
       hashtags: Array.isArray(hashtags) ? hashtags : [],
+      ultimoAgendamento,
+      proximoSlotLocal,
+      proximoSlotLabel,
       success: req.query.success || null,
       error: req.query.error || null,
     });
