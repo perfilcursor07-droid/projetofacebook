@@ -254,33 +254,37 @@ async function diasAtivosAgenda(userId) {
 /**
  * Compacta pendentes + confirmados do dia em horários contínuos de 30 em 30 min.
  * Ex.: 08:00, 08:30, 10:30 → 08:00, 08:30, 09:00
+ *
+ * Não pula slots por causa de itens já "publicado" — a aba Agendada deve ficar
+ * contínua; publicados ficam na outra aba e não devem abrir buraco na fila.
  */
 async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
   const day = dayKey || diaAmanhaKey();
   const todos = await itensAgendaDoDia(userId, day);
-  const publicadosKeys = new Set(
-    todos.filter((r) => r.status === 'publicado').map((r) => chaveHorario(r.proposed_at))
-  );
   const itens = todos
     .filter((r) => r.status === 'pendente' || r.status === 'confirmado')
     .sort((a, b) => a.proposed_at.getTime() - b.proposed_at.getTime());
   if (itens.length < 1) return { ajustados: 0, day };
 
-  const slotsLivres = buildAllDaySlotsForDay(day).filter(
-    (s) => !publicadosKeys.has(chaveHorario(s))
-  );
-  if (!slotsLivres.length) return { ajustados: 0, day };
+  const slots = buildAllDaySlotsForDay(day);
+  if (!slots.length) return { ajustados: 0, day };
 
   const firstMs = itens[0].proposed_at.getTime();
   let startIdx = 0;
-  for (let i = 0; i < slotsLivres.length; i += 1) {
-    if (slotsLivres[i].getTime() <= firstMs) startIdx = i;
+  for (let i = 0; i < slots.length; i += 1) {
+    if (slots[i].getTime() <= firstMs) startIdx = i;
     else break;
   }
 
+  // Garante que todos cabem na janela 7h–22h
+  if (startIdx + itens.length > slots.length) {
+    startIdx = Math.max(0, slots.length - itens.length);
+  }
+
   let ajustados = 0;
+  const antes = itens.map((r) => chaveHorario(r.proposed_at));
   for (let i = 0; i < itens.length; i += 1) {
-    const slot = slotsLivres[startIdx + i];
+    const slot = slots[startIdx + i];
     if (!slot) {
       console.warn(
         `[agenda] compactar user #${userId} ${day}: sem slot para item #${itens[i].id}`
@@ -291,7 +295,11 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
     const novoKey = chaveHorario(slot);
     if (atualKey === novoKey) continue;
 
-    await BibliotecaAgenda.update(itens[i].id, { proposed_at: slot });
+    // Persiste o instante do slot em UTC (DATETIME naive) — alinhado com toDatetimeLocal (−3h)
+    const d = slot;
+    const pad = (n) => String(n).padStart(2, '0');
+    const mysqlDt = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00`;
+    await BibliotecaAgenda.update(itens[i].id, { proposed_at: mysqlDt });
     itens[i].proposed_at = slot;
     if (itens[i].matter_id) {
       try {
@@ -307,9 +315,18 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
     ajustados += 1;
   }
   if (ajustados > 0) {
-    console.log(`[agenda] compactar user #${userId} ${day}: ${ajustados} horário(s) ajustado(s)`);
+    const depois = itens.map((r) => chaveHorario(r.proposed_at));
+    console.log(
+      `[agenda] compactar user #${userId} ${day}: ${ajustados} ajuste(s)`,
+      `\n  antes: ${antes.join(', ')}`,
+      `\n  depois: ${depois.join(', ')}`
+    );
+  } else {
+    console.log(
+      `[agenda] compactar user #${userId} ${day}: ok (já contínuo) ${antes.join(', ')}`
+    );
   }
-  return { ajustados, day };
+  return { ajustados, day, antes, depois: itens.map((r) => chaveHorario(r.proposed_at)) };
 }
 
 /** Compacta todos os dias com itens abertos na agenda. */
@@ -319,11 +336,20 @@ async function compactarHorariosAbertos(userId) {
     days = [diaHojeKey(), diaAmanhaKey()];
   }
   let total = 0;
+  const detalhes = [];
   for (const day of days) {
     const r = await compactarHorariosDoDia(userId, { dayKey: day });
     total += r.ajustados || 0;
+    if (r.antes) {
+      detalhes.push({
+        day,
+        ajustados: r.ajustados || 0,
+        antes: r.antes,
+        depois: r.depois,
+      });
+    }
   }
-  return { ajustados: total, days };
+  return { ajustados: total, days, detalhes };
 }
 
 /** @deprecated use compactarHorariosDoDia — mantido como alias */

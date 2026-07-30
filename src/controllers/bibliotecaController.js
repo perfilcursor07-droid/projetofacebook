@@ -522,15 +522,21 @@ async function compactarAgenda(req, res, next) {
       aba: 'agendada',
       reparar: false,
     });
+    const det = (result.detalhes || []).find((d) => (d.ajustados || 0) > 0) || (result.detalhes || [])[0];
+    let mensagem =
+      (result.ajustados || 0) > 0
+        ? `${result.ajustados} horário(s) reorganizado(s) de 30 em 30 min.`
+        : 'Horários já estavam em sequência de 30 em 30 min.';
+    if (det?.depois?.length) {
+      mensagem += ` Agora: ${det.depois.map((k) => k.slice(11)).join(' → ')}`;
+    }
     res.json({
       ok: true,
       ajustados: result.ajustados || 0,
       days: result.days || [],
+      detalhes: result.detalhes || [],
       itens,
-      mensagem:
-        (result.ajustados || 0) > 0
-          ? `${result.ajustados} horário(s) reorganizado(s) de 30 em 30 min.`
-          : 'Horários já estavam em sequência de 30 em 30 min.',
+      mensagem,
     });
   } catch (err) {
     return next(err);

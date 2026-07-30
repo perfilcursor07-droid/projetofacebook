@@ -151,7 +151,10 @@
         body: '{}',
       });
       setMsg(data.mensagem || `${data.ajustados || 0} horário(s) ajustado(s).`, false);
-      reloadAgenda();
+      // Hard reload para garantir horários novos na tela
+      setTimeout(() => {
+        window.location.href = '/biblioteca/agendar?aba=agendada&t=' + Date.now();
+      }, 400);
     } catch (err) {
       setMsg(err.message, true);
     } finally {
