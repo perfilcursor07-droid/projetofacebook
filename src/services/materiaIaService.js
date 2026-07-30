@@ -1020,7 +1020,7 @@ function parseScheduleDate(runAt) {
 }
 
 async function tickFilaJobs() {
-  /** Bloqueia publicação se a matéria só está pré-agendada na biblioteca (sem Confirmar). */
+  /** Só publica se a agenda da biblioteca estiver CONFIRMADA (ou se foi agendada direto em /materias-ia). */
   async function podePublicarAgendada(matter) {
     try {
       const hasAgendaTable = await db.schema.hasTable('biblioteca_agenda');
@@ -1030,17 +1030,21 @@ async function tickFilaJobs() {
         .whereNotIn('status', ['cancelado'])
         .orderBy('id', 'desc')
         .first();
-      if (!agenda) return { ok: true }; // agendada direto em /materias-ia
-      if (String(agenda.status) === 'pendente') {
-        return {
-          ok: false,
-          motivo: `agenda #${agenda.id} ainda pré-agendada (pendente) — precisa Confirmar`,
-        };
+      // Sem item na biblioteca → veio do botão Agendar em /materias-ia (confirmação explícita)
+      if (!agenda) return { ok: true };
+      const st = String(agenda.status || '');
+      if (st === 'confirmado' || st === 'publicado') {
+        return { ok: true, agendaStatus: st };
       }
-      return { ok: true, agendaStatus: agenda.status };
+      // pendente ou qualquer outro = NÃO publica
+      return {
+        ok: false,
+        motivo: `agenda #${agenda.id} status="${st}" — só publica depois de Confirmar`,
+      };
     } catch (err) {
       console.warn('[fila] checagem agenda:', err.message);
-      return { ok: true };
+      // Em dúvida, não publica matérias com risco de pré-agenda
+      return { ok: false, motivo: `falha ao checar agenda: ${err.message}` };
     }
   }
 
