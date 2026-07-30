@@ -250,6 +250,9 @@
                   <% if (item.fonte_nome) { %>
                     <span class="truncate text-[11px] text-slate-500"><%= item.fonte_nome %></span>
                   <% } %>
+                  <% if (item.matched_keyword || item.palavra_chave) { %>
+                    <span class="max-w-[220px] truncate rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-200 ring-1 ring-sky-500/25" title="Palavra-chave: <%= String(item.matched_keyword || item.palavra_chave).replace(/"/g, '&quot;') %>"><%= item.matched_keyword || item.palavra_chave %></span>
+                  <% } %>
                 </div>
                 <p class="agenda-titulo-label truncate text-sm font-medium text-slate-100" data-matter-id="<%= matterId %>"><%= titulo %></p>
                 <div class="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">

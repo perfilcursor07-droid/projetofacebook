@@ -490,6 +490,8 @@ async function showMatter(req, res, next) {
       anexarHashtagsAoFinal,
       materiaJaTemCredito,
       removerFechamentoOracao,
+      fundirParagrafosIncompletos,
+      extrairHashtagsDoTexto,
     } = require('../services/editorialGuidelinesFb');
     if (Array.isArray(hashtags) && hashtags.length) {
       matter.materia = anexarHashtagsAoFinal(matter.materia || '', hashtags);
@@ -497,7 +499,13 @@ async function showMatter(req, res, next) {
 
     // Crédito só no Conteúdo: limpa campo Fonte/crédito se já estiver no corpo
     const patchShow = {};
-    const materiaLimpa = removerFechamentoOracao(matter.materia || '');
+    let materiaLimpa = removerFechamentoOracao(matter.materia || '');
+    // Corrige lead truncado ("A apresentadora X, conhecida") deixado por limpeza antiga de créditos
+    {
+      const { body, tags } = extrairHashtagsDoTexto(materiaLimpa);
+      const corpo = fundirParagrafosIncompletos(body);
+      materiaLimpa = anexarHashtagsAoFinal(corpo, tags.length ? tags : hashtags);
+    }
     if (materiaLimpa !== String(matter.materia || '').trim()) {
       matter.materia = materiaLimpa;
       if (['rascunho', 'pronto', 'erro', 'agendado'].includes(matter.status)) {

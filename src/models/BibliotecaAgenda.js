@@ -23,6 +23,7 @@ const BibliotecaAgenda = {
         'a.matter_id',
         'a.proposed_at',
         'a.status',
+        'a.matched_keyword',
         'a.created_at',
         'a.updated_at',
         'p.titulo as post_titulo',

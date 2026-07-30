@@ -78,6 +78,60 @@ function filterByKeywords(rows, keywords) {
   });
 }
 
+/**
+ * Retorna a primeira palavra-chave (texto original) que bate no post/alerta.
+ * Ordem = ordem da lista do usuário.
+ */
+function findMatchingKeyword(row, keywords) {
+  const list = parseKeywords(keywords);
+  if (!list.length || !row) return null;
+  const raw = [
+    row.titulo,
+    row.resumo,
+    row.fonte_nome,
+    row.post_titulo,
+    row.post_resumo,
+    row.matter_titulo,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const text = ` ${stripAccents(raw)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()} `;
+  for (const keyword of list) {
+    const p = stripAccents(keyword).trim().toLowerCase().replace(/\s+/g, ' ');
+    if (p.length >= 2 && text.includes(` ${p} `)) return keyword;
+  }
+  return null;
+}
+
+/** Todas as palavras-chave que batem (útil p/ debug). */
+function findMatchingKeywords(row, keywords) {
+  const list = parseKeywords(keywords);
+  if (!list.length || !row) return [];
+  const raw = [
+    row.titulo,
+    row.resumo,
+    row.fonte_nome,
+    row.post_titulo,
+    row.post_resumo,
+    row.matter_titulo,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const text = ` ${stripAccents(raw)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()} `;
+  return list.filter((keyword) => {
+    const p = stripAccents(keyword).trim().toLowerCase().replace(/\s+/g, ' ');
+    return p.length >= 2 && text.includes(` ${p} `);
+  });
+}
+
 /** Alertas que NÃO batem com nenhuma palavra-chave. */
 function filterExcludingKeywords(rows, keywords) {
   const patterns = parseKeywords(keywords)
@@ -206,6 +260,8 @@ module.exports.parseKeywords = parseKeywords;
 module.exports.serializeKeywords = serializeKeywords;
 module.exports.filterByKeywords = filterByKeywords;
 module.exports.filterExcludingKeywords = filterExcludingKeywords;
+module.exports.findMatchingKeyword = findMatchingKeyword;
+module.exports.findMatchingKeywords = findMatchingKeywords;
 module.exports.keywordLikePatterns = (keyword) => {
   const pattern = keywordLikePattern(keyword);
   return pattern ? [pattern] : [];

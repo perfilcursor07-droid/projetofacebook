@@ -121,6 +121,7 @@ function mapItem(row) {
   const matterSt = String(row.matter_status || '');
   // Horário da AGENDA (proposed_at) é a fonte da verdade — não substituir por matter_scheduled_at
   const horario = asAgendaDate(row.proposed_at);
+  const matchedKeyword = String(row.matched_keyword || '').trim() || null;
   return {
     ...row,
     proposed_at: Number.isFinite(horario.getTime()) ? horario : row.proposed_at,
@@ -129,6 +130,8 @@ function mapItem(row) {
     ),
     titulo: row.matter_titulo || row.post_titulo || 'Sem título',
     thumb,
+    matched_keyword: matchedKeyword,
+    palavra_chave: matchedKeyword,
     ui_status:
       st === 'confirmado' || matterSt === 'agendado'
         ? 'agendada'
@@ -140,6 +143,38 @@ function mapItem(row) {
       !['publicado'].includes(st) &&
       !['publicado'].includes(matterSt),
   };
+}
+
+/**
+ * Preenche matched_keyword em itens antigos (antes da coluna existir)
+ * usando as palavras-chave salvas do usuário.
+ */
+async function enriquecerMatchedKeywords(userId, itens) {
+  const lista = Array.isArray(itens) ? itens : [];
+  const faltando = lista.filter((r) => !String(r.matched_keyword || '').trim());
+  if (!faltando.length) return lista;
+
+  const BibliotecaAlertas = require('../models/BibliotecaAlertas');
+  const Users = require('../models/Users');
+  const user = await Users.findById(userId);
+  const keywords = BibliotecaAlertas.parseKeywords(user?.biblioteca_alertas_keywords);
+  if (!keywords.length) return lista;
+
+  const keywordsStr = keywords.join(', ');
+  const updates = [];
+  for (const row of faltando) {
+    const hits = BibliotecaAlertas.findMatchingKeywords(row, keywordsStr);
+    if (!hits.length) continue;
+    const hit = hits.slice(0, 3).join(', ').slice(0, 60);
+    row.matched_keyword = hit;
+    updates.push(BibliotecaAgenda.update(row.id, { matched_keyword: hit }));
+  }
+  if (updates.length) {
+    await Promise.all(updates).catch((err) => {
+      console.warn('[agenda] backfill matched_keyword:', err.message);
+    });
+  }
+  return lista;
 }
 
 /** Alinha status da agenda com a matéria. Horário: agenda é a fonte da verdade. */
@@ -409,6 +444,9 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
     }
   }
 
+  // Itens antigos sem matched_keyword: deriva das palavras-chave atuais e grava
+  itens = await enriquecerMatchedKeywords(userId, itens || []);
+
   return (itens || []).map(mapItem);
 }
 
@@ -598,6 +636,13 @@ async function montarAgendaAmanha({
       const proposedAt = slots[slotIdx];
       slotIdx += 1;
 
+      const matchedHits = keywordsFiltro
+        ? BibliotecaAlertas.findMatchingKeywords(post, keywordsFiltro)
+        : [];
+      const matchedKeyword = matchedHits.length
+        ? matchedHits.slice(0, 3).join(', ').slice(0, 60)
+        : null;
+
       try {
         const [id] = await BibliotecaAgenda.create({
           user_id: userId,
@@ -606,8 +651,15 @@ async function montarAgendaAmanha({
           matter_id: matterId,
           proposed_at: proposedAt,
           status: 'pendente',
+          matched_keyword: matchedKeyword || null,
         });
-        criados.push({ id, postId: post.id, matterId, proposedAt });
+        criados.push({
+          id,
+          postId: post.id,
+          matterId,
+          proposedAt,
+          matched_keyword: matchedKeyword || null,
+        });
         jaNaAgenda.add(Number(post.id));
       } catch (dupErr) {
         if (!/Duplicate|UNIQUE|ER_DUP/i.test(String(dupErr.message || ''))) throw dupErr;

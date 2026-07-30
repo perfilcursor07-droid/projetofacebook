@@ -297,7 +297,7 @@ function quebrarEmParagrafos(texto) {
   // Separa créditos do corpo para não juntar "Fontes:\n• …" numa linha só
   let creditos = '';
   const creditMatch = t.match(
-    /\n\n((?:Fontes:\s*\n(?:[•\-*].+\n?)+)|(?:Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?)|(?:Por\s+.+(?:\n\(Foto:[^\n]+\))?))\s*$/i
+    /\n\n((?:Fontes:\s*\n(?:[•\-*].+\n?)+)|(?:Fonte:\s*[^\n]+(?:\n\(Foto:[^\n]+\))?)|(?:Por\s+[^\n]+?\s*[—\-–]\s*Site:\s*[^\n]+(?:\n\(Foto:[^\n]+\))?)|(?:\(Foto:[^\n]+\)))\s*$/i
   );
   if (creditMatch) {
     creditos = creditMatch[1].trim();
@@ -335,7 +335,54 @@ function quebrarEmParagrafos(texto) {
     body = paras.join('\n\n');
   }
 
+  body = fundirParagrafosIncompletos(body);
   return creditos ? `${body}\n\n${creditos}`.trim() : body;
+}
+
+function paragrafoTemFimDeFrase(p) {
+  return /[.!?…]["”')\]]*$/.test(String(p || '').trim());
+}
+
+/** Lead truncado típico da limpeza ruim / IA: "A apresentadora X, conhecida" */
+function pareceParagrafoTruncado(p) {
+  const t = String(p || '').trim();
+  if (!t || paragrafoTemFimDeFrase(t)) return false;
+  if (t.length > 140) return false;
+  if (/,\s*$/.test(t)) return true;
+  if (
+    /\b(conhecida|conhecido|considerada|considerado|apontada|apontado|nascida|nascido|eleita|eleito|chamada|chamado)\s*$/i.test(
+      t
+    )
+  ) {
+    return true;
+  }
+  return t.split(/\s+/).length <= 10;
+}
+
+/**
+ * Remove lead cortado no início e funde parágrafos sem pontuação final.
+ */
+function fundirParagrafosIncompletos(body) {
+  const paras = String(body || '')
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (!paras.length) return '';
+
+  while (paras.length > 1 && pareceParagrafoTruncado(paras[0])) {
+    paras.shift();
+  }
+
+  const out = [];
+  for (let i = 0; i < paras.length; i += 1) {
+    let cur = paras[i];
+    while (i + 1 < paras.length && !paragrafoTemFimDeFrase(cur) && cur.length < 320) {
+      i += 1;
+      cur = `${cur} ${paras[i]}`.replace(/\s+/g, ' ').trim();
+    }
+    out.push(cur);
+  }
+  return out.join('\n\n');
 }
 
 /**
@@ -592,12 +639,12 @@ function nomeSiteDeUrl(url) {
 }
 
 function removerBlocoCreditosDoCorpo(cleanBody) {
+  // NÃO usar /Por\s+.+/gi solto — apaga "conhecida por …" no meio da matéria.
   return String(cleanBody || '')
     .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+/gi, '')
-    .replace(/\n*Fonte:\s*.+(?:\n\(Foto:[^\n]+\))?/gi, '')
-    .replace(/\n*Por\s+.+\s*[—\-–]\s*Site:\s*.+(?:\n\(Foto:[^\n]+\))?/gi, '')
-    .replace(/\n*Por\s+.+(?:\n\(Foto:[^\n]+\))?/gi, '')
-    .replace(/\n*\(Foto:[^\n]+\)/gi, '')
+    .replace(/(?:^|\n+)Fonte:\s*[^\n]+(?:\n\(Foto:[^\n]+\))?/gi, '\n')
+    .replace(/(?:^|\n+)Por\s+[^\n]+?\s*[—\-–]\s*Site:\s*[^\n]+(?:\n\(Foto:[^\n]+\))?/gi, '\n')
+    .replace(/(?:^|\n+)\(Foto:\s*[^\n]+\)/gi, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -858,6 +905,7 @@ module.exports = {
   estiloCreditoDaPagina,
   limparAutorArtigo,
   quebrarEmParagrafos,
+  fundirParagrafosIncompletos,
   formatHashtagsLine,
   anexarHashtagsAoFinal,
   anexarCreditosFontes,

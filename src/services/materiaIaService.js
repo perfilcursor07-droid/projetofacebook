@@ -1477,7 +1477,7 @@ async function gerarVariacaoDeMateria({
 
   const corpoOrig = String(matter.materia || '')
     .replace(/\n*Fontes:[\s\S]*$/i, '')
-    .replace(/\n*Por\s+.+$/im, '')
+    .replace(/\n*Por\s+.+\s*[—\-–]\s*Site\s*:.+$/im, '')
     .replace(/#[\wÀ-ÿ]+/g, '')
     .replace(/\s+/g, ' ')
     .trim();
