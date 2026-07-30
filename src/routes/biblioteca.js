@@ -27,6 +27,7 @@ router.post('/agenda/compactar', controller.compactarAgenda);
 router.post('/agenda/limpar-sem-keyword', controller.limparAgendaSemKeyword);
 router.post('/agenda/lote', controller.loteAgenda);
 router.get('/agenda/viralizadas', controller.listarViralizadasAgenda);
+router.get('/agenda/viralizadas-debug', controller.viralizadasDebug);
 router.post('/agenda/viralizadas/:matterId', controller.agendarViralizada);
 router.patch('/agenda/:id', controller.atualizarAgendaItem);
 router.post('/agenda/:id/confirmar', controller.confirmarAgendaItem);

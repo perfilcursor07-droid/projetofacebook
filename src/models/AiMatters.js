@@ -31,6 +31,29 @@ function applyViralizouFilter(query) {
   });
 }
 
+/**
+ * Critério da agenda "Viralizadas": páginas gospel mid-size.
+ * Qualquer engajamento real já entra; ordenação por score puxa as melhores.
+ */
+function applyAgendaViralFilter(query) {
+  return query.where(function engWhere() {
+    this.where('publications.fb_likes', '>', 0)
+      .orWhere('publications.fb_comments', '>', 0)
+      .orWhere('publications.fb_views', '>', 0)
+      .orWhere('publications.fb_shares', '>', 0);
+  });
+}
+
+async function pageIdsDaConta(userId) {
+  const FacebookAccounts = require('./FacebookAccounts');
+  const FacebookPages = require('./FacebookPages');
+  const account = await FacebookAccounts.findByUser(userId);
+  if (!account) return [];
+  return (await FacebookPages.findByAccount(account.id))
+    .map((p) => Number(p.id))
+    .filter(Boolean);
+}
+
 function applySearchFilter(query, q) {
   const term = String(q || '').trim();
   if (!term) return query;
@@ -166,18 +189,12 @@ const AiMatters = {
   },
 
   /**
-   * Viralizadas de TODAS as Páginas da conta Facebook do usuário
-   * (não só a página padrão). Inclui matérias ligadas às páginas da conta
-   * mesmo se user_id divergir por migração antiga.
+   * Viralizadas p/ agenda: publicadas de TODAS as Páginas da conta
+   * com qualquer engajamento, ordenadas pelo score.
+   * Critério mais brando que a aba Viralizou — serve páginas mid-size.
    */
   async findViralizadasDaConta(userId, { limit = 40 } = {}) {
-    const FacebookAccounts = require('./FacebookAccounts');
-    const FacebookPages = require('./FacebookPages');
-    const account = await FacebookAccounts.findByUser(userId);
-    const pageIds = account
-      ? (await FacebookPages.findByAccount(account.id)).map((p) => Number(p.id)).filter(Boolean)
-      : [];
-
+    const pageIds = await pageIdsDaConta(userId);
     const lim = Math.min(80, Math.max(1, Number(limit) || 40));
 
     let query = db(this.table)
@@ -189,6 +206,7 @@ const AiMatters = {
           this.orWhereIn('ai_matters.facebook_page_id', pageIds);
         }
       })
+      .whereNotNull('ai_matters.publication_id')
       .select(
         'ai_matters.*',
         'publications.fb_post_id as pub_fb_post_id',
@@ -205,7 +223,7 @@ const AiMatters = {
       )
       .limit(lim);
 
-    query = applyViralizouFilter(query);
+    query = applyAgendaViralFilter(query);
     query = query.orderByRaw(
       `(COALESCE(publications.fb_likes, 0) + COALESCE(publications.fb_comments, 0) * 3 + COALESCE(publications.fb_shares, 0) * 5 + LEAST(COALESCE(publications.fb_views, 0), 5000) / 50) DESC`
     );
@@ -214,12 +232,7 @@ const AiMatters = {
   },
 
   async countViralizadasDaConta(userId) {
-    const FacebookAccounts = require('./FacebookAccounts');
-    const FacebookPages = require('./FacebookPages');
-    const account = await FacebookAccounts.findByUser(userId);
-    const pageIds = account
-      ? (await FacebookPages.findByAccount(account.id)).map((p) => Number(p.id)).filter(Boolean)
-      : [];
+    const pageIds = await pageIdsDaConta(userId);
 
     let query = db(this.table)
       .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
@@ -228,10 +241,64 @@ const AiMatters = {
         if (pageIds.length) {
           this.orWhereIn('ai_matters.facebook_page_id', pageIds);
         }
-      });
-    query = applyViralizouFilter(query);
+      })
+      .whereNotNull('ai_matters.publication_id');
+    query = applyAgendaViralFilter(query);
     const row = await query.count({ total: '*' }).first();
     return Number(row?.total) || 0;
+  },
+
+  /** Diagnóstico: engajamento por Página da conta. */
+  async diagnosticoEngajamentoConta(userId) {
+    const pageIds = await pageIdsDaConta(userId);
+    const pages = pageIds.length
+      ? await db('facebook_pages').whereIn('id', pageIds).select('id', 'page_name', 'page_id')
+      : [];
+
+    const porPagina = [];
+    for (const p of pages) {
+      const base = () =>
+        db(this.table)
+          .leftJoin('publications', 'ai_matters.publication_id', 'publications.id')
+          .where('ai_matters.facebook_page_id', p.id)
+          .whereNotNull('ai_matters.publication_id');
+
+      const [{ total: publicadas }] = await base().count({ total: '*' });
+      const [{ total: comEng }] = await applyAgendaViralFilter(base()).count({ total: '*' });
+      const [{ total: viralStrict }] = await applyViralizouFilter(base()).count({ total: '*' });
+
+      const top = await applyAgendaViralFilter(base())
+        .select(
+          'ai_matters.id',
+          'ai_matters.titulo',
+          'publications.fb_likes',
+          'publications.fb_comments',
+          'publications.fb_views',
+          'publications.fb_views_at'
+        )
+        .orderByRaw(
+          `(COALESCE(publications.fb_likes, 0) + COALESCE(publications.fb_comments, 0) * 3) DESC`
+        )
+        .limit(3);
+
+      porPagina.push({
+        page_id: p.id,
+        page_name: p.page_name,
+        publicadas: Number(publicadas) || 0,
+        com_engajamento: Number(comEng) || 0,
+        viralizou_estrito: Number(viralStrict) || 0,
+        top: (top || []).map((t) => ({
+          id: t.id,
+          titulo: String(t.titulo || '').slice(0, 80),
+          likes: t.fb_likes,
+          comments: t.fb_comments,
+          views: t.fb_views,
+          views_at: t.fb_views_at,
+        })),
+      });
+    }
+
+    return { userId: Number(userId), pageIds, porPagina };
   },
 
   async countByStatusForUser(userId, { q = '' } = {}) {
@@ -314,6 +381,24 @@ const AiMatters = {
       .orderByRaw('COALESCE(published_at, updated_at, created_at) DESC')
       .limit(Math.max(1, Math.min(60, Number(limit) || 30)))
       .select('id', 'publication_id', 'titulo', 'status');
+  },
+
+  /** Publicadas recentes de todas as Páginas da conta (sync engajamento). */
+  async findRecentPublishedDaContaForSync(userId, limit = 40) {
+    const pageIds = await pageIdsDaConta(userId);
+    const lim = Math.max(1, Math.min(80, Number(limit) || 40));
+    return db(this.table)
+      .where(function ownership() {
+        this.where('user_id', userId);
+        if (pageIds.length) this.orWhereIn('facebook_page_id', pageIds);
+      })
+      .whereNotNull('publication_id')
+      .where(function statusPub() {
+        this.where('status', 'publicado').orWhereNotNull('published_at');
+      })
+      .orderByRaw('COALESCE(published_at, updated_at, created_at) DESC')
+      .limit(lim)
+      .select('id', 'publication_id', 'titulo', 'status', 'user_id', 'facebook_page_id');
   },
 };
 

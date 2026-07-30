@@ -230,9 +230,10 @@
 
       <% if (abaAtual === 'viralizadas') { %>
         <p class="mt-3 text-xs text-slate-500">
-          Mesmas matérias de <a href="/minhas-materias?status=viralizou" class="text-rose-300 hover:underline">Matérias → Viralizou</a>
-          (todas as Páginas). Ao agendar, a IA cria uma <strong class="text-slate-300">nova matéria</strong> no estilo da sua marca — sem plagiar o post original.
+          Mesmas matérias publicadas com engajamento em <strong class="text-slate-300">qualquer Página</strong> da conta (Apocalipse, JM, etc.).
+          Ao agendar, a IA cria uma <strong class="text-slate-300">nova matéria</strong> no estilo da sua marca — sem plagiar.
           <span id="agenda-count" class="text-slate-400">(<%= viralList.length %> nesta lista)</span>
+          · <a href="/api/biblioteca/agenda/viralizadas-debug" class="text-sky-400 hover:underline" target="_blank" rel="noopener">diagnóstico</a>
         </p>
         <div class="mt-2 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
           <ul id="agenda-viral-list" class="divide-y divide-slate-800/80">

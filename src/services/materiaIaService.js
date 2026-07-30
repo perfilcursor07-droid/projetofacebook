@@ -1573,10 +1573,23 @@ async function gerarVariacaoDeMateria({
 }) {
   assertDeepseek();
   const matter = await AiMatters.findById(matterId);
-  if (!matter || Number(matter.user_id) !== Number(userId)) {
+  if (!matter) {
     const err = new Error('Matéria não encontrada');
     err.status = 404;
     throw err;
+  }
+  if (Number(matter.user_id) !== Number(userId)) {
+    const FacebookAccounts = require('../models/FacebookAccounts');
+    const FacebookPages = require('../models/FacebookPages');
+    const account = await FacebookAccounts.findByUser(userId);
+    const pageIds = account
+      ? (await FacebookPages.findByAccount(account.id)).map((p) => Number(p.id))
+      : [];
+    if (!pageIds.includes(Number(matter.facebook_page_id))) {
+      const err = new Error('Matéria não encontrada');
+      err.status = 404;
+      throw err;
+    }
   }
 
   const pageId = facebookPageId || matter.facebook_page_id || null;
@@ -2535,7 +2548,13 @@ function isDestaqueEngajamento(pubOrViral) {
  * Necessário para a aba Viralizou enxergar posts que ainda não tinham dado no banco.
  */
 async function sincronizarEngajamentoRecentes(userId, { limit = 30, concurrency = 3 } = {}) {
-  const matters = await AiMatters.findRecentPublishedForSync(userId, limit);
+  let matters = [];
+  try {
+    matters = await AiMatters.findRecentPublishedDaContaForSync(userId, limit);
+  } catch (err) {
+    console.warn('[sync engajamento] da conta:', err.message);
+    matters = await AiMatters.findRecentPublishedForSync(userId, limit);
+  }
   if (!matters.length) {
     return { checked: 0, updated: 0, destaques: 0, items: [] };
   }
@@ -2548,7 +2567,8 @@ async function sincronizarEngajamentoRecentes(userId, { limit = 30, concurrency 
       const idx = cursor++;
       const m = matters[idx];
       try {
-        const r = await atualizarViewsDaMateria(userId, m.id, { force: false });
+        const ownerId = Number(m.user_id) || Number(userId);
+        const r = await atualizarViewsDaMateria(ownerId, m.id, { force: false });
         const destaque = isDestaqueEngajamento(r.viral || r);
         items[idx] = {
           matterId: m.id,

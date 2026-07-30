@@ -459,14 +459,21 @@ async function agendarPage(req, res, next) {
     let itens = [];
     let viralizadas = [];
     if (aba === 'viralizadas') {
-      const [, contagens, pages, defaultPageId, user] = await Promise.all([
-        Promise.resolve(null),
-        contagensP,
+      // Sync + lista primeiro; contagem depois (senão o badge fica 0 com engajamento ainda null)
+      const viralizadas = await agendaService.listarViralizadas(req.session.userId, {
+        limit: 40,
+        sync: true,
+      });
+      const [contagens, pages, defaultPageId, user] = await Promise.all([
+        agendaService.contagensAgenda(req.session.userId),
         pagesP,
         defaultPageP,
         UsersFind,
       ]);
-      viralizadas = await agendaService.listarViralizadas(req.session.userId, { limit: 40 });
+      // Badge usa o tamanho real da lista se a contagem ainda estiver desatualizada
+      if (contagens && Number(contagens.viralizadas) < viralizadas.length) {
+        contagens.viralizadas = viralizadas.length;
+      }
       const keywordsRaw = String(user?.biblioteca_alertas_keywords || '').trim();
       const keywordsList = BibliotecaAlertas.parseKeywords(keywordsRaw);
       return res.render('biblioteca-agendar', {
@@ -690,6 +697,38 @@ async function listarViralizadasAgenda(req, res, next) {
   }
 }
 
+/** Diagnóstico: por que a aba Viralizadas está vazia? */
+async function viralizadasDebug(req, res) {
+  try {
+    const AiMatters = require('../models/AiMatters');
+    const agendaService = require('../services/bibliotecaAgendaService');
+    const before = await AiMatters.diagnosticoEngajamentoConta(req.session.userId);
+    let sync = null;
+    try {
+      sync = await require('../services/materiaIaService').sincronizarEngajamentoRecentes(
+        req.session.userId,
+        { limit: 25, concurrency: 2 }
+      );
+    } catch (err) {
+      sync = { erro: err.message };
+    }
+    const after = await AiMatters.diagnosticoEngajamentoConta(req.session.userId);
+    const lista = await agendaService.listarViralizadas(req.session.userId, {
+      limit: 10,
+      sync: false,
+    });
+    res.json({
+      ok: true,
+      antes: before,
+      sync,
+      depois: after,
+      amostraLista: lista,
+    });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+}
+
 /**
  * Reescreve a viralizada (anti-plágio + marca do perfil) e pré-agenda na Página escolhida.
  */
@@ -749,5 +788,6 @@ module.exports = {
   excluirAgendaItem,
   loteAgenda,
   listarViralizadasAgenda,
+  viralizadasDebug,
   agendarViralizada,
 };
