@@ -727,23 +727,35 @@ async function atualizarViews(req, res, next) {
     });
     res.json({ ok: true, ...result });
   } catch (err) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
-    return next(err);
+    // Nunca devolver 502 ao browser — engajamento é best-effort
+    console.warn('[atualizarViews]', err.message);
+    res.json({
+      ok: false,
+      likes: null,
+      comments: null,
+      views: null,
+      message: err.message || 'Não foi possível ler o engajamento agora',
+    });
   }
 }
 
 /** Sincroniza engajamento das publicadas recentes (lote). */
 async function sincronizarEngajamento(req, res, next) {
   try {
-    const limit = Math.min(50, Math.max(5, Number(req.body?.limit || req.query?.limit) || 35));
+    const limit = Math.min(20, Math.max(5, Number(req.body?.limit || req.query?.limit) || 12));
     const result = await materiaIaService.sincronizarEngajamentoRecentes(req.session.userId, {
       limit,
-      concurrency: 3,
+      concurrency: 2,
     });
     res.json({ ok: true, ...result });
   } catch (err) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
-    return next(err);
+    console.warn('[sincronizarEngajamento]', err.message);
+    res.json({
+      ok: false,
+      checked: 0,
+      updated: 0,
+      message: err.message || 'Sync de engajamento falhou',
+    });
   }
 }
 

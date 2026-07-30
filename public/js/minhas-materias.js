@@ -143,23 +143,13 @@
     }
   }
 
-  /** Ao abrir a página: atualiza engajamento de todas as publicadas visíveis (respeita cache 30 min no servidor). */
+  /** Ao abrir a página: atualiza engajamento das publicadas visíveis (1 por vez, sem martelar a API). */
   async function autoAtualizarEngajamento() {
     const buttons = Array.from(list.querySelectorAll('.mia-matter-views'));
     if (!buttons.length) return;
 
     for (const btn of buttons) {
-      const data = await fetchEngajamento(btn, { force: false, silent: true });
-      // Se veio vazio, tenta 1x forçado (quebra cache de falha antiga)
-      if (
-        data &&
-        data.likes == null &&
-        data.comments == null &&
-        data.views == null &&
-        !data.cached
-      ) {
-        await fetchEngajamento(btn, { force: true, silent: true });
-      }
+      await fetchEngajamento(btn, { force: false, silent: true });
     }
   }
 
@@ -289,15 +279,16 @@
     setTimeout(autoAtualizarEngajamento, 100);
   }
 
-  // Em outras abas: sync em background das publicadas (alimenta a aba Viralizou)
+  // Sync em background só fora da aba Publicadas (evita 502 por carga dupla + Ayrshare)
   const params = new URLSearchParams(window.location.search || '');
-  if (params.get('status') !== 'viralizou') {
+  const st = params.get('status') || 'all';
+  if (st !== 'viralizou' && st !== 'publicado') {
     setTimeout(() => {
       fetch('/api/materias-ia/matters/sincronizar-engajamento', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 30 }),
+        body: JSON.stringify({ limit: 12 }),
       }).catch(() => {});
-    }, 1500);
+    }, 4000);
   }
 })();

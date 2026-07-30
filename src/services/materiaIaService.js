@@ -2028,6 +2028,9 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
       );
     }
 
+    // No máximo 2 tentativas (UUID Ayrshare + 1 ID Facebook) — evita timeout/502 no proxy
+    const toTry = candidates.slice(0, 2);
+
     const applyAy = (ay) => {
       // Sobrescreve nulls e zeros (Graph sem permissão costuma devolver 0)
       if (ay.likes != null && (likes == null || force || Number(likes) === 0)) likes = ay.likes;
@@ -2038,13 +2041,16 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
       if (ay.views != null && (views == null || force || Number(views) === 0)) views = ay.views;
     };
 
-    for (const cand of candidates) {
+    for (const cand of toTry) {
       try {
         const ay = await ayrshareService.fetchFacebookPostAnalytics({
           postId: cand.id,
           profileKey,
           searchPlatformId: cand.searchPlatformId,
         });
+        if (ay.error) {
+          avisos.push(`Ayrshare analytics: ${ay.error}`);
+        }
         applyAy(ay);
         if (ay.postId && !ayrshareService.looksLikeAyrshareId(ay.postId)) {
           nativeId = ay.postId;

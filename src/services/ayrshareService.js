@@ -431,7 +431,15 @@ async function fetchFacebookPostAnalytics({ postId, profileKey = null, searchPla
   assertConfigured();
   const id = stripAyrsharePrefix(postId);
   if (!id) {
-    return { likes: null, comments: null, shares: null, views: null, postId: null, postUrl: null };
+    return {
+      likes: null,
+      comments: null,
+      shares: null,
+      views: null,
+      postId: null,
+      postUrl: null,
+      error: 'ID vazio',
+    };
   }
 
   const body = {
@@ -441,23 +449,76 @@ async function fetchFacebookPostAnalytics({ postId, profileKey = null, searchPla
   if (searchPlatformId) body.searchPlatformId = true;
 
   const pk = profileKey != null ? String(profileKey).trim() : '';
-  const { data } = await axios.post(`${API}/analytics/post`, body, {
-    headers: authHeaders({ 'Content-Type': 'application/json' }, pk || null),
-    timeout: 45000,
-    validateStatus: () => true,
-  });
-
-  if (data?.status === 'error' || data?.code >= 400 || (data?.errors && !data?.facebook)) {
-    const wrap = { response: { data, config: { url: `${API}/analytics/post` } } };
-    const err = new Error(apiErrorMessage(wrap) || data?.message || 'Falha no analytics Ayrshare');
-    err.status = Number(data?.code) || 502;
-    err.response = wrap.response;
-    throw err;
+  let data;
+  try {
+    const res = await axios.post(`${API}/analytics/post`, body, {
+      headers: authHeaders({ 'Content-Type': 'application/json' }, pk || null),
+      timeout: 12000,
+      validateStatus: () => true,
+    });
+    data = res.data;
+    if (res.status >= 500) {
+      return {
+        likes: null,
+        comments: null,
+        shares: null,
+        views: null,
+        postId: null,
+        postUrl: null,
+        error: `Ayrshare indisponível (HTTP ${res.status})`,
+      };
+    }
+  } catch (err) {
+    return {
+      likes: null,
+      comments: null,
+      shares: null,
+      views: null,
+      postId: null,
+      postUrl: null,
+      error: err.code === 'ECONNABORTED' ? 'Timeout Ayrshare' : err.message || 'Falha Ayrshare',
+    };
   }
 
-  const fb = data?.facebook || data?.Facebook || null;
+  if (!data || typeof data !== 'object') {
+    return {
+      likes: null,
+      comments: null,
+      shares: null,
+      views: null,
+      postId: null,
+      postUrl: null,
+      error: 'Resposta inválida da Ayrshare',
+    };
+  }
+
+  if (data.status === 'error' || data.code >= 400 || (data.errors && !data.facebook)) {
+    const wrap = { response: { data, config: { url: `${API}/analytics/post` } } };
+    return {
+      likes: null,
+      comments: null,
+      shares: null,
+      views: null,
+      postId: null,
+      postUrl: null,
+      error: apiErrorMessage(wrap) || data.message || 'Falha no analytics Ayrshare',
+    };
+  }
+
+  const fb = data.facebook || data.Facebook || null;
   if (!fb) {
-    return { likes: null, comments: null, shares: null, views: null, postId: null, postUrl: null, raw: data };
+    return {
+      likes: null,
+      comments: null,
+      shares: null,
+      views: null,
+      postId: null,
+      postUrl: null,
+      error: pk
+        ? 'Post não encontrado no Profile Key desta Página'
+        : 'Post não encontrado — confira o Profile Key em /paginas',
+      raw: data,
+    };
   }
 
   const analytics = fb.analytics && typeof fb.analytics === 'object' ? fb.analytics : fb;
@@ -465,8 +526,10 @@ async function fetchFacebookPostAnalytics({ postId, profileKey = null, searchPla
   const reactionsTotal = Number(
     reactions?.total ??
       (reactions
-        ? ['like', 'love', 'care', 'haha', 'wow', 'sad', 'angry', 'sorry']
-            .reduce((sum, k) => sum + (Number(reactions[k]) || 0), 0)
+        ? ['like', 'love', 'care', 'haha', 'wow', 'sad', 'anger', 'sorry'].reduce(
+            (sum, k) => sum + (Number(reactions[k]) || 0),
+            0
+          )
         : NaN)
   );
 
