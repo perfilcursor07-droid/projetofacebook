@@ -137,7 +137,7 @@ function mapItem(row) {
     source_matter_titulo: row.source_matter_titulo || null,
     source_page_name: row.source_page_name || null,
     ui_status:
-      st === 'confirmado' || matterSt === 'agendado'
+      st === 'confirmado'
         ? 'agendada'
         : st === 'publicado' || matterSt === 'publicado'
           ? 'publicado'
@@ -337,7 +337,10 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
     // Grava o Date direto: o driver serializa/lê no mesmo fuso, mantendo o round-trip estável
     await BibliotecaAgenda.update(itens[i].id, { proposed_at: slot });
     itens[i].proposed_at = slot;
-    if (itens[i].matter_id) {
+    // Só sincroniza a fila da matéria se o item JÁ foi confirmado.
+    // Chamar agendarMateria em "pendente" vira a matéria em "agendado" e a UI
+    // mostra AGENDADA / sincronizarComMaterias promove a agenda — sem o usuário confirmar.
+    if (itens[i].status === 'confirmado' && itens[i].matter_id) {
       try {
         await materiaIaService.agendarMateria({
           userId,
