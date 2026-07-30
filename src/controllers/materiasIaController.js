@@ -1044,7 +1044,7 @@ async function aplicarImagemUrl(req, res, next) {
     }
 
     const imageUrl = String(req.body?.imageUrl || req.body?.url || '').trim();
-    if (!/^https?:\/\//i.test(imageUrl)) {
+    if (!/^https?:\/\//i.test(imageUrl) && !String(imageUrl).startsWith('/media/')) {
       return res.status(400).json({ error: 'Informe a URL da imagem sugerida' });
     }
 
@@ -1089,6 +1089,53 @@ async function aplicarImagemUrl(req, res, next) {
       imagemUrl: artwork.publicUrl,
       hasLogo: artwork.hasLogo,
       imagemAutor,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+/**
+ * Monta imagem destacada com DUAS fotos (lado a lado ou cima/baixo) + Minha marca.
+ */
+async function aplicarColagemDuasImagens(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'Matéria já publicada. A imagem não pode ser alterada.' });
+    }
+
+    const imageUrlA = String(req.body?.imageUrlA || req.body?.urlA || '').trim();
+    const imageUrlB = String(req.body?.imageUrlB || req.body?.urlB || '').trim();
+    const layout = String(req.body?.layout || 'lado').toLowerCase() === 'cima' ? 'cima' : 'lado';
+
+    const okUrl = (u) => /^https?:\/\//i.test(u) || String(u).startsWith('/media/');
+    if (!okUrl(imageUrlA) || !okUrl(imageUrlB)) {
+      return res.status(400).json({ error: 'Informe as duas URLs das imagens' });
+    }
+
+    const { composeDualCollageArtwork } = require('../services/matterArtworkService');
+    const title = String(req.body?.titulo || matter.titulo || '').trim();
+    const artwork = await composeDualCollageArtwork({
+      userId: req.session.userId,
+      matterId,
+      imageUrlA,
+      imageUrlB,
+      layout,
+      title,
+    });
+
+    return res.json({
+      ok: true,
+      matter: artwork.matter,
+      imagemUrl: artwork.publicUrl,
+      hasLogo: artwork.hasLogo,
+      layout,
     });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -1307,6 +1354,7 @@ module.exports = {
   buscarImagemFonte,
   sugerirImagens,
   aplicarImagemUrl,
+  aplicarColagemDuasImagens,
   showMatter,
   listPage,
   showLotePage,

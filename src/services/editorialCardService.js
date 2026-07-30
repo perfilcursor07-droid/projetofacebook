@@ -965,6 +965,63 @@ async function buildFeedBaseImage(sourceBuffer, options = {}) {
     .toBuffer();
 }
 
+/**
+ * Monta uma única foto 1080×1350 a partir de duas imagens.
+ * layout: 'lado' (esquerda/direita) | 'cima' (acima/abaixo)
+ */
+async function buildDualCollageBuffer(bufferA, bufferB, { layout = 'lado' } = {}) {
+  const mode = String(layout || 'lado').toLowerCase() === 'cima' ? 'cima' : 'lado';
+  const gap = 4;
+  const halfW = mode === 'lado' ? Math.floor((WIDTH - gap) / 2) : WIDTH;
+  const halfH = mode === 'cima' ? Math.floor((HEIGHT - gap) / 2) : HEIGHT;
+
+  async function coverHalf(buf) {
+    let prepared = buf;
+    try {
+      prepared = await sharp(buf, { failOn: 'error', limitInputPixels: 40_000_000 })
+        .rotate()
+        .toBuffer();
+    } catch {
+      prepared = buf;
+    }
+    return sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .resize(halfW, halfH, {
+        fit: 'cover',
+        position: 'attention',
+        withoutEnlargement: false,
+        kernel: sharp.kernel.lanczos3,
+      })
+      .sharpen({ sigma: 0.5, m1: 0.5, m2: 0.3 })
+      .jpeg({ quality: 94, mozjpeg: true })
+      .toBuffer();
+  }
+
+  const [leftOrTop, rightOrBottom] = await Promise.all([coverHalf(bufferA), coverHalf(bufferB)]);
+
+  const composites =
+    mode === 'cima'
+      ? [
+          { input: leftOrTop, left: 0, top: 0 },
+          { input: rightOrBottom, left: 0, top: halfH + gap },
+        ]
+      : [
+          { input: leftOrTop, left: 0, top: 0 },
+          { input: rightOrBottom, left: halfW + gap, top: 0 },
+        ];
+
+  return sharp({
+    create: {
+      width: WIDTH,
+      height: HEIGHT,
+      channels: 3,
+      background: { r: 12, g: 12, b: 18 },
+    },
+  })
+    .composite(composites)
+    .jpeg({ quality: 95, mozjpeg: true })
+    .toBuffer();
+}
+
 async function createEditorialCard({ sourceUrl, title, user }) {
   if (!sourceUrl) throw new Error('A matéria não possui imagem editorial para compor a arte');
   if (!title) throw new Error('Informe o título da arte');
@@ -1050,6 +1107,8 @@ module.exports = {
   estimateTextWidth,
   splitHeadlinePunchline,
   assertPublicImageUrl,
+  fetchImage,
+  buildDualCollageBuffer,
   ART_WIDTH: WIDTH,
   ART_HEIGHT: HEIGHT,
 };

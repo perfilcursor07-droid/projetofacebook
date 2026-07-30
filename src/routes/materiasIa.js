@@ -37,6 +37,7 @@ router.post('/matters/:id/enriquecer-fontes', controller.enriquecerFontes);
 router.post('/matters/:id/buscar-imagem-fonte', controller.buscarImagemFonte);
 router.post('/matters/:id/sugerir-imagens', controller.sugerirImagens);
 router.post('/matters/:id/aplicar-imagem-url', controller.aplicarImagemUrl);
+router.post('/matters/:id/arte/colagem', controller.aplicarColagemDuasImagens);
 router.post('/monitor', controller.monitorCriar);
 router.get('/monitor', controller.monitorLista);
 router.post('/monitor/:id/pausar', controller.monitorPausar);

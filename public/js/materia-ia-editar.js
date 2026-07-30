@@ -688,8 +688,148 @@
     }
   }
 
+  /* —— Colagem com 2 imagens —— */
+  window.__COLAGEM_MODE__ = false;
+  window.__COLAGEM__ = { a: null, b: null, layout: 'lado' };
+
+  function renderColagemSlots() {
+    const slotA = document.getElementById('colagem-slot-a');
+    const slotB = document.getElementById('colagem-slot-b');
+    const btnGerar = document.getElementById('btn-colagem-gerar');
+    const fill = (el, item, label) => {
+      if (!el) return;
+      if (item?.url) {
+        const thumb = String(item.thumbnail || item.url).replace(/"/g, '&quot;');
+        el.innerHTML = `<img src="${thumb}" alt="" class="h-full w-full object-cover" />`;
+        el.classList.remove('border-dashed', 'text-slate-500');
+        el.classList.add('border-amber-500/50');
+      } else {
+        el.textContent = label;
+        el.classList.add('border-dashed', 'text-slate-500');
+        el.classList.remove('border-amber-500/50');
+      }
+    };
+    fill(slotA, window.__COLAGEM__.a, '1ª foto');
+    fill(slotB, window.__COLAGEM__.b, '2ª foto');
+    if (btnGerar) btnGerar.disabled = !(window.__COLAGEM__.a?.url && window.__COLAGEM__.b?.url);
+  }
+
+  function selecionarParaColagem(chosen) {
+    if (!chosen?.url) return;
+    if (!window.__COLAGEM__.a) {
+      window.__COLAGEM__.a = chosen;
+      setStatus('1ª foto ok — escolha a 2ª miniatura');
+    } else if (!window.__COLAGEM__.b) {
+      if (chosen.url === window.__COLAGEM__.a.url) {
+        setStatus('Escolha uma foto diferente da primeira.', true);
+        return;
+      }
+      window.__COLAGEM__.b = chosen;
+      setStatus('2 fotos prontas — clique em “Gerar arte com as 2 fotos”');
+    } else {
+      window.__COLAGEM__.a = chosen;
+      window.__COLAGEM__.b = null;
+      setStatus('Nova 1ª foto — escolha a 2ª');
+    }
+    renderColagemSlots();
+  }
+
+  function setColagemMode(on) {
+    window.__COLAGEM_MODE__ = Boolean(on);
+    const body = document.getElementById('matter-colagem-body');
+    const btn = document.getElementById('btn-colagem-toggle');
+    const strip = document.getElementById('matter-img-suggest-strip');
+    if (body) body.classList.toggle('hidden', !on);
+    if (btn) btn.textContent = on ? 'Desativar' : 'Ativar';
+    if (strip) {
+      strip.classList.toggle('ring-1', on);
+      strip.classList.toggle('ring-amber-500/40', on);
+    }
+    if (on) setStatus('Modo 2 imagens: clique em duas miniaturas');
+  }
+
+  document.getElementById('btn-colagem-toggle')?.addEventListener('click', () => {
+    setColagemMode(!window.__COLAGEM_MODE__);
+  });
+
+  document.querySelectorAll('.colagem-layout-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const layout = btn.getAttribute('data-colagem-layout') === 'cima' ? 'cima' : 'lado';
+      window.__COLAGEM__.layout = layout;
+      document.querySelectorAll('.colagem-layout-btn').forEach((b) => {
+        const active = b.getAttribute('data-colagem-layout') === layout;
+        b.classList.toggle('border-amber-500/50', active);
+        b.classList.toggle('bg-amber-500/15', active);
+        b.classList.toggle('text-amber-100', active);
+        b.classList.toggle('border-slate-600', !active);
+        b.classList.toggle('text-slate-300', !active);
+      });
+    });
+  });
+
+  document.getElementById('btn-colagem-limpar')?.addEventListener('click', () => {
+    window.__COLAGEM__.a = null;
+    window.__COLAGEM__.b = null;
+    renderColagemSlots();
+    setStatus('Slots limpos — escolha 2 miniaturas');
+  });
+
+  document.getElementById('btn-colagem-gerar')?.addEventListener('click', async () => {
+    const a = window.__COLAGEM__.a;
+    const b = window.__COLAGEM__.b;
+    if (!a?.url || !b?.url) {
+      setStatus('Escolha 2 miniaturas antes de gerar.', true);
+      return;
+    }
+    const btn = document.getElementById('btn-colagem-gerar');
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Gerando…';
+    }
+    setSuggestLoading(true);
+    setStatus('Montando as 2 fotos e aplicando Minha marca…');
+    try {
+      const r = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/colagem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrlA: a.url,
+          imageUrlB: b.url,
+          layout: window.__COLAGEM__.layout || 'lado',
+          titulo: tituloEl?.value || '',
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Falha ao montar colagem');
+      if (j.imagemUrl && imgEl) {
+        setArtImage(j.imagemUrl);
+        imgWrap?.classList.remove('hidden');
+      }
+      setStatus('Arte com 2 imagens pronta.');
+      setColagemMode(false);
+      window.__COLAGEM__.a = null;
+      window.__COLAGEM__.b = null;
+      renderColagemSlots();
+    } catch (err) {
+      setStatus(err.message || 'Erro na colagem', true);
+    } finally {
+      setSuggestLoading(false);
+      if (btn) {
+        btn.disabled = !(window.__COLAGEM__.a?.url && window.__COLAGEM__.b?.url);
+        btn.textContent = original || 'Gerar arte com as 2 fotos';
+      }
+    }
+  });
+
   async function aplicarImagemSugerida(chosen, el) {
     if (!chosen?.url) return;
+
+    if (window.__COLAGEM_MODE__) {
+      selecionarParaColagem(chosen);
+      return;
+    }
+
     if (el) el.disabled = true;
     setSuggestLoading(true);
     setStatus('Aguarde, alterando a arte…');

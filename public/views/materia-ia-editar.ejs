@@ -489,6 +489,39 @@
                 </div>
               </div>
 
+              <div id="matter-colagem-panel" class="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2">
+                <div class="flex items-center justify-between gap-2">
+                  <p class="text-[10px] font-medium uppercase tracking-wide text-amber-200/90">Montar com 2 imagens</p>
+                  <button type="button" id="btn-colagem-toggle"
+                    class="rounded border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold text-amber-100 hover:bg-amber-500/15">
+                    Ativar
+                  </button>
+                </div>
+                <div id="matter-colagem-body" class="hidden space-y-2">
+                  <p class="text-[10px] leading-relaxed text-slate-400">
+                    Clique em 2 miniaturas acima (1ª e 2ª foto). Depois escolha o layout e gere a arte.
+                  </p>
+                  <div class="flex gap-1.5">
+                    <button type="button" data-colagem-layout="lado" class="colagem-layout-btn flex-1 rounded border border-amber-500/50 bg-amber-500/15 px-2 py-1 text-[10px] font-semibold text-amber-100">Lado a lado</button>
+                    <button type="button" data-colagem-layout="cima" class="colagem-layout-btn flex-1 rounded border border-slate-600 px-2 py-1 text-[10px] font-semibold text-slate-300 hover:border-amber-500/40">Cima / baixo</button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-1.5">
+                    <div id="colagem-slot-a" class="flex h-16 items-center justify-center overflow-hidden rounded border border-dashed border-slate-600 bg-slate-950 text-[10px] text-slate-500">1ª foto</div>
+                    <div id="colagem-slot-b" class="flex h-16 items-center justify-center overflow-hidden rounded border border-dashed border-slate-600 bg-slate-950 text-[10px] text-slate-500">2ª foto</div>
+                  </div>
+                  <div class="flex gap-1.5">
+                    <button type="button" id="btn-colagem-gerar" disabled
+                      class="flex-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40">
+                      Gerar arte com as 2 fotos
+                    </button>
+                    <button type="button" id="btn-colagem-limpar"
+                      class="rounded border border-slate-600 px-2 py-1.5 text-[11px] text-slate-300 hover:border-slate-500">
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div id="matter-image-preview-wrap" class="hidden">
                 <img id="matter-image-preview" src="" alt="Pré-visualização" class="block max-h-48 w-full rounded border border-slate-800 bg-slate-900/50 object-contain" />
                 <div class="mt-2 flex gap-1.5">

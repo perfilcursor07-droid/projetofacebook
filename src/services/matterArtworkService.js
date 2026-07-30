@@ -153,6 +153,53 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
 }
 
 /**
+ * Monta arte destacada a partir de DUAS fotos (lado a lado ou cima/baixo),
+ * depois aplica Minha marca no mesmo fluxo 4:5.
+ */
+async function composeDualCollageArtwork({
+  userId,
+  matterId,
+  imageUrlA,
+  imageUrlB,
+  layout = 'lado',
+  title = null,
+} = {}) {
+  const urlA = String(imageUrlA || '').trim();
+  const urlB = String(imageUrlB || '').trim();
+  if (!urlA || !urlB) {
+    const err = new Error('Selecione duas imagens para montar a colagem');
+    err.status = 400;
+    throw err;
+  }
+
+  const { fetchImage, buildDualCollageBuffer } = require('./editorialCardService');
+  let bufA;
+  let bufB;
+  try {
+    [bufA, bufB] = await Promise.all([fetchImage(urlA), fetchImage(urlB)]);
+  } catch (err) {
+    const e = new Error(err.message || 'Não foi possível baixar uma das imagens');
+    e.status = 400;
+    throw e;
+  }
+
+  const collageBuffer = await buildDualCollageBuffer(bufA, bufB, { layout });
+  const stored = await storeMatterSourceImage({
+    userId,
+    matterId,
+    buffer: collageBuffer,
+  });
+
+  return composeMatterArtwork({
+    userId,
+    matterId,
+    sourceUrl: stored.publicUrl,
+    title,
+    force: true,
+  });
+}
+
+/**
  * Após gerar a matéria, compõe a arte 4:5 com título + Minha marca.
  * Se falhar, guarda a foto de origem e avisa (não derruba o fluxo).
  */
@@ -213,6 +260,7 @@ async function applyBrandArtworkToResult(userId, result) {
 
 module.exports = {
   composeMatterArtwork,
+  composeDualCollageArtwork,
   applyBrandArtworkToResult,
   resolveArtworkPath,
   storeMatterSourceImage,
