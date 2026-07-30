@@ -896,12 +896,11 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
 
 /**
  * Monta canvas 4:5 (1080×1350) para o feed do Facebook.
- * - Foto quase 4:5 → full-bleed (cover)
- * - Foto larga/paisagem (colagens) → imagem inteira (contain) + fundo desfocado
- * - mode: 'cover' → sempre preenche a arte inteira (sem faixas), usado no Citação marcador
+ * - mode: 'cover' (padrão na arte) → preenche a tela toda, sem faixa blur
+ * - mode: 'auto' → se a foto for bem diferente de 4:5, contain + fundo desfocado
  */
 async function buildFeedBaseImage(sourceBuffer, options = {}) {
-  const forceCover = options.mode === 'cover';
+  const forceCover = options.mode !== 'auto';
 
   let sourcePrepared = sourceBuffer;
   try {
@@ -924,11 +923,11 @@ async function buildFeedBaseImage(sourceBuffer, options = {}) {
     return sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
       .resize(WIDTH, HEIGHT, {
         fit: 'cover',
-        position: forceCover ? 'centre' : 'attention',
+        position: 'attention',
         withoutEnlargement: false,
         kernel: sharp.kernel.lanczos3,
       })
-      .sharpen({ sigma: 0.6, m1: 0.5, m2: 0.3 })
+      .sharpen({ sigma: 0.65, m1: 0.55, m2: 0.35 })
       .png()
       .toBuffer();
   }
@@ -1064,14 +1063,14 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   if (logo) composites.push(logo);
 
   const feedBase = await buildFeedBaseImage(source, {
-    // Citação marcador: foto em toda a arte (sem faixa blur / strip)
-    mode: modelId === 'citacao_marcador' ? 'cover' : 'auto',
+    // Sempre preenche 4:5 (cover). Faixa clássica / JM não deve ficar com strip blur.
+    mode: 'cover',
   });
 
   await sharp(feedBase, { failOn: 'error', limitInputPixels: 40_000_000 })
     .resize(WIDTH, HEIGHT, { fit: 'fill' })
     .composite(composites)
-    .jpeg({ quality: 97, chromaSubsampling: '4:4:4', mozjpeg: true })
+    .jpeg({ quality: 98, chromaSubsampling: '4:4:4', mozjpeg: true })
     .toFile(outputPath);
 
   return {

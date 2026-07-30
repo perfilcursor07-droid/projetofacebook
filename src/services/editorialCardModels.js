@@ -4,7 +4,7 @@ const ART_MODELS = Object.freeze([
   Object.freeze({
     id: 'faixa_classica',
     name: 'Faixa clássica',
-    description: 'Categoria e faixa horizontal, com título centralizado e espaçamento confortável.',
+    description: 'Categoria e faixa horizontal. A foto preenche a arte 4:5 inteira (sem faixas blur).',
   }),
   Object.freeze({
     id: 'bloco_inferior',
