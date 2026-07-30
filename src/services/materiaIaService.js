@@ -885,6 +885,19 @@ async function agendarMateria({ userId, matterId, runAt }) {
   }
   await AiMatters.update(matter.id, { status: 'agendado', scheduled_at: when });
 
+  let pageName = '';
+  try {
+    if (matter.facebook_page_id) {
+      const page = await FacebookPages.findById(matter.facebook_page_id);
+      pageName = page?.page_name || '';
+    }
+  } catch {
+    /* ignore */
+  }
+  console.log(
+    `[agendar] matéria #${matter.id} → "${String(matter.titulo || '').slice(0, 70)}" | ${pageName || 'página ?'} | ${formatLabelAraguaina(when) || when.toISOString()}`
+  );
+
   const existing = await db('ai_fila_jobs')
     .where({ matter_id: matter.id, status: 'pendente' })
     .orderBy('id', 'desc')
@@ -1007,12 +1020,83 @@ function parseScheduleDate(runAt) {
 }
 
 async function tickFilaJobs() {
+  /** Bloqueia publicação se a matéria só está pré-agendada na biblioteca (sem Confirmar). */
+  async function podePublicarAgendada(matter) {
+    try {
+      const hasAgendaTable = await db.schema.hasTable('biblioteca_agenda');
+      if (!hasAgendaTable) return { ok: true };
+      const agenda = await db('biblioteca_agenda')
+        .where({ matter_id: matter.id })
+        .whereNotIn('status', ['cancelado'])
+        .orderBy('id', 'desc')
+        .first();
+      if (!agenda) return { ok: true }; // agendada direto em /materias-ia
+      if (String(agenda.status) === 'pendente') {
+        return {
+          ok: false,
+          motivo: `agenda #${agenda.id} ainda pré-agendada (pendente) — precisa Confirmar`,
+        };
+      }
+      return { ok: true, agendaStatus: agenda.status };
+    } catch (err) {
+      console.warn('[fila] checagem agenda:', err.message);
+      return { ok: true };
+    }
+  }
+
+  async function logPublicacao(matter, origem) {
+    let pageName = '?';
+    try {
+      if (matter.facebook_page_id) {
+        const page = await FacebookPages.findById(matter.facebook_page_id);
+        pageName = page?.page_name || String(matter.facebook_page_id);
+      }
+    } catch {
+      /* ignore */
+    }
+    const quando = matter.scheduled_at
+      ? formatLabelAraguaina(matter.scheduled_at) || String(matter.scheduled_at)
+      : '—';
+    console.log(
+      `[fila] ${origem} matéria #${matter.id} → "${String(matter.titulo || '').slice(0, 80)}" | página: ${pageName} | agendado para: ${quando}`
+    );
+  }
+
+  async function bloquearPreAgendada(matter, motivo) {
+    console.warn(
+      `[fila] BLOQUEADO matéria #${matter.id} "${String(matter.titulo || '').slice(0, 60)}" — ${motivo}`
+    );
+    try {
+      await AiMatters.update(matter.id, { status: 'pronto', scheduled_at: null });
+      await db('ai_fila_jobs')
+        .where({ matter_id: matter.id })
+        .whereIn('status', ['pendente', 'processando'])
+        .update({
+          status: 'cancelado',
+          erro: String(motivo).slice(0, 500),
+        });
+    } catch (err) {
+      console.warn(`[fila] falha ao cancelar #${matter.id}:`, err.message);
+    }
+  }
+
   const jobs = await AiFilaJobs.findDue(5);
   for (const job of jobs) {
     await AiFilaJobs.update(job.id, { status: 'processando', attempts: Number(job.attempts || 0) + 1 });
     try {
       if (job.matter_id) {
-        // sync:true — espera o PostPulse/Graph e captura erro no job
+        const matter = await AiMatters.findById(job.matter_id);
+        if (!matter) {
+          await AiFilaJobs.update(job.id, { status: 'erro', erro: 'Matéria não encontrada' });
+          continue;
+        }
+        const check = await podePublicarAgendada(matter);
+        if (!check.ok) {
+          await bloquearPreAgendada(matter, check.motivo);
+          await AiFilaJobs.update(job.id, { status: 'cancelado', erro: check.motivo });
+          continue;
+        }
+        await logPublicacao(matter, 'job');
         await publicarMateria(job.user_id, job.matter_id, { sync: true });
       }
       await AiFilaJobs.update(job.id, { status: 'feito', erro: null });
@@ -1022,7 +1106,6 @@ async function tickFilaJobs() {
   }
 
   // Fallback: matérias agendadas vencidas (sem job pendente ou job perdido)
-  const db = require('../config/db');
   const dueMatters = await db('ai_matters')
     .where({ status: 'agendado' })
     .andWhere('scheduled_at', '<=', new Date())
@@ -1031,6 +1114,12 @@ async function tickFilaJobs() {
 
   for (const matter of dueMatters) {
     try {
+      const check = await podePublicarAgendada(matter);
+      if (!check.ok) {
+        await bloquearPreAgendada(matter, check.motivo);
+        continue;
+      }
+      await logPublicacao(matter, 'fallback');
       await publicarMateria(matter.user_id, matter.id, { sync: true });
     } catch (err) {
       console.error(`[agendado] matéria #${matter.id}:`, err.message);

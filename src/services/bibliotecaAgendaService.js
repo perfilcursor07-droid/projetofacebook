@@ -189,9 +189,27 @@ async function sincronizarComMaterias(userId, itens) {
     const agendaSt = String(row.status || '');
     const matterSt = String(row.matter_status || '');
     try {
+      // NÃO promover pendente → confirmado só porque a matéria está "agendado".
+      // Isso fazia posts saírem sem o usuário clicar em Confirmar.
+      // Se a agenda ainda é pré-agendada, cancela o agendamento indevido da matéria.
       if (matterSt === 'agendado' && agendaSt === 'pendente') {
-        await BibliotecaAgenda.update(row.id, { status: 'confirmado' });
-        row.status = 'confirmado';
+        try {
+          await db('ai_matters').where({ id: row.matter_id }).update({
+            status: 'pronto',
+            scheduled_at: null,
+            updated_at: db.fn.now(),
+          });
+          await db('ai_fila_jobs')
+            .where({ matter_id: row.matter_id, status: 'pendente' })
+            .update({ status: 'cancelado', erro: 'Agenda só pré-agendada — agendamento cancelado' });
+          row.matter_status = 'pronto';
+          row.matter_scheduled_at = null;
+          console.warn(
+            `[agenda] matéria #${row.matter_id} estava agendada sem Confirmar — cancelei a publicação automática`
+          );
+        } catch (err) {
+          console.warn(`[agenda] revert matéria #${row.matter_id}:`, err.message);
+        }
       }
       if (matterSt === 'publicado' && agendaSt !== 'publicado') {
         await BibliotecaAgenda.update(row.id, { status: 'publicado' });
