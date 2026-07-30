@@ -1933,6 +1933,38 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
   let fonte = null;
   const avisos = [];
 
+  // Publicação por provedor externo pode não ter gravado ID nenhum.
+  // Com token da Página, acha o post no feed pelo texto/horário e grava o ID nativo.
+  if (!nativeId && hasGraphToken && page?.page_id) {
+    try {
+      const found = await facebookService.findPagePostByContent(
+        page.page_access_token,
+        page.page_id,
+        {
+          message: pub.texto || matter.materia || matter.titulo || '',
+          publishedAt: pub.published_at || matter.published_at || null,
+        }
+      );
+      if (found?.id) {
+        nativeId = found.id;
+        const patchFound = { fb_native_post_id: found.id };
+        if (!pub.fb_post_url) {
+          patchFound.fb_post_url =
+            found.permalink ||
+            `https://www.facebook.com/${String(found.id).replace('_', '/posts/')}`;
+          pub.fb_post_url = patchFound.fb_post_url;
+        }
+        await Publications.update(pub.id, patchFound);
+        pub.fb_native_post_id = found.id;
+        fonte = 'feed';
+      } else {
+        avisos.push('Post não localizado no feed da Página pelo texto/horário.');
+      }
+    } catch (err) {
+      avisos.push(`Busca do post no feed: ${err.message}`);
+    }
+  }
+
   // 1) Graph API
   if (
     hasGraphToken &&
@@ -2184,6 +2216,19 @@ async function diagnosticarEngajamento(userId, matterId) {
       fb_comments: pub.fb_comments,
       fb_views: pub.fb_views,
       fb_views_at: pub.fb_views_at,
+      status: pub.status,
+      tipo: pub.tipo,
+      tentativas: pub.tentativas,
+      erro_mensagem: pub.erro_mensagem || null,
+      created_at: pub.created_at,
+      published_at: pub.published_at,
+    },
+    materia: {
+      status: matter.status,
+      tipo_publicacao: matter.tipo_publicacao,
+      publication_id: matter.publication_id,
+      published_at: matter.published_at,
+      error_message: matter.error_message || null,
     },
     pagina: {
       id: page?.id || null,
@@ -2197,9 +2242,34 @@ async function diagnosticarEngajamento(userId, matterId) {
       tem_profile_key: Boolean(profileKey),
       profile_key_tamanho: profileKey ? profileKey.length : 0,
     },
+    buscaNoFeed: null,
     ayrshare: { configurado: ayrshareService.isConfigured(), tentativas: [] },
     scrapecreators: null,
   };
+
+  if (out.pagina.tem_token_graph && page?.page_id) {
+    try {
+      const found = await facebookService.findPagePostByContent(
+        page.page_access_token,
+        page.page_id,
+        {
+          message: pub.texto || matter.materia || matter.titulo || '',
+          publishedAt: pub.published_at || matter.published_at || null,
+        }
+      );
+      out.buscaNoFeed = found || { encontrado: false };
+      if (found?.id) {
+        try {
+          const eng = await facebookService.fetchPostEngagement(page.page_access_token, found.id);
+          out.buscaNoFeed.engajamento = eng;
+        } catch (err) {
+          out.buscaNoFeed.engajamentoErro = err.message;
+        }
+      }
+    } catch (err) {
+      out.buscaNoFeed = { erro: err.message };
+    }
+  }
 
   if (ayrshareService.isConfigured()) {
     const tentativas = [];
@@ -2280,6 +2350,25 @@ async function diagnosticarEngajamento(userId, matterId) {
     }
   } catch (err) {
     out.scrapecreators = { url: permalink, erro: err.message };
+  }
+
+  // Últimas publicações da mesma Página: mostra se algum ID está sendo gravado
+  try {
+    out.ultimasPublicacoesDaPagina = await db('publications')
+      .where({ facebook_page_id: pub.facebook_page_id })
+      .orderBy('id', 'desc')
+      .limit(8)
+      .select(
+        'id',
+        'status',
+        'tipo',
+        'fb_post_id',
+        'fb_native_post_id',
+        'fb_post_url',
+        'published_at'
+      );
+  } catch (err) {
+    out.ultimasPublicacoesDaPagina = { erro: err.message };
   }
 
   return out;

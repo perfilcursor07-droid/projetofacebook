@@ -521,6 +521,83 @@ async function fetchPostEngagement(pageAccessToken, postIdOrUrl) {
   }
 }
 
+function normalizarParaComparar(texto) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N} ]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Procura no feed da Página o post correspondente ao texto/horário informados.
+ * Serve para recuperar o ID nativo quando a publicação saiu por provedor externo
+ * (Ayrshare/PostSyncer) e o ID não ficou gravado.
+ */
+async function findPagePostByContent(
+  pageAccessToken,
+  pageId,
+  { message = '', publishedAt = null, limit = 50, windowMs = 45 * 60 * 1000 } = {}
+) {
+  if (!pageAccessToken || !pageId) return null;
+
+  const alvo = normalizarParaComparar(message).slice(0, 80);
+  const alvoTs = publishedAt ? new Date(publishedAt).getTime() : null;
+  if (!alvo && !Number.isFinite(alvoTs)) return null;
+
+  const edges = ['published_posts', 'posts', 'feed'];
+  for (const edge of edges) {
+    let data;
+    try {
+      const res = await axios.get(`${GRAPH}/${encodeURIComponent(pageId)}/${edge}`, {
+        params: {
+          fields: 'id,message,created_time,permalink_url',
+          limit: Math.min(100, Math.max(10, Number(limit) || 50)),
+          access_token: pageAccessToken,
+        },
+        timeout: 20000,
+        validateStatus: () => true,
+      });
+      data = res.data;
+    } catch {
+      continue;
+    }
+    // Token inválido/expirado falha em qualquer edge — não insiste
+    if (data?.error?.code === 190) return null;
+    if (!data || data.error || !Array.isArray(data.data)) continue;
+
+    let porTempo = null;
+    let melhorDelta = Infinity;
+
+    for (const post of data.data) {
+      if (!post?.id) continue;
+      const msg = normalizarParaComparar(post.message);
+      if (alvo && msg && (msg.startsWith(alvo) || msg.includes(alvo) || alvo.startsWith(msg.slice(0, 80)))) {
+        return { id: String(post.id), permalink: post.permalink_url || null, via: `${edge}:texto` };
+      }
+      if (Number.isFinite(alvoTs) && post.created_time) {
+        const delta = Math.abs(new Date(post.created_time).getTime() - alvoTs);
+        if (delta < melhorDelta) {
+          melhorDelta = delta;
+          porTempo = post;
+        }
+      }
+    }
+
+    if (porTempo && melhorDelta <= windowMs) {
+      return {
+        id: String(porTempo.id),
+        permalink: porTempo.permalink_url || null,
+        via: `${edge}:horario`,
+      };
+    }
+  }
+
+  return null;
+}
+
 module.exports = {
   loginUrl,
   exchangeCodeForToken,
@@ -536,6 +613,7 @@ module.exports = {
   parseFacebookPostId,
   fetchPostViews,
   fetchPostEngagement,
+  findPagePostByContent,
   assertConfigured,
   REELS_DAILY_LIMIT,
 };
