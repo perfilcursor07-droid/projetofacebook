@@ -1951,6 +1951,7 @@ async function gerarTextoDePostImpl({
     // sites de notícia (ex.: fuxicogospel) precisam de scrape de autor + capa.
     redeSocial: Boolean(extraidoOriginal?.redeSocial || ehRedeSocialUrl),
     tipoFonte: extraidoOriginal?.tipoFonte || (ehRedeSocialUrl ? 'rede_social' : 'noticia'),
+    fonteMinimaBiblioteca: true,
     idiomaObrigatorio: 'pt-BR',
     traduzirFonte: true,
   };

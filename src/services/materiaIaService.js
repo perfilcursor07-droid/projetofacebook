@@ -217,7 +217,12 @@ async function gerarPreviewDeTopico(
     const temTrechoForte = fontes.some((f) => String(f?.trecho || f?.resumo || '').trim().length >= 180);
     const contexto = String(apurado.contextoApuracao || '').trim();
     const socialComTexto = Boolean(apurado.redeSocial || apurado.tipoFonte === 'rede_social') && contexto.length >= 120;
-    if (!temTrechoForte && !socialComTexto) {
+    const fonteMinimaBiblioteca =
+      Boolean(topico?.fonteMinimaBiblioteca) &&
+      contexto.length >= 80 &&
+      Boolean(apurado.link || fontes.some((f) => f?.url)) &&
+      Boolean(apurado.titulo || apurado.resumo);
+    if (!temTrechoForte && !socialComTexto && !fonteMinimaBiblioteca) {
       const err = new Error(
         'Não consegui extrair texto suficiente da notícia/post original. Para evitar invenção, abra a fonte, cole o texto manualmente ou tente novamente depois.'
       );

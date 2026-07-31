@@ -540,6 +540,44 @@ async function buscarFontesPorTitulo(titulo) {
 
   let ranked = ordenarFontesPorTitulo(titulo, candidates);
 
+  // Alguns sites/posts não entram no índice "news"; tenta busca web comum antes de Serper.
+  if (!ranked.length && env.braveSearchApiKey) {
+    try {
+      const { data } = await axios.get('https://api.search.brave.com/res/v1/web/search', {
+        params: { q, count: 8, country: 'BR', search_lang: 'pt-br' },
+        headers: {
+          Accept: 'application/json',
+          'X-Subscription-Token': env.braveSearchApiKey,
+        },
+        timeout: 15000,
+      });
+      const webCandidates = (data?.web?.results || []).map((item) => ({
+        titulo: item.title,
+        url: item.url,
+        snippet: item.description || '',
+      }));
+      ranked = ordenarFontesPorTitulo(titulo, webCandidates);
+    } catch (err) {
+      console.warn('buscarFontesPorTitulo BraveWeb:', err.response?.data?.message || err.message);
+    }
+  }
+
+  // Fallback gratuito: Google News RSS. Evita depender do Serper quando Brave não retorna.
+  if (!ranked.length) {
+    try {
+      const { buscarGoogleNewsRss } = require('./newsResearch');
+      const rss = await buscarGoogleNewsRss(q, { when: '365d' });
+      const rssCandidates = (rss || []).map((item) => ({
+        titulo: item.titulo,
+        url: item.link,
+        snippet: item.resumo || '',
+      }));
+      ranked = ordenarFontesPorTitulo(titulo, rssCandidates);
+    } catch (err) {
+      console.warn('buscarFontesPorTitulo GoogleNews:', err.message);
+    }
+  }
+
   // Evita spam de 400 no Serper free (rate limit / query rejeitada)
   if (!buscarFontesPorTitulo._serperCooldownUntil) {
     buscarFontesPorTitulo._serperCooldownUntil = 0;
@@ -564,12 +602,15 @@ async function buscarFontesPorTitulo(titulo) {
       ranked = ordenarFontesPorTitulo(titulo, candidates);
     } catch (err) {
       const status = err.response?.status;
-      if (status === 400 || status === 429 || status === 402) {
-        buscarFontesPorTitulo._serperCooldownUntil = Date.now() + 60_000;
+      const message = String(err.response?.data?.message || err.message || '');
+      if (/not enough credits/i.test(message)) {
+        buscarFontesPorTitulo._serperCooldownUntil = Date.now() + 6 * 60 * 60_000;
+      } else if (status === 400 || status === 429 || status === 402) {
+        buscarFontesPorTitulo._serperCooldownUntil = Date.now() + 10 * 60_000;
       }
       console.warn(
         'buscarFontesPorTitulo Serper:',
-        err.response?.data?.message || err.message
+        message
       );
     }
   }
