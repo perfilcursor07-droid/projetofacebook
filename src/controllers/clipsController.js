@@ -7,6 +7,7 @@ const {
   queueClipMateriaAndCover,
 } = require('../services/clipPostProcessService');
 const deepseekService = require('../services/deepseekService');
+const clipSplitService = require('../services/clipSplitService');
 
 function httpError(message, status) {
   const err = new Error(message);
@@ -54,10 +55,16 @@ async function retryClip(req, res, next) {
 async function removeClip(req, res, next) {
   try {
     const { clip } = await assertOwnedClip(req);
-    processingService.safeUnlink(clip.caminho_arquivo);
-    if (clip.arquivo_sem_capa && clip.arquivo_sem_capa !== clip.caminho_arquivo) {
-      processingService.safeUnlink(clip.arquivo_sem_capa);
-    }
+    const arquivos = new Set(
+      [
+        clip.caminho_arquivo,
+        clip.arquivo_sem_capa,
+        clip.arquivo_sem_split,
+        clip.split_image_path,
+        `clips/clip_${clip.id}.mp4`,
+      ].filter(Boolean)
+    );
+    for (const arquivo of arquivos) processingService.safeUnlink(arquivo);
     await VideoClips.remove(clip.id);
     res.json({ deleted: true, id: clip.id });
   } catch (err) {
@@ -188,6 +195,108 @@ async function removerCapa(req, res, next) {
   }
 }
 
+/**
+ * Monta a tela dividida do corte: imagem de um lado, vídeo do outro.
+ * Aceita JSON (imagem da busca / frame) ou multipart (upload).
+ */
+async function montarSplit(req, res, next) {
+  try {
+    const { clip } = await assertOwnedClip(req);
+    const body = req.body || {};
+    const fonte = req.file ? 'upload' : String(body.fonte || body.origem || 'busca');
+
+    if (fonte === 'busca' && !String(body.imagem_url || body.imagemUrl || '').trim()) {
+      throw httpError('Escolha uma imagem na busca ou envie um arquivo.', 400);
+    }
+
+    const result = await clipSplitService.aplicarSplitNoClip({
+      clipId: clip.id,
+      userId: req.session.userId,
+      fonte,
+      imagemUrl: String(body.imagem_url || body.imagemUrl || '').trim() || null,
+      buffer: req.file?.buffer || null,
+      frameSegundo: body.frame_segundo ?? body.frameSegundo,
+      videoOffset: body.video_offset ?? body.videoOffset,
+      imageOffset: body.imagem_offset ?? body.imageOffset,
+      imagemLado: body.imagem_lado ?? body.imagemLado,
+    });
+
+    res.status(202).json({
+      ...result,
+      clipId: clip.id,
+      message: 'Montando a tela dividida — o vídeo atualiza em alguns segundos.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Reaplica a tela dividida mudando só o enquadramento (empurra imagem/vídeo). */
+async function reenquadrarSplit(req, res, next) {
+  try {
+    const { clip } = await assertOwnedClip(req);
+    const body = req.body || {};
+    const result = await clipSplitService.reenquadrarSplit({
+      clipId: clip.id,
+      userId: req.session.userId,
+      videoOffset: body.video_offset ?? body.videoOffset,
+      imageOffset: body.imagem_offset ?? body.imageOffset,
+      imagemLado: body.imagem_lado ?? body.imagemLado,
+    });
+    res.status(202).json({ ...result, clipId: clip.id, message: 'Reenquadrando…' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Remove a tela dividida e volta ao vídeo cheio. */
+async function removerSplit(req, res, next) {
+  try {
+    const { clip } = await assertOwnedClip(req);
+    await clipSplitService.removerSplitDoClip({
+      clipId: clip.id,
+      userId: req.session.userId,
+    });
+    res.json({ ok: true, message: 'Tela dividida removida — corte original restaurado.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Miniaturas do próprio corte para usar como imagem da tela dividida. */
+async function listarFramesDoSplit(req, res, next) {
+  try {
+    const { clip } = await assertOwnedClip(req);
+    const frames = await clipSplitService.listarFramesDoClip(
+      clip,
+      req.query.quantidade || req.query.count || 6
+    );
+    res.json({ ok: true, frames });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Busca fotos na web (Brave e afins) para a metade da tela dividida. */
+async function buscarImagensDoSplit(req, res, next) {
+  try {
+    await assertOwnedClip(req);
+    const termo = String(req.query.q || req.query.termo || '').trim();
+    const imageSuggestService = require('../services/imageSuggestService');
+
+    if (String(req.query.fonte || '').toLowerCase() === 'brave') {
+      const imagens = await imageSuggestService.buscarBraveImagens(termo, { count: 16 });
+      if (!imagens.length) throw httpError(`Nenhuma imagem encontrada para “${termo}”.`, 422);
+      return res.json({ ok: true, imagens, aviso: 'Fotos via Brave Images' });
+    }
+
+    const result = await imageSuggestService.buscarImagensPorPalavra(termo, { limite: 16 });
+    res.json({ ok: true, imagens: result.imagens, aviso: result.aviso });
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** Página dedicada: revisar matéria e publicar o corte. */
 async function showClipPage(req, res, next) {
   try {
@@ -209,6 +318,9 @@ async function showClipPage(req, res, next) {
       clip,
       video,
       materia,
+      // Vídeo sem capa/tela dividida: é o que o preview da tela dividida usa.
+      previewBaseUrl: clipSplitService.previewBaseUrl(clip),
+      splitImagemUrl: clip.split_image_path ? `/media/${clip.split_image_path}` : null,
       currentPath: '/fila',
     });
   } catch (err) {
@@ -223,6 +335,11 @@ module.exports = {
   removeClip,
   gerarCapa,
   removerCapa,
+  montarSplit,
+  reenquadrarSplit,
+  removerSplit,
+  listarFramesDoSplit,
+  buscarImagensDoSplit,
   queueClipCover,
   resolveCapaTitulo,
   showClipPage,

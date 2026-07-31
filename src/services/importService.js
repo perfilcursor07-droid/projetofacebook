@@ -47,9 +47,43 @@ const { enqueue } = require('../workers/queue');
 const { downloadToStorage, storageAbsolutePath } = require('./downloadService');
 
 /**
- * Metadados de um link (YouTube, TikTok, URL direta) via yt-dlp.
+ * Metadados de um link (YouTube, TikTok, Facebook, Instagram, URL direta).
+ * FB/IG: tenta ScrapeCreators primeiro (mais estável), depois yt-dlp.
  */
 async function fetchLinkMetadata(url) {
+  const plataforma = detectarPlataformaLink(url);
+
+  if (plataforma === 'facebook' || plataforma === 'instagram') {
+    try {
+      const scrapeCreators = require('./scrapeCreatorsSocial');
+      if (scrapeCreators.isConfigured()) {
+        const post = await scrapeCreators.extrairPost(url, plataforma);
+        if (post?.isVideo || post?.videoUrl) {
+          return {
+            titulo: post.titulo || post.texto || null,
+            description: post.texto || null,
+            duracao: null,
+            thumbnail: post.imagem || null,
+            autor: post.veiculo || null,
+            autorUrl: post.autorUrl || null,
+            extractor: 'scrapecreators',
+            plataforma,
+            scrapecreators_video_url: post.videoUrl || null,
+            isVideo: true,
+          };
+        }
+        if (post && post.isVideo === false) {
+          const err = new Error('Este post do Facebook/Instagram não é um vídeo.');
+          err.status = 422;
+          throw err;
+        }
+      }
+    } catch (scrapeErr) {
+      if (scrapeErr.status === 422) throw scrapeErr;
+      console.warn('[import] metadata ScrapeCreators:', String(scrapeErr.message || scrapeErr).slice(0, 180));
+    }
+  }
+
   const info = await youtubedl(url, {
     dumpSingleJson: true,
     noWarnings: true,
@@ -69,7 +103,17 @@ async function fetchLinkMetadata(url) {
     autor: info.uploader || info.channel || null,
     autorUrl: info.uploader_url || info.channel_url || null,
     extractor: info.extractor_key || null,
+    plataforma: plataforma || null,
   };
+}
+
+function detectarPlataformaLink(url) {
+  const u = String(url || '').toLowerCase();
+  if (/instagram\.com/i.test(u)) return 'instagram';
+  if (/facebook\.com|fb\.watch|fb\.com/i.test(u)) return 'facebook';
+  if (/tiktok\.com|vm\.tiktok\.com/i.test(u)) return 'tiktok';
+  if (/youtube\.com|youtu\.be/i.test(u)) return 'youtube';
+  return null;
 }
 
 function humanizeYtDlpError(err) {
@@ -81,6 +125,9 @@ function humanizeYtDlpError(err) {
   if (lower.includes('private video') || lower.includes('private')) {
     return 'Vídeo privado — não é possível importar.';
   }
+  if (lower.includes('login required') || lower.includes('cookies')) {
+    return 'Facebook/Instagram pediu login. Configure cookies do yt-dlp ou use a ScrapeCreators.';
+  }
   if (lower.includes('requested format is not available') || lower.includes('no video formats')) {
     return 'Nenhum formato de vídeo disponível — cookies/JS runtime do yt-dlp podem estar faltando no servidor.';
   }
@@ -88,7 +135,7 @@ function humanizeYtDlpError(err) {
     return 'Vídeo indisponível nesta região ou foi removido.';
   }
   if (lower.includes('unsupported url') || lower.includes('no video')) {
-    return 'URL não suportada. Use link do YouTube/TikTok/vídeo direto.';
+    return 'URL não suportada. Use YouTube, TikTok, Facebook, Instagram ou vídeo direto.';
   }
   if (lower.includes('enoent') || lower.includes('spawn') || lower.includes('yt-dlp')) {
     return 'Ferramenta yt-dlp ausente/desatualizada no servidor. Atualize youtube-dl-exec.';
@@ -318,28 +365,149 @@ async function searchTiktok(termo, { limit = 30 } = {}) {
   }
 }
 
-/** Enfileira download de um vídeo importado por link. */
+/**
+ * Baixa FB/IG via CDN da ScrapeCreators (quando disponível) e cai no yt-dlp.
+ * Usado pela fila /busca — só baixa o arquivo; os cortes ficam a cargo do usuário.
+ */
+async function baixarLinkSocialParaArquivo(video, dest) {
+  const abs = storageAbsolutePath(dest);
+  const { probe } = require('./ffmpegService');
+
+  const parseMetadata = (value) => {
+    if (value && typeof value === 'object') return value;
+    try {
+      return JSON.parse(value || '{}');
+    } catch {
+      return {};
+    }
+  };
+
+  const removerParcial = () => {
+    try {
+      if (fs.existsSync(abs)) fs.unlinkSync(abs);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const metadataInicial = parseMetadata(video.metadata);
+  const plataforma =
+    metadataInicial.plataforma ||
+    detectarPlataformaLink(video.url_original);
+
+  const tentarDownloadDireto = async (url) => {
+    if (!/^https?:\/\//i.test(String(url || ''))) return false;
+    removerParcial();
+    try {
+      await downloadToStorage(url, dest);
+      const info = await probe(abs);
+      const temVideo =
+        Array.isArray(info?.streams) &&
+        info.streams.some((stream) => stream.codec_type === 'video');
+      const duracaoDireta = Number(info?.format?.duration);
+      if (!temVideo || !Number.isFinite(duracaoDireta) || duracaoDireta <= 0) {
+        throw new Error('arquivo recebido não contém vídeo completo');
+      }
+      return true;
+    } catch (directErr) {
+      removerParcial();
+      console.warn(
+        `[import] download direto #${video.id} falhou:`,
+        String(directErr.message || directErr).slice(0, 180)
+      );
+      return false;
+    }
+  };
+
+  let arquivoBaixado = false;
+  let directVideoUrl = String(metadataInicial.scrapecreators_video_url || '').trim();
+
+  if (directVideoUrl) {
+    arquivoBaixado = await tentarDownloadDireto(directVideoUrl);
+  }
+
+  if (!arquivoBaixado && (plataforma === 'facebook' || plataforma === 'instagram')) {
+    try {
+      const scrapeCreators = require('./scrapeCreatorsSocial');
+      if (scrapeCreators.isConfigured()) {
+        const refreshed = await scrapeCreators.extrairPost(video.url_original, plataforma);
+        const refreshedUrl = String(refreshed?.videoUrl || '').trim();
+        if (refreshedUrl) {
+          directVideoUrl = refreshedUrl;
+          const latest = await Videos.findById(video.id);
+          const latestMeta = parseMetadata(latest?.metadata);
+          await Videos.update(video.id, {
+            metadata: {
+              ...latestMeta,
+              scrapecreators_video_url: refreshedUrl,
+              plataforma,
+            },
+          });
+          arquivoBaixado = await tentarDownloadDireto(refreshedUrl);
+        }
+      }
+    } catch (refreshErr) {
+      console.warn(
+        `[import] ScrapeCreators #${video.id}:`,
+        String(refreshErr.message || refreshErr).slice(0, 180)
+      );
+    }
+  }
+
+  if (!arquivoBaixado) {
+    removerParcial();
+    await youtubedl(video.url_original, {
+      output: abs,
+      mergeOutputFormat: 'mp4',
+      remuxVideo: 'mp4',
+      ffmpegLocation: path.dirname(ffmpegPath),
+      noPlaylist: true,
+      noWarnings: true,
+    });
+  }
+
+  let duracao = video.duracao ? Number(video.duracao) : null;
+  try {
+    const info = await probe(abs);
+    const probed = Number(info?.format?.duration);
+    if (Number.isFinite(probed) && probed > 0) duracao = Math.round(probed);
+  } catch {
+    /* ignore */
+  }
+
+  return { dest, duracao, plataforma };
+}
+
+/** Enfileira download de um vídeo importado por link (YT/TikTok/FB/IG). */
 function queueLinkImport(video) {
   enqueue(`import link video ${video.id}`, async () => {
     try {
       const dest = `videos/video_${video.id}.mp4`;
-      await youtubedl(video.url_original, {
-        output: storageAbsolutePath(dest),
-        // Sem -f rígido: no datacenter o yt-dlp escolhe o melhor stream disponível
-        mergeOutputFormat: 'mp4',
-        remuxVideo: 'mp4',
-        ffmpegLocation: path.dirname(ffmpegPath),
-        noPlaylist: true,
-        noWarnings: true,
-      });
+      const { duracao, plataforma } = await baixarLinkSocialParaArquivo(video, dest);
+
+      const latest = await Videos.findById(video.id);
+      let meta = latest?.metadata;
+      if (typeof meta === 'string') {
+        try {
+          meta = JSON.parse(meta);
+        } catch {
+          meta = {};
+        }
+      }
+      if (!meta || typeof meta !== 'object') meta = {};
 
       await Videos.update(video.id, {
         status: 'baixado',
         caminho_local: dest,
+        duracao: duracao || video.duracao || null,
         erro_mensagem: null,
+        metadata: {
+          ...meta,
+          ...(plataforma ? { plataforma } : {}),
+        },
       });
     } catch (err) {
-      const msg = String(err.stderr || err.message || err).slice(0, 500);
+      const msg = humanizeYtDlpError(err);
       await Videos.update(video.id, {
         status: 'erro',
         erro_mensagem: `Importação falhou: ${msg}`,
@@ -583,6 +751,7 @@ function queueLinkImportAsReel(video, { facebookPageId = null, matterId = null }
 module.exports = {
   fetchLinkMetadata,
   humanizeYtDlpError,
+  detectarPlataformaLink,
   queueLinkImport,
   queueLinkImportAsReel,
   searchYoutube,

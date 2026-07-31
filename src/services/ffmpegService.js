@@ -107,6 +107,121 @@ function cutClip({ inputPath, outputPath, inicio, fim, aspectRatio = '9:16' }) {
   });
 }
 
+/** Resoluções de saída da tela dividida por formato. */
+const SPLIT_CANVAS = {
+  '9:16': { width: 1080, height: 1920 },
+  '1:1': { width: 1080, height: 1080 },
+  original: { width: 1080, height: 1920 },
+};
+
+function clampOffset(value, fallback = 50) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback / 100;
+  return Math.min(100, Math.max(0, n)) / 100;
+}
+
+/**
+ * Escala cobrindo a metade e recorta na posição pedida.
+ * offset 0 = encostado à esquerda, 0.5 = centro, 1 = encostado à direita.
+ */
+function coverHalfFilter(halfWidth, height, offset) {
+  const x = `(iw-ow)*${offset.toFixed(4)}`;
+  return [
+    `scale=${halfWidth}:${height}:force_original_aspect_ratio=increase`,
+    `crop=${halfWidth}:${height}:${x}:(ih-oh)/2`,
+    'setsar=1',
+  ].join(',');
+}
+
+/**
+ * Extrai um frame do vídeo como JPG (usado na capa e na tela dividida).
+ * @returns {Promise<string>} caminho do jpg gerado
+ */
+function extractFrame(inputPath, outputPath, atSecond = 0.5) {
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .seekInput(Math.max(0, Number(atSecond) || 0))
+      .frames(1)
+      .outputOptions(['-q:v', '2'])
+      .on('error', reject)
+      .on('end', () => resolve(outputPath))
+      .save(outputPath);
+  });
+}
+
+/**
+ * Monta a tela dividida: imagem fixa na esquerda, vídeo na direita, meio a meio.
+ * Cada lado é escalado para cobrir sua metade e recortado no offset escolhido,
+ * então nada é esticado — o usuário só empurra o enquadramento.
+ *
+ * @param {object} opts
+ * @param {string} opts.videoPath vídeo (corte já pronto)
+ * @param {string} opts.imagePath imagem da metade esquerda
+ * @param {string} opts.outputPath mp4 de saída
+ * @param {number} [opts.videoOffset] 0–100 (padrão 50)
+ * @param {number} [opts.imageOffset] 0–100 (padrão 50)
+ * @param {string} [opts.aspectRatio] "9:16" | "1:1"
+ * @param {'esquerda'|'direita'} [opts.imagemLado] lado da imagem (padrão esquerda)
+ * @returns {Promise<{ width: number, height: number }>}
+ */
+function renderSplitScreen({
+  videoPath,
+  imagePath,
+  outputPath,
+  videoOffset = 50,
+  imageOffset = 50,
+  aspectRatio = '9:16',
+  imagemLado = 'esquerda',
+}) {
+  const canvas = SPLIT_CANVAS[aspectRatio] || SPLIT_CANVAS['9:16'];
+  const height = canvas.height;
+  const halfWidth = Math.round(canvas.width / 2);
+  const imgOffset = clampOffset(imageOffset);
+  const vidOffset = clampOffset(videoOffset);
+
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  return new Promise((resolve, reject) => {
+    const command = ffmpeg().input(videoPath).input(imagePath).inputOptions(['-loop', '1']);
+
+    const filters = [
+      `[0:v]${coverHalfFilter(halfWidth, height, vidOffset)},fps=${OUTPUT_FPS}[vid]`,
+      `[1:v]${coverHalfFilter(halfWidth, height, imgOffset)}[img]`,
+      imagemLado === 'direita'
+        ? '[vid][img]hstack=inputs=2[v]'
+        : '[img][vid]hstack=inputs=2[v]',
+    ];
+
+    command
+      .complexFilter(filters)
+      .outputOptions([
+        '-map', '[v]',
+        // O áudio do corte é opcional: "?" evita erro em vídeo mudo.
+        '-map', '0:a?',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '23',
+        '-r', String(OUTPUT_FPS),
+        '-vsync', 'cfr',
+        '-pix_fmt', 'yuv420p',
+        '-g', String(OUTPUT_FPS * 2),
+        '-keyint_min', String(OUTPUT_FPS * 2),
+        '-sc_threshold', '0',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-ar', '48000',
+        '-ac', '2',
+        // A imagem é um input infinito (-loop 1): termina junto com o vídeo.
+        '-shortest',
+        '-movflags', '+faststart',
+      ])
+      .on('error', (err) => reject(err))
+      .on('end', () => resolve({ width: halfWidth * 2, height }))
+      .save(outputPath);
+  });
+}
+
 /**
  * Extrai áudio WAV mono 16kHz para STT (Whisper).
  * @returns {Promise<string>} caminho absoluto do wav
@@ -180,6 +295,8 @@ async function validateReelFile(filePath) {
 module.exports = {
   cutClip,
   extractAudioWav,
+  extractFrame,
+  renderSplitScreen,
   probe,
   validateReelFile,
   MAX_CLIP_SECONDS,

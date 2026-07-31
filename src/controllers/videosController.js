@@ -78,7 +78,7 @@ async function importOneLink(userId, { url, termo, titulo, thumbnail, fonte }) {
   const [id] = await Videos.create({
     user_id: userId,
     origem: 'link',
-    termo_busca: (termo || meta.extractor || 'link').toString().slice(0, 255),
+    termo_busca: (termo || meta.extractor || meta.plataforma || 'link').toString().slice(0, 255),
     titulo: String(meta.titulo || titulo || normalized)
       .replace(/\s+/g, ' ')
       .trim()
@@ -89,7 +89,13 @@ async function importOneLink(userId, { url, termo, titulo, thumbnail, fonte }) {
     autor: meta.autor ? String(meta.autor).slice(0, 255) : null,
     autor_url: meta.autorUrl ? String(meta.autorUrl).slice(0, 500) : null,
     status: 'pendente',
-    metadata: { extractor: meta.extractor, fonte: fonte || null, metaWarning },
+    metadata: {
+      extractor: meta.extractor,
+      fonte: fonte || meta.plataforma || null,
+      plataforma: meta.plataforma || importService.detectarPlataformaLink(normalized),
+      scrapecreators_video_url: meta.scrapecreators_video_url || null,
+      metaWarning,
+    },
   });
 
   const video = await Videos.findById(id);

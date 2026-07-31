@@ -4,7 +4,7 @@ const app = require('./app');
 const { env } = require('./config/env');
 const { recoverStuckJobs } = require('./services/processingService');
 
-const storageDirs = ['videos', 'clips', 'imagens', 'temp', 'tmp'].map((dir) =>
+const storageDirs = ['videos', 'clips', 'imagens', 'temp', 'tmp', 'splits', 'splits/frames'].map((dir) =>
   path.join(env.storagePath, dir)
 );
 

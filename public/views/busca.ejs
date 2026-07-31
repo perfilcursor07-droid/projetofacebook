@@ -43,7 +43,7 @@
             </span>
             <span class="min-w-0">
               <span class="block text-sm font-semibold text-white">YouTube</span>
-              <span class="block truncate text-xs text-slate-400">Shorts + curtos</span>
+              <span class="block truncate text-xs text-slate-400">+ FB · IG · Upload</span>
             </span>
           </button>
 
@@ -71,7 +71,7 @@
             Upload
           </button>
           <button type="button" data-yt-modo="link" class="yt-modo-btn flex-1 rounded-lg px-4 py-2.5 text-sm text-slate-300 hover:text-white sm:flex-none">
-            Por link
+            Por link (YT · FB · IG)
           </button>
         </div>
       </div>
@@ -124,16 +124,19 @@
         </div>
       </div>
 
-      <!-- Painel: por link (YouTube) — vários de uma vez -->
+      <!-- Painel: por link (YouTube / Facebook / Instagram) — vários de uma vez -->
       <div id="panel-link" class="mt-4 hidden">
         <div class="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
           <h2 class="text-sm font-semibold text-white">Importar por link</h2>
           <p class="mt-1 text-xs text-slate-500">
-            Cole um ou vários links do YouTube (Shorts, vídeos). <strong class="font-medium text-slate-400">Um por linha</strong> — até 20 por vez.
+            Cole links do <strong class="font-medium text-slate-300">YouTube</strong>,
+            <strong class="font-medium text-slate-300">Facebook</strong> ou
+            <strong class="font-medium text-slate-300">Instagram</strong>
+            (vídeo/Reel). <strong class="font-medium text-slate-400">Um por linha</strong> — até 20 por vez.
           </p>
           <form id="import-form" class="mt-3 space-y-3">
             <textarea id="import-urls" rows="6" required
-              placeholder="https://www.youtube.com/shorts/...&#10;https://youtu.be/...&#10;https://www.youtube.com/watch?v=..."
+              placeholder="https://www.youtube.com/watch?v=...&#10;https://www.facebook.com/reel/...&#10;https://www.instagram.com/reel/...&#10;https://fb.watch/..."
               class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
             <div class="flex flex-wrap items-center gap-3">
               <button type="submit" id="import-btn"
@@ -159,7 +162,7 @@
     <!-- Upload / link para Pexels e TikTok (fora das abas YT) -->
     <div id="extra-import" class="mt-10 rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
       <h2 class="text-sm font-semibold text-white">Upload ou importar por link</h2>
-      <p class="mt-1 text-xs text-slate-500">Arquivo próprio · YouTube · TikTok — vários links de uma vez</p>
+      <p class="mt-1 text-xs text-slate-500">Arquivo próprio · YouTube · Facebook · Instagram · TikTok — vários links de uma vez</p>
       <div class="mt-4 grid gap-4 lg:grid-cols-2">
         <section>
           <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Enviar arquivo</h3>
@@ -177,7 +180,7 @@
           <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Links (vários)</h3>
           <form id="import-form-extra" class="mt-2 space-y-2">
             <textarea id="import-urls-extra" rows="4" required
-              placeholder="Um link por linha…"
+              placeholder="YouTube, Facebook, Instagram ou TikTok — um link por linha…"
               class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
             <button type="submit" id="import-btn-extra"
               class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
@@ -220,7 +223,7 @@
 
     const FONTE_HINTS = {
       pexels: 'Pexels: vídeos/fotos licenciados para uso comercial.',
-      youtube: 'YouTube: use as abas Palavra-chave, Upload ou Por link. Atenção a direitos autorais.',
+      youtube: 'YouTube: palavra-chave, upload ou link. Na aba Por link também aceita Facebook e Instagram.',
       tiktok: 'TikTok: digite um @usuário (ex.: @tiktok). Ou importe vários links na seção abaixo.',
     };
 

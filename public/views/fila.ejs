@@ -5,18 +5,18 @@
 
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl font-semibold text-white">Produção</h1>
-        <p class="mt-0.5 text-sm text-slate-400">Baixe · analise · escolha Reels · publique</p>
+        <h1 class="text-xl font-semibold text-white">Produção de cortes</h1>
+        <p class="mt-0.5 text-sm text-slate-400">Baixe → a IA sugere momentos coerentes → escolha → revise e publique</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <ol class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
           <li class="rounded-md bg-slate-800/80 px-2 py-1 text-emerald-300">1 Baixar</li>
           <li class="text-slate-600">→</li>
-          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-fuchsia-300">2 Analisar</li>
+          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-fuchsia-300">2 Melhores momentos</li>
           <li class="text-slate-600">→</li>
-          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-violet-300">3 Criar Reels</li>
+          <li class="rounded-md bg-slate-800/80 px-2 py-1 text-violet-300">3 Criar cortes</li>
           <li class="text-slate-600">→</li>
-          <li class="rounded-md bg-[#1877F2]/15 px-2 py-1 text-[#1877F2]">4 Publicar</li>
+          <li class="rounded-md bg-[#1877F2]/15 px-2 py-1 text-[#1877F2]">4 Revisar · publicar</li>
         </ol>
         <span id="last-updated" class="text-xs text-slate-500"></span>
         <button id="refresh-btn" type="button"
@@ -472,7 +472,7 @@
             ${canOpen ? `
               <a href="/fila/corte/${clip.id}"
                 class="rounded-lg bg-[#1877F2] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#166FE5]">
-                ${isPublished ? 'Ver' : 'Revisar e publicar'}
+                ${isPublished ? 'Ver' : 'Revisar · tela dividida'}
               </a>` : ''}
             <button type="button"
               class="action-btn rounded-lg px-2 py-1.5 text-[11px] text-rose-400/80 hover:bg-rose-500/10 hover:text-rose-300"
@@ -485,7 +485,10 @@
       if (v.status === 'pendente' || v.status === 'erro') {
         return `
           <div class="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3">
-            <p class="flex-1 text-sm text-slate-200">Baixe o vídeo para gerar os cortes.</p>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-semibold text-white">1. Baixar o vídeo</p>
+              <p class="mt-0.5 text-xs text-slate-400">Precisa estar no disco para a IA achar os melhores momentos.</p>
+            </div>
             <button type="button" class="action-btn rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-emerald-400" data-action="download-video" data-id="${v.id}">Baixar vídeo</button>
           </div>`;
       }
@@ -493,43 +496,53 @@
         const max = Number(v.duracao) > 0 ? Number(v.duracao) : 600;
         if (max < 3) return `<p class="text-xs text-amber-300">Vídeo menor que 3s</p>`;
         const defaultFim = Math.min(max, 90);
+        const longo = max >= 600;
         return `
-          <form class="clip-form" data-id="${v.id}" data-max="${max}">
-            <div class="flex flex-wrap gap-2">
-              <button type="button"
-                class="action-btn flex-1 min-w-[160px] rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 py-2.5 text-sm font-bold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
-                data-action="analyze-video" data-id="${v.id}">
-                Analisar vídeo
-              </button>
-              <details class="relative flex-1 min-w-[140px]">
-                <summary class="cursor-pointer list-none rounded-xl border border-slate-600 bg-slate-900 px-4 py-2.5 text-center text-sm font-semibold text-slate-200 hover:border-violet-500 hover:text-white">
-                  Manual
-                </summary>
-                <div class="absolute left-0 right-0 z-20 mt-2 space-y-3 rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-xl">
-                  <div class="grid grid-cols-2 gap-2">
-                    <label class="text-[11px] text-slate-400">Início (s)
-                      <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
-                        class="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
-                    </label>
-                    <label class="text-[11px] text-slate-400">Fim (s)
-                      <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
-                        class="clip-fim mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
-                    </label>
-                  </div>
-                  <select name="aspect_ratio" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100">
-                    <option value="9:16">9:16 · vertical</option>
-                    <option value="1:1">1:1 · quadrado</option>
-                    <option value="original">Original</option>
-                  </select>
-                  <div class="flex flex-wrap gap-1.5">
-                    <button type="button" class="fim-preset rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 30)}">30s</button>
-                    <button type="button" class="fim-preset rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 60)}">60s</button>
-                    <button type="button" class="fim-preset rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300" data-fim="${Math.min(max, 90)}">90s</button>
-                  </div>
-                  <button type="submit" class="w-full rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-400">Criar corte</button>
+          <form class="clip-form space-y-3" data-id="${v.id}" data-max="${max}">
+            <div class="rounded-xl border border-fuchsia-500/25 bg-fuchsia-500/5 p-3 sm:p-4">
+              <div class="flex flex-wrap items-start gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-semibold text-white">2. Achar os melhores momentos</p>
+                  <p class="mt-1 text-xs leading-relaxed text-slate-400">
+                    A IA transcreve a fala e corta só trechos com começo, meio e fim — sem começar no meio da frase.
+                    ${longo ? ' Vídeo longo: analisa em partes para não perder o que está no final.' : ''}
+                  </p>
                 </div>
-              </details>
+                <button type="button"
+                  class="action-btn shrink-0 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 py-2.5 text-sm font-bold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+                  data-action="analyze-video" data-id="${v.id}">
+                  Analisar com IA
+                </button>
+              </div>
             </div>
+            <details class="rounded-xl border border-slate-700 bg-slate-900/60">
+              <summary class="cursor-pointer list-none px-4 py-2.5 text-sm font-medium text-slate-300 hover:text-white">
+                Ou corte manual (início / fim em segundos)
+              </summary>
+              <div class="space-y-3 border-t border-slate-800 px-4 py-3">
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="text-[11px] text-slate-400">Início (s)
+                    <input type="number" name="inicio" min="0" max="${Math.max(0, max - 3)}" value="0" step="1" required
+                      class="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
+                  </label>
+                  <label class="text-[11px] text-slate-400">Fim (s)
+                    <input type="number" name="fim" min="3" max="${max}" value="${defaultFim}" step="1" required
+                      class="clip-fim mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" />
+                  </label>
+                </div>
+                <select name="aspect_ratio" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100">
+                  <option value="9:16">9:16 · vertical (Reels)</option>
+                  <option value="1:1">1:1 · quadrado</option>
+                  <option value="original">Original</option>
+                </select>
+                <div class="flex flex-wrap gap-1.5">
+                  <button type="button" class="fim-preset rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 30)}">30s</button>
+                  <button type="button" class="fim-preset rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:border-emerald-500 hover:text-emerald-300" data-fim="${Math.min(max, 60)}">60s</button>
+                  <button type="button" class="fim-preset rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300" data-fim="${Math.min(max, 90)}">90s</button>
+                </div>
+                <button type="submit" class="w-full rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-400">Criar corte manual</button>
+              </div>
+            </details>
           </form>`;
       }
       return '';
@@ -555,9 +568,12 @@
       const cards = list.map((s, i) => {
         const titulo = escapeHtml(s.titulo || s.legenda || `Sugestão ${i + 1}`);
         const motivo = escapeHtml(s.motivo || '');
+        const abre = escapeHtml(s.abre || '');
+        const fecha = escapeHtml(s.fecha || '');
         const tempo = formatMmSs(s.inicio) + '–' + formatMmSs(s.fim);
+        const dur = Math.max(0, Math.round(Number(s.fim) - Number(s.inicio)));
         return `
-          <label class="flex cursor-pointer gap-3 rounded-xl border border-slate-700 bg-slate-950/70 p-3 transition hover:border-violet-500/50">
+          <label class="flex cursor-pointer gap-3 rounded-xl border border-slate-700 bg-slate-950/70 p-3 transition hover:border-violet-500/50 has-[:checked]:border-violet-500/60 has-[:checked]:bg-violet-500/10">
             <input type="checkbox" name="sugestao" value="${i}" checked
               class="mt-1 rounded border-slate-600 bg-slate-900 text-violet-500 focus:ring-violet-500"
               data-inicio="${Number(s.inicio)}" data-fim="${Number(s.fim)}"
@@ -565,9 +581,13 @@
               data-legenda="${attrEscape(s.legenda || '')}"
               data-motivo="${attrEscape(s.motivo || '')}" />
             <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold text-white">${titulo}</span>
-              <span class="mt-0.5 block text-[11px] font-medium text-violet-300">${tempo}</span>
-              ${motivo ? `<span class="mt-1 block text-[11px] leading-snug text-slate-500">${motivo}</span>` : ''}
+              <span class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-semibold text-white">${titulo}</span>
+                <span class="rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-300">${tempo} · ${dur}s</span>
+              </span>
+              ${abre ? `<span class="mt-1.5 block text-[11px] leading-snug text-slate-400"><span class="font-medium text-emerald-400/90">Começa:</span> “${abre}”</span>` : ''}
+              ${fecha ? `<span class="mt-0.5 block text-[11px] leading-snug text-slate-400"><span class="font-medium text-sky-400/90">Termina:</span> “${fecha}”</span>` : ''}
+              ${motivo ? `<span class="mt-1.5 block text-[11px] leading-snug text-slate-500">${motivo}</span>` : ''}
             </span>
           </label>`;
       }).join('');
@@ -575,14 +595,14 @@
       return `
         <div class="sugestoes-reels space-y-3 rounded-xl border border-violet-500/25 bg-violet-500/5 p-3 sm:p-4" data-video-sugestoes="${videoId}">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-violet-300">Sugestões de Reels</p>
-            <p class="mt-1 text-[11px] text-slate-500">Marque os trechos ou digite o que quer — a IA corta no tempo certo, escreve a legenda e cria a capa.</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-violet-300">3. Escolha os cortes</p>
+            <p class="mt-1 text-[11px] text-slate-500">Cada sugestão já começa e termina em frase completa. Marque as que quiser ou digite o momento que procura.</p>
           </div>
           ${cards
             ? `<div class="space-y-2">${cards}</div>`
-            : `<p class="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">Nenhuma sugestão automática. Digite abaixo o que quer no Reel ou use Manual.</p>`}
+            : `<p class="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">Nenhuma sugestão automática. Digite abaixo o que quer no Reel ou use o corte manual.</p>`}
           <label class="block text-sm">
-            <span class="text-slate-400">Ou digite quais Reels quer</span>
+            <span class="text-slate-400">Ou digite quais momentos quer</span>
             <textarea name="pedido-reels" rows="2"
               placeholder="Ex.: o momento da oração final; quando ele fala de perdão…"
               class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-violet-500 focus:outline-none"></textarea>
@@ -596,7 +616,7 @@
             <button type="button"
               class="action-btn flex-1 min-w-[180px] rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-400 disabled:cursor-wait disabled:opacity-60"
               data-action="criar-reels" data-id="${videoId}">
-              Criar Reels selecionados
+              Criar cortes selecionados
             </button>
             <button type="button"
               class="action-btn rounded-xl border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-violet-400 hover:text-white"
@@ -615,18 +635,18 @@
 
     function videoNextStep(v, clips, analise, sugestoes) {
       if (v.status === 'pendente' || v.status === 'erro') return 'Próximo: baixar o vídeo';
-      if (analise === 'processando') return 'Transcrevendo e sugerindo Reels…';
+      if (analise === 'processando') return 'Transcrevendo e escolhendo momentos coerentes…';
       if (analise === 'pronta' && sugestoes.length && !clips.length) {
-        return 'Escolha os Reels abaixo (ou digite o que quer) e clique em Criar';
+        return 'Escolha os cortes abaixo (veja Começa / Termina) e clique em Criar';
       }
       if (analise === 'pronta' && sugestoes.length) {
-        return 'Pode criar mais Reels pelas sugestões ou revisar os cortes prontos';
+        return 'Pode criar mais cortes pelas sugestões ou revisar os prontos';
       }
       if (!clips.length && (v.status === 'baixado' || v.status === 'cortado')) {
-        return 'Próximo: analisar o vídeo para sugerir Reels';
+        return 'Próximo: analisar com IA para achar os melhores momentos';
       }
       const ready = clips.filter((c) => (c.status === 'pronto' || c.status === 'publicado') && c.materia_status === 'pronta');
-      if (ready.length) return `${ready.length} pronto(s) — abra Revisar e publicar`;
+      if (ready.length) return `${ready.length} pronto(s) — abra Revisar (tela dividida, capa e publicar)`;
       if (clips.length) return 'Cortando · legenda · capa…';
       return '';
     }
@@ -686,7 +706,7 @@
 
             ${clips.length ? `
             <div class="space-y-2">
-              <p class="px-0.5 text-xs font-medium text-slate-500">${clips.length} corte(s)</p>
+              <p class="px-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">4. Revisar e publicar · ${clips.length} corte(s)</p>
               ${clips.map((c, i) => clipHtml(c, i)).join('')}
             </div>` : ''}
           </div>

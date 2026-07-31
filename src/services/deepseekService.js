@@ -717,6 +717,228 @@ Retorne JSON completo atualizado.`,
   };
 }
 
+/** Silêncio que indica fim de fala (fecha a frase). */
+const PAUSA_FIM_DE_FRASE = 0.55;
+/** A partir daqui a timeline não cabe num prompt só: analisa em blocos. */
+const TIMELINE_CHARS_POR_BLOCO = 7000;
+const MAX_BLOCOS_ANALISE = 8;
+
+/** Normaliza os segmentos de fala vindos do Whisper/legendas. */
+function normalizarSegmentosFala(segmentos, total) {
+  return (Array.isArray(segmentos) ? segmentos : [])
+    .map((segment) => ({
+      start: Math.max(0, Number(segment.start)),
+      end: Math.min(total, Number(segment.end)),
+      text: String(segment.text || '').trim(),
+    }))
+    .filter((segment) => (
+      segment.text &&
+      Number.isFinite(segment.start) &&
+      Number.isFinite(segment.end) &&
+      segment.end > segment.start
+    ))
+    .sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Agrupa segmentos em frases (unidade mínima de sentido).
+ * Fecha a frase na pontuação final ou numa pausa audível — é isso que evita
+ * corte no meio do raciocínio. Legendas automáticas não têm pontuação, então
+ * também fecha por duração para não virar um bloco único gigante.
+ */
+function montarFrases(speechSegments) {
+  const frases = [];
+  let atual = null;
+
+  for (let i = 0; i < speechSegments.length; i += 1) {
+    const seg = speechSegments[i];
+    const next = speechSegments[i + 1];
+
+    if (!atual) atual = { start: seg.start, end: seg.end, text: seg.text };
+    else {
+      atual.end = seg.end;
+      atual.text = `${atual.text} ${seg.text}`.replace(/\s+/g, ' ').trim();
+    }
+
+    const duracao = atual.end - atual.start;
+    const pausaDepois = next ? next.start - seg.end : Infinity;
+    const terminaComPontuacao = /[.!?…][")'\]]?$/.test(seg.text.trim());
+    const pausaLonga = pausaDepois >= PAUSA_FIM_DE_FRASE;
+    // Sem pontuação (legenda automática): fecha em pausa curta depois de 14s.
+    const longaComPausa = duracao >= 14 && pausaDepois >= 0.2;
+    const muitoLonga = duracao >= 26;
+
+    if (!next || terminaComPontuacao || pausaLonga || longaComPausa || muitoLonga) {
+      frases.push({ ...atual, pausaDepois });
+      atual = null;
+    }
+  }
+  if (atual) frases.push({ ...atual, pausaDepois: Infinity });
+  return frases;
+}
+
+function formatarTimeline(frases, limiteChars = 30000) {
+  return frases
+    .map((f) => `[${f.start.toFixed(1)}-${f.end.toFixed(1)}] ${f.text}`)
+    .join('\n')
+    .slice(0, limiteChars);
+}
+
+/** Divide as frases em blocos consecutivos que caibam num prompt. */
+function dividirEmBlocos(frases, { maxChars = TIMELINE_CHARS_POR_BLOCO, maxBlocos = MAX_BLOCOS_ANALISE } = {}) {
+  const totalChars = frases.reduce((acc, f) => acc + f.text.length + 18, 0);
+  const alvo = Math.max(maxChars, Math.ceil(totalChars / maxBlocos));
+  const blocos = [];
+  let atual = [];
+  let chars = 0;
+
+  for (const frase of frases) {
+    atual.push(frase);
+    chars += frase.text.length + 18;
+    if (chars >= alvo) {
+      blocos.push(atual);
+      atual = [];
+      chars = 0;
+    }
+  }
+  if (atual.length) blocos.push(atual);
+  return blocos;
+}
+
+/** Texto de abertura/fechamento do trecho — mostra ao usuário onde o corte começa e termina. */
+function bordasDoTrecho(frases, inicio, fim) {
+  const dentro = frases.filter((f) => f.end > inicio && f.start < fim);
+  if (!dentro.length) return { abre: null, fecha: null };
+  const abre = dentro[0].text.replace(/\s+/g, ' ').trim().slice(0, 120);
+  const ultima = dentro[dentro.length - 1].text.replace(/\s+/g, ' ').trim();
+  const fecha = ultima.length > 120 ? `…${ultima.slice(-120)}` : ultima;
+  return { abre: abre || null, fecha: fecha || null };
+}
+
+/**
+ * Vídeo longo: varre em blocos, pede candidatos em cada um e depois escolhe os
+ * melhores no conjunto. Sem isso a IA só via o começo do vídeo.
+ */
+async function candidatosPorBlocos({ frases, titulo, termo, minClip, maxClip, total, n, pedido = null }) {
+  const blocos = dividirEmBlocos(frases);
+  const candidatos = [];
+  const pedidoTxt = String(pedido || '').trim();
+
+  for (let i = 0; i < blocos.length; i += 1) {
+    const bloco = blocos[i];
+    const inicioBloco = Math.floor(bloco[0].start);
+    const fimBloco = Math.ceil(bloco[bloco.length - 1].end);
+
+    const system = `Você é editor de cortes para Reels. Analise SOMENTE o trecho recebido do vídeo.
+${pedidoTxt
+      ? 'Aponte até 2 momentos deste trecho que atendam o pedido do usuário. Se nada aqui atender, devolva a lista vazia.'
+      : 'Aponte até 2 momentos que funcionariam sozinhos. Se o trecho não tiver nada realmente forte, devolva a lista vazia.'}
+Cada momento começa no início de uma ideia, dá contexto e termina depois da conclusão.
+Nunca comece numa resposta sem pergunta, num pronome solto ou no meio de uma frase.
+Responda APENAS JSON: {"candidatos":[{"inicio":${inicioBloco},"fim":${Math.min(fimBloco, inicioBloco + maxClip)},"titulo":"manchete curta","motivo":"por que é autossuficiente","nota":0}]}
+"nota" = 0 a 100 (potencial de retenção).`;
+
+    const user = [
+      pedidoTxt ? `Pedido do usuário: ${pedidoTxt}` : null,
+      `Parte ${i + 1} de ${blocos.length} do vídeo (de ${inicioBloco}s a ${fimBloco}s).`,
+      `Título do vídeo: ${titulo || '—'}`,
+      `Termo/nicho: ${termo || '—'}`,
+      `Duração de cada corte: ${minClip}–${maxClip}s.`,
+      `Use apenas timestamps entre ${inicioBloco} e ${fimBloco}.`,
+      '',
+      'Fala com tempos:',
+      formatarTimeline(bloco, TIMELINE_CHARS_POR_BLOCO + 2000),
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      const raw = await chatCompletion(
+        [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        { temperature: 0.2, json: true }
+      );
+      const parsed = JSON.parse(raw);
+      const lista = Array.isArray(parsed?.candidatos)
+        ? parsed.candidatos
+        : Array.isArray(parsed?.cortes)
+          ? parsed.cortes
+          : [];
+      for (const item of lista) {
+        const inicio = Number(item.inicio);
+        const fim = Number(item.fim);
+        if (!Number.isFinite(inicio) || !Number.isFinite(fim) || fim <= inicio) continue;
+        candidatos.push({
+          inicio: Math.max(0, Math.min(inicio, total)),
+          fim: Math.max(0, Math.min(fim, total)),
+          titulo: String(item.titulo || '').slice(0, 120),
+          motivo: String(item.motivo || '').slice(0, 280),
+          nota: Math.max(0, Math.min(100, Number(item.nota) || 50)),
+        });
+      }
+    } catch (err) {
+      console.warn(`[cortes] bloco ${i + 1}/${blocos.length}:`, String(err.message || err).slice(0, 160));
+    }
+  }
+
+  candidatos.sort((a, b) => b.nota - a.nota);
+  const finalistas = candidatos.slice(0, Math.max(n * 3, 6));
+  if (finalistas.length <= n) return finalistas;
+
+  // Passe final: com todos os candidatos na mesa, a IA ranqueia e escreve a legenda.
+  const resumo = finalistas
+    .map((c, idx) => {
+      const { abre, fecha } = bordasDoTrecho(frases, c.inicio, c.fim);
+      return [
+        `#${idx + 1} ${c.inicio}s–${c.fim}s (nota ${c.nota}) — ${c.titulo || 'sem título'}`,
+        abre ? `  abre: ${abre}` : null,
+        fecha ? `  fecha: ${fecha}` : null,
+        c.motivo ? `  motivo: ${c.motivo}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n');
+    })
+    .join('\n');
+
+  try {
+    const raw = await chatCompletion(
+      [
+        {
+          role: 'system',
+          content: `Você é editor-chefe. Recebeu candidatos de partes diferentes do mesmo vídeo.
+Escolha no máximo ${n}, do melhor para o menos forte, sem repetir o mesmo assunto e sem sobreposição de tempo.
+Mantenha inicio/fim exatamente como recebidos.
+Responda APENAS JSON: {"cortes":[{"inicio":0,"fim":55,"titulo":"manchete curta (máx 80)","legenda":"resumo curto","motivo":"gancho e por que é completo"}]}`,
+        },
+        {
+          role: 'user',
+          content: [
+            pedidoTxt ? `Pedido do usuário: ${pedidoTxt}` : null,
+            `Título do vídeo: ${titulo || '—'}`,
+            `Duração total: ${total}s`,
+            `Escolha no máximo ${n} cortes.`,
+            '',
+            'Candidatos:',
+            resumo,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
+      ],
+      { temperature: 0.25, json: true }
+    );
+    const parsed = JSON.parse(raw);
+    const escolhidos = Array.isArray(parsed?.cortes) ? parsed.cortes : [];
+    if (escolhidos.length) return escolhidos;
+  } catch (err) {
+    console.warn('[cortes] ranking final:', String(err.message || err).slice(0, 160));
+  }
+
+  return finalistas;
+}
+
 /**
  * Analisa o vídeo (fala com timestamps + metadados) e sugere 1–3 cortes
  * com alto potencial de retenção para Reels.
@@ -745,29 +967,37 @@ async function sugerirCortes({
   const preferredMax = Math.min(maxClip, total, 75);
   const n = Math.min(3, Math.max(1, Number(maxCortes) || 3));
 
-  const speechSegments = (Array.isArray(segmentos) ? segmentos : [])
-    .map((segment) => ({
-      start: Math.max(0, Number(segment.start)),
-      end: Math.min(total, Number(segment.end)),
-      text: String(segment.text || '').trim(),
-    }))
-    .filter((segment) => (
-      segment.text &&
-      Number.isFinite(segment.start) &&
-      Number.isFinite(segment.end) &&
-      segment.end > segment.start
-    ))
-    .sort((a, b) => a.start - b.start);
+  const speechSegments = normalizarSegmentosFala(segmentos, total);
+  const frases = montarFrases(speechSegments);
 
   let timeline = '';
-  if (speechSegments.length) {
-    timeline = speechSegments
-      .slice(0, 500)
-      .map((segment) => `[${segment.start.toFixed(1)}-${segment.end.toFixed(1)}] ${segment.text}`)
-      .join('\n')
-      .slice(0, 30000);
-  } else if (transcricao) {
-    timeline = String(transcricao).slice(0, 20000);
+  if (frases.length) timeline = formatarTimeline(frases);
+  else if (transcricao) timeline = String(transcricao).slice(0, 20000);
+
+  // Vídeo longo: varre em blocos para não olhar só o começo.
+  const timelineCompleta = frases.length ? formatarTimeline(frases, Number.MAX_SAFE_INTEGER) : '';
+  if (frases.length && timelineCompleta.length > TIMELINE_CHARS_POR_BLOCO * 1.6) {
+    const escolhidos = await candidatosPorBlocos({
+      frases,
+      titulo,
+      termo,
+      minClip,
+      maxClip,
+      total,
+      n,
+    });
+    if (escolhidos.length) {
+      return normalizeCortesList(escolhidos, {
+        total,
+        minClip,
+        maxClip,
+        preferredMin,
+        speechSegments,
+        frases,
+        titulo,
+        n,
+      });
+    }
   }
 
   const system = `Você é um editor-chefe de vídeos curtos para Reels, Shorts e TikTok.
@@ -786,7 +1016,8 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
     `Duração permitida: ${minClip}–${maxClip}s. Faixa preferida: ${preferredMin}–${preferredMax}s.`,
     `Use cortes abaixo de ${preferredMin}s somente quando o vídeo inteiro for mais curto.`,
     `inicio e fim em segundos, 0 <= inicio < fim <= ${total}.`,
-    `Use os timestamps para iniciar antes da contextualização e terminar após a conclusão da ideia.`,
+    `Use os timestamps para iniciar no começo de uma frase/ideia e terminar depois da conclusão.`,
+    `Não corte no meio de frase, resposta solta ou raciocínio incompleto.`,
     `Não divida um mesmo raciocínio em vários cortes e evite sobreposição ou conteúdo repetido.`,
     `Descarte trechos que sejam apenas introdução, transição, pergunta sem resposta ou conclusão sem contexto.`,
     `No motivo, explique o gancho e confirme que o trecho tem começo, desenvolvimento e fechamento.`,
@@ -826,6 +1057,7 @@ Responda APENAS com JSON válido (sem markdown), ordenado do melhor para o menos
     maxClip,
     preferredMin,
     speechSegments,
+    frases,
     titulo,
     n,
   });
@@ -837,45 +1069,77 @@ function normalizeCortesList(list, {
   maxClip,
   preferredMin,
   speechSegments = [],
+  frases = null,
   titulo = null,
   n = 3,
 }) {
-  function speechStartAt(time) {
-    const containing = speechSegments.find((segment) => segment.start <= time && segment.end > time);
-    if (containing) return containing.start;
-    const next = speechSegments.find((segment) => segment.start >= time);
-    return next ? next.start : time;
-  }
+  const sentencas = Array.isArray(frases) && frases.length
+    ? frases
+    : montarFrases(speechSegments || []);
 
-  function speechEndAt(time) {
-    const containing = speechSegments.find((segment) => segment.start < time && segment.end >= time);
-    if (containing) return containing.end;
-    const next = speechSegments.find((segment) => segment.end >= time);
-    return next ? next.end : time;
-  }
+  /**
+   * Encaixa o intervalo pedido pela IA em frases inteiras: o corte passa a
+   * começar no início de uma fala e terminar depois dela concluir.
+   * Só recorre a corte "no tempo" quando uma única frase estoura o máximo.
+   */
+  function ajustarParaFrases(rawStart, rawEnd) {
+    if (!sentencas.length) return null;
 
-  function findSpeechWindow(center, rawStart, rawEnd, targetDuration) {
-    let best = null;
-    for (const startSegment of speechSegments) {
-      const start = Math.max(0, Math.floor(startSegment.start));
-      if (start > center) break;
-
-      for (const endSegment of speechSegments) {
-        const end = Math.min(total, Math.ceil(endSegment.end));
-        if (end < center) continue;
-        const duration = end - start;
-        if (duration < minClip || duration > maxClip) continue;
-
-        const covered = Math.max(0, Math.min(end, rawEnd) - Math.max(start, rawStart));
-        const coverage = covered / Math.max(1, rawEnd - rawStart);
-        const score =
-          Math.abs(duration - targetDuration) +
-          Math.abs((start + end) / 2 - center) * 0.25 +
-          (1 - coverage) * 20;
-        if (!best || score < best.score) best = { inicio: start, fim: end, score };
-      }
+    let iStart = sentencas.findIndex((f) => f.end > rawStart + 0.3);
+    if (iStart < 0) iStart = sentencas.length - 1;
+    let iEnd = iStart;
+    for (let i = iStart; i < sentencas.length; i += 1) {
+      iEnd = i;
+      if (sentencas[i].end >= rawEnd - 0.3) break;
     }
-    return best;
+
+    const bordas = (a, b) => ({
+      inicio: Math.max(0, Math.floor(sentencas[a].start)),
+      fim: Math.min(total, Math.ceil(sentencas[b].end + 0.3)),
+    });
+
+    let { inicio, fim } = bordas(iStart, iEnd);
+
+    // Curto demais: cresce por frases inteiras (primeiro para frente).
+    while (fim - inicio < minClip && (iEnd < sentencas.length - 1 || iStart > 0)) {
+      if (iEnd < sentencas.length - 1) iEnd += 1;
+      else iStart -= 1;
+      ({ inicio, fim } = bordas(iStart, iEnd));
+    }
+
+    // Longo demais: solta a última frase enquanto ainda respeitar o mínimo.
+    while (fim - inicio > maxClip && iEnd > iStart) {
+      const proposta = bordas(iStart, iEnd - 1);
+      if (proposta.fim - proposta.inicio < minClip) break;
+      iEnd -= 1;
+      ({ inicio, fim } = proposta);
+    }
+
+    if (fim - inicio > maxClip) fim = inicio + maxClip;
+    if (fim - inicio < minClip) {
+      fim = Math.min(total, inicio + minClip);
+      inicio = Math.max(0, fim - minClip);
+    }
+
+    inicio = Math.round(inicio);
+    fim = Math.round(fim);
+    if (fim - inicio < Math.min(minClip, total)) return null;
+    return { inicio, fim };
+  }
+
+  /** Sem transcrição: respeita o intervalo pedido, só ajusta aos limites. */
+  function ajustarSemFala(rawStart, rawEnd) {
+    let inicio = Math.round(rawStart);
+    let fim = Math.round(rawEnd);
+
+    if (fim - inicio > maxClip) fim = inicio + maxClip;
+    if (fim - inicio < minClip) {
+      const alvo = Math.min(total, Math.max(minClip, preferredMin));
+      fim = Math.min(total, inicio + alvo);
+      inicio = Math.max(0, fim - alvo);
+    }
+    if (fim - inicio < Math.min(minClip, total)) return null;
+    return { inicio, fim };
   }
 
   function normalizeRange(item) {
@@ -887,51 +1151,10 @@ function normalizeCortesList(list, {
 
     const rawStart = Math.max(0, Math.min(requestedStart, total));
     const rawEnd = Math.max(rawStart, Math.min(requestedEnd, total));
-    const requestedDuration = rawEnd - rawStart;
-    const targetDuration = Math.min(maxClip, Math.max(preferredMin, requestedDuration));
-    const center = (rawStart + rawEnd) / 2;
 
-    // Dá um pouco mais de espaço depois do momento central para preservar a conclusão.
-    let start = Math.max(0, center - targetDuration * 0.45);
-    let end = Math.min(total, start + targetDuration);
-    start = Math.max(0, end - targetDuration);
-
-    if (speechSegments.length) {
-      start = Math.max(0, speechStartAt(start));
-      end = Math.min(total, speechEndAt(end));
-    }
-
-    start = Math.max(0, Math.floor(start));
-    end = Math.min(total, Math.ceil(end));
-
-    // Se expandir até os limites das frases passar de 90s, procura outra janela
-    // formada exclusivamente por começo/fim de segmentos completos.
-    if (speechSegments.length && (end - start < minClip || end - start > maxClip)) {
-      const speechWindow = findSpeechWindow(center, rawStart, rawEnd, targetDuration);
-      if (speechWindow) {
-        start = speechWindow.inicio;
-        end = speechWindow.fim;
-      }
-    }
-
-    if (end - start > maxClip) {
-      start = Math.max(0, Math.round(center - maxClip * 0.45));
-      end = Math.min(total, start + maxClip);
-      start = Math.max(0, end - maxClip);
-    }
-
-    if (end - start < minClip) {
-      const missing = minClip - (end - start);
-      const before = Math.min(start, Math.ceil(missing * 0.45));
-      start -= before;
-      end = Math.min(total, end + missing - before);
-      start = Math.max(0, end - minClip);
-    }
-
-    start = Math.round(start);
-    end = Math.round(end);
-    if (end <= start || end - start < minClip || end - start > maxClip) return null;
-    return { inicio: start, fim: end };
+    return sentencas.length
+      ? ajustarParaFrases(rawStart, rawEnd)
+      : ajustarSemFala(rawStart, rawEnd);
   }
 
   function overlapRatio(a, b) {
@@ -968,11 +1191,18 @@ function normalizeCortesList(list, {
       descriptions.some((existing) => existing === description)
     ) continue;
 
+    const { abre, fecha } = sentencas.length
+      ? bordasDoTrecho(sentencas, range.inicio, range.fim)
+      : { abre: null, fecha: null };
+
     cortes.push({
       ...range,
       titulo: tituloSugestao || `Trecho ${range.inicio}s–${range.fim}s`,
       legenda,
       motivo,
+      // Mostra na fila onde a fala começa e termina — o usuário confere a coerência.
+      abre,
+      fecha,
     });
     descriptions.push(description);
     if (cortes.length >= n) break;
@@ -1024,32 +1254,42 @@ async function mapearPedidoParaCortes({
   const minClip = Math.min(maxClip, total, Math.max(3, Number(minSegundos) || 40));
   const preferredMin = Math.min(maxClip, total, Math.max(minClip, 45));
 
-  const speechSegments = (Array.isArray(segmentos) ? segmentos : [])
-    .map((segment) => ({
-      start: Math.max(0, Number(segment.start)),
-      end: Math.min(total, Number(segment.end)),
-      text: String(segment.text || '').trim(),
-    }))
-    .filter((segment) => (
-      segment.text &&
-      Number.isFinite(segment.start) &&
-      Number.isFinite(segment.end) &&
-      segment.end > segment.start
-    ))
-    .sort((a, b) => a.start - b.start);
+  const speechSegments = normalizarSegmentosFala(segmentos, total);
+  const frases = montarFrases(speechSegments);
 
   let timeline = '';
-  if (speechSegments.length) {
-    timeline = speechSegments
-      .slice(0, 500)
-      .map((segment) => `[${segment.start.toFixed(1)}-${segment.end.toFixed(1)}] ${segment.text}`)
-      .join('\n')
-      .slice(0, 30000);
-  } else if (transcricao) {
-    timeline = String(transcricao).slice(0, 20000);
-  }
+  if (frases.length) timeline = formatarTimeline(frases);
+  else if (transcricao) timeline = String(transcricao).slice(0, 20000);
 
   const n = Math.min(3, Math.max(1, Number(maxCortes) || 3));
+
+  // Vídeo longo: procura o pedido bloco a bloco, senão a IA só vê o começo.
+  const timelineCompleta = frases.length ? formatarTimeline(frases, Number.MAX_SAFE_INTEGER) : '';
+  if (frases.length && timelineCompleta.length > TIMELINE_CHARS_POR_BLOCO * 1.6) {
+    const escolhidos = await candidatosPorBlocos({
+      frases,
+      titulo,
+      termo: null,
+      minClip,
+      maxClip,
+      total,
+      n,
+      pedido: pedidoTxt,
+    });
+    if (escolhidos.length) {
+      return normalizeCortesList(escolhidos, {
+        total,
+        minClip,
+        maxClip,
+        preferredMin,
+        speechSegments,
+        frases,
+        titulo: pedidoTxt.slice(0, 90),
+        n,
+      });
+    }
+  }
+
   const raw = await chatCompletion(
     [
       {
@@ -1098,6 +1338,7 @@ Responda APENAS JSON:
     maxClip,
     preferredMin,
     speechSegments,
+    frases,
     titulo: pedidoTxt.slice(0, 90),
     n,
   });
@@ -2222,6 +2463,9 @@ module.exports = {
   gerarMateriaNoticiaFacebook,
   sugerirCortes,
   mapearPedidoParaCortes,
+  // Expostos para teste/inspeção do encaixe dos cortes em frases inteiras
+  montarFrases,
+  normalizeCortesList,
   resumirAlertaBiblioteca,
   ranquearPostsViralFacebook,
   sugerirTituloMateria,
