@@ -573,10 +573,20 @@ async function showMatter(req, res, next) {
     let proximoSlotLocal = null;
     let proximoSlotLabel = null;
     let horarioAtualAgendado = null;
+    let agendaBiblioteca = null;
+    try {
+      const agendaService = require('../services/bibliotecaAgendaService');
+      agendaBiblioteca = await agendaService.obterAgendaDaMateria(req.session.userId, matter.id);
+    } catch (err) {
+      console.warn('[showMatter] agenda biblioteca:', err.message);
+    }
     try {
       const jaAgendada = String(matter.status) === 'agendado' && matter.scheduled_at;
       if (jaAgendada) {
         horarioAtualAgendado = materiaIaService.formatarHorarioAgendamento(matter.scheduled_at);
+      } else if (agendaBiblioteca?.horario) {
+        // Pré-agendada na Biblioteca: mostra o horário no editor sem confirmar ainda
+        horarioAtualAgendado = agendaBiblioteca.horario;
       }
       const info = await materiaIaService.obterUltimoAgendamento(req.session.userId, {
         excludeMatterId: jaAgendada ? matter.id : null,
@@ -596,6 +606,7 @@ async function showMatter(req, res, next) {
       proximoSlotLocal,
       proximoSlotLabel,
       horarioAtualAgendado,
+      agendaBiblioteca,
       success: req.query.success || null,
       error: req.query.error || null,
     });

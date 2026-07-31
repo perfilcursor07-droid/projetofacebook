@@ -525,10 +525,14 @@
 
   const scheduleInput = document.getElementById('matter-schedule');
   if (scheduleInput) {
-    // Já agendada: mantém o horário dela. Senão: +30 após a última, ou agora+10.
+    // Prioridade: horário já agendado / pré-agenda da Biblioteca → +30 → agora+10.
     if (!scheduleInput.value) {
       if (cfg.horarioAtualAgendado?.local) {
         scheduleInput.value = cfg.horarioAtualAgendado.local;
+      } else if (cfg.agendaBiblioteca?.horario?.local) {
+        scheduleInput.value = cfg.agendaBiblioteca.horario.local;
+      } else if (cfg.agendaBiblioteca?.proposed_at_local) {
+        scheduleInput.value = String(cfg.agendaBiblioteca.proposed_at_local).slice(0, 16);
       } else {
         scheduleInput.value = cfg.proximoSlotLocal || defaultScheduleAraguainaPlus10();
       }
@@ -567,7 +571,11 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao agendar');
       setStatus(
-        cfg.horarioAtualAgendado ? 'Remarcada ✓ (horário de Araguaína)' : 'Agendada ✓ (horário de Araguaína)'
+        cfg.agendaBiblioteca
+          ? 'Agendada e confirmada na Biblioteca ✓'
+          : cfg.horarioAtualAgendado
+            ? 'Remarcada ✓ (horário de Araguaína)'
+            : 'Agendada ✓ (horário de Araguaína)'
       );
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {

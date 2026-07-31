@@ -336,7 +336,10 @@
                   const proxLocal = typeof proximoSlotLocal !== 'undefined' ? proximoSlotLocal : null;
                   const proxLabel = typeof proximoSlotLabel !== 'undefined' ? proximoSlotLabel : null;
                   const atualAg = typeof horarioAtualAgendado !== 'undefined' ? horarioAtualAgendado : null;
+                  const agendaBib = typeof agendaBiblioteca !== 'undefined' ? agendaBiblioteca : null;
                   const jaEstaAgendada = st === 'agendado' && atualAg && atualAg.local;
+                  const preAgendaBib = !jaEstaAgendada && agendaBib && agendaBib.horario && agendaBib.horario.local;
+                  const horarioNoCampo = (jaEstaAgendada || preAgendaBib) && atualAg && atualAg.local ? atualAg.local : '';
                 %>
                 <% if (jaEstaAgendada) { %>
                   <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-2">
@@ -344,13 +347,19 @@
                     <p class="mt-0.5 text-[12px] font-medium text-amber-50"><%= atualAg.label %></p>
                     <p class="mt-1 text-[10px] text-amber-200/70">Altere o horário abaixo e clique em Agendar para remarcar.</p>
                   </div>
+                <% } else if (preAgendaBib) { %>
+                  <div class="rounded-lg border border-sky-500/40 bg-sky-500/10 px-2.5 py-2">
+                    <p class="text-[11px] font-semibold text-sky-100">Pré-agendada na Biblioteca</p>
+                    <p class="mt-0.5 text-[12px] font-medium text-sky-50"><%= atualAg.label %></p>
+                    <p class="mt-1 text-[10px] text-sky-200/70">Clique em Agendar para confirmar esse horário (não precisa voltar à agenda).</p>
+                  </div>
                 <% } %>
                 <label class="block text-[11px] text-slate-500"><%= jaEstaAgendada ? 'Remarcar' : 'Agendar' %> (Araguaína −03)
                   <input
                     id="matter-schedule"
                     type="datetime-local"
                     class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-2 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
-                    value="<%= jaEstaAgendada ? atualAg.local : '' %>"
+                    value="<%= horarioNoCampo %>"
                   />
                 </label>
                 <% if (ult && ult.label) { %>
@@ -598,6 +607,7 @@
       ultimoAgendamento: <%- JSON.stringify(typeof ultimoAgendamento !== 'undefined' ? ultimoAgendamento : null) %>,
       proximoSlotLocal: <%- JSON.stringify(typeof proximoSlotLocal !== 'undefined' ? proximoSlotLocal : null) %>,
       horarioAtualAgendado: <%- JSON.stringify(typeof horarioAtualAgendado !== 'undefined' ? horarioAtualAgendado : null) %>,
+      agendaBiblioteca: <%- JSON.stringify(typeof agendaBiblioteca !== 'undefined' ? agendaBiblioteca : null) %>,
     };
     (function () {
       const ta = document.getElementById('matter-materia');

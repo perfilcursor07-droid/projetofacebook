@@ -1973,6 +1973,16 @@ async function gerarTextoDePostImpl({
     resumo: postBase.resumo,
   });
 
+  // Se o post já estava na agenda (pré-agendado), religa a matéria e preserva o horário.
+  if (gerado.matter?.id) {
+    try {
+      const agendaService = require('./bibliotecaAgendaService');
+      await agendaService.vincularMateriaNaAgendaPorPost(userId, post.id, gerado.matter.id);
+    } catch (err) {
+      console.warn('[biblioteca] vincular agenda:', err.message);
+    }
+  }
+
   return gerado;
 }
 

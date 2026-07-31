@@ -187,11 +187,31 @@ async function sincronizarComMaterias(userId, itens) {
   for (const row of lista) {
     const agendaSt = String(row.status || '');
     if (!row.matter_id) {
-      if (agendaSt === 'confirmado') {
-        await BibliotecaAgenda.update(row.id, { status: 'pendente' });
-        row.status = 'pendente';
+      // Post já tem matéria gerada de novo → religa o horário da agenda
+      if (row.post_id) {
+        try {
+          const post = await BibliotecaPosts.findById(row.post_id);
+          if (post?.matter_id) {
+            const matter = await AiMatters.findById(post.matter_id);
+            if (matter && Number(matter.user_id) === Number(userId)) {
+              await BibliotecaAgenda.update(row.id, { matter_id: post.matter_id });
+              row.matter_id = post.matter_id;
+              row.matter_status = matter.status;
+              row.matter_scheduled_at = matter.scheduled_at;
+              row.matter_titulo = matter.titulo;
+            }
+          }
+        } catch {
+          /* segue sem bloquear */
+        }
       }
-      continue;
+      if (!row.matter_id) {
+        if (agendaSt === 'confirmado') {
+          await BibliotecaAgenda.update(row.id, { status: 'pendente' });
+          row.status = 'pendente';
+        }
+        continue;
+      }
     }
     const matterSt = String(row.matter_status || '');
     try {
@@ -1075,16 +1095,124 @@ async function atualizarHorario(userId, id, proposedAt) {
   };
 }
 
+/**
+ * Religa matéria gerada a item pré-agendado do mesmo post (ex.: matter_id
+ * foi limpo ao excluir a matéria antiga).
+ */
+async function vincularMateriaNaAgendaPorPost(userId, postId, matterId) {
+  const pid = Number(postId || 0);
+  const mid = Number(matterId || 0);
+  if (!pid || !mid) return { ok: true, synced: false };
+  const item = await db(BibliotecaAgenda.table)
+    .where({ user_id: userId, post_id: pid })
+    .whereIn('status', ['pendente', 'confirmado'])
+    .orderBy('id', 'desc')
+    .first();
+  if (!item) return { ok: true, synced: false };
+  await BibliotecaAgenda.update(item.id, { matter_id: mid });
+  return {
+    ok: true,
+    synced: true,
+    agendaId: item.id,
+    proposed_at: item.proposed_at,
+    status: item.status,
+  };
+}
+
+/** Agenda vinculada à matéria (por matter_id ou pelo post que gerou a matéria). */
+async function obterAgendaDaMateria(userId, matterId) {
+  const mid = Number(matterId || 0);
+  if (!mid) return null;
+
+  let item = await db(`${BibliotecaAgenda.table} as a`)
+    .leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id')
+    .where('a.user_id', userId)
+    .where('a.matter_id', mid)
+    .whereNotIn('a.status', ['cancelado', 'publicado'])
+    .orderBy('a.id', 'desc')
+    .select('a.*', 'p.titulo as post_titulo')
+    .first();
+
+  if (!item) {
+    const post = await db('biblioteca_posts')
+      .where({ user_id: userId, matter_id: mid })
+      .first('id');
+    if (post?.id) {
+      item = await db(`${BibliotecaAgenda.table} as a`)
+        .leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id')
+        .where('a.user_id', userId)
+        .where('a.post_id', post.id)
+        .whereNotIn('a.status', ['cancelado', 'publicado'])
+        .orderBy('a.id', 'desc')
+        .select('a.*', 'p.titulo as post_titulo')
+        .first();
+      if (item && !item.matter_id) {
+        await BibliotecaAgenda.update(item.id, { matter_id: mid });
+        item.matter_id = mid;
+      }
+    }
+  }
+
+  if (!item?.proposed_at) return null;
+  const when = asAgendaDate(item.proposed_at);
+  if (!Number.isFinite(when.getTime())) return null;
+  return {
+    agendaId: item.id,
+    status: item.status,
+    proposed_at: when,
+    proposed_at_local: toDatetimeLocal(when),
+    horario: materiaIaService.formatarHorarioAgendamento(when),
+  };
+}
+
+async function garantirMatterNoItemAgenda(userId, item) {
+  if (item.matter_id) {
+    const matter = await AiMatters.findById(item.matter_id);
+    if (matter && Number(matter.user_id) === Number(userId)) return Number(item.matter_id);
+  }
+
+  if (item.post_id) {
+    const post = await BibliotecaPosts.findById(item.post_id);
+    if (post?.matter_id) {
+      const matter = await AiMatters.findById(post.matter_id);
+      if (matter && Number(matter.user_id) === Number(userId)) {
+        await BibliotecaAgenda.update(item.id, { matter_id: post.matter_id });
+        return Number(post.matter_id);
+      }
+    }
+
+    const gerado = await bibliotecaService.gerarTextoDePost({
+      userId,
+      postId: item.post_id,
+      facebookPageId: item.facebook_page_id || null,
+      tipoPublicacao: 'foto',
+      publicarAgora: false,
+    });
+    const matterId = gerado.matter?.id || null;
+    if (matterId) {
+      await BibliotecaAgenda.update(item.id, { matter_id: matterId });
+      return Number(matterId);
+    }
+  }
+
+  return null;
+}
+
 async function confirmarAgendamento(userId, id) {
   const item = await getItemOwned(userId, id);
-  if (!item.matter_id) {
-    const err = new Error('Item sem matéria vinculada');
-    err.status = 422;
-    throw err;
-  }
   if (item.status === 'confirmado' || item.status === 'publicado') {
     return { ok: true, already: true };
   }
+
+  const matterId = await garantirMatterNoItemAgenda(userId, item);
+  if (!matterId) {
+    const err = new Error(
+      'Item sem matéria vinculada. Gere a matéria do post (Ver → Gerar Matéria) e tente Confirmar de novo.'
+    );
+    err.status = 422;
+    throw err;
+  }
+
   const runAtDate =
     item.proposed_at instanceof Date ? item.proposed_at : new Date(item.proposed_at);
   if (Number.isNaN(runAtDate.getTime())) {
@@ -1103,28 +1231,48 @@ async function confirmarAgendamento(userId, id) {
   const runAt = runAtDate.toISOString();
   const result = await materiaIaService.agendarMateria({
     userId,
-    matterId: item.matter_id,
+    matterId,
     runAt,
   });
   const finalRunAt = result?.runAt ? new Date(result.runAt) : runAtDate;
-  await BibliotecaAgenda.update(item.id, { status: 'confirmado', proposed_at: finalRunAt });
-  return { ok: true, ...result };
+  await BibliotecaAgenda.update(item.id, {
+    status: 'confirmado',
+    matter_id: matterId,
+    proposed_at: finalRunAt,
+  });
+  return { ok: true, ...result, matterId };
 }
 
 async function sincronizarAgendamentoDaMateria(userId, matterId, runAt) {
   const id = Number(matterId || 0);
   if (!id || !runAt) return { ok: true, synced: false };
-  const item = await db(BibliotecaAgenda.table)
+
+  let item = await db(BibliotecaAgenda.table)
     .where({ user_id: userId, matter_id: id })
     .whereNotIn('status', ['cancelado', 'publicado'])
     .orderBy('id', 'desc')
     .first();
+
+  if (!item) {
+    const post = await db('biblioteca_posts')
+      .where({ user_id: userId, matter_id: id })
+      .first('id');
+    if (post?.id) {
+      item = await db(BibliotecaAgenda.table)
+        .where({ user_id: userId, post_id: post.id })
+        .whereNotIn('status', ['cancelado', 'publicado'])
+        .orderBy('id', 'desc')
+        .first();
+    }
+  }
+
   if (!item) return { ok: true, synced: false };
 
   const parsed = runAt instanceof Date ? runAt : new Date(runAt);
   if (Number.isNaN(parsed.getTime())) return { ok: true, synced: false };
 
   await BibliotecaAgenda.update(item.id, {
+    matter_id: id,
     proposed_at: parsed,
     status: 'confirmado',
   });
@@ -1443,6 +1591,8 @@ module.exports = {
   atualizarHorario,
   confirmarAgendamento,
   sincronizarAgendamentoDaMateria,
+  vincularMateriaNaAgendaPorPost,
+  obterAgendaDaMateria,
   cancelarAgendamentosPendentesDaBiblioteca,
   publicarAgora,
   excluirItem,
