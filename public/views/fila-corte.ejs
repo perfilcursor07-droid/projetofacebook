@@ -22,6 +22,10 @@
   const splitTextoTam = Number.isFinite(splitTextoTamRaw)
     ? Math.min(160, Math.max(70, Math.round(splitTextoTamRaw)))
     : 100;
+  const splitTextoFundo = clip.split_texto_fundo === 'transparente' ? 'transparente' : 'cor';
+  const splitTextoFundoCor = /^#[0-9a-fA-F]{6}$/.test(String(clip.split_texto_fundo_cor || ''))
+    ? String(clip.split_texto_fundo_cor).toLowerCase()
+    : '#000000';
   const capaAtiva = clip.capa_status === 'pronta';
 %>
 
@@ -246,10 +250,31 @@
                       class="mt-1.5 w-full accent-fuchsia-500" />
                   </label>
 
+                  <div class="flex flex-wrap items-end gap-2">
+                    <div class="min-w-0 flex-1">
+                      <p class="text-[11px] text-slate-500">Fundo do texto</p>
+                      <div class="mt-1 inline-flex rounded-lg border border-slate-700 bg-slate-950 p-0.5">
+                        <button type="button" data-texto-fundo="cor"
+                          class="split-texto-fundo-btn rounded-md px-2.5 py-1 text-[11px] <%= splitTextoFundo === 'cor' ? 'bg-fuchsia-500 font-semibold text-white' : 'text-slate-400 hover:text-white' %>">
+                          Com cor
+                        </button>
+                        <button type="button" data-texto-fundo="transparente"
+                          class="split-texto-fundo-btn rounded-md px-2.5 py-1 text-[11px] <%= splitTextoFundo === 'transparente' ? 'bg-fuchsia-500 font-semibold text-white' : 'text-slate-400 hover:text-white' %>">
+                          Transparente
+                        </button>
+                      </div>
+                    </div>
+                    <label id="split-texto-fundo-cor-wrap" class="<%= splitTextoFundo === 'cor' ? '' : 'hidden' %> shrink-0">
+                      <span class="text-[11px] text-slate-500">Cor</span>
+                      <input id="split-texto-fundo-cor" type="color" value="<%= splitTextoFundoCor %>"
+                        class="mt-1 block h-8 w-12 cursor-pointer rounded border border-slate-700 bg-slate-950 p-0.5" />
+                    </label>
+                  </div>
+
                   <p class="text-[11px] text-slate-600">
                     Fica fixo no Reel <strong class="font-medium text-slate-500">depois da capa</strong> (se a capa estiver marcada).
                     Use <code class="text-fuchsia-300">[[palavra]]</code> para caixas de destaque.
-                    Clique em <strong class="font-medium text-slate-500">Sugerir com IA</strong> várias vezes até gostar.
+                    Em fundo claro, use <strong class="font-medium text-slate-500">Com cor</strong> para o texto não sumir.
                     Estilo em <a href="/minha-marca?tab=video" class="text-fuchsia-300 hover:underline">Minha marca → vídeo</a>.
                   </p>
                 </div>
@@ -367,7 +392,9 @@
       splitTexto: <%- JSON.stringify(splitTexto) %>,
       splitTextoPosicao: <%- JSON.stringify(splitTextoPos) %>,
       splitTextoTamanho: <%= splitTextoTam %>,
+      splitTextoFundo: <%- JSON.stringify(splitTextoFundo) %>,
+      splitTextoFundoCor: <%- JSON.stringify(splitTextoFundoCor) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731f"></script>
+  <script src="/js/fila-corte.js?v=20260731g"></script>
 <%- include('partials/app-end') %>

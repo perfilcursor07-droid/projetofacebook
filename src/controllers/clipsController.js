@@ -228,6 +228,8 @@ async function montarSplit(req, res, next) {
       texto: body.texto ?? body.split_texto,
       textoPosicao: body.texto_posicao ?? body.textoPosicao ?? body.split_texto_posicao,
       textoTamanho: body.texto_tamanho ?? body.textoTamanho ?? body.split_texto_tamanho,
+      textoFundo: body.texto_fundo ?? body.textoFundo ?? body.split_texto_fundo,
+      textoFundoCor: body.texto_fundo_cor ?? body.textoFundoCor ?? body.split_texto_fundo_cor,
     });
 
     res.status(202).json({
@@ -254,6 +256,8 @@ async function reenquadrarSplit(req, res, next) {
       texto: body.texto ?? body.split_texto,
       textoPosicao: body.texto_posicao ?? body.textoPosicao ?? body.split_texto_posicao,
       textoTamanho: body.texto_tamanho ?? body.textoTamanho ?? body.split_texto_tamanho,
+      textoFundo: body.texto_fundo ?? body.textoFundo ?? body.split_texto_fundo,
+      textoFundoCor: body.texto_fundo_cor ?? body.textoFundoCor ?? body.split_texto_fundo_cor,
     });
     res.status(202).json({ ...result, clipId: clip.id, message: 'Reenquadrando…' });
   } catch (err) {
@@ -344,6 +348,10 @@ async function statusClip(req, res, next) {
         ? clip.split_texto_posicao
         : 'rodape',
       split_texto_tamanho: Math.min(160, Math.max(70, Number(clip.split_texto_tamanho) || 100)),
+      split_texto_fundo: clip.split_texto_fundo === 'transparente' ? 'transparente' : 'cor',
+      split_texto_fundo_cor: /^#[0-9a-fA-F]{6}$/.test(String(clip.split_texto_fundo_cor || ''))
+        ? String(clip.split_texto_fundo_cor).toLowerCase()
+        : '#000000',
       preview_base_url: clipSplitService.previewBaseUrl(clip),
       updated_at: clip.updated_at || null,
     });

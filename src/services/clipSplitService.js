@@ -109,8 +109,8 @@ function textoSemMarcadores(texto) {
 }
 
 function estimarLarguraChars(str, fontSize) {
-  // Arial Black caixa-alta: ~0.62em por caractere (aprox. suficiente p/ SVG).
-  return String(str || '').length * fontSize * 0.62;
+  // Arial Black caixa-alta: um pouco mais largo que 0.62 — evita texto “estourar” a margem.
+  return String(str || '').length * fontSize * 0.68;
 }
 
 /** Quebra tokens em linhas sem partir um destaque no meio. */
@@ -133,51 +133,34 @@ function quebrarTokensEmLinhas(tokens, maxWidthPx, fontSize, maxLinhas = 5) {
       .map((p) => ({ text: p.toUpperCase(), highlight: token.highlight }));
 
     for (const parte of partes) {
-      const w = estimarLarguraChars(parte.text, fontSize);
-      const need = atual.length ? atualW + spaceW + w : w;
+      const wordW = estimarLarguraChars(parte.text, fontSize);
+      const need = atual.length ? atualW + spaceW + wordW : wordW;
       if (atual.length && need > maxWidthPx) {
         flush();
         if (linhas.length >= maxLinhas) return linhas;
       }
-      if (!atual.length && w > maxWidthPx) {
-        // Palavra enorme: corta.
-        const maxChars = Math.max(4, Math.floor(maxWidthPx / (fontSize * 0.62)));
+      if (!atual.length && wordW > maxWidthPx) {
+        const maxChars = Math.max(4, Math.floor(maxWidthPx / (fontSize * 0.68)));
         atual.push({ text: `${parte.text.slice(0, maxChars - 1)}…`, highlight: parte.highlight });
         flush();
         if (linhas.length >= maxLinhas) return linhas;
         continue;
       }
       atual.push(parte);
-      atualW = atual.length === 1 ? w : atualW + spaceW + w;
+      atualW = atual.length === 1 ? wordW : atualW + spaceW + wordW;
     }
   }
   flush();
   return linhas.length ? linhas : [[{ text: '', highlight: false }]];
 }
 
-/** Quebra texto simples (sem tokens) em linhas. */
-function quebrarLinhas(texto, maxChars = 34, maxLinhas = 4) {
-  const plain = textoSemMarcadores(texto).toUpperCase();
-  const palavras = plain.split(/\s+/).filter(Boolean);
-  const linhas = [];
-  let atual = '';
-  for (const palavra of palavras) {
-    const tentativa = atual ? `${atual} ${palavra}` : palavra;
-    if (tentativa.length <= maxChars) {
-      atual = tentativa;
-      continue;
-    }
-    if (atual) linhas.push(atual);
-    atual = palavra;
-    if (linhas.length >= maxLinhas - 1) break;
-  }
-  if (atual && linhas.length < maxLinhas) linhas.push(atual);
-  const usado = linhas.join(' ').length;
-  if (usado < plain.length && linhas.length) {
-    const last = linhas[linhas.length - 1];
-    linhas[linhas.length - 1] = (last.length > 3 ? last.slice(0, -3) : last) + '…';
-  }
-  return linhas.length ? linhas : [plain.slice(0, maxChars)];
+function normalizarFundoTexto(raw) {
+  return String(raw || '').toLowerCase() === 'transparente' ? 'transparente' : 'cor';
+}
+
+function normalizarCorHex(raw, fallback = '#000000') {
+  const v = String(raw || '').trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(v) ? v : fallback;
 }
 
 function svgLinhaComDestaques({
@@ -188,6 +171,8 @@ function svgLinhaComDestaques({
   highlightColor,
   align,
   totalWidth,
+  minX = 0,
+  maxX = Infinity,
 }) {
   const spaceW = estimarLarguraChars(' ', fontSize);
   const padX = Math.round(fontSize * 0.18);
@@ -195,29 +180,34 @@ function svgLinhaComDestaques({
   const boxH = Math.round(fontSize * 1.12);
   const boxY = y - fontSize + padY;
 
+  let lineW = 0;
+  segmentos.forEach((s, i) => {
+    lineW += estimarLarguraChars(s.text, fontSize);
+    if (i < segmentos.length - 1) lineW += spaceW;
+  });
+
   let cursor = startX;
   if (align === 'center') {
-    let lineW = 0;
-    segmentos.forEach((s, i) => {
-      lineW += estimarLarguraChars(s.text, fontSize);
-      if (i < segmentos.length - 1) lineW += spaceW;
-    });
-    cursor = startX + (totalWidth - lineW) / 2;
+    cursor = startX + Math.max(0, (totalWidth - lineW) / 2);
   }
+  // Nunca começa antes da margem segura (evita corte na esquerda).
+  cursor = Math.max(minX + padX, cursor);
 
   const parts = [];
   segmentos.forEach((seg, i) => {
     const segW = estimarLarguraChars(seg.text, fontSize);
     if (seg.highlight) {
+      const boxX = Math.max(minX, cursor - padX);
+      const boxW = Math.min(segW + padX * 2, maxX - boxX);
       parts.push(
-        `<rect x="${cursor - padX}" y="${boxY}" width="${segW + padX * 2}" height="${boxH}" rx="3" fill="${escapeXml(highlightColor)}"/>`
+        `<rect x="${boxX}" y="${boxY}" width="${Math.max(4, boxW)}" height="${boxH}" rx="3" fill="${escapeXml(highlightColor)}"/>`
       );
       parts.push(
         `<text x="${cursor}" y="${y}" fill="#0f172a" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900">${escapeXml(seg.text)}</text>`
       );
     } else {
       parts.push(
-        `<text x="${cursor}" y="${y}" fill="#ffffff" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" stroke="#000" stroke-width="3" paint-order="stroke fill">${escapeXml(seg.text)}</text>`
+        `<text x="${cursor}" y="${y}" fill="#ffffff" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" stroke="#000" stroke-width="${Math.max(2, Math.round(fontSize * 0.06))}" paint-order="stroke fill">${escapeXml(seg.text)}</text>`
       );
     }
     cursor += segW + (i < segmentos.length - 1 ? spaceW : 0);
@@ -226,8 +216,8 @@ function svgLinhaComDestaques({
 }
 
 /**
- * Gera PNG transparente do tamanho do vídeo com texto no estilo da marca de vídeo.
- * O texto fica no corpo do Reel (depois da capa).
+ * Gera PNG do tamanho do vídeo com texto centralizado e margens seguras
+ * (igual ao preview da tela dividida — sem colar na borda esquerda).
  */
 async function criarFaixaTextoPng({
   texto,
@@ -238,6 +228,8 @@ async function criarFaixaTextoPng({
   modelo = DEFAULT_VIDEO_BRAND_MODEL,
   corDestaque = '#facc15',
   tamanhoPct = 100,
+  fundo = 'cor',
+  fundoCor = '#000000',
 }) {
   const w = Math.max(320, Math.round(Number(width) || 1080));
   const h = Math.max(320, Math.round(Number(height) || 1920));
@@ -246,143 +238,66 @@ async function criarFaixaTextoPng({
   const highlight = /^#[0-9a-f]{6}$/i.test(String(corDestaque || ''))
     ? String(corDestaque).toLowerCase()
     : '#facc15';
+  const fundoModo = normalizarFundoTexto(fundo);
+  const fundoHex = normalizarCorHex(fundoCor, '#000000');
   const tokens = parseTokensComDestaque(texto);
-  const usaDestaque =
-    modeloId === 'destaque_viral' ||
-    modeloId === 'impacto_central' ||
-    tokens.some((t) => t.highlight);
 
-  let svgBody = '';
+  // Fonte um pouco maior no viral; layout sempre full-width centralizado (como o preview).
+  const baseRatio =
+    modeloId === 'destaque_viral' ? 0.048 : modeloId === 'impacto_central' ? 0.046 : 0.042;
+  const fontSize = Math.round(w * baseRatio * scale);
+  const lineH = Math.round(fontSize * 1.28);
+  const marginX = Math.max(36, Math.round(w * 0.06));
+  const maxW = w - marginX * 2;
+  const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 6);
+  const padY = Math.round(w * 0.028);
+  const blockH = padY * 2 + Math.max(1, linhas.length) * lineH;
+  const barY = yBlocoTexto(
+    posicao,
+    h,
+    blockH,
+    posicao === 'topo' ? Math.round(h * 0.02) : 0,
+    posicao === 'rodape' ? Math.round(h * 0.02) : 0
+  );
+  const baseY = barY + padY + fontSize;
 
-  if (modeloId === 'destaque_viral') {
-    const fontSize = Math.round(w * 0.055 * scale);
-    const lineH = Math.round(fontSize * 1.28);
-    const maxW = Math.round(w * 0.52);
-    const marginL = Math.round(w * 0.035);
-    const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 6);
-    const blockH = linhas.length * lineH;
-    const topY = yBlocoTexto(
-      posicao,
-      h,
-      blockH,
-      Math.round(h * 0.08),
-      Math.round(h * 0.06)
-    );
-    const baseY = topY + fontSize;
-
-    const linesSvg = linhas
-      .map((segs, i) =>
-        svgLinhaComDestaques({
-          segmentos: segs,
-          y: baseY + i * lineH,
-          startX: marginL,
-          fontSize,
-          highlightColor: highlight,
-          align: 'left',
-          totalWidth: maxW,
-        })
-      )
-      .join('\n');
-
-    svgBody = linesSvg;
-  } else if (modeloId === 'impacto_central') {
-    const fontSize = Math.round(w * 0.048 * scale);
-    const lineH = Math.round(fontSize * 1.3);
-    const maxW = Math.round(w * 0.86);
-    const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 5);
-    const padY = Math.round(w * 0.03);
-    const barH = padY * 2 + linhas.length * lineH;
-    const barY = yBlocoTexto(
-      posicao,
-      h,
-      barH,
-      Math.round(h * 0.04),
-      Math.round(h * 0.05)
-    );
-    const barX = Math.round(w * 0.05);
-    const barW = w - barX * 2;
-    const baseY = barY + padY + fontSize;
-
-    const linesSvg = linhas
-      .map((segs, i) =>
-        svgLinhaComDestaques({
-          segmentos: segs,
-          y: baseY + i * lineH,
-          startX: barX + Math.round(w * 0.02),
-          fontSize,
-          highlightColor: highlight,
-          align: 'center',
-          totalWidth: barW - Math.round(w * 0.04),
-        })
-      )
-      .join('\n');
-
-    svgBody = `<rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="14" fill="#000" fill-opacity="0.78"/>
-${linesSvg}`;
-  } else if (usaDestaque) {
-    // Faixa com caixas nas palavras [[marcadas]].
-    const fontSize = Math.round(w * 0.042 * scale);
-    const lineH = Math.round(fontSize * 1.28);
-    const maxW = Math.round(w * 0.9);
-    const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 4);
-    const padY = Math.round(w * 0.035);
-    const barH = padY * 2 + linhas.length * lineH;
-    const barY = yBlocoTexto(posicao, h, barH, 0, 0);
-    const baseY = barY + padY + fontSize;
-    const barOpacity =
-      posicao === 'meio' ? '0.72' : posicao === 'topo' ? '0.82' : '0.88';
-
-    const linesSvg = linhas
-      .map((segs, i) =>
-        svgLinhaComDestaques({
-          segmentos: segs,
-          y: baseY + i * lineH,
-          startX: Math.round(w * 0.05),
-          fontSize,
-          highlightColor: highlight,
-          align: 'center',
-          totalWidth: maxW,
-        })
-      )
-      .join('\n');
-
-    svgBody = `<defs>
+  let fundoSvg = '';
+  if (fundoModo === 'cor') {
+    const opacity = posicao === 'meio' ? 0.78 : 0.82;
+    if (posicao === 'meio' || modeloId === 'impacto_central') {
+      const inset = Math.round(w * 0.035);
+      fundoSvg = `<rect x="${inset}" y="${barY}" width="${w - inset * 2}" height="${blockH}" rx="14" fill="${escapeXml(fundoHex)}" fill-opacity="${opacity}"/>`;
+    } else {
+      fundoSvg = `<defs>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.82' : posicao === 'meio' ? '0.7' : '0.55'}"/>
-      <stop offset="100%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.55' : barOpacity}"/>
+      <stop offset="0%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity : opacity * 0.7}"/>
+      <stop offset="100%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity * 0.7 : opacity}"/>
     </linearGradient>
   </defs>
-  <rect x="0" y="${barY}" width="${w}" height="${barH}" fill="url(#bar)"/>
-${linesSvg}`;
-  } else {
-    const plain = textoSemMarcadores(texto);
-    const linhas = quebrarLinhas(plain, w >= 1000 ? 34 : 28, 4);
-    const fontSize = Math.round(w * 0.042 * scale);
-    const lineH = Math.round(fontSize * 1.25);
-    const padY = Math.round(w * 0.035);
-    const barH = padY * 2 + linhas.length * lineH;
-    const barY = yBlocoTexto(posicao, h, barH, 0, 0);
-    const tspans = linhas
-      .map((linha, i) => {
-        const y = barY + padY + fontSize + i * lineH;
-        return `<tspan x="${w / 2}" y="${y}">${escapeXml(linha)}</tspan>`;
-      })
-      .join('');
-
-    svgBody = `<defs>
-    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.82' : posicao === 'meio' ? '0.7' : '0.55'}"/>
-      <stop offset="100%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.55' : posicao === 'meio' ? '0.72' : '0.88'}"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="${barY}" width="${w}" height="${barH}" fill="url(#bar)"/>
-  <text text-anchor="middle" fill="#ffffff" font-family="Arial Black, Arial, Helvetica, sans-serif"
-    font-size="${fontSize}" font-weight="800" letter-spacing="0.5">${tspans}</text>`;
+  <rect x="0" y="${barY}" width="${w}" height="${blockH}" fill="url(#bar)"/>`;
+    }
   }
+
+  const linesSvg = linhas
+    .map((segs, i) =>
+      svgLinhaComDestaques({
+        segmentos: segs,
+        y: baseY + i * lineH,
+        startX: marginX,
+        fontSize,
+        highlightColor: highlight,
+        align: 'center',
+        totalWidth: maxW,
+        minX: marginX,
+        maxX: w - marginX,
+      })
+    )
+    .join('\n');
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
-${svgBody}
+${fundoSvg}
+${linesSvg}
 </svg>`;
 
   fs.mkdirSync(path.dirname(destAbs), { recursive: true });
@@ -560,6 +475,8 @@ async function aplicarSplitAgora({
   texto,
   textoPosicao,
   textoTamanho,
+  textoFundo,
+  textoFundoCor,
 }) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
@@ -596,6 +513,13 @@ async function aplicarSplitAgora({
     textoTamanho != null ? textoTamanho : clip.split_texto_tamanho,
     100
   );
+  const fundoFinal = normalizarFundoTexto(
+    textoFundo != null ? textoFundo : clip.split_texto_fundo
+  );
+  const fundoCorFinal = normalizarCorHex(
+    textoFundoCor != null ? textoFundoCor : clip.split_texto_fundo_cor,
+    '#000000'
+  );
 
   const uid = crypto.randomBytes(3).toString('hex');
   const splitTempRel = `clips/clip_${clip.id}_split_raw_${Date.now()}_${uid}.mp4`;
@@ -631,6 +555,8 @@ async function aplicarSplitAgora({
         modelo: videoModelo,
         corDestaque: videoCorDestaque,
         tamanhoPct: tamanhoFinal,
+        fundo: fundoFinal,
+        fundoCor: fundoCorFinal,
       });
       await overlayTextoFixo({
         videoPath: splitTempAbs,
@@ -658,6 +584,8 @@ async function aplicarSplitAgora({
       split_texto: textoFinal || null,
       split_texto_posicao: posicaoFinal,
       split_texto_tamanho: tamanhoFinal,
+      split_texto_fundo: fundoFinal,
+      split_texto_fundo_cor: fundoCorFinal,
       split_erro: null,
       capa_status: capaEstavaPronta ? 'gerando' : 'pendente',
     });
@@ -705,6 +633,8 @@ async function aplicarSplitNoClip({
   texto,
   textoPosicao,
   textoTamanho,
+  textoFundo,
+  textoFundoCor,
 }) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
@@ -734,6 +664,13 @@ async function aplicarSplitNoClip({
     textoTamanho != null ? textoTamanho : clip.split_texto_tamanho,
     100
   );
+  const fundoFinal = normalizarFundoTexto(
+    textoFundo != null ? textoFundo : clip.split_texto_fundo
+  );
+  const fundoCorFinal = normalizarCorHex(
+    textoFundoCor != null ? textoFundoCor : clip.split_texto_fundo_cor,
+    '#000000'
+  );
 
   await VideoClips.update(clip.id, {
     split_status: 'gerando',
@@ -745,6 +682,8 @@ async function aplicarSplitNoClip({
     split_texto: textoFinal || null,
     split_texto_posicao: posicaoFinal,
     split_texto_tamanho: tamanhoFinal,
+    split_texto_fundo: fundoFinal,
+    split_texto_fundo_cor: fundoCorFinal,
   });
 
   enqueue(`split clip ${clip.id}`, async () => {
@@ -757,6 +696,8 @@ async function aplicarSplitNoClip({
         texto: textoFinal,
         textoPosicao: posicaoFinal,
         textoTamanho: tamanhoFinal,
+        textoFundo: fundoFinal,
+        textoFundoCor: fundoCorFinal,
         ...offsets,
       });
     } catch (err) {
@@ -770,6 +711,8 @@ async function aplicarSplitNoClip({
     texto: textoFinal || null,
     texto_posicao: posicaoFinal,
     texto_tamanho: tamanhoFinal,
+    texto_fundo: fundoFinal,
+    texto_fundo_cor: fundoCorFinal,
     ...offsets,
   };
 }
@@ -820,6 +763,8 @@ async function reenquadrarSplit({
   texto,
   textoPosicao,
   textoTamanho,
+  textoFundo,
+  textoFundoCor,
 }) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
@@ -840,6 +785,13 @@ async function reenquadrarSplit({
     textoTamanho != null ? textoTamanho : clip.split_texto_tamanho,
     100
   );
+  const fundoFinal = normalizarFundoTexto(
+    textoFundo != null ? textoFundo : clip.split_texto_fundo
+  );
+  const fundoCorFinal = normalizarCorHex(
+    textoFundoCor != null ? textoFundoCor : clip.split_texto_fundo_cor,
+    '#000000'
+  );
 
   await VideoClips.update(clip.id, {
     split_status: 'gerando',
@@ -847,6 +799,8 @@ async function reenquadrarSplit({
     split_texto: textoFinal || null,
     split_texto_posicao: posicaoFinal,
     split_texto_tamanho: tamanhoFinal,
+    split_texto_fundo: fundoFinal,
+    split_texto_fundo_cor: fundoCorFinal,
   });
 
   enqueue(`split clip ${clip.id}`, async () => {
@@ -859,6 +813,8 @@ async function reenquadrarSplit({
         texto: textoFinal,
         textoPosicao: posicaoFinal,
         textoTamanho: tamanhoFinal,
+        textoFundo: fundoFinal,
+        textoFundoCor: fundoCorFinal,
         ...offsets,
       });
     } catch (err) {
@@ -871,6 +827,8 @@ async function reenquadrarSplit({
     texto: textoFinal || null,
     texto_posicao: posicaoFinal,
     texto_tamanho: tamanhoFinal,
+    texto_fundo: fundoFinal,
+    texto_fundo_cor: fundoCorFinal,
     ...offsets,
   };
 }

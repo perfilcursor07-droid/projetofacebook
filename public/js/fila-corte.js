@@ -462,6 +462,10 @@
       ? cfg.splitTextoPosicao
       : 'rodape';
     let textoTamanho = Number(cfg.splitTextoTamanho) || 100;
+    let textoFundo = cfg.splitTextoFundo === 'transparente' ? 'transparente' : 'cor';
+    let textoFundoCor = /^#[0-9a-f]{6}$/i.test(String(cfg.splitTextoFundoCor || ''))
+      ? String(cfg.splitTextoFundoCor).toLowerCase()
+      : '#000000';
     const textoEvitar = [];
     const textoInput = document.getElementById('split-texto');
     const textoPreview = document.getElementById('split-texto-preview');
@@ -470,6 +474,8 @@
     const textoTamValor = document.getElementById('split-texto-tam-valor');
     const textoTomEl = document.getElementById('split-texto-tom');
     const sugerirTextoBtn = document.getElementById('btn-split-sugerir-texto');
+    const textoFundoCorInput = document.getElementById('split-texto-fundo-cor');
+    const textoFundoCorWrap = document.getElementById('split-texto-fundo-cor-wrap');
 
     function setSplitMsg(msg, isError) {
       if (!msgEl) return;
@@ -493,13 +499,15 @@
     }
 
     function previewClassForPos(pos) {
-      if (pos === 'topo') {
-        return 'pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-black/40 px-1.5 py-1.5';
+      const base = 'pointer-events-none absolute inset-x-0 px-2 py-1.5 ';
+      if (textoFundo === 'transparente') {
+        if (pos === 'topo') return base + 'top-0 bg-transparent';
+        if (pos === 'meio') return base + 'top-1/2 -translate-y-1/2 bg-transparent';
+        return base + 'bottom-0 bg-transparent';
       }
-      if (pos === 'meio') {
-        return 'pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 bg-black/70 px-1.5 py-1.5';
-      }
-      return 'pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-black/40 px-1.5 py-1.5';
+      if (pos === 'topo') return base + 'top-0';
+      if (pos === 'meio') return base + 'top-1/2 -translate-y-1/2';
+      return base + 'bottom-0';
     }
 
     function syncTextoPreview() {
@@ -513,13 +521,33 @@
       textoPreviewP.innerHTML = formatTextoComDestaque(txt);
       const px = Math.max(6, Math.round(8 * (textoTamanho / 100)));
       textoPreviewP.style.fontSize = px + 'px';
+      textoPreviewP.className =
+        'text-center text-[8px] font-extrabold uppercase leading-snug tracking-wide text-white px-0.5';
       textoPreview.classList.remove('hidden');
       textoPreview.className = previewClassForPos(textoPosicao);
+      if (textoFundo === 'cor') {
+        textoPreview.style.background =
+          textoFundoCor + (textoPosicao === 'meio' ? 'cc' : 'd9');
+      } else {
+        textoPreview.style.background = 'transparent';
+      }
     }
 
     function normalizarPosUi(pos) {
       if (pos === 'topo' || pos === 'meio') return pos;
       return 'rodape';
+    }
+
+    function syncFundoBtns() {
+      splitPanel.querySelectorAll('.split-texto-fundo-btn').forEach((b) => {
+        const on = b.dataset.textoFundo === textoFundo;
+        b.className = on
+          ? 'split-texto-fundo-btn rounded-md bg-fuchsia-500 px-2.5 py-1 text-[11px] font-semibold text-white'
+          : 'split-texto-fundo-btn rounded-md px-2.5 py-1 text-[11px] text-slate-400 hover:text-white';
+      });
+      if (textoFundoCorWrap) {
+        textoFundoCorWrap.classList.toggle('hidden', textoFundo !== 'cor');
+      }
     }
 
     textoInput?.addEventListener('input', syncTextoPreview);
@@ -528,6 +556,18 @@
       if (textoTamValor) textoTamValor.textContent = String(textoTamanho);
       syncTextoPreview();
     });
+    textoFundoCorInput?.addEventListener('input', () => {
+      textoFundoCor = String(textoFundoCorInput.value || '#000000').toLowerCase();
+      syncTextoPreview();
+    });
+    splitPanel.querySelectorAll('.split-texto-fundo-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        textoFundo = btn.dataset.textoFundo === 'transparente' ? 'transparente' : 'cor';
+        syncFundoBtns();
+        syncTextoPreview();
+      });
+    });
+    syncFundoBtns();
 
     sugerirTextoBtn?.addEventListener('click', async () => {
       const original = sugerirTextoBtn.textContent;
@@ -741,6 +781,8 @@
         texto,
         texto_posicao: textoPosicao,
         texto_tamanho: textoTamanho,
+        texto_fundo: textoFundo,
+        texto_fundo_cor: textoFundoCor,
       };
 
       if (fonte === 'upload') {
@@ -755,6 +797,8 @@
         form.append('texto', texto);
         form.append('texto_posicao', textoPosicao);
         form.append('texto_tamanho', String(textoTamanho));
+        form.append('texto_fundo', textoFundo);
+        form.append('texto_fundo_cor', textoFundoCor);
         return { body: form, isForm: true };
       }
 
@@ -840,6 +884,8 @@
           texto: String(textoInput?.value || '').trim(),
           texto_posicao: textoPosicao,
           texto_tamanho: textoTamanho,
+          texto_fundo: textoFundo,
+          texto_fundo_cor: textoFundoCor,
         });
         setSplitMsg('Reenquadrando… o vídeo atualiza sozinho.');
         setStatus('Reenquadrando — a página não recarrega.');
