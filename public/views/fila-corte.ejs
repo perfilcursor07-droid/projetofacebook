@@ -183,7 +183,7 @@
                   style="<%= splitModo === 'empilhado' ? (splitImagemPos === 'baixo' ? 'flex-direction:column-reverse' : 'flex-direction:column') : (splitImagemPos === 'direita' ? 'flex-direction:row-reverse' : 'flex-direction:row') %>">
                   <div id="split-pane-img" class="relative overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
                     <img id="split-img-preview" alt="" class="h-full w-full object-cover <%= splitImagemUrl ? '' : 'hidden' %>"
-                      src="<%= splitImagemUrl || '' %>" style="object-position: <%= splitModo === 'empilhado' ? '50% ' + offsetImagem + '%' : offsetImagem + '% 50%' %>;" />
+                      src="<%= splitImagemUrl || '' %>" style="object-position: <%= offsetImagem %>% 50%;" />
                     <div id="split-img-empty" class="absolute inset-0 flex items-center justify-center px-2 text-center text-[10px] leading-tight text-slate-600 <%= splitImagemUrl ? 'hidden' : '' %>">
                       Escolha a imagem
                     </div>
@@ -191,7 +191,7 @@
                   <div id="split-pane-vid" class="overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
                     <% if (previewVideo) { %>
                       <video id="split-video-preview" class="h-full w-full object-cover" muted loop playsinline preload="metadata"
-                        style="object-position: <%= splitModo === 'empilhado' ? '50% ' + offsetVideo + '%' : offsetVideo + '% 50%' %>;" src="<%= previewVideo %>#t=0.5"></video>
+                        style="object-position: <%= offsetVideo %>% 50%;" src="<%= previewVideo %>#t=0.5"></video>
                     <% } %>
                   </div>
                   <span id="split-divider" class="pointer-events-none absolute bg-white/20 <%= splitModo === 'empilhado' ? 'inset-x-0 top-1/2 h-px -translate-y-1/2' : 'inset-y-0 left-1/2 w-px -translate-x-1/2' %>"></span>
@@ -209,6 +209,7 @@
 
               <div class="space-y-4">
                 <div class="space-y-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <p class="text-[10px] text-slate-600">0% = esquerda · 50% = centro · 100% = direita</p>
                   <label class="block">
                     <span class="flex items-center justify-between text-[11px] font-medium text-slate-400">
                       Empurrar o vídeo <span id="split-video-valor" class="tabular-nums text-slate-500"><%= offsetVideo %>%</span>
@@ -466,5 +467,5 @@
       bgmPresets: <%- JSON.stringify(presetsLista) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731k"></script>
+  <script src="/js/fila-corte.js?v=20260731m"></script>
 <%- include('partials/app-end') %>

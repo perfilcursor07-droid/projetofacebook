@@ -189,7 +189,8 @@ function renderSplitScreen({
   const empilhado = String(modo) === 'empilhado';
   const paneW = empilhado ? width : Math.round(width / 2);
   const paneH = empilhado ? Math.round(height / 2) : height;
-  const axis = empilhado ? 'y' : 'x';
+  // Sempre empurra na horizontal (esquerda ← → direita), nos dois layouts.
+  const axis = 'x';
   const imgOffset = clampOffset(imageOffset);
   const vidOffset = clampOffset(videoOffset);
   const pos = String(imagemLado || '');

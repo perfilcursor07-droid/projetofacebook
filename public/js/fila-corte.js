@@ -682,12 +682,9 @@
     function aplicarOffsetsNoPreview() {
       const v = Number(videoRange?.value ?? 50);
       const i = Number(imagemRange?.value ?? 50);
-      if (videoPreview) {
-        videoPreview.style.objectPosition = modo === 'empilhado' ? '50% ' + v + '%' : v + '% 50%';
-      }
-      if (imgPreview) {
-        imgPreview.style.objectPosition = modo === 'empilhado' ? '50% ' + i + '%' : i + '% 50%';
-      }
+      // Empurrar sempre na horizontal (0% = esquerda, 100% = direita).
+      if (videoPreview) videoPreview.style.objectPosition = v + '% 50%';
+      if (imgPreview) imgPreview.style.objectPosition = i + '% 50%';
       if (videoValor) videoValor.textContent = v + '%';
       if (imagemValor) imagemValor.textContent = i + '%';
     }
