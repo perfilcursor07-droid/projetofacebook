@@ -11,6 +11,8 @@ router.post('/:id/retry', clipsController.retryClip);
 router.post('/:id/capa', clipsController.gerarCapa);
 router.delete('/:id/capa', clipsController.removerCapa);
 
+router.get('/:id/status', clipsController.statusClip);
+
 // Tela dividida (imagem + vídeo meio a meio)
 router.get('/:id/split/imagens', clipsController.buscarImagensDoSplit);
 router.get('/:id/split/frames', clipsController.listarFramesDoSplit);

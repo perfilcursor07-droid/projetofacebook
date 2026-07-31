@@ -9,6 +9,21 @@
   const capaTituloEl = document.getElementById('clip-capa-titulo');
   const modoEl = document.getElementById('clip-modo');
   const videoEl = document.getElementById('clip-video');
+  const btnMateria = document.getElementById('btn-materia');
+  const btnCapa = document.getElementById('btn-capa');
+
+  // Estado local — nunca recarrega a página inteira enquanto o usuário edita.
+  const state = {
+    materiaStatus: cfg.materiaStatus || '',
+    capaStatus: cfg.capaStatus || '',
+    splitStatus: cfg.splitStatus || '',
+    splitAtivo: Boolean(cfg.splitAtivo),
+    videoUrl: videoEl?.getAttribute('src') || '',
+    splitImagemUrl: cfg.splitImagemUrl || '',
+    materiaSnapshot: String(materiaEl?.value || ''),
+    pollTimer: null,
+    polling: false,
+  };
 
   function setStatus(msg, isError) {
     if (!statusEl) return;
@@ -22,6 +37,230 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function mediaUrlComCache(url) {
+    if (!url) return '';
+    const base = String(url).split('?')[0];
+    return base + '?t=' + Date.now();
+  }
+
+  /** Troca só o src do player — sem mexer no resto da página. */
+  function atualizarVideoPrincipal(url) {
+    if (!videoEl || !url) return;
+    const atual = String(videoEl.getAttribute('src') || '').split('?')[0];
+    const nova = String(url).split('?')[0];
+    if (atual === nova && state.videoUrl && state.videoUrl.split('?')[0] === nova) return;
+    const wasPaused = videoEl.paused;
+    const t = videoEl.currentTime || 0;
+    videoEl.src = mediaUrlComCache(url);
+    state.videoUrl = url;
+    videoEl.addEventListener(
+      'loadedmetadata',
+      () => {
+        try {
+          if (t > 0 && t < (videoEl.duration || Infinity)) videoEl.currentTime = t;
+        } catch {
+          /* ignore */
+        }
+        if (!wasPaused) videoEl.play().catch(() => {});
+      },
+      { once: true }
+    );
+  }
+
+  function setBadgeSplit(ativo, gerando) {
+    const header = document.querySelector('main .flex.flex-wrap.items-start .flex.flex-wrap.items-center.gap-2');
+    if (!header) return;
+    header.querySelectorAll('[data-live-badge]').forEach((el) => el.remove());
+    if (gerando) {
+      const span = document.createElement('span');
+      span.dataset.liveBadge = '1';
+      span.className = 'rounded-full bg-amber-500/15 px-2.5 py-0.5 font-medium text-amber-200';
+      span.textContent = 'Montando tela…';
+      header.appendChild(span);
+    } else if (ativo) {
+      const span = document.createElement('span');
+      span.dataset.liveBadge = '1';
+      span.className = 'rounded-full bg-fuchsia-500/15 px-2.5 py-0.5 font-medium text-fuchsia-300';
+      span.textContent = 'Tela dividida';
+      header.appendChild(span);
+    }
+  }
+
+  function atualizarUiSplit(data) {
+    const aplicarBtn = document.getElementById('btn-split-aplicar');
+    const msgEl = document.getElementById('split-msg');
+    const imgPreview = document.getElementById('split-img-preview');
+    const imgEmpty = document.getElementById('split-img-empty');
+    const badgeGerando = document.querySelector('#split-panel [data-split-live-status]');
+
+    const gerando = data.split_status === 'gerando';
+    const ativo = data.layout === 'split' || data.split_status === 'pronta';
+
+    if (badgeGerando) {
+      badgeGerando.textContent = gerando ? 'Montando…' : ativo ? 'Ativa' : '';
+      badgeGerando.className = gerando
+        ? 'rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-200'
+        : ativo
+          ? 'rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300'
+          : 'hidden';
+      badgeGerando.classList.toggle('hidden', !gerando && !ativo);
+    }
+
+    setBadgeSplit(ativo, gerando);
+
+    if (data.split_imagem_url && imgPreview) {
+      const atual = String(imgPreview.getAttribute('src') || '').split('?')[0];
+      const nova = String(data.split_imagem_url).split('?')[0];
+      if (atual !== nova) {
+        imgPreview.src = data.split_imagem_url;
+        imgPreview.classList.remove('hidden');
+        imgEmpty?.classList.add('hidden');
+      }
+      state.splitImagemUrl = data.split_imagem_url;
+    }
+
+    if (aplicarBtn) {
+      aplicarBtn.disabled = gerando;
+      aplicarBtn.textContent = gerando
+        ? 'Montando…'
+        : ativo
+          ? 'Atualizar tela dividida'
+          : 'Aplicar tela dividida';
+    }
+
+    const enquadrarBtn = document.getElementById('btn-split-enquadrar');
+    if (enquadrarBtn) enquadrarBtn.disabled = gerando;
+
+    if (msgEl) {
+      if (gerando) {
+        msgEl.textContent = 'Montando a tela dividida — só o vídeo atualiza quando ficar pronto.';
+        msgEl.className = 'text-[11px] text-amber-300';
+      } else if (data.split_status === 'erro') {
+        msgEl.textContent = data.split_erro || 'Falha na tela dividida.';
+        msgEl.className = 'text-[11px] text-rose-300';
+      } else if (data.split_status === 'pronta' && state.splitStatus === 'gerando') {
+        msgEl.textContent = 'Tela dividida pronta.';
+        msgEl.className = 'text-[11px] text-emerald-400';
+      }
+    }
+  }
+
+  function atualizarMateriaSeSeguro(data) {
+    if (!materiaEl) return;
+    const nova = String(data.materia || '').trim();
+    if (!nova) return;
+    // Só preenche se o campo ainda está igual ao que veio do servidor
+    // (o usuário não digitou por cima) ou se estava vazio.
+    const atual = String(materiaEl.value || '');
+    if (!atual.trim() || atual === state.materiaSnapshot) {
+      materiaEl.value = nova;
+      state.materiaSnapshot = nova;
+    }
+    if (btnMateria && data.materia_status === 'pronta') {
+      btnMateria.textContent = 'Refazer matéria';
+    }
+  }
+
+  function atualizarCapaTituloSeSeguro(data) {
+    if (!capaTituloEl) return;
+    const novo = String(data.capa_titulo || '').trim();
+    if (!novo) return;
+    if (!capaTituloEl.value.trim()) capaTituloEl.value = novo;
+    if (btnCapa && data.capa_status === 'pronta') {
+      btnCapa.textContent = 'Refazer capa';
+    }
+  }
+
+  function aindaGerando() {
+    return (
+      state.materiaStatus === 'gerando' ||
+      state.capaStatus === 'gerando' ||
+      state.splitStatus === 'gerando'
+    );
+  }
+
+  function pararPoll() {
+    if (state.pollTimer) {
+      clearTimeout(state.pollTimer);
+      state.pollTimer = null;
+    }
+    state.polling = false;
+  }
+
+  function agendarPoll(ms) {
+    pararPoll();
+    state.polling = true;
+    state.pollTimer = setTimeout(pollStatus, ms);
+  }
+
+  async function pollStatus() {
+    state.pollTimer = null;
+    try {
+      const res = await fetch('/api/clips/' + cfg.id + '/status', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao consultar status');
+
+      const prevSplit = state.splitStatus;
+      const prevCapa = state.capaStatus;
+      const prevMateria = state.materiaStatus;
+
+      state.materiaStatus = data.materia_status || '';
+      state.capaStatus = data.capa_status || '';
+      state.splitStatus = data.split_status || '';
+      state.splitAtivo = data.layout === 'split' || data.split_status === 'pronta';
+
+      // Só o vídeo (e badges/msgs da tela dividida) — página permanece editável.
+      if (data.video_url) atualizarVideoPrincipal(data.video_url);
+      atualizarUiSplit(data);
+
+      if (data.materia_status === 'pronta' && prevMateria === 'gerando') {
+        atualizarMateriaSeSeguro(data);
+        setStatus('Matéria pronta.');
+      }
+      if (data.capa_status === 'pronta' && prevCapa === 'gerando') {
+        atualizarCapaTituloSeSeguro(data);
+        setStatus('Capa pronta — vídeo atualizado.');
+      }
+      if (data.split_status === 'pronta' && prevSplit === 'gerando') {
+        setStatus('Tela dividida pronta — vídeo atualizado.');
+      }
+      if (data.split_status === 'erro') {
+        setStatus(data.split_erro || 'Falha na tela dividida.', true);
+      }
+      if (data.capa_status === 'erro' && data.erro_mensagem) {
+        setStatus(data.erro_mensagem, true);
+      }
+      if (data.materia_status === 'erro' && data.erro_mensagem) {
+        setStatus(data.erro_mensagem, true);
+      }
+
+      if (aindaGerando()) {
+        if (!statusEl?.textContent || /gerando|montando|aguarde/i.test(statusEl.textContent)) {
+          const partes = [];
+          if (state.splitStatus === 'gerando') partes.push('tela dividida');
+          if (state.capaStatus === 'gerando') partes.push('capa');
+          if (state.materiaStatus === 'gerando') partes.push('matéria');
+          setStatus('Gerando ' + (partes.join(' · ') || 'conteúdo') + '… (a página não recarrega)');
+        }
+        agendarPoll(2500);
+        return;
+      }
+
+      state.polling = false;
+    } catch (err) {
+      console.warn('[clip-edit] poll:', err.message);
+      if (aindaGerando()) agendarPoll(4000);
+      else state.polling = false;
+    }
+  }
+
+  function iniciarPollSePreciso() {
+    if (aindaGerando() && !state.polling) {
+      setStatus('Aguarde: gerando conteúdo… (só o vídeo atualiza)');
+      agendarPoll(1500);
+    }
   }
 
   async function loadPages() {
@@ -62,28 +301,33 @@
     return data;
   }
 
-  document.getElementById('btn-materia')?.addEventListener('click', async () => {
+  btnMateria?.addEventListener('click', async () => {
     setStatus('Gerando matéria…');
+    state.materiaStatus = 'gerando';
+    state.materiaSnapshot = String(materiaEl?.value || '');
     try {
       await postJson('/api/clips/' + cfg.id + '/materia', {
         tema: temaEl ? temaEl.value.trim() : '',
       });
-      setStatus('Matéria enfileirada — atualizando em instantes…');
-      setTimeout(() => location.reload(), 4000);
+      setStatus('Matéria enfileirada — o texto atualiza sozinho quando ficar pronto.');
+      iniciarPollSePreciso();
     } catch (err) {
+      state.materiaStatus = '';
       setStatus(err.message, true);
     }
   });
 
-  document.getElementById('btn-capa')?.addEventListener('click', async () => {
+  btnCapa?.addEventListener('click', async () => {
     setStatus('Gerando capa…');
+    state.capaStatus = 'gerando';
     try {
       await postJson('/api/clips/' + cfg.id + '/capa', {
         titulo: capaTituloEl ? capaTituloEl.value.trim() : '',
       });
-      setStatus('Capa enfileirada — atualizando…');
-      setTimeout(() => location.reload(), 5000);
+      setStatus('Capa enfileirada — só o vídeo atualiza quando ficar pronta.');
+      iniciarPollSePreciso();
     } catch (err) {
+      state.capaStatus = '';
       setStatus(err.message, true);
     }
   });
@@ -93,7 +337,10 @@
       const res = await fetch('/api/clips/' + cfg.id + '/capa', { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao remover capa');
-      location.reload();
+      state.capaStatus = 'pendente';
+      setStatus('Capa removida — atualizando o vídeo…');
+      // Uma consulta imediata puxa o arquivo sem capa.
+      agendarPoll(400);
     } catch (err) {
       setStatus(err.message, true);
     }
@@ -102,6 +349,15 @@
   // ——— Tela dividida (metade imagem, metade vídeo) ———
   const splitPanel = document.getElementById('split-panel');
   if (splitPanel) {
+    // Badge de status ao vivo (sem precisar recarregar o HTML do painel)
+    const splitTitleRow = splitPanel.querySelector('.flex.flex-wrap.items-center.gap-2');
+    if (splitTitleRow && !splitTitleRow.querySelector('[data-split-live-status]')) {
+      const live = document.createElement('span');
+      live.dataset.splitLiveStatus = '1';
+      live.className = 'hidden';
+      splitTitleRow.appendChild(live);
+    }
+
     const imgPreview = document.getElementById('split-img-preview');
     const imgEmpty = document.getElementById('split-img-empty');
     const videoPreview = document.getElementById('split-video-preview');
@@ -191,6 +447,11 @@
     imagemRange?.addEventListener('input', aplicarOffsetsNoPreview);
     aplicarOffsetsNoPreview();
     aplicarLadoNoPreview();
+    atualizarUiSplit({
+      split_status: state.splitStatus,
+      layout: state.splitAtivo ? 'split' : 'normal',
+      split_imagem_url: state.splitImagemUrl,
+    });
 
     ladoBtn?.addEventListener('click', () => {
       lado = lado === 'direita' ? 'esquerda' : 'direita';
@@ -317,8 +578,18 @@
         };
       }
 
-      if (!imagemEscolhida || !/^https?:\/\//i.test(imagemEscolhida)) {
+      // Aceita URL remota (busca) ou /media/... (frame já aplicado / imagem local)
+      if (
+        !imagemEscolhida ||
+        (!/^https?:\/\//i.test(imagemEscolhida) && !imagemEscolhida.startsWith('/media/'))
+      ) {
         throw new Error('Busque e clique em uma foto primeiro.');
+      }
+      // Frame já escolhido via preview /media — manda como busca por URL local? Não.
+      // Se for /media/splits/... já está no servidor; reaplicar usa enquadrar.
+      // Para busca, precisa ser http.
+      if (imagemEscolhida.startsWith('/media/') && fonte === 'busca') {
+        throw new Error('Busque e clique em uma foto da web, ou use a aba Upload / Do vídeo.');
       }
       return {
         body: {
@@ -345,6 +616,7 @@
       aplicarBtn.disabled = true;
       aplicarBtn.textContent = 'Montando…';
       setSplitMsg('Montando a tela dividida…');
+      state.splitStatus = 'gerando';
       try {
         const res = await fetch('/api/clips/' + cfg.id + '/split', {
           method: 'POST',
@@ -353,9 +625,11 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Falha ao montar a tela dividida');
-        setSplitMsg(data.message || 'Enfileirado — atualizando…');
-        setTimeout(() => location.reload(), 7000);
+        setSplitMsg(data.message || 'Montando… o vídeo atualiza sozinho.');
+        setStatus('Montando tela dividida — continue editando, a página não recarrega.');
+        iniciarPollSePreciso();
       } catch (err) {
+        state.splitStatus = '';
         aplicarBtn.disabled = false;
         aplicarBtn.textContent = original;
         setSplitMsg(err.message, true);
@@ -365,15 +639,18 @@
     enquadrarBtn?.addEventListener('click', async () => {
       enquadrarBtn.disabled = true;
       setSplitMsg('Reenquadrando…');
+      state.splitStatus = 'gerando';
       try {
         await postJson('/api/clips/' + cfg.id + '/split/enquadrar', {
           video_offset: Number(videoRange?.value ?? 50),
           imagem_offset: Number(imagemRange?.value ?? 50),
           imagem_lado: lado,
         });
-        setSplitMsg('Enfileirado — atualizando…');
-        setTimeout(() => location.reload(), 7000);
+        setSplitMsg('Reenquadrando… o vídeo atualiza sozinho.');
+        setStatus('Reenquadrando — a página não recarrega.');
+        iniciarPollSePreciso();
       } catch (err) {
+        state.splitStatus = state.splitAtivo ? 'pronta' : '';
         enquadrarBtn.disabled = false;
         setSplitMsg(err.message, true);
       }
@@ -385,7 +662,11 @@
         const res = await fetch('/api/clips/' + cfg.id + '/split', { method: 'DELETE' });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Falha ao remover');
-        location.reload();
+        state.splitStatus = 'pendente';
+        state.splitAtivo = false;
+        setSplitMsg('Tela dividida removida — atualizando o vídeo…');
+        setStatus('Tela dividida removida.');
+        agendarPoll(400);
       } catch (err) {
         setSplitMsg(err.message, true);
       }
@@ -453,9 +734,6 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao publicar');
       modalDone(data.message || 'Reel enviado. Pode demorar alguns minutos no Facebook.', '/fila');
-      if (videoEl && data.pendingConfirmation) {
-        /* ok */
-      }
     } catch (err) {
       modalError(err.message);
       setStatus(err.message, true);
@@ -463,14 +741,5 @@
   });
 
   loadPages();
-
-  // Auto-refresh enquanto matéria/capa/tela dividida geram
-  if (
-    cfg.materiaStatus === 'gerando' ||
-    cfg.capaStatus === 'gerando' ||
-    cfg.splitStatus === 'gerando'
-  ) {
-    setStatus('Aguarde: gerando conteúdo…');
-    setTimeout(() => location.reload(), 6000);
-  }
+  iniciarPollSePreciso();
 })();

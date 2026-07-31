@@ -297,6 +297,44 @@ async function buscarImagensDoSplit(req, res, next) {
   }
 }
 
+/**
+ * Status leve do corte — o front usa para atualizar só o vídeo/badges
+ * sem recarregar a página inteira (evita perder edições do usuário).
+ */
+async function statusClip(req, res, next) {
+  try {
+    const { clip } = await assertOwnedClip(req);
+    let materia = String(clip.legenda_sugerida || '').trim();
+    if (!materia || /^\[(sem fala|falha)/i.test(materia)) materia = '';
+
+    const videoUrl = clip.caminho_arquivo
+      ? `/media/${String(clip.caminho_arquivo).replace(/^\/+/, '')}`
+      : null;
+
+    res.json({
+      ok: true,
+      id: clip.id,
+      status: clip.status,
+      materia_status: clip.materia_status || 'pendente',
+      capa_status: clip.capa_status || 'pendente',
+      capa_titulo: clip.capa_titulo || '',
+      split_status: clip.split_status || 'pendente',
+      layout: clip.layout || 'normal',
+      split_erro: clip.split_erro || null,
+      erro_mensagem: clip.erro_mensagem || null,
+      materia,
+      video_url: videoUrl,
+      split_imagem_url: clip.split_image_path ? `/media/${clip.split_image_path}` : null,
+      split_video_offset: Number(clip.split_video_offset) || 50,
+      split_image_offset: Number(clip.split_image_offset) || 50,
+      preview_base_url: clipSplitService.previewBaseUrl(clip),
+      updated_at: clip.updated_at || null,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** Página dedicada: revisar matéria e publicar o corte. */
 async function showClipPage(req, res, next) {
   try {
@@ -340,6 +378,7 @@ module.exports = {
   removerSplit,
   listarFramesDoSplit,
   buscarImagensDoSplit,
+  statusClip,
   queueClipCover,
   resolveCapaTitulo,
   showClipPage,
