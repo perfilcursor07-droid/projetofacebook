@@ -345,8 +345,13 @@
     const v = e.target.closest('.bib-gen-video');
     if (t) {
       e.preventDefault();
+      if (t.disabled || t.dataset.opening === '1') return;
+      t.dataset.opening = '1';
       const postId = t.dataset.id;
-      if (!postId) return;
+      if (!postId) {
+        delete t.dataset.opening;
+        return;
+      }
       const qs = new URLSearchParams();
       const page = pageId();
       if (page) qs.set('facebook_page_id', page);
@@ -359,13 +364,19 @@
       setTimeout(() => {
         t.textContent = original || 'Gerar Matéria';
         t.disabled = false;
-      }, 1500);
+        delete t.dataset.opening;
+      }, 4000);
       return;
     }
     if (v) {
       e.preventDefault();
+      if (v.disabled || v.dataset.opening === '1') return;
+      v.dataset.opening = '1';
       const postId = v.dataset.id;
-      if (!postId) return;
+      if (!postId) {
+        delete v.dataset.opening;
+        return;
+      }
       const qs = new URLSearchParams();
       qs.set('media', 'video');
       const page = pageId();
@@ -377,7 +388,8 @@
       setTimeout(() => {
         v.textContent = original || 'Gerar Reel';
         v.disabled = false;
-      }, 1500);
+        delete v.dataset.opening;
+      }, 4000);
     }
   });
 

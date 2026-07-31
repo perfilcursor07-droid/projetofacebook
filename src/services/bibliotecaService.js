@@ -17,6 +17,8 @@ const { env } = require('../config/env');
 const axios = require('axios');
 const { titulosParecidos, mesmoAssuntoNoticia } = require('./editorialGuidelinesFb');
 
+const geracaoTextoLocks = new Map();
+
 /** external_id é VARCHAR(191); URLs do Google News passam disso → hash estável. */
 function stableExternalId(raw) {
   const s = String(raw || '').trim();
@@ -1745,10 +1747,118 @@ async function escanearAgora(userId, fonteId) {
   }
 }
 
+function classificarLinkBiblioteca(url) {
+  try {
+    const host = new URL(String(url || '')).hostname.replace(/^www\./, '').toLowerCase();
+    if (host.includes('youtube.com') || host === 'youtu.be' || host === 'm.youtube.com') return 'youtube';
+    if (
+      host.includes('facebook.com') ||
+      host === 'fb.com' ||
+      host === 'fb.watch' ||
+      host === 'm.facebook.com'
+    ) {
+      return 'facebook';
+    }
+    if (host.includes('instagram.com')) return 'instagram';
+    if (host.includes('tiktok.com')) return 'tiktok';
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+async function extrairYoutubeParaBiblioteca(url, post, fonte) {
+  const meta = await importService.fetchLinkMetadata(url);
+  const titulo = meta.titulo || post.titulo || null;
+  const descricao = String(meta.description || post.resumo || '').trim();
+  const veiculo = meta.autor || fonte?.nome || 'YouTube';
+  let trecho = [titulo ? `Título: ${titulo}` : null, descricao || null].filter(Boolean).join('\n\n');
+
+  try {
+    const { trySubtitlesFromUrl } = require('./transcriptionService');
+    const subs = await trySubtitlesFromUrl(url);
+    if (subs?.text && String(subs.text).trim().length >= 40) {
+      trecho = `${trecho}\n\nTranscrição/legendas:\n${String(subs.text).trim().slice(0, 12000)}`;
+    }
+  } catch (err) {
+    console.warn('[biblioteca] youtube transcrição:', err.message);
+  }
+
+  if (trecho.trim().length < 180) return null;
+
+  return {
+    titulo,
+    link: url,
+    resumo: descricao || trecho.slice(0, 400),
+    imagemFonte: meta.thumbnail || post.thumbnail || null,
+    veiculo,
+    fonte: veiculo,
+    redeSocial: true,
+    tipoFonte: 'rede_social',
+    contextoApuracao: [
+      titulo ? `Título do vídeo:\n${titulo}` : null,
+      `Canal/perfil:\n${veiculo}`,
+      `URL original:\n${url}`,
+      `Texto documentado do vídeo:\n${trecho.slice(0, 14000)}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    fontesApuracao: [
+      {
+        veiculo,
+        url,
+        titulo,
+        resumo: descricao || trecho.slice(0, 400),
+        trecho: trecho.slice(0, 14000),
+        ehRedeSocial: true,
+        plataforma: 'youtube',
+      },
+    ],
+  };
+}
+
+async function extrairOriginalParaTopicoBiblioteca(post, fonte) {
+  const url = String(post?.url || '').trim();
+  if (!/^https?:\/\//i.test(url)) return null;
+
+  const tipo = classificarLinkBiblioteca(url);
+  try {
+    if (tipo === 'youtube') {
+      return await extrairYoutubeParaBiblioteca(url, post, fonte);
+    }
+
+    if (tipo === 'facebook' || tipo === 'instagram') {
+      const {
+        isSocialPostUrl,
+        normalizarUrlSocial,
+        extrairPostSocial,
+        socialParaTopico,
+      } = require('./socialPostExtract');
+      const link = normalizarUrlSocial(url);
+      if (!isSocialPostUrl(link)) return null;
+      const extraido = await extrairPostSocial(link);
+      if (String(extraido?.texto || '').trim().length < 40) return null;
+      const topico = socialParaTopico(extraido, link);
+      return {
+        ...topico,
+        titulo: topico.titulo || post.titulo,
+        resumo: topico.resumo || post.resumo,
+        imagemFonte: topico.imagemFonte || post.thumbnail,
+        veiculo: topico.veiculo || fonte?.nome || tipo,
+        fonte: topico.fonte || fonte?.nome || tipo,
+      };
+    }
+  } catch (err) {
+    console.warn('[biblioteca] extrair original:', err.message);
+  }
+
+  return null;
+}
+
 /**
  * Gera matéria texto (ai_matters) a partir de um post da biblioteca.
  */
-async function gerarTextoDePost({
+async function gerarTextoDePostImpl({
   userId,
   postId,
   facebookPageId,
@@ -1761,6 +1871,11 @@ async function gerarTextoDePost({
     const err = new Error('Post não encontrado');
     err.status = 404;
     throw err;
+  }
+  if (post.matter_id) {
+    const AiMatters = require('../models/AiMatters');
+    const existente = await AiMatters.findById(post.matter_id);
+    if (existente) return { matter: existente, created: false, avisos: ['Esta pauta já tinha matéria gerada.'] };
   }
   const fonte = await BibliotecaFontes.findById(post.fonte_id);
   // Fonte em inglês/outro idioma → traduz título/resumo antes de checar duplicata e gerar
@@ -1789,42 +1904,53 @@ async function gerarTextoDePost({
     }
   }
 
-  const urlPost = String(postPt.url || '');
+  const extraidoOriginal = await extrairOriginalParaTopicoBiblioteca(postPt, fonte);
+  const postBase = {
+    ...postPt,
+    titulo: extraidoOriginal?.titulo || postPt.titulo,
+    resumo: extraidoOriginal?.resumo || postPt.resumo,
+    thumbnail: extraidoOriginal?.imagemFonte || postPt.thumbnail,
+    url: extraidoOriginal?.link || postPt.url,
+  };
+
+  const urlPost = String(postBase.url || '');
   const ehRedeSocialUrl =
     /(?:instagram|facebook|fb\.watch|tiktok|youtube|youtu\.be)\.com/i.test(urlPost) ||
     /youtu\.be\//i.test(urlPost);
 
   const topico = {
-    titulo: postPt.titulo,
-    link: postPt.url,
-    resumo: postPt.resumo,
+    titulo: postBase.titulo,
+    link: postBase.url,
+    resumo: postBase.resumo,
     nicho: fonte?.nome || fonte?.plataforma || 'notícia',
-    fonte: fonte?.nome,
-    veiculo: fonte?.nome || fonte?.plataforma,
-    imagemFonte: postPt.thumbnail,
-    contextoApuracao: [
-      postPt.titulo ? `Título capturado da fonte:\n${postPt.titulo}` : null,
-      postPt.resumo ? `Texto/resumo capturado da fonte:\n${postPt.resumo}` : null,
+    fonte: extraidoOriginal?.fonte || fonte?.nome,
+    veiculo: extraidoOriginal?.veiculo || fonte?.nome || fonte?.plataforma,
+    imagemFonte: postBase.thumbnail,
+    contextoApuracao: extraidoOriginal?.contextoApuracao || [
+      postBase.titulo ? `Título capturado da fonte:\n${postBase.titulo}` : null,
+      postBase.resumo ? `Texto/resumo capturado da fonte:\n${postBase.resumo}` : null,
       urlPost ? `URL original:\n${urlPost}` : null,
     ]
       .filter(Boolean)
       .join('\n\n'),
-    fontesApuracao: postPt.resumo
+    fontesApuracao: Array.isArray(extraidoOriginal?.fontesApuracao)
+      ? extraidoOriginal.fontesApuracao
+      : postBase.resumo
       ? [
           {
             veiculo: fonte?.nome || fonte?.plataforma || 'Biblioteca',
-            url: postPt.url,
-            titulo: postPt.titulo,
-            resumo: postPt.resumo,
-            trecho: postPt.resumo,
+            url: postBase.url,
+            titulo: postBase.titulo,
+            resumo: postBase.resumo,
+            trecho: postBase.resumo,
             ehRedeSocial: ehRedeSocialUrl,
           },
         ]
       : [],
     // Só trata como rede social se a URL for IG/FB/TikTok/YT —
     // sites de notícia (ex.: fuxicogospel) precisam de scrape de autor + capa.
-    redeSocial: ehRedeSocialUrl,
-    tipoFonte: ehRedeSocialUrl ? 'rede_social' : 'noticia',
+    redeSocial: Boolean(extraidoOriginal?.redeSocial || ehRedeSocialUrl),
+    tipoFonte: extraidoOriginal?.tipoFonte || (ehRedeSocialUrl ? 'rede_social' : 'noticia'),
     idiomaObrigatorio: 'pt-BR',
     traduzirFonte: true,
   };
@@ -1842,11 +1968,22 @@ async function gerarTextoDePost({
   await BibliotecaPosts.update(post.id, {
     status: 'gerado_texto',
     matter_id: gerado.matter?.id || null,
-    titulo: postPt.titulo,
-    resumo: postPt.resumo,
+    titulo: postBase.titulo,
+    resumo: postBase.resumo,
   });
 
   return gerado;
+}
+
+async function gerarTextoDePost(args) {
+  const lockKey = `${args?.userId || 'u'}:${args?.postId || 'p'}:texto`;
+  if (geracaoTextoLocks.has(lockKey)) return geracaoTextoLocks.get(lockKey);
+
+  const promise = gerarTextoDePostImpl(args).finally(() => {
+    geracaoTextoLocks.delete(lockKey);
+  });
+  geracaoTextoLocks.set(lockKey, promise);
+  return promise;
 }
 
 /**

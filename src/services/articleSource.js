@@ -66,6 +66,65 @@ function extrairMeta(html, propriedade) {
   return null;
 }
 
+function limparMarkdownReader(texto) {
+  return decodificarHtml(texto)
+    .replace(/^Title:\s*/gim, '')
+    .replace(/^URL Source:\s*https?:\/\/\S+/gim, '')
+    .replace(/^Markdown Content:\s*/gim, '')
+    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+async function extrairMetadadosViaJina(urlReal) {
+  try {
+    const res = await axios.get(`https://r.jina.ai/${urlReal}`, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        Accept: 'text/plain,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      },
+      timeout: 20000,
+      maxRedirects: 3,
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+    const raw = String(res.data || '');
+    const titulo =
+      raw.match(/^Title:\s*(.+)$/im)?.[1]?.trim() ||
+      raw.match(/^#\s+(.+)$/m)?.[1]?.trim() ||
+      null;
+    const texto = limparMarkdownReader(raw);
+    const paragrafos = texto
+      .split(/\n{2,}|\.\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/)
+      .map((p) => p.replace(/\s+/g, ' ').trim())
+      .filter((p) => p.length >= 80 && !/^https?:\/\//i.test(p));
+    const trecho = paragrafos.slice(0, 8).join('\n\n');
+    if (!trecho && !titulo) return null;
+    return {
+      url: urlReal,
+      titulo,
+      resumo: paragrafos[0]?.slice(0, 400) || null,
+      imagem: null,
+      trecho,
+      autor: null,
+      veiculo: (() => {
+        try {
+          return new URL(urlReal).hostname.replace(/^www\./, '');
+        } catch {
+          return null;
+        }
+      })(),
+      veiculoHost: null,
+    };
+  } catch (err) {
+    console.warn('extrairMetadadosArtigo Jina:', err.message);
+    return null;
+  }
+}
+
 function imagemPareceLogoOuAvatar(url, className = '') {
   const hay = `${url} ${className}`.toLowerCase();
   return /(?:^|[\s/_-])(?:logo|avatar|icons?|sprite|emoji|favicon|badge)(?:[\s/_.-]|$)|gravatar|wp-smiley|site-logo|cropped-logo|\/ads?\/|banner-sm|[-_]ads?[-_]/i.test(
@@ -376,7 +435,7 @@ async function extrairMetadadosArtigo(url) {
       }
     })();
 
-    return {
+    const meta = {
       url: finalUrl,
       titulo: titulo || null,
       resumo: resumo || null,
@@ -386,8 +445,26 @@ async function extrairMetadadosArtigo(url) {
       veiculo: veiculoMeta || veiculoHost,
       veiculoHost,
     };
+    if (String(meta.trecho || '').trim().length < 180) {
+      const viaJina = await extrairMetadadosViaJina(finalUrl);
+      if (String(viaJina?.trecho || '').trim().length > String(meta.trecho || '').trim().length) {
+        return {
+          ...meta,
+          ...viaJina,
+          titulo: viaJina.titulo || meta.titulo,
+          resumo: viaJina.resumo || meta.resumo,
+          imagem: meta.imagem || viaJina.imagem,
+          autor: meta.autor || viaJina.autor,
+          veiculo: meta.veiculo || viaJina.veiculo,
+          veiculoHost: meta.veiculoHost || viaJina.veiculoHost,
+        };
+      }
+    }
+    return meta;
   } catch (err) {
     console.warn('extrairMetadadosArtigo:', err.message);
+    const viaJina = await extrairMetadadosViaJina(urlReal);
+    if (viaJina) return viaJina;
     return {
       url: urlReal,
       titulo: null,
