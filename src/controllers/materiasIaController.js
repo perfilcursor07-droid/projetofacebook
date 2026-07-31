@@ -1246,6 +1246,8 @@ async function aplicarColagemDuasImagens(req, res, next) {
 
     const imageUrlA = String(req.body?.imageUrlA || req.body?.urlA || '').trim();
     const imageUrlB = String(req.body?.imageUrlB || req.body?.urlB || '').trim();
+    const thumbnailA = String(req.body?.thumbnailA || req.body?.thumbA || '').trim() || null;
+    const thumbnailB = String(req.body?.thumbnailB || req.body?.thumbB || '').trim() || null;
     const layout = String(req.body?.layout || 'lado').toLowerCase() === 'cima' ? 'cima' : 'lado';
 
     const okUrl = (u) => /^https?:\/\//i.test(u) || String(u).startsWith('/media/');
@@ -1260,6 +1262,8 @@ async function aplicarColagemDuasImagens(req, res, next) {
       matterId,
       imageUrlA,
       imageUrlB,
+      thumbnailA,
+      thumbnailB,
       layout,
       title,
     });

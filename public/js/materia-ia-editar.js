@@ -824,6 +824,8 @@
         body: JSON.stringify({
           imageUrlA: a.url,
           imageUrlB: b.url,
+          thumbnailA: a.thumbnail || a.url || null,
+          thumbnailB: b.thumbnail || b.url || null,
           layout: window.__COLAGEM__.layout || 'lado',
           titulo: tituloEl?.value || '',
         }),

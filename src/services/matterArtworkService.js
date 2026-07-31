@@ -161,6 +161,8 @@ async function composeDualCollageArtwork({
   matterId,
   imageUrlA,
   imageUrlB,
+  thumbnailA = null,
+  thumbnailB = null,
   layout = 'lado',
   title = null,
 } = {}) {
@@ -172,18 +174,33 @@ async function composeDualCollageArtwork({
     throw err;
   }
 
-  const { fetchImage, buildDualCollageBuffer } = require('./editorialCardService');
+  const { fetchImageWithFallback, buildDualCollageBuffer } = require('./editorialCardService');
   let bufA;
   let bufB;
   try {
-    [bufA, bufB] = await Promise.all([fetchImage(urlA), fetchImage(urlB)]);
+    bufA = await fetchImageWithFallback(urlA, thumbnailA);
   } catch (err) {
-    const e = new Error(err.message || 'Não foi possível baixar uma das imagens');
+    const e = new Error(`1ª foto: ${err.message || 'não baixou'}`);
+    e.status = 400;
+    throw e;
+  }
+  try {
+    bufB = await fetchImageWithFallback(urlB, thumbnailB);
+  } catch (err) {
+    const e = new Error(`2ª foto: ${err.message || 'não baixou'}`);
     e.status = 400;
     throw e;
   }
 
-  const collageBuffer = await buildDualCollageBuffer(bufA, bufB, { layout });
+  let collageBuffer;
+  try {
+    collageBuffer = await buildDualCollageBuffer(bufA, bufB, { layout });
+  } catch (err) {
+    const e = new Error(`Falha ao montar as 2 fotos: ${err.message}`);
+    e.status = 400;
+    throw e;
+  }
+
   const stored = await storeMatterSourceImage({
     userId,
     matterId,

@@ -57,17 +57,51 @@ async function assertPublicImageUrl(value) {
 }
 
 function resolveStoredSourcePath(value) {
-  const publicUrl = String(value || '').replace(/\\/g, '/');
-  if (!publicUrl.startsWith('/media/fontes/')) return null;
+  let publicUrl = String(value || '').replace(/\\/g, '/').trim();
+  // https://domínio/media/fontes/... → /media/fontes/...
+  try {
+    if (/^https?:\/\//i.test(publicUrl)) {
+      const parsed = new URL(publicUrl);
+      if (parsed.pathname.startsWith('/media/')) {
+        publicUrl = parsed.pathname;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  if (!publicUrl.startsWith('/media/')) return null;
 
   const storageRoot = path.resolve(env.storagePath);
-  const sourcesRoot = path.resolve(storageRoot, 'fontes');
   const relativePath = publicUrl.slice('/media/'.length).replace(/\//g, path.sep);
   const absolutePath = path.resolve(storageRoot, relativePath);
-  if (!absolutePath.startsWith(sourcesRoot + path.sep) || !fs.existsSync(absolutePath)) {
-    throw new Error('A imagem original escolhida não foi encontrada');
+  if (!absolutePath.startsWith(storageRoot + path.sep) || !fs.existsSync(absolutePath)) {
+    return null;
   }
   return absolutePath;
+}
+
+function looksLikeImageBuffer(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 12) return false;
+  // JPEG
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true;
+  // PNG
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true;
+  // GIF
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return true;
+  // WEBP (RIFF....WEBP)
+  if (
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return true;
+  }
+  return false;
 }
 
 async function fetchImage(url) {
@@ -79,24 +113,85 @@ async function fetchImage(url) {
   }
 
   const safeUrl = await assertPublicImageUrl(url);
+  const host = (() => {
+    try {
+      return new URL(safeUrl).hostname;
+    } catch {
+      return '';
+    }
+  })();
   const isMetaCdn = /fbsbx\.com|fbcdn\.net|cdninstagram\.com|instagram\.com|facebook\.com/i.test(safeUrl);
-  const response = await axios.get(safeUrl, {
-    responseType: 'arraybuffer',
-    timeout: 30000,
-    maxRedirects: 4,
-    maxContentLength: MAX_IMAGE_BYTES,
-    maxBodyLength: MAX_IMAGE_BYTES,
-    headers: {
+  const isBraveCdn = /brave\.com|search\.brave|gstatic\.com|googleusercontent\.com|ggpht\.com|bing\.com|pinimg\.com|wp\.com|cloudfront\.net/i.test(
+    host
+  );
+
+  const headerSets = [
+    {
       'User-Agent': isMetaCdn
         ? 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'
-        : 'Mozilla/5.0 (compatible; ViralizeAI/1.0)',
+        : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-      Referer: isMetaCdn ? 'https://www.facebook.com/' : undefined,
+      Referer: isMetaCdn
+        ? 'https://www.facebook.com/'
+        : isBraveCdn
+          ? 'https://search.brave.com/'
+          : 'https://www.google.com/',
     },
-  });
-  const contentType = String(response.headers['content-type'] || '').toLowerCase();
-  if (!contentType.startsWith('image/')) throw new Error('A fonte não retornou uma imagem válida');
-  return Buffer.from(response.data);
+    {
+      'User-Agent': 'Mozilla/5.0 (compatible; ViralizeAI/1.0)',
+      Accept: '*/*',
+    },
+  ];
+
+  let lastErr = null;
+  for (const headers of headerSets) {
+    try {
+      const response = await axios.get(safeUrl, {
+        responseType: 'arraybuffer',
+        timeout: 35000,
+        maxRedirects: 5,
+        maxContentLength: MAX_IMAGE_BYTES,
+        maxBodyLength: MAX_IMAGE_BYTES,
+        headers,
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+      const buf = Buffer.from(response.data || []);
+      const contentType = String(response.headers['content-type'] || '').toLowerCase();
+      if (contentType.startsWith('image/') || looksLikeImageBuffer(buf)) {
+        return buf;
+      }
+      lastErr = new Error('A fonte não retornou uma imagem válida');
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+
+  const msg =
+    lastErr?.response?.status === 403 || lastErr?.response?.status === 401
+      ? 'CDN bloqueou o download da imagem. Escolha outra miniatura ou envie o arquivo.'
+      : lastErr?.message || 'Não foi possível baixar a imagem';
+  throw new Error(msg);
+}
+
+/**
+ * Tenta URL principal e, se falhar, thumbnail (útil na colagem com Brave/Serper).
+ */
+async function fetchImageWithFallback(primaryUrl, fallbackUrl = null) {
+  const tried = [];
+  const candidates = [primaryUrl, fallbackUrl]
+    .map((u) => String(u || '').trim())
+    .filter((u, i, arr) => u && arr.indexOf(u) === i);
+
+  let lastErr = null;
+  for (const candidate of candidates) {
+    tried.push(candidate.slice(0, 80));
+    try {
+      return await fetchImage(candidate);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw new Error(lastErr?.message || `Falha ao baixar imagem (${tried.join(' | ')})`);
 }
 
 function stripWordPunct(word) {
@@ -1132,6 +1227,7 @@ module.exports = {
   splitHeadlinePunchline,
   assertPublicImageUrl,
   fetchImage,
+  fetchImageWithFallback,
   buildDualCollageBuffer,
   ART_WIDTH: WIDTH,
   ART_HEIGHT: HEIGHT,
