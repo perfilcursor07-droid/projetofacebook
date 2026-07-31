@@ -481,6 +481,84 @@
     }
   });
 
+  // ——— Velocidade do vídeo ———
+  const speedRange = document.getElementById('clip-speed');
+  const speedValor = document.getElementById('clip-speed-valor');
+  const speedDurPrev = document.getElementById('clip-speed-dur-prev');
+  const speedBtn = document.getElementById('btn-speed-aplicar');
+  const speedMsg = document.getElementById('clip-speed-msg');
+  const speedOpts = Array.isArray(cfg.speedOptions) && cfg.speedOptions.length
+    ? cfg.speedOptions.map(Number)
+    : String(speedRange?.dataset.options || '0.75,1,1.25,1.5,1.75,2,2.5,3')
+        .split(',')
+        .map(Number)
+        .filter((n) => Number.isFinite(n));
+  const durBaseSec = Number(cfg.durBase ?? speedRange?.dataset.durBase);
+  let appliedSpeed = Number(cfg.playbackSpeed) || 1;
+
+  function speedFromRange() {
+    const idx = Math.max(0, Math.min(speedOpts.length - 1, Number(speedRange?.value) || 0));
+    return speedOpts[idx] || 1;
+  }
+
+  function formatSpeedUi(s) {
+    return Number.isInteger(s) ? s + 'x' : String(s) + 'x';
+  }
+
+  function syncSpeedPreview() {
+    const s = speedFromRange();
+    if (speedValor) speedValor.textContent = formatSpeedUi(s);
+    if (speedDurPrev && Number.isFinite(durBaseSec) && durBaseSec > 0) {
+      speedDurPrev.textContent = '~' + Math.max(1, Math.round(durBaseSec / s)) + 's';
+    }
+    const video = document.getElementById('clip-video');
+    if (video) {
+      const relative = s / (appliedSpeed || 1);
+      video.playbackRate = Math.min(4, Math.max(0.25, relative));
+    }
+    if (speedBtn) {
+      speedBtn.textContent =
+        Math.abs(s - 1) < 0.001 ? 'Voltar para 1x' : 'Aplicar velocidade ' + formatSpeedUi(s);
+    }
+  }
+
+  speedRange?.addEventListener('input', syncSpeedPreview);
+  syncSpeedPreview();
+
+  speedBtn?.addEventListener('click', async () => {
+    const s = speedFromRange();
+    const original = speedBtn.textContent;
+    speedBtn.disabled = true;
+    speedBtn.textContent = 'Aplicando…';
+    if (speedMsg) {
+      speedMsg.textContent = 'Reprocessando o vídeo na nova velocidade…';
+      speedMsg.className = 'text-[11px] text-sky-300';
+    }
+    try {
+      const data = await postJson('/api/clips/' + cfg.id + '/velocidade', { speed: s });
+      appliedSpeed = Number(data.speed) || s;
+      if (data.video_url) atualizarVideoPrincipal(data.video_url);
+      const video = document.getElementById('clip-video');
+      if (video) video.playbackRate = 1;
+      if (speedMsg) {
+        speedMsg.textContent = data.message || 'Pronto.';
+        speedMsg.className = 'text-[11px] text-emerald-400';
+      }
+      setStatus(data.message || 'Velocidade aplicada.');
+      syncSpeedPreview();
+    } catch (err) {
+      if (speedMsg) {
+        speedMsg.textContent = err.message;
+        speedMsg.className = 'text-[11px] text-rose-300';
+      }
+      setStatus(err.message, true);
+    } finally {
+      speedBtn.disabled = false;
+      speedBtn.textContent = original;
+      syncSpeedPreview();
+    }
+  });
+
   // ——— Tela dividida (metade imagem, metade vídeo) ———
   const splitPanel = document.getElementById('split-panel');
   if (splitPanel) {

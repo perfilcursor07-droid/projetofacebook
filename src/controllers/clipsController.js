@@ -474,6 +474,22 @@ async function aplicarBgm(req, res, next) {
   }
 }
 
+/** Acelera / desacelera o vídeo do corte (ex.: 3 min → ~1 min em 3x). */
+async function aplicarVelocidade(req, res, next) {
+  try {
+    const { clip } = await assertOwnedClip(req);
+    const body = req.body || {};
+    const clipSpeedService = require('../services/clipSpeedService');
+    const result = await clipSpeedService.aplicarVelocidadeNoClip({
+      clipId: clip.id,
+      speed: body.speed ?? body.velocidade ?? body.playback_speed,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** Página dedicada: revisar matéria e publicar o corte. */
 async function showClipPage(req, res, next) {
   try {
@@ -490,6 +506,16 @@ async function showClipPage(req, res, next) {
     let materia = String(clip.legenda_sugerida || '').trim();
     if (!materia || /^\[(sem fala|falha)/i.test(materia)) materia = '';
 
+    const clipSpeedService = require('../services/clipSpeedService');
+    const inicio = Number(clip.inicio_segundo);
+    const fim = Number(clip.fim_segundo);
+    const clipDurBase =
+      Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : null;
+    const clipPlaybackSpeed = clipSpeedService.normalizePlaybackSpeed(clip.playback_speed, 1);
+    const clipPlaybackSpeedLabel = clipSpeedService.formatSpeedLabel(clipPlaybackSpeed);
+    const clipDurDisplay =
+      clipDurBase != null ? Math.max(1, Math.round(clipDurBase / (clipPlaybackSpeed || 1))) : null;
+
     res.render('fila-corte', {
       title: `Corte #${clip.id}`,
       clip,
@@ -498,6 +524,11 @@ async function showClipPage(req, res, next) {
       bgmPresets: BGM_PRESETS,
       defaultBgmPreset: DEFAULT_BGM_PRESET,
       defaultBgmVolume: DEFAULT_BGM_VOLUME,
+      clipSpeedOptions: clipSpeedService.SPEED_OPTIONS,
+      clipPlaybackSpeed,
+      clipPlaybackSpeedLabel,
+      clipDurBase,
+      clipDurDisplay,
       // Vídeo sem capa/tela dividida: é o que o preview da tela dividida usa.
       previewBaseUrl: clipSplitService.previewBaseUrl(clip),
       splitImagemUrl: clip.split_image_path ? `/media/${clip.split_image_path}` : null,
@@ -523,6 +554,7 @@ module.exports = {
   sugerirTextoSplit,
   sugerirTituloCapa,
   aplicarBgm,
+  aplicarVelocidade,
   statusClip,
   queueClipCover,
   resolveCapaTitulo,

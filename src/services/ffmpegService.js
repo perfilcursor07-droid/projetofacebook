@@ -439,6 +439,86 @@ function mixBackgroundMusic({ videoPath, bgmPath, outputPath, bgmVolume = 0.18, 
   });
 }
 
+/**
+ * Cadeia atempo (FFmpeg só aceita 0.5–2.0 por filtro).
+ * Ex.: 3x → atempo=2.0,atempo=1.5
+ */
+function buildAtempoChain(speed) {
+  let remaining = Number(speed);
+  if (!Number.isFinite(remaining) || remaining <= 0) remaining = 1;
+  const parts = [];
+  while (remaining > 2.0001) {
+    parts.push('atempo=2.0');
+    remaining /= 2;
+  }
+  while (remaining < 0.4999) {
+    parts.push('atempo=0.5');
+    remaining /= 0.5;
+  }
+  parts.push(`atempo=${Number(remaining.toFixed(4))}`);
+  return parts.join(',');
+}
+
+/**
+ * Acelera ou desacelera o vídeo (vídeo + áudio sincronizados).
+ * speed 2 = metade da duração; 0.75 = ~33% mais longo.
+ * @returns {Promise<{ duracao: number, speed: number }>}
+ */
+function changePlaybackSpeed({ videoPath, outputPath, speed = 1 }) {
+  const spd = Math.min(3, Math.max(0.5, Number(speed) || 1));
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  if (Math.abs(spd - 1) < 0.001) {
+    return new Promise((resolve, reject) => {
+      fs.copyFile(videoPath, outputPath, (err) => {
+        if (err) return reject(err);
+        probe(outputPath)
+          .then((data) => resolve({ duracao: Number(data.format?.duration) || 0, speed: 1 }))
+          .catch(() => resolve({ duracao: 0, speed: 1 }));
+      });
+    });
+  }
+
+  const setpts = `setpts=PTS/${spd}`;
+  const atempo = buildAtempoChain(spd);
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(videoPath)
+      .videoFilters(setpts)
+      .audioFilters(atempo)
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .outputOptions([
+        '-preset', 'veryfast',
+        '-crf', '23',
+        '-r', String(OUTPUT_FPS),
+        '-vsync', 'cfr',
+        '-pix_fmt', 'yuv420p',
+        '-g', String(OUTPUT_FPS * 2),
+        '-keyint_min', String(OUTPUT_FPS * 2),
+        '-sc_threshold', '0',
+        '-b:a', '128k',
+        '-ar', '48000',
+        '-ac', '2',
+        '-movflags', '+faststart',
+        '-y',
+      ])
+      .on('error', reject)
+      .on('end', async () => {
+        try {
+          const data = await probe(outputPath);
+          resolve({
+            duracao: Number(data.format?.duration) || 0,
+            speed: spd,
+          });
+        } catch {
+          resolve({ duracao: 0, speed: spd });
+        }
+      })
+      .save(outputPath);
+  });
+}
+
 module.exports = {
   cutClip,
   extractAudioWav,
@@ -446,6 +526,8 @@ module.exports = {
   renderSplitScreen,
   overlayTextoFixo,
   mixBackgroundMusic,
+  changePlaybackSpeed,
+  buildAtempoChain,
   probe,
   validateReelFile,
   MAX_CLIP_SECONDS,

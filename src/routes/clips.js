@@ -12,6 +12,7 @@ router.post('/:id/capa', clipsController.gerarCapa);
 router.post('/:id/capa/sugerir-titulo', clipsController.sugerirTituloCapa);
 router.delete('/:id/capa', clipsController.removerCapa);
 router.post('/:id/bgm', clipsController.aplicarBgm);
+router.post('/:id/velocidade', clipsController.aplicarVelocidade);
 
 router.get('/:id/status', clipsController.statusClip);
 

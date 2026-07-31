@@ -4,7 +4,21 @@
   const videoUrl = clip.caminho_arquivo ? '/media/' + String(clip.caminho_arquivo).replace(/^\/+/, '') : '';
   const inicio = Number(clip.inicio_segundo);
   const fim = Number(clip.fim_segundo);
-  const dur = Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : null;
+  const durBase = typeof clipDurBase !== 'undefined' && clipDurBase != null
+    ? Number(clipDurBase)
+    : (Number.isFinite(inicio) && Number.isFinite(fim) ? Math.max(0, Math.round(fim - inicio)) : null);
+  const speedOptions = typeof clipSpeedOptions !== 'undefined' && Array.isArray(clipSpeedOptions)
+    ? clipSpeedOptions
+    : [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+  const playbackSpeed = typeof clipPlaybackSpeed !== 'undefined'
+    ? Number(clipPlaybackSpeed)
+    : 1;
+  const playbackSpeedLabel = typeof clipPlaybackSpeedLabel !== 'undefined'
+    ? clipPlaybackSpeedLabel
+    : (Number.isInteger(playbackSpeed) ? playbackSpeed + 'x' : playbackSpeed + 'x');
+  const dur = typeof clipDurDisplay !== 'undefined' && clipDurDisplay != null
+    ? Number(clipDurDisplay)
+    : (durBase != null ? Math.max(1, Math.round(durBase / (playbackSpeed || 1))) : null);
   const ratio = clip.aspect_ratio || '9:16';
   const materiaOk = Boolean(materia) && clip.materia_status === 'pronta';
   const splitAtivo = String(clip.layout || 'normal') === 'split';
@@ -437,6 +451,43 @@
             <% } else { %>
               <div class="flex min-h-[240px] items-center justify-center rounded-xl border border-dashed border-slate-700 text-xs text-slate-500">Sem arquivo</div>
             <% } %>
+            <div class="mt-3 space-y-2 rounded-xl border border-sky-500/20 bg-slate-950/50 p-3">
+              <p class="text-[11px] font-semibold uppercase tracking-wide text-sky-300">Velocidade</p>
+              <p class="text-[10px] leading-relaxed text-slate-500">
+                Acelere para encurtar (ex.: 3&nbsp;min em 3x ≈ 1&nbsp;min). O slider pré-ouve; clique em aplicar para gravar no arquivo.
+              </p>
+              <label class="block">
+                <span class="flex items-center justify-between text-[11px] font-medium text-slate-400">
+                  <span>Reprodução</span>
+                  <span class="tabular-nums text-sky-300">
+                    <span id="clip-speed-valor"><%= playbackSpeedLabel %></span>
+                    <% if (durBase != null) { %>
+                      <span class="text-slate-600"> · </span>
+                      <span id="clip-speed-dur-prev" class="text-slate-500">~<%= Math.max(1, Math.round(durBase / playbackSpeed)) %>s</span>
+                    <% } %>
+                  </span>
+                </span>
+                <%
+                  let speedIdx = speedOptions.findIndex((x) => Number(x) === Number(playbackSpeed));
+                  if (speedIdx < 0) speedIdx = Math.max(0, speedOptions.findIndex((x) => Number(x) === 1));
+                %>
+                <input id="clip-speed" type="range" min="0" max="<%= speedOptions.length - 1 %>" step="1"
+                  value="<%= speedIdx %>"
+                  data-options="<%= speedOptions.join(',') %>"
+                  data-dur-base="<%= durBase != null ? durBase : '' %>"
+                  class="mt-1.5 w-full accent-sky-500" />
+              </label>
+              <div class="flex flex-wrap gap-1 text-[10px] text-slate-600">
+                <% speedOptions.forEach((s) => { %>
+                  <span class="rounded bg-slate-800/80 px-1.5 py-0.5"><%= Number.isInteger(s) ? s + 'x' : String(s) + 'x' %></span>
+                <% }) %>
+              </div>
+              <button type="button" id="btn-speed-aplicar"
+                class="w-full rounded-xl border border-sky-500/40 bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-100 hover:bg-sky-500/25 disabled:opacity-50">
+                Aplicar velocidade
+              </button>
+              <p id="clip-speed-msg" class="text-[11px] text-slate-500"></p>
+            </div>
           </div>
 
           <div class="rounded-2xl border border-amber-500/20 bg-slate-900/60 p-4">
@@ -530,7 +581,10 @@
       bgmPreset: <%- JSON.stringify(bgmPreset) %>,
       bgmVolume: <%= bgmVolume %>,
       bgmPresets: <%- JSON.stringify(presetsLista) %>,
+      playbackSpeed: <%= playbackSpeed %>,
+      durBase: <%= durBase != null ? durBase : 'null' %>,
+      speedOptions: <%- JSON.stringify(speedOptions) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731o"></script>
+  <script src="/js/fila-corte.js?v=20260731speed"></script>
 <%- include('partials/app-end') %>
