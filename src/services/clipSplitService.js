@@ -129,8 +129,9 @@ function textoSemMarcadores(texto) {
 }
 
 function estimarLarguraChars(str, fontSize) {
-  // Barlow Condensed ExtraBold / Impact: ~0.52em (condensada) — evita estouro nas bordas.
-  return String(str || '').length * fontSize * 0.52;
+  // Estimativa conservadora (um pouco larga) — só para quebra de linha / caixas.
+  // O desenho real das letras usa text-anchor do SVG (sem sobreposição).
+  return String(str || '').length * fontSize * 0.58;
 }
 
 /** Quebra tokens em linhas sem partir um destaque no meio. */
@@ -139,7 +140,7 @@ function quebrarTokensEmLinhas(tokens, maxWidthPx, fontSize, maxLinhas = 8) {
   let atual = [];
   let atualW = 0;
   const spaceW = estimarLarguraChars(' ', fontSize);
-  const charW = fontSize * 0.52;
+  const charW = fontSize * 0.58;
 
   function flush() {
     if (atual.length) linhas.push(atual);
@@ -201,58 +202,67 @@ function normalizarCorHex(raw, fallback = '#000000') {
   return /^#[0-9a-f]{6}$/.test(v) ? v : fallback;
 }
 
+/**
+ * Uma linha = um <text text-anchor="middle">.
+ * Layout nativo do SVG — evita letras/palavras empilhadas.
+ */
 function svgLinhaComDestaques({
   segmentos,
   y,
-  startX,
+  centerX,
   fontSize,
   highlightColor,
-  align,
-  totalWidth,
-  minX = 0,
-  maxX = Infinity,
   fontFamily = 'Impact, Arial Black, sans-serif',
 }) {
-  const spaceW = estimarLarguraChars(' ', fontSize);
-  const padX = Math.round(fontSize * 0.2);
-  const padY = Math.round(fontSize * 0.14);
-  const boxH = Math.round(fontSize * 1.18);
-  const boxY = y - fontSize + Math.round(fontSize * 0.08);
   const strokeW = Math.max(3, Math.round(fontSize * 0.085));
   const fam = escapeXml(fontFamily);
+  const segs = Array.isArray(segmentos) ? segmentos.filter((s) => s && String(s.text || '').length) : [];
+  if (!segs.length) return '';
 
-  let lineW = 0;
-  segmentos.forEach((s, i) => {
-    lineW += estimarLarguraChars(s.text, fontSize);
-    if (i < segmentos.length - 1) lineW += spaceW;
-  });
+  const cx = Math.round(centerX);
+  const hasHighlight = segs.some((s) => s.highlight);
 
-  let cursor = startX;
-  if (align === 'center') {
-    cursor = startX + Math.max(0, (totalWidth - lineW) / 2);
+  // Sem destaque: uma string só — o mais estável no sharp/librsvg.
+  if (!hasHighlight) {
+    const line = segs.map((s) => s.text).join(' ');
+    return `<text x="${cx}" y="${y}" text-anchor="middle" fill="#ffffff" font-family="${fam}" font-size="${fontSize}" font-weight="800" stroke="#000000" stroke-width="${strokeW}" paint-order="stroke fill">${escapeXml(line)}</text>`;
   }
-  cursor = Math.max(minX + padX, Math.min(cursor, maxX - 4));
 
-  const parts = [];
-  segmentos.forEach((seg, i) => {
+  // Com [[destaque]]: caixas amarelas (estimativa) + tspans (layout nativo).
+  const boxes = [];
+  const padX = Math.round(fontSize * 0.18);
+  const boxH = Math.round(fontSize * 1.2);
+  const boxY = y - fontSize + Math.round(fontSize * 0.1);
+  const spaceW = fontSize * 0.28;
+  let lineW = 0;
+  segs.forEach((s, i) => {
+    lineW += estimarLarguraChars(s.text, fontSize);
+    if (i < segs.length - 1) lineW += spaceW;
+  });
+  let cursor = cx - lineW / 2;
+  segs.forEach((seg, i) => {
     const segW = estimarLarguraChars(seg.text, fontSize);
     if (seg.highlight) {
-      const boxX = Math.max(minX, cursor - padX);
-      const boxW = Math.min(segW + padX * 2, Math.max(4, maxX - boxX));
-      parts.push(
-        `<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="4" fill="${escapeXml(highlightColor)}"/>`
-      );
-      parts.push(
-        `<text x="${cursor}" y="${y}" fill="#0f172a" font-family="${fam}" font-size="${fontSize}" font-weight="800">${escapeXml(seg.text)}</text>`
-      );
-    } else {
-      parts.push(
-        `<text x="${cursor}" y="${y}" fill="#ffffff" font-family="${fam}" font-size="${fontSize}" font-weight="800" stroke="#000000" stroke-width="${strokeW}" paint-order="stroke fill">${escapeXml(seg.text)}</text>`
+      boxes.push(
+        `<rect x="${Math.round(cursor - padX)}" y="${boxY}" width="${Math.round(segW + padX * 2)}" height="${boxH}" rx="5" fill="${escapeXml(highlightColor)}"/>`
       );
     }
-    cursor += segW + (i < segmentos.length - 1 ? spaceW : 0);
+    cursor += segW + (i < segs.length - 1 ? spaceW : 0);
   });
-  return parts.join('\n');
+
+  const tspans = segs
+    .map((seg, i) => {
+      const space = i < segs.length - 1 ? ' ' : '';
+      const raw = `${seg.text}${space}`;
+      if (seg.highlight) {
+        return `<tspan fill="#0f172a" stroke="none">${escapeXml(raw)}</tspan>`;
+      }
+      return `<tspan fill="#ffffff">${escapeXml(raw)}</tspan>`;
+    })
+    .join('');
+
+  return `${boxes.join('\n')}
+  <text x="${cx}" y="${y}" text-anchor="middle" font-family="${fam}" font-size="${fontSize}" font-weight="800" stroke="#000000" stroke-width="${strokeW}" paint-order="stroke fill" xml:space="preserve">${tspans}</text>`;
 }
 
 /**
@@ -283,6 +293,7 @@ async function criarFaixaTextoPng({
   const tokens = parseTokensComDestaque(texto);
   const fontFace = buildSvgFontFace('serithai_condensed');
   const fontFamily = fontFace.familyName || 'Serithai Condensed';
+  const centerX = Math.round(w / 2);
 
   const baseRatio =
     modeloId === 'destaque_viral' ? 0.05 : modeloId === 'impacto_central' ? 0.048 : 0.044;
@@ -295,7 +306,7 @@ async function criarFaixaTextoPng({
 
   let fit = quebrarTokensEmLinhas(tokens, maxW, fontSize, maxLinhas);
   let linhas = fit.linhas;
-  let lineH = Math.round(fontSize * 1.22);
+  let lineH = Math.round(fontSize * 1.28);
   let padY = Math.round(Math.max(14, w * 0.022));
   let blockH = padY * 2 + Math.max(1, linhas.length) * lineH;
 
@@ -309,7 +320,7 @@ async function criarFaixaTextoPng({
     fontSize = Math.max(minFont, Math.round(fontSize * 0.9));
     fit = quebrarTokensEmLinhas(tokens, maxW, fontSize, maxLinhas);
     linhas = fit.linhas;
-    lineH = Math.round(fontSize * 1.22);
+    lineH = Math.round(fontSize * 1.28);
     padY = Math.round(Math.max(12, fontSize * 0.35));
     blockH = padY * 2 + Math.max(1, linhas.length) * lineH;
     guard += 1;
@@ -346,13 +357,9 @@ async function criarFaixaTextoPng({
       svgLinhaComDestaques({
         segmentos: segs,
         y: baseY + i * lineH,
-        startX: marginX,
+        centerX,
         fontSize,
         highlightColor: highlight,
-        align: 'center',
-        totalWidth: maxW,
-        minX: marginX,
-        maxX: w - marginX,
         fontFamily,
       })
     )
