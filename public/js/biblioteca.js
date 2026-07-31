@@ -340,18 +340,22 @@
     }
   }
 
+  const abrirPreparacaoLocks = new Set();
+
   document.body.addEventListener('click', (e) => {
     const t = e.target.closest('.bib-gen-texto');
     const v = e.target.closest('.bib-gen-video');
     if (t) {
       e.preventDefault();
+      e.stopPropagation();
       if (t.disabled || t.dataset.opening === '1') return;
-      t.dataset.opening = '1';
       const postId = t.dataset.id;
-      if (!postId) {
-        delete t.dataset.opening;
-        return;
-      }
+      if (!postId) return;
+      const lockKey = `texto:${postId}`;
+      if (abrirPreparacaoLocks.has(lockKey)) return;
+      abrirPreparacaoLocks.add(lockKey);
+      t.dataset.opening = '1';
+      t.disabled = true;
       const qs = new URLSearchParams();
       const page = pageId();
       if (page) qs.set('facebook_page_id', page);
@@ -360,23 +364,25 @@
       abrirAbaEmSegundoPlano(url);
       const original = t.textContent;
       t.textContent = 'Abrindo…';
-      t.disabled = true;
       setTimeout(() => {
         t.textContent = original || 'Gerar Matéria';
         t.disabled = false;
         delete t.dataset.opening;
-      }, 4000);
+        abrirPreparacaoLocks.delete(lockKey);
+      }, 5000);
       return;
     }
     if (v) {
       e.preventDefault();
+      e.stopPropagation();
       if (v.disabled || v.dataset.opening === '1') return;
-      v.dataset.opening = '1';
       const postId = v.dataset.id;
-      if (!postId) {
-        delete v.dataset.opening;
-        return;
-      }
+      if (!postId) return;
+      const lockKey = `video:${postId}`;
+      if (abrirPreparacaoLocks.has(lockKey)) return;
+      abrirPreparacaoLocks.add(lockKey);
+      v.dataset.opening = '1';
+      v.disabled = true;
       const qs = new URLSearchParams();
       qs.set('media', 'video');
       const page = pageId();
@@ -384,12 +390,12 @@
       abrirAbaEmSegundoPlano(`/biblioteca/preparar/${postId}?${qs}`);
       const original = v.textContent;
       v.textContent = 'Abrindo…';
-      v.disabled = true;
       setTimeout(() => {
         v.textContent = original || 'Gerar Reel';
         v.disabled = false;
         delete v.dataset.opening;
-      }, 4000);
+        abrirPreparacaoLocks.delete(lockKey);
+      }, 5000);
     }
   });
 
@@ -455,16 +461,24 @@
   /** Abre URL em nova aba (processamento) e tenta manter o foco nesta. */
   function abrirAbaEmSegundoPlano(url) {
     if (!url || url.startsWith('#')) return;
-    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    // NÃO passar "noopener" nas features do window.open: em Chrome/Edge isso
+    // faz a chamada retornar null mesmo com a aba aberta — e o fallback
+    // abaixo abriria uma segunda aba.
+    const win = window.open(url, '_blank');
     if (win) {
       try {
         win.opener = null;
+      } catch {
+        /* ignore */
+      }
+      try {
         window.focus();
       } catch {
         /* ignore */
       }
       return;
     }
+    // Só cai aqui se o popup foi realmente bloqueado.
     const a = document.createElement('a');
     a.href = url;
     a.target = '_blank';
