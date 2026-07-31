@@ -967,6 +967,9 @@ async function buildFeedBaseImage(sourceBuffer, options = {}) {
 /**
  * Monta uma única foto 1080×1350 a partir de duas imagens.
  * layout: 'lado' (esquerda/direita) | 'cima' (acima/abaixo)
+ *
+ * Em cada painel: a foto aparece INTEIRA (contain), sem cortar rostos.
+ * O fundo do painel é a mesma foto em blur/cover — a arte 4:5 fica cheia no Facebook.
  */
 async function buildDualCollageBuffer(bufferA, bufferB, { layout = 'lado' } = {}) {
   const mode = String(layout || 'lado').toLowerCase() === 'cima' ? 'cima' : 'lado';
@@ -974,7 +977,7 @@ async function buildDualCollageBuffer(bufferA, bufferB, { layout = 'lado' } = {}
   const halfW = mode === 'lado' ? Math.floor((WIDTH - gap) / 2) : WIDTH;
   const halfH = mode === 'cima' ? Math.floor((HEIGHT - gap) / 2) : HEIGHT;
 
-  async function coverHalf(buf) {
+  async function fitHalf(buf) {
     let prepared = buf;
     try {
       prepared = await sharp(buf, { failOn: 'error', limitInputPixels: 40_000_000 })
@@ -983,19 +986,41 @@ async function buildDualCollageBuffer(bufferA, bufferB, { layout = 'lado' } = {}
     } catch {
       prepared = buf;
     }
-    return sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+
+    // Fundo: preenche o painel (cover + blur) — sem “buraco” na arte do FB
+    const blurred = await sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 })
       .resize(halfW, halfH, {
         fit: 'cover',
-        position: 'attention',
+        position: 'centre',
         withoutEnlargement: false,
         kernel: sharp.kernel.lanczos3,
       })
-      .sharpen({ sigma: 0.5, m1: 0.5, m2: 0.3 })
-      .jpeg({ quality: 94, mozjpeg: true })
+      .blur(36)
+      .modulate({ brightness: 0.42, saturation: 0.8 })
+      .png()
+      .toBuffer();
+
+    // Foto inteira dentro do painel (contain) — não corta
+    const foreground = await sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .resize(halfW, halfH, {
+        fit: 'inside',
+        withoutEnlargement: false,
+        kernel: sharp.kernel.lanczos3,
+      })
+      .sharpen({ sigma: 0.55, m1: 0.5, m2: 0.3 })
+      .png()
+      .toBuffer({ resolveWithObject: true });
+
+    const left = Math.max(0, Math.round((halfW - foreground.info.width) / 2));
+    const top = Math.max(0, Math.round((halfH - foreground.info.height) / 2));
+
+    return sharp(blurred)
+      .composite([{ input: foreground.data, left, top }])
+      .jpeg({ quality: 95, mozjpeg: true })
       .toBuffer();
   }
 
-  const [leftOrTop, rightOrBottom] = await Promise.all([coverHalf(bufferA), coverHalf(bufferB)]);
+  const [leftOrTop, rightOrBottom] = await Promise.all([fitHalf(bufferA), fitHalf(bufferB)]);
 
   const composites =
     mode === 'cima'
@@ -1017,7 +1042,7 @@ async function buildDualCollageBuffer(bufferA, bufferB, { layout = 'lado' } = {}
     },
   })
     .composite(composites)
-    .jpeg({ quality: 95, mozjpeg: true })
+    .jpeg({ quality: 96, mozjpeg: true })
     .toBuffer();
 }
 
