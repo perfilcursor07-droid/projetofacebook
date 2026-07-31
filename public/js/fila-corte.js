@@ -499,8 +499,12 @@
     const previewBox = document.getElementById('split-preview');
     const videoRange = document.getElementById('split-video-offset');
     const imagemRange = document.getElementById('split-imagem-offset');
+    const videoRangeY = document.getElementById('split-video-offset-y');
+    const imagemRangeY = document.getElementById('split-imagem-offset-y');
     const videoValor = document.getElementById('split-video-valor');
     const imagemValor = document.getElementById('split-imagem-valor');
+    const videoValorY = document.getElementById('split-video-valor-y');
+    const imagemValorY = document.getElementById('split-imagem-valor-y');
     const ladoBtn = document.getElementById('btn-split-lado');
     const msgEl = document.getElementById('split-msg');
     const aplicarBtn = document.getElementById('btn-split-aplicar');
@@ -682,11 +686,14 @@
     function aplicarOffsetsNoPreview() {
       const v = Number(videoRange?.value ?? 50);
       const i = Number(imagemRange?.value ?? 50);
-      // Empurrar sempre na horizontal (0% = esquerda, 100% = direita).
-      if (videoPreview) videoPreview.style.objectPosition = v + '% 50%';
-      if (imgPreview) imgPreview.style.objectPosition = i + '% 50%';
+      const vy = Number(videoRangeY?.value ?? 50);
+      const iy = Number(imagemRangeY?.value ?? 50);
+      if (videoPreview) videoPreview.style.objectPosition = v + '% ' + vy + '%';
+      if (imgPreview) imgPreview.style.objectPosition = i + '% ' + iy + '%';
       if (videoValor) videoValor.textContent = v + '%';
       if (imagemValor) imagemValor.textContent = i + '%';
+      if (videoValorY) videoValorY.textContent = vy + '%';
+      if (imagemValorY) imagemValorY.textContent = iy + '%';
     }
 
     function rotuloPosicao() {
@@ -775,6 +782,8 @@
 
     videoRange?.addEventListener('input', aplicarOffsetsNoPreview);
     imagemRange?.addEventListener('input', aplicarOffsetsNoPreview);
+    videoRangeY?.addEventListener('input', aplicarOffsetsNoPreview);
+    imagemRangeY?.addEventListener('input', aplicarOffsetsNoPreview);
     aplicarOffsetsNoPreview();
     aplicarLadoNoPreview();
     atualizarUiSplit({
@@ -909,6 +918,8 @@
     function corpoDoSplit() {
       const videoOffset = Number(videoRange?.value ?? 50);
       const imagemOffset = Number(imagemRange?.value ?? 50);
+      const videoOffsetY = Number(videoRangeY?.value ?? 50);
+      const imagemOffsetY = Number(imagemRangeY?.value ?? 50);
       const texto = String(textoInput?.value || '').trim();
       const textoFields = {
         texto,
@@ -916,6 +927,12 @@
         texto_tamanho: textoTamanho,
         texto_fundo: textoFundo,
         texto_fundo_cor: textoFundoCor,
+      };
+      const offsetFields = {
+        video_offset: videoOffset,
+        imagem_offset: imagemOffset,
+        video_offset_y: videoOffsetY,
+        imagem_offset_y: imagemOffsetY,
       };
 
       if (fonte === 'upload') {
@@ -926,6 +943,8 @@
         form.append('fonte', 'upload');
         form.append('video_offset', String(videoOffset));
         form.append('imagem_offset', String(imagemOffset));
+        form.append('video_offset_y', String(videoOffsetY));
+        form.append('imagem_offset_y', String(imagemOffsetY));
         form.append('imagem_lado', lado);
         form.append('modo', modo);
         form.append('texto', texto);
@@ -942,10 +961,9 @@
           body: {
             fonte: 'frame',
             frame_segundo: frameSegundo,
-            video_offset: videoOffset,
-            imagem_offset: imagemOffset,
             imagem_lado: lado,
             modo,
+            ...offsetFields,
             ...textoFields,
           },
           isForm: false,
@@ -965,10 +983,9 @@
         body: {
           fonte: 'busca',
           imagem_url: imagemEscolhida,
-          video_offset: videoOffset,
-          imagem_offset: imagemOffset,
           imagem_lado: lado,
           modo,
+          ...offsetFields,
           ...textoFields,
         },
         isForm: false,
@@ -1016,6 +1033,8 @@
         await postJson('/api/clips/' + cfg.id + '/split/enquadrar', {
           video_offset: Number(videoRange?.value ?? 50),
           imagem_offset: Number(imagemRange?.value ?? 50),
+          video_offset_y: Number(videoRangeY?.value ?? 50),
+          imagem_offset_y: Number(imagemRangeY?.value ?? 50),
           imagem_lado: lado,
           modo,
           texto: String(textoInput?.value || '').trim(),

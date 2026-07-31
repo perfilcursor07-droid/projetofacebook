@@ -551,6 +551,8 @@ async function aplicarSplitAgora({
   imagemRelPath,
   videoOffset,
   imageOffset,
+  videoOffsetY,
+  imageOffsetY,
   imagemLado,
   modo,
   texto,
@@ -628,6 +630,8 @@ async function aplicarSplitAgora({
       outputPath: textoFinal ? splitTempAbs : outAbs,
       videoOffset,
       imageOffset,
+      videoOffsetY,
+      imageOffsetY,
       aspectRatio: clip.aspect_ratio === '1:1' ? '1:1' : '9:16',
       imagemLado: imagemPosFinal,
       modo: modoFinal,
@@ -673,6 +677,8 @@ async function aplicarSplitAgora({
       split_image_path: imagemRelPath,
       split_video_offset: clampOffset(videoOffset),
       split_image_offset: clampOffset(imageOffset),
+      split_video_offset_y: clampOffset(videoOffsetY),
+      split_image_offset_y: clampOffset(imageOffsetY),
       split_modo: modoFinal,
       split_imagem_pos: imagemPosFinal,
       split_texto: textoFinal || null,
@@ -732,6 +738,8 @@ async function aplicarSplitNoClip({
   frameSegundo,
   videoOffset,
   imageOffset,
+  videoOffsetY,
+  imageOffsetY,
   imagemLado,
   modo,
   texto,
@@ -758,6 +766,8 @@ async function aplicarSplitNoClip({
   const offsets = {
     videoOffset: clampOffset(videoOffset, Number(clip.split_video_offset) || 50),
     imageOffset: clampOffset(imageOffset, Number(clip.split_image_offset) || 50),
+    videoOffsetY: clampOffset(videoOffsetY, Number(clip.split_video_offset_y) || 50),
+    imageOffsetY: clampOffset(imageOffsetY, Number(clip.split_image_offset_y) || 50),
   };
   const modoFinal = normalizarModoSplit(modo != null ? modo : clip.split_modo);
   const lado = normalizarImagemPos(
@@ -789,6 +799,8 @@ async function aplicarSplitNoClip({
     split_image_url: imagem.url,
     split_video_offset: offsets.videoOffset,
     split_image_offset: offsets.imageOffset,
+    split_video_offset_y: offsets.videoOffsetY,
+    split_image_offset_y: offsets.imageOffsetY,
     split_modo: modoFinal,
     split_imagem_pos: lado,
     split_texto: textoFinal || null,
@@ -890,6 +902,8 @@ async function reenquadrarSplit({
   userId,
   videoOffset,
   imageOffset,
+  videoOffsetY,
+  imageOffsetY,
   imagemLado,
   modo,
   texto,
@@ -907,6 +921,8 @@ async function reenquadrarSplit({
   const offsets = {
     videoOffset: clampOffset(videoOffset, Number(clip.split_video_offset) || 50),
     imageOffset: clampOffset(imageOffset, Number(clip.split_image_offset) || 50),
+    videoOffsetY: clampOffset(videoOffsetY, Number(clip.split_video_offset_y) || 50),
+    imageOffsetY: clampOffset(imageOffsetY, Number(clip.split_image_offset_y) || 50),
   };
   const modoFinal = normalizarModoSplit(modo != null ? modo : clip.split_modo);
   const lado = normalizarImagemPos(
@@ -936,6 +952,10 @@ async function reenquadrarSplit({
     split_erro: null,
     split_modo: modoFinal,
     split_imagem_pos: lado,
+    split_video_offset: offsets.videoOffset,
+    split_image_offset: offsets.imageOffset,
+    split_video_offset_y: offsets.videoOffsetY,
+    split_image_offset_y: offsets.imageOffsetY,
     split_texto: textoFinal || null,
     split_texto_posicao: posicaoFinal,
     split_texto_tamanho: tamanhoFinal,

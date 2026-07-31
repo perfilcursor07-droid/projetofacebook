@@ -121,29 +121,22 @@ function clampOffset(value, fallback = 50) {
 }
 
 /**
- * Escala cobrindo o painel e recorta na posição pedida.
- * axis 'x' (lado a lado): offset empurra horizontalmente.
- * axis 'y' (empilhado): offset empurra verticalmente — enquadramento horizontal.
+ * Escala cobrindo o painel e recorta em X e Y (0–1).
+ * 0 = encostado à esquerda/topo, 0.5 = centro, 1 = direita/baixo.
  */
-function coverPaneFilter(paneW, paneH, offset, axis = 'x') {
-  const o = Number(offset).toFixed(4);
-  if (axis === 'y') {
-    return [
-      `scale=${paneW}:${paneH}:force_original_aspect_ratio=increase`,
-      `crop=${paneW}:${paneH}:(iw-ow)/2:(ih-oh)*${o}`,
-      'setsar=1',
-    ].join(',');
-  }
+function coverPaneFilter(paneW, paneH, offsetX = 0.5, offsetY = 0.5) {
+  const x = Number(offsetX).toFixed(4);
+  const y = Number(offsetY).toFixed(4);
   return [
     `scale=${paneW}:${paneH}:force_original_aspect_ratio=increase`,
-    `crop=${paneW}:${paneH}:(iw-ow)*${o}:(ih-oh)/2`,
+    `crop=${paneW}:${paneH}:(iw-ow)*${x}:(ih-oh)*${y}`,
     'setsar=1',
   ].join(',');
 }
 
 /** @deprecated use coverPaneFilter */
 function coverHalfFilter(halfWidth, height, offset) {
-  return coverPaneFilter(halfWidth, height, offset, 'x');
+  return coverPaneFilter(halfWidth, height, offset, 0.5);
 }
 
 /**
@@ -179,6 +172,8 @@ function renderSplitScreen({
   outputPath,
   videoOffset = 50,
   imageOffset = 50,
+  videoOffsetY = 50,
+  imageOffsetY = 50,
   aspectRatio = '9:16',
   imagemLado = 'esquerda',
   modo = 'lado',
@@ -189,10 +184,10 @@ function renderSplitScreen({
   const empilhado = String(modo) === 'empilhado';
   const paneW = empilhado ? width : Math.round(width / 2);
   const paneH = empilhado ? Math.round(height / 2) : height;
-  // Sempre empurra na horizontal (esquerda ← → direita), nos dois layouts.
-  const axis = 'x';
-  const imgOffset = clampOffset(imageOffset);
-  const vidOffset = clampOffset(videoOffset);
+  const imgX = clampOffset(imageOffset);
+  const imgY = clampOffset(imageOffsetY);
+  const vidX = clampOffset(videoOffset);
+  const vidY = clampOffset(videoOffsetY);
   const pos = String(imagemLado || '');
 
   let stackFilter;
@@ -210,8 +205,8 @@ function renderSplitScreen({
     const command = ffmpeg().input(videoPath).input(imagePath).inputOptions(['-loop', '1']);
 
     const filters = [
-      `[0:v]${coverPaneFilter(paneW, paneH, vidOffset, axis)},fps=${OUTPUT_FPS}[vid]`,
-      `[1:v]${coverPaneFilter(paneW, paneH, imgOffset, axis)}[img]`,
+      `[0:v]${coverPaneFilter(paneW, paneH, vidX, vidY)},fps=${OUTPUT_FPS}[vid]`,
+      `[1:v]${coverPaneFilter(paneW, paneH, imgX, imgY)}[img]`,
       stackFilter,
     ];
 

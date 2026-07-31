@@ -13,6 +13,10 @@
   const imagemOffset = Number(clip.split_image_offset);
   const offsetVideo = Number.isFinite(videoOffset) ? videoOffset : 50;
   const offsetImagem = Number.isFinite(imagemOffset) ? imagemOffset : 50;
+  const videoOffsetYRaw = Number(clip.split_video_offset_y);
+  const imagemOffsetYRaw = Number(clip.split_image_offset_y);
+  const offsetVideoY = Number.isFinite(videoOffsetYRaw) ? videoOffsetYRaw : 50;
+  const offsetImagemY = Number.isFinite(imagemOffsetYRaw) ? imagemOffsetYRaw : 50;
   const splitModo = clip.split_modo === 'empilhado' ? 'empilhado' : 'lado';
   const splitImagemPosRaw = String(clip.split_imagem_pos || '');
   const splitImagemPos = splitModo === 'empilhado'
@@ -183,7 +187,7 @@
                   style="<%= splitModo === 'empilhado' ? (splitImagemPos === 'baixo' ? 'flex-direction:column-reverse' : 'flex-direction:column') : (splitImagemPos === 'direita' ? 'flex-direction:row-reverse' : 'flex-direction:row') %>">
                   <div id="split-pane-img" class="relative overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
                     <img id="split-img-preview" alt="" class="h-full w-full object-cover <%= splitImagemUrl ? '' : 'hidden' %>"
-                      src="<%= splitImagemUrl || '' %>" style="object-position: <%= offsetImagem %>% 50%;" />
+                      src="<%= splitImagemUrl || '' %>" style="object-position: <%= offsetImagem %>% <%= offsetImagemY %>%;" />
                     <div id="split-img-empty" class="absolute inset-0 flex items-center justify-center px-2 text-center text-[10px] leading-tight text-slate-600 <%= splitImagemUrl ? 'hidden' : '' %>">
                       Escolha a imagem
                     </div>
@@ -191,7 +195,7 @@
                   <div id="split-pane-vid" class="overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
                     <% if (previewVideo) { %>
                       <video id="split-video-preview" class="h-full w-full object-cover" muted loop playsinline preload="metadata"
-                        style="object-position: <%= offsetVideo %>% 50%;" src="<%= previewVideo %>#t=0.5"></video>
+                        style="object-position: <%= offsetVideo %>% <%= offsetVideoY %>%;" src="<%= previewVideo %>#t=0.5"></video>
                     <% } %>
                   </div>
                   <span id="split-divider" class="pointer-events-none absolute bg-white/20 <%= splitModo === 'empilhado' ? 'inset-x-0 top-1/2 h-px -translate-y-1/2' : 'inset-y-0 left-1/2 w-px -translate-x-1/2' %>"></span>
@@ -209,19 +213,33 @@
 
               <div class="space-y-4">
                 <div class="space-y-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p class="text-[10px] text-slate-600">0% = esquerda · 50% = centro · 100% = direita</p>
+                  <p class="text-[11px] font-medium text-slate-400">Enquadramento</p>
                   <label class="block">
-                    <span class="flex items-center justify-between text-[11px] font-medium text-slate-400">
-                      Empurrar o vídeo <span id="split-video-valor" class="tabular-nums text-slate-500"><%= offsetVideo %>%</span>
+                    <span class="flex items-center justify-between text-[11px] text-slate-500">
+                      Vídeo ← → <span id="split-video-valor" class="tabular-nums text-slate-500"><%= offsetVideo %>%</span>
                     </span>
                     <input id="split-video-offset" type="range" min="0" max="100" step="1" value="<%= offsetVideo %>"
                       class="mt-1.5 w-full accent-emerald-500" />
                   </label>
                   <label class="block">
-                    <span class="flex items-center justify-between text-[11px] font-medium text-slate-400">
-                      Empurrar a imagem <span id="split-imagem-valor" class="tabular-nums text-slate-500"><%= offsetImagem %>%</span>
+                    <span class="flex items-center justify-between text-[11px] text-slate-500">
+                      Vídeo ↑ ↓ <span id="split-video-valor-y" class="tabular-nums text-slate-500"><%= offsetVideoY %>%</span>
+                    </span>
+                    <input id="split-video-offset-y" type="range" min="0" max="100" step="1" value="<%= offsetVideoY %>"
+                      class="mt-1.5 w-full accent-emerald-500" />
+                  </label>
+                  <label class="block">
+                    <span class="flex items-center justify-between text-[11px] text-slate-500">
+                      Imagem ← → <span id="split-imagem-valor" class="tabular-nums text-slate-500"><%= offsetImagem %>%</span>
                     </span>
                     <input id="split-imagem-offset" type="range" min="0" max="100" step="1" value="<%= offsetImagem %>"
+                      class="mt-1.5 w-full accent-fuchsia-500" />
+                  </label>
+                  <label class="block">
+                    <span class="flex items-center justify-between text-[11px] text-slate-500">
+                      Imagem ↑ ↓ <span id="split-imagem-valor-y" class="tabular-nums text-slate-500"><%= offsetImagemY %>%</span>
+                    </span>
+                    <input id="split-imagem-offset-y" type="range" min="0" max="100" step="1" value="<%= offsetImagemY %>"
                       class="mt-1.5 w-full accent-fuchsia-500" />
                   </label>
                 </div>
@@ -455,6 +473,8 @@
       splitImagemUrl: <%- JSON.stringify(splitImagemUrl || '') %>,
       videoOffset: <%= offsetVideo %>,
       imagemOffset: <%= offsetImagem %>,
+      videoOffsetY: <%= offsetVideoY %>,
+      imagemOffsetY: <%= offsetImagemY %>,
       splitTexto: <%- JSON.stringify(splitTexto) %>,
       splitTextoPosicao: <%- JSON.stringify(splitTextoPos) %>,
       splitTextoTamanho: <%= splitTextoTam %>,
