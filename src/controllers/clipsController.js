@@ -234,6 +234,8 @@ async function montarSplit(req, res, next) {
       imageOffset: body.imagem_offset ?? body.imageOffset,
       videoOffsetY: body.video_offset_y ?? body.videoOffsetY,
       imageOffsetY: body.imagem_offset_y ?? body.imageOffsetY,
+      videoZoom: body.video_zoom ?? body.videoZoom,
+      imageZoom: body.imagem_zoom ?? body.imageZoom,
       imagemLado: body.imagem_lado ?? body.imagemLado ?? body.imagem_pos,
       modo: body.modo ?? body.split_modo ?? body.layout_split,
       texto: body.texto ?? body.split_texto,
@@ -265,6 +267,8 @@ async function reenquadrarSplit(req, res, next) {
       imageOffset: body.imagem_offset ?? body.imageOffset,
       videoOffsetY: body.video_offset_y ?? body.videoOffsetY,
       imageOffsetY: body.imagem_offset_y ?? body.imageOffsetY,
+      videoZoom: body.video_zoom ?? body.videoZoom,
+      imageZoom: body.imagem_zoom ?? body.imageZoom,
       imagemLado: body.imagem_lado ?? body.imagemLado ?? body.imagem_pos,
       modo: body.modo ?? body.split_modo ?? body.layout_split,
       texto: body.texto ?? body.split_texto,
@@ -359,6 +363,8 @@ async function statusClip(req, res, next) {
       split_image_offset: Number(clip.split_image_offset) || 50,
       split_video_offset_y: Number(clip.split_video_offset_y) || 50,
       split_image_offset_y: Number(clip.split_image_offset_y) || 50,
+      split_video_zoom: Math.min(160, Math.max(70, Number(clip.split_video_zoom) || 100)),
+      split_image_zoom: Math.min(160, Math.max(70, Number(clip.split_image_zoom) || 100)),
       split_modo: clip.split_modo === 'empilhado' ? 'empilhado' : 'lado',
       split_imagem_pos: ['direita', 'cima', 'baixo'].includes(clip.split_imagem_pos)
         ? clip.split_imagem_pos

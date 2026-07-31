@@ -17,6 +17,10 @@
   const imagemOffsetYRaw = Number(clip.split_image_offset_y);
   const offsetVideoY = Number.isFinite(videoOffsetYRaw) ? videoOffsetYRaw : 50;
   const offsetImagemY = Number.isFinite(imagemOffsetYRaw) ? imagemOffsetYRaw : 50;
+  const videoZoomRaw = Number(clip.split_video_zoom);
+  const imagemZoomRaw = Number(clip.split_image_zoom);
+  const zoomVideo = Number.isFinite(videoZoomRaw) ? Math.min(160, Math.max(70, Math.round(videoZoomRaw))) : 100;
+  const zoomImagem = Number.isFinite(imagemZoomRaw) ? Math.min(160, Math.max(70, Math.round(imagemZoomRaw))) : 100;
   const splitModo = clip.split_modo === 'empilhado' ? 'empilhado' : 'lado';
   const splitImagemPosRaw = String(clip.split_imagem_pos || '');
   const splitImagemPos = splitModo === 'empilhado'
@@ -192,7 +196,7 @@
                       Escolha a imagem
                     </div>
                   </div>
-                  <div id="split-pane-vid" class="overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
+                  <div id="split-pane-vid" class="relative overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
                     <% if (previewVideo) { %>
                       <video id="split-video-preview" class="h-full w-full object-cover" muted loop playsinline preload="metadata"
                         style="object-position: <%= offsetVideo %>% <%= offsetVideoY %>%;" src="<%= previewVideo %>#t=0.5"></video>
@@ -213,35 +217,65 @@
 
               <div class="space-y-4">
                 <div class="space-y-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p class="text-[11px] font-medium text-slate-400">Enquadramento</p>
-                  <label class="block">
-                    <span class="flex items-center justify-between text-[11px] text-slate-500">
-                      Vídeo ← → <span id="split-video-valor" class="tabular-nums text-slate-500"><%= offsetVideo %>%</span>
-                    </span>
-                    <input id="split-video-offset" type="range" min="0" max="100" step="1" value="<%= offsetVideo %>"
-                      class="mt-1.5 w-full accent-emerald-500" />
-                  </label>
-                  <label class="block">
-                    <span class="flex items-center justify-between text-[11px] text-slate-500">
-                      Vídeo ↑ ↓ <span id="split-video-valor-y" class="tabular-nums text-slate-500"><%= offsetVideoY %>%</span>
-                    </span>
-                    <input id="split-video-offset-y" type="range" min="0" max="100" step="1" value="<%= offsetVideoY %>"
-                      class="mt-1.5 w-full accent-emerald-500" />
-                  </label>
-                  <label class="block">
-                    <span class="flex items-center justify-between text-[11px] text-slate-500">
-                      Imagem ← → <span id="split-imagem-valor" class="tabular-nums text-slate-500"><%= offsetImagem %>%</span>
-                    </span>
-                    <input id="split-imagem-offset" type="range" min="0" max="100" step="1" value="<%= offsetImagem %>"
-                      class="mt-1.5 w-full accent-fuchsia-500" />
-                  </label>
-                  <label class="block">
-                    <span class="flex items-center justify-between text-[11px] text-slate-500">
-                      Imagem ↑ ↓ <span id="split-imagem-valor-y" class="tabular-nums text-slate-500"><%= offsetImagemY %>%</span>
-                    </span>
-                    <input id="split-imagem-offset-y" type="range" min="0" max="100" step="1" value="<%= offsetImagemY %>"
-                      class="mt-1.5 w-full accent-fuchsia-500" />
-                  </label>
+                  <div>
+                    <p class="text-[11px] font-medium text-slate-400">Enquadramento</p>
+                    <p class="mt-1 text-[10px] leading-relaxed text-slate-600">
+                      Use o zoom para <span class="text-slate-400">mostrar mais</span> (afastar) ou aproximar.
+                      Depois empurre para os lados e para cima/baixo. Em 100% o ←→ às vezes não mexe — afaste ou aproxime um pouco.
+                    </p>
+                  </div>
+
+                  <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2.5 space-y-2.5">
+                    <p class="text-[11px] font-semibold text-emerald-300">Vídeo</p>
+                    <label class="block">
+                      <span class="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Zoom <span class="text-slate-600">mostra mais ↔ aproxima</span></span>
+                        <span id="split-video-zoom-valor" class="tabular-nums text-slate-500"><%= zoomVideo %>%</span>
+                      </span>
+                      <input id="split-video-zoom" type="range" min="70" max="160" step="1" value="<%= zoomVideo %>"
+                        class="mt-1.5 w-full accent-emerald-500" />
+                    </label>
+                    <label class="block">
+                      <span class="flex items-center justify-between text-[11px] text-slate-500">
+                        Empurrar ← → <span id="split-video-valor" class="tabular-nums text-slate-500"><%= offsetVideo %>%</span>
+                      </span>
+                      <input id="split-video-offset" type="range" min="0" max="100" step="1" value="<%= offsetVideo %>"
+                        class="mt-1.5 w-full accent-emerald-500" />
+                    </label>
+                    <label class="block">
+                      <span class="flex items-center justify-between text-[11px] text-slate-500">
+                        Empurrar ↑ ↓ <span id="split-video-valor-y" class="tabular-nums text-slate-500"><%= offsetVideoY %>%</span>
+                      </span>
+                      <input id="split-video-offset-y" type="range" min="0" max="100" step="1" value="<%= offsetVideoY %>"
+                        class="mt-1.5 w-full accent-emerald-500" />
+                    </label>
+                  </div>
+
+                  <div class="rounded-lg border border-fuchsia-500/20 bg-fuchsia-500/5 p-2.5 space-y-2.5">
+                    <p class="text-[11px] font-semibold text-fuchsia-300">Imagem</p>
+                    <label class="block">
+                      <span class="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Zoom <span class="text-slate-600">mostra mais ↔ aproxima</span></span>
+                        <span id="split-imagem-zoom-valor" class="tabular-nums text-slate-500"><%= zoomImagem %>%</span>
+                      </span>
+                      <input id="split-imagem-zoom" type="range" min="70" max="160" step="1" value="<%= zoomImagem %>"
+                        class="mt-1.5 w-full accent-fuchsia-500" />
+                    </label>
+                    <label class="block">
+                      <span class="flex items-center justify-between text-[11px] text-slate-500">
+                        Empurrar ← → <span id="split-imagem-valor" class="tabular-nums text-slate-500"><%= offsetImagem %>%</span>
+                      </span>
+                      <input id="split-imagem-offset" type="range" min="0" max="100" step="1" value="<%= offsetImagem %>"
+                        class="mt-1.5 w-full accent-fuchsia-500" />
+                    </label>
+                    <label class="block">
+                      <span class="flex items-center justify-between text-[11px] text-slate-500">
+                        Empurrar ↑ ↓ <span id="split-imagem-valor-y" class="tabular-nums text-slate-500"><%= offsetImagemY %>%</span>
+                      </span>
+                      <input id="split-imagem-offset-y" type="range" min="0" max="100" step="1" value="<%= offsetImagemY %>"
+                        class="mt-1.5 w-full accent-fuchsia-500" />
+                    </label>
+                  </div>
                 </div>
 
                 <div class="space-y-2 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
@@ -475,6 +509,8 @@
       imagemOffset: <%= offsetImagem %>,
       videoOffsetY: <%= offsetVideoY %>,
       imagemOffsetY: <%= offsetImagemY %>,
+      videoZoom: <%= zoomVideo %>,
+      imagemZoom: <%= zoomImagem %>,
       splitTexto: <%- JSON.stringify(splitTexto) %>,
       splitTextoPosicao: <%- JSON.stringify(splitTextoPos) %>,
       splitTextoTamanho: <%= splitTextoTam %>,
@@ -487,5 +523,5 @@
       bgmPresets: <%- JSON.stringify(presetsLista) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731m"></script>
+  <script src="/js/fila-corte.js?v=20260731n"></script>
 <%- include('partials/app-end') %>

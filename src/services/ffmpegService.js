@@ -120,23 +120,49 @@ function clampOffset(value, fallback = 50) {
   return Math.min(100, Math.max(0, n)) / 100;
 }
 
+/** Zoom 70–160: <100 mostra mais (faixas), 100 preenche, >100 aproxima. */
+function clampZoom(value, fallback = 100) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(160, Math.max(70, Math.round(n)));
+}
+
 /**
- * Escala cobrindo o painel e recorta em X e Y (0–1).
- * 0 = encostado à esquerda/topo, 0.5 = centro, 1 = direita/baixo.
+ * Enquadra o painel com pan (X/Y) + zoom.
+ * zoomPct 100 = preencher (cover). Abaixo = mostrar mais. Acima = aproximar.
  */
-function coverPaneFilter(paneW, paneH, offsetX = 0.5, offsetY = 0.5) {
+function coverPaneFilter(paneW, paneH, offsetX = 0.5, offsetY = 0.5, zoomPct = 100) {
   const x = Number(offsetX).toFixed(4);
   const y = Number(offsetY).toFixed(4);
+  const z = clampZoom(zoomPct) / 100;
+
+  if (z >= 1) {
+    const parts = [
+      `scale=${paneW}:${paneH}:force_original_aspect_ratio=increase`,
+    ];
+    if (z > 1.001) {
+      parts.push(`scale=iw*${z.toFixed(4)}:ih*${z.toFixed(4)}`);
+    }
+    parts.push(`crop=${paneW}:${paneH}:(iw-ow)*${x}:(ih-oh)*${y}`, 'setsar=1');
+    return parts.join(',');
+  }
+
+  // Mostrar mais: preenche um retângulo menor e completa com faixas pretas.
+  let innerW = Math.round((paneW * z) / 2) * 2;
+  let innerH = Math.round((paneH * z) / 2) * 2;
+  innerW = Math.max(2, Math.min(paneW, innerW));
+  innerH = Math.max(2, Math.min(paneH, innerH));
   return [
-    `scale=${paneW}:${paneH}:force_original_aspect_ratio=increase`,
-    `crop=${paneW}:${paneH}:(iw-ow)*${x}:(ih-oh)*${y}`,
+    `scale=${innerW}:${innerH}:force_original_aspect_ratio=increase`,
+    `crop=${innerW}:${innerH}:(iw-ow)*${x}:(ih-oh)*${y}`,
+    `pad=${paneW}:${paneH}:(ow-iw)*${x}:(oh-ih)*${y}:black`,
     'setsar=1',
   ].join(',');
 }
 
 /** @deprecated use coverPaneFilter */
 function coverHalfFilter(halfWidth, height, offset) {
-  return coverPaneFilter(halfWidth, height, offset, 0.5);
+  return coverPaneFilter(halfWidth, height, offset, 0.5, 100);
 }
 
 /**
@@ -174,6 +200,8 @@ function renderSplitScreen({
   imageOffset = 50,
   videoOffsetY = 50,
   imageOffsetY = 50,
+  videoZoom = 100,
+  imageZoom = 100,
   aspectRatio = '9:16',
   imagemLado = 'esquerda',
   modo = 'lado',
@@ -188,6 +216,8 @@ function renderSplitScreen({
   const imgY = clampOffset(imageOffsetY);
   const vidX = clampOffset(videoOffset);
   const vidY = clampOffset(videoOffsetY);
+  const vidZ = clampZoom(videoZoom);
+  const imgZ = clampZoom(imageZoom);
   const pos = String(imagemLado || '');
 
   let stackFilter;
@@ -205,8 +235,8 @@ function renderSplitScreen({
     const command = ffmpeg().input(videoPath).input(imagePath).inputOptions(['-loop', '1']);
 
     const filters = [
-      `[0:v]${coverPaneFilter(paneW, paneH, vidX, vidY)},fps=${OUTPUT_FPS}[vid]`,
-      `[1:v]${coverPaneFilter(paneW, paneH, imgX, imgY)}[img]`,
+      `[0:v]${coverPaneFilter(paneW, paneH, vidX, vidY, vidZ)},fps=${OUTPUT_FPS}[vid]`,
+      `[1:v]${coverPaneFilter(paneW, paneH, imgX, imgY, imgZ)}[img]`,
       stackFilter,
     ];
 
@@ -422,4 +452,5 @@ module.exports = {
   MAX_MANUAL_CLIP_SECONDS,
   MIN_CLIP_SECONDS,
   MONETIZATION_MIN_SECONDS,
+  clampZoom,
 };

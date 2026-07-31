@@ -8,7 +8,7 @@ const Videos = require('../models/Videos');
 const Users = require('../models/Users');
 const { enqueue } = require('../workers/queue');
 const { storageAbsolutePath } = require('./downloadService');
-const { extractFrame, renderSplitScreen, overlayTextoFixo, probe } = require('./ffmpegService');
+const { extractFrame, renderSplitScreen, overlayTextoFixo, probe, clampZoom } = require('./ffmpegService');
 const {
   DEFAULT_VIDEO_BRAND_MODEL,
   normalizeVideoBrandModel,
@@ -553,6 +553,8 @@ async function aplicarSplitAgora({
   imageOffset,
   videoOffsetY,
   imageOffsetY,
+  videoZoom,
+  imageZoom,
   imagemLado,
   modo,
   texto,
@@ -632,6 +634,8 @@ async function aplicarSplitAgora({
       imageOffset,
       videoOffsetY,
       imageOffsetY,
+      videoZoom,
+      imageZoom,
       aspectRatio: clip.aspect_ratio === '1:1' ? '1:1' : '9:16',
       imagemLado: imagemPosFinal,
       modo: modoFinal,
@@ -679,6 +683,8 @@ async function aplicarSplitAgora({
       split_image_offset: clampOffset(imageOffset),
       split_video_offset_y: clampOffset(videoOffsetY),
       split_image_offset_y: clampOffset(imageOffsetY),
+      split_video_zoom: clampZoom(videoZoom),
+      split_image_zoom: clampZoom(imageZoom),
       split_modo: modoFinal,
       split_imagem_pos: imagemPosFinal,
       split_texto: textoFinal || null,
@@ -740,6 +746,8 @@ async function aplicarSplitNoClip({
   imageOffset,
   videoOffsetY,
   imageOffsetY,
+  videoZoom,
+  imageZoom,
   imagemLado,
   modo,
   texto,
@@ -768,6 +776,8 @@ async function aplicarSplitNoClip({
     imageOffset: clampOffset(imageOffset, Number(clip.split_image_offset) || 50),
     videoOffsetY: clampOffset(videoOffsetY, Number(clip.split_video_offset_y) || 50),
     imageOffsetY: clampOffset(imageOffsetY, Number(clip.split_image_offset_y) || 50),
+    videoZoom: clampZoom(videoZoom != null ? videoZoom : clip.split_video_zoom, 100),
+    imageZoom: clampZoom(imageZoom != null ? imageZoom : clip.split_image_zoom, 100),
   };
   const modoFinal = normalizarModoSplit(modo != null ? modo : clip.split_modo);
   const lado = normalizarImagemPos(
@@ -801,6 +811,8 @@ async function aplicarSplitNoClip({
     split_image_offset: offsets.imageOffset,
     split_video_offset_y: offsets.videoOffsetY,
     split_image_offset_y: offsets.imageOffsetY,
+    split_video_zoom: offsets.videoZoom,
+    split_image_zoom: offsets.imageZoom,
     split_modo: modoFinal,
     split_imagem_pos: lado,
     split_texto: textoFinal || null,
@@ -904,6 +916,8 @@ async function reenquadrarSplit({
   imageOffset,
   videoOffsetY,
   imageOffsetY,
+  videoZoom,
+  imageZoom,
   imagemLado,
   modo,
   texto,
@@ -923,6 +937,8 @@ async function reenquadrarSplit({
     imageOffset: clampOffset(imageOffset, Number(clip.split_image_offset) || 50),
     videoOffsetY: clampOffset(videoOffsetY, Number(clip.split_video_offset_y) || 50),
     imageOffsetY: clampOffset(imageOffsetY, Number(clip.split_image_offset_y) || 50),
+    videoZoom: clampZoom(videoZoom != null ? videoZoom : clip.split_video_zoom, 100),
+    imageZoom: clampZoom(imageZoom != null ? imageZoom : clip.split_image_zoom, 100),
   };
   const modoFinal = normalizarModoSplit(modo != null ? modo : clip.split_modo);
   const lado = normalizarImagemPos(
@@ -956,6 +972,8 @@ async function reenquadrarSplit({
     split_image_offset: offsets.imageOffset,
     split_video_offset_y: offsets.videoOffsetY,
     split_image_offset_y: offsets.imageOffsetY,
+    split_video_zoom: offsets.videoZoom,
+    split_image_zoom: offsets.imageZoom,
     split_texto: textoFinal || null,
     split_texto_posicao: posicaoFinal,
     split_texto_tamanho: tamanhoFinal,

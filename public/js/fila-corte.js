@@ -501,10 +501,14 @@
     const imagemRange = document.getElementById('split-imagem-offset');
     const videoRangeY = document.getElementById('split-video-offset-y');
     const imagemRangeY = document.getElementById('split-imagem-offset-y');
+    const videoZoomRange = document.getElementById('split-video-zoom');
+    const imagemZoomRange = document.getElementById('split-imagem-zoom');
     const videoValor = document.getElementById('split-video-valor');
     const imagemValor = document.getElementById('split-imagem-valor');
     const videoValorY = document.getElementById('split-video-valor-y');
     const imagemValorY = document.getElementById('split-imagem-valor-y');
+    const videoZoomValor = document.getElementById('split-video-zoom-valor');
+    const imagemZoomValor = document.getElementById('split-imagem-zoom-valor');
     const ladoBtn = document.getElementById('btn-split-lado');
     const msgEl = document.getElementById('split-msg');
     const aplicarBtn = document.getElementById('btn-split-aplicar');
@@ -683,17 +687,46 @@
     });
     syncTextoPreview();
 
+    function aplicarMediaPreview(el, x, y, zoomPct) {
+      if (!el) return;
+      const z = Math.min(160, Math.max(70, Number(zoomPct) || 100)) / 100;
+      el.style.objectFit = 'cover';
+      el.style.objectPosition = x + '% ' + y + '%';
+      el.style.position = 'absolute';
+      el.style.maxWidth = 'none';
+      if (z >= 1) {
+        el.style.width = '100%';
+        el.style.height = '100%';
+        el.style.left = '0';
+        el.style.top = '0';
+        el.style.transform = z > 1.001 ? 'scale(' + z + ')' : 'none';
+        el.style.transformOrigin = x + '% ' + y + '%';
+      } else {
+        const w = z * 100;
+        const h = z * 100;
+        el.style.width = w + '%';
+        el.style.height = h + '%';
+        el.style.left = ((100 - w) * x) / 100 + '%';
+        el.style.top = ((100 - h) * y) / 100 + '%';
+        el.style.transform = 'none';
+      }
+    }
+
     function aplicarOffsetsNoPreview() {
       const v = Number(videoRange?.value ?? 50);
       const i = Number(imagemRange?.value ?? 50);
       const vy = Number(videoRangeY?.value ?? 50);
       const iy = Number(imagemRangeY?.value ?? 50);
-      if (videoPreview) videoPreview.style.objectPosition = v + '% ' + vy + '%';
-      if (imgPreview) imgPreview.style.objectPosition = i + '% ' + iy + '%';
+      const vz = Number(videoZoomRange?.value ?? 100);
+      const iz = Number(imagemZoomRange?.value ?? 100);
+      aplicarMediaPreview(videoPreview, v, vy, vz);
+      aplicarMediaPreview(imgPreview, i, iy, iz);
       if (videoValor) videoValor.textContent = v + '%';
       if (imagemValor) imagemValor.textContent = i + '%';
       if (videoValorY) videoValorY.textContent = vy + '%';
       if (imagemValorY) imagemValorY.textContent = iy + '%';
+      if (videoZoomValor) videoZoomValor.textContent = vz + '%';
+      if (imagemZoomValor) imagemZoomValor.textContent = iz + '%';
     }
 
     function rotuloPosicao() {
@@ -784,6 +817,8 @@
     imagemRange?.addEventListener('input', aplicarOffsetsNoPreview);
     videoRangeY?.addEventListener('input', aplicarOffsetsNoPreview);
     imagemRangeY?.addEventListener('input', aplicarOffsetsNoPreview);
+    videoZoomRange?.addEventListener('input', aplicarOffsetsNoPreview);
+    imagemZoomRange?.addEventListener('input', aplicarOffsetsNoPreview);
     aplicarOffsetsNoPreview();
     aplicarLadoNoPreview();
     atualizarUiSplit({
@@ -920,6 +955,8 @@
       const imagemOffset = Number(imagemRange?.value ?? 50);
       const videoOffsetY = Number(videoRangeY?.value ?? 50);
       const imagemOffsetY = Number(imagemRangeY?.value ?? 50);
+      const videoZoom = Number(videoZoomRange?.value ?? 100);
+      const imagemZoom = Number(imagemZoomRange?.value ?? 100);
       const texto = String(textoInput?.value || '').trim();
       const textoFields = {
         texto,
@@ -933,6 +970,8 @@
         imagem_offset: imagemOffset,
         video_offset_y: videoOffsetY,
         imagem_offset_y: imagemOffsetY,
+        video_zoom: videoZoom,
+        imagem_zoom: imagemZoom,
       };
 
       if (fonte === 'upload') {
@@ -945,6 +984,8 @@
         form.append('imagem_offset', String(imagemOffset));
         form.append('video_offset_y', String(videoOffsetY));
         form.append('imagem_offset_y', String(imagemOffsetY));
+        form.append('video_zoom', String(videoZoom));
+        form.append('imagem_zoom', String(imagemZoom));
         form.append('imagem_lado', lado);
         form.append('modo', modo);
         form.append('texto', texto);
@@ -1035,6 +1076,8 @@
           imagem_offset: Number(imagemRange?.value ?? 50),
           video_offset_y: Number(videoRangeY?.value ?? 50),
           imagem_offset_y: Number(imagemRangeY?.value ?? 50),
+          video_zoom: Number(videoZoomRange?.value ?? 100),
+          imagem_zoom: Number(imagemZoomRange?.value ?? 100),
           imagem_lado: lado,
           modo,
           texto: String(textoInput?.value || '').trim(),
