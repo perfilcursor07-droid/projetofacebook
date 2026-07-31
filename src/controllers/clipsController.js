@@ -185,67 +185,48 @@ async function gerarCapa(req, res, next) {
 async function removerCapa(req, res, next) {
   try {
     const { clip } = await assertOwnedClip(req);
-    const {
-      isCapaVideoPath,
-      resolvePlaybackVideoPath,
-      syncClipVideoToCapaFlag,
-    } = require('../services/clipCoverService');
+    const { removeCoverFromClip, isCapaVideoPath } = require('../services/clipCoverService');
 
-    // Garante corpo sem capa mesmo se arquivo_sem_capa sumiu / caminho ficou _capa_
-    let working = await syncClipVideoToCapaFlag({
-      ...clip,
-      capa_status: 'pendente',
-    });
+    // Desmarcar no editor sempre tenta limpar de verdade (force).
+    const forceStrip =
+      req.body?.force === true ||
+      req.body?.force === '1' ||
+      req.query?.force === '1' ||
+      String(clip.capa_status || '') === 'pronta' ||
+      isCapaVideoPath(clip.caminho_arquivo);
 
-    let body =
-      (working.arquivo_sem_capa &&
-      !isCapaVideoPath(working.arquivo_sem_capa) &&
-      fsExistsMedia(working.arquivo_sem_capa)
-        ? working.arquivo_sem_capa
-        : null) ||
-      resolvePlaybackVideoPath({ ...working, capa_status: 'pendente', caminho_arquivo: null }) ||
-      resolvePlaybackVideoPath({ ...working, capa_status: 'pendente' });
+    const result = await removeCoverFromClip(clip, { forceStrip: Boolean(forceStrip) });
+    const finalRel = result.relativePath;
+    const stripped = result.stripped;
 
-    if (!body || isCapaVideoPath(body)) {
-      throw httpError(
-        'Não há versão sem capa disponível. Gere o corte de novo ou remova o layout e tente outra vez.',
-        422
-      );
-    }
-
-    const atual = working.caminho_arquivo;
-    if (atual && atual !== body && isCapaVideoPath(atual)) {
+    const atual = clip.caminho_arquivo;
+    if (atual && atual !== finalRel && (isCapaVideoPath(atual) || stripped)) {
       processingService.safeUnlink(atual);
     }
 
     await VideoClips.update(clip.id, {
-      caminho_arquivo: body,
+      caminho_arquivo: finalRel,
       arquivo_sem_capa: null,
       capa_status: 'pendente',
-      ...(working.arquivo_sem_speed && isCapaVideoPath(working.arquivo_sem_speed)
-        ? { arquivo_sem_speed: body }
+      // Evita reaproveitar backup 1x que ainda tenha a intro embutida
+      ...(stripped ? { arquivo_sem_speed: null } : {}),
+      ...(clip.arquivo_sem_speed && isCapaVideoPath(clip.arquivo_sem_speed)
+        ? { arquivo_sem_speed: finalRel }
         : {}),
     });
 
     res.json({
       ok: true,
-      message: 'Capa desmarcada — vídeo sem capa',
-      video_url: `/media/${String(body).replace(/^\/+/, '')}`,
+      message: stripped
+        ? 'Capa removida do vídeo.'
+        : 'Capa desmarcada — vídeo sem capa',
+      video_url: `/media/${String(finalRel).replace(/^\/+/, '')}`,
       capa_status: 'pendente',
       capa_titulo: clip.capa_titulo || '',
+      stripped,
     });
   } catch (err) {
     next(err);
-  }
-}
-
-function fsExistsMedia(relative) {
-  try {
-    const { storageAbsolutePath } = require('../services/downloadService');
-    const fs = require('fs');
-    return Boolean(relative) && fs.existsSync(storageAbsolutePath(relative));
-  } catch {
-    return false;
   }
 }
 

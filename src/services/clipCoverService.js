@@ -269,8 +269,92 @@ function fileExistsRel(relative) {
 }
 
 /**
+ * Candidatos a “corpo” do Reel sem a intro de capa.
+ */
+function listCorpoSemCapaCandidates(clip) {
+  if (!clip?.id) return [];
+  const list = [
+    clip.arquivo_sem_capa,
+    clip.arquivo_sem_split,
+    clip.arquivo_sem_speed,
+    clip.arquivo_sem_bgm,
+    `clips/clip_${clip.id}.mp4`,
+    clip.caminho_arquivo,
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const rel of list) {
+    if (!rel || seen.has(rel)) continue;
+    seen.add(rel);
+    if (!fileExistsRel(rel)) continue;
+    if (isCapaVideoPath(rel)) continue;
+    out.push(rel);
+  }
+  return out;
+}
+
+/**
+ * Remove a intro da capa (primeiros ~COVER_SECONDS) de um mp4.
+ * Usado quando a capa ficou embutida num arquivo sem sufixo `_capa_`.
+ */
+function stripCoverIntro({ inputRelative, outputRelative, coverSeconds = COVER_SECONDS }) {
+  const inputPath = storageAbs(inputRelative);
+  const outputPath = storageAbs(outputRelative);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  return probe(inputPath).then((meta) => {
+    const dur = Number(meta.format?.duration) || 0;
+    const skip = Math.min(Number(coverSeconds) || COVER_SECONDS, Math.max(0, dur - 3));
+    if (skip < 0.35) {
+      fs.copyFileSync(inputPath, outputPath);
+      return outputRelative;
+    }
+
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .setStartTime(skip)
+        .videoCodec('libx264')
+        .audioCodec('aac')
+        .outputOptions([
+          '-preset', 'veryfast',
+          '-crf', '23',
+          '-r', String(OUTPUT_FPS),
+          '-vsync', 'cfr',
+          '-pix_fmt', 'yuv420p',
+          '-g', String(OUTPUT_FPS * 2),
+          '-keyint_min', String(OUTPUT_FPS * 2),
+          '-sc_threshold', '0',
+          '-b:a', '128k',
+          '-ar', '48000',
+          '-ac', '2',
+          '-movflags', '+faststart',
+          '-y',
+        ])
+        .on('error', reject)
+        .on('end', () => resolve(outputRelative))
+        .save(outputPath);
+    });
+  });
+}
+
+/** Existe algum mp4 de capa gerado para este clip? (mesmo se o caminho atual não tiver `_capa_`) */
+function clipHasCapaArtifact(clipId) {
+  const id = Number(clipId);
+  if (!Number.isFinite(id) || id <= 0) return false;
+  const dir = storageAbs('clips');
+  if (!fs.existsSync(dir)) return false;
+  try {
+    const re = new RegExp(`^clip_${id}.*_capa_`, 'i');
+    return fs.readdirSync(dir).some((name) => re.test(name) && /\.mp4$/i.test(name));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Vídeo do preview/publicação conforme o flag da capa.
- * Com capa desmarcada, nunca devolve arquivo `_capa_`.
+ * Com capa desmarcada, nunca devolve arquivo `_capa_` nem “surpresa”
+ * de arquivo_sem_speed com intro embutida.
  */
 function resolvePlaybackVideoPath(clip) {
   if (!clip) return null;
@@ -282,24 +366,21 @@ function resolvePlaybackVideoPath(clip) {
     return clip.caminho_arquivo || null;
   }
 
-  const candidates = [
+  // Capa off: o caminho atual (já corrigido pelo DELETE) tem prioridade.
+  // Não preferir arquivo_sem_speed/bgm — podem ter a intro queimada sem `_capa_` no nome.
+  if (fileExistsRel(clip.caminho_arquivo) && !isCapaVideoPath(clip.caminho_arquivo)) {
+    return clip.caminho_arquivo;
+  }
+
+  const trusted = [
     clip.arquivo_sem_capa,
-    clip.arquivo_sem_speed && !isCapaVideoPath(clip.arquivo_sem_speed)
-      ? clip.arquivo_sem_speed
-      : null,
     clip.arquivo_sem_split,
-    clip.caminho_arquivo && !isCapaVideoPath(clip.caminho_arquivo)
-      ? clip.caminho_arquivo
-      : null,
     `clips/clip_${clip.id}.mp4`,
   ];
+  for (const rel of trusted) {
+    if (rel && fileExistsRel(rel) && !isCapaVideoPath(rel)) return rel;
+  }
 
-  for (const rel of candidates) {
-    if (fileExistsRel(rel) && !isCapaVideoPath(rel)) return rel;
-  }
-  for (const rel of candidates) {
-    if (fileExistsRel(rel)) return rel;
-  }
   return clip.caminho_arquivo || null;
 }
 
@@ -313,18 +394,14 @@ async function syncClipVideoToCapaFlag(clip) {
 
   if (capaOn || !isCapaVideoPath(atual)) return clip;
 
-  const corpo =
-    (fileExistsRel(clip.arquivo_sem_capa) && !isCapaVideoPath(clip.arquivo_sem_capa)
-      ? clip.arquivo_sem_capa
-      : null) ||
-    (fileExistsRel(clip.arquivo_sem_speed) && !isCapaVideoPath(clip.arquivo_sem_speed)
-      ? clip.arquivo_sem_speed
-      : null) ||
-    (fileExistsRel(clip.arquivo_sem_split) ? clip.arquivo_sem_split : null) ||
-    (fileExistsRel(`clips/clip_${clip.id}.mp4`) ? `clips/clip_${clip.id}.mp4` : null) ||
-    resolvePlaybackVideoPath({ ...clip, caminho_arquivo: null, capa_status: 'pendente' });
+  const corpos = [
+    clip.arquivo_sem_capa,
+    clip.arquivo_sem_split,
+    `clips/clip_${clip.id}.mp4`,
+  ].filter((rel) => rel && fileExistsRel(rel) && !isCapaVideoPath(rel) && rel !== atual);
 
-  if (!corpo || corpo === atual) return clip;
+  const corpo = corpos[0] || null;
+  if (!corpo) return clip;
 
   const VideoClips = require('../models/VideoClips');
   await VideoClips.update(clip.id, {
@@ -340,11 +417,82 @@ async function syncClipVideoToCapaFlag(clip) {
   };
 }
 
+/**
+ * Remove a capa do arquivo do clip (volta ao corpo limpo ou corta a intro).
+ * @returns {Promise<{ relativePath: string, stripped: boolean }>}
+ */
+async function removeCoverFromClip(clip, { forceStrip = false } = {}) {
+  if (!clip?.id) throw new Error('Clip inválido');
+
+  const atual = clip.caminho_arquivo;
+  const capaWasOn =
+    String(clip.capa_status || '') === 'pronta' || isCapaVideoPath(atual);
+  const hasArtifact = clipHasCapaArtifact(clip.id);
+  const alreadyStripped = /_sem_capa_/i.test(String(atual || ''));
+
+  // Corpo limpo explícito (backup feito ao gerar a capa)
+  const semCapaBackup =
+    fileExistsRel(clip.arquivo_sem_capa) && !isCapaVideoPath(clip.arquivo_sem_capa)
+      ? clip.arquivo_sem_capa
+      : null;
+
+  if (semCapaBackup && semCapaBackup !== atual) {
+    return { relativePath: semCapaBackup, stripped: false };
+  }
+
+  const shouldStrip =
+    (forceStrip || capaWasOn || isCapaVideoPath(atual) || hasArtifact) &&
+    !(alreadyStripped && !capaWasOn && !isCapaVideoPath(atual));
+
+  // force sem evidência de capa: não corta os primeiros segundos à toa
+  if (forceStrip && !capaWasOn && !isCapaVideoPath(atual) && !hasArtifact && !semCapaBackup) {
+    if (fileExistsRel(atual)) return { relativePath: atual, stripped: false };
+  }
+
+  if (shouldStrip && fileExistsRel(atual)) {
+    const outRel = `clips/clip_${clip.id}_sem_capa_${Date.now()}.mp4`;
+    await stripCoverIntro({
+      inputRelative: atual,
+      outputRelative: outRel,
+      coverSeconds: COVER_SECONDS + 0.2,
+    });
+    if (!fileExistsRel(outRel)) {
+      throw new Error('Falha ao gerar o vídeo sem capa');
+    }
+    return { relativePath: outRel, stripped: true };
+  }
+
+  // Soft: troca de `_capa_` para split / original
+  if (isCapaVideoPath(atual)) {
+    const soft = [
+      clip.arquivo_sem_split,
+      `clips/clip_${clip.id}.mp4`,
+    ].find((rel) => rel && fileExistsRel(rel) && !isCapaVideoPath(rel));
+    if (soft) return { relativePath: soft, stripped: false };
+  }
+
+  if (fileExistsRel(atual) && !isCapaVideoPath(atual)) {
+    return { relativePath: atual, stripped: false };
+  }
+
+  const fallback = [
+    clip.arquivo_sem_split,
+    `clips/clip_${clip.id}.mp4`,
+  ].find((rel) => rel && fileExistsRel(rel) && !isCapaVideoPath(rel));
+
+  if (fallback) return { relativePath: fallback, stripped: false };
+
+  throw new Error('Arquivo do vídeo não encontrado para remover a capa');
+}
+
 module.exports = {
   addCoverToClip,
   COVER_SECONDS,
   isCapaVideoPath,
   resolvePlaybackVideoPath,
   syncClipVideoToCapaFlag,
+  removeCoverFromClip,
+  stripCoverIntro,
+  listCorpoSemCapaCandidates,
 };
 
