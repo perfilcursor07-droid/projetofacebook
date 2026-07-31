@@ -579,6 +579,16 @@
     return true;
   }
 
+  async function persistirAlertaLido(alertaId) {
+    if (!alertaId) return;
+    try {
+      await api(`/api/biblioteca/alertas/${alertaId}/lido`, { method: 'POST', body: '{}' });
+    } catch (err) {
+      console.warn('[biblioteca] falha ao marcar alerta como lido', alertaId, err);
+      alert(err.message || 'Não foi possível marcar como lido. Atualize a página e tente de novo.');
+    }
+  }
+
   function onAlertaListaClick(box, e) {
     if (!box || !box.contains(e.target)) return false;
     const marcarBtn = e.target.closest('.bib-alerta-marcar-lido');
@@ -589,9 +599,7 @@
       if (!item) return true;
       const alertaId = item.dataset.alerta;
       const eraNovo = marcarAlertaVisualComoLido(item);
-      if (eraNovo && alertaId) {
-        api(`/api/biblioteca/alertas/${alertaId}/lido`, { method: 'POST', body: '{}' }).catch(() => {});
-      }
+      if (eraNovo && alertaId) persistirAlertaLido(alertaId);
       return true;
     }
 
@@ -606,9 +614,7 @@
     if (!item) return true;
     const eraNovo = marcarAlertaVisualComoLido(item);
     const alertaId = item.dataset.alerta;
-    if (eraNovo && alertaId) {
-      api(`/api/biblioteca/alertas/${alertaId}/lido`, { method: 'POST', body: '{}' }).catch(() => {});
-    }
+    if (eraNovo && alertaId) persistirAlertaLido(alertaId);
     return true;
   }
 

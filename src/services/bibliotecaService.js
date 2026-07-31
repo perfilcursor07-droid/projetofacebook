@@ -2468,16 +2468,16 @@ async function dashboardUsuario(userId) {
   let alertasForaNaoLidos = 0;
   let alertasForaLidos = 0;
   if (hasKeywords) {
-    alertasNaoLidos = alertasNaoLidosRows.length;
-    alertasLidos = alertasLidosRows.length;
-    alertasForaNaoLidos = alertasForaRows.length;
-    const foraLidosRows = await BibliotecaAlertas.findByUser(userId, {
-      apenasLidos: true,
-      limit: 80,
-      keywords: alertasKeywords,
-      excludeKeywords: true,
-    });
-    alertasForaLidos = foraLidosRows.length;
+    const [countKw, countKwLidos, countFora, countForaLidos] = await Promise.all([
+      BibliotecaAlertas.countNaoLidos(userId, alertasKeywords),
+      BibliotecaAlertas.countLidos(userId, alertasKeywords),
+      BibliotecaAlertas.countNaoLidos(userId, alertasKeywords, { excludeKeywords: true }),
+      BibliotecaAlertas.countLidos(userId, alertasKeywords, { excludeKeywords: true }),
+    ]);
+    alertasNaoLidos = Number(countKw?.total || alertasNaoLidosRows.length || 0);
+    alertasLidos = Number(countKwLidos?.total || alertasLidosRows.length || 0);
+    alertasForaNaoLidos = Number(countFora?.total || alertasForaRows.length || 0);
+    alertasForaLidos = Number(countForaLidos?.total || 0);
   } else {
     const [countRow, countLidosRow] = await Promise.all([
       BibliotecaAlertas.countNaoLidos(userId, null),

@@ -142,21 +142,29 @@ function filterExcludingKeywords(rows, keywords) {
   return (rows || []).filter((row) => !matchedIds.has(row.id));
 }
 
+function tituloDedupeKey(row) {
+  return `${row.fonte_id || 0}|${String(row?.titulo || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/^[^:]+:\s*/, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140)}`;
+}
+
+function isLidoFlag(value) {
+  return value === true || value === 1 || value === '1';
+}
+
 function dedupeAlertasRows(rows) {
   const seenPost = new Set();
   const seenTitulo = new Set();
   const out = [];
   for (const row of rows || []) {
     if (row.post_id && seenPost.has(Number(row.post_id))) continue;
-    const tKey = `${row.fonte_id || 0}|${String(row.titulo || '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/^[^:]+:\s*/, '')
-      .replace(/[^\p{L}\p{N}]+/gu, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 140)}`;
+    const tKey = tituloDedupeKey(row);
     if (tKey.length > 28 && seenTitulo.has(tKey)) continue;
     if (row.post_id) seenPost.add(Number(row.post_id));
     if (tKey.length > 28) seenTitulo.add(tKey);
@@ -174,8 +182,13 @@ const BibliotecaAlertas = {
   ) {
     const lim = Math.min(500, Math.max(1, Number(limit) || 40));
     const hasKw = parseKeywords(keywords).length > 0;
-    // Com palavras-chave (match ou exclusão): pool maior e filtra em JS.
-    const poolLimit = hasKw ? Math.min(500, Math.max(lim * 5, 250)) : Math.min(500, Math.max(lim * 3, lim));
+    // Com exclusão de keywords o pool precisa ser bem maior: alertas “com keyword”
+    // recentes empurravam os “fora” para fora do limite e a lista/contagem mentiam.
+    const poolLimit = !hasKw
+      ? Math.min(500, Math.max(lim * 3, lim))
+      : excludeKeywords
+        ? Math.min(4000, Math.max(lim * 20, 1200))
+        : Math.min(1500, Math.max(lim * 8, 400));
     return baseQuery(userId, { apenasNaoLidos, apenasLidos })
       .leftJoin('biblioteca_posts as p', 'p.id', 'a.post_id')
       .orderBy('a.created_at', 'desc')
@@ -257,31 +270,29 @@ const BibliotecaAlertas = {
 
   /**
    * Remove alertas duplicados (mesmo post_id ou mesmo título+fonte).
-   * Mantém o mais antigo; marca os extras como lidos ou apaga os não lidos extras.
+   * Prefere manter o já lido; senão o mais antigo. Evita o caso em que
+   * o usuário marca o mais recente e o duplicado antigo volta como não lido.
    */
   async limparDuplicados(userId) {
     const rows = await db(this.table)
       .where({ user_id: userId })
-      .orderBy('id', 'asc')
       .select('id', 'post_id', 'fonte_id', 'titulo', 'lido');
+    const sorted = [...(rows || [])].sort((a, b) => {
+      const aLido = isLidoFlag(a.lido);
+      const bLido = isLidoFlag(b.lido);
+      if (aLido !== bLido) return aLido ? -1 : 1;
+      return Number(a.id) - Number(b.id);
+    });
     const seenPost = new Set();
     const seenTitulo = new Set();
     const idsLixo = [];
-    for (const row of rows || []) {
+    for (const row of sorted) {
       let dup = false;
       if (row.post_id) {
         if (seenPost.has(Number(row.post_id))) dup = true;
         else seenPost.add(Number(row.post_id));
       }
-      const tKey = `${row.fonte_id || 0}|${String(row.titulo || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/^[^:]+:\s*/, '')
-        .replace(/[^\p{L}\p{N}]+/gu, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 140)}`;
+      const tKey = tituloDedupeKey(row);
       if (tKey.length > 28) {
         if (seenTitulo.has(tKey)) dup = true;
         else seenTitulo.add(tKey);
@@ -292,8 +303,37 @@ const BibliotecaAlertas = {
     return db(this.table).whereIn('id', idsLixo).del();
   },
 
-  marcarLido(id, userId) {
-    return db(this.table).where({ id, user_id: userId }).update({ lido: true, updated_at: db.fn.now() });
+  async marcarLido(id, userId) {
+    const alertaId = Number(id);
+    if (!alertaId) return 0;
+    const row = await db(this.table).where({ id: alertaId, user_id: userId }).first();
+    if (!row) return 0;
+
+    const ids = new Set([alertaId]);
+    if (row.post_id) {
+      const samePost = await db(this.table)
+        .where({ user_id: userId, post_id: row.post_id })
+        .select('id');
+      for (const r of samePost || []) ids.add(Number(r.id));
+    }
+    const tKey = tituloDedupeKey(row);
+    if (tKey.length > 28) {
+      const candidatos = await db(this.table)
+        .where({ user_id: userId })
+        .modify((qb) => {
+          if (row.fonte_id != null) qb.andWhere({ fonte_id: row.fonte_id });
+          else qb.whereNull('fonte_id');
+        })
+        .select('id', 'fonte_id', 'titulo');
+      for (const r of candidatos || []) {
+        if (tituloDedupeKey(r) === tKey) ids.add(Number(r.id));
+      }
+    }
+
+    return db(this.table)
+      .where({ user_id: userId })
+      .whereIn('id', [...ids])
+      .update({ lido: true, updated_at: db.fn.now() });
   },
 
   marcarLidoPorPost(postId, userId) {
@@ -308,18 +348,26 @@ const BibliotecaAlertas = {
         .where({ user_id: userId, lido: false })
         .update({ lido: true, updated_at: db.fn.now() });
     }
-    const rows = await this.findByUser(userId, {
-      apenasNaoLidos: true,
-      limit: 500,
-      keywords,
-      excludeKeywords,
-    });
-    const ids = rows.map((r) => r.id).filter(Boolean);
-    if (!ids.length) return 0;
-    return db(this.table)
-      .where({ user_id: userId, lido: false })
-      .whereIn('id', ids)
-      .update({ lido: true, updated_at: db.fn.now() });
+
+    // Em lotes: o pool/filtro JS pode não cobrir todos de uma vez.
+    let total = 0;
+    for (let i = 0; i < 20; i += 1) {
+      const rows = await this.findByUser(userId, {
+        apenasNaoLidos: true,
+        limit: 500,
+        keywords,
+        excludeKeywords,
+      });
+      const ids = rows.map((r) => Number(r.id)).filter(Boolean);
+      if (!ids.length) break;
+      const updated = await db(this.table)
+        .where({ user_id: userId, lido: false })
+        .whereIn('id', ids)
+        .update({ lido: true, updated_at: db.fn.now() });
+      total += Number(updated || 0);
+      if (ids.length < 500) break;
+    }
+    return total;
   },
 };
 
