@@ -186,10 +186,16 @@ async function removerCapa(req, res, next) {
     await VideoClips.update(clip.id, {
       caminho_arquivo: clip.arquivo_sem_capa,
       arquivo_sem_capa: null,
-      capa_titulo: null,
+      // Mantém o título para facilitar gerar de novo; só tira a capa do arquivo.
       capa_status: 'pendente',
     });
-    res.json({ ok: true, message: 'Capa removida — corte original restaurado' });
+    res.json({
+      ok: true,
+      message: 'Capa desmarcada — vídeo sem capa',
+      video_url: `/media/${String(clip.arquivo_sem_capa).replace(/^\/+/, '')}`,
+      capa_status: 'pendente',
+      capa_titulo: clip.capa_titulo || '',
+    });
   } catch (err) {
     next(err);
   }
@@ -221,6 +227,7 @@ async function montarSplit(req, res, next) {
       imagemLado: body.imagem_lado ?? body.imagemLado,
       texto: body.texto ?? body.split_texto,
       textoPosicao: body.texto_posicao ?? body.textoPosicao ?? body.split_texto_posicao,
+      textoTamanho: body.texto_tamanho ?? body.textoTamanho ?? body.split_texto_tamanho,
     });
 
     res.status(202).json({
@@ -246,6 +253,7 @@ async function reenquadrarSplit(req, res, next) {
       imagemLado: body.imagem_lado ?? body.imagemLado,
       texto: body.texto ?? body.split_texto,
       textoPosicao: body.texto_posicao ?? body.textoPosicao ?? body.split_texto_posicao,
+      textoTamanho: body.texto_tamanho ?? body.textoTamanho ?? body.split_texto_tamanho,
     });
     res.status(202).json({ ...result, clipId: clip.id, message: 'Reenquadrando…' });
   } catch (err) {
@@ -333,9 +341,35 @@ async function statusClip(req, res, next) {
       split_image_offset: Number(clip.split_image_offset) || 50,
       split_texto: clip.split_texto || '',
       split_texto_posicao: clip.split_texto_posicao === 'topo' ? 'topo' : 'rodape',
+      split_texto_tamanho: Math.min(160, Math.max(70, Number(clip.split_texto_tamanho) || 100)),
       preview_base_url: clipSplitService.previewBaseUrl(clip),
       updated_at: clip.updated_at || null,
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** IA sugere o texto fixo do Reel (com tom e [[destaques]]). */
+async function sugerirTextoSplit(req, res, next) {
+  try {
+    const { clip, video } = await assertOwnedClip(req);
+    const body = req.body || {};
+    const tom = String(body.tom || 'natural').toLowerCase();
+
+    let materia = String(clip.legenda_sugerida || '').trim();
+    if (!materia || /^\[(sem fala|falha)/i.test(materia)) materia = '';
+
+    const result = await deepseekService.sugerirTextoSplitVideo({
+      transcricao: clip.transcricao || '',
+      materia,
+      titulo: String(body.titulo || clip.capa_titulo || '').trim() || null,
+      tituloVideo: video.titulo || video.termo_busca || null,
+      tom,
+      textoAtual: String(body.texto_atual || body.texto || clip.split_texto || '').trim(),
+    });
+
+    res.json({ ok: true, ...result });
   } catch (err) {
     next(err);
   }
@@ -384,6 +418,7 @@ module.exports = {
   removerSplit,
   listarFramesDoSplit,
   buscarImagensDoSplit,
+  sugerirTextoSplit,
   statusClip,
   queueClipCover,
   resolveCapaTitulo,

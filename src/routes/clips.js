@@ -17,6 +17,7 @@ router.get('/:id/status', clipsController.statusClip);
 router.get('/:id/split/imagens', clipsController.buscarImagensDoSplit);
 router.get('/:id/split/frames', clipsController.listarFramesDoSplit);
 router.post('/:id/split/enquadrar', clipsController.reenquadrarSplit);
+router.post('/:id/split/sugerir-texto', clipsController.sugerirTextoSplit);
 // uploadSplitImage ignora requisições que não são multipart, então o mesmo
 // endpoint atende imagem da busca (JSON) e upload de arquivo.
 router.post('/:id/split', uploadSplitImage, clipsController.montarSplit);

@@ -57,6 +57,13 @@ function normalizarPosicaoTexto(raw) {
   return String(raw || '').toLowerCase() === 'topo' ? 'topo' : 'rodape';
 }
 
+/** Escala da fonte: 70–160 (% do tamanho padrão do modelo). */
+function normalizarTamanhoTexto(raw, fallback = 100) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(160, Math.max(70, Math.round(n)));
+}
+
 function escapeXml(text) {
   return String(text || '')
     .replace(/&/g, '&amp;')
@@ -222,10 +229,12 @@ async function criarFaixaTextoPng({
   destAbs,
   modelo = DEFAULT_VIDEO_BRAND_MODEL,
   corDestaque = '#facc15',
+  tamanhoPct = 100,
 }) {
   const w = Math.max(320, Math.round(Number(width) || 1080));
   const h = Math.max(320, Math.round(Number(height) || 1920));
   const modeloId = normalizeVideoBrandModel(modelo);
+  const scale = normalizarTamanhoTexto(tamanhoPct) / 100;
   const highlight = /^#[0-9a-f]{6}$/i.test(String(corDestaque || ''))
     ? String(corDestaque).toLowerCase()
     : '#facc15';
@@ -238,7 +247,7 @@ async function criarFaixaTextoPng({
   let svgBody = '';
 
   if (modeloId === 'destaque_viral') {
-    const fontSize = Math.round(w * 0.055);
+    const fontSize = Math.round(w * 0.055 * scale);
     const lineH = Math.round(fontSize * 1.28);
     const maxW = Math.round(w * 0.52);
     const marginL = Math.round(w * 0.035);
@@ -265,7 +274,7 @@ async function criarFaixaTextoPng({
 
     svgBody = linesSvg;
   } else if (modeloId === 'impacto_central') {
-    const fontSize = Math.round(w * 0.048);
+    const fontSize = Math.round(w * 0.048 * scale);
     const lineH = Math.round(fontSize * 1.3);
     const maxW = Math.round(w * 0.86);
     const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 5);
@@ -294,7 +303,7 @@ async function criarFaixaTextoPng({
 ${linesSvg}`;
   } else if (usaDestaque) {
     // Faixa topo/rodapé, mas com caixas nas palavras [[marcadas]].
-    const fontSize = Math.round(w * 0.042);
+    const fontSize = Math.round(w * 0.042 * scale);
     const lineH = Math.round(fontSize * 1.28);
     const maxW = Math.round(w * 0.9);
     const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 4);
@@ -328,7 +337,7 @@ ${linesSvg}`;
   } else {
     const plain = textoSemMarcadores(texto);
     const linhas = quebrarLinhas(plain, w >= 1000 ? 34 : 28, 4);
-    const fontSize = Math.round(w * 0.042);
+    const fontSize = Math.round(w * 0.042 * scale);
     const lineH = Math.round(fontSize * 1.25);
     const padY = Math.round(w * 0.035);
     const barH = padY * 2 + linhas.length * lineH;
@@ -530,6 +539,7 @@ async function aplicarSplitAgora({
   imagemLado,
   texto,
   textoPosicao,
+  textoTamanho,
 }) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
@@ -561,6 +571,10 @@ async function aplicarSplitAgora({
     textoPosicao != null
       ? textoPosicao
       : clip.split_texto_posicao || videoBrandModelMeta(videoModelo).posicaoPadrao
+  );
+  const tamanhoFinal = normalizarTamanhoTexto(
+    textoTamanho != null ? textoTamanho : clip.split_texto_tamanho,
+    100
   );
 
   const uid = crypto.randomBytes(3).toString('hex');
@@ -596,6 +610,7 @@ async function aplicarSplitAgora({
         destAbs: overlayAbs,
         modelo: videoModelo,
         corDestaque: videoCorDestaque,
+        tamanhoPct: tamanhoFinal,
       });
       await overlayTextoFixo({
         videoPath: splitTempAbs,
@@ -622,6 +637,7 @@ async function aplicarSplitAgora({
       split_image_offset: clampOffset(imageOffset),
       split_texto: textoFinal || null,
       split_texto_posicao: posicaoFinal,
+      split_texto_tamanho: tamanhoFinal,
       split_erro: null,
       capa_status: capaEstavaPronta ? 'gerando' : 'pendente',
     });
@@ -668,6 +684,7 @@ async function aplicarSplitNoClip({
   imagemLado,
   texto,
   textoPosicao,
+  textoTamanho,
 }) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
@@ -693,6 +710,10 @@ async function aplicarSplitNoClip({
   const posicaoFinal = normalizarPosicaoTexto(
     textoPosicao != null ? textoPosicao : clip.split_texto_posicao
   );
+  const tamanhoFinal = normalizarTamanhoTexto(
+    textoTamanho != null ? textoTamanho : clip.split_texto_tamanho,
+    100
+  );
 
   await VideoClips.update(clip.id, {
     split_status: 'gerando',
@@ -703,6 +724,7 @@ async function aplicarSplitNoClip({
     split_image_offset: offsets.imageOffset,
     split_texto: textoFinal || null,
     split_texto_posicao: posicaoFinal,
+    split_texto_tamanho: tamanhoFinal,
   });
 
   enqueue(`split clip ${clip.id}`, async () => {
@@ -714,6 +736,7 @@ async function aplicarSplitNoClip({
         imagemLado: lado,
         texto: textoFinal,
         textoPosicao: posicaoFinal,
+        textoTamanho: tamanhoFinal,
         ...offsets,
       });
     } catch (err) {
@@ -726,6 +749,7 @@ async function aplicarSplitNoClip({
     imagem: `/media/${imagem.relativePath}`,
     texto: textoFinal || null,
     texto_posicao: posicaoFinal,
+    texto_tamanho: tamanhoFinal,
     ...offsets,
   };
 }
@@ -775,6 +799,7 @@ async function reenquadrarSplit({
   imagemLado,
   texto,
   textoPosicao,
+  textoTamanho,
 }) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
@@ -791,12 +816,17 @@ async function reenquadrarSplit({
   const posicaoFinal = normalizarPosicaoTexto(
     textoPosicao != null ? textoPosicao : clip.split_texto_posicao
   );
+  const tamanhoFinal = normalizarTamanhoTexto(
+    textoTamanho != null ? textoTamanho : clip.split_texto_tamanho,
+    100
+  );
 
   await VideoClips.update(clip.id, {
     split_status: 'gerando',
     split_erro: null,
     split_texto: textoFinal || null,
     split_texto_posicao: posicaoFinal,
+    split_texto_tamanho: tamanhoFinal,
   });
 
   enqueue(`split clip ${clip.id}`, async () => {
@@ -808,6 +838,7 @@ async function reenquadrarSplit({
         imagemLado: lado,
         texto: textoFinal,
         textoPosicao: posicaoFinal,
+        textoTamanho: tamanhoFinal,
         ...offsets,
       });
     } catch (err) {
@@ -819,6 +850,7 @@ async function reenquadrarSplit({
     queued: true,
     texto: textoFinal || null,
     texto_posicao: posicaoFinal,
+    texto_tamanho: tamanhoFinal,
     ...offsets,
   };
 }

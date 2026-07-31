@@ -7,6 +7,8 @@
   const materiaEl = document.getElementById('clip-materia');
   const temaEl = document.getElementById('clip-tema');
   const capaTituloEl = document.getElementById('clip-capa-titulo');
+  const capaAtivaEl = document.getElementById('clip-capa-ativa');
+  const capaStatusLabel = document.getElementById('capa-status-label');
   const modoEl = document.getElementById('clip-modo');
   const videoEl = document.getElementById('clip-video');
   const btnMateria = document.getElementById('btn-materia');
@@ -163,14 +165,32 @@
     }
   }
 
+  function syncCapaUi(status) {
+    const pronta = status === 'pronta';
+    const gerando = status === 'gerando';
+    if (capaAtivaEl && document.activeElement !== capaAtivaEl) {
+      capaAtivaEl.checked = pronta;
+    }
+    if (btnCapa) {
+      btnCapa.textContent = gerando ? 'Gerando…' : pronta ? 'Refazer capa' : 'Gerar capa';
+      btnCapa.disabled = gerando;
+    }
+    if (capaStatusLabel) {
+      capaStatusLabel.textContent = gerando
+        ? 'Gerando capa…'
+        : pronta
+          ? 'Capa ativa no vídeo'
+          : 'Sem capa';
+      capaStatusLabel.className =
+        'text-[11px] ' + (pronta ? 'text-emerald-300' : gerando ? 'text-amber-300' : 'text-slate-600');
+    }
+  }
+
   function atualizarCapaTituloSeSeguro(data) {
     if (!capaTituloEl) return;
     const novo = String(data.capa_titulo || '').trim();
-    if (!novo) return;
-    if (!capaTituloEl.value.trim()) capaTituloEl.value = novo;
-    if (btnCapa && data.capa_status === 'pronta') {
-      btnCapa.textContent = 'Refazer capa';
-    }
+    if (novo && !capaTituloEl.value.trim()) capaTituloEl.value = novo;
+    syncCapaUi(data.capa_status || state.capaStatus);
   }
 
   function aindaGerando() {
@@ -222,6 +242,8 @@
       if (data.capa_status === 'pronta' && prevCapa === 'gerando') {
         atualizarCapaTituloSeSeguro(data);
         setStatus('Capa pronta — vídeo atualizado.');
+      } else if (data.capa_status && data.capa_status !== prevCapa) {
+        syncCapaUi(data.capa_status);
       }
       if (data.split_status === 'pronta' && prevSplit === 'gerando') {
         setStatus('Tela dividida pronta — vídeo atualizado.');
@@ -318,8 +340,10 @@
   });
 
   btnCapa?.addEventListener('click', async () => {
+    if (capaAtivaEl) capaAtivaEl.checked = true;
     setStatus('Gerando capa…');
     state.capaStatus = 'gerando';
+    syncCapaUi('gerando');
     try {
       await postJson('/api/clips/' + cfg.id + '/capa', {
         titulo: capaTituloEl ? capaTituloEl.value.trim() : '',
@@ -328,23 +352,45 @@
       iniciarPollSePreciso();
     } catch (err) {
       state.capaStatus = '';
+      syncCapaUi(state.capaStatus);
       setStatus(err.message, true);
     }
   });
 
-  document.getElementById('btn-remover-capa')?.addEventListener('click', async () => {
+  async function removerCapaDoVideo() {
+    const res = await fetch('/api/clips/' + cfg.id + '/capa', { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Falha ao remover capa');
+    state.capaStatus = 'pendente';
+    syncCapaUi('pendente');
+    if (data.video_url) atualizarVideoPrincipal(data.video_url);
+    setStatus('Capa desmarcada — vídeo sem capa.');
+    agendarPoll(400);
+  }
+
+  capaAtivaEl?.addEventListener('change', async () => {
+    if (capaAtivaEl.checked) {
+      // Marcou: gera (ou regenera) a capa com o título atual.
+      btnCapa?.click();
+      return;
+    }
+    // Desmarcou: tira a capa do arquivo se estiver aplicada.
+    if (state.capaStatus !== 'pronta' && !String(state.videoUrl || '').includes('_capa_')) {
+      syncCapaUi('pendente');
+      setStatus('Capa desmarcada — o vídeo já está sem capa.');
+      return;
+    }
     try {
-      const res = await fetch('/api/clips/' + cfg.id + '/capa', { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Falha ao remover capa');
-      state.capaStatus = 'pendente';
-      setStatus('Capa removida — atualizando o vídeo…');
-      // Uma consulta imediata puxa o arquivo sem capa.
-      agendarPoll(400);
+      setStatus('Removendo capa do vídeo…');
+      await removerCapaDoVideo();
     } catch (err) {
+      capaAtivaEl.checked = true;
+      syncCapaUi('pronta');
       setStatus(err.message, true);
     }
   });
+
+  syncCapaUi(state.capaStatus);
 
   // ——— Tela dividida (metade imagem, metade vídeo) ———
   const splitPanel = document.getElementById('split-panel');
@@ -382,9 +428,14 @@
     let frameSegundo = null;
     let lado = 'esquerda';
     let textoPosicao = cfg.splitTextoPosicao === 'topo' ? 'topo' : 'rodape';
+    let textoTamanho = Number(cfg.splitTextoTamanho) || 100;
     const textoInput = document.getElementById('split-texto');
     const textoPreview = document.getElementById('split-texto-preview');
     const textoPreviewP = document.getElementById('split-texto-preview-p');
+    const textoTamInput = document.getElementById('split-texto-tamanho');
+    const textoTamValor = document.getElementById('split-texto-tam-valor');
+    const textoTomEl = document.getElementById('split-texto-tom');
+    const sugerirTextoBtn = document.getElementById('btn-split-sugerir-texto');
 
     function setSplitMsg(msg, isError) {
       if (!msgEl) return;
@@ -392,7 +443,7 @@
       msgEl.className = 'text-[11px] ' + (isError ? 'text-rose-300' : 'text-slate-500');
     }
 
-    function escapeHtml(s) {
+    function escapeHtmlLocal(s) {
       return String(s || '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -401,7 +452,7 @@
     }
 
     function formatTextoComDestaque(raw) {
-      return escapeHtml(raw).replace(
+      return escapeHtmlLocal(raw).replace(
         /\[\[([^\]]+)\]\]/g,
         '<span class="inline-block bg-yellow-400 px-0.5 text-slate-950">$1</span>'
       );
@@ -416,10 +467,9 @@
         return;
       }
       textoPreviewP.innerHTML = formatTextoComDestaque(txt);
+      const px = Math.max(6, Math.round(8 * (textoTamanho / 100)));
+      textoPreviewP.style.fontSize = px + 'px';
       textoPreview.classList.remove('hidden');
-      textoPreview.classList.toggle('top-0', textoPosicao === 'topo');
-      textoPreview.classList.toggle('bottom-0', textoPosicao === 'rodape');
-      // Gradiente: do preto na borda do texto para transparente
       textoPreview.className =
         'pointer-events-none absolute inset-x-0 px-1.5 py-1.5 ' +
         (textoPosicao === 'topo'
@@ -428,6 +478,36 @@
     }
 
     textoInput?.addEventListener('input', syncTextoPreview);
+    textoTamInput?.addEventListener('input', () => {
+      textoTamanho = Number(textoTamInput.value) || 100;
+      if (textoTamValor) textoTamValor.textContent = String(textoTamanho);
+      syncTextoPreview();
+    });
+
+    sugerirTextoBtn?.addEventListener('click', async () => {
+      const original = sugerirTextoBtn.textContent;
+      sugerirTextoBtn.disabled = true;
+      sugerirTextoBtn.textContent = 'Gerando…';
+      setSplitMsg('IA escrevendo o texto do vídeo…');
+      try {
+        const data = await postJson('/api/clips/' + cfg.id + '/split/sugerir-texto', {
+          tom: textoTomEl?.value || 'natural',
+          texto_atual: String(textoInput?.value || '').trim(),
+          titulo: capaTituloEl ? capaTituloEl.value.trim() : '',
+        });
+        if (textoInput && data.texto) {
+          textoInput.value = data.texto;
+          syncTextoPreview();
+        }
+        setSplitMsg('Sugestão pronta — revise e aplique a tela dividida.');
+      } catch (err) {
+        setSplitMsg(err.message, true);
+      } finally {
+        sugerirTextoBtn.disabled = false;
+        sugerirTextoBtn.textContent = original;
+      }
+    });
+
     splitPanel.querySelectorAll('.split-texto-pos-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         textoPosicao = btn.dataset.textoPos === 'topo' ? 'topo' : 'rodape';
@@ -609,6 +689,7 @@
       const textoFields = {
         texto,
         texto_posicao: textoPosicao,
+        texto_tamanho: textoTamanho,
       };
 
       if (fonte === 'upload') {
@@ -622,6 +703,7 @@
         form.append('imagem_lado', lado);
         form.append('texto', texto);
         form.append('texto_posicao', textoPosicao);
+        form.append('texto_tamanho', String(textoTamanho));
         return { body: form, isForm: true };
       }
 
@@ -706,6 +788,7 @@
           imagem_lado: lado,
           texto: String(textoInput?.value || '').trim(),
           texto_posicao: textoPosicao,
+          texto_tamanho: textoTamanho,
         });
         setSplitMsg('Reenquadrando… o vídeo atualiza sozinho.');
         setStatus('Reenquadrando — a página não recarrega.');

@@ -2457,6 +2457,106 @@ Regras:
   return { termos, tema, resumo };
 }
 
+/**
+ * Texto fixo para overlay no Reel / tela dividida (estilo thumbnail viral).
+ * Marca 2–4 palavras-chave com [[palavra]] para as caixas de destaque.
+ */
+async function sugerirTextoSplitVideo({
+  transcricao,
+  materia,
+  titulo,
+  tituloVideo,
+  tom = 'natural',
+  textoAtual = '',
+}) {
+  assertDeepseek();
+  const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
+  const tomDesc = TITULO_TOMES[tomKey];
+  const base =
+    String(transcricao || '').trim() ||
+    String(materia || '').trim() ||
+    String(titulo || tituloVideo || '').trim();
+  if (!base) {
+    const err = new Error('Gere a matéria ou aguarde a transcrição antes de sugerir o texto.');
+    err.status = 422;
+    throw err;
+  }
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content:
+          'Você escreve texto fixo para overlay de Reels estilo thumbnail viral. Responda só JSON válido.',
+      },
+      {
+        role: 'user',
+        content: [
+          'Responda APENAS JSON: {"texto":"..."}',
+          '',
+          'Regras do texto:',
+          '- Português do Brasil, CAIXA ALTA.',
+          '- 1 a 3 frases curtas, no máximo 180 caracteres no total (sem contar os [[ ]]).',
+          '- Deve fazer a pessoa PARAR o scroll (gancho, pergunta ou cobrança).',
+          '- NÃO invente fatos fora da base.',
+          '- Sem emoji, sem hashtag, sem aspas longas.',
+          '- Marque 2 a 4 palavras-chave com [[ASSIM]] (só a palavra/expressão curta dentro dos colchetes).',
+          '- Exemplo de formato: SABE POR QUE O LIVRO [[SECRETO]] DE [[ENOQUE]] NÃO ESTÁ NA [[BÍBLIA?]]',
+          `- Tom obrigatório: ${tomDesc}`,
+          tomKey === 'polemico'
+            ? '- Tom POLÊMICO: confronto/cobrança no começo; não entregue texto neutro de portal.'
+            : null,
+          textoAtual ? `Texto atual (não repetir igual):\n${String(textoAtual).slice(0, 200)}` : null,
+          titulo ? `Título/capa do corte:\n${String(titulo).slice(0, 120)}` : null,
+          tituloVideo ? `Vídeo de origem:\n${String(tituloVideo).slice(0, 120)}` : null,
+          'Base (fala/matéria — use só isso):',
+          String(base).slice(0, 4500),
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      },
+    ],
+    { temperature: sortearTemperatura(tomKey === 'polemico'), json: true }
+  );
+
+  let parsed = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    const m = String(raw).match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        parsed = JSON.parse(m[0]);
+      } catch {
+        parsed = null;
+      }
+    }
+  }
+
+  let texto = String(parsed?.texto || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+    .slice(0, 280);
+
+  // Garante pelo menos um destaque se a IA esqueceu.
+  if (texto && !/\[\[[^\]]+\]\]/.test(texto)) {
+    const palavras = texto.split(/\s+/).filter((p) => p.length > 4);
+    if (palavras[0]) {
+      const alvo = palavras[0];
+      texto = texto.replace(alvo, `[[${alvo}]]`);
+    }
+  }
+
+  if (!texto) {
+    const err = new Error('A IA não devolveu um texto útil. Tente de novo.');
+    err.status = 502;
+    throw err;
+  }
+
+  return { texto, tom: tomKey };
+}
+
 module.exports = {
   gerarMateriaVideo,
   gerarMateriaImagem,
@@ -2469,6 +2569,7 @@ module.exports = {
   resumirAlertaBiblioteca,
   ranquearPostsViralFacebook,
   sugerirTituloMateria,
+  sugerirTextoSplitVideo,
   reescreverMateriaComInfo,
   enriquecerMateriaComFatos,
   sugerirConsultasPesquisa,
