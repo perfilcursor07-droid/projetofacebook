@@ -896,6 +896,20 @@ async function tickMonitores() {
   }
 }
 
+async function proximoHorarioLivreAgendamento({ userId, matterId, desiredAt }) {
+  let candidate = new Date(desiredAt);
+  for (let i = 0; i < 96; i += 1) {
+    const ocupada = await db('ai_matters')
+      .where({ user_id: userId, status: 'agendado' })
+      .whereNot({ id: matterId })
+      .where('scheduled_at', candidate)
+      .first('id');
+    if (!ocupada) return candidate;
+    candidate = new Date(candidate.getTime() + 30 * 60 * 1000);
+  }
+  return candidate;
+}
+
 async function agendarMateria({ userId, matterId, runAt }) {
   const matter = await AiMatters.findById(matterId);
   if (!matter || matter.user_id !== userId) {
@@ -909,7 +923,8 @@ async function agendarMateria({ userId, matterId, runAt }) {
     err.status = 400;
     throw err;
   }
-  await AiMatters.update(matter.id, { status: 'agendado', scheduled_at: when });
+  const slotLivre = await proximoHorarioLivreAgendamento({ userId, matterId: matter.id, desiredAt: when });
+  await AiMatters.update(matter.id, { status: 'agendado', scheduled_at: slotLivre });
 
   let pageName = '';
   try {
@@ -921,7 +936,9 @@ async function agendarMateria({ userId, matterId, runAt }) {
     /* ignore */
   }
   console.log(
-    `[agendar] matéria #${matter.id} → "${String(matter.titulo || '').slice(0, 70)}" | ${pageName || 'página ?'} | ${formatLabelAraguaina(when) || when.toISOString()}`
+    `[agendar] matéria #${matter.id} → "${String(matter.titulo || '').slice(0, 70)}" | ${pageName || 'página ?'} | ${formatLabelAraguaina(slotLivre) || slotLivre.toISOString()}${
+      slotLivre.getTime() !== when.getTime() ? ` (ajustado de ${formatLabelAraguaina(when) || when.toISOString()})` : ''
+    }`
   );
 
   const existing = await db('ai_fila_jobs')
@@ -929,18 +946,51 @@ async function agendarMateria({ userId, matterId, runAt }) {
     .orderBy('id', 'desc')
     .first();
   if (existing) {
-    await AiFilaJobs.update(existing.id, { run_at: when });
-    return { jobId: existing.id, matterId: matter.id, runAt: when };
+    await AiFilaJobs.update(existing.id, { run_at: slotLivre });
+    return { jobId: existing.id, matterId: matter.id, runAt: slotLivre };
   }
 
   const [jobId] = await AiFilaJobs.create({
     user_id: userId,
     matter_id: matter.id,
-    run_at: when,
+    run_at: slotLivre,
     status: 'pendente',
     payload: JSON.stringify({ action: 'publish', matterId: matter.id }),
   });
-  return { jobId, matterId: matter.id, runAt: when };
+  return { jobId, matterId: matter.id, runAt: slotLivre };
+}
+
+async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = 30 } = {}) {
+  const rows = await db('ai_matters')
+    .where({ user_id: userId, status: 'agendado' })
+    .whereNotNull('scheduled_at')
+    .where('scheduled_at', '>', new Date())
+    .orderBy('scheduled_at', 'asc')
+    .orderBy('id', 'asc')
+    .select('id', 'scheduled_at');
+
+  let cursor = null;
+  let ajustados = 0;
+  const intervaloMs = Math.max(5, Number(intervaloMinutos) || 30) * 60 * 1000;
+
+  for (const row of rows || []) {
+    const atual = row.scheduled_at instanceof Date ? row.scheduled_at : new Date(row.scheduled_at);
+    if (Number.isNaN(atual.getTime())) continue;
+    const novo = cursor && atual.getTime() < cursor.getTime() ? cursor : atual;
+    cursor = new Date(novo.getTime() + intervaloMs);
+    if (novo.getTime() === atual.getTime()) continue;
+
+    await AiMatters.update(row.id, { scheduled_at: novo });
+    await db('ai_fila_jobs')
+      .where({ matter_id: row.id, status: 'pendente' })
+      .update({ run_at: novo, updated_at: db.fn.now() });
+    ajustados += 1;
+  }
+
+  if (ajustados > 0) {
+    console.log(`[agendar] user #${userId}: ${ajustados} agendamento(s) redistribuído(s) ${intervaloMinutos}m`);
+  }
+  return { ajustados };
 }
 
 /** Formata Date → YYYY-MM-DDTHH:mm no fuso America/Araguaina. */
@@ -3134,6 +3184,7 @@ module.exports = {
   criarMonitor,
   tickMonitores,
   agendarMateria,
+  repararAgendamentosSobrepostos,
   obterUltimoAgendamento,
   formatarHorarioAgendamento,
   toDatetimeLocalAraguaina,

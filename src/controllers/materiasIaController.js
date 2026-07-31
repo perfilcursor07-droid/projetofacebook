@@ -630,6 +630,16 @@ async function listMinhasMaterias(req, res, next) {
       }
     }
 
+    if (statusFilter === 'agendado') {
+      try {
+        await materiaIaService.repararAgendamentosSobrepostos(req.session.userId, {
+          intervaloMinutos: 30,
+        });
+      } catch (err) {
+        console.warn('[minhas-materias] reparar agendados:', err.message);
+      }
+    }
+
     const [statusCounts, total] = await Promise.all([
       AiMatters.countByStatusForUser(req.session.userId, { q }),
       AiMatters.countByUserWithPub(req.session.userId, {

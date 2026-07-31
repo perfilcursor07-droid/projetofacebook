@@ -227,12 +227,16 @@ async function sincronizarComMaterias(userId, itens) {
         const b = new Date(row.matter_scheduled_at).getTime();
         if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > 60_000) {
           try {
-            await materiaIaService.agendarMateria({
+            const result = await materiaIaService.agendarMateria({
               userId,
               matterId: row.matter_id,
               runAt: new Date(row.proposed_at).toISOString(),
             });
-            row.matter_scheduled_at = row.proposed_at;
+            if (result?.runAt && new Date(result.runAt).getTime() !== a) {
+              await BibliotecaAgenda.update(row.id, { proposed_at: result.runAt });
+              row.proposed_at = result.runAt;
+            }
+            row.matter_scheduled_at = result?.runAt || row.proposed_at;
           } catch {
             /* mantém horário da agenda mesmo se a fila falhar */
           }
@@ -360,11 +364,15 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
     // mostra AGENDADA / sincronizarComMaterias promove a agenda — sem o usuário confirmar.
     if (itens[i].status === 'confirmado' && itens[i].matter_id) {
       try {
-        await materiaIaService.agendarMateria({
+        const result = await materiaIaService.agendarMateria({
           userId,
           matterId: itens[i].matter_id,
           runAt: slot.toISOString(),
         });
+        if (result?.runAt && new Date(result.runAt).getTime() !== slot.getTime()) {
+          await BibliotecaAgenda.update(itens[i].id, { proposed_at: result.runAt });
+          itens[i].proposed_at = result.runAt;
+        }
       } catch (err) {
         console.warn(`[agenda] sync matéria #${itens[i].matter_id} → ${novoKey}:`, err.message);
       }
@@ -1036,11 +1044,21 @@ async function atualizarHorario(userId, id, proposedAt) {
 
   // Confirmado: atualiza também o job da matéria (scheduled_at)
   if (item.status === 'confirmado' && item.matter_id) {
-    await materiaIaService.agendarMateria({
+    const result = await materiaIaService.agendarMateria({
       userId,
       matterId: item.matter_id,
       runAt: parsed.toISOString(),
     });
+    if (result?.runAt && new Date(result.runAt).getTime() !== parsed.getTime()) {
+      await BibliotecaAgenda.update(item.id, { proposed_at: result.runAt });
+      return {
+        ok: true,
+        proposed_at: result.runAt,
+        proposed_at_local: toDatetimeLocal(result.runAt),
+        status: item.status,
+        ajustado: true,
+      };
+    }
   }
 
   return {
@@ -1082,7 +1100,8 @@ async function confirmarAgendamento(userId, id) {
     matterId: item.matter_id,
     runAt,
   });
-  await BibliotecaAgenda.update(item.id, { status: 'confirmado' });
+  const finalRunAt = result?.runAt ? new Date(result.runAt) : runAtDate;
+  await BibliotecaAgenda.update(item.id, { status: 'confirmado', proposed_at: finalRunAt });
   return { ok: true, ...result };
 }
 
