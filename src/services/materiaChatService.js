@@ -68,7 +68,7 @@ function classificarUrlFonte(url) {
  * YouTube → título + descrição (+ legendas/auto-captions se existirem).
  * Não baixa o vídeo inteiro.
  */
-async function extrairYoutubeComoFonte(url) {
+async function extrairYoutubeComoFonte(url, { onPasso } = {}) {
   const fs = require('fs');
   const youtubedlPkg = require('youtube-dl-exec');
   const { runYtDlp } = require('./ytDlpAuth');
@@ -107,7 +107,14 @@ async function extrairYoutubeComoFonte(url) {
     const { trySubtitlesFromUrl } = require('./transcriptionService');
     const subs = await trySubtitlesFromUrl(url);
     if (subs?.text && String(subs.text).trim().length >= 40) {
-      trecho = `${trecho}\n\nTranscrição/legendas:\n${String(subs.text).trim().slice(0, 4500)}`;
+      const transcricao = String(subs.text).trim();
+      trecho = `${trecho}\n\nTranscrição/legendas:\n${transcricao.slice(0, 12000)}`;
+      if (typeof onPasso === 'function') {
+        onPasso({
+          kind: 'fontes',
+          texto: `Transcrição do YouTube encontrada (${transcricao.length} caracteres)`,
+        });
+      }
     }
   } catch (err) {
     console.warn('[materia-chat] youtube subs:', err.message);
@@ -126,7 +133,7 @@ async function extrairYoutubeComoFonte(url) {
     titulo: titulo || `Vídeo — ${veiculo}`,
     url,
     resumo: String(descricao || trecho).slice(0, 400),
-    trecho: trecho.slice(0, 5000),
+    trecho: trecho.slice(0, 14000),
     ehRedeSocial: true,
     plataforma: 'youtube',
   };
@@ -158,7 +165,7 @@ async function extrairFontesDeLinks(urls, { onPasso } = {}) {
 
     try {
       if (tipo === 'youtube') {
-        fontes.push(await extrairYoutubeComoFonte(raw));
+        fontes.push(await extrairYoutubeComoFonte(raw, { onPasso }));
         continue;
       }
 

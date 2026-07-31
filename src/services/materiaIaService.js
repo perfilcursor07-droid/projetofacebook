@@ -2951,10 +2951,11 @@ async function coletarFatosNaWeb({
 /** Bloco de fatos que vai no prompt do DeepSeek. */
 function montarBlocoFatos(fontes) {
   return (fontes || [])
-    .map(
-      (f, i) =>
-        `Fonte ${i + 1} — ${f.veiculo || 'Web'}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo || ''}\nTrecho factual:\n${String(f.trecho || f.resumo || '').slice(0, 1800)}`
-    )
+    .map((f, i) => {
+      const limiteTrecho =
+        f?.plataforma === 'youtube' || f?.ehRedeSocial || f?.tipoFonte === 'rede_social' ? 9000 : 1800;
+      return `Fonte ${i + 1} — ${f.veiculo || 'Web'}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo || ''}\nTrecho factual:\n${String(f.trecho || f.resumo || '').slice(0, limiteTrecho)}`;
+    })
     .join('\n\n---\n\n');
 }
 

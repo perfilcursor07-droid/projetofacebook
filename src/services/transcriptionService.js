@@ -31,6 +31,62 @@ function parseVttTimestamp(value) {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
+function normalizeCaptionWord(value) {
+  return String(value || '')
+    .toLocaleLowerCase('pt-BR')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function captionWords(value) {
+  return String(value || '')
+    .split(/\s+/)
+    .map((word) => ({ raw: word, norm: normalizeCaptionWord(word) }))
+    .filter((word) => word.norm);
+}
+
+/**
+ * YouTube auto-captions often emit sliding windows:
+ * "A B C", then "A B C D E", then "D E".
+ * Build a readable transcript by appending only the non-overlapping suffix.
+ */
+function mergeCaptionSegments(segments) {
+  const words = [];
+
+  for (const segment of segments || []) {
+    const next = captionWords(segment.text);
+    if (!next.length) continue;
+
+    const maxOverlap = Math.min(words.length, next.length, 40);
+    let overlap = 0;
+    for (let size = maxOverlap; size > 0; size -= 1) {
+      let ok = true;
+      for (let i = 0; i < size; i += 1) {
+        if (words[words.length - size + i].norm !== next[i].norm) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) {
+        overlap = size;
+        break;
+      }
+    }
+
+    // If the whole caption is already the current suffix, skip it.
+    if (overlap === next.length) continue;
+    words.push(...next.slice(overlap));
+  }
+
+  return words
+    .map((word) => word.raw)
+    .join(' ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseVtt(content) {
   const normalized = String(content || '')
     .replace(/\ufeff/g, '')
@@ -56,11 +112,7 @@ function parseVtt(content) {
     segments.push({ start, end, text });
   }
 
-  const text = segments
-    .map((segment) => segment.text)
-    .filter((line, index, all) => line !== all[index - 1])
-    .join(' ')
-    .trim();
+  const text = mergeCaptionSegments(segments);
 
   return { text, segments };
 }

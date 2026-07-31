@@ -1790,7 +1790,7 @@ Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosU
           `Tom editorial obrigatório (título e corpo): ${tomDesc} [chave: ${tomKey}]`,
           autor ? `Crédito da foto: ${autor}` : null,
           blocoFatos
-            ? `TRECHOS DAS FONTES PESQUISADAS (use só o que for fato verificável):\n${blocoFatos.slice(0, 9000)}`
+            ? `TRECHOS DAS FONTES PESQUISADAS (use só o que for fato verificável):\n${blocoFatos.slice(0, 18000)}`
             : 'SEM PESQUISA NA WEB: use somente as informações do usuário e não acrescente dados externos.',
           'Escreva a matéria.',
         ]
@@ -1854,7 +1854,7 @@ Responda APENAS JSON:
       },
       {
         role: 'user',
-        content: `PEDIDO DO EDITOR:\n${texto.slice(0, 2000)}\n\nTRECHOS DAS FONTES:\n${blocoFatos.slice(0, 9000)}\n\nAs fontes confirmam o fato central do pedido?`,
+        content: `PEDIDO DO EDITOR:\n${texto.slice(0, 2000)}\n\nTRECHOS DAS FONTES:\n${blocoFatos.slice(0, 18000)}\n\nAs fontes confirmam o fato central do pedido?`,
       },
     ],
     { temperature: 0.1, json: true }
@@ -1916,7 +1916,7 @@ Responda APENAS JSON:
         content: [
           pedido ? `PEDIDO ORIGINAL DO EDITOR:\n${String(pedido).slice(0, 1200)}` : null,
           `MATÉRIA A REVISAR:\n${materia.slice(0, 9000)}`,
-          `TRECHOS DAS FONTES (única base permitida):\n${blocoFatos.slice(0, 9000)}`,
+          `TRECHOS DAS FONTES (única base permitida):\n${blocoFatos.slice(0, 18000)}`,
           suspeitas.length
             ? `TRECHOS QUE O SISTEMA JÁ MARCOU COMO SUSPEITOS:\n- ${suspeitas.slice(0, 8).join('\n- ')}`
             : null,
@@ -2027,7 +2027,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
       texto.slice(0, 5000),
       `Tom editorial: ${tomDesc} [chave: ${tomKey}]`,
       blocoFatos
-        ? `TRECHOS DAS FONTES PESQUISADAS AGORA (use só fato verificável):\n${blocoFatos.slice(0, 9000)}`
+        ? `TRECHOS DAS FONTES PESQUISADAS AGORA (use só fato verificável):\n${blocoFatos.slice(0, 18000)}`
         : 'SEM PESQUISA NOVA: use o que já está na conversa e o que o editor informou.',
       permitirSemConfirmacao
         ? 'O EDITOR ASSUME A RESPONSABILIDADE e pediu a matéria mesmo sem confirmação nas fontes: escreva, mas continua PROIBIDO inventar falas entre aspas, números, datas e atribuições a veículos. Deixe claro no texto que a informação é atribuída ao que o editor relatou e que não há confirmação oficial.'
