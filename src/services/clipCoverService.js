@@ -257,4 +257,94 @@ async function addCoverToClip({ clip, user, titulo }) {
   }
 }
 
-module.exports = { addCoverToClip, COVER_SECONDS };
+/**
+ * Arquivo `_capa_` = intro Minha marca costurada no início.
+ */
+function isCapaVideoPath(relative) {
+  return /_capa_/i.test(String(relative || ''));
+}
+
+function fileExistsRel(relative) {
+  return Boolean(relative) && fs.existsSync(storageAbs(relative));
+}
+
+/**
+ * Vídeo do preview/publicação conforme o flag da capa.
+ * Com capa desmarcada, nunca devolve arquivo `_capa_`.
+ */
+function resolvePlaybackVideoPath(clip) {
+  if (!clip) return null;
+  const capaOn = String(clip.capa_status || '') === 'pronta';
+
+  if (capaOn) {
+    if (fileExistsRel(clip.caminho_arquivo)) return clip.caminho_arquivo;
+    if (fileExistsRel(clip.arquivo_sem_capa)) return clip.arquivo_sem_capa;
+    return clip.caminho_arquivo || null;
+  }
+
+  const candidates = [
+    clip.arquivo_sem_capa,
+    clip.arquivo_sem_speed && !isCapaVideoPath(clip.arquivo_sem_speed)
+      ? clip.arquivo_sem_speed
+      : null,
+    clip.arquivo_sem_split,
+    clip.caminho_arquivo && !isCapaVideoPath(clip.caminho_arquivo)
+      ? clip.caminho_arquivo
+      : null,
+    `clips/clip_${clip.id}.mp4`,
+  ];
+
+  for (const rel of candidates) {
+    if (fileExistsRel(rel) && !isCapaVideoPath(rel)) return rel;
+  }
+  for (const rel of candidates) {
+    if (fileExistsRel(rel)) return rel;
+  }
+  return clip.caminho_arquivo || null;
+}
+
+/**
+ * Se a capa está off mas o caminho ainda é `_capa_`, corrige no banco.
+ */
+async function syncClipVideoToCapaFlag(clip) {
+  if (!clip?.id) return clip;
+  const capaOn = String(clip.capa_status || '') === 'pronta';
+  const atual = clip.caminho_arquivo;
+
+  if (capaOn || !isCapaVideoPath(atual)) return clip;
+
+  const corpo =
+    (fileExistsRel(clip.arquivo_sem_capa) && !isCapaVideoPath(clip.arquivo_sem_capa)
+      ? clip.arquivo_sem_capa
+      : null) ||
+    (fileExistsRel(clip.arquivo_sem_speed) && !isCapaVideoPath(clip.arquivo_sem_speed)
+      ? clip.arquivo_sem_speed
+      : null) ||
+    (fileExistsRel(clip.arquivo_sem_split) ? clip.arquivo_sem_split : null) ||
+    (fileExistsRel(`clips/clip_${clip.id}.mp4`) ? `clips/clip_${clip.id}.mp4` : null) ||
+    resolvePlaybackVideoPath({ ...clip, caminho_arquivo: null, capa_status: 'pendente' });
+
+  if (!corpo || corpo === atual) return clip;
+
+  const VideoClips = require('../models/VideoClips');
+  await VideoClips.update(clip.id, {
+    caminho_arquivo: corpo,
+    arquivo_sem_capa: null,
+    capa_status: 'pendente',
+  });
+  return {
+    ...clip,
+    caminho_arquivo: corpo,
+    arquivo_sem_capa: null,
+    capa_status: 'pendente',
+  };
+}
+
+module.exports = {
+  addCoverToClip,
+  COVER_SECONDS,
+  isCapaVideoPath,
+  resolvePlaybackVideoPath,
+  syncClipVideoToCapaFlag,
+};
+

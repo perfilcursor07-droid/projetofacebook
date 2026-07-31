@@ -181,36 +181,71 @@ async function gerarCapa(req, res, next) {
   }
 }
 
-/** Remove a capa e volta ao corte original. */
+/** Remove a capa e volta ao corte original (sem intro). */
 async function removerCapa(req, res, next) {
   try {
     const { clip } = await assertOwnedClip(req);
-    if (!clip.arquivo_sem_capa) {
-      throw httpError('Este corte não tem capa aplicada', 422);
-    }
-    if (clip.caminho_arquivo !== clip.arquivo_sem_capa) {
-      processingService.safeUnlink(clip.caminho_arquivo);
-    }
-    await VideoClips.update(clip.id, {
-      caminho_arquivo: clip.arquivo_sem_capa,
-      arquivo_sem_capa: null,
-      // Mantém o título para facilitar gerar de novo; só tira a capa do arquivo.
+    const {
+      isCapaVideoPath,
+      resolvePlaybackVideoPath,
+      syncClipVideoToCapaFlag,
+    } = require('../services/clipCoverService');
+
+    // Garante corpo sem capa mesmo se arquivo_sem_capa sumiu / caminho ficou _capa_
+    let working = await syncClipVideoToCapaFlag({
+      ...clip,
       capa_status: 'pendente',
-      // Se o backup de velocidade era o arquivo COM capa, descarta — senão a próxima
-      // aplicação de velocidade traz a intro de volta.
-      ...(clip.arquivo_sem_speed && /_capa_/i.test(String(clip.arquivo_sem_speed))
-        ? { arquivo_sem_speed: clip.arquivo_sem_capa, playback_speed: clip.playback_speed || 1 }
+    });
+
+    let body =
+      (working.arquivo_sem_capa &&
+      !isCapaVideoPath(working.arquivo_sem_capa) &&
+      fsExistsMedia(working.arquivo_sem_capa)
+        ? working.arquivo_sem_capa
+        : null) ||
+      resolvePlaybackVideoPath({ ...working, capa_status: 'pendente', caminho_arquivo: null }) ||
+      resolvePlaybackVideoPath({ ...working, capa_status: 'pendente' });
+
+    if (!body || isCapaVideoPath(body)) {
+      throw httpError(
+        'Não há versão sem capa disponível. Gere o corte de novo ou remova o layout e tente outra vez.',
+        422
+      );
+    }
+
+    const atual = working.caminho_arquivo;
+    if (atual && atual !== body && isCapaVideoPath(atual)) {
+      processingService.safeUnlink(atual);
+    }
+
+    await VideoClips.update(clip.id, {
+      caminho_arquivo: body,
+      arquivo_sem_capa: null,
+      capa_status: 'pendente',
+      ...(working.arquivo_sem_speed && isCapaVideoPath(working.arquivo_sem_speed)
+        ? { arquivo_sem_speed: body }
         : {}),
     });
+
     res.json({
       ok: true,
       message: 'Capa desmarcada — vídeo sem capa',
-      video_url: `/media/${String(clip.arquivo_sem_capa).replace(/^\/+/, '')}`,
+      video_url: `/media/${String(body).replace(/^\/+/, '')}`,
       capa_status: 'pendente',
       capa_titulo: clip.capa_titulo || '',
     });
   } catch (err) {
     next(err);
+  }
+}
+
+function fsExistsMedia(relative) {
+  try {
+    const { storageAbsolutePath } = require('../services/downloadService');
+    const fs = require('fs');
+    return Boolean(relative) && fs.existsSync(storageAbsolutePath(relative));
+  } catch {
+    return false;
   }
 }
 
@@ -351,12 +386,20 @@ async function buscarImagensDoSplit(req, res, next) {
  */
 async function statusClip(req, res, next) {
   try {
-    const { clip } = await assertOwnedClip(req);
+    let { clip } = await assertOwnedClip(req);
+    const {
+      resolvePlaybackVideoPath,
+      syncClipVideoToCapaFlag,
+    } = require('../services/clipCoverService');
+
+    clip = await syncClipVideoToCapaFlag(clip);
+
     let materia = String(clip.legenda_sugerida || '').trim();
     if (!materia || /^\[(sem fala|falha)/i.test(materia)) materia = '';
 
-    const videoUrl = clip.caminho_arquivo
-      ? `/media/${String(clip.caminho_arquivo).replace(/^\/+/, '')}`
+    const playbackRel = resolvePlaybackVideoPath(clip);
+    const videoUrl = playbackRel
+      ? `/media/${String(playbackRel).replace(/^\/+/, '')}`
       : null;
 
     res.json({
@@ -499,7 +542,7 @@ async function aplicarVelocidade(req, res, next) {
 /** Página dedicada: revisar matéria e publicar o corte. */
 async function showClipPage(req, res, next) {
   try {
-    const clip = await VideoClips.findById(req.params.id);
+    let clip = await VideoClips.findById(req.params.id);
     if (!clip) {
       const err = httpError('Corte não encontrado', 404);
       return next(err);
@@ -507,6 +550,17 @@ async function showClipPage(req, res, next) {
     const video = await Videos.findById(clip.video_id);
     if (!video || video.user_id !== req.session.userId) {
       return next(httpError('Corte não encontrado', 404));
+    }
+
+    const {
+      resolvePlaybackVideoPath,
+      syncClipVideoToCapaFlag,
+    } = require('../services/clipCoverService');
+    clip = await syncClipVideoToCapaFlag(clip);
+    const playbackRel = resolvePlaybackVideoPath(clip);
+    // Garante que a view use o arquivo certo (sem capa se desmarcada)
+    if (playbackRel && playbackRel !== clip.caminho_arquivo) {
+      clip = { ...clip, caminho_arquivo: playbackRel };
     }
 
     let materia = String(clip.legenda_sugerida || '').trim();

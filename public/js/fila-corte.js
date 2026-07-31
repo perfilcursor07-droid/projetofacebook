@@ -103,13 +103,14 @@
   }
 
   /** Troca só o src do player — sem mexer no resto da página. */
-  function atualizarVideoPrincipal(url) {
+  function atualizarVideoPrincipal(url, opts = {}) {
     if (!videoEl || !url) return;
     const atual = String(videoEl.getAttribute('src') || '').split('?')[0];
     const nova = String(url).split('?')[0];
-    if (atual === nova && state.videoUrl && state.videoUrl.split('?')[0] === nova) return;
+    const force = Boolean(opts.force);
+    if (!force && atual === nova && state.videoUrl && state.videoUrl.split('?')[0] === nova) return;
     const wasPaused = videoEl.paused;
-    const t = videoEl.currentTime || 0;
+    const t = force ? 0 : videoEl.currentTime || 0;
     videoEl.src = mediaUrlComCache(url);
     state.videoUrl = url;
     videoEl.addEventListener(
@@ -117,10 +118,11 @@
       () => {
         try {
           if (t > 0 && t < (videoEl.duration || Infinity)) videoEl.currentTime = t;
+          else videoEl.currentTime = 0;
         } catch {
           /* ignore */
         }
-        if (!wasPaused) videoEl.play().catch(() => {});
+        if (!wasPaused && !force) videoEl.play().catch(() => {});
       },
       { once: true }
     );
@@ -287,7 +289,14 @@
       state.splitAtivo = data.layout === 'split' || data.split_status === 'pronta';
 
       // Só o vídeo (e badges/msgs da tela dividida) — página permanece editável.
-      if (data.video_url) atualizarVideoPrincipal(data.video_url);
+      // Com capa desmarcada, nunca aceitar URL de arquivo `_capa_` no preview.
+      if (data.video_url) {
+        const capaOff = String(data.capa_status || '') !== 'pronta';
+        const urlCapa = /_capa_/i.test(String(data.video_url));
+        if (!(capaOff && urlCapa)) {
+          atualizarVideoPrincipal(data.video_url);
+        }
+      }
       atualizarUiSplit(data);
 
       if (data.materia_status === 'pronta' && prevMateria === 'gerando') {
@@ -418,7 +427,7 @@
     if (!res.ok) throw new Error(data.error || 'Falha ao remover capa');
     state.capaStatus = 'pendente';
     syncCapaUi('pendente');
-    if (data.video_url) atualizarVideoPrincipal(data.video_url);
+    if (data.video_url) atualizarVideoPrincipal(data.video_url, { force: true });
     setStatus('Capa desmarcada — vídeo sem capa.');
     agendarPoll(400);
   }
@@ -429,21 +438,55 @@
       btnCapa?.click();
       return;
     }
-    // Desmarcou: tira a capa do arquivo se estiver aplicada.
-    if (state.capaStatus !== 'pronta' && !String(state.videoUrl || '').includes('_capa_')) {
-      syncCapaUi('pendente');
-      setStatus('Capa desmarcada — o vídeo já está sem capa.');
+    // Desmarcou: sempre tenta tirar a intro do arquivo (mesmo se o status já era pendente
+    // mas o player ainda mostra `_capa_`).
+    const urlTemCapa = /_capa_/i.test(String(state.videoUrl || videoEl?.src || ''));
+    if (state.capaStatus !== 'pronta' && !urlTemCapa) {
+      // Ainda assim pede ao servidor a URL correta sem capa (auto-heal).
+      try {
+        await removerCapaDoVideo();
+      } catch {
+        syncCapaUi('pendente');
+        setStatus('Capa desmarcada — vídeo sem capa.');
+      }
       return;
     }
     try {
       setStatus('Removendo capa do vídeo…');
       await removerCapaDoVideo();
     } catch (err) {
+      // Se já não havia capa no banco, tenta só alinhar o preview via status
+      try {
+        const st = await fetch('/api/clips/' + cfg.id + '/status', { cache: 'no-store' });
+        const j = await st.json().catch(() => ({}));
+        state.capaStatus = 'pendente';
+        syncCapaUi('pendente');
+        if (j.video_url && !/_capa_/i.test(String(j.video_url))) {
+          atualizarVideoPrincipal(j.video_url, { force: true });
+          setStatus('Capa desmarcada — vídeo sem capa.');
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
       capaAtivaEl.checked = true;
       syncCapaUi('pronta');
       setStatus(err.message, true);
     }
   });
+
+  // Ao abrir a página: se a capa está off mas o src ainda é `_capa_`, corrige já.
+  if (state.capaStatus !== 'pronta' && /_capa_/i.test(String(state.videoUrl || ''))) {
+    removerCapaDoVideo().catch(() => {
+      fetch('/api/clips/' + cfg.id + '/status', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((j) => {
+          if (j.video_url) atualizarVideoPrincipal(j.video_url, { force: true });
+          syncCapaUi(j.capa_status || 'pendente');
+        })
+        .catch(() => {});
+    });
+  }
 
   syncCapaUi(state.capaStatus);
 
