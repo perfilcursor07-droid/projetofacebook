@@ -340,7 +340,9 @@ async function statusClip(req, res, next) {
       split_video_offset: Number(clip.split_video_offset) || 50,
       split_image_offset: Number(clip.split_image_offset) || 50,
       split_texto: clip.split_texto || '',
-      split_texto_posicao: clip.split_texto_posicao === 'topo' ? 'topo' : 'rodape',
+      split_texto_posicao: ['topo', 'meio'].includes(clip.split_texto_posicao)
+        ? clip.split_texto_posicao
+        : 'rodape',
       split_texto_tamanho: Math.min(160, Math.max(70, Number(clip.split_texto_tamanho) || 100)),
       preview_base_url: clipSplitService.previewBaseUrl(clip),
       updated_at: clip.updated_at || null,
@@ -367,9 +369,40 @@ async function sugerirTextoSplit(req, res, next) {
       tituloVideo: video.titulo || video.termo_busca || null,
       tom,
       textoAtual: String(body.texto_atual || body.texto || clip.split_texto || '').trim(),
+      evitar: Array.isArray(body.evitar) ? body.evitar : [],
     });
 
     res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** IA sugere título da capa — cada clique gera uma nova opção. */
+async function sugerirTituloCapa(req, res, next) {
+  try {
+    const { clip, video } = await assertOwnedClip(req);
+    const body = req.body || {};
+    const tom = String(body.tom || 'natural').toLowerCase();
+
+    let materia = String(clip.legenda_sugerida || '').trim();
+    if (!materia || /^\[(sem fala|falha)/i.test(materia)) materia = '';
+    if (!materia && clip.transcricao) materia = String(clip.transcricao).slice(0, 2500);
+
+    if (!materia && !clip.capa_titulo && !video.titulo) {
+      throw httpError('Gere a matéria antes de sugerir o título da capa.', 422);
+    }
+
+    const evitar = Array.isArray(body.evitar) ? body.evitar : [];
+    const result = await deepseekService.sugerirTituloMateria({
+      tituloAtual: String(body.titulo_atual || clip.capa_titulo || '').trim(),
+      materia: materia || String(video.titulo || video.termo_busca || ''),
+      fonteTitulo: video.titulo || video.termo_busca || null,
+      tom,
+      evitar,
+    });
+
+    res.json({ ok: true, titulo: result.titulo, tom: result.tom || tom });
   } catch (err) {
     next(err);
   }
@@ -419,6 +452,7 @@ module.exports = {
   listarFramesDoSplit,
   buscarImagensDoSplit,
   sugerirTextoSplit,
+  sugerirTituloCapa,
   statusClip,
   queueClipCover,
   resolveCapaTitulo,

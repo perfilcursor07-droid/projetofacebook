@@ -9,6 +9,7 @@ router.post('/:id/transcribe', clipsController.transcribe);
 router.post('/:id/materia', clipsController.gerarMateria);
 router.post('/:id/retry', clipsController.retryClip);
 router.post('/:id/capa', clipsController.gerarCapa);
+router.post('/:id/capa/sugerir-titulo', clipsController.sugerirTituloCapa);
 router.delete('/:id/capa', clipsController.removerCapa);
 
 router.get('/:id/status', clipsController.statusClip);

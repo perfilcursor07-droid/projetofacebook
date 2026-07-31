@@ -54,7 +54,15 @@ function normalizarTextoSplit(raw) {
 }
 
 function normalizarPosicaoTexto(raw) {
-  return String(raw || '').toLowerCase() === 'topo' ? 'topo' : 'rodape';
+  const v = String(raw || '').toLowerCase();
+  if (v === 'topo' || v === 'meio') return v;
+  return 'rodape';
+}
+
+function yBlocoTexto(posicao, h, blockH, padTopo = 0, padRodape = 0) {
+  if (posicao === 'topo') return padTopo;
+  if (posicao === 'meio') return Math.max(0, Math.round((h - blockH) / 2));
+  return Math.max(0, h - blockH - padRodape);
 }
 
 /** Escala da fonte: 70–160 (% do tamanho padrão do modelo). */
@@ -253,10 +261,14 @@ async function criarFaixaTextoPng({
     const marginL = Math.round(w * 0.035);
     const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 6);
     const blockH = linhas.length * lineH;
-    const baseY =
-      posicao === 'topo'
-        ? Math.round(h * 0.08) + fontSize
-        : h - Math.round(h * 0.06) - blockH + fontSize;
+    const topY = yBlocoTexto(
+      posicao,
+      h,
+      blockH,
+      Math.round(h * 0.08),
+      Math.round(h * 0.06)
+    );
+    const baseY = topY + fontSize;
 
     const linesSvg = linhas
       .map((segs, i) =>
@@ -280,7 +292,13 @@ async function criarFaixaTextoPng({
     const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 5);
     const padY = Math.round(w * 0.03);
     const barH = padY * 2 + linhas.length * lineH;
-    const barY = posicao === 'topo' ? Math.round(h * 0.04) : h - barH - Math.round(h * 0.05);
+    const barY = yBlocoTexto(
+      posicao,
+      h,
+      barH,
+      Math.round(h * 0.04),
+      Math.round(h * 0.05)
+    );
     const barX = Math.round(w * 0.05);
     const barW = w - barX * 2;
     const baseY = barY + padY + fontSize;
@@ -302,15 +320,17 @@ async function criarFaixaTextoPng({
     svgBody = `<rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="14" fill="#000" fill-opacity="0.78"/>
 ${linesSvg}`;
   } else if (usaDestaque) {
-    // Faixa topo/rodapé, mas com caixas nas palavras [[marcadas]].
+    // Faixa com caixas nas palavras [[marcadas]].
     const fontSize = Math.round(w * 0.042 * scale);
     const lineH = Math.round(fontSize * 1.28);
     const maxW = Math.round(w * 0.9);
     const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 4);
     const padY = Math.round(w * 0.035);
     const barH = padY * 2 + linhas.length * lineH;
-    const barY = posicao === 'topo' ? 0 : h - barH;
+    const barY = yBlocoTexto(posicao, h, barH, 0, 0);
     const baseY = barY + padY + fontSize;
+    const barOpacity =
+      posicao === 'meio' ? '0.72' : posicao === 'topo' ? '0.82' : '0.88';
 
     const linesSvg = linhas
       .map((segs, i) =>
@@ -328,8 +348,8 @@ ${linesSvg}`;
 
     svgBody = `<defs>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.82' : '0.55'}"/>
-      <stop offset="100%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.55' : '0.88'}"/>
+      <stop offset="0%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.82' : posicao === 'meio' ? '0.7' : '0.55'}"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.55' : barOpacity}"/>
     </linearGradient>
   </defs>
   <rect x="0" y="${barY}" width="${w}" height="${barH}" fill="url(#bar)"/>
@@ -341,7 +361,7 @@ ${linesSvg}`;
     const lineH = Math.round(fontSize * 1.25);
     const padY = Math.round(w * 0.035);
     const barH = padY * 2 + linhas.length * lineH;
-    const barY = posicao === 'topo' ? 0 : h - barH;
+    const barY = yBlocoTexto(posicao, h, barH, 0, 0);
     const tspans = linhas
       .map((linha, i) => {
         const y = barY + padY + fontSize + i * lineH;
@@ -351,8 +371,8 @@ ${linesSvg}`;
 
     svgBody = `<defs>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.82' : '0.55'}"/>
-      <stop offset="100%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.55' : '0.88'}"/>
+      <stop offset="0%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.82' : posicao === 'meio' ? '0.7' : '0.55'}"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.55' : posicao === 'meio' ? '0.72' : '0.88'}"/>
     </linearGradient>
   </defs>
   <rect x="0" y="${barY}" width="${w}" height="${barH}" fill="url(#bar)"/>

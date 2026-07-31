@@ -9,10 +9,13 @@
   const capaTituloEl = document.getElementById('clip-capa-titulo');
   const capaAtivaEl = document.getElementById('clip-capa-ativa');
   const capaStatusLabel = document.getElementById('capa-status-label');
+  const capaTomEl = document.getElementById('clip-capa-tom');
+  const btnCapaSugerir = document.getElementById('btn-capa-sugerir-titulo');
   const modoEl = document.getElementById('clip-modo');
   const videoEl = document.getElementById('clip-video');
   const btnMateria = document.getElementById('btn-materia');
   const btnCapa = document.getElementById('btn-capa');
+  const tituloCapaEvitar = [];
 
   // Estado local — nunca recarrega a página inteira enquanto o usuário edita.
   const state = {
@@ -392,6 +395,34 @@
 
   syncCapaUi(state.capaStatus);
 
+  btnCapaSugerir?.addEventListener('click', async () => {
+    const original = btnCapaSugerir.textContent;
+    btnCapaSugerir.disabled = true;
+    btnCapaSugerir.textContent = 'Gerando…';
+    setStatus('IA sugerindo título da capa…');
+    try {
+      const atual = String(capaTituloEl?.value || '').trim();
+      if (atual && !tituloCapaEvitar.includes(atual)) tituloCapaEvitar.push(atual);
+      const data = await postJson('/api/clips/' + cfg.id + '/capa/sugerir-titulo', {
+        tom: capaTomEl?.value || 'natural',
+        titulo_atual: atual,
+        evitar: tituloCapaEvitar.slice(-8),
+      });
+      if (capaTituloEl && data.titulo) {
+        capaTituloEl.value = data.titulo;
+        if (!tituloCapaEvitar.includes(data.titulo)) tituloCapaEvitar.push(data.titulo);
+      }
+      btnCapaSugerir.textContent = 'Outra sugestão';
+      setStatus('Novo título sugerido — clique de novo se quiser outra opção.');
+    } catch (err) {
+      btnCapaSugerir.textContent = original;
+      setStatus(err.message, true);
+    } finally {
+      btnCapaSugerir.disabled = false;
+      if (btnCapaSugerir.textContent === 'Gerando…') btnCapaSugerir.textContent = original;
+    }
+  });
+
   // ——— Tela dividida (metade imagem, metade vídeo) ———
   const splitPanel = document.getElementById('split-panel');
   if (splitPanel) {
@@ -427,8 +458,11 @@
     let imagemEscolhida = cfg.splitImagemUrl || null;
     let frameSegundo = null;
     let lado = 'esquerda';
-    let textoPosicao = cfg.splitTextoPosicao === 'topo' ? 'topo' : 'rodape';
+    let textoPosicao = ['topo', 'meio'].includes(cfg.splitTextoPosicao)
+      ? cfg.splitTextoPosicao
+      : 'rodape';
     let textoTamanho = Number(cfg.splitTextoTamanho) || 100;
+    const textoEvitar = [];
     const textoInput = document.getElementById('split-texto');
     const textoPreview = document.getElementById('split-texto-preview');
     const textoPreviewP = document.getElementById('split-texto-preview-p');
@@ -458,6 +492,16 @@
       );
     }
 
+    function previewClassForPos(pos) {
+      if (pos === 'topo') {
+        return 'pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-black/40 px-1.5 py-1.5';
+      }
+      if (pos === 'meio') {
+        return 'pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 bg-black/70 px-1.5 py-1.5';
+      }
+      return 'pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-black/40 px-1.5 py-1.5';
+    }
+
     function syncTextoPreview() {
       const txt = String(textoInput?.value || '').trim();
       if (!textoPreview || !textoPreviewP) return;
@@ -470,11 +514,12 @@
       const px = Math.max(6, Math.round(8 * (textoTamanho / 100)));
       textoPreviewP.style.fontSize = px + 'px';
       textoPreview.classList.remove('hidden');
-      textoPreview.className =
-        'pointer-events-none absolute inset-x-0 px-1.5 py-1.5 ' +
-        (textoPosicao === 'topo'
-          ? 'top-0 bg-gradient-to-b from-black/80 to-black/40'
-          : 'bottom-0 bg-gradient-to-t from-black/80 to-black/40');
+      textoPreview.className = previewClassForPos(textoPosicao);
+    }
+
+    function normalizarPosUi(pos) {
+      if (pos === 'topo' || pos === 'meio') return pos;
+      return 'rodape';
     }
 
     textoInput?.addEventListener('input', syncTextoPreview);
@@ -488,29 +533,35 @@
       const original = sugerirTextoBtn.textContent;
       sugerirTextoBtn.disabled = true;
       sugerirTextoBtn.textContent = 'Gerando…';
-      setSplitMsg('IA escrevendo o texto do vídeo…');
+      setSplitMsg('IA escrevendo outra opção de texto…');
       try {
+        const atual = String(textoInput?.value || '').trim();
+        if (atual && !textoEvitar.includes(atual)) textoEvitar.push(atual);
         const data = await postJson('/api/clips/' + cfg.id + '/split/sugerir-texto', {
           tom: textoTomEl?.value || 'natural',
-          texto_atual: String(textoInput?.value || '').trim(),
+          texto_atual: atual,
+          evitar: textoEvitar.slice(-8),
           titulo: capaTituloEl ? capaTituloEl.value.trim() : '',
         });
         if (textoInput && data.texto) {
           textoInput.value = data.texto;
+          if (!textoEvitar.includes(data.texto)) textoEvitar.push(data.texto);
           syncTextoPreview();
         }
-        setSplitMsg('Sugestão pronta — revise e aplique a tela dividida.');
+        sugerirTextoBtn.textContent = 'Outra sugestão';
+        setSplitMsg('Nova sugestão — clique de novo até gostar, depois aplique a tela dividida.');
       } catch (err) {
+        sugerirTextoBtn.textContent = original;
         setSplitMsg(err.message, true);
       } finally {
         sugerirTextoBtn.disabled = false;
-        sugerirTextoBtn.textContent = original;
+        if (sugerirTextoBtn.textContent === 'Gerando…') sugerirTextoBtn.textContent = original;
       }
     });
 
     splitPanel.querySelectorAll('.split-texto-pos-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        textoPosicao = btn.dataset.textoPos === 'topo' ? 'topo' : 'rodape';
+        textoPosicao = normalizarPosUi(btn.dataset.textoPos);
         splitPanel.querySelectorAll('.split-texto-pos-btn').forEach((b) => {
           const on = b === btn;
           b.className = on

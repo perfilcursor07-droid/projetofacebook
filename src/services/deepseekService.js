@@ -2460,6 +2460,7 @@ Regras:
 /**
  * Texto fixo para overlay no Reel / tela dividida (estilo thumbnail viral).
  * Marca 2–4 palavras-chave com [[palavra]] para as caixas de destaque.
+ * Cada chamada deve devolver uma opção NOVA (útil ao clicar várias vezes em "Sugerir").
  */
 async function sugerirTextoSplitVideo({
   transcricao,
@@ -2468,6 +2469,7 @@ async function sugerirTextoSplitVideo({
   tituloVideo,
   tom = 'natural',
   textoAtual = '',
+  evitar = [],
 }) {
   assertDeepseek();
   const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
@@ -2482,79 +2484,115 @@ async function sugerirTextoSplitVideo({
     throw err;
   }
 
-  const raw = await chatCompletion(
-    [
-      {
-        role: 'system',
-        content:
-          'Você escreve texto fixo para overlay de Reels estilo thumbnail viral. Responda só JSON válido.',
-      },
-      {
-        role: 'user',
-        content: [
-          'Responda APENAS JSON: {"texto":"..."}',
-          '',
-          'Regras do texto:',
-          '- Português do Brasil, CAIXA ALTA.',
-          '- 1 a 3 frases curtas, no máximo 180 caracteres no total (sem contar os [[ ]]).',
-          '- Deve fazer a pessoa PARAR o scroll (gancho, pergunta ou cobrança).',
-          '- NÃO invente fatos fora da base.',
-          '- Sem emoji, sem hashtag, sem aspas longas.',
-          '- Marque 2 a 4 palavras-chave com [[ASSIM]] (só a palavra/expressão curta dentro dos colchetes).',
-          '- Exemplo de formato: SABE POR QUE O LIVRO [[SECRETO]] DE [[ENOQUE]] NÃO ESTÁ NA [[BÍBLIA?]]',
-          `- Tom obrigatório: ${tomDesc}`,
-          tomKey === 'polemico'
-            ? '- Tom POLÊMICO: confronto/cobrança no começo; não entregue texto neutro de portal.'
-            : null,
-          textoAtual ? `Texto atual (não repetir igual):\n${String(textoAtual).slice(0, 200)}` : null,
-          titulo ? `Título/capa do corte:\n${String(titulo).slice(0, 120)}` : null,
-          tituloVideo ? `Vídeo de origem:\n${String(tituloVideo).slice(0, 120)}` : null,
-          'Base (fala/matéria — use só isso):',
-          String(base).slice(0, 4500),
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      },
-    ],
-    { temperature: sortearTemperatura(tomKey === 'polemico'), json: true }
-  );
+  const evitarList = [
+    textoAtual,
+    ...(Array.isArray(evitar) ? evitar : []),
+  ]
+    .map((t) => String(t || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 10);
 
-  let parsed = null;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    const m = String(raw).match(/\{[\s\S]*\}/);
-    if (m) {
-      try {
-        parsed = JSON.parse(m[0]);
-      } catch {
-        parsed = null;
+  function textoJaUsado(candidato) {
+    const n = normalizeTituloCmp(candidato.replace(/\[\[|\]\]/g, ''));
+    if (!n) return true;
+    return evitarList.some((prev) => {
+      const p = normalizeTituloCmp(String(prev).replace(/\[\[|\]\]/g, ''));
+      if (!p) return false;
+      if (n === p) return true;
+      // Semelhança grosseira: um contém o outro com boa sobreposição.
+      if (n.length > 20 && p.length > 20 && (n.includes(p.slice(0, 24)) || p.includes(n.slice(0, 24)))) {
+        return true;
+      }
+      return false;
+    });
+  }
+
+  let ultimoTexto = '';
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const raw = await chatCompletion(
+      [
+        {
+          role: 'system',
+          content:
+            'Você escreve texto fixo para overlay de Reels estilo thumbnail viral. Responda só JSON válido.',
+        },
+        {
+          role: 'user',
+          content: [
+            'Responda APENAS JSON: {"texto":"..."}',
+            '',
+            'Regras do texto:',
+            '- Português do Brasil, CAIXA ALTA.',
+            '- 1 a 3 frases curtas, no máximo 180 caracteres no total (sem contar os [[ ]]).',
+            '- Deve fazer a pessoa PARAR o scroll (gancho, pergunta ou cobrança).',
+            '- NÃO invente fatos fora da base.',
+            '- Sem emoji, sem hashtag, sem aspas longas.',
+            '- Marque 2 a 4 palavras-chave com [[ASSIM]] (só a palavra/expressão curta dentro dos colchetes).',
+            '- Exemplo de formato: SABE POR QUE O LIVRO [[SECRETO]] DE [[ENOQUE]] NÃO ESTÁ NA [[BÍBLIA?]]',
+            `- Tom obrigatório: ${tomDesc}`,
+            tomKey === 'polemico'
+              ? '- Tom POLÊMICO: confronto/cobrança no começo; não entregue texto neutro de portal.'
+              : null,
+            attempt > 1
+              ? 'OBRIGATÓRIO: mude o ÂNGULO, a abertura e as palavras de destaque — a sugestão anterior foi rejeitada por ser parecida.'
+              : 'OBRIGATÓRIO: se houver textos a evitar, entregue uma versão SUBSTANCIALMENTE diferente (outro gancho).',
+            evitarList.length
+              ? `NÃO repita nem parafraseie estes textos:\n- ${evitarList.map((t) => t.slice(0, 180)).join('\n- ')}`
+              : null,
+            titulo ? `Título/capa do corte:\n${String(titulo).slice(0, 120)}` : null,
+            tituloVideo ? `Vídeo de origem:\n${String(tituloVideo).slice(0, 120)}` : null,
+            'Base (fala/matéria — use só isso):',
+            String(base).slice(0, 4500),
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
+      ],
+      {
+        temperature: Math.min(1.15, sortearTemperatura(tomKey === 'polemico') + attempt * 0.08),
+        json: true,
+      }
+    );
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      const m = String(raw).match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          parsed = JSON.parse(m[0]);
+        } catch {
+          parsed = null;
+        }
       }
     }
-  }
 
-  let texto = String(parsed?.texto || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toUpperCase()
-    .slice(0, 280);
+    let texto = String(parsed?.texto || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toUpperCase()
+      .slice(0, 280);
 
-  // Garante pelo menos um destaque se a IA esqueceu.
-  if (texto && !/\[\[[^\]]+\]\]/.test(texto)) {
-    const palavras = texto.split(/\s+/).filter((p) => p.length > 4);
-    if (palavras[0]) {
-      const alvo = palavras[0];
-      texto = texto.replace(alvo, `[[${alvo}]]`);
+    if (texto && !/\[\[[^\]]+\]\]/.test(texto)) {
+      const palavras = texto.split(/\s+/).filter((p) => p.length > 4);
+      if (palavras[0]) {
+        const alvo = palavras[0];
+        texto = texto.replace(alvo, `[[${alvo}]]`);
+      }
+    }
+
+    ultimoTexto = texto;
+    if (texto && !textoJaUsado(texto)) {
+      return { texto, tom: tomKey };
     }
   }
 
-  if (!texto) {
-    const err = new Error('A IA não devolveu um texto útil. Tente de novo.');
-    err.status = 502;
-    throw err;
-  }
+  if (ultimoTexto) return { texto: ultimoTexto, tom: tomKey };
 
-  return { texto, tom: tomKey };
+  const err = new Error('A IA não devolveu um texto útil. Tente de novo.');
+  err.status = 502;
+  throw err;
 }
 
 module.exports = {
