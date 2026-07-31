@@ -219,6 +219,8 @@ async function montarSplit(req, res, next) {
       videoOffset: body.video_offset ?? body.videoOffset,
       imageOffset: body.imagem_offset ?? body.imageOffset,
       imagemLado: body.imagem_lado ?? body.imagemLado,
+      texto: body.texto ?? body.split_texto,
+      textoPosicao: body.texto_posicao ?? body.textoPosicao ?? body.split_texto_posicao,
     });
 
     res.status(202).json({
@@ -242,6 +244,8 @@ async function reenquadrarSplit(req, res, next) {
       videoOffset: body.video_offset ?? body.videoOffset,
       imageOffset: body.imagem_offset ?? body.imageOffset,
       imagemLado: body.imagem_lado ?? body.imagemLado,
+      texto: body.texto ?? body.split_texto,
+      textoPosicao: body.texto_posicao ?? body.textoPosicao ?? body.split_texto_posicao,
     });
     res.status(202).json({ ...result, clipId: clip.id, message: 'Reenquadrando…' });
   } catch (err) {
@@ -327,6 +331,8 @@ async function statusClip(req, res, next) {
       split_imagem_url: clip.split_image_path ? `/media/${clip.split_image_path}` : null,
       split_video_offset: Number(clip.split_video_offset) || 50,
       split_image_offset: Number(clip.split_image_offset) || 50,
+      split_texto: clip.split_texto || '',
+      split_texto_posicao: clip.split_texto_posicao === 'topo' ? 'topo' : 'rodape',
       preview_base_url: clipSplitService.previewBaseUrl(clip),
       updated_at: clip.updated_at || null,
     });

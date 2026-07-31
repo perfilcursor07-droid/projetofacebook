@@ -381,12 +381,51 @@
     let imagemEscolhida = cfg.splitImagemUrl || null;
     let frameSegundo = null;
     let lado = 'esquerda';
+    let textoPosicao = cfg.splitTextoPosicao === 'topo' ? 'topo' : 'rodape';
+    const textoInput = document.getElementById('split-texto');
+    const textoPreview = document.getElementById('split-texto-preview');
+    const textoPreviewP = document.getElementById('split-texto-preview-p');
 
     function setSplitMsg(msg, isError) {
       if (!msgEl) return;
       msgEl.textContent = msg || '';
       msgEl.className = 'text-[11px] ' + (isError ? 'text-rose-300' : 'text-slate-500');
     }
+
+    function syncTextoPreview() {
+      const txt = String(textoInput?.value || '').trim();
+      if (!textoPreview || !textoPreviewP) return;
+      if (!txt) {
+        textoPreview.classList.add('hidden');
+        textoPreviewP.textContent = '';
+        return;
+      }
+      textoPreviewP.textContent = txt;
+      textoPreview.classList.remove('hidden');
+      textoPreview.classList.toggle('top-0', textoPosicao === 'topo');
+      textoPreview.classList.toggle('bottom-0', textoPosicao === 'rodape');
+      // Gradiente: do preto na borda do texto para transparente
+      textoPreview.className =
+        'pointer-events-none absolute inset-x-0 px-1.5 py-1.5 ' +
+        (textoPosicao === 'topo'
+          ? 'top-0 bg-gradient-to-b from-black/80 to-black/40'
+          : 'bottom-0 bg-gradient-to-t from-black/80 to-black/40');
+    }
+
+    textoInput?.addEventListener('input', syncTextoPreview);
+    splitPanel.querySelectorAll('.split-texto-pos-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        textoPosicao = btn.dataset.textoPos === 'topo' ? 'topo' : 'rodape';
+        splitPanel.querySelectorAll('.split-texto-pos-btn').forEach((b) => {
+          const on = b === btn;
+          b.className = on
+            ? 'split-texto-pos-btn rounded-md bg-fuchsia-500 px-2.5 py-1 text-[11px] font-semibold text-white'
+            : 'split-texto-pos-btn rounded-md px-2.5 py-1 text-[11px] text-slate-400 hover:text-white';
+        });
+        syncTextoPreview();
+      });
+    });
+    syncTextoPreview();
 
     function aplicarOffsetsNoPreview() {
       const v = Number(videoRange?.value ?? 50);
@@ -551,6 +590,11 @@
     function corpoDoSplit() {
       const videoOffset = Number(videoRange?.value ?? 50);
       const imagemOffset = Number(imagemRange?.value ?? 50);
+      const texto = String(textoInput?.value || '').trim();
+      const textoFields = {
+        texto,
+        texto_posicao: textoPosicao,
+      };
 
       if (fonte === 'upload') {
         const file = uploadInput?.files?.[0];
@@ -561,6 +605,8 @@
         form.append('video_offset', String(videoOffset));
         form.append('imagem_offset', String(imagemOffset));
         form.append('imagem_lado', lado);
+        form.append('texto', texto);
+        form.append('texto_posicao', textoPosicao);
         return { body: form, isForm: true };
       }
 
@@ -573,21 +619,18 @@
             video_offset: videoOffset,
             imagem_offset: imagemOffset,
             imagem_lado: lado,
+            ...textoFields,
           },
           isForm: false,
         };
       }
 
-      // Aceita URL remota (busca) ou /media/... (frame já aplicado / imagem local)
       if (
         !imagemEscolhida ||
         (!/^https?:\/\//i.test(imagemEscolhida) && !imagemEscolhida.startsWith('/media/'))
       ) {
         throw new Error('Busque e clique em uma foto primeiro.');
       }
-      // Frame já escolhido via preview /media — manda como busca por URL local? Não.
-      // Se for /media/splits/... já está no servidor; reaplicar usa enquadrar.
-      // Para busca, precisa ser http.
       if (imagemEscolhida.startsWith('/media/') && fonte === 'busca') {
         throw new Error('Busque e clique em uma foto da web, ou use a aba Upload / Do vídeo.');
       }
@@ -598,6 +641,7 @@
           video_offset: videoOffset,
           imagem_offset: imagemOffset,
           imagem_lado: lado,
+          ...textoFields,
         },
         isForm: false,
       };
@@ -645,6 +689,8 @@
           video_offset: Number(videoRange?.value ?? 50),
           imagem_offset: Number(imagemRange?.value ?? 50),
           imagem_lado: lado,
+          texto: String(textoInput?.value || '').trim(),
+          texto_posicao: textoPosicao,
         });
         setSplitMsg('Reenquadrando… o vídeo atualiza sozinho.');
         setStatus('Reenquadrando — a página não recarrega.');

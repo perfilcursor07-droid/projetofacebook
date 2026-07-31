@@ -223,6 +223,48 @@ function renderSplitScreen({
 }
 
 /**
+ * Queima uma faixa PNG (texto) sobre o vídeo inteiro — topo ou rodapé.
+ * O overlay é transparente fora da faixa; a capa depois é costurada à parte.
+ *
+ * @param {object} opts
+ * @param {string} opts.videoPath
+ * @param {string} opts.overlayPath PNG com alpha (mesmo tamanho do vídeo)
+ * @param {string} opts.outputPath
+ * @returns {Promise<void>}
+ */
+function overlayTextoFixo({ videoPath, overlayPath, outputPath }) {
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(videoPath)
+      .input(overlayPath)
+      .complexFilter(['[0:v][1:v]overlay=0:0:format=auto[v]'])
+      .outputOptions([
+        '-map', '[v]',
+        '-map', '0:a?',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '23',
+        '-r', String(OUTPUT_FPS),
+        '-vsync', 'cfr',
+        '-pix_fmt', 'yuv420p',
+        '-g', String(OUTPUT_FPS * 2),
+        '-keyint_min', String(OUTPUT_FPS * 2),
+        '-sc_threshold', '0',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-ar', '48000',
+        '-ac', '2',
+        '-movflags', '+faststart',
+      ])
+      .on('error', reject)
+      .on('end', () => resolve())
+      .save(outputPath);
+  });
+}
+
+/**
  * Extrai áudio WAV mono 16kHz para STT (Whisper).
  * @returns {Promise<string>} caminho absoluto do wav
  */
@@ -297,6 +339,7 @@ module.exports = {
   extractAudioWav,
   extractFrame,
   renderSplitScreen,
+  overlayTextoFixo,
   probe,
   validateReelFile,
   MAX_CLIP_SECONDS,

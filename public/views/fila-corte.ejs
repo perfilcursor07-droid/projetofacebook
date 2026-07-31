@@ -14,6 +14,8 @@
   const offsetVideo = Number.isFinite(videoOffset) ? videoOffset : 50;
   const offsetImagem = Number.isFinite(imagemOffset) ? imagemOffset : 50;
   const previewVideo = previewBaseUrl || videoUrl;
+  const splitTexto = String(clip.split_texto || '');
+  const splitTextoPos = clip.split_texto_posicao === 'topo' ? 'topo' : 'rodape';
 %>
 
   <main class="mx-auto max-w-8xl px-4 py-5 sm:px-6 sm:py-8">
@@ -127,6 +129,10 @@
                     <% } %>
                   </div>
                   <span class="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/20"></span>
+                  <div id="split-texto-preview"
+                    class="pointer-events-none absolute inset-x-0 <%= splitTextoPos === 'topo' ? 'top-0' : 'bottom-0' %> <%= splitTexto ? '' : 'hidden' %> bg-gradient-to-<%= splitTextoPos === 'topo' ? 'b' : 't' %> from-black/80 to-black/40 px-1.5 py-1.5">
+                    <p id="split-texto-preview-p" class="text-center text-[8px] font-extrabold uppercase leading-snug tracking-wide text-white"><%= splitTexto %></p>
+                  </div>
                 </div>
                 <div class="mt-2 flex items-center justify-center gap-2">
                   <button type="button" id="btn-split-play" class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300">Testar</button>
@@ -151,6 +157,25 @@
                     <input id="split-imagem-offset" type="range" min="0" max="100" step="1" value="<%= offsetImagem %>"
                       class="mt-1.5 w-full accent-fuchsia-500" />
                   </label>
+                </div>
+
+                <div class="space-y-2 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-[11px] font-medium text-slate-400">Texto no vídeo <span class="font-normal text-slate-600">(opcional)</span></p>
+                    <div class="inline-flex rounded-lg border border-slate-700 bg-slate-950 p-0.5">
+                      <button type="button" data-texto-pos="topo"
+                        class="split-texto-pos-btn rounded-md px-2.5 py-1 text-[11px] <%= splitTextoPos === 'topo' ? 'bg-fuchsia-500 font-semibold text-white' : 'text-slate-400 hover:text-white' %>">
+                        Topo
+                      </button>
+                      <button type="button" data-texto-pos="rodape"
+                        class="split-texto-pos-btn rounded-md px-2.5 py-1 text-[11px] <%= splitTextoPos === 'rodape' ? 'bg-fuchsia-500 font-semibold text-white' : 'text-slate-400 hover:text-white' %>">
+                        Rodapé
+                      </button>
+                    </div>
+                  </div>
+                  <textarea id="split-texto" rows="2" maxlength="280" placeholder="Ex.: AQUI NÃO TEM ARTISTA, AQUI TEM SERVO"
+                    class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold uppercase leading-snug text-white placeholder:normal-case placeholder:font-normal placeholder:text-slate-600 focus:border-fuchsia-500 focus:outline-none"><%= splitTexto %></textarea>
+                  <p class="text-[11px] text-slate-600">Fica fixo no Reel <strong class="font-medium text-slate-500">depois da capa</strong>. Deixe em branco se não quiser.</p>
                 </div>
 
                 <div>
@@ -263,7 +288,9 @@
       splitImagemUrl: <%- JSON.stringify(splitImagemUrl || '') %>,
       videoOffset: <%= offsetVideo %>,
       imagemOffset: <%= offsetImagem %>,
+      splitTexto: <%- JSON.stringify(splitTexto) %>,
+      splitTextoPosicao: <%- JSON.stringify(splitTextoPos) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731b"></script>
+  <script src="/js/fila-corte.js?v=20260731c"></script>
 <%- include('partials/app-end') %>

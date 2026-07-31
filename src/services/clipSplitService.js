@@ -7,11 +7,12 @@ const VideoClips = require('../models/VideoClips');
 const Videos = require('../models/Videos');
 const { enqueue } = require('../workers/queue');
 const { storageAbsolutePath } = require('./downloadService');
-const { extractFrame, renderSplitScreen, probe } = require('./ffmpegService');
+const { extractFrame, renderSplitScreen, overlayTextoFixo, probe } = require('./ffmpegService');
 
 const SPLIT_DIR = 'splits';
 const FRAME_DIR = 'splits/frames';
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_TEXTO = 280;
 
 function httpError(message, status = 400) {
   const err = new Error(message);
@@ -37,6 +38,90 @@ function clampOffset(value, fallback = 50) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
+}
+
+function normalizarTextoSplit(raw) {
+  return String(raw || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_TEXTO);
+}
+
+function normalizarPosicaoTexto(raw) {
+  return String(raw || '').toLowerCase() === 'topo' ? 'topo' : 'rodape';
+}
+
+function escapeXml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/** Quebra o texto em linhas curtas para caber na faixa. */
+function quebrarLinhas(texto, maxChars = 34, maxLinhas = 4) {
+  const palavras = String(texto || '').split(/\s+/).filter(Boolean);
+  const linhas = [];
+  let atual = '';
+  for (const palavra of palavras) {
+    const tentativa = atual ? `${atual} ${palavra}` : palavra;
+    if (tentativa.length <= maxChars) {
+      atual = tentativa;
+      continue;
+    }
+    if (atual) linhas.push(atual);
+    atual = palavra;
+    if (linhas.length >= maxLinhas - 1) break;
+  }
+  if (atual && linhas.length < maxLinhas) linhas.push(atual);
+  // Se sobrou texto, corta a última linha com reticências.
+  const usado = linhas.join(' ').length;
+  if (usado < texto.length && linhas.length) {
+    const last = linhas[linhas.length - 1];
+    linhas[linhas.length - 1] = (last.length > 3 ? last.slice(0, -3) : last) + '…';
+  }
+  return linhas.length ? linhas : [String(texto).slice(0, maxChars)];
+}
+
+/**
+ * Gera PNG transparente do tamanho do vídeo com faixa de texto no topo ou rodapé.
+ * O texto fica no corpo do Reel (depois da capa).
+ */
+async function criarFaixaTextoPng({ texto, posicao, width, height, destAbs }) {
+  const w = Math.max(320, Math.round(Number(width) || 1080));
+  const h = Math.max(320, Math.round(Number(height) || 1920));
+  const linhas = quebrarLinhas(texto, w >= 1000 ? 34 : 28, 4);
+  const fontSize = Math.round(w * 0.042);
+  const lineH = Math.round(fontSize * 1.25);
+  const padY = Math.round(w * 0.035);
+  const barH = padY * 2 + linhas.length * lineH;
+  const barY = posicao === 'topo' ? 0 : h - barH;
+
+  const tspans = linhas
+    .map((linha, i) => {
+      const y = barY + padY + fontSize + i * lineH;
+      return `<tspan x="${w / 2}" y="${y}">${escapeXml(linha.toUpperCase())}</tspan>`;
+    })
+    .join('');
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.82' : '0.55'}"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.55' : '0.88'}"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="${barY}" width="${w}" height="${barH}" fill="url(#bar)"/>
+  <text text-anchor="middle" fill="#ffffff" font-family="Arial Black, Arial, Helvetica, sans-serif"
+    font-size="${fontSize}" font-weight="800" letter-spacing="0.5">${tspans}</text>
+</svg>`;
+
+  fs.mkdirSync(path.dirname(destAbs), { recursive: true });
+  await sharp(Buffer.from(svg)).png().toFile(destAbs);
+  return destAbs;
 }
 
 /**
@@ -197,8 +282,18 @@ async function regenerarCapaSePreciso(clipId, userId, capaEstavaPronta, titulo) 
 
 /**
  * Renderiza a tela dividida agora (roda dentro da fila).
+ * Texto opcional é queimado no corpo do vídeo (aparece depois da capa).
  */
-async function aplicarSplitAgora({ clipId, userId, imagemRelPath, videoOffset, imageOffset, imagemLado }) {
+async function aplicarSplitAgora({
+  clipId,
+  userId,
+  imagemRelPath,
+  videoOffset,
+  imageOffset,
+  imagemLado,
+  texto,
+  textoPosicao,
+}) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
 
@@ -208,8 +303,19 @@ async function aplicarSplitAgora({ clipId, userId, imagemRelPath, videoOffset, i
   const imagemAbs = storageAbs(imagemRelPath);
   if (!fs.existsSync(imagemAbs)) throw httpError('Imagem da tela dividida não encontrada.', 422);
 
+  const textoFinal = normalizarTextoSplit(
+    texto != null ? texto : clip.split_texto
+  );
+  const posicaoFinal = normalizarPosicaoTexto(
+    textoPosicao != null ? textoPosicao : clip.split_texto_posicao
+  );
+
+  const uid = crypto.randomBytes(3).toString('hex');
+  const splitTempRel = `clips/clip_${clip.id}_split_raw_${Date.now()}_${uid}.mp4`;
   const outRelative = `clips/clip_${clip.id}_split_${Date.now()}.mp4`;
+  const splitTempAbs = storageAbs(splitTempRel);
   const outAbs = storageAbs(outRelative);
+  const overlayAbs = storageAbs(`${SPLIT_DIR}/clip_${clip.id}_txt_${uid}.png`);
   const capaEstavaPronta = clip.capa_status === 'pronta';
   const arquivoAnterior = clip.caminho_arquivo;
 
@@ -217,17 +323,39 @@ async function aplicarSplitAgora({ clipId, userId, imagemRelPath, videoOffset, i
     await renderSplitScreen({
       videoPath: storageAbs(base),
       imagePath: imagemAbs,
-      outputPath: outAbs,
+      outputPath: textoFinal ? splitTempAbs : outAbs,
       videoOffset,
       imageOffset,
       aspectRatio: clip.aspect_ratio === '1:1' ? '1:1' : '9:16',
       imagemLado,
     });
+
+    if (textoFinal) {
+      const info = await probe(splitTempAbs);
+      const stream = (info.streams || []).find((s) => s.codec_type === 'video') || {};
+      const width = Number(stream.width) || 1080;
+      const height = Number(stream.height) || 1920;
+      await criarFaixaTextoPng({
+        texto: textoFinal,
+        posicao: posicaoFinal,
+        width,
+        height,
+        destAbs: overlayAbs,
+      });
+      await overlayTextoFixo({
+        videoPath: splitTempAbs,
+        overlayPath: overlayAbs,
+        outputPath: outAbs,
+      });
+      safeUnlink(splitTempRel);
+    }
+
     if (!fs.existsSync(outAbs) || fs.statSync(outAbs).size < 1000) {
       throw new Error('arquivo final vazio');
     }
 
-    // A capa passa a ser gerada sobre a versão em tela dividida.
+    // A capa passa a ser gerada sobre a versão em tela dividida (+ texto).
+    // O texto fica no corpo do Reel — a capa intro fica sem ele.
     await VideoClips.update(clip.id, {
       caminho_arquivo: outRelative,
       arquivo_sem_split: base,
@@ -237,11 +365,12 @@ async function aplicarSplitAgora({ clipId, userId, imagemRelPath, videoOffset, i
       split_image_path: imagemRelPath,
       split_video_offset: clampOffset(videoOffset),
       split_image_offset: clampOffset(imageOffset),
+      split_texto: textoFinal || null,
+      split_texto_posicao: posicaoFinal,
       split_erro: null,
       capa_status: capaEstavaPronta ? 'gerando' : 'pendente',
     });
 
-    // Limpa o arquivo antigo (capa/split anterior), nunca o corte original.
     if (arquivoAnterior && arquivoAnterior !== base && arquivoAnterior !== outRelative) {
       safeUnlink(arquivoAnterior);
     }
@@ -253,11 +382,18 @@ async function aplicarSplitAgora({ clipId, userId, imagemRelPath, videoOffset, i
     return { relativePath: outRelative };
   } catch (err) {
     safeUnlink(outRelative);
+    safeUnlink(splitTempRel);
     await VideoClips.update(clip.id, {
       split_status: 'erro',
       split_erro: `Tela dividida falhou: ${String(err.message || err).slice(0, 320)}`,
     });
     throw err;
+  } finally {
+    try {
+      if (fs.existsSync(overlayAbs)) fs.unlinkSync(overlayAbs);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -265,7 +401,19 @@ async function aplicarSplitAgora({ clipId, userId, imagemRelPath, videoOffset, i
  * Enfileira a tela dividida do corte.
  * @returns {Promise<{ queued: true, imagem: string }>}
  */
-async function aplicarSplitNoClip({ clipId, userId, fonte, imagemUrl, buffer, frameSegundo, videoOffset, imageOffset, imagemLado }) {
+async function aplicarSplitNoClip({
+  clipId,
+  userId,
+  fonte,
+  imagemUrl,
+  buffer,
+  frameSegundo,
+  videoOffset,
+  imageOffset,
+  imagemLado,
+  texto,
+  textoPosicao,
+}) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
   if (!['pronto', 'publicado'].includes(String(clip.status))) {
@@ -286,6 +434,10 @@ async function aplicarSplitNoClip({ clipId, userId, fonte, imagemUrl, buffer, fr
     imageOffset: clampOffset(imageOffset, Number(clip.split_image_offset) || 50),
   };
   const lado = imagemLado === 'direita' ? 'direita' : 'esquerda';
+  const textoFinal = normalizarTextoSplit(texto != null ? texto : clip.split_texto);
+  const posicaoFinal = normalizarPosicaoTexto(
+    textoPosicao != null ? textoPosicao : clip.split_texto_posicao
+  );
 
   await VideoClips.update(clip.id, {
     split_status: 'gerando',
@@ -294,6 +446,8 @@ async function aplicarSplitNoClip({ clipId, userId, fonte, imagemUrl, buffer, fr
     split_image_url: imagem.url,
     split_video_offset: offsets.videoOffset,
     split_image_offset: offsets.imageOffset,
+    split_texto: textoFinal || null,
+    split_texto_posicao: posicaoFinal,
   });
 
   enqueue(`split clip ${clip.id}`, async () => {
@@ -303,6 +457,8 @@ async function aplicarSplitNoClip({ clipId, userId, fonte, imagemUrl, buffer, fr
         userId,
         imagemRelPath: imagem.relativePath,
         imagemLado: lado,
+        texto: textoFinal,
+        textoPosicao: posicaoFinal,
         ...offsets,
       });
     } catch (err) {
@@ -310,7 +466,13 @@ async function aplicarSplitNoClip({ clipId, userId, fonte, imagemUrl, buffer, fr
     }
   });
 
-  return { queued: true, imagem: `/media/${imagem.relativePath}`, ...offsets };
+  return {
+    queued: true,
+    imagem: `/media/${imagem.relativePath}`,
+    texto: textoFinal || null,
+    texto_posicao: posicaoFinal,
+    ...offsets,
+  };
 }
 
 /** Volta o corte para o vídeo cheio (sem imagem ao lado). */
@@ -336,6 +498,8 @@ async function removerSplitDoClip({ clipId, userId }) {
     split_image_path: null,
     split_image_origem: null,
     split_image_url: null,
+    split_texto: null,
+    split_texto_posicao: 'rodape',
     split_erro: null,
     capa_status: capaEstavaPronta ? 'gerando' : 'pendente',
   });
@@ -347,8 +511,16 @@ async function removerSplitDoClip({ clipId, userId }) {
   return { ok: true };
 }
 
-/** Reaplica a tela dividida com a mesma imagem, só mudando o enquadramento. */
-async function reenquadrarSplit({ clipId, userId, videoOffset, imageOffset, imagemLado }) {
+/** Reaplica a tela dividida com a mesma imagem, só mudando o enquadramento/texto. */
+async function reenquadrarSplit({
+  clipId,
+  userId,
+  videoOffset,
+  imageOffset,
+  imagemLado,
+  texto,
+  textoPosicao,
+}) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
   if (!clip.split_image_path || !fs.existsSync(storageAbs(clip.split_image_path))) {
@@ -360,8 +532,17 @@ async function reenquadrarSplit({ clipId, userId, videoOffset, imageOffset, imag
     imageOffset: clampOffset(imageOffset, Number(clip.split_image_offset) || 50),
   };
   const lado = imagemLado === 'direita' ? 'direita' : 'esquerda';
+  const textoFinal = normalizarTextoSplit(texto != null ? texto : clip.split_texto);
+  const posicaoFinal = normalizarPosicaoTexto(
+    textoPosicao != null ? textoPosicao : clip.split_texto_posicao
+  );
 
-  await VideoClips.update(clip.id, { split_status: 'gerando', split_erro: null });
+  await VideoClips.update(clip.id, {
+    split_status: 'gerando',
+    split_erro: null,
+    split_texto: textoFinal || null,
+    split_texto_posicao: posicaoFinal,
+  });
 
   enqueue(`split clip ${clip.id}`, async () => {
     try {
@@ -370,6 +551,8 @@ async function reenquadrarSplit({ clipId, userId, videoOffset, imageOffset, imag
         userId,
         imagemRelPath: clip.split_image_path,
         imagemLado: lado,
+        texto: textoFinal,
+        textoPosicao: posicaoFinal,
         ...offsets,
       });
     } catch (err) {
@@ -377,7 +560,12 @@ async function reenquadrarSplit({ clipId, userId, videoOffset, imageOffset, imag
     }
   });
 
-  return { queued: true, ...offsets };
+  return {
+    queued: true,
+    texto: textoFinal || null,
+    texto_posicao: posicaoFinal,
+    ...offsets,
+  };
 }
 
 /** Vídeo usado nos previews e nos frames (sempre sem capa/split). */
