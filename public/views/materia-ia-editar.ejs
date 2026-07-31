@@ -470,18 +470,20 @@
             </div>
             <div class="p-2">
               <div id="matter-img-frame-preview" class="relative overflow-hidden rounded border border-slate-800 bg-slate-900/50">
-                <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="relative z-10 block h-auto w-full object-cover" />
                 <% if (canEdit && imagemFonteUrl) { %>
                   <img id="matter-img-fonte" src="<%= imagemFonteUrl %>" alt="Foto de origem"
                     class="pointer-events-none absolute inset-0 z-0 hidden h-full w-full object-cover" />
                 <% } %>
+                <img id="matter-img-marca" alt="Minha marca"
+                  class="pointer-events-none absolute inset-0 z-20 hidden h-full w-full object-fill" />
+                <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="relative z-10 block h-auto w-full object-cover" />
               </div>
               <% if (canEdit) { %>
                 <div id="matter-art-frame" class="mt-2 space-y-2 rounded-lg border border-slate-700/80 bg-slate-950/60 p-2">
                   <div>
                     <p class="text-[11px] font-medium text-slate-300">Enquadramento</p>
                     <p class="mt-0.5 text-[10px] leading-relaxed text-slate-500">
-                      O zoom mexe só na foto. A marca (logo/título) fica fixa e é aplicada por cima ao clicar em aplicar.
+                      Zoom e posição mexem só na foto. A marca fica fixa por cima na prévia e na arte final.
                     </p>
                   </div>
                   <label class="block">
@@ -677,5 +679,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260731frame3"></script>
+  <script src="/js/materia-ia-editar.js?v=20260731frame4"></script>
 <%- include('partials/app-end') %>

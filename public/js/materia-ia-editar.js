@@ -134,8 +134,51 @@
     }
   }
 
+  function getMarcaOverlayEl() {
+    return document.getElementById('matter-img-marca');
+  }
+
+  let marcaOverlayLoading = null;
+  let marcaOverlayTitle = '';
+
+  function marcaOverlayUrl(titulo) {
+    const q = new URLSearchParams({
+      titulo: String(titulo || tituloEl?.value || '').trim(),
+      t: String(Date.now()),
+    });
+    return '/api/materias-ia/matters/' + cfg.id + '/arte/marca-overlay?' + q.toString();
+  }
+
+  async function ensureMarcaOverlay() {
+    const el = getMarcaOverlayEl();
+    if (!el) return null;
+    const titulo = String(tituloEl?.value || '').trim();
+    if (el.dataset.ready === '1' && marcaOverlayTitle === titulo && el.getAttribute('src')) {
+      return el;
+    }
+    if (marcaOverlayLoading) return marcaOverlayLoading;
+    marcaOverlayTitle = titulo;
+    marcaOverlayLoading = new Promise((resolve) => {
+      const url = marcaOverlayUrl(titulo);
+      const onDone = () => {
+        el.dataset.ready = '1';
+        marcaOverlayLoading = null;
+        resolve(el);
+      };
+      el.onload = onDone;
+      el.onerror = () => {
+        el.dataset.ready = '';
+        marcaOverlayLoading = null;
+        resolve(null);
+      };
+      el.src = url;
+    });
+    return marcaOverlayLoading;
+  }
+
   function showBrandedArtPreview() {
     const imgFonteEl = getFontePreviewEl();
+    const imgMarcaEl = getMarcaOverlayEl();
     clearMediaPreviewStyles(imgEl);
     clearMediaPreviewStyles(imgFonteEl);
     if (imgEl) {
@@ -146,13 +189,12 @@
       imgEl.style.height = 'auto';
       imgEl.style.objectFit = 'cover';
     }
-    if (imgFonteEl) {
-      imgFonteEl.classList.add('hidden');
-    }
+    if (imgFonteEl) imgFonteEl.classList.add('hidden');
+    if (imgMarcaEl) imgMarcaEl.classList.add('hidden');
     if (artFramePreview) artFramePreview.style.aspectRatio = '';
   }
 
-  function applyArtFramePreview() {
+  async function applyArtFramePreview() {
     const { zoom, offsetX, offsetY } = readArtFrame();
     if (artZoomValor) artZoomValor.textContent = zoom + '%';
     if (artOffsetXValor) artOffsetXValor.textContent = offsetX + '%';
@@ -161,22 +203,20 @@
     const fonteUrl = String(cfg.imagemFonteUrl || '').trim();
     const framingActive = zoom !== 100 || offsetX !== 50 || offsetY !== 50;
     const imgFonteEl = getFontePreviewEl();
-
-    // Sem foto de origem: não dá para pré-visualizar sem zoom na marca.
-    if (!fonteUrl || !imgFonteEl) {
-      if (framingActive) {
-        setStatus('Foto de origem indisponível — o zoom só funciona na imagem (sem a marca).', true);
-      }
-      showBrandedArtPreview();
-      return;
-    }
+    const imgMarcaEl = getMarcaOverlayEl();
 
     if (!framingActive) {
       showBrandedArtPreview();
       return;
     }
 
-    // Prévia: só a FOTO (origem). A arte com Minha marca fica escondida.
+    if (!fonteUrl || !imgFonteEl) {
+      setStatus('Foto de origem indisponível para enquadrar.', true);
+      showBrandedArtPreview();
+      return;
+    }
+
+    // Prévia em camadas: foto com zoom embaixo + Minha marca fixa em cima.
     if (artFramePreview) artFramePreview.style.aspectRatio = '4 / 5';
     if (imgEl) imgEl.classList.add('hidden');
     imgFonteEl.classList.remove('hidden');
@@ -185,10 +225,27 @@
       imgFonteEl.src = fonteUrl;
     }
     applyMediaPreviewStyles(imgFonteEl, zoom, offsetX, offsetY);
+
+    const marca = await ensureMarcaOverlay();
+    if (marca) {
+      clearMediaPreviewStyles(marca);
+      marca.classList.remove('hidden');
+      marca.style.position = 'absolute';
+      marca.style.inset = '0';
+      marca.style.width = '100%';
+      marca.style.height = '100%';
+      marca.style.objectFit = 'fill';
+      marca.style.zIndex = '20';
+      marca.style.transform = 'none';
+    } else if (imgMarcaEl) {
+      imgMarcaEl.classList.add('hidden');
+    }
   }
 
   [artZoom, artOffsetX, artOffsetY].forEach((el) => {
-    el?.addEventListener('input', applyArtFramePreview);
+    el?.addEventListener('input', () => {
+      applyArtFramePreview();
+    });
   });
 
   btnArtEnquadrar?.addEventListener('click', async () => {

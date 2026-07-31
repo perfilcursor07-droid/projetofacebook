@@ -1240,6 +1240,60 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
   };
 }
 
+/**
+ * PNG transparente só com Minha marca (gradiente + título + logo).
+ * Serve para prévia de enquadramento: foto zoom por baixo, marca fixa por cima.
+ */
+async function buildBrandOverlayPng({ title, user } = {}) {
+  if (!title) throw new Error('Informe o título da arte');
+  if (!user?.id) throw new Error('Usuário inválido para compor a arte');
+
+  const { normalizeArtModel } = require('./editorialCardModels');
+  const modelId = normalizeArtModel(user.marca_modelo_arte);
+  const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
+  const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
+  const brandName = String(user.marca_nome || '').trim();
+  const maxChars = modelId === 'estilo_fatos' || modelId === 'citacao_marcador' ? 30 : 27;
+  const titleLines = wrapTitle(title, maxChars, 5);
+  const logo = await buildLogoComposite(user.logo_path, WIDTH, {
+    model: modelId,
+    canvasHeight: HEIGHT,
+    titleLineCount: titleLines.length,
+  });
+  const overlay = buildOverlay({
+    title,
+    category: user.marca_categoria || 'ÚLTIMAS',
+    footer: user.marca_rodape || brandName,
+    brandName,
+    primary,
+    secondary,
+    hasLogo: Boolean(logo),
+    model: modelId,
+    fontId: user.marca_fonte,
+    titleColorId: user.marca_titulo_cor,
+    titleSizeId: user.marca_titulo_tamanho,
+  });
+
+  const composites = [{ input: overlay, left: 0, top: 0 }];
+  if (logo) composites.push(logo);
+
+  const blank = await sharp({
+    create: {
+      width: WIDTH,
+      height: HEIGHT,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .png()
+    .toBuffer();
+
+  return sharp(blank)
+    .composite(composites)
+    .png()
+    .toBuffer();
+}
+
 function removeEditorialCard(relativePath) {
   if (!relativePath) return;
   const storageRoot = path.resolve(env.storagePath);
@@ -1256,6 +1310,7 @@ function removeEditorialCard(relativePath) {
 module.exports = {
   createEditorialCard,
   composeBrandOverlayOnImage,
+  buildBrandOverlayPng,
   removeEditorialCard,
   wrapTitle,
   wrapTextLines,

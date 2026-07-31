@@ -14,6 +14,36 @@ const { publishEditorialPhoto } = require('../services/editorialPublishService')
 const router = express.Router();
 router.use(requireAuth);
 
+router.get('/matters/:id/arte/marca-overlay', async (req, res, next) => {
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID da matéria inválido' });
+    }
+
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+
+    const Users = require('../models/Users');
+    const user = await Users.findById(req.session.userId);
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    const title = String(req.query.titulo || req.query.title || matter.titulo || '').trim();
+    if (!title) return res.status(400).json({ error: 'Informe o título para a marca' });
+
+    const { buildBrandOverlayPng } = require('../services/editorialCardService');
+    const png = await buildBrandOverlayPng({ title, user });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'private, max-age=20');
+    return res.send(png);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+});
+
 router.post('/matters/:id/arte', (req, res, next) => {
   uploadMatterImage(req, res, async (uploadError) => {
     if (uploadError) {
