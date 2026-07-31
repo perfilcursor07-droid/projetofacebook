@@ -290,7 +290,7 @@
         <header class="flex items-center justify-between gap-2 border-b border-slate-800 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
           <div class="min-w-0">
             <p id="chat-titulo" class="truncate text-sm font-semibold text-white">Nova conversa</p>
-            <p class="hidden text-[11px] text-slate-500 sm:block">A IA pesquisa na web, escreve a matéria e você refina no chat antes de salvar o rascunho.</p>
+            <p class="hidden text-[11px] text-slate-500 sm:block">Pesquisa na web ou lê links do Facebook, Instagram e YouTube — você refina no chat e salva o rascunho.</p>
           </div>
           <button type="button" id="chat-renomear"
             class="hidden shrink-0 rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:border-emerald-500 hover:text-white">Renomear</button>
@@ -300,15 +300,18 @@
           <div id="chat-vazio" class="mx-auto max-w-lg py-4 text-center sm:py-8 lg:py-10">
             <p class="text-base font-semibold text-white sm:text-lg">O que vamos noticiar hoje?</p>
             <p class="mt-1.5 text-xs leading-relaxed text-slate-400 sm:mt-2 sm:text-sm">
-              Peça o assunto e a IA busca na internet, lê as reportagens e escreve a matéria.
-              Depois você pede ajustes no próprio chat e só salva quando gostar.
+              Peça o assunto para pesquisar na web, ou cole um link do
+              <strong class="font-medium text-slate-300">Facebook</strong>,
+              <strong class="font-medium text-slate-300">Instagram</strong> ou
+              <strong class="font-medium text-slate-300">YouTube</strong>
+              — a IA lê a legenda/descrição e escreve a matéria. Depois você ajusta no chat e salva o rascunho.
             </p>
             <div class="mt-3 flex flex-wrap justify-center gap-1.5 sm:mt-4 sm:gap-2">
               <button type="button" class="chat-exemplo rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-white sm:px-3 sm:py-1.5 sm:text-xs">
                 faça uma matéria sobre católicos e evangélicos juntos na política em 2026
               </button>
               <button type="button" class="chat-exemplo rounded-full border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-white sm:px-3 sm:py-1.5 sm:text-xs">
-                pesquise o que saiu hoje sobre pesquisa eleitoral no Nordeste
+                faça matéria deste link: cole aqui o post do Facebook, Instagram ou YouTube
               </button>
             </div>
           </div>
@@ -317,7 +320,7 @@
         <div class="border-t border-slate-800 px-2.5 py-2 sm:px-4 sm:py-3">
           <div class="rounded-xl border border-slate-700 bg-slate-950 p-2 focus-within:border-emerald-500 sm:rounded-2xl">
             <textarea id="chat-input" rows="2"
-              placeholder="Peça a matéria, tire uma dúvida ou peça um ajuste (Enter envia, Shift+Enter pula linha)"
+              placeholder="Peça a matéria, cole um link do Facebook/Instagram/YouTube, ou peça um ajuste (Enter envia)"
               class="max-h-28 min-h-[2.5rem] w-full resize-none bg-transparent px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none sm:max-h-36"></textarea>
             <div class="mt-1 grid gap-1.5 px-1 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
               <button type="button" id="chat-toggle-web" aria-pressed="true"

@@ -29,6 +29,191 @@ function tituloDaConversa(texto) {
   return t.length > 70 ? `${t.slice(0, 70).trim()}…` : t;
 }
 
+/** URLs http(s) no pedido (remove pontuação final comum). */
+function extrairUrlsDoTexto(texto) {
+  const matches = String(texto || '').match(/https?:\/\/[^\s<>"'`)\]]+/gi) || [];
+  const vistos = new Set();
+  const urls = [];
+  for (const raw of matches) {
+    const limpa = String(raw).replace(/[.,;:!?]+$/g, '').trim();
+    if (!limpa || vistos.has(limpa)) continue;
+    vistos.add(limpa);
+    urls.push(limpa);
+  }
+  return urls.slice(0, 4);
+}
+
+function classificarUrlFonte(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    if (
+      host.includes('facebook.com') ||
+      host === 'fb.com' ||
+      host === 'fb.watch' ||
+      host === 'm.facebook.com'
+    ) {
+      return 'facebook';
+    }
+    if (host.includes('instagram.com')) return 'instagram';
+    if (host.includes('youtube.com') || host === 'youtu.be' || host === 'm.youtube.com') {
+      return 'youtube';
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * YouTube → título + descrição (+ legendas/auto-captions se existirem).
+ * Não baixa o vídeo inteiro.
+ */
+async function extrairYoutubeComoFonte(url) {
+  const fs = require('fs');
+  const youtubedlPkg = require('youtube-dl-exec');
+  const { runYtDlp } = require('./ytDlpAuth');
+
+  let binary = String(process.env.YTDLP_PATH || '').trim();
+  if (!binary || !fs.existsSync(binary)) {
+    for (const c of ['/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp']) {
+      if (fs.existsSync(c)) {
+        binary = c;
+        break;
+      }
+    }
+  }
+  const exec = binary ? youtubedlPkg.create(binary) : youtubedlPkg;
+  const info = await runYtDlp(
+    exec,
+    url,
+    {
+      dumpSingleJson: true,
+      noWarnings: true,
+      skipDownload: true,
+      noPlaylist: true,
+      socketTimeout: 45,
+      retries: 1,
+    },
+    { platform: 'youtube' }
+  );
+
+  const titulo = String(info.title || '').trim() || null;
+  const descricao = String(info.description || '').trim();
+  const veiculo = String(info.uploader || info.channel || 'YouTube').trim();
+  let trecho = [titulo ? `Título: ${titulo}` : null, descricao || null].filter(Boolean).join('\n\n');
+
+  // Legendas/auto-captions enriquecem o factual (fala do vídeo)
+  try {
+    const { trySubtitlesFromUrl } = require('./transcriptionService');
+    const subs = await trySubtitlesFromUrl(url);
+    if (subs?.text && String(subs.text).trim().length >= 40) {
+      trecho = `${trecho}\n\nTranscrição/legendas:\n${String(subs.text).trim().slice(0, 4500)}`;
+    }
+  } catch (err) {
+    console.warn('[materia-chat] youtube subs:', err.message);
+  }
+
+  if (String(trecho || '').trim().length < 40) {
+    const err = new Error(
+      'Não consegui ler título/descrição suficientes deste YouTube. O vídeo pode estar privado ou bloqueado; cole o texto da descrição no chat.'
+    );
+    err.status = 422;
+    throw err;
+  }
+
+  return {
+    veiculo,
+    titulo: titulo || `Vídeo — ${veiculo}`,
+    url,
+    resumo: String(descricao || trecho).slice(0, 400),
+    trecho: trecho.slice(0, 5000),
+    ehRedeSocial: true,
+    plataforma: 'youtube',
+  };
+}
+
+/**
+ * Extrai legenda/texto de FB, IG ou YT colados no chat.
+ * Devolve fontes no formato do montarBlocoFatos.
+ */
+async function extrairFontesDeLinks(urls, { onPasso } = {}) {
+  const {
+    isSocialPostUrl,
+    extrairPostSocial,
+    normalizarUrlSocial,
+  } = require('./socialPostExtract');
+
+  const fontes = [];
+  const falhas = [];
+
+  for (const raw of urls) {
+    const tipo = classificarUrlFonte(raw);
+    if (!tipo) continue;
+
+    const rotulo =
+      tipo === 'facebook' ? 'Facebook' : tipo === 'instagram' ? 'Instagram' : 'YouTube';
+    if (typeof onPasso === 'function') {
+      onPasso({ kind: 'lendo', texto: `Lendo ${rotulo}: ${raw}`, url: raw });
+    }
+
+    try {
+      if (tipo === 'youtube') {
+        fontes.push(await extrairYoutubeComoFonte(raw));
+        continue;
+      }
+
+      const link = normalizarUrlSocial(raw);
+      if (!isSocialPostUrl(link)) {
+        falhas.push({
+          url: raw,
+          erro: `Link de ${rotulo} não parece ser um post/foto/Reel. Use o link da publicação.`,
+        });
+        continue;
+      }
+
+      const social = await extrairPostSocial(link);
+      const texto = String(social.texto || '').trim();
+      if (texto.length < 40) {
+        falhas.push({
+          url: raw,
+          erro: `Legenda de ${rotulo} vazia ou curta demais. Cole o texto do post no chat.`,
+        });
+        continue;
+      }
+
+      // Em vídeo, tenta legendas se a legenda for curta
+      let trecho = texto;
+      if (texto.length < 220 && /reel|reels|videos|fb\.watch|\/tv\//i.test(link)) {
+        try {
+          const { trySubtitlesFromUrl } = require('./transcriptionService');
+          const subs = await trySubtitlesFromUrl(link);
+          if (subs?.text && String(subs.text).trim().length >= 40) {
+            trecho = `${texto}\n\nTranscrição/legendas:\n${String(subs.text).trim().slice(0, 3500)}`;
+          }
+        } catch {
+          /* opcional */
+        }
+      }
+
+      fontes.push({
+        veiculo: social.veiculo || rotulo,
+        titulo: social.titulo || texto.slice(0, 120),
+        url: social.url || link,
+        resumo: texto.slice(0, 400),
+        trecho: trecho.slice(0, 5000),
+        ehRedeSocial: true,
+        plataforma: tipo,
+        imagem: social.imagem || null,
+      });
+    } catch (err) {
+      console.warn(`[materia-chat] extrair ${tipo}:`, err.message);
+      falhas.push({ url: raw, erro: err.message || `Falha ao ler ${rotulo}` });
+    }
+  }
+
+  return { fontes, falhas };
+}
+
 /**
  * A resposta do chat pode ser matéria ou só um recado/resposta curta.
  * Quando é matéria, separa título, corpo e hashtags para virar rascunho.
@@ -340,11 +525,16 @@ async function responder({
       pedido
     );
 
+  const urlsNoPedido = extrairUrlsDoTexto(pedido);
+  const urlsSociais = urlsNoPedido.filter((u) => classificarUrlFonte(u));
+
   // Pedido curto afirmando um fato = hipótese a checar antes de virar matéria
+  // Colar só o link (ou “faça matéria” + link) também pede matéria.
   const pedeMateria =
     !pedidoDeAjuste &&
-    pedido.length < 700 &&
-    /\b(mat[eé]ria|reportagem|escrev|escreva|fa[çc]a|monte|poste?|texto)\b/i.test(pedido);
+    (Boolean(urlsSociais.length) ||
+      (pedido.length < 700 &&
+        /\b(mat[eé]ria|reportagem|escrev|escreva|fa[çc]a|monte|poste?|texto)\b/i.test(pedido)));
   const usuarioInsiste =
     /\b(mesmo assim|pode escrever|escreva assim|escreve assim|sem confirma|eu confirmo|eu garanto|é verdade|e verdade|assumo)\b/i.test(
       pedido
@@ -357,6 +547,59 @@ async function responder({
 
   let fontes = [];
   let blocoFatos = null;
+  let temFonteDoLink = false;
+
+  // 1) Links FB / IG / YT colados no chat → legenda, descrição ou legendas
+  if (urlsSociais.length) {
+    registrarPasso({
+      kind: 'pensando',
+      texto: `Lendo ${urlsSociais.length} link(s) de Facebook/Instagram/YouTube…`,
+    });
+    const { fontes: fontesLink, falhas } = await extrairFontesDeLinks(urlsSociais, {
+      onPasso: registrarPasso,
+    });
+    if (fontesLink.length) {
+      fontes = fontesLink;
+      temFonteDoLink = true;
+      registrarPasso({
+        kind: 'fontes',
+        texto: `${fontesLink.length} fonte(s) extraída(s) do(s) link(s)`,
+      });
+      blocoFatos = materiaIaService.montarBlocoFatos(fontes);
+
+      // Pedido ≈ só o link: matéria sai do post/vídeo; pesquisa web só se pedirem.
+      const resto = urlsSociais
+        .reduce((t, u) => t.replace(u, ' '), pedido)
+        .replace(/\s+/g, ' ')
+        .trim();
+      const pediuComplementoWeb =
+        /\b(pesquis|busc|complement|outras fontes|na web|na internet|confirme|confirmar)\b/i.test(
+          resto
+        );
+      if (resto.length < 50 && !pediuComplementoWeb && usarPesquisa) {
+        usarPesquisa = false;
+        registrarPasso({
+          kind: 'pensando',
+          texto:
+            'Usando só o conteúdo do link. Para cruzar com reportagens, diga “pesquise também” ou acrescente o assunto.',
+        });
+      }
+    }
+    for (const f of falhas) {
+      registrarPasso({
+        kind: 'aviso',
+        texto: `Não li o link: ${f.erro}`,
+        url: f.url || null,
+      });
+    }
+    if (!fontesLink.length && falhas.length) {
+      registrarPasso({
+        kind: 'aviso',
+        texto:
+          'Não consegui extrair o texto do link. Cole a legenda/descrição no chat ou tente outro link público.',
+      });
+    }
+  }
 
   if (usarPesquisa) {
     const { rotuloPeriodo } = require('./newsResearch');
@@ -377,16 +620,26 @@ async function responder({
       console.warn('[materia-chat] consultas:', err.message);
     }
     if (!consultas.length) {
-      const base = String(palavrasChave || pedido).replace(/\s+/g, ' ').trim().slice(0, 120);
+      const semUrls = urlsSociais
+        .reduce((t, u) => t.replace(u, ' '), pedido)
+        .replace(/\s+/g, ' ')
+        .trim();
+      const base = String(
+        palavrasChave || semUrls || fontes[0]?.titulo || fontes[0]?.resumo || pedido
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
       if (base.length >= 8) consultas = [base];
     }
 
     let lidas = 0;
+    let fontesWeb = [];
     try {
-      fontes = await materiaIaService.coletarFatosNaWeb({
+      fontesWeb = await materiaIaService.coletarFatosNaWeb({
         consultas: consultas.slice(0, 4),
         periodo: periodoFinal,
-        max: 6,
+        max: temFonteDoLink ? 4 : 6,
         resumoContexto: pedido.slice(0, 300),
         logPrefix: '[materia-chat]',
         onProgress: (evento) => {
@@ -419,55 +672,85 @@ async function responder({
       console.warn('[materia-chat] pesquisa:', err.message);
     }
 
-    if (fontes.length) {
+    if (fontesWeb.length) {
+      const urlsJa = new Set(fontes.map((f) => String(f.url || '').toLowerCase()).filter(Boolean));
+      const extras = fontesWeb.filter((f) => {
+        const u = String(f.url || '').toLowerCase();
+        if (u && urlsJa.has(u)) return false;
+        if (u) urlsJa.add(u);
+        return true;
+      });
+      fontes = [...fontes, ...extras];
       registrarPasso({
         kind: 'fontes',
-        texto: `${fontes.length} fonte(s) aproveitadas na apuração (${janela})`,
+        texto: `${extras.length} fonte(s) da web aproveitadas na apuração (${janela})`,
       });
       blocoFatos = `Janela da apuração: ${janela}. Não trate fato antigo como novidade.\n\n${materiaIaService.montarBlocoFatos(
         fontes
       )}`;
+    } else if (!temFonteDoLink) {
+      registrarPasso({
+        kind: 'aviso',
+        texto: `Não achei fontes na web nesse período (${janela}). Aumente o período ou cole o link da fonte (Facebook, Instagram ou YouTube).`,
+      });
+      usarPesquisa = false;
     } else {
       registrarPasso({
         kind: 'aviso',
-        texto: `Não achei fontes na web nesse período (${janela}). Aumente o período ou cole o link da fonte.`,
+        texto: `Sem reportagens extras na web (${janela}) — a matéria sai com o conteúdo do link.`,
       });
       usarPesquisa = false;
     }
+  }
 
-    // Portão anti-invenção: pedido que AFIRMA um fato só passa se a apuração confirmar
-    if (!pedidoDeAjuste && !usuarioInsiste) {
-      let checagem = null;
-      if (blocoFatos) {
-        registrarPasso({ kind: 'checagem', texto: 'Checando o pedido contra as fontes…' });
-        try {
-          checagem = await deepseekService.checarPedidoNasFontes({ pedido, fatosFontes: blocoFatos });
-        } catch (err) {
-          console.warn('[materia-chat] checagem:', err.message);
-        }
+  // Portão anti-invenção: pedido que AFIRMA um fato só passa se a apuração confirmar.
+  // Link social/YouTube já é fonte documentada — a checagem usa o texto extraído.
+  if ((usarPesquisa || temFonteDoLink) && !pedidoDeAjuste && !usuarioInsiste) {
+    let checagem = null;
+    if (blocoFatos) {
+      registrarPasso({ kind: 'checagem', texto: 'Checando o pedido contra as fontes…' });
+      try {
+        checagem = await deepseekService.checarPedidoNasFontes({ pedido, fatosFontes: blocoFatos });
+      } catch (err) {
+        console.warn('[materia-chat] checagem:', err.message);
       }
+    }
 
-      const afirmaFato = !checagem || checagem.tipoPedido === 'fato';
-      const naoConfirmado = !blocoFatos || (checagem && checagem.confirmado === false);
-      if (afirmaFato && naoConfirmado && pedeMateria) {
-        registrarPasso({
-          kind: 'aviso',
-          texto: 'A apuração não confirmou o fato do pedido — matéria não escrita.',
-        });
-        onEvent({ tipo: 'inicio-resposta' });
-        const resposta = respostaSemConfirmacao(checagem, fontes);
-        onEvent({ tipo: 'delta', texto: resposta });
-        return finalizar(resposta, { fontesUsadas: fontes, usouWeb: Boolean(fontes.length) });
-      }
+    const afirmaFato = !checagem || checagem.tipoPedido === 'fato';
+    const naoConfirmado = !blocoFatos || (checagem && checagem.confirmado === false);
+    // Pedido = só o link (ou “faça matéria deste link”): o fato está no próprio post/vídeo
+    const pedidoCentadoNoLink =
+      temFonteDoLink &&
+      (!checagem ||
+        checagem.tipoPedido === 'tema' ||
+        urlsSociais.some((u) => pedido.replace(u, '').replace(/\s+/g, ' ').trim().length < 40));
 
-      if (checagem?.confirmado) {
-        registrarPasso({ kind: 'fontes', texto: 'Fato do pedido confirmado na apuração' });
-      } else if (checagem?.tipoPedido === 'tema') {
-        registrarPasso({
-          kind: 'checagem',
-          texto: 'Pedido de tema: a matéria vai sair só com o que está nas fontes',
-        });
-      }
+    if (afirmaFato && naoConfirmado && pedeMateria && !pedidoCentadoNoLink) {
+      registrarPasso({
+        kind: 'aviso',
+        texto: 'A apuração não confirmou o fato do pedido — matéria não escrita.',
+      });
+      onEvent({ tipo: 'inicio-resposta' });
+      const resposta = respostaSemConfirmacao(checagem, fontes);
+      onEvent({ tipo: 'delta', texto: resposta });
+      return finalizar(resposta, {
+        fontesUsadas: fontes,
+        usouWeb: Boolean(fontes.some((f) => !f.ehRedeSocial)),
+      });
+    }
+
+    if (checagem?.confirmado || (temFonteDoLink && pedidoCentadoNoLink)) {
+      registrarPasso({
+        kind: 'fontes',
+        texto: temFonteDoLink
+          ? 'Conteúdo do link usado como base factual'
+          : 'Fato do pedido confirmado na apuração',
+      });
+    } else if (checagem?.tipoPedido === 'tema') {
+      registrarPasso({
+        kind: 'checagem',
+        texto: 'Pedido de tema: a matéria vai sair só com o que está nas fontes',
+      });
     }
   }
 
@@ -522,8 +805,15 @@ async function responder({
 
   const ehMateriaGerada = interpretarResposta(resposta).ehMateria;
 
-  // Rede de segurança: matéria sem nenhuma fonte, com pesquisa pedida, não vale
-  if (ehMateriaGerada && pesquisarWeb && !pediuSemPesquisa && !blocoFatos && !usuarioInsiste) {
+  // Rede de segurança: matéria sem nenhuma fonte (web ou link), com pesquisa pedida, não vale
+  if (
+    ehMateriaGerada &&
+    pesquisarWeb &&
+    !pediuSemPesquisa &&
+    !blocoFatos &&
+    !temFonteDoLink &&
+    !usuarioInsiste
+  ) {
     registrarPasso({
       kind: 'aviso',
       texto: 'Matéria descartada: a IA escreveu sem nenhuma fonte apurada.',
@@ -576,7 +866,10 @@ async function responder({
     registrarPasso({ kind: 'aviso', texto: `Confira antes de publicar — ${suspeita}` });
   }
 
-  return finalizar(resposta, { fontesUsadas: fontes, usouWeb: usarPesquisa });
+  return finalizar(resposta, {
+    fontesUsadas: fontes,
+    usouWeb: Boolean(usarPesquisa || fontes.some((f) => !f.ehRedeSocial)),
+  });
 }
 
 /**
@@ -640,7 +933,23 @@ async function salvarMateriaDoChat({
     titulo_ia: titulo.slice(0, 180),
     materia_ia: materia,
     hashtags: JSON.stringify(info.hashtags || []),
-    fonte_titulo: row.pesquisou_web ? 'Chat de matérias + pesquisa na web' : 'Chat de matérias',
+    fonte_titulo: (() => {
+      const rede = fontes.find((f) => f.ehRedeSocial);
+      if (rede) {
+        const plat =
+          rede.plataforma === 'youtube'
+            ? 'YouTube'
+            : rede.plataforma === 'instagram'
+              ? 'Instagram'
+              : rede.plataforma === 'facebook'
+                ? 'Facebook'
+                : 'rede social';
+        return row.pesquisou_web
+          ? `Chat de matérias + ${plat} + pesquisa na web`
+          : `Chat de matérias + ${plat}`;
+      }
+      return row.pesquisou_web ? 'Chat de matérias + pesquisa na web' : 'Chat de matérias';
+    })(),
     fonte_url: fontePrincipal?.url || null,
     fonte_resumo: String(row.chat_titulo || '').slice(0, 1500) || null,
     contexto_apuracao: fontes.length
