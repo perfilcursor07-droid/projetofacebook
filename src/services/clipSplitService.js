@@ -5,9 +5,15 @@ const axios = require('axios');
 const sharp = require('sharp');
 const VideoClips = require('../models/VideoClips');
 const Videos = require('../models/Videos');
+const Users = require('../models/Users');
 const { enqueue } = require('../workers/queue');
 const { storageAbsolutePath } = require('./downloadService');
 const { extractFrame, renderSplitScreen, overlayTextoFixo, probe } = require('./ffmpegService');
+const {
+  DEFAULT_VIDEO_BRAND_MODEL,
+  normalizeVideoBrandModel,
+  videoBrandModelMeta,
+} = require('./videoBrandModels');
 
 const SPLIT_DIR = 'splits';
 const FRAME_DIR = 'splits/frames';
@@ -60,9 +66,84 @@ function escapeXml(text) {
     .replace(/'/g, '&apos;');
 }
 
-/** Quebra o texto em linhas curtas para caber na faixa. */
+/** Tokens: texto normal e destaques marcados com [[palavra]]. */
+function parseTokensComDestaque(texto) {
+  const raw = String(texto || '');
+  const tokens = [];
+  const re = /\[\[([^\]]+)\]\]/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(raw))) {
+    if (m.index > last) {
+      tokens.push({ text: raw.slice(last, m.index), highlight: false });
+    }
+    tokens.push({ text: m[1], highlight: true });
+    last = m.index + m[0].length;
+  }
+  if (last < raw.length) tokens.push({ text: raw.slice(last), highlight: false });
+  return tokens
+    .map((t) => ({ ...t, text: t.text.replace(/\s+/g, ' ') }))
+    .filter((t) => t.text.length);
+}
+
+function textoSemMarcadores(texto) {
+  return String(texto || '')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function estimarLarguraChars(str, fontSize) {
+  // Arial Black caixa-alta: ~0.62em por caractere (aprox. suficiente p/ SVG).
+  return String(str || '').length * fontSize * 0.62;
+}
+
+/** Quebra tokens em linhas sem partir um destaque no meio. */
+function quebrarTokensEmLinhas(tokens, maxWidthPx, fontSize, maxLinhas = 5) {
+  const linhas = [];
+  let atual = [];
+  let atualW = 0;
+  const spaceW = estimarLarguraChars(' ', fontSize);
+
+  function flush() {
+    if (atual.length) linhas.push(atual);
+    atual = [];
+    atualW = 0;
+  }
+
+  for (const token of tokens) {
+    const partes = String(token.text)
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((p) => ({ text: p.toUpperCase(), highlight: token.highlight }));
+
+    for (const parte of partes) {
+      const w = estimarLarguraChars(parte.text, fontSize);
+      const need = atual.length ? atualW + spaceW + w : w;
+      if (atual.length && need > maxWidthPx) {
+        flush();
+        if (linhas.length >= maxLinhas) return linhas;
+      }
+      if (!atual.length && w > maxWidthPx) {
+        // Palavra enorme: corta.
+        const maxChars = Math.max(4, Math.floor(maxWidthPx / (fontSize * 0.62)));
+        atual.push({ text: `${parte.text.slice(0, maxChars - 1)}…`, highlight: parte.highlight });
+        flush();
+        if (linhas.length >= maxLinhas) return linhas;
+        continue;
+      }
+      atual.push(parte);
+      atualW = atual.length === 1 ? w : atualW + spaceW + w;
+    }
+  }
+  flush();
+  return linhas.length ? linhas : [[{ text: '', highlight: false }]];
+}
+
+/** Quebra texto simples (sem tokens) em linhas. */
 function quebrarLinhas(texto, maxChars = 34, maxLinhas = 4) {
-  const palavras = String(texto || '').split(/\s+/).filter(Boolean);
+  const plain = textoSemMarcadores(texto).toUpperCase();
+  const palavras = plain.split(/\s+/).filter(Boolean);
   const linhas = [];
   let atual = '';
   for (const palavra of palavras) {
@@ -76,39 +157,190 @@ function quebrarLinhas(texto, maxChars = 34, maxLinhas = 4) {
     if (linhas.length >= maxLinhas - 1) break;
   }
   if (atual && linhas.length < maxLinhas) linhas.push(atual);
-  // Se sobrou texto, corta a última linha com reticências.
   const usado = linhas.join(' ').length;
-  if (usado < texto.length && linhas.length) {
+  if (usado < plain.length && linhas.length) {
     const last = linhas[linhas.length - 1];
     linhas[linhas.length - 1] = (last.length > 3 ? last.slice(0, -3) : last) + '…';
   }
-  return linhas.length ? linhas : [String(texto).slice(0, maxChars)];
+  return linhas.length ? linhas : [plain.slice(0, maxChars)];
+}
+
+function svgLinhaComDestaques({
+  segmentos,
+  y,
+  startX,
+  fontSize,
+  highlightColor,
+  align,
+  totalWidth,
+}) {
+  const spaceW = estimarLarguraChars(' ', fontSize);
+  const padX = Math.round(fontSize * 0.18);
+  const padY = Math.round(fontSize * 0.12);
+  const boxH = Math.round(fontSize * 1.12);
+  const boxY = y - fontSize + padY;
+
+  let cursor = startX;
+  if (align === 'center') {
+    let lineW = 0;
+    segmentos.forEach((s, i) => {
+      lineW += estimarLarguraChars(s.text, fontSize);
+      if (i < segmentos.length - 1) lineW += spaceW;
+    });
+    cursor = startX + (totalWidth - lineW) / 2;
+  }
+
+  const parts = [];
+  segmentos.forEach((seg, i) => {
+    const segW = estimarLarguraChars(seg.text, fontSize);
+    if (seg.highlight) {
+      parts.push(
+        `<rect x="${cursor - padX}" y="${boxY}" width="${segW + padX * 2}" height="${boxH}" rx="3" fill="${escapeXml(highlightColor)}"/>`
+      );
+      parts.push(
+        `<text x="${cursor}" y="${y}" fill="#0f172a" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900">${escapeXml(seg.text)}</text>`
+      );
+    } else {
+      parts.push(
+        `<text x="${cursor}" y="${y}" fill="#ffffff" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" stroke="#000" stroke-width="3" paint-order="stroke fill">${escapeXml(seg.text)}</text>`
+      );
+    }
+    cursor += segW + (i < segmentos.length - 1 ? spaceW : 0);
+  });
+  return parts.join('\n');
 }
 
 /**
- * Gera PNG transparente do tamanho do vídeo com faixa de texto no topo ou rodapé.
+ * Gera PNG transparente do tamanho do vídeo com texto no estilo da marca de vídeo.
  * O texto fica no corpo do Reel (depois da capa).
  */
-async function criarFaixaTextoPng({ texto, posicao, width, height, destAbs }) {
+async function criarFaixaTextoPng({
+  texto,
+  posicao,
+  width,
+  height,
+  destAbs,
+  modelo = DEFAULT_VIDEO_BRAND_MODEL,
+  corDestaque = '#facc15',
+}) {
   const w = Math.max(320, Math.round(Number(width) || 1080));
   const h = Math.max(320, Math.round(Number(height) || 1920));
-  const linhas = quebrarLinhas(texto, w >= 1000 ? 34 : 28, 4);
-  const fontSize = Math.round(w * 0.042);
-  const lineH = Math.round(fontSize * 1.25);
-  const padY = Math.round(w * 0.035);
-  const barH = padY * 2 + linhas.length * lineH;
-  const barY = posicao === 'topo' ? 0 : h - barH;
+  const modeloId = normalizeVideoBrandModel(modelo);
+  const highlight = /^#[0-9a-f]{6}$/i.test(String(corDestaque || ''))
+    ? String(corDestaque).toLowerCase()
+    : '#facc15';
+  const tokens = parseTokensComDestaque(texto);
+  const usaDestaque =
+    modeloId === 'destaque_viral' ||
+    modeloId === 'impacto_central' ||
+    tokens.some((t) => t.highlight);
 
-  const tspans = linhas
-    .map((linha, i) => {
-      const y = barY + padY + fontSize + i * lineH;
-      return `<tspan x="${w / 2}" y="${y}">${escapeXml(linha.toUpperCase())}</tspan>`;
-    })
-    .join('');
+  let svgBody = '';
 
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
+  if (modeloId === 'destaque_viral') {
+    const fontSize = Math.round(w * 0.055);
+    const lineH = Math.round(fontSize * 1.28);
+    const maxW = Math.round(w * 0.52);
+    const marginL = Math.round(w * 0.035);
+    const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 6);
+    const blockH = linhas.length * lineH;
+    const baseY =
+      posicao === 'topo'
+        ? Math.round(h * 0.08) + fontSize
+        : h - Math.round(h * 0.06) - blockH + fontSize;
+
+    const linesSvg = linhas
+      .map((segs, i) =>
+        svgLinhaComDestaques({
+          segmentos: segs,
+          y: baseY + i * lineH,
+          startX: marginL,
+          fontSize,
+          highlightColor: highlight,
+          align: 'left',
+          totalWidth: maxW,
+        })
+      )
+      .join('\n');
+
+    svgBody = linesSvg;
+  } else if (modeloId === 'impacto_central') {
+    const fontSize = Math.round(w * 0.048);
+    const lineH = Math.round(fontSize * 1.3);
+    const maxW = Math.round(w * 0.86);
+    const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 5);
+    const padY = Math.round(w * 0.03);
+    const barH = padY * 2 + linhas.length * lineH;
+    const barY = posicao === 'topo' ? Math.round(h * 0.04) : h - barH - Math.round(h * 0.05);
+    const barX = Math.round(w * 0.05);
+    const barW = w - barX * 2;
+    const baseY = barY + padY + fontSize;
+
+    const linesSvg = linhas
+      .map((segs, i) =>
+        svgLinhaComDestaques({
+          segmentos: segs,
+          y: baseY + i * lineH,
+          startX: barX + Math.round(w * 0.02),
+          fontSize,
+          highlightColor: highlight,
+          align: 'center',
+          totalWidth: barW - Math.round(w * 0.04),
+        })
+      )
+      .join('\n');
+
+    svgBody = `<rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="14" fill="#000" fill-opacity="0.78"/>
+${linesSvg}`;
+  } else if (usaDestaque) {
+    // Faixa topo/rodapé, mas com caixas nas palavras [[marcadas]].
+    const fontSize = Math.round(w * 0.042);
+    const lineH = Math.round(fontSize * 1.28);
+    const maxW = Math.round(w * 0.9);
+    const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 4);
+    const padY = Math.round(w * 0.035);
+    const barH = padY * 2 + linhas.length * lineH;
+    const barY = posicao === 'topo' ? 0 : h - barH;
+    const baseY = barY + padY + fontSize;
+
+    const linesSvg = linhas
+      .map((segs, i) =>
+        svgLinhaComDestaques({
+          segmentos: segs,
+          y: baseY + i * lineH,
+          startX: Math.round(w * 0.05),
+          fontSize,
+          highlightColor: highlight,
+          align: 'center',
+          totalWidth: maxW,
+        })
+      )
+      .join('\n');
+
+    svgBody = `<defs>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.82' : '0.55'}"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.55' : '0.88'}"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="${barY}" width="${w}" height="${barH}" fill="url(#bar)"/>
+${linesSvg}`;
+  } else {
+    const plain = textoSemMarcadores(texto);
+    const linhas = quebrarLinhas(plain, w >= 1000 ? 34 : 28, 4);
+    const fontSize = Math.round(w * 0.042);
+    const lineH = Math.round(fontSize * 1.25);
+    const padY = Math.round(w * 0.035);
+    const barH = padY * 2 + linhas.length * lineH;
+    const barY = posicao === 'topo' ? 0 : h - barH;
+    const tspans = linhas
+      .map((linha, i) => {
+        const y = barY + padY + fontSize + i * lineH;
+        return `<tspan x="${w / 2}" y="${y}">${escapeXml(linha)}</tspan>`;
+      })
+      .join('');
+
+    svgBody = `<defs>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.82' : '0.55'}"/>
       <stop offset="100%" stop-color="#000" stop-opacity="${posicao === 'topo' ? '0.55' : '0.88'}"/>
@@ -116,7 +348,12 @@ async function criarFaixaTextoPng({ texto, posicao, width, height, destAbs }) {
   </defs>
   <rect x="0" y="${barY}" width="${w}" height="${barH}" fill="url(#bar)"/>
   <text text-anchor="middle" fill="#ffffff" font-family="Arial Black, Arial, Helvetica, sans-serif"
-    font-size="${fontSize}" font-weight="800" letter-spacing="0.5">${tspans}</text>
+    font-size="${fontSize}" font-weight="800" letter-spacing="0.5">${tspans}</text>`;
+  }
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+${svgBody}
 </svg>`;
 
   fs.mkdirSync(path.dirname(destAbs), { recursive: true });
@@ -306,8 +543,24 @@ async function aplicarSplitAgora({
   const textoFinal = normalizarTextoSplit(
     texto != null ? texto : clip.split_texto
   );
+
+  let videoModelo = DEFAULT_VIDEO_BRAND_MODEL;
+  let videoCorDestaque = '#facc15';
+  try {
+    const user = await Users.findById(userId);
+    if (user) {
+      videoModelo = normalizeVideoBrandModel(user.marca_video_modelo);
+      const cor = String(user.marca_video_cor_destaque || '').trim().toLowerCase();
+      if (/^#[0-9a-f]{6}$/.test(cor)) videoCorDestaque = cor;
+    }
+  } catch {
+    /* usa defaults */
+  }
+
   const posicaoFinal = normalizarPosicaoTexto(
-    textoPosicao != null ? textoPosicao : clip.split_texto_posicao
+    textoPosicao != null
+      ? textoPosicao
+      : clip.split_texto_posicao || videoBrandModelMeta(videoModelo).posicaoPadrao
   );
 
   const uid = crypto.randomBytes(3).toString('hex');
@@ -341,6 +594,8 @@ async function aplicarSplitAgora({
         width,
         height,
         destAbs: overlayAbs,
+        modelo: videoModelo,
+        corDestaque: videoCorDestaque,
       });
       await overlayTextoFixo({
         videoPath: splitTempAbs,

@@ -173,9 +173,13 @@
                       </button>
                     </div>
                   </div>
-                  <textarea id="split-texto" rows="2" maxlength="280" placeholder="Ex.: AQUI NÃO TEM ARTISTA, AQUI TEM SERVO"
+                  <textarea id="split-texto" rows="2" maxlength="280" placeholder="Ex.: SABE POR QUE O LIVRO [[SECRETO]] DE [[ENOQUE]]…"
                     class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold uppercase leading-snug text-white placeholder:normal-case placeholder:font-normal placeholder:text-slate-600 focus:border-fuchsia-500 focus:outline-none"><%= splitTexto %></textarea>
-                  <p class="text-[11px] text-slate-600">Fica fixo no Reel <strong class="font-medium text-slate-500">depois da capa</strong>. Deixe em branco se não quiser.</p>
+                  <p class="text-[11px] text-slate-600">
+                    Fica fixo no Reel <strong class="font-medium text-slate-500">depois da capa</strong>.
+                    Use <code class="text-fuchsia-300">[[palavra]]</code> para caixas de destaque (estilo em
+                    <a href="/minha-marca?tab=video" class="text-fuchsia-300 hover:underline">Minha marca → vídeo</a>).
+                  </p>
                 </div>
 
                 <div>
@@ -292,5 +296,5 @@
       splitTextoPosicao: <%- JSON.stringify(splitTextoPos) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731c"></script>
+  <script src="/js/fila-corte.js?v=20260731d"></script>
 <%- include('partials/app-end') %>

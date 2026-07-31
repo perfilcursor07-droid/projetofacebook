@@ -392,6 +392,21 @@
       msgEl.className = 'text-[11px] ' + (isError ? 'text-rose-300' : 'text-slate-500');
     }
 
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function formatTextoComDestaque(raw) {
+      return escapeHtml(raw).replace(
+        /\[\[([^\]]+)\]\]/g,
+        '<span class="inline-block bg-yellow-400 px-0.5 text-slate-950">$1</span>'
+      );
+    }
+
     function syncTextoPreview() {
       const txt = String(textoInput?.value || '').trim();
       if (!textoPreview || !textoPreviewP) return;
@@ -400,7 +415,7 @@
         textoPreviewP.textContent = '';
         return;
       }
-      textoPreviewP.textContent = txt;
+      textoPreviewP.innerHTML = formatTextoComDestaque(txt);
       textoPreview.classList.remove('hidden');
       textoPreview.classList.toggle('top-0', textoPosicao === 'topo');
       textoPreview.classList.toggle('bottom-0', textoPosicao === 'rodape');

@@ -9,6 +9,12 @@ const {
   isArtModel,
 } = require('../services/editorialCardModels');
 const {
+  VIDEO_BRAND_MODELS,
+  DEFAULT_VIDEO_BRAND_MODEL,
+  isVideoBrandModel,
+  normalizeVideoBrandModel,
+} = require('../services/videoBrandModels');
+const {
   BRAND_FONTS,
   DEFAULT_BRAND_FONT,
   TITLE_COLORS,
@@ -52,6 +58,8 @@ async function show(req, res, next) {
       profile,
       artModels: ART_MODELS,
       defaultArtModel: DEFAULT_ART_MODEL,
+      videoBrandModels: VIDEO_BRAND_MODELS,
+      defaultVideoBrandModel: DEFAULT_VIDEO_BRAND_MODEL,
       brandFonts: BRAND_FONTS,
       defaultBrandFont: DEFAULT_BRAND_FONT,
       titleColors: TITLE_COLORS,
@@ -62,6 +70,7 @@ async function show(req, res, next) {
       googleFontsHref: googleFontsHref(),
       saved: req.query.saved === '1',
       error: req.query.error || null,
+      tab: String(req.query.tab || 'imagem') === 'video' ? 'video' : 'imagem',
     });
   } catch (err) {
     next(err);
@@ -78,7 +87,7 @@ async function update(req, res, next) {
       throw err;
     }
 
-    const requestedModel = String(req.body.marca_modelo_arte || '');
+    const requestedModel = String(req.body.marca_modelo_arte || current.marca_modelo_arte || DEFAULT_ART_MODEL);
     if (!isArtModel(requestedModel)) {
       if (temporaryPath) {
         removeStorageFile(path.relative(path.resolve(env.storagePath), temporaryPath));
@@ -87,6 +96,23 @@ async function update(req, res, next) {
       return res.redirect(`/minha-marca?error=${encodeURIComponent('Selecione um modelo de arte válido.')}`);
     }
 
+    const requestedVideoModel = String(
+      req.body.marca_video_modelo || current.marca_video_modelo || DEFAULT_VIDEO_BRAND_MODEL
+    );
+    if (!isVideoBrandModel(requestedVideoModel)) {
+      if (temporaryPath) {
+        removeStorageFile(path.relative(path.resolve(env.storagePath), temporaryPath));
+        temporaryPath = null;
+      }
+      return res.redirect(
+        `/minha-marca?tab=video&error=${encodeURIComponent('Selecione um modelo de vídeo válido.')}`
+      );
+    }
+
+    const tab = String(req.body.marca_tab || req.query.tab || 'imagem') === 'video' ? 'video' : 'imagem';
+
+    // Nome/logo/cores são comuns. Tipografia e modelo de arte só na aba imagem;
+    // modelo de vídeo e cor de destaque só na aba vídeo (não sobrescreve a outra).
     const patch = {
       marca_nome: clean(req.body.marca_nome, 120),
       marca_categoria: clean(req.body.marca_categoria, 80) || 'ÚLTIMAS',
@@ -94,10 +120,23 @@ async function update(req, res, next) {
       marca_cor_primaria: color(req.body.marca_cor_primaria, '#ffbd59'),
       marca_cor_secundaria: color(req.body.marca_cor_secundaria, '#fb923c'),
       marca_modelo_arte: requestedModel,
-      marca_fonte: normalizeBrandFont(req.body.marca_fonte),
-      marca_titulo_cor: normalizeTitleColor(req.body.marca_titulo_cor),
-      marca_titulo_tamanho: normalizeTitleSize(req.body.marca_titulo_tamanho),
+      marca_video_modelo: normalizeVideoBrandModel(requestedVideoModel),
     };
+
+    if (tab === 'imagem') {
+      patch.marca_fonte = normalizeBrandFont(req.body.marca_fonte || current.marca_fonte);
+      patch.marca_titulo_cor = normalizeTitleColor(req.body.marca_titulo_cor || current.marca_titulo_cor);
+      patch.marca_titulo_tamanho = normalizeTitleSize(
+        req.body.marca_titulo_tamanho != null && req.body.marca_titulo_tamanho !== ''
+          ? req.body.marca_titulo_tamanho
+          : current.marca_titulo_tamanho
+      );
+    } else {
+      patch.marca_video_cor_destaque = color(
+        req.body.marca_video_cor_destaque || current.marca_video_cor_destaque,
+        '#facc15'
+      );
+    }
 
     const removeLogo = req.body.remover_logo === '1';
     if (removeLogo) {
@@ -127,7 +166,7 @@ async function update(req, res, next) {
     }
 
     await Users.update(req.session.userId, patch);
-    res.redirect('/minha-marca?saved=1');
+    res.redirect(tab === 'video' ? '/minha-marca?tab=video&saved=1' : '/minha-marca?saved=1');
   } catch (err) {
     if (temporaryPath) removeStorageFile(path.relative(path.resolve(env.storagePath), temporaryPath));
     next(err);

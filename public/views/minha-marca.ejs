@@ -1,11 +1,19 @@
 <%- include('partials/app-start') %>
+<%
+  const activeTab = typeof tab !== 'undefined' && tab === 'video' ? 'video' : 'imagem';
+  const videoModeloAtual = profile.marca_video_modelo || defaultVideoBrandModel;
+  const videoCorDestaque = profile.marca_video_cor_destaque || '#facc15';
+%>
 
   <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Identidade visual</p>
         <h1 class="mt-1 text-2xl font-semibold text-white">Minha marca</h1>
-        <p class="mt-2 max-w-2xl text-sm text-slate-400">Configure logo, tipografia e cores aplicadas automaticamente às artes das Matérias IA.</p>
+        <p class="mt-2 max-w-2xl text-sm text-slate-400">
+          Marca de <strong class="font-medium text-slate-300">imagem</strong> (artes das matérias) e marca de
+          <strong class="font-medium text-slate-300">vídeo</strong> (Reels / tela dividida) — podem ser diferentes.
+        </p>
       </div>
       <a href="/conteudo" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">Voltar para criar conteúdo</a>
     </div>
@@ -17,9 +25,25 @@
       <div class="mt-5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"><%= error %></div>
     <% } %>
 
-    <form action="/minha-marca" method="POST" enctype="multipart/form-data" class="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+    <div class="mt-6 inline-flex rounded-xl border border-slate-700 bg-slate-950 p-1" role="tablist" aria-label="Tipo de marca">
+      <a href="/minha-marca"
+        class="rounded-lg px-4 py-2 text-sm font-semibold <%= activeTab === 'imagem' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:text-white' %>">
+        Marca para imagem
+      </a>
+      <a href="/minha-marca?tab=video"
+        class="rounded-lg px-4 py-2 text-sm font-semibold <%= activeTab === 'video' ? 'bg-fuchsia-500 text-white' : 'text-slate-300 hover:text-white' %>">
+        Marca para vídeo
+      </a>
+    </div>
+
+    <form action="/minha-marca" method="POST" enctype="multipart/form-data" class="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <input type="hidden" name="marca_tab" value="<%= activeTab %>" />
+      <input type="hidden" name="marca_modelo_arte" value="<%= profile.marca_modelo_arte || defaultArtModel %>" id="hidden-modelo-arte" />
+      <input type="hidden" name="marca_video_modelo" value="<%= videoModeloAtual %>" id="hidden-modelo-video" />
+
       <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
         <h2 class="text-base font-semibold text-white">Dados da marca</h2>
+        <p class="mt-1 text-xs text-slate-500">Nome, logo e cores valem para os dois (imagem e vídeo).</p>
         <div class="mt-5 grid gap-4 sm:grid-cols-2">
           <label class="block sm:col-span-2">
             <span class="text-sm text-slate-400">Logomarca</span>
@@ -29,7 +53,7 @@
           </label>
           <label class="block sm:col-span-2">
             <span class="text-sm text-slate-400">Nome exibido</span>
-            <input name="marca_nome" maxlength="120" value="<%= profile.marca_nome || profile.nome || '' %>" required
+            <input name="marca_nome" maxlength="120" value="<%= profile.marca_nome || profile.nome || '' %>"
               class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-white focus:border-emerald-500 focus:outline-none" />
           </label>
           <label class="block">
@@ -56,9 +80,10 @@
           </label>
         </div>
 
+        <% if (activeTab === 'imagem') { %>
         <div class="mt-7 border-t border-slate-800 pt-6">
           <h3 class="text-sm font-semibold text-white">Tipografia do título</h3>
-          <p class="mt-1 text-xs text-slate-500">Padrão: Serithai Condensed. Escolha também a cor bold e o tamanho do título nas artes.</p>
+          <p class="mt-1 text-xs text-slate-500">Usada nas artes de imagem (Matérias IA).</p>
 
           <p class="mt-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Fonte principal</p>
           <div class="mt-2 grid gap-2 sm:grid-cols-2">
@@ -96,7 +121,7 @@
           <div class="mt-2 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3">
             <div class="flex items-center justify-between gap-3 text-xs text-slate-400">
               <span><%= titleSizeMin %></span>
-              <span class="font-semibold text-white">Tamanho: <span id="title-size-value"><%= Number(profile.marca_titulo_tamanho) >= titleSizeMin && Number(profile.marca_titulo_tamanho) <= titleSizeMax ? Number(profile.marca_titulo_tamanho) : defaultTitleSize %></span>px <span class="font-normal text-slate-500">(padrão <%= defaultTitleSize %>)</span></span>
+              <span class="font-semibold text-white">Tamanho: <span id="title-size-value"><%= Number(profile.marca_titulo_tamanho) >= titleSizeMin && Number(profile.marca_titulo_tamanho) <= titleSizeMax ? Number(profile.marca_titulo_tamanho) : defaultTitleSize %></span>px</span>
               <span><%= titleSizeMax %></span>
             </div>
             <input id="title-size-input" type="range" name="marca_titulo_tamanho" min="<%= titleSizeMin %>" max="<%= titleSizeMax %>" step="1"
@@ -113,80 +138,20 @@
         </div>
 
         <div class="mt-7 border-t border-slate-800 pt-6">
-          <h3 class="text-sm font-semibold text-white">Modelo da arte</h3>
-          <p class="mt-1 text-xs text-slate-500">Escolha um padrão para as próximas artes e para as que forem regeneradas.</p>
+          <h3 class="text-sm font-semibold text-white">Modelo da arte (imagem)</h3>
+          <p class="mt-1 text-xs text-slate-500">Usado nas artes das Matérias IA — não no Reel.</p>
           <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <% artModels.forEach((model) => { %>
               <label class="cursor-pointer" title="<%= model.description %>">
-                <input type="radio" name="marca_modelo_arte" value="<%= model.id %>" class="peer sr-only"
+                <input type="radio" name="marca_modelo_arte_ui" value="<%= model.id %>" class="peer sr-only js-modelo-arte"
                   <%= (profile.marca_modelo_arte || defaultArtModel) === model.id ? 'checked' : '' %> />
                 <span class="block overflow-hidden rounded-xl border-2 border-slate-600 bg-slate-950 transition peer-checked:border-emerald-400 peer-checked:ring-2 peer-checked:ring-emerald-400/25 hover:border-slate-400">
                   <span class="relative flex aspect-[4/5] flex-col overflow-hidden bg-gradient-to-br from-slate-600 via-slate-900 to-black p-2">
                     <span class="pointer-events-none absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black via-black/50 to-transparent"></span>
-                    <% if (model.id !== 'estilo_fatos' && model.id !== 'citacao_marcador') { %>
-                      <span class="relative z-10 mx-auto mt-0.5 rounded bg-white/90 px-2 py-0.5 text-[8px] font-bold leading-none text-slate-900">MARCA</span>
-                    <% } %>
                     <span class="relative z-10 mt-auto space-y-1">
-                      <% if (model.id === 'faixa_classica') { %>
-                        <span class="block text-center text-[8px] font-bold tracking-wide text-white">ÚLTIMAS</span>
-                        <span class="mx-auto block h-1 w-full rounded bg-gradient-to-r from-yellow-400 to-orange-400"></span>
-                        <span class="block pb-1 text-center text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
-                      <% } else if (model.id === 'bloco_inferior') { %>
-                        <span class="-mx-2 -mb-2 space-y-1 bg-black/80 px-2 pb-2 pt-2">
-                          <span class="block h-1 w-full bg-gradient-to-r from-yellow-400 to-orange-400"></span>
-                          <span class="block text-[8px] font-bold text-white">ÚLTIMAS</span>
-                          <span class="block text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
-                        </span>
-                      <% } else if (model.id === 'minimalista') { %>
-                        <span class="inline-block rounded-full bg-yellow-400 px-2 py-0.5 text-[8px] font-black text-slate-950">ÚLTIMAS</span>
-                        <span class="block h-1 w-8 rounded bg-orange-400"></span>
-                        <span class="block pb-1 text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
-                      <% } else if (model.id === 'barra_lateral') { %>
-                        <span class="flex gap-1.5 pb-1">
-                          <span class="w-1 shrink-0 self-stretch rounded bg-gradient-to-b from-yellow-400 to-orange-400"></span>
-                          <span class="min-w-0">
-                            <span class="block text-[8px] font-bold text-white">ÚLTIMAS</span>
-                            <span class="mt-1 block text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
-                          </span>
-                        </span>
-                      <% } else if (model.id === 'faixa_topo') { %>
-                        <span class="space-y-1 rounded-lg bg-black/60 p-1.5">
-                          <span class="block rounded-md bg-gradient-to-r from-yellow-400 to-orange-400 py-1 text-center text-[8px] font-black text-slate-950">ÚLTIMAS</span>
-                          <span class="block text-center text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
-                        </span>
-                      <% } else if (model.id === 'moldura_editorial') { %>
-                        <span class="pointer-events-none absolute inset-1.5 rounded-md border-2 border-yellow-400"></span>
-                        <span class="pointer-events-none absolute inset-2.5 rounded border border-white/40"></span>
-                        <span class="relative block text-center text-[8px] font-bold text-white">ÚLTIMAS</span>
-                        <span class="relative mx-auto block h-1 w-4/5 rounded bg-gradient-to-r from-yellow-400 to-orange-400"></span>
-                        <span class="relative block pb-1 text-center text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
-                      <% } else if (model.id === 'impacto_central') { %>
-                        <span class="space-y-1 rounded-xl bg-black/70 p-1.5">
-                          <span class="flex items-center justify-center gap-1">
-                            <span class="h-1.5 w-1.5 rounded-full bg-yellow-400"></span>
-                            <span class="text-[8px] font-bold text-white">ÚLTIMAS</span>
-                            <span class="h-1.5 w-1.5 rounded-full bg-orange-400"></span>
-                          </span>
-                          <span class="mx-auto block h-1 w-3/4 rounded bg-gradient-to-r from-yellow-400 to-orange-400"></span>
-                          <span class="block text-center text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
-                        </span>
-                      <% } else if (model.id === 'canto_solido') { %>
-                        <span class="-ml-2 inline-block bg-gradient-to-r from-yellow-400 to-orange-400 py-1 pl-2 pr-3 text-[8px] font-black text-slate-950" style="clip-path: polygon(0 0, 100% 0, 88% 100%, 0 100%)">ÚLTIMAS</span>
-                        <span class="block h-1 w-8 rounded bg-yellow-400"></span>
-                        <span class="block pb-1 text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
-                      <% } else if (model.id === 'estilo_fatos') { %>
-                        <span class="mx-auto mb-1 block h-3 w-10 rounded bg-white/90"></span>
-                        <span class="block pb-1 text-center text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA EM<br />DESTAQUE</span>
-                      <% } else if (model.id === 'citacao_marcador') { %>
-                        <span class="relative z-10 space-y-1 pb-1">
-                          <span class="mx-auto mb-0.5 flex items-center gap-1">
-                            <span class="h-px flex-1 bg-white/50"></span>
-                            <span class="h-2.5 w-2.5 rounded-sm bg-white/80"></span>
-                            <span class="h-px flex-1 bg-white/50"></span>
-                          </span>
-                          <span class="block text-left text-[8px] font-bold leading-tight text-white drop-shadow">Manchete da notícia:</span>
-                          <span class="inline-block bg-yellow-400 px-1 text-[8px] font-black leading-tight text-slate-950">'Citação em destaque'</span>
-                        </span>
+                      <% if (model.id === 'citacao_marcador') { %>
+                        <span class="block text-left text-[8px] font-bold text-white">Manchete:</span>
+                        <span class="inline-block bg-yellow-400 px-1 text-[8px] font-black text-slate-950">'Citação'</span>
                       <% } else { %>
                         <span class="block text-center text-[8px] font-bold tracking-wide text-white">ÚLTIMAS</span>
                         <span class="mx-auto block h-1 w-full rounded bg-gradient-to-r from-yellow-400 to-orange-400"></span>
@@ -200,27 +165,103 @@
             <% }) %>
           </div>
         </div>
+        <% } else { %>
+        <div class="mt-7 border-t border-slate-800 pt-6">
+          <h3 class="text-sm font-semibold text-white">Modelo para vídeo / Reels</h3>
+          <p class="mt-1 text-xs text-slate-500">
+            Estilo do texto fixo na tela dividida (depois da capa). Independente do modelo de arte das imagens.
+          </p>
+
+          <label class="mt-4 block max-w-xs">
+            <span class="text-sm text-slate-400">Cor dos destaques</span>
+            <div class="mt-1.5 flex gap-2 rounded-lg border border-slate-700 bg-slate-950 p-2">
+              <input type="color" name="marca_video_cor_destaque" id="video-cor-destaque" value="<%= videoCorDestaque %>" class="h-8 w-full cursor-pointer border-0 bg-transparent" />
+            </div>
+            <span class="mt-1 block text-xs text-slate-500">Caixas atrás das palavras marcadas com [[assim]].</span>
+          </label>
+
+          <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <% videoBrandModels.forEach((model) => { %>
+              <label class="cursor-pointer" title="<%= model.description %>">
+                <input type="radio" name="marca_video_modelo_ui" value="<%= model.id %>" class="peer sr-only js-modelo-video"
+                  <%= videoModeloAtual === model.id ? 'checked' : '' %> />
+                <span class="block overflow-hidden rounded-xl border-2 border-slate-600 bg-slate-950 transition peer-checked:border-fuchsia-400 peer-checked:ring-2 peer-checked:ring-fuchsia-400/25 hover:border-slate-400">
+                  <span class="relative flex aspect-[9/16] max-h-[220px] flex-col overflow-hidden bg-gradient-to-br from-slate-700 via-slate-900 to-black">
+                    <span class="absolute inset-y-0 left-0 w-1/2 bg-slate-800/80"></span>
+                    <span class="absolute inset-y-0 right-0 w-1/2 bg-slate-600/40"></span>
+                    <span class="absolute inset-y-0 left-1/2 w-px bg-white/20"></span>
+                    <% if (model.id === 'faixa_rodape') { %>
+                      <span class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/40 px-2 py-2">
+                        <span class="block text-center text-[9px] font-black uppercase leading-tight text-white">Título do reel em destaque</span>
+                      </span>
+                    <% } else if (model.id === 'faixa_topo') { %>
+                      <span class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/90 to-black/40 px-2 py-2">
+                        <span class="block text-center text-[9px] font-black uppercase leading-tight text-white">Título do reel em destaque</span>
+                      </span>
+                    <% } else if (model.id === 'destaque_viral') { %>
+                      <span class="absolute bottom-3 left-2 right-[42%] space-y-1 text-left">
+                        <span class="block text-[8px] font-black uppercase leading-tight text-white drop-shadow">Sabe por que o livro</span>
+                        <span class="inline-block px-1 text-[8px] font-black uppercase leading-tight text-slate-950" style="background:<%= videoCorDestaque %>">secreto</span>
+                        <span class="block text-[8px] font-black uppercase leading-tight text-white drop-shadow">de <span class="inline-block px-0.5 text-slate-950" style="background:<%= videoCorDestaque %>">enoque</span> não está na</span>
+                        <span class="inline-block px-1 text-[8px] font-black uppercase leading-tight text-slate-950" style="background:<%= videoCorDestaque %>">bíblia?</span>
+                      </span>
+                    <% } else { %>
+                      <span class="absolute inset-x-4 bottom-6 rounded-lg bg-black/75 px-2 py-2 text-center">
+                        <span class="block text-[8px] font-black uppercase leading-tight text-white">Título com <span class="inline-block px-0.5 text-slate-950" style="background:<%= videoCorDestaque %>">destaque</span></span>
+                      </span>
+                    <% } %>
+                  </span>
+                  <span class="block border-t border-slate-700 px-2 py-2">
+                    <span class="block text-xs font-semibold text-white"><%= model.name %></span>
+                    <span class="mt-0.5 block text-[10px] leading-snug text-slate-500"><%= model.description %></span>
+                  </span>
+                </span>
+              </label>
+            <% }) %>
+          </div>
+
+          <div class="mt-5 rounded-xl border border-fuchsia-500/20 bg-fuchsia-500/5 px-4 py-3 text-xs leading-relaxed text-slate-400">
+            No editor do corte, use <code class="text-fuchsia-300">[[palavra]]</code> no texto da tela dividida para pintar a caixa.
+            Ex.: <span class="text-slate-300">SABE POR QUE O LIVRO [[SECRETO]] DE [[ENOQUE]] NÃO ESTÁ NA [[BÍBLIA?]]</span>
+          </div>
+        </div>
+        <% } %>
 
         <% if (profile.logo_path) { %>
-          <label data-remove-logo class="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200 sm:col-span-2">
+          <label data-remove-logo class="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">
             <input id="remove-logo-input" type="checkbox" name="remover_logo" value="1" class="mt-0.5 rounded border-rose-400/50 bg-slate-950 text-rose-500" />
-            <span><strong class="block font-semibold">Remover logomarca</strong><span class="mt-0.5 block text-xs text-slate-400">Ao salvar, a logo atual será apagada e deixará de aparecer nas próximas artes.</span></span>
+            <span><strong class="block font-semibold">Remover logomarca</strong><span class="mt-0.5 block text-xs text-slate-400">Ao salvar, a logo atual será apagada.</span></span>
           </label>
         <% } %>
 
         <div class="mt-6 flex justify-end">
-          <button type="submit" class="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Salvar identidade visual</button>
+          <button type="submit" class="rounded-lg <%= activeTab === 'video' ? 'bg-fuchsia-500 hover:bg-fuchsia-400 text-white' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950' %> px-5 py-2.5 text-sm font-semibold">
+            Salvar <%= activeTab === 'video' ? 'marca de vídeo' : 'identidade visual' %>
+          </button>
         </div>
       </section>
 
       <aside class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Prévia da logo</p>
-        <div class="mt-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-gradient-to-br from-slate-800 to-slate-950 p-6">
-          <img id="logo-preview" src="<%= profile.logo_path ? '/media/' + profile.logo_path.replace(/\\/g, '/') : '' %>" alt="Prévia da logomarca"
-            class="<%= profile.logo_path ? '' : 'hidden' %> max-h-full max-w-full object-contain" />
-          <p id="logo-empty" class="<%= profile.logo_path ? 'hidden' : '' %> text-center text-sm text-slate-500">Nenhuma logomarca configurada.</p>
-        </div>
-        <p class="mt-4 text-xs leading-relaxed text-slate-500">A arte final usa o formato do feed do Facebook (1080×1350 · 4:5), com a foto preenchendo o quadro inteiro (sem faixas laterais). Vídeos/Reels continuam em 9:16.</p>
+        <% if (activeTab === 'imagem') { %>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Prévia da logo</p>
+          <div class="mt-4 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-gradient-to-br from-slate-800 to-slate-950 p-6">
+            <img id="logo-preview" src="<%= profile.logo_path ? '/media/' + profile.logo_path.replace(/\\/g, '/') : '' %>" alt="Prévia da logomarca"
+              class="<%= profile.logo_path ? '' : 'hidden' %> max-h-full max-w-full object-contain" />
+            <p id="logo-empty" class="<%= profile.logo_path ? 'hidden' : '' %> text-center text-sm text-slate-500">Nenhuma logomarca configurada.</p>
+          </div>
+          <p class="mt-4 text-xs leading-relaxed text-slate-500">Arte 4:5 para o feed. Vídeos usam a aba <strong class="text-slate-400">Marca para vídeo</strong>.</p>
+        <% } else { %>
+          <p class="text-xs font-semibold uppercase tracking-wider text-fuchsia-300">Prévia estilo vídeo</p>
+          <div class="relative mt-4 mx-auto aspect-[9/16] w-full max-w-[220px] overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
+            <div class="absolute inset-y-0 left-0 w-1/2 bg-slate-800"></div>
+            <div class="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-br from-slate-600 to-slate-900"></div>
+            <div class="absolute inset-y-0 left-1/2 w-px bg-white/20"></div>
+            <div id="video-preview-overlay" class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/40 px-2 py-2">
+              <p id="video-preview-text" class="text-center text-[10px] font-black uppercase leading-tight text-white">Título do reel</p>
+            </div>
+          </div>
+          <p class="mt-4 text-xs leading-relaxed text-slate-500">Esse estilo entra no texto da tela dividida em <a href="/fila" class="text-fuchsia-300 hover:underline">/fila</a> → Revisar corte.</p>
+        <% } %>
       </aside>
     </form>
   </main>
@@ -235,6 +276,7 @@
       document.head.appendChild(link);
     })();
 
+    const activeTab = <%- JSON.stringify(activeTab) %>;
     const logoInput = document.getElementById('logo-input');
     const logoPreview = document.getElementById('logo-preview');
     const logoEmpty = document.getElementById('logo-empty');
@@ -246,18 +288,33 @@
     const defaultTitleSize = <%= Number(defaultTitleSize) || 43 %>;
     const titleSizeInput = document.getElementById('title-size-input');
     const titleSizeValue = document.getElementById('title-size-value');
+    const hiddenArte = document.getElementById('hidden-modelo-arte');
+    const hiddenVideo = document.getElementById('hidden-modelo-video');
     let previewObjectUrl = null;
 
-    // Nome da conta não é nome da marca: o campo pode permanecer vazio.
-    brandNameInput.required = false;
-    brandNameInput.value = <%- JSON.stringify(profile.marca_nome || '').replace(/</g, '\\u003c') %>;
-    brandNameInput.placeholder = 'Opcional — deixe vazio para não exibir nome';
+    if (brandNameInput) {
+      brandNameInput.required = false;
+      brandNameInput.value = <%- JSON.stringify(profile.marca_nome || '').replace(/</g, '\\u003c') %>;
+      brandNameInput.placeholder = 'Opcional — deixe vazio para não exibir nome';
+    }
 
     const removeLogoCard = document.querySelector('[data-remove-logo]');
-    if (removeLogoCard) logoInput.closest('label').insertAdjacentElement('afterend', removeLogoCard);
+    if (removeLogoCard && logoInput) logoInput.closest('label').insertAdjacentElement('afterend', removeLogoCard);
+
+    document.querySelectorAll('.js-modelo-arte').forEach((el) => {
+      el.addEventListener('change', () => {
+        if (el.checked && hiddenArte) hiddenArte.value = el.value;
+      });
+    });
+    document.querySelectorAll('.js-modelo-video').forEach((el) => {
+      el.addEventListener('change', () => {
+        if (el.checked && hiddenVideo) hiddenVideo.value = el.value;
+        updateVideoPreview();
+      });
+    });
 
     function selectedValue(name) {
-      const el = document.querySelector(`input[name="${name}"]:checked`);
+      const el = document.querySelector('input[name="' + name + '"]:checked');
       return el ? el.value : null;
     }
 
@@ -272,23 +329,43 @@
       return '#ffffff';
     }
 
-    function currentTitleSize() {
-      const n = Number(titleSizeInput?.value);
-      return Number.isFinite(n) ? n : defaultTitleSize;
-    }
-
     function updateTitlePreview() {
       if (!titlePreview) return;
       const fontId = selectedValue('marca_fonte') || 'serithai_condensed';
       const colorId = selectedValue('marca_titulo_cor') || 'branco';
-      const sizePx = currentTitleSize();
+      const sizePx = Number(titleSizeInput?.value) || defaultTitleSize;
       const font = brandFonts.find((f) => f.id === fontId) || brandFonts[0];
       if (titleSizeValue) titleSizeValue.textContent = String(sizePx);
-      // prévia na tela ~0.7× o px da arte (1080)
       titlePreview.style.fontFamily = font.cssFamily;
       titlePreview.style.fontWeight = String(font.previewWeight || 900);
       titlePreview.style.color = resolvePreviewColor(colorId);
-      titlePreview.style.fontSize = `${Math.max(18, Math.round(sizePx * 0.7))}px`;
+      titlePreview.style.fontSize = Math.max(18, Math.round(sizePx * 0.7)) + 'px';
+    }
+
+    function updateVideoPreview() {
+      const overlay = document.getElementById('video-preview-overlay');
+      const textEl = document.getElementById('video-preview-text');
+      if (!overlay || !textEl) return;
+      const model = selectedValue('marca_video_modelo_ui') || hiddenVideo?.value || 'faixa_rodape';
+      const highlight = document.getElementById('video-cor-destaque')?.value || '#facc15';
+      if (model === 'faixa_topo') {
+        overlay.className = 'absolute inset-x-0 top-0 bg-gradient-to-b from-black/90 to-black/40 px-2 py-2';
+        textEl.innerHTML = 'Título do reel';
+        textEl.className = 'text-center text-[10px] font-black uppercase leading-tight text-white';
+      } else if (model === 'destaque_viral') {
+        overlay.className = 'absolute bottom-3 left-2 right-[40%] space-y-1 text-left bg-transparent';
+        textEl.innerHTML =
+          'Sabe por que o livro <span style="background:' + highlight + ';color:#0f172a" class="px-0.5">secreto</span> de <span style="background:' + highlight + ';color:#0f172a" class="px-0.5">enoque</span> não está na <span style="background:' + highlight + ';color:#0f172a" class="px-0.5">bíblia?</span>';
+        textEl.className = 'text-left text-[9px] font-black uppercase leading-snug text-white drop-shadow';
+      } else if (model === 'impacto_central') {
+        overlay.className = 'absolute inset-x-3 bottom-6 rounded-lg bg-black/75 px-2 py-2 text-center';
+        textEl.innerHTML = 'Título com <span style="background:' + highlight + ';color:#0f172a" class="px-0.5">destaque</span>';
+        textEl.className = 'text-center text-[10px] font-black uppercase leading-tight text-white';
+      } else {
+        overlay.className = 'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/40 px-2 py-2';
+        textEl.innerHTML = 'Título do reel';
+        textEl.className = 'text-center text-[10px] font-black uppercase leading-tight text-white';
+      }
     }
 
     document.querySelectorAll('.js-brand-font, .js-title-color').forEach((el) => {
@@ -298,7 +375,9 @@
     document.querySelectorAll('input[name="marca_cor_primaria"], input[name="marca_cor_secundaria"]').forEach((el) => {
       el.addEventListener('input', updateTitlePreview);
     });
-    updateTitlePreview();
+    document.getElementById('video-cor-destaque')?.addEventListener('input', updateVideoPreview);
+    if (activeTab === 'imagem') updateTitlePreview();
+    if (activeTab === 'video') updateVideoPreview();
 
     function releaseLogoPreview() {
       if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
@@ -306,19 +385,23 @@
     }
 
     function showLogo(src) {
+      if (!logoPreview) return;
       logoPreview.src = src;
       logoPreview.classList.remove('hidden');
-      logoEmpty.classList.add('hidden');
+      logoEmpty?.classList.add('hidden');
     }
 
     function showNoLogo(message) {
+      if (!logoPreview) return;
       logoPreview.removeAttribute('src');
       logoPreview.classList.add('hidden');
-      logoEmpty.textContent = message;
-      logoEmpty.classList.remove('hidden');
+      if (logoEmpty) {
+        logoEmpty.textContent = message;
+        logoEmpty.classList.remove('hidden');
+      }
     }
 
-    logoInput.addEventListener('change', () => {
+    logoInput?.addEventListener('change', () => {
       releaseLogoPreview();
       const file = logoInput.files && logoInput.files[0];
       if (!file) {
@@ -335,13 +418,10 @@
     removeLogoInput?.addEventListener('change', () => {
       releaseLogoPreview();
       if (removeLogoInput.checked) {
-        logoInput.value = '';
+        if (logoInput) logoInput.value = '';
         showNoLogo('A logomarca será removida ao salvar.');
-      } else if (currentLogoUrl) {
-        showLogo(currentLogoUrl);
-      } else {
-        showNoLogo('Nenhuma logomarca configurada.');
-      }
+      } else if (currentLogoUrl) showLogo(currentLogoUrl);
+      else showNoLogo('Nenhuma logomarca configurada.');
     });
 
     window.addEventListener('beforeunload', releaseLogoPreview);
