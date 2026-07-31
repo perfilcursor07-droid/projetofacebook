@@ -129,9 +129,9 @@ function textoSemMarcadores(texto) {
 }
 
 function estimarLarguraChars(str, fontSize) {
-  // Estimativa conservadora (um pouco larga) — só para quebra de linha / caixas.
-  // O desenho real das letras usa text-anchor do SVG (sem sobreposição).
-  return String(str || '').length * fontSize * 0.58;
+  // Largo de propósito: quebra a linha mais cedo para o texto NÃO sair do fundo.
+  // (Barlow Condensed real ~0.45–0.55; usamos 0.72 de margem de segurança.)
+  return String(str || '').length * fontSize * 0.72;
 }
 
 /** Quebra tokens em linhas sem partir um destaque no meio. */
@@ -140,7 +140,7 @@ function quebrarTokensEmLinhas(tokens, maxWidthPx, fontSize, maxLinhas = 8) {
   let atual = [];
   let atualW = 0;
   const spaceW = estimarLarguraChars(' ', fontSize);
-  const charW = fontSize * 0.58;
+  const charW = fontSize * 0.72;
 
   function flush() {
     if (atual.length) linhas.push(atual);
@@ -204,7 +204,8 @@ function normalizarCorHex(raw, fallback = '#000000') {
 
 /**
  * Uma linha = um <text text-anchor="middle">.
- * Layout nativo do SVG — evita letras/palavras empilhadas.
+ * Destaque [[palavra]] = traço amarelo grosso atrás da letra (acompanha o glifo real,
+ * sem estimar posição — resolve caixa laranja torta / incompleta).
  */
 function svgLinhaComDestaques({
   segmentos,
@@ -214,7 +215,8 @@ function svgLinhaComDestaques({
   highlightColor,
   fontFamily = 'Impact, Arial Black, sans-serif',
 }) {
-  const strokeW = Math.max(3, Math.round(fontSize * 0.085));
+  const outlineW = Math.max(3, Math.round(fontSize * 0.085));
+  const hiStroke = Math.max(10, Math.round(fontSize * 0.42));
   const fam = escapeXml(fontFamily);
   const segs = Array.isArray(segmentos) ? segmentos.filter((s) => s && String(s.text || '').length) : [];
   if (!segs.length) return '';
@@ -222,47 +224,23 @@ function svgLinhaComDestaques({
   const cx = Math.round(centerX);
   const hasHighlight = segs.some((s) => s.highlight);
 
-  // Sem destaque: uma string só — o mais estável no sharp/librsvg.
   if (!hasHighlight) {
     const line = segs.map((s) => s.text).join(' ');
-    return `<text x="${cx}" y="${y}" text-anchor="middle" fill="#ffffff" font-family="${fam}" font-size="${fontSize}" font-weight="800" stroke="#000000" stroke-width="${strokeW}" paint-order="stroke fill">${escapeXml(line)}</text>`;
+    return `<text x="${cx}" y="${y}" text-anchor="middle" fill="#ffffff" font-family="${fam}" font-size="${fontSize}" font-weight="800" stroke="#000000" stroke-width="${outlineW}" paint-order="stroke fill">${escapeXml(line)}</text>`;
   }
-
-  // Com [[destaque]]: caixas amarelas (estimativa) + tspans (layout nativo).
-  const boxes = [];
-  const padX = Math.round(fontSize * 0.18);
-  const boxH = Math.round(fontSize * 1.2);
-  const boxY = y - fontSize + Math.round(fontSize * 0.1);
-  const spaceW = fontSize * 0.28;
-  let lineW = 0;
-  segs.forEach((s, i) => {
-    lineW += estimarLarguraChars(s.text, fontSize);
-    if (i < segs.length - 1) lineW += spaceW;
-  });
-  let cursor = cx - lineW / 2;
-  segs.forEach((seg, i) => {
-    const segW = estimarLarguraChars(seg.text, fontSize);
-    if (seg.highlight) {
-      boxes.push(
-        `<rect x="${Math.round(cursor - padX)}" y="${boxY}" width="${Math.round(segW + padX * 2)}" height="${boxH}" rx="5" fill="${escapeXml(highlightColor)}"/>`
-      );
-    }
-    cursor += segW + (i < segs.length - 1 ? spaceW : 0);
-  });
 
   const tspans = segs
     .map((seg, i) => {
       const space = i < segs.length - 1 ? ' ' : '';
       const raw = `${seg.text}${space}`;
       if (seg.highlight) {
-        return `<tspan fill="#0f172a" stroke="none">${escapeXml(raw)}</tspan>`;
+        return `<tspan fill="#0f172a" stroke="${escapeXml(highlightColor)}" stroke-width="${hiStroke}" stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill">${escapeXml(raw)}</tspan>`;
       }
-      return `<tspan fill="#ffffff">${escapeXml(raw)}</tspan>`;
+      return `<tspan fill="#ffffff" stroke="#000000" stroke-width="${outlineW}" paint-order="stroke fill">${escapeXml(raw)}</tspan>`;
     })
     .join('');
 
-  return `${boxes.join('\n')}
-  <text x="${cx}" y="${y}" text-anchor="middle" font-family="${fam}" font-size="${fontSize}" font-weight="800" stroke="#000000" stroke-width="${strokeW}" paint-order="stroke fill" xml:space="preserve">${tspans}</text>`;
+  return `<text x="${cx}" y="${y}" text-anchor="middle" font-family="${fam}" font-size="${fontSize}" font-weight="800" xml:space="preserve">${tspans}</text>`;
 }
 
 /**
@@ -296,32 +274,34 @@ async function criarFaixaTextoPng({
   const centerX = Math.round(w / 2);
 
   const baseRatio =
-    modeloId === 'destaque_viral' ? 0.05 : modeloId === 'impacto_central' ? 0.048 : 0.044;
+    modeloId === 'destaque_viral' ? 0.048 : modeloId === 'impacto_central' ? 0.046 : 0.042;
   let fontSize = Math.round(w * baseRatio * scale);
-  const minFont = Math.max(22, Math.round(w * 0.028));
-  const marginX = Math.max(48, Math.round(w * 0.07));
+  const minFont = Math.max(22, Math.round(w * 0.026));
+  // Margem larga: título não encosta / não sai do fundo no Reel.
+  const marginX = Math.max(56, Math.round(w * 0.1));
   const maxW = w - marginX * 2;
   const maxLinhas = 7;
-  const maxBlockH = Math.round(h * 0.38);
+  const maxBlockH = Math.round(h * 0.42);
+  const hasHighlight = tokens.some((t) => t.highlight);
 
   let fit = quebrarTokensEmLinhas(tokens, maxW, fontSize, maxLinhas);
   let linhas = fit.linhas;
-  let lineH = Math.round(fontSize * 1.28);
-  let padY = Math.round(Math.max(14, w * 0.022));
+  let lineH = Math.round(fontSize * (hasHighlight ? 1.42 : 1.3));
+  let padY = Math.round(Math.max(18, fontSize * (hasHighlight ? 0.55 : 0.4)));
   let blockH = padY * 2 + Math.max(1, linhas.length) * lineH;
 
   // Encolhe até caber (texto grande não corta / não estoura a faixa).
   let guard = 0;
   while (
-    guard < 18 &&
+    guard < 20 &&
     fontSize > minFont &&
     (fit.truncated || blockH > maxBlockH || linhasAlgunhasLargas(linhas, maxW, fontSize))
   ) {
     fontSize = Math.max(minFont, Math.round(fontSize * 0.9));
     fit = quebrarTokensEmLinhas(tokens, maxW, fontSize, maxLinhas);
     linhas = fit.linhas;
-    lineH = Math.round(fontSize * 1.28);
-    padY = Math.round(Math.max(12, fontSize * 0.35));
+    lineH = Math.round(fontSize * (hasHighlight ? 1.42 : 1.3));
+    padY = Math.round(Math.max(16, fontSize * (hasHighlight ? 0.55 : 0.4)));
     blockH = padY * 2 + Math.max(1, linhas.length) * lineH;
     guard += 1;
   }
@@ -330,22 +310,23 @@ async function criarFaixaTextoPng({
     posicao,
     h,
     blockH,
-    posicao === 'topo' ? Math.round(h * 0.025) : 0,
-    posicao === 'rodape' ? Math.round(h * 0.025) : 0
+    posicao === 'topo' ? Math.round(h * 0.03) : 0,
+    posicao === 'rodape' ? Math.round(h * 0.03) : 0
   );
   const baseY = barY + padY + fontSize;
 
+  // Fundo sempre quase/largura total — evita texto “fora da caixa”.
   let fundoSvg = '';
   if (fundoModo === 'cor') {
-    const opacity = posicao === 'meio' ? 0.8 : 0.84;
+    const opacity = posicao === 'meio' ? 0.82 : 0.86;
     if (posicao === 'meio' || modeloId === 'impacto_central') {
-      const inset = Math.round(w * 0.04);
-      fundoSvg = `<rect x="${inset}" y="${barY}" width="${w - inset * 2}" height="${blockH}" rx="14" fill="${escapeXml(fundoHex)}" fill-opacity="${opacity}"/>`;
+      const inset = Math.round(w * 0.02);
+      fundoSvg = `<rect x="${inset}" y="${barY}" width="${w - inset * 2}" height="${blockH}" rx="16" fill="${escapeXml(fundoHex)}" fill-opacity="${opacity}"/>`;
     } else {
       fundoSvg = `<defs>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity : opacity * 0.72}"/>
-      <stop offset="100%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity * 0.72 : opacity}"/>
+      <stop offset="0%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity : opacity * 0.75}"/>
+      <stop offset="100%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity * 0.75 : opacity}"/>
     </linearGradient>
   </defs>
   <rect x="0" y="${barY}" width="${w}" height="${blockH}" fill="url(#bar)"/>`;
