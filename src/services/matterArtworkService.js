@@ -73,7 +73,16 @@ async function storeMatterSourceImage({ userId, matterId, buffer }) {
   };
 }
 
-async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force = false }) {
+async function composeMatterArtwork({
+  userId,
+  matterId,
+  sourceUrl,
+  title,
+  force = false,
+  zoom,
+  offsetX,
+  offsetY,
+} = {}) {
   const matter = await AiMatters.findById(matterId);
   if (!matter || Number(matter.user_id) !== Number(userId)) {
     const err = new Error('Matéria não encontrada');
@@ -91,6 +100,8 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
   const { normalizeArtModel } = require('./editorialCardModels');
   const modelId = normalizeArtModel(user.marca_modelo_arte);
   const currentFile = resolveArtworkPath(matter.imagem_path);
+  const hasFrame =
+    zoom != null || offsetX != null || offsetY != null;
 
   let sizeOk = false;
   if (currentFile) {
@@ -105,6 +116,7 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
   // Reusa só se título/modelo iguais E arte já estiver no tamanho do feed (4:5).
   if (
     !force &&
+    !hasFrame &&
     currentFile &&
     sizeOk &&
     finalTitle === String(matter.titulo || '').trim() &&
@@ -121,7 +133,14 @@ async function composeMatterArtwork({ userId, matterId, sourceUrl, title, force 
     };
   }
 
-  const card = await createEditorialCard({ sourceUrl: source, title: finalTitle, user });
+  const card = await createEditorialCard({
+    sourceUrl: source,
+    title: finalTitle,
+    user,
+    zoom,
+    offsetX,
+    offsetY,
+  });
 
   try {
     await AiMatters.update(matter.id, {
@@ -165,6 +184,9 @@ async function composeDualCollageArtwork({
   thumbnailB = null,
   layout = 'lado',
   title = null,
+  zoom = 108,
+  offsetX = 50,
+  offsetY = 50,
 } = {}) {
   const urlA = String(imageUrlA || '').trim();
   const urlB = String(imageUrlB || '').trim();
@@ -194,7 +216,12 @@ async function composeDualCollageArtwork({
 
   let collageBuffer;
   try {
-    collageBuffer = await buildDualCollageBuffer(bufA, bufB, { layout });
+    collageBuffer = await buildDualCollageBuffer(bufA, bufB, {
+      layout,
+      zoom,
+      offsetX,
+      offsetY,
+    });
   } catch (err) {
     const e = new Error(`Falha ao montar as 2 fotos: ${err.message}`);
     e.status = 400;
@@ -207,12 +234,16 @@ async function composeDualCollageArtwork({
     buffer: collageBuffer,
   });
 
+  // Colagem já veio enquadrada; marca em cima com zoom neutro.
   return composeMatterArtwork({
     userId,
     matterId,
     sourceUrl: stored.publicUrl,
     title,
     force: true,
+    zoom: 100,
+    offsetX: 50,
+    offsetY: 50,
   });
 }
 

@@ -96,6 +96,9 @@ router.post('/matters/:id/arte/regenerar', async (req, res, next) => {
       sourceUrl,
       title: matter.titulo,
       force: true,
+      zoom: req.body?.zoom,
+      offsetX: req.body?.offsetX ?? req.body?.offset_x,
+      offsetY: req.body?.offsetY ?? req.body?.offset_y,
     });
 
     return res.json({
@@ -104,6 +107,72 @@ router.post('/matters/:id/arte/regenerar', async (req, res, next) => {
       imagemUrl: artwork.publicUrl,
       arteModelo: artwork.modelId,
       hasLogo: artwork.hasLogo,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+});
+
+router.post('/matters/:id/arte/enquadrar', async (req, res, next) => {
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID da matéria inválido' });
+    }
+
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'A arte de uma matéria publicada não pode ser alterada' });
+    }
+
+    const sourceUrl =
+      matter.imagem_fonte_url ||
+      (!matter.imagem_path && /^https?:\/\//i.test(String(matter.imagem_url || ''))
+        ? matter.imagem_url
+        : null);
+
+    if (!sourceUrl) {
+      return res.status(400).json({
+        error: 'A foto original não está disponível. Escolha outra imagem para gerar a arte novamente.',
+      });
+    }
+
+    const zoom = req.body?.zoom != null ? Number(req.body.zoom) : 100;
+    const offsetX = req.body?.offsetX != null
+      ? Number(req.body.offsetX)
+      : req.body?.offset_x != null
+        ? Number(req.body.offset_x)
+        : 50;
+    const offsetY = req.body?.offsetY != null
+      ? Number(req.body.offsetY)
+      : req.body?.offset_y != null
+        ? Number(req.body.offset_y)
+        : 50;
+
+    const artwork = await composeMatterArtwork({
+      userId: req.session.userId,
+      matterId,
+      sourceUrl,
+      title: String(req.body?.titulo || matter.titulo || '').trim(),
+      force: true,
+      zoom,
+      offsetX,
+      offsetY,
+    });
+
+    return res.json({
+      ok: true,
+      matter: artwork.matter,
+      imagemUrl: artwork.publicUrl,
+      arteModelo: artwork.modelId,
+      hasLogo: artwork.hasLogo,
+      zoom,
+      offsetX,
+      offsetY,
     });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });

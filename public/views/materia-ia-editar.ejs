@@ -468,7 +468,47 @@
               </div>
             </div>
             <div class="p-2">
-              <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="block h-auto w-full rounded border border-slate-800 bg-slate-900/50 object-contain" />
+              <div id="matter-img-frame-preview" class="relative overflow-hidden rounded border border-slate-800 bg-slate-900/50">
+                <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="block h-auto w-full object-cover" />
+              </div>
+              <% if (canEdit) { %>
+                <div id="matter-art-frame" class="mt-2 space-y-2 rounded-lg border border-slate-700/80 bg-slate-950/60 p-2">
+                  <div>
+                    <p class="text-[11px] font-medium text-slate-300">Enquadramento</p>
+                    <p class="mt-0.5 text-[10px] leading-relaxed text-slate-500">
+                      Zoom para aproximar ou mostrar mais. Depois ajuste ←→ e ↑↓. Clique em aplicar para regenerar a arte.
+                    </p>
+                  </div>
+                  <label class="block">
+                    <span class="flex items-center justify-between text-[10px] text-slate-400">
+                      Zoom
+                      <span id="art-zoom-valor" class="tabular-nums text-slate-500">100%</span>
+                    </span>
+                    <input id="art-zoom" type="range" min="80" max="160" step="1" value="100"
+                      class="mt-1 w-full accent-emerald-500" />
+                  </label>
+                  <label class="block">
+                    <span class="flex items-center justify-between text-[10px] text-slate-400">
+                      Horizontal
+                      <span id="art-offset-x-valor" class="tabular-nums text-slate-500">50%</span>
+                    </span>
+                    <input id="art-offset-x" type="range" min="0" max="100" step="1" value="50"
+                      class="mt-1 w-full accent-sky-500" />
+                  </label>
+                  <label class="block">
+                    <span class="flex items-center justify-between text-[10px] text-slate-400">
+                      Vertical
+                      <span id="art-offset-y-valor" class="tabular-nums text-slate-500">50%</span>
+                    </span>
+                    <input id="art-offset-y" type="range" min="0" max="100" step="1" value="50"
+                      class="mt-1 w-full accent-sky-500" />
+                  </label>
+                  <button type="button" id="btn-art-enquadrar"
+                    class="w-full rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40">
+                    Aplicar enquadramento
+                  </button>
+                </div>
+              <% } %>
             </div>
           </div>
         <% } %>
@@ -547,8 +587,16 @@
                 </div>
                 <div id="matter-colagem-body" class="hidden space-y-2">
                   <p class="text-[10px] leading-relaxed text-slate-400">
-                    Clique em 2 miniaturas acima. Cada foto entra inteira no painel (sem cortar); a arte 4:5 continua cheia no Facebook.
+                    Clique em 2 miniaturas. As fotos preenchem o painel (corte inteligente) para ficarem grandes. Use o zoom abaixo e o enquadramento na imagem destacada.
                   </p>
+                  <label class="block">
+                    <span class="flex items-center justify-between text-[10px] text-amber-200/80">
+                      Zoom das 2 fotos
+                      <span id="colagem-zoom-valor" class="tabular-nums text-slate-500">108%</span>
+                    </span>
+                    <input id="colagem-zoom" type="range" min="90" max="150" step="1" value="108"
+                      class="mt-1 w-full accent-amber-500" />
+                  </label>
                   <div class="flex gap-1.5">
                     <button type="button" data-colagem-layout="lado" class="colagem-layout-btn flex-1 rounded border border-amber-500/50 bg-amber-500/15 px-2 py-1 text-[10px] font-semibold text-amber-100">Lado a lado</button>
                     <button type="button" data-colagem-layout="cima" class="colagem-layout-btn flex-1 rounded border border-slate-600 px-2 py-1 text-[10px] font-semibold text-slate-300 hover:border-amber-500/40">Cima / baixo</button>
@@ -623,5 +671,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js"></script>
+  <script src="/js/materia-ia-editar.js?v=20260731frame"></script>
 <%- include('partials/app-end') %>

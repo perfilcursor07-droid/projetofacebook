@@ -33,13 +33,131 @@
     btnBaixarArte.classList.remove('hidden');
   }
 
-  function setArtImage(url) {
+  function setArtImage(url, opts = {}) {
     if (!imgEl || !url) return;
     const withCache = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
     imgEl.src = withCache;
     if (imgWrap) imgWrap.classList.remove('hidden');
     syncDownloadArtLink(withCache);
+    // Após regenerar no servidor, a prévia CSS volta ao neutro
+    // (o corte já está “assado” na nova arte).
+    if (opts.resetFrame !== false) {
+      if (artZoom) artZoom.value = '100';
+      if (artOffsetX) artOffsetX.value = '50';
+      if (artOffsetY) artOffsetY.value = '50';
+      resetArtFramePreviewCss();
+      if (artZoomValor) artZoomValor.textContent = '100%';
+      if (artOffsetXValor) artOffsetXValor.textContent = '50%';
+      if (artOffsetYValor) artOffsetYValor.textContent = '50%';
+    }
   }
+
+  /* —— Enquadramento da arte destacada —— */
+  const artZoom = document.getElementById('art-zoom');
+  const artOffsetX = document.getElementById('art-offset-x');
+  const artOffsetY = document.getElementById('art-offset-y');
+  const artZoomValor = document.getElementById('art-zoom-valor');
+  const artOffsetXValor = document.getElementById('art-offset-x-valor');
+  const artOffsetYValor = document.getElementById('art-offset-y-valor');
+  const btnArtEnquadrar = document.getElementById('btn-art-enquadrar');
+  const artFramePreview = document.getElementById('matter-img-frame-preview');
+
+  function readArtFrame() {
+    return {
+      zoom: Math.min(160, Math.max(80, Number(artZoom?.value ?? 100) || 100)),
+      offsetX: Math.min(100, Math.max(0, Number(artOffsetX?.value ?? 50) || 50)),
+      offsetY: Math.min(100, Math.max(0, Number(artOffsetY?.value ?? 50) || 50)),
+    };
+  }
+
+  function resetArtFramePreviewCss() {
+    if (!imgEl) return;
+    imgEl.style.objectFit = 'cover';
+    imgEl.style.objectPosition = '50% 50%';
+    imgEl.style.transform = 'none';
+    imgEl.style.transformOrigin = '50% 50%';
+    imgEl.style.width = '100%';
+    imgEl.style.height = 'auto';
+    imgEl.style.position = '';
+    imgEl.style.left = '';
+    imgEl.style.top = '';
+    imgEl.style.maxWidth = '';
+    if (artFramePreview) {
+      artFramePreview.style.aspectRatio = '';
+    }
+  }
+
+  function applyArtFramePreview() {
+    if (!imgEl) return;
+    const { zoom, offsetX, offsetY } = readArtFrame();
+    if (artZoomValor) artZoomValor.textContent = zoom + '%';
+    if (artOffsetXValor) artOffsetXValor.textContent = offsetX + '%';
+    if (artOffsetYValor) artOffsetYValor.textContent = offsetY + '%';
+
+    // Prévia rápida no browser (a arte final só muda ao clicar em Aplicar).
+    if (artFramePreview) {
+      artFramePreview.style.aspectRatio = '4 / 5';
+    }
+    const z = zoom / 100;
+    imgEl.style.objectFit = 'cover';
+    imgEl.style.objectPosition = offsetX + '% ' + offsetY + '%';
+    imgEl.style.position = 'absolute';
+    imgEl.style.maxWidth = 'none';
+    if (z >= 1) {
+      imgEl.style.width = '100%';
+      imgEl.style.height = '100%';
+      imgEl.style.left = '0';
+      imgEl.style.top = '0';
+      imgEl.style.transform = z > 1.001 ? 'scale(' + z + ')' : 'none';
+      imgEl.style.transformOrigin = offsetX + '% ' + offsetY + '%';
+    } else {
+      const w = z * 100;
+      const h = z * 100;
+      imgEl.style.width = w + '%';
+      imgEl.style.height = h + '%';
+      imgEl.style.left = ((100 - w) * offsetX) / 100 + '%';
+      imgEl.style.top = ((100 - h) * offsetY) / 100 + '%';
+      imgEl.style.transform = 'none';
+    }
+  }
+
+  [artZoom, artOffsetX, artOffsetY].forEach((el) => {
+    el?.addEventListener('input', applyArtFramePreview);
+  });
+
+  btnArtEnquadrar?.addEventListener('click', async () => {
+    const frame = readArtFrame();
+    const original = btnArtEnquadrar.textContent;
+    btnArtEnquadrar.disabled = true;
+    btnArtEnquadrar.textContent = 'Aplicando…';
+    setStatus('Regenerando a arte com o enquadramento…');
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/enquadrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          zoom: frame.zoom,
+          offsetX: frame.offsetX,
+          offsetY: frame.offsetY,
+          titulo: tituloEl?.value || '',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao enquadrar a arte');
+      if (data.imagemUrl) {
+        setArtImage(data.imagemUrl);
+        imgWrap?.classList.remove('hidden');
+      }
+      setStatus('Enquadramento aplicado à arte ✓');
+    } catch (err) {
+      setStatus(err.message || 'Erro ao enquadrar', true);
+    } finally {
+      btnArtEnquadrar.disabled = false;
+      btnArtEnquadrar.textContent = original || 'Aplicar enquadramento';
+    }
+  });
+
+  if (artZoom) applyArtFramePreview();
 
   function montarLegendaCompleta() {
     const titulo = String(tituloEl?.value || '').trim();
@@ -718,7 +836,15 @@
 
   /* —— Colagem com 2 imagens —— */
   window.__COLAGEM_MODE__ = false;
-  window.__COLAGEM__ = { a: null, b: null, layout: 'lado' };
+  window.__COLAGEM__ = { a: null, b: null, layout: 'lado', zoom: 108 };
+
+  const colagemZoom = document.getElementById('colagem-zoom');
+  const colagemZoomValor = document.getElementById('colagem-zoom-valor');
+  colagemZoom?.addEventListener('input', () => {
+    const z = Math.min(150, Math.max(90, Number(colagemZoom.value) || 108));
+    window.__COLAGEM__.zoom = z;
+    if (colagemZoomValor) colagemZoomValor.textContent = z + '%';
+  });
 
   function renderColagemSlots() {
     const slotA = document.getElementById('colagem-slot-a');
@@ -827,6 +953,9 @@
           thumbnailA: a.thumbnail || a.url || null,
           thumbnailB: b.thumbnail || b.url || null,
           layout: window.__COLAGEM__.layout || 'lado',
+          zoom: Number(colagemZoom?.value ?? window.__COLAGEM__.zoom ?? 108),
+          offsetX: Number(artOffsetX?.value ?? 50),
+          offsetY: Number(artOffsetY?.value ?? 50),
           titulo: tituloEl?.value || '',
         }),
       });

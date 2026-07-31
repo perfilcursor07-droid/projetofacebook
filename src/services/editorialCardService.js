@@ -990,12 +990,112 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
 }
 
 /**
+ * Cobre outW×outH com zoom e pan.
+ * zoom 100 = preencher; >100 aproxima; <100 mostra mais (contain + blur).
+ */
+function clampArtZoom(value, fallback = 100) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(180, Math.max(80, Math.round(n)));
+}
+
+function clampArtOffset(value, fallback = 50) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(100, Math.max(0, Math.round(n)));
+}
+
+async function coverPaneBuffer(sourceBuffer, outW, outH, opts = {}) {
+  const zoom = clampArtZoom(opts.zoom, 100);
+  const offsetX = clampArtOffset(opts.offsetX, 50);
+  const offsetY = clampArtOffset(opts.offsetY, 50);
+  const z = zoom / 100;
+
+  let prepared = sourceBuffer;
+  try {
+    prepared = await sharp(sourceBuffer, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .rotate()
+      .toBuffer();
+  } catch {
+    prepared = sourceBuffer;
+  }
+
+  const meta = await sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 }).metadata();
+  const srcW = Math.max(1, Number(meta.width) || outW);
+  const srcH = Math.max(1, Number(meta.height) || outH);
+
+  if (z < 1) {
+    const blurred = await sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .resize(outW, outH, {
+        fit: 'cover',
+        position: 'centre',
+        withoutEnlargement: false,
+        kernel: sharp.kernel.lanczos3,
+      })
+      .blur(36)
+      .modulate({ brightness: 0.42, saturation: 0.8 })
+      .png()
+      .toBuffer();
+
+    const fgScale = z; // 0.8 → um pouco menor que contain cheio
+    const fg = await sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .resize(Math.round(outW * fgScale), Math.round(outH * fgScale), {
+        fit: 'inside',
+        withoutEnlargement: false,
+        kernel: sharp.kernel.lanczos3,
+      })
+      .sharpen({ sigma: 0.55, m1: 0.5, m2: 0.3 })
+      .png()
+      .toBuffer({ resolveWithObject: true });
+
+    const padX = Math.max(0, outW - fg.info.width);
+    const padY = Math.max(0, outH - fg.info.height);
+    const left = Math.round((offsetX / 100) * padX);
+    const top = Math.round((offsetY / 100) * padY);
+
+    return sharp(blurred)
+      .composite([{ input: fg.data, left, top }])
+      .png()
+      .toBuffer();
+  }
+
+  const baseScale = Math.max(outW / srcW, outH / srcH);
+  const scale = baseScale * z;
+  let resizedW = Math.max(outW, Math.round(srcW * scale));
+  let resizedH = Math.max(outH, Math.round(srcH * scale));
+
+  const maxLeft = Math.max(0, resizedW - outW);
+  const maxTop = Math.max(0, resizedH - outH);
+  const left = Math.min(maxLeft, Math.round((offsetX / 100) * maxLeft));
+  const top = Math.min(maxTop, Math.round((offsetY / 100) * maxTop));
+
+  return sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 })
+    .resize(resizedW, resizedH, {
+      fit: 'fill',
+      withoutEnlargement: false,
+      kernel: sharp.kernel.lanczos3,
+    })
+    .extract({ left, top, width: outW, height: outH })
+    .sharpen({ sigma: 0.65, m1: 0.55, m2: 0.35 })
+    .png()
+    .toBuffer();
+}
+
+/**
  * Monta canvas 4:5 (1080×1350) para o feed do Facebook.
  * - mode: 'cover' (padrão na arte) → preenche a tela toda, sem faixa blur
  * - mode: 'auto' → se a foto for bem diferente de 4:5, contain + fundo desfocado
+ * - zoom / offsetX / offsetY → enquadramento manual
  */
 async function buildFeedBaseImage(sourceBuffer, options = {}) {
-  const forceCover = options.mode !== 'auto';
+  const zoom = clampArtZoom(options.zoom, 100);
+  const offsetX = clampArtOffset(options.offsetX, 50);
+  const offsetY = clampArtOffset(options.offsetY, 50);
+
+  // Padrão / cover / enquadramento manual → preenche 4:5 com zoom e pan.
+  if (options.mode !== 'auto') {
+    return coverPaneBuffer(sourceBuffer, WIDTH, HEIGHT, { zoom, offsetX, offsetY });
+  }
 
   let sourcePrepared = sourceBuffer;
   try {
@@ -1013,109 +1113,44 @@ async function buildFeedBaseImage(sourceBuffer, options = {}) {
   const targetRatio = WIDTH / HEIGHT;
   const ratioDiff = Math.abs(srcRatio - targetRatio) / targetRatio;
 
-  // Full-bleed: preenche 1080×1350 sem faixas pretas/blur.
-  if (forceCover || ratioDiff <= 0.14) {
-    return sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
-      .resize(WIDTH, HEIGHT, {
-        fit: 'cover',
-        position: 'attention',
-        withoutEnlargement: false,
-        kernel: sharp.kernel.lanczos3,
-      })
-      .sharpen({ sigma: 0.65, m1: 0.55, m2: 0.35 })
-      .png()
-      .toBuffer();
+  if (ratioDiff <= 0.14) {
+    return coverPaneBuffer(sourcePrepared, WIDTH, HEIGHT, { zoom: 100, offsetX: 50, offsetY: 50 });
   }
 
-  // Colagem/paisagem: mostra a imagem inteira e completa a altura com blur.
-  const blurred = await sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
-    .resize(WIDTH, HEIGHT, {
-      fit: 'cover',
-      position: 'centre',
-      withoutEnlargement: false,
-      kernel: sharp.kernel.lanczos3,
-    })
-    .blur(48)
-    .modulate({ brightness: 0.45, saturation: 0.85 })
-    .png()
-    .toBuffer();
-
-  const foreground = await sharp(sourcePrepared, { failOn: 'error', limitInputPixels: 40_000_000 })
-    .resize(WIDTH, HEIGHT, {
-      fit: 'inside',
-      withoutEnlargement: false,
-      kernel: sharp.kernel.lanczos3,
-    })
-    .sharpen({ sigma: 0.55, m1: 0.5, m2: 0.3 })
-    .png()
-    .toBuffer({ resolveWithObject: true });
-
-  const left = Math.max(0, Math.round((WIDTH - foreground.info.width) / 2));
-  const top = Math.max(0, Math.round((HEIGHT - foreground.info.height) / 2));
-
-  return sharp(blurred)
-    .composite([{ input: foreground.data, left, top }])
-    .png()
-    .toBuffer();
+  // Paisagem muito larga: afasta um pouco + blur nas bordas.
+  return coverPaneBuffer(sourcePrepared, WIDTH, HEIGHT, { zoom: 90, offsetX: 50, offsetY: 50 });
 }
 
 /**
  * Monta uma única foto 1080×1350 a partir de duas imagens.
  * layout: 'lado' (esquerda/direita) | 'cima' (acima/abaixo)
  *
- * Em cada painel: a foto aparece INTEIRA (contain), sem cortar rostos.
- * O fundo do painel é a mesma foto em blur/cover — a arte 4:5 fica cheia no Facebook.
+ * Em cada painel: cover (fotos grandes, cortando as bordas) + zoom/pan opcional.
  */
-async function buildDualCollageBuffer(bufferA, bufferB, { layout = 'lado' } = {}) {
+async function buildDualCollageBuffer(bufferA, bufferB, opts = {}) {
+  const layout = opts.layout || 'lado';
   const mode = String(layout || 'lado').toLowerCase() === 'cima' ? 'cima' : 'lado';
   const gap = 4;
   const halfW = mode === 'lado' ? Math.floor((WIDTH - gap) / 2) : WIDTH;
   const halfH = mode === 'cima' ? Math.floor((HEIGHT - gap) / 2) : HEIGHT;
 
-  async function fitHalf(buf) {
-    let prepared = buf;
-    try {
-      prepared = await sharp(buf, { failOn: 'error', limitInputPixels: 40_000_000 })
-        .rotate()
-        .toBuffer();
-    } catch {
-      prepared = buf;
-    }
+  // Default 108: preenche o painel e corta um pouco as bordas (as duas ficam grandes).
+  const zoomA = clampArtZoom(opts.zoomA ?? opts.zoom, 108);
+  const zoomB = clampArtZoom(opts.zoomB ?? opts.zoom, zoomA);
+  const offsetXA = clampArtOffset(opts.offsetXA ?? opts.offsetX, 50);
+  const offsetYA = clampArtOffset(opts.offsetYA ?? opts.offsetY, 50);
+  const offsetXB = clampArtOffset(opts.offsetXB ?? opts.offsetX, offsetXA);
+  const offsetYB = clampArtOffset(opts.offsetYB ?? opts.offsetY, offsetYA);
 
-    // Fundo: preenche o painel (cover + blur) — sem “buraco” na arte do FB
-    const blurred = await sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 })
-      .resize(halfW, halfH, {
-        fit: 'cover',
-        position: 'centre',
-        withoutEnlargement: false,
-        kernel: sharp.kernel.lanczos3,
-      })
-      .blur(36)
-      .modulate({ brightness: 0.42, saturation: 0.8 })
-      .png()
-      .toBuffer();
-
-    // Foto inteira dentro do painel (contain) — não corta
-    const foreground = await sharp(prepared, { failOn: 'error', limitInputPixels: 40_000_000 })
-      .resize(halfW, halfH, {
-        fit: 'inside',
-        withoutEnlargement: false,
-        kernel: sharp.kernel.lanczos3,
-      })
-      .sharpen({ sigma: 0.55, m1: 0.5, m2: 0.3 })
-      .png()
-      .toBuffer({ resolveWithObject: true });
-
-    const left = Math.max(0, Math.round((halfW - foreground.info.width) / 2));
-    const top = Math.max(0, Math.round((halfH - foreground.info.height) / 2));
-
-    return sharp(blurred)
-      .composite([{ input: foreground.data, left, top }])
-      .jpeg({ quality: 95, mozjpeg: true })
-      .toBuffer();
+  async function fitHalf(buf, zoom, offsetX, offsetY) {
+    const pane = await coverPaneBuffer(buf, halfW, halfH, { zoom, offsetX, offsetY });
+    return sharp(pane).jpeg({ quality: 95, mozjpeg: true }).toBuffer();
   }
 
-  const [leftOrTop, rightOrBottom] = await Promise.all([fitHalf(bufferA), fitHalf(bufferB)]);
+  const [leftOrTop, rightOrBottom] = await Promise.all([
+    fitHalf(bufferA, zoomA, offsetXA, offsetYA),
+    fitHalf(bufferB, zoomB, offsetXB, offsetYB),
+  ]);
 
   const composites =
     mode === 'cima'
@@ -1141,7 +1176,7 @@ async function buildDualCollageBuffer(bufferA, bufferB, { layout = 'lado' } = {}
     .toBuffer();
 }
 
-async function createEditorialCard({ sourceUrl, title, user }) {
+async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offsetY } = {}) {
   if (!sourceUrl) throw new Error('A matéria não possui imagem editorial para compor a arte');
   if (!title) throw new Error('Informe o título da arte');
   if (!user?.id) throw new Error('Usuário inválido para compor a arte');
@@ -1183,8 +1218,10 @@ async function createEditorialCard({ sourceUrl, title, user }) {
   if (logo) composites.push(logo);
 
   const feedBase = await buildFeedBaseImage(source, {
-    // Sempre preenche 4:5 (cover). Faixa clássica / JM não deve ficar com strip blur.
     mode: 'cover',
+    zoom: zoom != null ? zoom : 100,
+    offsetX: offsetX != null ? offsetX : 50,
+    offsetY: offsetY != null ? offsetY : 50,
   });
 
   await sharp(feedBase, { failOn: 'error', limitInputPixels: 40_000_000 })
