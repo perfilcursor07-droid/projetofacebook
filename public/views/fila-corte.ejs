@@ -21,7 +21,11 @@
   const imagemZoomRaw = Number(clip.split_image_zoom);
   const zoomVideo = Number.isFinite(videoZoomRaw) ? Math.min(160, Math.max(70, Math.round(videoZoomRaw))) : 100;
   const zoomImagem = Number.isFinite(imagemZoomRaw) ? Math.min(160, Math.max(70, Math.round(imagemZoomRaw))) : 100;
-  const splitModo = clip.split_modo === 'empilhado' ? 'empilhado' : 'lado';
+  const splitModo = clip.split_modo === 'empilhado'
+    ? 'empilhado'
+    : clip.split_modo === 'normal'
+      ? 'normal'
+      : (splitAtivo ? 'lado' : 'normal');
   const splitImagemPosRaw = String(clip.split_imagem_pos || '');
   const splitImagemPos = splitModo === 'empilhado'
     ? (splitImagemPosRaw === 'baixo' ? 'baixo' : 'cima')
@@ -155,16 +159,17 @@
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                  <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-300">Tela dividida</p>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-300">Layout do Reel</p>
                   <% if (splitGerando) { %>
                     <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-200">Montando…</span>
                   <% } else if (splitAtivo) { %>
-                    <span class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300">Ativa</span>
+                    <span class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300">Ativo</span>
                   <% } %>
                 </div>
                 <p class="mt-1 text-xs leading-relaxed text-slate-500">
-                  Duas opções: <strong class="font-medium text-slate-400">lado a lado</strong> ou
-                  <strong class="font-medium text-slate-400">um em cima do outro</strong> (imagem/vídeo horizontal, texto no meio).
+                  <strong class="font-medium text-slate-400">Normal</strong> = só texto no vídeo.
+                  Ou divida com imagem <strong class="font-medium text-slate-400">lado a lado</strong> /
+                  <strong class="font-medium text-slate-400">um em cima do outro</strong>.
                 </p>
               </div>
               <% if (splitAtivo) { %>
@@ -174,7 +179,11 @@
               <% } %>
             </div>
 
-            <div class="mt-3 inline-flex flex-wrap gap-1 rounded-xl border border-slate-700 bg-slate-950 p-1" role="tablist" aria-label="Layout da tela dividida">
+            <div class="mt-3 inline-flex flex-wrap gap-1 rounded-xl border border-slate-700 bg-slate-950 p-1" role="tablist" aria-label="Layout do Reel">
+              <button type="button" data-split-modo="normal"
+                class="split-modo-btn rounded-lg px-3 py-1.5 text-xs <%= splitModo === 'normal' ? 'bg-fuchsia-500 font-semibold text-white' : 'text-slate-300 hover:text-white' %>">
+                Normal
+              </button>
               <button type="button" data-split-modo="lado"
                 class="split-modo-btn rounded-lg px-3 py-1.5 text-xs <%= splitModo === 'lado' ? 'bg-fuchsia-500 font-semibold text-white' : 'text-slate-300 hover:text-white' %>">
                 Lado a lado
@@ -188,21 +197,21 @@
             <div class="mt-4 grid gap-4 sm:grid-cols-[210px_minmax(0,1fr)]">
               <div>
                 <div id="split-preview" class="relative mx-auto flex aspect-[9/16] w-full max-w-[210px] overflow-hidden rounded-xl border border-slate-700 bg-black <%= splitModo === 'empilhado' ? 'flex-col' : '' %>"
-                  style="<%= splitModo === 'empilhado' ? (splitImagemPos === 'baixo' ? 'flex-direction:column-reverse' : 'flex-direction:column') : (splitImagemPos === 'direita' ? 'flex-direction:row-reverse' : 'flex-direction:row') %>">
-                  <div id="split-pane-img" class="relative overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
+                  style="<%= splitModo === 'normal' ? 'flex-direction:column' : splitModo === 'empilhado' ? (splitImagemPos === 'baixo' ? 'flex-direction:column-reverse' : 'flex-direction:column') : (splitImagemPos === 'direita' ? 'flex-direction:row-reverse' : 'flex-direction:row') %>">
+                  <div id="split-pane-img" class="relative overflow-hidden bg-slate-950 <%= splitModo === 'normal' ? 'hidden' : splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
                     <img id="split-img-preview" alt="" class="h-full w-full object-cover <%= splitImagemUrl ? '' : 'hidden' %>"
                       src="<%= splitImagemUrl || '' %>" style="object-position: <%= offsetImagem %>% <%= offsetImagemY %>%;" />
                     <div id="split-img-empty" class="absolute inset-0 flex items-center justify-center px-2 text-center text-[10px] leading-tight text-slate-600 <%= splitImagemUrl ? 'hidden' : '' %>">
                       Escolha a imagem
                     </div>
                   </div>
-                  <div id="split-pane-vid" class="relative overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
+                  <div id="split-pane-vid" class="relative overflow-hidden bg-slate-950 <%= splitModo === 'normal' ? 'h-full w-full' : splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
                     <% if (previewVideo) { %>
                       <video id="split-video-preview" class="h-full w-full object-cover" muted loop playsinline preload="metadata"
                         style="object-position: <%= offsetVideo %>% <%= offsetVideoY %>%;" src="<%= previewVideo %>#t=0.5"></video>
                     <% } %>
                   </div>
-                  <span id="split-divider" class="pointer-events-none absolute bg-white/20 <%= splitModo === 'empilhado' ? 'inset-x-0 top-1/2 h-px -translate-y-1/2' : 'inset-y-0 left-1/2 w-px -translate-x-1/2' %>"></span>
+                  <span id="split-divider" class="pointer-events-none absolute bg-white/20 <%= splitModo === 'normal' ? 'hidden' : splitModo === 'empilhado' ? 'inset-x-0 top-1/2 h-px -translate-y-1/2' : 'inset-y-0 left-1/2 w-px -translate-x-1/2' %>"></span>
                   <div id="split-texto-preview"
                     class="pointer-events-none absolute inset-x-0 <%= splitTextoPos === 'topo' ? 'top-0' : splitTextoPos === 'meio' ? 'top-1/2 -translate-y-1/2' : 'bottom-0' %> <%= splitTexto ? '' : 'hidden' %> <%= splitTextoPos === 'meio' ? 'bg-black/70 px-1.5 py-1.5' : 'bg-gradient-to-' + (splitTextoPos === 'topo' ? 'b' : 't') + ' from-black/80 to-black/40 px-1.5 py-1.5' %>">
                     <p id="split-texto-preview-p" class="text-center text-[8px] font-extrabold uppercase leading-snug tracking-wide text-white"><%= splitTexto %></p>
@@ -210,13 +219,13 @@
                 </div>
                 <div class="mt-2 flex items-center justify-center gap-2">
                   <button type="button" id="btn-split-play" class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300">Testar</button>
-                  <button type="button" id="btn-split-lado" class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 hover:border-fuchsia-500 hover:text-fuchsia-200"
+                  <button type="button" id="btn-split-lado" class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 hover:border-fuchsia-500 hover:text-fuchsia-200 <%= splitModo === 'normal' ? 'hidden' : '' %>"
                     data-lado="<%= splitImagemPos %>"><%= splitModo === 'empilhado' ? (splitImagemPos === 'baixo' ? 'Imagem embaixo' : 'Imagem em cima') : (splitImagemPos === 'direita' ? 'Imagem à direita' : 'Imagem à esquerda') %></button>
                 </div>
               </div>
 
               <div class="space-y-4">
-                <div class="space-y-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                <div id="split-bloco-enquadrar" class="space-y-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3 <%= splitModo === 'normal' ? 'hidden' : '' %>">
                   <div>
                     <p class="text-[11px] font-medium text-slate-400">Enquadramento</p>
                     <p class="mt-1 text-[10px] leading-relaxed text-slate-600">
@@ -366,7 +375,7 @@
                   </p>
                 </div>
 
-                <div>
+                <div id="split-bloco-imagem-fonte" class="<%= splitModo === 'normal' ? 'hidden' : '' %>">
                   <div class="inline-flex flex-wrap gap-1 rounded-xl border border-slate-700 bg-slate-950 p-1" role="tablist" aria-label="Fonte da imagem">
                     <button type="button" data-split-fonte="busca" class="split-fonte-btn rounded-lg bg-fuchsia-500 px-3 py-1.5 text-xs font-semibold text-white">Buscar foto</button>
                     <button type="button" data-split-fonte="frame" class="split-fonte-btn rounded-lg px-3 py-1.5 text-xs text-slate-300 hover:text-white">Do vídeo</button>
@@ -401,7 +410,7 @@
                 <div class="flex flex-wrap items-center gap-2">
                   <button type="button" id="btn-split-aplicar"
                     class="rounded-xl bg-fuchsia-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-fuchsia-400 disabled:opacity-50">
-                    <%= splitAtivo ? 'Atualizar tela dividida' : 'Aplicar tela dividida' %>
+                    <%= splitModo === 'normal' ? (splitAtivo ? 'Atualizar texto' : 'Aplicar texto') : (splitAtivo ? 'Atualizar layout' : 'Aplicar layout') %>
                   </button>
                   <% if (splitAtivo) { %>
                     <button type="button" id="btn-split-enquadrar"
@@ -523,5 +532,5 @@
       bgmPresets: <%- JSON.stringify(presetsLista) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731n"></script>
+  <script src="/js/fila-corte.js?v=20260731o"></script>
 <%- include('partials/app-end') %>

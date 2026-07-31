@@ -63,12 +63,14 @@ function normalizarPosicaoTexto(raw) {
 function normalizarModoSplit(raw) {
   const v = String(raw || '').toLowerCase();
   if (v === 'empilhado' || v === 'cima' || v === 'vertical' || v === 'stack') return 'empilhado';
+  if (v === 'normal' || v === 'texto' || v === 'full' || v === 'inteiro') return 'normal';
   return 'lado';
 }
 
 /** Posição da imagem: esquerda/direita (lado) ou cima/baixo (empilhado). */
 function normalizarImagemPos(raw, modo) {
   const v = String(raw || '').toLowerCase();
+  if (modo === 'normal') return 'esquerda';
   if (modo === 'empilhado') {
     if (v === 'baixo' || v === 'direita' || v === 'bottom') return 'baixo';
     return 'cima';
@@ -569,9 +571,6 @@ async function aplicarSplitAgora({
   const base = baseClipFile(clip);
   if (!base) throw httpError('Corte sem arquivo — gere o corte novamente.', 422);
 
-  const imagemAbs = storageAbs(imagemRelPath);
-  if (!fs.existsSync(imagemAbs)) throw httpError('Imagem da tela dividida não encontrada.', 422);
-
   const textoFinal = normalizarTextoSplit(
     texto != null ? texto : clip.split_texto
   );
@@ -624,6 +623,114 @@ async function aplicarSplitAgora({
   const overlayAbs = storageAbs(`${SPLIT_DIR}/clip_${clip.id}_txt_${uid}.png`);
   const capaEstavaPronta = clip.capa_status === 'pronta';
   const arquivoAnterior = clip.caminho_arquivo;
+
+  // Modo Normal: vídeo inteiro + texto opcional (sem imagem ao lado).
+  if (modoFinal === 'normal') {
+    try {
+      if (!textoFinal) {
+        // Sem texto = volta ao corte limpo.
+        await VideoClips.update(clip.id, {
+          caminho_arquivo: base,
+          arquivo_sem_split: null,
+          arquivo_sem_capa: base,
+          layout: 'normal',
+          split_status: 'pendente',
+          split_modo: 'normal',
+          split_texto: null,
+          split_erro: null,
+          capa_status: capaEstavaPronta ? 'gerando' : 'pendente',
+        });
+        if (arquivoAnterior && arquivoAnterior !== base) safeUnlink(arquivoAnterior);
+        if (clip.split_image_path) safeUnlink(clip.split_image_path);
+        await regenerarCapaSePreciso(clip.id, userId, capaEstavaPronta, clip.capa_titulo);
+        if (!capaEstavaPronta) {
+          try {
+            const clipBgmService = require('./clipBgmService');
+            await clipBgmService.reaplicarBgmSeConfigurado(clip.id);
+          } catch (bgmErr) {
+            console.warn(`[split] BGM normal limpo #${clip.id}:`, bgmErr.message || bgmErr);
+          }
+        }
+        return { relativePath: base };
+      }
+
+      const info = await probe(storageAbs(base));
+      const stream = (info.streams || []).find((s) => s.codec_type === 'video') || {};
+      const width = Number(stream.width) || 1080;
+      const height = Number(stream.height) || 1920;
+      await criarFaixaTextoPng({
+        texto: textoFinal,
+        posicao: posicaoFinal,
+        width,
+        height,
+        destAbs: overlayAbs,
+        modelo: videoModelo,
+        corDestaque: videoCorDestaque,
+        tamanhoPct: tamanhoFinal,
+        fundo: fundoFinal,
+        fundoCor: fundoCorFinal,
+      });
+      await overlayTextoFixo({
+        videoPath: storageAbs(base),
+        overlayPath: overlayAbs,
+        outputPath: outAbs,
+      });
+
+      if (!fs.existsSync(outAbs) || fs.statSync(outAbs).size < 1000) {
+        throw new Error('arquivo final vazio');
+      }
+
+      await VideoClips.update(clip.id, {
+        caminho_arquivo: outRelative,
+        arquivo_sem_split: base,
+        arquivo_sem_capa: outRelative,
+        layout: 'split',
+        split_status: 'pronta',
+        split_image_path: null,
+        split_modo: 'normal',
+        split_imagem_pos: imagemPosFinal,
+        split_texto: textoFinal,
+        split_texto_posicao: posicaoFinal,
+        split_texto_tamanho: tamanhoFinal,
+        split_texto_fundo: fundoFinal,
+        split_texto_fundo_cor: fundoCorFinal,
+        split_erro: null,
+        capa_status: capaEstavaPronta ? 'gerando' : 'pendente',
+      });
+
+      if (arquivoAnterior && arquivoAnterior !== base && arquivoAnterior !== outRelative) {
+        safeUnlink(arquivoAnterior);
+      }
+      if (clip.split_image_path) safeUnlink(clip.split_image_path);
+
+      await regenerarCapaSePreciso(clip.id, userId, capaEstavaPronta, clip.capa_titulo);
+      if (!capaEstavaPronta) {
+        try {
+          const clipBgmService = require('./clipBgmService');
+          await clipBgmService.reaplicarBgmSeConfigurado(clip.id);
+        } catch (bgmErr) {
+          console.warn(`[split] BGM normal #${clip.id}:`, bgmErr.message || bgmErr);
+        }
+      }
+      return { relativePath: outRelative };
+    } catch (err) {
+      safeUnlink(outRelative);
+      await VideoClips.update(clip.id, {
+        split_status: 'erro',
+        split_erro: `Texto no vídeo falhou: ${String(err.message || err).slice(0, 320)}`,
+      });
+      throw err;
+    } finally {
+      try {
+        if (fs.existsSync(overlayAbs)) fs.unlinkSync(overlayAbs);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  const imagemAbs = storageAbs(imagemRelPath);
+  if (!fs.existsSync(imagemAbs)) throw httpError('Imagem da tela dividida não encontrada.', 422);
 
   try {
     await renderSplitScreen({
@@ -763,14 +870,6 @@ async function aplicarSplitNoClip({
   }
 
   const fonteFinal = ['upload', 'frame'].includes(fonte) ? fonte : 'busca';
-  const imagem = await resolverImagemDoSplit({
-    clip,
-    fonte: fonteFinal,
-    imagemUrl,
-    buffer,
-    frameSegundo,
-  });
-
   const offsets = {
     videoOffset: clampOffset(videoOffset, Number(clip.split_video_offset) || 50),
     imageOffset: clampOffset(imageOffset, Number(clip.split_image_offset) || 50),
@@ -802,11 +901,22 @@ async function aplicarSplitNoClip({
     '#000000'
   );
 
+  let imagem = null;
+  if (modoFinal !== 'normal') {
+    imagem = await resolverImagemDoSplit({
+      clip,
+      fonte: fonteFinal,
+      imagemUrl,
+      buffer,
+      frameSegundo,
+    });
+  }
+
   await VideoClips.update(clip.id, {
     split_status: 'gerando',
     split_erro: null,
-    split_image_origem: imagem.origem,
-    split_image_url: imagem.url,
+    split_image_origem: imagem?.origem || null,
+    split_image_url: imagem?.url || null,
     split_video_offset: offsets.videoOffset,
     split_image_offset: offsets.imageOffset,
     split_video_offset_y: offsets.videoOffsetY,
@@ -827,7 +937,7 @@ async function aplicarSplitNoClip({
       await aplicarSplitAgora({
         clipId: clip.id,
         userId,
-        imagemRelPath: imagem.relativePath,
+        imagemRelPath: imagem?.relativePath || clip.split_image_path || null,
         imagemLado: lado,
         modo: modoFinal,
         texto: textoFinal,
@@ -844,7 +954,7 @@ async function aplicarSplitNoClip({
 
   return {
     queued: true,
-    imagem: `/media/${imagem.relativePath}`,
+    imagem: imagem ? `/media/${imagem.relativePath}` : null,
     modo: modoFinal,
     imagem_pos: lado,
     texto: textoFinal || null,
@@ -928,9 +1038,6 @@ async function reenquadrarSplit({
 }) {
   const clip = await VideoClips.findById(clipId);
   if (!clip) throw httpError('Corte não encontrado', 404);
-  if (!clip.split_image_path || !fs.existsSync(storageAbs(clip.split_image_path))) {
-    throw httpError('Escolha a imagem da tela dividida primeiro.', 422);
-  }
 
   const offsets = {
     videoOffset: clampOffset(videoOffset, Number(clip.split_video_offset) || 50),
@@ -941,6 +1048,12 @@ async function reenquadrarSplit({
     imageZoom: clampZoom(imageZoom != null ? imageZoom : clip.split_image_zoom, 100),
   };
   const modoFinal = normalizarModoSplit(modo != null ? modo : clip.split_modo);
+  if (
+    modoFinal !== 'normal' &&
+    (!clip.split_image_path || !fs.existsSync(storageAbs(clip.split_image_path)))
+  ) {
+    throw httpError('Escolha a imagem da tela dividida primeiro.', 422);
+  }
   const lado = normalizarImagemPos(
     imagemLado != null ? imagemLado : clip.split_imagem_pos,
     modoFinal

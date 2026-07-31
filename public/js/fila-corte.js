@@ -526,7 +526,11 @@
     let fonte = 'busca';
     let imagemEscolhida = cfg.splitImagemUrl || null;
     let frameSegundo = null;
-    let modo = cfg.splitModo === 'empilhado' ? 'empilhado' : 'lado';
+    let modo = cfg.splitModo === 'empilhado'
+      ? 'empilhado'
+      : cfg.splitModo === 'lado'
+        ? 'lado'
+        : 'normal';
     let lado = cfg.splitImagemPos || (modo === 'empilhado' ? 'cima' : 'esquerda');
     let textoPosicao = ['topo', 'meio'].includes(cfg.splitTextoPosicao)
       ? cfg.splitTextoPosicao
@@ -729,6 +733,9 @@
       if (imagemZoomValor) imagemZoomValor.textContent = iz + '%';
     }
 
+    const blocoEnquadrar = document.getElementById('split-bloco-enquadrar');
+    const blocoImagemFonte = document.getElementById('split-bloco-imagem-fonte');
+
     function rotuloPosicao() {
       if (modo === 'empilhado') {
         return lado === 'baixo' ? 'Imagem embaixo' : 'Imagem em cima';
@@ -736,11 +743,29 @@
       return lado === 'direita' ? 'Imagem à direita' : 'Imagem à esquerda';
     }
 
+    function rotuloAplicar() {
+      if (modo === 'normal') {
+        return state.splitAtivo ? 'Atualizar texto' : 'Aplicar texto';
+      }
+      return state.splitAtivo ? 'Atualizar layout' : 'Aplicar layout';
+    }
+
     function aplicarLayoutNoPreview() {
       if (!previewBox) return;
-      if (modo === 'empilhado') {
+      const isNormal = modo === 'normal';
+      blocoEnquadrar?.classList.toggle('hidden', isNormal);
+      blocoImagemFonte?.classList.toggle('hidden', isNormal);
+      ladoBtn?.classList.toggle('hidden', isNormal);
+      paneImg?.classList.toggle('hidden', isNormal);
+      dividerEl?.classList.toggle('hidden', isNormal);
+
+      if (isNormal) {
+        previewBox.style.flexDirection = 'column';
+        paneVid?.classList.remove('h-1/2', 'w-1/2');
+        paneVid?.classList.add('h-full', 'w-full');
+      } else if (modo === 'empilhado') {
         previewBox.style.flexDirection = lado === 'baixo' ? 'column-reverse' : 'column';
-        paneImg?.classList.remove('h-full', 'w-1/2');
+        paneImg?.classList.remove('h-full', 'w-1/2', 'hidden');
         paneVid?.classList.remove('h-full', 'w-1/2');
         paneImg?.classList.add('h-1/2', 'w-full');
         paneVid?.classList.add('h-1/2', 'w-full');
@@ -750,7 +775,7 @@
         }
       } else {
         previewBox.style.flexDirection = lado === 'direita' ? 'row-reverse' : 'row';
-        paneImg?.classList.remove('h-1/2', 'w-full');
+        paneImg?.classList.remove('h-1/2', 'w-full', 'hidden');
         paneVid?.classList.remove('h-1/2', 'w-full');
         paneImg?.classList.add('h-full', 'w-1/2');
         paneVid?.classList.add('h-full', 'w-1/2');
@@ -762,6 +787,9 @@
       if (ladoBtn) {
         ladoBtn.dataset.lado = lado;
         ladoBtn.textContent = rotuloPosicao();
+      }
+      if (aplicarBtn && !aplicarBtn.disabled) {
+        aplicarBtn.textContent = rotuloAplicar();
       }
       splitPanel.querySelectorAll('.split-modo-btn').forEach((b) => {
         const on = b.dataset.splitModo === modo;
@@ -838,10 +866,15 @@
 
     splitPanel.querySelectorAll('.split-modo-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const next = btn.dataset.splitModo === 'empilhado' ? 'empilhado' : 'lado';
+        const next =
+          btn.dataset.splitModo === 'empilhado'
+            ? 'empilhado'
+            : btn.dataset.splitModo === 'normal'
+              ? 'normal'
+              : 'lado';
         if (next === modo) return;
         if (next === 'empilhado') {
-          lado = lado === 'direita' ? 'baixo' : 'cima';
+          lado = lado === 'direita' || lado === 'baixo' ? 'baixo' : 'cima';
           if (textoPosicao === 'rodape') {
             textoPosicao = 'meio';
             splitPanel.querySelectorAll('.split-texto-pos-btn').forEach((b) => {
@@ -852,7 +885,7 @@
             });
             syncTextoPreview();
           }
-        } else {
+        } else if (next === 'lado') {
           lado = lado === 'baixo' ? 'direita' : 'esquerda';
         }
         modo = next;
@@ -973,6 +1006,19 @@
         video_zoom: videoZoom,
         imagem_zoom: imagemZoom,
       };
+
+      if (modo === 'normal') {
+        return {
+          body: {
+            fonte: 'busca',
+            imagem_lado: 'esquerda',
+            modo: 'normal',
+            ...offsetFields,
+            ...textoFields,
+          },
+          isForm: false,
+        };
+      }
 
       if (fonte === 'upload') {
         const file = uploadInput?.files?.[0];

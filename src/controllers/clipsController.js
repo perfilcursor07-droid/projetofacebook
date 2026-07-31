@@ -218,8 +218,14 @@ async function montarSplit(req, res, next) {
     const { clip } = await assertOwnedClip(req);
     const body = req.body || {};
     const fonte = req.file ? 'upload' : String(body.fonte || body.origem || 'busca');
+    const modo = String(body.modo || body.split_modo || body.layout_split || '').toLowerCase();
 
-    if (fonte === 'busca' && !String(body.imagem_url || body.imagemUrl || '').trim()) {
+    if (
+      fonte === 'busca' &&
+      modo !== 'normal' &&
+      modo !== 'texto' &&
+      !String(body.imagem_url || body.imagemUrl || '').trim()
+    ) {
       throw httpError('Escolha uma imagem na busca ou envie um arquivo.', 400);
     }
 
@@ -248,7 +254,10 @@ async function montarSplit(req, res, next) {
     res.status(202).json({
       ...result,
       clipId: clip.id,
-      message: 'Montando a tela dividida — o vídeo atualiza em alguns segundos.',
+      message:
+        modo === 'normal' || modo === 'texto'
+          ? 'Aplicando texto no vídeo — atualiza em alguns segundos.'
+          : 'Montando a tela dividida — o vídeo atualiza em alguns segundos.',
     });
   } catch (err) {
     next(err);
@@ -365,7 +374,11 @@ async function statusClip(req, res, next) {
       split_image_offset_y: Number(clip.split_image_offset_y) || 50,
       split_video_zoom: Math.min(160, Math.max(70, Number(clip.split_video_zoom) || 100)),
       split_image_zoom: Math.min(160, Math.max(70, Number(clip.split_image_zoom) || 100)),
-      split_modo: clip.split_modo === 'empilhado' ? 'empilhado' : 'lado',
+      split_modo: clip.split_modo === 'empilhado'
+        ? 'empilhado'
+        : clip.split_modo === 'normal'
+          ? 'normal'
+          : 'lado',
       split_imagem_pos: ['direita', 'cima', 'baixo'].includes(clip.split_imagem_pos)
         ? clip.split_imagem_pos
         : 'esquerda',
