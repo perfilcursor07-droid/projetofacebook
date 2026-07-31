@@ -494,17 +494,24 @@ async function publicarMateria(userId, matterId, overrides = {}) {
 
     let reelFile = null;
     if (pubTipo === 'reel') {
-      // Só regenera capa se ainda não estiver pronta (ffmpeg demora minutos — não refazer a cada publish)
+      // Só toca na capa se o editor já tiver incluído (não cria capa na hora de publicar)
       if (matter.video_clip_id) {
         try {
-          const { applyCoverToClipNow } = require('./clipPostProcessService');
-          await applyCoverToClipNow({
-            clipId: matter.video_clip_id,
-            userId,
-            titulo: overrides.titulo || matter.titulo,
-            force: false,
-          });
-          matter = await AiMatters.findById(matter.id);
+          const VideoClips = require('../models/VideoClips');
+          const clipCapa = await VideoClips.findById(matter.video_clip_id);
+          const temCapa =
+            clipCapa?.capa_status === 'pronta' ||
+            (clipCapa?.caminho_arquivo && /_capa_/i.test(String(clipCapa.caminho_arquivo)));
+          if (temCapa) {
+            const { applyCoverToClipNow } = require('./clipPostProcessService');
+            await applyCoverToClipNow({
+              clipId: matter.video_clip_id,
+              userId,
+              titulo: overrides.titulo || matter.titulo,
+              force: false,
+            });
+            matter = await AiMatters.findById(matter.id);
+          }
         } catch (capaErr) {
           console.warn(`[publicar-reel] capa matter #${matter.id}:`, capaErr.message);
         }
@@ -1509,7 +1516,7 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
       String(matter.materia || '').length > 900
     ) {
       patchLimpeza.materia =
-        '⏳ Processando Reel: baixando o vídeo, transcrevendo a fala, gerando a legenda e aplicando a capa (Minha marca) no início…';
+        '⏳ Processando Reel: baixando o vídeo, transcrevendo a fala e gerando a legenda…';
     }
     if (matter.error_message) {
       patchLimpeza.error_message = null;
@@ -1518,13 +1525,12 @@ async function gerarDeLinkReel({ userId, url, facebookPageId = null }) {
     matter = await AiMatters.findById(matter.id);
   }
 
-  // Já tem clipe pronto → sincroniza; se faltar capa/matéria, reenfileira
+  // Já tem clipe pronto → sincroniza; se faltar matéria, reenfileira (capa é opcional)
   if (video.caminho_local && (video.status === 'baixado' || video.status === 'cortado')) {
     const clips = await VideoClips.findByVideo(video.id);
     const pronto = clips.find((c) => c.status === 'pronto' && c.caminho_arquivo);
     if (pronto) {
       const precisaRefazer =
-        pronto.capa_status !== 'pronta' ||
         pronto.materia_status !== 'pronta' ||
         !pronto.legenda_sugerida;
 
@@ -3104,18 +3110,25 @@ async function enriquecerMateriaComWeb({
 
   if (titleChanged && updated.tipo_publicacao === 'reel' && updated.video_clip_id) {
     try {
-      const { applyCoverToClipNow } = require('./clipPostProcessService');
-      await applyCoverToClipNow({
-        clipId: updated.video_clip_id,
-        userId,
-        titulo: reescrito.titulo,
-        force: true,
-      });
-      updated = await AiMatters.findById(matterId);
-      if (updated.video_path) {
-        videoUrl = `/media/${String(updated.video_path).replace(/\\/g, '/')}`;
+      const VideoClips = require('../models/VideoClips');
+      const clipCapa = await VideoClips.findById(updated.video_clip_id);
+      const temCapa =
+        clipCapa?.capa_status === 'pronta' ||
+        (clipCapa?.caminho_arquivo && /_capa_/i.test(String(clipCapa.caminho_arquivo)));
+      if (temCapa) {
+        const { applyCoverToClipNow } = require('./clipPostProcessService');
+        await applyCoverToClipNow({
+          clipId: updated.video_clip_id,
+          userId,
+          titulo: reescrito.titulo,
+          force: true,
+        });
+        updated = await AiMatters.findById(matterId);
+        if (updated.video_path) {
+          videoUrl = `/media/${String(updated.video_path).replace(/\\/g, '/')}`;
+        }
+        aviso += ' Capa do Reel atualizada.';
       }
-      aviso += ' Capa do Reel atualizada.';
     } catch (err) {
       console.warn('[enriquecer] capa reel:', err.message);
     }

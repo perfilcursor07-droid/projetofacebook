@@ -105,11 +105,32 @@
         <a href="/fila" class="mt-3 inline-block text-sm text-sky-300 hover:underline">Voltar e aguardar →</a>
       </div>
     <% } else { %>
-      <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div class="space-y-6">
-          <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div class="min-w-0 space-y-4">
+          <nav id="corte-tabs" class="flex flex-wrap gap-1 rounded-2xl border border-slate-800 bg-slate-900/70 p-1.5" role="tablist" aria-label="Seções do corte">
+            <button type="button" role="tab" data-corte-tab-btn="materia" aria-selected="true"
+              class="corte-tab-btn rounded-xl bg-violet-500 px-3.5 py-2 text-xs font-semibold text-white sm:px-4">
+              Matéria
+            </button>
+            <button type="button" role="tab" data-corte-tab-btn="layout" aria-selected="false"
+              class="corte-tab-btn rounded-xl px-3.5 py-2 text-xs font-medium text-slate-400 hover:text-white sm:px-4">
+              Layout do Reel
+              <% if (splitAtivo) { %><span class="ml-1 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] text-emerald-300">on</span><% } %>
+            </button>
+            <button type="button" role="tab" data-corte-tab-btn="audio" aria-selected="false"
+              class="corte-tab-btn rounded-xl px-3.5 py-2 text-xs font-medium text-slate-400 hover:text-white sm:px-4">
+              Áudio
+            </button>
+          </nav>
+
+          <!-- ABA: Matéria + capa -->
+          <section id="corte-tab-materia" data-corte-tab-panel="materia" role="tabpanel"
+            class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Matéria</p>
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Matéria</p>
+                <p class="mt-0.5 text-[11px] text-slate-600">Texto da legenda e capa de abertura.</p>
+              </div>
               <button type="button" id="btn-materia" class="rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-400">
                 <%= materia ? 'Refazer matéria' : 'Gerar matéria' %>
               </button>
@@ -126,7 +147,7 @@
                   <%= capaAtiva ? 'checked' : '' %> />
                 <span>
                   <span class="block text-sm font-medium text-slate-200">Incluir capa no início do Reel</span>
-                  <span class="mt-0.5 block text-[11px] text-slate-500">Desmarque para publicar/ver só o vídeo, sem a intro da capa.</span>
+                  <span class="mt-0.5 block text-[11px] text-slate-500">Desmarcado por padrão — marque só se quiser a intro da capa no vídeo.</span>
                 </span>
               </label>
               <div id="clip-capa-campos" class="space-y-3">
@@ -168,8 +189,9 @@
             </div>
           </section>
 
-          <!-- Tela dividida: imagem de um lado, vídeo do outro -->
-          <section id="split-panel" class="rounded-2xl border border-fuchsia-500/25 bg-slate-900/60 p-5">
+          <!-- ABA: Layout do Reel -->
+          <section id="split-panel" data-corte-tab-panel="layout" role="tabpanel" hidden
+            class="rounded-2xl border border-fuchsia-500/25 bg-slate-900/60 p-5">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
@@ -437,26 +459,16 @@
               </div>
             </div>
           </section>
-        </div>
 
-        <aside class="space-y-4">
-          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-            <div class="mb-2 flex items-center justify-between">
-              <span class="text-xs font-semibold uppercase tracking-wide text-violet-300">Reel</span>
-              <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400"><%= ratio %></span>
-            </div>
-            <% if (videoUrl) { %>
-              <video id="clip-video" class="block aspect-[9/16] max-h-[420px] w-full rounded-xl border border-slate-700 bg-black object-contain" controls playsinline
-                src="<%= videoUrl %>?t=<%= Date.now() %>"></video>
-            <% } else { %>
-              <div class="flex min-h-[240px] items-center justify-center rounded-xl border border-dashed border-slate-700 text-xs text-slate-500">Sem arquivo</div>
-            <% } %>
-            <div class="mt-3 space-y-2 rounded-xl border border-sky-500/20 bg-slate-950/50 p-3">
-              <p class="text-[11px] font-semibold uppercase tracking-wide text-sky-300">Velocidade</p>
-              <p class="text-[10px] leading-relaxed text-slate-500">
-                Acelere para encurtar (ex.: 3&nbsp;min em 3x ≈ 1&nbsp;min). O slider pré-ouve; clique em aplicar para gravar no arquivo.
+          <!-- ABA: Áudio (velocidade + música) -->
+          <section id="corte-tab-audio" data-corte-tab-panel="audio" role="tabpanel" hidden
+            class="space-y-4">
+            <div class="rounded-2xl border border-sky-500/25 bg-slate-900/60 p-5">
+              <p class="text-xs font-semibold uppercase tracking-wide text-sky-300">Velocidade</p>
+              <p class="mt-1 text-[11px] leading-relaxed text-slate-500">
+                Acelere para encurtar (ex.: 3&nbsp;min em 3x ≈ 1&nbsp;min). O slider pré-ouve no player à direita; clique em aplicar para gravar no arquivo.
               </p>
-              <label class="block">
+              <label class="mt-4 block">
                 <span class="flex items-center justify-between text-[11px] font-medium text-slate-400">
                   <span>Reprodução</span>
                   <span class="tabular-nums text-sky-300">
@@ -477,48 +489,63 @@
                   data-dur-base="<%= durBase != null ? durBase : '' %>"
                   class="mt-1.5 w-full accent-sky-500" />
               </label>
-              <div class="flex flex-wrap gap-1 text-[10px] text-slate-600">
+              <div class="mt-2 flex flex-wrap gap-1 text-[10px] text-slate-600">
                 <% speedOptions.forEach((s) => { %>
                   <span class="rounded bg-slate-800/80 px-1.5 py-0.5"><%= Number.isInteger(s) ? s + 'x' : String(s) + 'x' %></span>
                 <% }) %>
               </div>
               <button type="button" id="btn-speed-aplicar"
-                class="w-full rounded-xl border border-sky-500/40 bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-100 hover:bg-sky-500/25 disabled:opacity-50">
+                class="mt-4 w-full rounded-xl border border-sky-500/40 bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-100 hover:bg-sky-500/25 disabled:opacity-50 sm:w-auto">
                 Aplicar velocidade
               </button>
-              <p id="clip-speed-msg" class="text-[11px] text-slate-500"></p>
+              <p id="clip-speed-msg" class="mt-2 text-[11px] text-slate-500"></p>
             </div>
-          </div>
 
-          <div class="rounded-2xl border border-amber-500/20 bg-slate-900/60 p-4">
-            <p class="text-xs font-semibold uppercase tracking-wide text-amber-300">Música de fundo</p>
-            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">
-              Trilhas padronizadas (baixo volume para não cobrir a fala). Troque ou remova quando quiser.
-            </p>
-            <label class="mt-3 block text-sm">
-              <span class="text-slate-400">Estilo</span>
-              <select id="clip-bgm-preset" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none">
-                <% presetsLista.forEach((p) => { %>
-                  <option value="<%= p.id %>" <%= bgmPreset === p.id ? 'selected' : '' %> title="<%= p.description %>"><%= p.name %></option>
-                <% }) %>
-              </select>
-            </label>
-            <p id="clip-bgm-desc" class="mt-1.5 text-[11px] text-slate-600">
-              <%= (presetsLista.find((p) => p.id === bgmPreset) || {}).description || '' %>
-            </p>
-            <label class="mt-3 block">
-              <span class="flex items-center justify-between text-[11px] font-medium text-slate-400">
-                Volume da trilha
-                <span class="tabular-nums text-slate-500"><span id="clip-bgm-vol-valor"><%= bgmVolume %></span>%</span>
-              </span>
-              <input id="clip-bgm-volume" type="range" min="5" max="40" step="1" value="<%= bgmVolume %>"
-                class="mt-1.5 w-full accent-amber-500" <%= bgmPreset === 'nenhuma' ? 'disabled' : '' %> />
-            </label>
-            <button type="button" id="btn-bgm-aplicar"
-              class="mt-3 w-full rounded-xl border border-amber-500/40 bg-amber-500/15 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-500/25 disabled:opacity-50">
-              <%= bgmPreset === 'nenhuma' ? 'Remover música' : 'Aplicar música' %>
-            </button>
-            <p id="clip-bgm-msg" class="mt-2 text-[11px] text-slate-500"></p>
+            <div class="rounded-2xl border border-amber-500/20 bg-slate-900/60 p-5">
+              <p class="text-xs font-semibold uppercase tracking-wide text-amber-300">Música de fundo</p>
+              <p class="mt-1 text-[11px] leading-relaxed text-slate-500">
+                Trilhas padronizadas (baixo volume para não cobrir a fala). Troque ou remova quando quiser.
+              </p>
+              <label class="mt-3 block text-sm">
+                <span class="text-slate-400">Estilo</span>
+                <select id="clip-bgm-preset" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none">
+                  <% presetsLista.forEach((p) => { %>
+                    <option value="<%= p.id %>" <%= bgmPreset === p.id ? 'selected' : '' %> title="<%= p.description %>"><%= p.name %></option>
+                  <% }) %>
+                </select>
+              </label>
+              <p id="clip-bgm-desc" class="mt-1.5 text-[11px] text-slate-600">
+                <%= (presetsLista.find((p) => p.id === bgmPreset) || {}).description || '' %>
+              </p>
+              <label class="mt-3 block">
+                <span class="flex items-center justify-between text-[11px] font-medium text-slate-400">
+                  Volume da trilha
+                  <span class="tabular-nums text-slate-500"><span id="clip-bgm-vol-valor"><%= bgmVolume %></span>%</span>
+                </span>
+                <input id="clip-bgm-volume" type="range" min="5" max="40" step="1" value="<%= bgmVolume %>"
+                  class="mt-1.5 w-full accent-amber-500" <%= bgmPreset === 'nenhuma' ? 'disabled' : '' %> />
+              </label>
+              <button type="button" id="btn-bgm-aplicar"
+                class="mt-3 w-full rounded-xl border border-amber-500/40 bg-amber-500/15 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-500/25 disabled:opacity-50 sm:w-auto">
+                <%= bgmPreset === 'nenhuma' ? 'Remover música' : 'Aplicar música' %>
+              </button>
+              <p id="clip-bgm-msg" class="mt-2 text-[11px] text-slate-500"></p>
+            </div>
+          </section>
+        </div>
+
+        <aside class="space-y-4 lg:sticky lg:top-4 lg:self-start">
+          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase tracking-wide text-violet-300">Preview</span>
+              <span class="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400"><%= ratio %></span>
+            </div>
+            <% if (videoUrl) { %>
+              <video id="clip-video" class="block aspect-[9/16] max-h-[420px] w-full rounded-xl border border-slate-700 bg-black object-contain" controls playsinline
+                src="<%= videoUrl %>?t=<%= Date.now() %>"></video>
+            <% } else { %>
+              <div class="flex min-h-[240px] items-center justify-center rounded-xl border border-dashed border-slate-700 text-xs text-slate-500">Sem arquivo</div>
+            <% } %>
           </div>
 
           <div class="rounded-2xl border border-[#1877F2]/30 bg-slate-900/60 p-4">
@@ -586,5 +613,5 @@
       speedOptions: <%- JSON.stringify(speedOptions) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731speed"></script>
+  <script src="/js/fila-corte.js?v=20260731capaoff"></script>
 <%- include('partials/app-end') %>

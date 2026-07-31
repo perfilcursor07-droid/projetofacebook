@@ -144,7 +144,6 @@ async function publicarSePronto({ videoId, clipId = null, matterId = null }) {
   const ready =
     clip?.status === 'pronto' &&
     clip?.materia_status === 'pronta' &&
-    clip?.capa_status === 'pronta' &&
     Boolean(clip?.caminho_arquivo);
   if (!ready) return { published: false, reason: 'pipeline_pending' };
 

@@ -167,36 +167,20 @@ async function recoverStuckJobs() {
     queueClipMateriaAndCover(clip, video, { userId: video.user_id });
   }
 
-  // Clip com matéria pronta mas capa faltando / presa / erro → refaz só a capa
-  const needCapa = await db('video_clips')
-    .where({ status: 'pronto' })
+  // Capa presa em "gerando" após restart → conclui só o que o usuário pediu (não auto-cria capa)
+  const stuckCapa = await db('video_clips')
+    .where({ status: 'pronto', capa_status: 'gerando' })
     .whereNotNull('caminho_arquivo')
-    .where(function whereCapa() {
-      this.whereNull('capa_status')
-        .orWhereIn('capa_status', ['pendente', 'gerando', 'erro'])
-        .orWhere(function noCoverFile() {
-          this.where('capa_status', 'pronta').andWhere(function pathCheck() {
-            this.whereNull('caminho_arquivo').orWhere('caminho_arquivo', 'not like', '%_capa_%');
-          });
-        });
-    })
     .limit(40);
 
-  for (const clip of needCapa) {
+  for (const clip of stuckCapa) {
     if (!clip.caminho_arquivo && !clip.arquivo_sem_capa) continue;
-    // Evita duplicar com needPostProcess
-    if (['pendente', 'gerando'].includes(String(clip.materia_status || '')) && !clip.legenda_sugerida) {
-      continue;
-    }
     const video = await Videos.findById(clip.video_id);
     if (!video) continue;
-    console.log(`[recover] reenfileirando capa do corte #${clip.id} (status=${clip.capa_status || 'null'})`);
+    console.log(`[recover] concluindo capa pedida do corte #${clip.id} (status=gerando)`);
     const { queueClipCover } = require('./clipPostProcessService');
     try {
-      // Libera status preso em "gerando" após restart
-      if (clip.capa_status === 'gerando') {
-        await VideoClips.update(clip.id, { capa_status: 'pendente' });
-      }
+      await VideoClips.update(clip.id, { capa_status: 'pendente' });
       await queueClipCover({
         clipId: clip.id,
         userId: video.user_id,
@@ -211,7 +195,7 @@ async function recoverStuckJobs() {
     .where({ materia_status: 'gerando' })
     .update({ materia_status: 'pendente' });
 
-  if (pendingReels || stuckClips.length || needPostProcess.length || needCapa.length || nImgs) {
+  if (pendingReels || stuckClips.length || needPostProcess.length || stuckCapa.length || nImgs) {
     console.log(
       `[recover] downloads Reel=${pendingReels}, cortes=${stuckClips.length}, pós-processo=${needPostProcess.length}, capas=${needCapa.length}, imagens matéria reset=${nImgs}`
     );

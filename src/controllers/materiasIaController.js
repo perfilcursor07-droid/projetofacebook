@@ -987,21 +987,30 @@ async function sugerirTitulo(req, res, next) {
     let videoUrl = null;
     let aviso = null;
 
-    // Reel: regenera capa no início do vídeo com modelo Minha marca + novo título
+    // Reel: regenera capa só se o editor já tinha incluído a capa
     if (updated.tipo_publicacao === 'reel' && updated.video_clip_id) {
       try {
-        const { applyCoverToClipNow } = require('../services/clipPostProcessService');
-        await applyCoverToClipNow({
-          clipId: updated.video_clip_id,
-          userId: req.session.userId,
-          titulo: sugerido.titulo,
-          force: true,
-        });
-        updated = await AiMatters.findById(matterId);
-        if (updated.video_path) {
-          videoUrl = `/media/${String(updated.video_path).replace(/\\/g, '/')}`;
+        const VideoClips = require('../models/VideoClips');
+        const clipCapa = await VideoClips.findById(updated.video_clip_id);
+        const temCapa =
+          clipCapa?.capa_status === 'pronta' ||
+          (clipCapa?.caminho_arquivo && /_capa_/i.test(String(clipCapa.caminho_arquivo)));
+        if (temCapa) {
+          const { applyCoverToClipNow } = require('../services/clipPostProcessService');
+          await applyCoverToClipNow({
+            clipId: updated.video_clip_id,
+            userId: req.session.userId,
+            titulo: sugerido.titulo,
+            force: true,
+          });
+          updated = await AiMatters.findById(matterId);
+          if (updated.video_path) {
+            videoUrl = `/media/${String(updated.video_path).replace(/\\/g, '/')}`;
+          }
+          aviso = 'Novo título aplicado e capa do Reel atualizada (Minha marca) ✓';
+        } else {
+          aviso = 'Novo título aplicado (capa do Reel continua desmarcada)';
         }
-        aviso = 'Novo título aplicado e capa do Reel atualizada (Minha marca) ✓';
       } catch (err) {
         aviso = `Título atualizado, mas a capa do Reel não foi regenerada: ${err.message}`;
       }

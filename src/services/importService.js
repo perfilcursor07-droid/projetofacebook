@@ -690,7 +690,7 @@ function queueLinkImportAsReel(video, { facebookPageId = null, matterId = null }
             clip: ready,
             video: fresh,
           });
-          if (ready.materia_status !== 'pronta' || ready.capa_status !== 'pronta') {
+          if (ready.materia_status !== 'pronta') {
             const { queueClipMateriaAndCover } = require('./clipPostProcessService');
             queueClipMateriaAndCover(ready, fresh, {
               userId: fresh.user_id,

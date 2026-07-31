@@ -2,6 +2,58 @@
   const cfg = window.__CLIP_EDIT__;
   if (!cfg?.id || !cfg.canEdit) return;
 
+  /* —— Abas: Matéria | Layout do Reel | Áudio —— */
+  const TAB_STYLES = {
+    on: 'corte-tab-btn rounded-xl bg-violet-500 px-3.5 py-2 text-xs font-semibold text-white sm:px-4',
+    off: 'corte-tab-btn rounded-xl px-3.5 py-2 text-xs font-medium text-slate-400 hover:text-white sm:px-4',
+  };
+  // Layout usa fuchsia quando ativa
+  const TAB_ON = {
+    materia: 'corte-tab-btn rounded-xl bg-violet-500 px-3.5 py-2 text-xs font-semibold text-white sm:px-4',
+    layout: 'corte-tab-btn rounded-xl bg-fuchsia-500 px-3.5 py-2 text-xs font-semibold text-white sm:px-4',
+    audio: 'corte-tab-btn rounded-xl bg-sky-500 px-3.5 py-2 text-xs font-semibold text-white sm:px-4',
+  };
+
+  function setCorteTab(tabId) {
+    const id = ['materia', 'layout', 'audio'].includes(tabId) ? tabId : 'materia';
+    document.querySelectorAll('[data-corte-tab-panel]').forEach((panel) => {
+      const on = panel.getAttribute('data-corte-tab-panel') === id;
+      if (on) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', '');
+    });
+    document.querySelectorAll('[data-corte-tab-btn]').forEach((btn) => {
+      const key = btn.getAttribute('data-corte-tab-btn');
+      const on = key === id;
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      btn.className = on ? TAB_ON[key] || TAB_STYLES.on : TAB_STYLES.off;
+    });
+    try {
+      const url = new URL(window.location.href);
+      if (id === 'materia') url.hash = '';
+      else url.hash = id;
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  document.getElementById('corte-tabs')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-corte-tab-btn]');
+    if (!btn) return;
+    setCorteTab(btn.getAttribute('data-corte-tab-btn'));
+  });
+
+  const hashTab = String(window.location.hash || '')
+    .replace(/^#/, '')
+    .toLowerCase();
+  const initialTab =
+    hashTab === 'layout' || hashTab === 'audio' || hashTab === 'materia'
+      ? hashTab
+      : cfg.splitAtivo || cfg.splitStatus === 'gerando'
+        ? 'layout'
+        : 'materia';
+  setCorteTab(initialTab);
+
   const statusEl = document.getElementById('clip-status');
   const pageSelect = document.getElementById('clip-page');
   const materiaEl = document.getElementById('clip-materia');

@@ -264,8 +264,8 @@ async function applyCoverToClipNow({ clipId, userId, titulo = null, force = fals
 }
 
 /**
- * Pipeline automático após o corte: fala → matéria → capa.
- * Usado ao finalizar o ffmpeg e também pelo botão "Gerar matéria".
+ * Pipeline automático após o corte: fala → matéria.
+ * A capa NÃO é aplicada por padrão — o editor marca “Incluir capa” ou clica em Gerar capa.
  */
 function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, force = false } = {}) {
   const uid = userId || video?.user_id;
@@ -276,23 +276,7 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
       const current = await VideoClips.findById(clip.id);
       if (!current || !current.caminho_arquivo) return;
       if (!force && current.materia_status === 'pronta' && current.legenda_sugerida) {
-        // Já tem matéria — garante a capa (refaz se ficou presa em gerando/erro)
-        const capaOk =
-          current.capa_status === 'pronta' &&
-          current.caminho_arquivo &&
-          /_capa_/i.test(String(current.caminho_arquivo));
-        if (!capaOk) {
-          try {
-            await applyCoverToClipNow({
-              clipId: current.id,
-              userId: uid,
-              titulo: current.capa_titulo || null,
-              force: current.capa_status === 'gerando' || current.capa_status === 'erro',
-            });
-          } catch (capaErr) {
-            console.error(`[capa] auto clip ${current.id}:`, capaErr.message || capaErr);
-          }
-        }
+        // Matéria pronta — capa fica opcional (só sob demanda no /fila/corte)
         return;
       }
 
@@ -394,7 +378,7 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
           idioma,
         });
       } catch (aiErr) {
-        // Sem DeepSeek ou falha: ainda gera capa com título do vídeo
+        // Sem DeepSeek ou falha: só marca erro — capa fica opcional no /fila/corte
         console.warn(`[materia] clip ${clip.id}:`, aiErr.message || aiErr);
         const tituloCapa = resolveCapaTitulo({
           videoTitulo: video.titulo || video.termo_busca,
@@ -404,16 +388,6 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
           capa_titulo: tituloCapa,
           erro_mensagem: `Matéria falhou: ${String(aiErr.message || aiErr).slice(0, 400)}`,
         });
-        try {
-          await applyCoverToClipNow({
-            clipId: clip.id,
-            userId: uid,
-            titulo: tituloCapa,
-            force: true,
-          });
-        } catch (capaErr) {
-          console.error(`[capa] auto clip ${clip.id}:`, capaErr.message || capaErr);
-        }
         try {
           const freshClip = await VideoClips.findById(clip.id);
           const meta =
@@ -448,21 +422,7 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
         erro_mensagem: null,
       });
 
-      // Aplica a capa no mesmo job (evita fila aninhada e status "gerando" preso)
-      try {
-        await applyCoverToClipNow({
-          clipId: clip.id,
-          userId: uid,
-          titulo: tituloCapa,
-          force: true,
-        });
-      } catch (capaErr) {
-        console.error(`[capa] auto clip ${clip.id}:`, capaErr.message || capaErr);
-        await VideoClips.update(clip.id, {
-          capa_status: 'erro',
-          erro_mensagem: `Capa falhou: ${String(capaErr.message || capaErr).slice(0, 400)}`,
-        });
-      }
+      // Capa NÃO é aplicada automaticamente — o editor opta em “Incluir capa” / Gerar capa.
 
       // Reel via /conteudo → atualiza a matéria em /materias-ia
       try {
@@ -506,20 +466,6 @@ function queueClipMateriaAndCover(clip, video, { tema = null, userId = null, for
         materia_status: 'erro',
         erro_mensagem: `Matéria falhou: ${String(err.message || err).slice(0, 400)}`,
       });
-      // Não relança: a fila não precisa “falhar” — capa ainda pode ser tentada
-      try {
-        const tituloCapa = resolveCapaTitulo({
-          videoTitulo: video?.titulo || video?.termo_busca,
-        });
-        await applyCoverToClipNow({
-          clipId: clip.id,
-          userId: uid,
-          titulo: tituloCapa,
-          force: true,
-        });
-      } catch (capaErr) {
-        console.warn(`[capa] após erro matéria clip ${clip.id}:`, capaErr.message);
-      }
       try {
         const meta =
           video?.metadata && typeof video.metadata === 'object' ? video.metadata : {};

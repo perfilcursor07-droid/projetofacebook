@@ -397,7 +397,7 @@
     setGenerating(
       true,
       isReel
-        ? 'Baixando o Reel, transcrevendo a fala, gerando a legenda e aplicando a capa no início…'
+        ? 'Baixando o Reel, transcrevendo a fala e gerando a legenda…'
         : looksPhotoPost
           ? 'Extraindo texto e imagem do post, reescrevendo com IA… Depois você pode trocar a foto por outra sugerida.'
           : 'Lendo o link (texto + imagem), montando o furo e reescrevendo. Em seguida você revisa a matéria.'
