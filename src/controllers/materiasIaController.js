@@ -837,6 +837,16 @@ async function agendar(req, res, next) {
       matterId,
       runAt: body.run_at || body.runAt,
     });
+    try {
+      const agendaService = require('../services/bibliotecaAgendaService');
+      await agendaService.sincronizarAgendamentoDaMateria(
+        req.session.userId,
+        matterId,
+        result.runAt
+      );
+    } catch (syncErr) {
+      console.warn('[materias-ia] sync agenda biblioteca:', syncErr.message);
+    }
     res.json({ ok: true, ...result });
   } catch (err) {
     next(err);

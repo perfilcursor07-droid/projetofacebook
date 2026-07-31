@@ -189,43 +189,21 @@ async function sincronizarComMaterias(userId, itens) {
     const agendaSt = String(row.status || '');
     const matterSt = String(row.matter_status || '');
     try {
-      // NÃO promover pendente → confirmado só porque a matéria está "agendado".
-      // Isso fazia posts saírem sem o usuário clicar em Confirmar.
-      // Se a agenda ainda é pré-agendada, cancela o agendamento indevido da matéria.
-      if (matterSt === 'agendado' && agendaSt === 'pendente') {
-        try {
-          await db('ai_matters').where({ id: row.matter_id }).update({
-            status: 'pronto',
-            scheduled_at: null,
-            updated_at: db.fn.now(),
-          });
-          await db('ai_fila_jobs')
-            .where({ matter_id: row.matter_id, status: 'pendente' })
-            .update({ status: 'cancelado', erro: 'Agenda só pré-agendada — agendamento cancelado' });
-          row.matter_status = 'pronto';
-          row.matter_scheduled_at = null;
-          console.warn(
-            `[agenda] matéria #${row.matter_id} estava agendada sem Confirmar — cancelei a publicação automática`
-          );
-        } catch (err) {
-          console.warn(`[agenda] revert matéria #${row.matter_id}:`, err.message);
-        }
-      }
       if (matterSt === 'publicado' && agendaSt !== 'publicado') {
         await BibliotecaAgenda.update(row.id, { status: 'publicado' });
         row.status = 'publicado';
       }
-      // NÃO sobrescrever proposed_at com matter_scheduled_at — isso desfaz a compactação 30 em 30.
-      // Se confirmado e o horário da matéria divergir, empurra a agenda → matéria.
+      // Agenda é a fonte do horário. Mesmo pendente aparece como "agendado"
+      // em /minhas-materias, mas tickFilaJobs só publica se a agenda estiver confirmada.
       if (
-        (row.status === 'confirmado' || agendaSt === 'confirmado') &&
         row.matter_id &&
         row.proposed_at &&
-        row.matter_scheduled_at
+        (row.matter_status !== 'agendado' ||
+          !row.matter_scheduled_at ||
+          Math.abs(new Date(row.proposed_at).getTime() - new Date(row.matter_scheduled_at).getTime()) > 60_000)
       ) {
         const a = new Date(row.proposed_at).getTime();
-        const b = new Date(row.matter_scheduled_at).getTime();
-        if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > 60_000) {
+        if (Number.isFinite(a)) {
           try {
             const result = await materiaIaService.agendarMateria({
               userId,
@@ -237,6 +215,7 @@ async function sincronizarComMaterias(userId, itens) {
               row.proposed_at = result.runAt;
             }
             row.matter_scheduled_at = result?.runAt || row.proposed_at;
+            row.matter_status = 'agendado';
           } catch {
             /* mantém horário da agenda mesmo se a fila falhar */
           }
@@ -955,11 +934,25 @@ async function montarAgendaAmanha({
           status: 'pendente',
           matched_keyword: matchedKeyword || null,
         });
+        let finalProposedAt = proposedAt;
+        try {
+          const ag = await materiaIaService.agendarMateria({
+            userId,
+            matterId,
+            runAt: proposedAt.toISOString(),
+          });
+          if (ag?.runAt && new Date(ag.runAt).getTime() !== proposedAt.getTime()) {
+            finalProposedAt = new Date(ag.runAt);
+            await BibliotecaAgenda.update(id, { proposed_at: finalProposedAt });
+          }
+        } catch (err) {
+          console.warn(`[agenda] sync matéria #${matterId} ao criar agenda:`, err.message);
+        }
         criados.push({
           id,
           postId: post.id,
           matterId,
-          proposedAt,
+          proposedAt: finalProposedAt,
           matched_keyword: matchedKeyword || null,
         });
         jaNaAgenda.add(Number(post.id));
@@ -1103,6 +1096,26 @@ async function confirmarAgendamento(userId, id) {
   const finalRunAt = result?.runAt ? new Date(result.runAt) : runAtDate;
   await BibliotecaAgenda.update(item.id, { status: 'confirmado', proposed_at: finalRunAt });
   return { ok: true, ...result };
+}
+
+async function sincronizarAgendamentoDaMateria(userId, matterId, runAt) {
+  const id = Number(matterId || 0);
+  if (!id || !runAt) return { ok: true, synced: false };
+  const item = await db(BibliotecaAgenda.table)
+    .where({ user_id: userId, matter_id: id })
+    .whereNotIn('status', ['cancelado', 'publicado'])
+    .orderBy('id', 'desc')
+    .first();
+  if (!item) return { ok: true, synced: false };
+
+  const parsed = runAt instanceof Date ? runAt : new Date(runAt);
+  if (Number.isNaN(parsed.getTime())) return { ok: true, synced: false };
+
+  await BibliotecaAgenda.update(item.id, {
+    proposed_at: parsed,
+    status: 'confirmado',
+  });
+  return { ok: true, synced: true, agendaId: item.id, proposed_at: parsed };
 }
 
 async function publicarAgora(userId, id) {
@@ -1387,6 +1400,7 @@ module.exports = {
   montarAgendaAmanha,
   atualizarHorario,
   confirmarAgendamento,
+  sincronizarAgendamentoDaMateria,
   publicarAgora,
   excluirItem,
   readequarHorariosPendentes,
