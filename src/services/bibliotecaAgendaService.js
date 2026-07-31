@@ -193,9 +193,30 @@ async function sincronizarComMaterias(userId, itens) {
         await BibliotecaAgenda.update(row.id, { status: 'publicado' });
         row.status = 'publicado';
       }
-      // Agenda é a fonte do horário. Mesmo pendente aparece como "agendado"
-      // em /minhas-materias, mas tickFilaJobs só publica se a agenda estiver confirmada.
+      // Pré-agendado NÃO pode aparecer como agendado em /minhas-materias.
+      // Só confirmar agenda (ou Agendar no editor) cria scheduled_at/job.
+      if (matterSt === 'agendado' && agendaSt === 'pendente') {
+        try {
+          await db('ai_matters').where({ id: row.matter_id }).update({
+            status: 'pronto',
+            scheduled_at: null,
+            updated_at: db.fn.now(),
+          });
+          await db('ai_fila_jobs')
+            .where({ matter_id: row.matter_id, status: 'pendente' })
+            .update({
+              status: 'cancelado',
+              erro: 'Agenda pré-agendada — só agenda ao Confirmar',
+            });
+          row.matter_status = 'pronto';
+          row.matter_scheduled_at = null;
+        } catch (err) {
+          console.warn(`[agenda] cancelar pré-agendada #${row.matter_id}:`, err.message);
+        }
+      }
+      // Agenda confirmada é a fonte do horário.
       if (
+        (row.status === 'confirmado' || agendaSt === 'confirmado') &&
         row.matter_id &&
         row.proposed_at &&
         (row.matter_status !== 'agendado' ||
@@ -934,25 +955,11 @@ async function montarAgendaAmanha({
           status: 'pendente',
           matched_keyword: matchedKeyword || null,
         });
-        let finalProposedAt = proposedAt;
-        try {
-          const ag = await materiaIaService.agendarMateria({
-            userId,
-            matterId,
-            runAt: proposedAt.toISOString(),
-          });
-          if (ag?.runAt && new Date(ag.runAt).getTime() !== proposedAt.getTime()) {
-            finalProposedAt = new Date(ag.runAt);
-            await BibliotecaAgenda.update(id, { proposed_at: finalProposedAt });
-          }
-        } catch (err) {
-          console.warn(`[agenda] sync matéria #${matterId} ao criar agenda:`, err.message);
-        }
         criados.push({
           id,
           postId: post.id,
           matterId,
-          proposedAt: finalProposedAt,
+          proposedAt,
           matched_keyword: matchedKeyword || null,
         });
         jaNaAgenda.add(Number(post.id));
@@ -1116,6 +1123,35 @@ async function sincronizarAgendamentoDaMateria(userId, matterId, runAt) {
     status: 'confirmado',
   });
   return { ok: true, synced: true, agendaId: item.id, proposed_at: parsed };
+}
+
+async function cancelarAgendamentosPendentesDaBiblioteca(userId) {
+  const rows = await db(`${BibliotecaAgenda.table} as a`)
+    .join('ai_matters as m', 'm.id', 'a.matter_id')
+    .where('a.user_id', userId)
+    .where('a.status', 'pendente')
+    .where('m.status', 'agendado')
+    .select('a.id as agenda_id', 'm.id as matter_id');
+
+  let cancelados = 0;
+  for (const row of rows || []) {
+    await db('ai_matters').where({ id: row.matter_id, user_id: userId }).update({
+      status: 'pronto',
+      scheduled_at: null,
+      updated_at: db.fn.now(),
+    });
+    await db('ai_fila_jobs')
+      .where({ matter_id: row.matter_id, status: 'pendente' })
+      .update({
+        status: 'cancelado',
+        erro: 'Agenda pré-agendada — só agenda ao Confirmar',
+      });
+    cancelados += 1;
+  }
+  if (cancelados) {
+    console.warn(`[agenda] user #${userId}: ${cancelados} matéria(s) pré-agendada(s) removidas de /minhas-materias`);
+  }
+  return { cancelados };
 }
 
 async function publicarAgora(userId, id) {
@@ -1401,6 +1437,7 @@ module.exports = {
   atualizarHorario,
   confirmarAgendamento,
   sincronizarAgendamentoDaMateria,
+  cancelarAgendamentosPendentesDaBiblioteca,
   publicarAgora,
   excluirItem,
   readequarHorariosPendentes,

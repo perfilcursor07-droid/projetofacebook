@@ -632,6 +632,8 @@ async function listMinhasMaterias(req, res, next) {
 
     if (statusFilter === 'agendado') {
       try {
+        const agendaService = require('../services/bibliotecaAgendaService');
+        await agendaService.cancelarAgendamentosPendentesDaBiblioteca(req.session.userId);
         await materiaIaService.repararAgendamentosSobrepostos(req.session.userId, {
           intervaloMinutos: 30,
         });
