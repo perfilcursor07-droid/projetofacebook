@@ -232,7 +232,8 @@ async function montarSplit(req, res, next) {
       frameSegundo: body.frame_segundo ?? body.frameSegundo,
       videoOffset: body.video_offset ?? body.videoOffset,
       imageOffset: body.imagem_offset ?? body.imageOffset,
-      imagemLado: body.imagem_lado ?? body.imagemLado,
+      imagemLado: body.imagem_lado ?? body.imagemLado ?? body.imagem_pos,
+      modo: body.modo ?? body.split_modo ?? body.layout_split,
       texto: body.texto ?? body.split_texto,
       textoPosicao: body.texto_posicao ?? body.textoPosicao ?? body.split_texto_posicao,
       textoTamanho: body.texto_tamanho ?? body.textoTamanho ?? body.split_texto_tamanho,
@@ -260,7 +261,8 @@ async function reenquadrarSplit(req, res, next) {
       userId: req.session.userId,
       videoOffset: body.video_offset ?? body.videoOffset,
       imageOffset: body.imagem_offset ?? body.imageOffset,
-      imagemLado: body.imagem_lado ?? body.imagemLado,
+      imagemLado: body.imagem_lado ?? body.imagemLado ?? body.imagem_pos,
+      modo: body.modo ?? body.split_modo ?? body.layout_split,
       texto: body.texto ?? body.split_texto,
       textoPosicao: body.texto_posicao ?? body.textoPosicao ?? body.split_texto_posicao,
       textoTamanho: body.texto_tamanho ?? body.textoTamanho ?? body.split_texto_tamanho,
@@ -351,6 +353,10 @@ async function statusClip(req, res, next) {
       split_imagem_url: clip.split_image_path ? `/media/${clip.split_image_path}` : null,
       split_video_offset: Number(clip.split_video_offset) || 50,
       split_image_offset: Number(clip.split_image_offset) || 50,
+      split_modo: clip.split_modo === 'empilhado' ? 'empilhado' : 'lado',
+      split_imagem_pos: ['direita', 'cima', 'baixo'].includes(clip.split_imagem_pos)
+        ? clip.split_imagem_pos
+        : 'esquerda',
       split_texto: clip.split_texto || '',
       split_texto_posicao: ['topo', 'meio'].includes(clip.split_texto_posicao)
         ? clip.split_texto_posicao

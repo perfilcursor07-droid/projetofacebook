@@ -121,16 +121,29 @@ function clampOffset(value, fallback = 50) {
 }
 
 /**
- * Escala cobrindo a metade e recorta na posição pedida.
- * offset 0 = encostado à esquerda, 0.5 = centro, 1 = encostado à direita.
+ * Escala cobrindo o painel e recorta na posição pedida.
+ * axis 'x' (lado a lado): offset empurra horizontalmente.
+ * axis 'y' (empilhado): offset empurra verticalmente — enquadramento horizontal.
  */
-function coverHalfFilter(halfWidth, height, offset) {
-  const x = `(iw-ow)*${offset.toFixed(4)}`;
+function coverPaneFilter(paneW, paneH, offset, axis = 'x') {
+  const o = Number(offset).toFixed(4);
+  if (axis === 'y') {
+    return [
+      `scale=${paneW}:${paneH}:force_original_aspect_ratio=increase`,
+      `crop=${paneW}:${paneH}:(iw-ow)/2:(ih-oh)*${o}`,
+      'setsar=1',
+    ].join(',');
+  }
   return [
-    `scale=${halfWidth}:${height}:force_original_aspect_ratio=increase`,
-    `crop=${halfWidth}:${height}:${x}:(ih-oh)/2`,
+    `scale=${paneW}:${paneH}:force_original_aspect_ratio=increase`,
+    `crop=${paneW}:${paneH}:(iw-ow)*${o}:(ih-oh)/2`,
     'setsar=1',
   ].join(',');
+}
+
+/** @deprecated use coverPaneFilter */
+function coverHalfFilter(halfWidth, height, offset) {
+  return coverPaneFilter(halfWidth, height, offset, 'x');
 }
 
 /**
@@ -151,18 +164,13 @@ function extractFrame(inputPath, outputPath, atSecond = 0.5) {
 }
 
 /**
- * Monta a tela dividida: imagem fixa na esquerda, vídeo na direita, meio a meio.
- * Cada lado é escalado para cobrir sua metade e recortado no offset escolhido,
- * então nada é esticado — o usuário só empurra o enquadramento.
+ * Monta a tela dividida 9:16.
+ * - modo "lado": imagem | vídeo (hstack)
+ * - modo "empilhado": imagem acima/abaixo do vídeo (vstack) — cada metade em landscape
  *
  * @param {object} opts
- * @param {string} opts.videoPath vídeo (corte já pronto)
- * @param {string} opts.imagePath imagem da metade esquerda
- * @param {string} opts.outputPath mp4 de saída
- * @param {number} [opts.videoOffset] 0–100 (padrão 50)
- * @param {number} [opts.imageOffset] 0–100 (padrão 50)
- * @param {string} [opts.aspectRatio] "9:16" | "1:1"
- * @param {'esquerda'|'direita'} [opts.imagemLado] lado da imagem (padrão esquerda)
+ * @param {'lado'|'empilhado'} [opts.modo]
+ * @param {'esquerda'|'direita'|'cima'|'baixo'} [opts.imagemLado]
  * @returns {Promise<{ width: number, height: number }>}
  */
 function renderSplitScreen({
@@ -173,12 +181,27 @@ function renderSplitScreen({
   imageOffset = 50,
   aspectRatio = '9:16',
   imagemLado = 'esquerda',
+  modo = 'lado',
 }) {
   const canvas = SPLIT_CANVAS[aspectRatio] || SPLIT_CANVAS['9:16'];
+  const width = canvas.width;
   const height = canvas.height;
-  const halfWidth = Math.round(canvas.width / 2);
+  const empilhado = String(modo) === 'empilhado';
+  const paneW = empilhado ? width : Math.round(width / 2);
+  const paneH = empilhado ? Math.round(height / 2) : height;
+  const axis = empilhado ? 'y' : 'x';
   const imgOffset = clampOffset(imageOffset);
   const vidOffset = clampOffset(videoOffset);
+  const pos = String(imagemLado || '');
+
+  let stackFilter;
+  if (empilhado) {
+    stackFilter =
+      pos === 'baixo' ? '[vid][img]vstack=inputs=2[v]' : '[img][vid]vstack=inputs=2[v]';
+  } else {
+    stackFilter =
+      pos === 'direita' ? '[vid][img]hstack=inputs=2[v]' : '[img][vid]hstack=inputs=2[v]';
+  }
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
@@ -186,11 +209,9 @@ function renderSplitScreen({
     const command = ffmpeg().input(videoPath).input(imagePath).inputOptions(['-loop', '1']);
 
     const filters = [
-      `[0:v]${coverHalfFilter(halfWidth, height, vidOffset)},fps=${OUTPUT_FPS}[vid]`,
-      `[1:v]${coverHalfFilter(halfWidth, height, imgOffset)}[img]`,
-      imagemLado === 'direita'
-        ? '[vid][img]hstack=inputs=2[v]'
-        : '[img][vid]hstack=inputs=2[v]',
+      `[0:v]${coverPaneFilter(paneW, paneH, vidOffset, axis)},fps=${OUTPUT_FPS}[vid]`,
+      `[1:v]${coverPaneFilter(paneW, paneH, imgOffset, axis)}[img]`,
+      stackFilter,
     ];
 
     command
@@ -217,7 +238,7 @@ function renderSplitScreen({
         '-movflags', '+faststart',
       ])
       .on('error', (err) => reject(err))
-      .on('end', () => resolve({ width: halfWidth * 2, height }))
+      .on('end', () => resolve({ width, height }))
       .save(outputPath);
   });
 }

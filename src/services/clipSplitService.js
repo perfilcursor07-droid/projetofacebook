@@ -60,6 +60,23 @@ function normalizarPosicaoTexto(raw) {
   return 'rodape';
 }
 
+function normalizarModoSplit(raw) {
+  const v = String(raw || '').toLowerCase();
+  if (v === 'empilhado' || v === 'cima' || v === 'vertical' || v === 'stack') return 'empilhado';
+  return 'lado';
+}
+
+/** Posição da imagem: esquerda/direita (lado) ou cima/baixo (empilhado). */
+function normalizarImagemPos(raw, modo) {
+  const v = String(raw || '').toLowerCase();
+  if (modo === 'empilhado') {
+    if (v === 'baixo' || v === 'direita' || v === 'bottom') return 'baixo';
+    return 'cima';
+  }
+  if (v === 'direita' || v === 'baixo' || v === 'right') return 'direita';
+  return 'esquerda';
+}
+
 function yBlocoTexto(posicao, h, blockH, padTopo = 0, padRodape = 0) {
   if (posicao === 'topo') return padTopo;
   if (posicao === 'meio') return Math.max(0, Math.round((h - blockH) / 2));
@@ -535,6 +552,7 @@ async function aplicarSplitAgora({
   videoOffset,
   imageOffset,
   imagemLado,
+  modo,
   texto,
   textoPosicao,
   textoTamanho,
@@ -567,11 +585,21 @@ async function aplicarSplitAgora({
     /* usa defaults */
   }
 
-  const posicaoFinal = normalizarPosicaoTexto(
+  const modoFinal = normalizarModoSplit(
+    modo != null ? modo : clip.split_modo
+  );
+  const imagemPosFinal = normalizarImagemPos(
+    imagemLado != null ? imagemLado : clip.split_imagem_pos,
+    modoFinal
+  );
+
+  // Empilhado: texto no meio (caixa central na divisão), como no Reel de referência.
+  const posicaoRaw =
     textoPosicao != null
       ? textoPosicao
-      : clip.split_texto_posicao || videoBrandModelMeta(videoModelo).posicaoPadrao
-  );
+      : clip.split_texto_posicao ||
+        (modoFinal === 'empilhado' ? 'meio' : videoBrandModelMeta(videoModelo).posicaoPadrao);
+  const posicaoFinal = normalizarPosicaoTexto(posicaoRaw);
   const tamanhoFinal = normalizarTamanhoTexto(
     textoTamanho != null ? textoTamanho : clip.split_texto_tamanho,
     100
@@ -601,7 +629,8 @@ async function aplicarSplitAgora({
       videoOffset,
       imageOffset,
       aspectRatio: clip.aspect_ratio === '1:1' ? '1:1' : '9:16',
-      imagemLado,
+      imagemLado: imagemPosFinal,
+      modo: modoFinal,
     });
 
     if (textoFinal) {
@@ -644,6 +673,8 @@ async function aplicarSplitAgora({
       split_image_path: imagemRelPath,
       split_video_offset: clampOffset(videoOffset),
       split_image_offset: clampOffset(imageOffset),
+      split_modo: modoFinal,
+      split_imagem_pos: imagemPosFinal,
       split_texto: textoFinal || null,
       split_texto_posicao: posicaoFinal,
       split_texto_tamanho: tamanhoFinal,
@@ -702,6 +733,7 @@ async function aplicarSplitNoClip({
   videoOffset,
   imageOffset,
   imagemLado,
+  modo,
   texto,
   textoPosicao,
   textoTamanho,
@@ -727,10 +759,16 @@ async function aplicarSplitNoClip({
     videoOffset: clampOffset(videoOffset, Number(clip.split_video_offset) || 50),
     imageOffset: clampOffset(imageOffset, Number(clip.split_image_offset) || 50),
   };
-  const lado = imagemLado === 'direita' ? 'direita' : 'esquerda';
+  const modoFinal = normalizarModoSplit(modo != null ? modo : clip.split_modo);
+  const lado = normalizarImagemPos(
+    imagemLado != null ? imagemLado : clip.split_imagem_pos,
+    modoFinal
+  );
   const textoFinal = normalizarTextoSplit(texto != null ? texto : clip.split_texto);
   const posicaoFinal = normalizarPosicaoTexto(
-    textoPosicao != null ? textoPosicao : clip.split_texto_posicao
+    textoPosicao != null
+      ? textoPosicao
+      : clip.split_texto_posicao || (modoFinal === 'empilhado' ? 'meio' : 'rodape')
   );
   const tamanhoFinal = normalizarTamanhoTexto(
     textoTamanho != null ? textoTamanho : clip.split_texto_tamanho,
@@ -751,6 +789,8 @@ async function aplicarSplitNoClip({
     split_image_url: imagem.url,
     split_video_offset: offsets.videoOffset,
     split_image_offset: offsets.imageOffset,
+    split_modo: modoFinal,
+    split_imagem_pos: lado,
     split_texto: textoFinal || null,
     split_texto_posicao: posicaoFinal,
     split_texto_tamanho: tamanhoFinal,
@@ -765,6 +805,7 @@ async function aplicarSplitNoClip({
         userId,
         imagemRelPath: imagem.relativePath,
         imagemLado: lado,
+        modo: modoFinal,
         texto: textoFinal,
         textoPosicao: posicaoFinal,
         textoTamanho: tamanhoFinal,
@@ -780,6 +821,8 @@ async function aplicarSplitNoClip({
   return {
     queued: true,
     imagem: `/media/${imagem.relativePath}`,
+    modo: modoFinal,
+    imagem_pos: lado,
     texto: textoFinal || null,
     texto_posicao: posicaoFinal,
     texto_tamanho: tamanhoFinal,
@@ -848,6 +891,7 @@ async function reenquadrarSplit({
   videoOffset,
   imageOffset,
   imagemLado,
+  modo,
   texto,
   textoPosicao,
   textoTamanho,
@@ -864,10 +908,16 @@ async function reenquadrarSplit({
     videoOffset: clampOffset(videoOffset, Number(clip.split_video_offset) || 50),
     imageOffset: clampOffset(imageOffset, Number(clip.split_image_offset) || 50),
   };
-  const lado = imagemLado === 'direita' ? 'direita' : 'esquerda';
+  const modoFinal = normalizarModoSplit(modo != null ? modo : clip.split_modo);
+  const lado = normalizarImagemPos(
+    imagemLado != null ? imagemLado : clip.split_imagem_pos,
+    modoFinal
+  );
   const textoFinal = normalizarTextoSplit(texto != null ? texto : clip.split_texto);
   const posicaoFinal = normalizarPosicaoTexto(
-    textoPosicao != null ? textoPosicao : clip.split_texto_posicao
+    textoPosicao != null
+      ? textoPosicao
+      : clip.split_texto_posicao || (modoFinal === 'empilhado' ? 'meio' : 'rodape')
   );
   const tamanhoFinal = normalizarTamanhoTexto(
     textoTamanho != null ? textoTamanho : clip.split_texto_tamanho,
@@ -884,6 +934,8 @@ async function reenquadrarSplit({
   await VideoClips.update(clip.id, {
     split_status: 'gerando',
     split_erro: null,
+    split_modo: modoFinal,
+    split_imagem_pos: lado,
     split_texto: textoFinal || null,
     split_texto_posicao: posicaoFinal,
     split_texto_tamanho: tamanhoFinal,
@@ -898,6 +950,7 @@ async function reenquadrarSplit({
         userId,
         imagemRelPath: clip.split_image_path,
         imagemLado: lado,
+        modo: modoFinal,
         texto: textoFinal,
         textoPosicao: posicaoFinal,
         textoTamanho: tamanhoFinal,
@@ -912,6 +965,8 @@ async function reenquadrarSplit({
 
   return {
     queued: true,
+    modo: modoFinal,
+    imagem_pos: lado,
     texto: textoFinal || null,
     texto_posicao: posicaoFinal,
     texto_tamanho: tamanhoFinal,
@@ -934,4 +989,6 @@ module.exports = {
   listarFramesDoClip,
   previewBaseUrl,
   baseClipFile,
+  normalizarModoSplit,
+  normalizarImagemPos,
 };

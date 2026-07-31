@@ -13,11 +13,16 @@
   const imagemOffset = Number(clip.split_image_offset);
   const offsetVideo = Number.isFinite(videoOffset) ? videoOffset : 50;
   const offsetImagem = Number.isFinite(imagemOffset) ? imagemOffset : 50;
-  const previewVideo = previewBaseUrl || videoUrl;
+  const splitModo = clip.split_modo === 'empilhado' ? 'empilhado' : 'lado';
+  const splitImagemPosRaw = String(clip.split_imagem_pos || '');
+  const splitImagemPos = splitModo === 'empilhado'
+    ? (splitImagemPosRaw === 'baixo' ? 'baixo' : 'cima')
+    : (splitImagemPosRaw === 'direita' ? 'direita' : 'esquerda');
+  const previewVideo = (typeof previewBaseUrl !== 'undefined' && previewBaseUrl) ? previewBaseUrl : videoUrl;
   const splitTexto = String(clip.split_texto || '');
   const splitTextoPos = ['topo', 'meio'].includes(clip.split_texto_posicao)
     ? clip.split_texto_posicao
-    : 'rodape';
+    : (splitModo === 'empilhado' ? 'meio' : 'rodape');
   const splitTextoTamRaw = Number(clip.split_texto_tamanho);
   const splitTextoTam = Number.isFinite(splitTextoTamRaw)
     ? Math.min(160, Math.max(70, Math.round(splitTextoTamRaw)))
@@ -150,7 +155,8 @@
                   <% } %>
                 </div>
                 <p class="mt-1 text-xs leading-relaxed text-slate-500">
-                  Metade imagem, metade vídeo. Arraste os controles para empurrar cada lado e não cortar o rosto de ninguém.
+                  Duas opções: <strong class="font-medium text-slate-400">lado a lado</strong> ou
+                  <strong class="font-medium text-slate-400">um em cima do outro</strong> (imagem/vídeo horizontal, texto no meio).
                 </p>
               </div>
               <% if (splitAtivo) { %>
@@ -160,23 +166,35 @@
               <% } %>
             </div>
 
+            <div class="mt-3 inline-flex flex-wrap gap-1 rounded-xl border border-slate-700 bg-slate-950 p-1" role="tablist" aria-label="Layout da tela dividida">
+              <button type="button" data-split-modo="lado"
+                class="split-modo-btn rounded-lg px-3 py-1.5 text-xs <%= splitModo === 'lado' ? 'bg-fuchsia-500 font-semibold text-white' : 'text-slate-300 hover:text-white' %>">
+                Lado a lado
+              </button>
+              <button type="button" data-split-modo="empilhado"
+                class="split-modo-btn rounded-lg px-3 py-1.5 text-xs <%= splitModo === 'empilhado' ? 'bg-fuchsia-500 font-semibold text-white' : 'text-slate-300 hover:text-white' %>">
+                Um em cima do outro
+              </button>
+            </div>
+
             <div class="mt-4 grid gap-4 sm:grid-cols-[210px_minmax(0,1fr)]">
               <div>
-                <div id="split-preview" class="relative mx-auto flex aspect-[9/16] w-full max-w-[210px] overflow-hidden rounded-xl border border-slate-700 bg-black">
-                  <div class="relative h-full w-1/2 overflow-hidden bg-slate-950">
+                <div id="split-preview" class="relative mx-auto flex aspect-[9/16] w-full max-w-[210px] overflow-hidden rounded-xl border border-slate-700 bg-black <%= splitModo === 'empilhado' ? 'flex-col' : '' %>"
+                  style="<%= splitModo === 'empilhado' ? (splitImagemPos === 'baixo' ? 'flex-direction:column-reverse' : 'flex-direction:column') : (splitImagemPos === 'direita' ? 'flex-direction:row-reverse' : 'flex-direction:row') %>">
+                  <div id="split-pane-img" class="relative overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
                     <img id="split-img-preview" alt="" class="h-full w-full object-cover <%= splitImagemUrl ? '' : 'hidden' %>"
-                      src="<%= splitImagemUrl || '' %>" style="object-position: <%= offsetImagem %>% 50%;" />
+                      src="<%= splitImagemUrl || '' %>" style="object-position: <%= splitModo === 'empilhado' ? '50% ' + offsetImagem + '%' : offsetImagem + '% 50%' %>;" />
                     <div id="split-img-empty" class="absolute inset-0 flex items-center justify-center px-2 text-center text-[10px] leading-tight text-slate-600 <%= splitImagemUrl ? 'hidden' : '' %>">
                       Escolha a imagem
                     </div>
                   </div>
-                  <div class="h-full w-1/2 overflow-hidden bg-slate-950">
+                  <div id="split-pane-vid" class="overflow-hidden bg-slate-950 <%= splitModo === 'empilhado' ? 'h-1/2 w-full' : 'h-full w-1/2' %>">
                     <% if (previewVideo) { %>
                       <video id="split-video-preview" class="h-full w-full object-cover" muted loop playsinline preload="metadata"
-                        style="object-position: <%= offsetVideo %>% 50%;" src="<%= previewVideo %>#t=0.5"></video>
+                        style="object-position: <%= splitModo === 'empilhado' ? '50% ' + offsetVideo + '%' : offsetVideo + '% 50%' %>;" src="<%= previewVideo %>#t=0.5"></video>
                     <% } %>
                   </div>
-                  <span class="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/20"></span>
+                  <span id="split-divider" class="pointer-events-none absolute bg-white/20 <%= splitModo === 'empilhado' ? 'inset-x-0 top-1/2 h-px -translate-y-1/2' : 'inset-y-0 left-1/2 w-px -translate-x-1/2' %>"></span>
                   <div id="split-texto-preview"
                     class="pointer-events-none absolute inset-x-0 <%= splitTextoPos === 'topo' ? 'top-0' : splitTextoPos === 'meio' ? 'top-1/2 -translate-y-1/2' : 'bottom-0' %> <%= splitTexto ? '' : 'hidden' %> <%= splitTextoPos === 'meio' ? 'bg-black/70 px-1.5 py-1.5' : 'bg-gradient-to-' + (splitTextoPos === 'topo' ? 'b' : 't') + ' from-black/80 to-black/40 px-1.5 py-1.5' %>">
                     <p id="split-texto-preview-p" class="text-center text-[8px] font-extrabold uppercase leading-snug tracking-wide text-white"><%= splitTexto %></p>
@@ -185,7 +203,7 @@
                 <div class="mt-2 flex items-center justify-center gap-2">
                   <button type="button" id="btn-split-play" class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-emerald-300">Testar</button>
                   <button type="button" id="btn-split-lado" class="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 hover:border-fuchsia-500 hover:text-fuchsia-200"
-                    data-lado="esquerda">Trocar lados</button>
+                    data-lado="<%= splitImagemPos %>"><%= splitModo === 'empilhado' ? (splitImagemPos === 'baixo' ? 'Imagem embaixo' : 'Imagem em cima') : (splitImagemPos === 'direita' ? 'Imagem à direita' : 'Imagem à esquerda') %></button>
                 </div>
               </div>
 
@@ -441,10 +459,12 @@
       splitTextoTamanho: <%= splitTextoTam %>,
       splitTextoFundo: <%- JSON.stringify(splitTextoFundo) %>,
       splitTextoFundoCor: <%- JSON.stringify(splitTextoFundoCor) %>,
+      splitModo: <%- JSON.stringify(splitModo) %>,
+      splitImagemPos: <%- JSON.stringify(splitImagemPos) %>,
       bgmPreset: <%- JSON.stringify(bgmPreset) %>,
       bgmVolume: <%= bgmVolume %>,
       bgmPresets: <%- JSON.stringify(presetsLista) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731j"></script>
+  <script src="/js/fila-corte.js?v=20260731k"></script>
 <%- include('partials/app-end') %>

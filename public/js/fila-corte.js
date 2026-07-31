@@ -511,14 +511,20 @@
     const framesBtn = document.getElementById('btn-split-frames');
     const framesResultados = document.getElementById('split-frames-resultados');
     const uploadInput = document.getElementById('split-upload-file');
+    const paneImg = document.getElementById('split-pane-img');
+    const paneVid = document.getElementById('split-pane-vid');
+    const dividerEl = document.getElementById('split-divider');
 
     let fonte = 'busca';
     let imagemEscolhida = cfg.splitImagemUrl || null;
     let frameSegundo = null;
-    let lado = 'esquerda';
+    let modo = cfg.splitModo === 'empilhado' ? 'empilhado' : 'lado';
+    let lado = cfg.splitImagemPos || (modo === 'empilhado' ? 'cima' : 'esquerda');
     let textoPosicao = ['topo', 'meio'].includes(cfg.splitTextoPosicao)
       ? cfg.splitTextoPosicao
-      : 'rodape';
+      : modo === 'empilhado'
+        ? 'meio'
+        : 'rodape';
     let textoTamanho = Number(cfg.splitTextoTamanho) || 100;
     let textoFundo = cfg.splitTextoFundo === 'transparente' ? 'transparente' : 'cor';
     let textoFundoCor = /^#[0-9a-f]{6}$/i.test(String(cfg.splitTextoFundoCor || ''))
@@ -676,19 +682,61 @@
     function aplicarOffsetsNoPreview() {
       const v = Number(videoRange?.value ?? 50);
       const i = Number(imagemRange?.value ?? 50);
-      if (videoPreview) videoPreview.style.objectPosition = v + '% 50%';
-      if (imgPreview) imgPreview.style.objectPosition = i + '% 50%';
+      if (videoPreview) {
+        videoPreview.style.objectPosition = modo === 'empilhado' ? '50% ' + v + '%' : v + '% 50%';
+      }
+      if (imgPreview) {
+        imgPreview.style.objectPosition = modo === 'empilhado' ? '50% ' + i + '%' : i + '% 50%';
+      }
       if (videoValor) videoValor.textContent = v + '%';
       if (imagemValor) imagemValor.textContent = i + '%';
     }
 
-    function aplicarLadoNoPreview() {
+    function rotuloPosicao() {
+      if (modo === 'empilhado') {
+        return lado === 'baixo' ? 'Imagem embaixo' : 'Imagem em cima';
+      }
+      return lado === 'direita' ? 'Imagem à direita' : 'Imagem à esquerda';
+    }
+
+    function aplicarLayoutNoPreview() {
       if (!previewBox) return;
-      previewBox.style.flexDirection = lado === 'direita' ? 'row-reverse' : 'row';
+      if (modo === 'empilhado') {
+        previewBox.style.flexDirection = lado === 'baixo' ? 'column-reverse' : 'column';
+        paneImg?.classList.remove('h-full', 'w-1/2');
+        paneVid?.classList.remove('h-full', 'w-1/2');
+        paneImg?.classList.add('h-1/2', 'w-full');
+        paneVid?.classList.add('h-1/2', 'w-full');
+        if (dividerEl) {
+          dividerEl.className =
+            'pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/20';
+        }
+      } else {
+        previewBox.style.flexDirection = lado === 'direita' ? 'row-reverse' : 'row';
+        paneImg?.classList.remove('h-1/2', 'w-full');
+        paneVid?.classList.remove('h-1/2', 'w-full');
+        paneImg?.classList.add('h-full', 'w-1/2');
+        paneVid?.classList.add('h-full', 'w-1/2');
+        if (dividerEl) {
+          dividerEl.className =
+            'pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/20';
+        }
+      }
       if (ladoBtn) {
         ladoBtn.dataset.lado = lado;
-        ladoBtn.textContent = lado === 'direita' ? 'Imagem à direita' : 'Imagem à esquerda';
+        ladoBtn.textContent = rotuloPosicao();
       }
+      splitPanel.querySelectorAll('.split-modo-btn').forEach((b) => {
+        const on = b.dataset.splitModo === modo;
+        b.className = on
+          ? 'split-modo-btn rounded-lg bg-fuchsia-500 px-3 py-1.5 text-xs font-semibold text-white'
+          : 'split-modo-btn rounded-lg px-3 py-1.5 text-xs text-slate-300 hover:text-white';
+      });
+      aplicarOffsetsNoPreview();
+    }
+
+    function aplicarLadoNoPreview() {
+      aplicarLayoutNoPreview();
     }
 
     function mostrarImagem(url) {
@@ -739,8 +787,36 @@
     });
 
     ladoBtn?.addEventListener('click', () => {
-      lado = lado === 'direita' ? 'esquerda' : 'direita';
+      if (modo === 'empilhado') {
+        lado = lado === 'baixo' ? 'cima' : 'baixo';
+      } else {
+        lado = lado === 'direita' ? 'esquerda' : 'direita';
+      }
       aplicarLadoNoPreview();
+    });
+
+    splitPanel.querySelectorAll('.split-modo-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.dataset.splitModo === 'empilhado' ? 'empilhado' : 'lado';
+        if (next === modo) return;
+        if (next === 'empilhado') {
+          lado = lado === 'direita' ? 'baixo' : 'cima';
+          if (textoPosicao === 'rodape') {
+            textoPosicao = 'meio';
+            splitPanel.querySelectorAll('.split-texto-pos-btn').forEach((b) => {
+              const on = b.dataset.textoPos === 'meio';
+              b.className = on
+                ? 'split-texto-pos-btn rounded-md bg-fuchsia-500 px-2.5 py-1 text-[11px] font-semibold text-white'
+                : 'split-texto-pos-btn rounded-md px-2.5 py-1 text-[11px] text-slate-400 hover:text-white';
+            });
+            syncTextoPreview();
+          }
+        } else {
+          lado = lado === 'baixo' ? 'direita' : 'esquerda';
+        }
+        modo = next;
+        aplicarLayoutNoPreview();
+      });
     });
 
     document.getElementById('btn-split-play')?.addEventListener('click', () => {
@@ -854,6 +930,7 @@
         form.append('video_offset', String(videoOffset));
         form.append('imagem_offset', String(imagemOffset));
         form.append('imagem_lado', lado);
+        form.append('modo', modo);
         form.append('texto', texto);
         form.append('texto_posicao', textoPosicao);
         form.append('texto_tamanho', String(textoTamanho));
@@ -871,6 +948,7 @@
             video_offset: videoOffset,
             imagem_offset: imagemOffset,
             imagem_lado: lado,
+            modo,
             ...textoFields,
           },
           isForm: false,
@@ -893,6 +971,7 @@
           video_offset: videoOffset,
           imagem_offset: imagemOffset,
           imagem_lado: lado,
+          modo,
           ...textoFields,
         },
         isForm: false,
@@ -941,6 +1020,7 @@
           video_offset: Number(videoRange?.value ?? 50),
           imagem_offset: Number(imagemRange?.value ?? 50),
           imagem_lado: lado,
+          modo,
           texto: String(textoInput?.value || '').trim(),
           texto_posicao: textoPosicao,
           texto_tamanho: textoTamanho,
