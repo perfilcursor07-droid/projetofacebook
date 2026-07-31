@@ -11,6 +11,7 @@ router.post('/:id/retry', clipsController.retryClip);
 router.post('/:id/capa', clipsController.gerarCapa);
 router.post('/:id/capa/sugerir-titulo', clipsController.sugerirTituloCapa);
 router.delete('/:id/capa', clipsController.removerCapa);
+router.post('/:id/bgm', clipsController.aplicarBgm);
 
 router.get('/:id/status', clipsController.statusClip);
 

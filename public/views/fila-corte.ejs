@@ -27,6 +27,13 @@
     ? String(clip.split_texto_fundo_cor).toLowerCase()
     : '#000000';
   const capaAtiva = clip.capa_status === 'pronta';
+  const bgmPresetAtual = (typeof defaultBgmPreset !== 'undefined' ? defaultBgmPreset : 'nenhuma');
+  const bgmPreset = String(clip.bgm_preset || bgmPresetAtual);
+  const bgmVolRaw = Number(clip.bgm_volume);
+  const bgmVolume = Number.isFinite(bgmVolRaw)
+    ? Math.min(40, Math.max(5, Math.round(bgmVolRaw)))
+    : (typeof defaultBgmVolume !== 'undefined' ? defaultBgmVolume : 18);
+  const presetsLista = typeof bgmPresets !== 'undefined' && Array.isArray(bgmPresets) ? bgmPresets : [];
 %>
 
   <main class="mx-auto max-w-8xl px-4 py-5 sm:px-6 sm:py-8">
@@ -343,6 +350,37 @@
             <% } %>
           </div>
 
+          <div class="rounded-2xl border border-amber-500/20 bg-slate-900/60 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-amber-300">Música de fundo</p>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">
+              Trilhas padronizadas (baixo volume para não cobrir a fala). Troque ou remova quando quiser.
+            </p>
+            <label class="mt-3 block text-sm">
+              <span class="text-slate-400">Estilo</span>
+              <select id="clip-bgm-preset" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none">
+                <% presetsLista.forEach((p) => { %>
+                  <option value="<%= p.id %>" <%= bgmPreset === p.id ? 'selected' : '' %> title="<%= p.description %>"><%= p.name %></option>
+                <% }) %>
+              </select>
+            </label>
+            <p id="clip-bgm-desc" class="mt-1.5 text-[11px] text-slate-600">
+              <%= (presetsLista.find((p) => p.id === bgmPreset) || {}).description || '' %>
+            </p>
+            <label class="mt-3 block">
+              <span class="flex items-center justify-between text-[11px] font-medium text-slate-400">
+                Volume da trilha
+                <span class="tabular-nums text-slate-500"><span id="clip-bgm-vol-valor"><%= bgmVolume %></span>%</span>
+              </span>
+              <input id="clip-bgm-volume" type="range" min="5" max="40" step="1" value="<%= bgmVolume %>"
+                class="mt-1.5 w-full accent-amber-500" <%= bgmPreset === 'nenhuma' ? 'disabled' : '' %> />
+            </label>
+            <button type="button" id="btn-bgm-aplicar"
+              class="mt-3 w-full rounded-xl border border-amber-500/40 bg-amber-500/15 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-500/25 disabled:opacity-50">
+              <%= bgmPreset === 'nenhuma' ? 'Remover música' : 'Aplicar música' %>
+            </button>
+            <p id="clip-bgm-msg" class="mt-2 text-[11px] text-slate-500"></p>
+          </div>
+
           <div class="rounded-2xl border border-[#1877F2]/30 bg-slate-900/60 p-4">
             <p class="text-xs font-semibold uppercase tracking-wide text-[#1877F2]">Publicar</p>
             <label class="mt-3 block text-sm">
@@ -394,7 +432,10 @@
       splitTextoTamanho: <%= splitTextoTam %>,
       splitTextoFundo: <%- JSON.stringify(splitTextoFundo) %>,
       splitTextoFundoCor: <%- JSON.stringify(splitTextoFundoCor) %>,
+      bgmPreset: <%- JSON.stringify(bgmPreset) %>,
+      bgmVolume: <%= bgmVolume %>,
+      bgmPresets: <%- JSON.stringify(presetsLista) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731g"></script>
+  <script src="/js/fila-corte.js?v=20260731h"></script>
 <%- include('partials/app-end') %>

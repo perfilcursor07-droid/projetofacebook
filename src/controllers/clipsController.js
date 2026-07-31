@@ -8,6 +8,14 @@ const {
 } = require('../services/clipPostProcessService');
 const deepseekService = require('../services/deepseekService');
 const clipSplitService = require('../services/clipSplitService');
+const clipBgmService = require('../services/clipBgmService');
+const {
+  BGM_PRESETS,
+  DEFAULT_BGM_PRESET,
+  DEFAULT_BGM_VOLUME,
+  normalizeBgmPreset,
+  normalizeBgmVolume,
+} = require('../services/clipBgmPresets');
 
 function httpError(message, status) {
   const err = new Error(message);
@@ -352,6 +360,8 @@ async function statusClip(req, res, next) {
       split_texto_fundo_cor: /^#[0-9a-fA-F]{6}$/.test(String(clip.split_texto_fundo_cor || ''))
         ? String(clip.split_texto_fundo_cor).toLowerCase()
         : '#000000',
+      bgm_preset: normalizeBgmPreset(clip.bgm_preset),
+      bgm_volume: normalizeBgmVolume(clip.bgm_volume, DEFAULT_BGM_VOLUME),
       preview_base_url: clipSplitService.previewBaseUrl(clip),
       updated_at: clip.updated_at || null,
     });
@@ -416,6 +426,22 @@ async function sugerirTituloCapa(req, res, next) {
   }
 }
 
+/** Aplica / troca / remove música de fundo no corte. */
+async function aplicarBgm(req, res, next) {
+  try {
+    const { clip } = await assertOwnedClip(req);
+    const body = req.body || {};
+    const result = await clipBgmService.aplicarBgmNoClip({
+      clipId: clip.id,
+      preset: body.preset ?? body.bgm_preset ?? body.musica,
+      volume: body.volume ?? body.bgm_volume,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** Página dedicada: revisar matéria e publicar o corte. */
 async function showClipPage(req, res, next) {
   try {
@@ -437,6 +463,9 @@ async function showClipPage(req, res, next) {
       clip,
       video,
       materia,
+      bgmPresets: BGM_PRESETS,
+      defaultBgmPreset: DEFAULT_BGM_PRESET,
+      defaultBgmVolume: DEFAULT_BGM_VOLUME,
       // Vídeo sem capa/tela dividida: é o que o preview da tela dividida usa.
       previewBaseUrl: clipSplitService.previewBaseUrl(clip),
       splitImagemUrl: clip.split_image_path ? `/media/${clip.split_image_path}` : null,
@@ -461,6 +490,7 @@ module.exports = {
   buscarImagensDoSplit,
   sugerirTextoSplit,
   sugerirTituloCapa,
+  aplicarBgm,
   statusClip,
   queueClipCover,
   resolveCapaTitulo,

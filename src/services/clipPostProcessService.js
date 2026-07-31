@@ -190,6 +190,22 @@ async function applyCoverToClipNow({ clipId, userId, titulo = null, force = fals
       erro_mensagem: null,
     });
 
+    try {
+      const clipBgmService = require('./clipBgmService');
+      // Capa gera arquivo novo: o atual (com capa) vira base sem BGM e remixa se houver preset.
+      const afterCapa = await VideoClips.findById(clipId);
+      if (afterCapa && afterCapa.bgm_preset && afterCapa.bgm_preset !== 'nenhuma') {
+        await VideoClips.update(clipId, { arquivo_sem_bgm: relativePath });
+        await clipBgmService.aplicarBgmNoClip({
+          clipId,
+          preset: afterCapa.bgm_preset,
+          volume: afterCapa.bgm_volume,
+        });
+      }
+    } catch (bgmErr) {
+      console.warn(`[capa] reaplicar BGM clip #${clipId}:`, bgmErr.message || bgmErr);
+    }
+
     const updatedClip = await VideoClips.findById(clipId);
     const meta =
       video?.metadata && typeof video.metadata === 'object'

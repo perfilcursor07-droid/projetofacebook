@@ -598,6 +598,15 @@ async function aplicarSplitAgora({
     }
 
     await regenerarCapaSePreciso(clip.id, userId, capaEstavaPronta, clip.capa_titulo);
+    // Se a capa foi refeita, o BGM já foi reaplicado lá. Sem capa, remixa aqui.
+    if (!capaEstavaPronta) {
+      try {
+        const clipBgmService = require('./clipBgmService');
+        await clipBgmService.reaplicarBgmSeConfigurado(clip.id);
+      } catch (bgmErr) {
+        console.warn(`[split] reaplicar BGM clip #${clip.id}:`, bgmErr.message || bgmErr);
+      }
+    }
     return { relativePath: outRelative };
   } catch (err) {
     safeUnlink(outRelative);
@@ -750,6 +759,22 @@ async function removerSplitDoClip({ clipId, userId }) {
   if (clip.split_image_path) safeUnlink(clip.split_image_path);
 
   await regenerarCapaSePreciso(clip.id, userId, capaEstavaPronta, clip.capa_titulo);
+  if (!capaEstavaPronta) {
+    try {
+      const clipBgmService = require('./clipBgmService');
+      const fresh = await VideoClips.findById(clip.id);
+      if (fresh?.bgm_preset && fresh.bgm_preset !== 'nenhuma') {
+        await VideoClips.update(clip.id, { arquivo_sem_bgm: base });
+        await clipBgmService.aplicarBgmNoClip({
+          clipId: clip.id,
+          preset: fresh.bgm_preset,
+          volume: fresh.bgm_volume,
+        });
+      }
+    } catch (bgmErr) {
+      console.warn(`[split] BGM após remover split #${clip.id}:`, bgmErr.message || bgmErr);
+    }
+  }
   return { ok: true };
 }
 

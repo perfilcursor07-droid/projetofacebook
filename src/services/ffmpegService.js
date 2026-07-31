@@ -334,12 +334,80 @@ async function validateReelFile(filePath) {
   return { ok: erros.length === 0, erros, avisos, info };
 }
 
+/**
+ * Mistura música de fundo no vídeo (áudio original + BGM).
+ * Se o vídeo não tiver áudio, usa só o BGM.
+ *
+ * @param {object} opts
+ * @param {string} opts.videoPath
+ * @param {string} opts.bgmPath WAV/MP3
+ * @param {string} opts.outputPath
+ * @param {number} [opts.bgmVolume] 0–1 (ex.: 0.18)
+ * @returns {Promise<void>}
+ */
+function mixBackgroundMusic({ videoPath, bgmPath, outputPath, bgmVolume = 0.18 }) {
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  const vol = Math.min(0.5, Math.max(0.03, Number(bgmVolume) || 0.18));
+
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(videoPath, (probeErr, data) => {
+      const hasAudio = !probeErr && (data?.streams || []).some((s) => s.codec_type === 'audio');
+
+      const rebuild = ffmpeg();
+      rebuild.input(videoPath);
+      // -stream_loop precisa vir ANTES do input do BGM
+      rebuild.inputOptions(['-stream_loop', '-1']);
+      rebuild.input(bgmPath);
+
+      if (hasAudio) {
+        rebuild.complexFilter([
+          `[0:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1[voice]`,
+          `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${vol}[bgm]`,
+          `[voice][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`,
+        ]);
+        rebuild.outputOptions([
+          '-map', '0:v',
+          '-map', '[aout]',
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-ar', '48000',
+          '-ac', '2',
+          '-shortest',
+          '-movflags', '+faststart',
+        ]);
+      } else {
+        rebuild.complexFilter([
+          `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${vol}[aout]`,
+        ]);
+        rebuild.outputOptions([
+          '-map', '0:v',
+          '-map', '[aout]',
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-ar', '48000',
+          '-ac', '2',
+          '-shortest',
+          '-movflags', '+faststart',
+        ]);
+      }
+
+      rebuild
+        .on('error', reject)
+        .on('end', () => resolve())
+        .save(outputPath);
+    });
+  });
+}
+
 module.exports = {
   cutClip,
   extractAudioWav,
   extractFrame,
   renderSplitScreen,
   overlayTextoFixo,
+  mixBackgroundMusic,
   probe,
   validateReelFile,
   MAX_CLIP_SECONDS,

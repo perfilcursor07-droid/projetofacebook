@@ -423,6 +423,64 @@
     }
   });
 
+  // ——— Música de fundo ———
+  const bgmPresetEl = document.getElementById('clip-bgm-preset');
+  const bgmVolEl = document.getElementById('clip-bgm-volume');
+  const bgmVolValor = document.getElementById('clip-bgm-vol-valor');
+  const bgmDescEl = document.getElementById('clip-bgm-desc');
+  const bgmBtn = document.getElementById('btn-bgm-aplicar');
+  const bgmMsg = document.getElementById('clip-bgm-msg');
+  const bgmPresetsMeta = Array.isArray(cfg.bgmPresets) ? cfg.bgmPresets : [];
+
+  function syncBgmUi() {
+    const preset = bgmPresetEl?.value || 'nenhuma';
+    const meta = bgmPresetsMeta.find((p) => p.id === preset);
+    if (bgmDescEl) bgmDescEl.textContent = meta?.description || '';
+    if (bgmVolEl) bgmVolEl.disabled = preset === 'nenhuma';
+    if (bgmBtn) {
+      bgmBtn.textContent = preset === 'nenhuma' ? 'Remover música' : 'Aplicar música';
+    }
+  }
+
+  bgmPresetEl?.addEventListener('change', syncBgmUi);
+  bgmVolEl?.addEventListener('input', () => {
+    if (bgmVolValor) bgmVolValor.textContent = String(bgmVolEl.value || '18');
+  });
+  syncBgmUi();
+
+  bgmBtn?.addEventListener('click', async () => {
+    const original = bgmBtn.textContent;
+    bgmBtn.disabled = true;
+    bgmBtn.textContent = 'Aplicando…';
+    if (bgmMsg) {
+      bgmMsg.textContent = 'Misturando áudio…';
+      bgmMsg.className = 'mt-2 text-[11px] text-amber-300';
+    }
+    try {
+      const data = await postJson('/api/clips/' + cfg.id + '/bgm', {
+        preset: bgmPresetEl?.value || 'nenhuma',
+        volume: Number(bgmVolEl?.value || 18),
+      });
+      if (data.video_url) atualizarVideoPrincipal(data.video_url);
+      if (bgmMsg) {
+        bgmMsg.textContent = data.message || 'Pronto.';
+        bgmMsg.className = 'mt-2 text-[11px] text-emerald-400';
+      }
+      setStatus(data.message || 'Música atualizada.');
+      syncBgmUi();
+    } catch (err) {
+      if (bgmMsg) {
+        bgmMsg.textContent = err.message;
+        bgmMsg.className = 'mt-2 text-[11px] text-rose-300';
+      }
+      setStatus(err.message, true);
+    } finally {
+      bgmBtn.disabled = false;
+      bgmBtn.textContent = original;
+      syncBgmUi();
+    }
+  });
+
   // ——— Tela dividida (metade imagem, metade vídeo) ———
   const splitPanel = document.getElementById('split-panel');
   if (splitPanel) {
