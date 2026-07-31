@@ -9,7 +9,7 @@ const {
   DEFAULT_BGM_VOLUME,
   normalizeBgmPreset,
   normalizeBgmVolume,
-  writeBgmWav,
+  ensureBgmPresetFile,
 } = require('./clipBgmPresets');
 
 function httpError(message, status = 400) {
@@ -34,7 +34,7 @@ function safeUnlink(relative) {
 
 /**
  * Aplica (ou remove) música de fundo no arquivo atual do corte.
- * Mantém `arquivo_sem_bgm` para trocar/remover sem remixar a partir do vídeo já misturado.
+ * Usa WAV curto em cache + mix com -t (costuma terminar em poucos segundos).
  */
 async function aplicarBgmNoClip({ clipId, preset, volume }) {
   const clip = await VideoClips.findById(clipId);
@@ -49,7 +49,6 @@ async function aplicarBgmNoClip({ clipId, preset, volume }) {
     DEFAULT_BGM_VOLUME
   );
 
-  // Sem música: restaura o arquivo limpo, se existir.
   if (presetFinal === 'nenhuma' || presetFinal === DEFAULT_BGM_PRESET) {
     const limpo = clip.arquivo_sem_bgm;
     if (limpo && fs.existsSync(storageAbs(limpo))) {
@@ -92,22 +91,32 @@ async function aplicarBgmNoClip({ clipId, preset, volume }) {
     throw httpError('Arquivo do corte não encontrado — gere o corte novamente.', 422);
   }
 
-  const info = await probe(storageAbs(fonteRel));
+  const fonteAbs = storageAbs(fonteRel);
+  const info = await probe(fonteAbs);
   const dur = Number(info?.format?.duration) || 30;
+  if (!Number.isFinite(dur) || dur < 1) {
+    throw httpError('Não foi possível ler a duração do vídeo.', 422);
+  }
+
+  const bgmAbs = ensureBgmPresetFile(presetFinal);
+  if (!bgmAbs) throw httpError('Preset de música inválido', 400);
+
   const uid = crypto.randomBytes(3).toString('hex');
-  const bgmRel = `temp/clip_${clip.id}_bgm_${uid}.wav`;
   const outRel = `clips/clip_${clip.id}_bgm_${Date.now()}_${uid}.mp4`;
-  const bgmAbs = storageAbs(bgmRel);
   const outAbs = storageAbs(outRel);
 
   try {
-    writeBgmWav(bgmAbs, dur + 1.5, presetFinal);
+    const started = Date.now();
     await mixBackgroundMusic({
-      videoPath: storageAbs(fonteRel),
+      videoPath: fonteAbs,
       bgmPath: bgmAbs,
       outputPath: outAbs,
       bgmVolume: volumeFinal / 100,
+      durationSec: dur,
     });
+    console.log(
+      `[bgm] clip #${clip.id} preset=${presetFinal} em ${Math.round((Date.now() - started) / 1000)}s`
+    );
 
     if (!fs.existsSync(outAbs) || fs.statSync(outAbs).size < 1000) {
       throw new Error('arquivo com música vazio');
@@ -121,7 +130,6 @@ async function aplicarBgmNoClip({ clipId, preset, volume }) {
       bgm_volume: volumeFinal,
     });
 
-    // Apaga só saídas BGM antigas — não o arquivo limpo.
     if (
       anterior &&
       anterior !== fonteRel &&
@@ -141,8 +149,6 @@ async function aplicarBgmNoClip({ clipId, preset, volume }) {
   } catch (err) {
     safeUnlink(outRel);
     throw err;
-  } finally {
-    safeUnlink(bgmRel);
   }
 }
 
@@ -153,7 +159,6 @@ async function reaplicarBgmSeConfigurado(clipId) {
   const preset = normalizeBgmPreset(clip.bgm_preset);
   if (preset === 'nenhuma') return null;
 
-  // Após split/capa o arquivo mudou: trata o atual como “sem BGM” e remixa.
   await VideoClips.update(clip.id, {
     arquivo_sem_bgm: clip.caminho_arquivo,
   });

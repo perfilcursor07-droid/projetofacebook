@@ -2468,12 +2468,41 @@ async function sugerirTextoSplitVideo({
   titulo,
   tituloVideo,
   tom = 'natural',
+  tamanho = 'curto',
   textoAtual = '',
   evitar = [],
 }) {
   assertDeepseek();
   const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
   const tomDesc = TITULO_TOMES[tomKey];
+  const tamanhoKey = ['curto', 'medio', 'grande'].includes(String(tamanho || '').toLowerCase())
+    ? String(tamanho).toLowerCase()
+    : 'curto';
+  const tamanhoRegra =
+    tamanhoKey === 'grande'
+      ? {
+          label: 'GRANDE',
+          maxChars: 170,
+          frases: '2 a 3 frases curtas',
+          destaques: '3 a 4',
+          exemplo:
+            'O HOMEM MAIS [[SÁBIO]] DA HISTÓRIA TESTOU [[TUDO]]: FESTA, MÚSICA, RIQUEZA. E VOCÊ AINDA INSISTE EM BUSCAR [[FELICIDADE]]?',
+        }
+      : tamanhoKey === 'medio'
+        ? {
+            label: 'MÉDIO',
+            maxChars: 110,
+            frases: '1 a 2 frases',
+            destaques: '2 a 3',
+            exemplo: 'SALOMÃO TEVE [[TUDO]] E DESCOBRIU QUE SÓ [[DEUS]] PREENCHE.',
+          }
+        : {
+            label: 'CURTO',
+            maxChars: 60,
+            frases: 'UMA frase só (máx 1 linha e meia)',
+            destaques: '1 a 2',
+            exemplo: 'SÓ [[DEUS]] PREENCHE O VAZIO.',
+          };
   const base =
     String(transcricao || '').trim() ||
     String(materia || '').trim() ||
@@ -2523,12 +2552,15 @@ async function sugerirTextoSplitVideo({
             '',
             'Regras do texto:',
             '- Português do Brasil, CAIXA ALTA.',
-            '- 1 a 3 frases curtas, no máximo 180 caracteres no total (sem contar os [[ ]]).',
+            `- TAMANHO OBRIGATÓRIO: ${tamanhoRegra.label}.`,
+            `- ${tamanhoRegra.frases}.`,
+            `- No máximo ${tamanhoRegra.maxChars} caracteres no total (sem contar os [[ ]]).`,
+            `- Se passar de ${tamanhoRegra.maxChars}, está ERRADO — encurte.`,
+            `- Marque ${tamanhoRegra.destaques} palavras-chave com [[ASSIM]].`,
+            `- Exemplo do tamanho pedido: ${tamanhoRegra.exemplo}`,
             '- Deve fazer a pessoa PARAR o scroll (gancho, pergunta ou cobrança).',
             '- NÃO invente fatos fora da base.',
             '- Sem emoji, sem hashtag, sem aspas longas.',
-            '- Marque 2 a 4 palavras-chave com [[ASSIM]] (só a palavra/expressão curta dentro dos colchetes).',
-            '- Exemplo de formato: SABE POR QUE O LIVRO [[SECRETO]] DE [[ENOQUE]] NÃO ESTÁ NA [[BÍBLIA?]]',
             `- Tom obrigatório: ${tomDesc}`,
             tomKey === 'polemico'
               ? '- Tom POLÊMICO: confronto/cobrança no começo; não entregue texto neutro de portal.'
@@ -2584,11 +2616,25 @@ async function sugerirTextoSplitVideo({
 
     ultimoTexto = texto;
     if (texto && !textoJaUsado(texto)) {
-      return { texto, tom: tomKey };
+      // Corta se a IA ignorou o limite do tamanho.
+      const plainLen = texto.replace(/\[\[|\]\]/g, '').length;
+      if (plainLen > tamanhoRegra.maxChars + 12) {
+        const semMarc = texto.replace(/\[\[([^\]]+)\]\]/g, '$1');
+        let corta = semMarc.slice(0, tamanhoRegra.maxChars).trim();
+        const lastSpace = corta.lastIndexOf(' ');
+        if (lastSpace > tamanhoRegra.maxChars * 0.5) corta = corta.slice(0, lastSpace);
+        texto = `${corta}…`;
+        const palavras = texto.split(/\s+/).filter((p) => p.length > 3 && p !== '…');
+        if (palavras[0] && !/\[\[[^\]]+\]\]/.test(texto)) {
+          texto = texto.replace(palavras[0], `[[${palavras[0]}]]`);
+        }
+        ultimoTexto = texto;
+      }
+      return { texto, tom: tomKey, tamanho: tamanhoKey };
     }
   }
 
-  if (ultimoTexto) return { texto: ultimoTexto, tom: tomKey };
+  if (ultimoTexto) return { texto: ultimoTexto, tom: tomKey, tamanho: tamanhoKey };
 
   const err = new Error('A IA não devolveu um texto útil. Tente de novo.');
   err.status = 502;

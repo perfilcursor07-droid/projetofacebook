@@ -386,6 +386,7 @@ async function sugerirTextoSplit(req, res, next) {
       titulo: String(body.titulo || clip.capa_titulo || '').trim() || null,
       tituloVideo: video.titulo || video.termo_busca || null,
       tom,
+      tamanho: String(body.tamanho || body.tamanho_texto || 'curto').toLowerCase(),
       textoAtual: String(body.texto_atual || body.texto || clip.split_texto || '').trim(),
       evitar: Array.isArray(body.evitar) ? body.evitar : [],
     });

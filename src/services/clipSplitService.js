@@ -14,6 +14,7 @@ const {
   normalizeVideoBrandModel,
   videoBrandModelMeta,
 } = require('./videoBrandModels');
+const { buildSvgFontFace } = require('./brandFonts');
 
 const SPLIT_DIR = 'splits';
 const FRAME_DIR = 'splits/frames';
@@ -109,16 +110,17 @@ function textoSemMarcadores(texto) {
 }
 
 function estimarLarguraChars(str, fontSize) {
-  // Arial Black caixa-alta: um pouco mais largo que 0.62 — evita texto “estourar” a margem.
-  return String(str || '').length * fontSize * 0.68;
+  // Barlow Condensed ExtraBold / Impact: ~0.52em (condensada) — evita estouro nas bordas.
+  return String(str || '').length * fontSize * 0.52;
 }
 
 /** Quebra tokens em linhas sem partir um destaque no meio. */
-function quebrarTokensEmLinhas(tokens, maxWidthPx, fontSize, maxLinhas = 5) {
+function quebrarTokensEmLinhas(tokens, maxWidthPx, fontSize, maxLinhas = 8) {
   const linhas = [];
   let atual = [];
   let atualW = 0;
   const spaceW = estimarLarguraChars(' ', fontSize);
+  const charW = fontSize * 0.52;
 
   function flush() {
     if (atual.length) linhas.push(atual);
@@ -126,32 +128,49 @@ function quebrarTokensEmLinhas(tokens, maxWidthPx, fontSize, maxLinhas = 5) {
     atualW = 0;
   }
 
+  const flat = [];
   for (const token of tokens) {
     const partes = String(token.text)
       .split(/\s+/)
       .filter(Boolean)
       .map((p) => ({ text: p.toUpperCase(), highlight: token.highlight }));
+    flat.push(...partes);
+  }
 
-    for (const parte of partes) {
-      const wordW = estimarLarguraChars(parte.text, fontSize);
-      const need = atual.length ? atualW + spaceW + wordW : wordW;
-      if (atual.length && need > maxWidthPx) {
-        flush();
-        if (linhas.length >= maxLinhas) return linhas;
+  let truncated = false;
+  for (let pi = 0; pi < flat.length; pi++) {
+    const parte = flat[pi];
+    const wordW = estimarLarguraChars(parte.text, fontSize);
+    const need = atual.length ? atualW + spaceW + wordW : wordW;
+    if (atual.length && need > maxWidthPx) {
+      flush();
+      if (linhas.length >= maxLinhas) {
+        truncated = true;
+        const last = linhas[linhas.length - 1];
+        if (last?.length) {
+          const lastSeg = last[last.length - 1];
+          if (!String(lastSeg.text).endsWith('…')) {
+            lastSeg.text = `${String(lastSeg.text).replace(/…$/, '')}…`;
+          }
+        }
+        return { linhas, truncated };
       }
-      if (!atual.length && wordW > maxWidthPx) {
-        const maxChars = Math.max(4, Math.floor(maxWidthPx / (fontSize * 0.68)));
-        atual.push({ text: `${parte.text.slice(0, maxChars - 1)}…`, highlight: parte.highlight });
-        flush();
-        if (linhas.length >= maxLinhas) return linhas;
-        continue;
-      }
-      atual.push(parte);
-      atualW = atual.length === 1 ? wordW : atualW + spaceW + wordW;
     }
+    if (!atual.length && wordW > maxWidthPx) {
+      const maxChars = Math.max(4, Math.floor(maxWidthPx / charW) - 1);
+      atual.push({ text: `${parte.text.slice(0, maxChars)}…`, highlight: parte.highlight });
+      flush();
+      if (linhas.length >= maxLinhas) {
+        truncated = pi < flat.length - 1;
+        return { linhas, truncated };
+      }
+      continue;
+    }
+    atual.push(parte);
+    atualW = atual.length === 1 ? wordW : atualW + spaceW + wordW;
   }
   flush();
-  return linhas.length ? linhas : [[{ text: '', highlight: false }]];
+  return { linhas: linhas.length ? linhas : [[{ text: '', highlight: false }]], truncated: false };
 }
 
 function normalizarFundoTexto(raw) {
@@ -173,12 +192,15 @@ function svgLinhaComDestaques({
   totalWidth,
   minX = 0,
   maxX = Infinity,
+  fontFamily = 'Impact, Arial Black, sans-serif',
 }) {
   const spaceW = estimarLarguraChars(' ', fontSize);
-  const padX = Math.round(fontSize * 0.18);
-  const padY = Math.round(fontSize * 0.12);
-  const boxH = Math.round(fontSize * 1.12);
-  const boxY = y - fontSize + padY;
+  const padX = Math.round(fontSize * 0.2);
+  const padY = Math.round(fontSize * 0.14);
+  const boxH = Math.round(fontSize * 1.18);
+  const boxY = y - fontSize + Math.round(fontSize * 0.08);
+  const strokeW = Math.max(3, Math.round(fontSize * 0.085));
+  const fam = escapeXml(fontFamily);
 
   let lineW = 0;
   segmentos.forEach((s, i) => {
@@ -190,24 +212,23 @@ function svgLinhaComDestaques({
   if (align === 'center') {
     cursor = startX + Math.max(0, (totalWidth - lineW) / 2);
   }
-  // Nunca começa antes da margem segura (evita corte na esquerda).
-  cursor = Math.max(minX + padX, cursor);
+  cursor = Math.max(minX + padX, Math.min(cursor, maxX - 4));
 
   const parts = [];
   segmentos.forEach((seg, i) => {
     const segW = estimarLarguraChars(seg.text, fontSize);
     if (seg.highlight) {
       const boxX = Math.max(minX, cursor - padX);
-      const boxW = Math.min(segW + padX * 2, maxX - boxX);
+      const boxW = Math.min(segW + padX * 2, Math.max(4, maxX - boxX));
       parts.push(
-        `<rect x="${boxX}" y="${boxY}" width="${Math.max(4, boxW)}" height="${boxH}" rx="3" fill="${escapeXml(highlightColor)}"/>`
+        `<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="4" fill="${escapeXml(highlightColor)}"/>`
       );
       parts.push(
-        `<text x="${cursor}" y="${y}" fill="#0f172a" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900">${escapeXml(seg.text)}</text>`
+        `<text x="${cursor}" y="${y}" fill="#0f172a" font-family="${fam}" font-size="${fontSize}" font-weight="800">${escapeXml(seg.text)}</text>`
       );
     } else {
       parts.push(
-        `<text x="${cursor}" y="${y}" fill="#ffffff" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" stroke="#000" stroke-width="${Math.max(2, Math.round(fontSize * 0.06))}" paint-order="stroke fill">${escapeXml(seg.text)}</text>`
+        `<text x="${cursor}" y="${y}" fill="#ffffff" font-family="${fam}" font-size="${fontSize}" font-weight="800" stroke="#000000" stroke-width="${strokeW}" paint-order="stroke fill">${escapeXml(seg.text)}</text>`
       );
     }
     cursor += segW + (i < segmentos.length - 1 ? spaceW : 0);
@@ -216,8 +237,8 @@ function svgLinhaComDestaques({
 }
 
 /**
- * Gera PNG do tamanho do vídeo com texto centralizado e margens seguras
- * (igual ao preview da tela dividida — sem colar na borda esquerda).
+ * Gera PNG do tamanho do vídeo com texto NEGRITO centralizado e margens seguras.
+ * Reduz a fonte automaticamente se o texto for longo (evita corte no Reel).
  */
 async function criarFaixaTextoPng({
   texto,
@@ -241,37 +262,60 @@ async function criarFaixaTextoPng({
   const fundoModo = normalizarFundoTexto(fundo);
   const fundoHex = normalizarCorHex(fundoCor, '#000000');
   const tokens = parseTokensComDestaque(texto);
+  const fontFace = buildSvgFontFace('serithai_condensed');
+  const fontFamily = fontFace.familyName || 'Serithai Condensed';
 
-  // Fonte um pouco maior no viral; layout sempre full-width centralizado (como o preview).
   const baseRatio =
-    modeloId === 'destaque_viral' ? 0.048 : modeloId === 'impacto_central' ? 0.046 : 0.042;
-  const fontSize = Math.round(w * baseRatio * scale);
-  const lineH = Math.round(fontSize * 1.28);
-  const marginX = Math.max(36, Math.round(w * 0.06));
+    modeloId === 'destaque_viral' ? 0.05 : modeloId === 'impacto_central' ? 0.048 : 0.044;
+  let fontSize = Math.round(w * baseRatio * scale);
+  const minFont = Math.max(22, Math.round(w * 0.028));
+  const marginX = Math.max(48, Math.round(w * 0.07));
   const maxW = w - marginX * 2;
-  const linhas = quebrarTokensEmLinhas(tokens, maxW, fontSize, 6);
-  const padY = Math.round(w * 0.028);
-  const blockH = padY * 2 + Math.max(1, linhas.length) * lineH;
+  const maxLinhas = 7;
+  const maxBlockH = Math.round(h * 0.38);
+
+  let fit = quebrarTokensEmLinhas(tokens, maxW, fontSize, maxLinhas);
+  let linhas = fit.linhas;
+  let lineH = Math.round(fontSize * 1.22);
+  let padY = Math.round(Math.max(14, w * 0.022));
+  let blockH = padY * 2 + Math.max(1, linhas.length) * lineH;
+
+  // Encolhe até caber (texto grande não corta / não estoura a faixa).
+  let guard = 0;
+  while (
+    guard < 18 &&
+    fontSize > minFont &&
+    (fit.truncated || blockH > maxBlockH || linhasAlgunhasLargas(linhas, maxW, fontSize))
+  ) {
+    fontSize = Math.max(minFont, Math.round(fontSize * 0.9));
+    fit = quebrarTokensEmLinhas(tokens, maxW, fontSize, maxLinhas);
+    linhas = fit.linhas;
+    lineH = Math.round(fontSize * 1.22);
+    padY = Math.round(Math.max(12, fontSize * 0.35));
+    blockH = padY * 2 + Math.max(1, linhas.length) * lineH;
+    guard += 1;
+  }
+
   const barY = yBlocoTexto(
     posicao,
     h,
     blockH,
-    posicao === 'topo' ? Math.round(h * 0.02) : 0,
-    posicao === 'rodape' ? Math.round(h * 0.02) : 0
+    posicao === 'topo' ? Math.round(h * 0.025) : 0,
+    posicao === 'rodape' ? Math.round(h * 0.025) : 0
   );
   const baseY = barY + padY + fontSize;
 
   let fundoSvg = '';
   if (fundoModo === 'cor') {
-    const opacity = posicao === 'meio' ? 0.78 : 0.82;
+    const opacity = posicao === 'meio' ? 0.8 : 0.84;
     if (posicao === 'meio' || modeloId === 'impacto_central') {
-      const inset = Math.round(w * 0.035);
+      const inset = Math.round(w * 0.04);
       fundoSvg = `<rect x="${inset}" y="${barY}" width="${w - inset * 2}" height="${blockH}" rx="14" fill="${escapeXml(fundoHex)}" fill-opacity="${opacity}"/>`;
     } else {
       fundoSvg = `<defs>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity : opacity * 0.7}"/>
-      <stop offset="100%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity * 0.7 : opacity}"/>
+      <stop offset="0%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity : opacity * 0.72}"/>
+      <stop offset="100%" stop-color="${escapeXml(fundoHex)}" stop-opacity="${posicao === 'topo' ? opacity * 0.72 : opacity}"/>
     </linearGradient>
   </defs>
   <rect x="0" y="${barY}" width="${w}" height="${blockH}" fill="url(#bar)"/>`;
@@ -290,12 +334,18 @@ async function criarFaixaTextoPng({
         totalWidth: maxW,
         minX: marginX,
         maxX: w - marginX,
+        fontFamily,
       })
     )
     .join('\n');
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style type="text/css"><![CDATA[
+${fontFace.faceCss || ''}
+    ]]></style>
+  </defs>
 ${fundoSvg}
 ${linesSvg}
 </svg>`;
@@ -303,6 +353,19 @@ ${linesSvg}
   fs.mkdirSync(path.dirname(destAbs), { recursive: true });
   await sharp(Buffer.from(svg)).png().toFile(destAbs);
   return destAbs;
+}
+
+function linhasAlgunhasLargas(linhas, maxW, fontSize) {
+  const spaceW = estimarLarguraChars(' ', fontSize);
+  for (const segs of linhas) {
+    let w = 0;
+    segs.forEach((s, i) => {
+      w += estimarLarguraChars(s.text, fontSize);
+      if (i < segs.length - 1) w += spaceW;
+    });
+    if (w > maxW * 1.02) return true;
+  }
+  return false;
 }
 
 /**

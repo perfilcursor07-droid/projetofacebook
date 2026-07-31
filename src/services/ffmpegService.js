@@ -335,65 +335,56 @@ async function validateReelFile(filePath) {
 }
 
 /**
- * Mistura música de fundo no vídeo (áudio original + BGM).
- * Se o vídeo não tiver áudio, usa só o BGM.
+ * Mistura música de fundo no vídeo (rápido: copia vídeo, só remixa áudio).
+ * BGM deve ser um loop curto; usamos aloop+atrim com duração explícita (sem -stream_loop infinito).
  *
  * @param {object} opts
  * @param {string} opts.videoPath
- * @param {string} opts.bgmPath WAV/MP3
+ * @param {string} opts.bgmPath WAV curto em loop
  * @param {string} opts.outputPath
- * @param {number} [opts.bgmVolume] 0–1 (ex.: 0.18)
+ * @param {number} [opts.bgmVolume] 0–1
+ * @param {number} opts.durationSec duração do vídeo (obrigatória para terminar rápido)
  * @returns {Promise<void>}
  */
-function mixBackgroundMusic({ videoPath, bgmPath, outputPath, bgmVolume = 0.18 }) {
+function mixBackgroundMusic({ videoPath, bgmPath, outputPath, bgmVolume = 0.18, durationSec }) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   const vol = Math.min(0.5, Math.max(0.03, Number(bgmVolume) || 0.18));
+  const dur = Math.max(1, Math.min(600, Number(durationSec) || 30));
+  const durStr = dur.toFixed(3);
 
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(videoPath, (probeErr, data) => {
-      const hasAudio = !probeErr && (data?.streams || []).some((s) => s.codec_type === 'audio');
+      if (probeErr) return reject(probeErr);
+      const hasAudio = (data?.streams || []).some((s) => s.codec_type === 'audio');
 
-      const rebuild = ffmpeg();
-      rebuild.input(videoPath);
-      // -stream_loop precisa vir ANTES do input do BGM
-      rebuild.inputOptions(['-stream_loop', '-1']);
-      rebuild.input(bgmPath);
+      const cmd = ffmpeg().input(videoPath).input(bgmPath);
 
       if (hasAudio) {
-        rebuild.complexFilter([
+        // aloop no BGM curto + atrim na duração do vídeo — evita hang do -stream_loop -1
+        cmd.complexFilter([
           `[0:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1[voice]`,
-          `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${vol}[bgm]`,
+          `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,aloop=loop=-1:size=2000000000,atrim=0:${durStr},asetpts=N/SR/TB,volume=${vol}[bgm]`,
           `[voice][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`,
         ]);
-        rebuild.outputOptions([
-          '-map', '0:v',
-          '-map', '[aout]',
-          '-c:v', 'copy',
-          '-c:a', 'aac',
-          '-b:a', '128k',
-          '-ar', '48000',
-          '-ac', '2',
-          '-shortest',
-          '-movflags', '+faststart',
-        ]);
       } else {
-        rebuild.complexFilter([
-          `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${vol}[aout]`,
-        ]);
-        rebuild.outputOptions([
-          '-map', '0:v',
-          '-map', '[aout]',
-          '-c:v', 'copy',
-          '-c:a', 'aac',
-          '-b:a', '128k',
-          '-ar', '48000',
-          '-ac', '2',
-          '-shortest',
-          '-movflags', '+faststart',
+        cmd.complexFilter([
+          `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,aloop=loop=-1:size=2000000000,atrim=0:${durStr},asetpts=N/SR/TB,volume=${vol}[aout]`,
         ]);
       }
 
-      rebuild
+      cmd
+        .outputOptions([
+          '-map', '0:v:0',
+          '-map', '[aout]',
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-ar', '48000',
+          '-ac', '2',
+          '-t', durStr,
+          '-movflags', '+faststart',
+          '-y',
+        ])
         .on('error', reject)
         .on('end', () => resolve())
         .save(outputPath);

@@ -453,7 +453,7 @@
     bgmBtn.disabled = true;
     bgmBtn.textContent = 'Aplicando…';
     if (bgmMsg) {
-      bgmMsg.textContent = 'Misturando áudio…';
+      bgmMsg.textContent = 'Aplicando trilha (uns segundos)…';
       bgmMsg.className = 'mt-2 text-[11px] text-amber-300';
     }
     try {
@@ -531,6 +531,7 @@
     const textoTamInput = document.getElementById('split-texto-tamanho');
     const textoTamValor = document.getElementById('split-texto-tam-valor');
     const textoTomEl = document.getElementById('split-texto-tom');
+    const textoIaTamEl = document.getElementById('split-texto-ia-tamanho');
     const sugerirTextoBtn = document.getElementById('btn-split-sugerir-texto');
     const textoFundoCorInput = document.getElementById('split-texto-fundo-cor');
     const textoFundoCorWrap = document.getElementById('split-texto-fundo-cor-wrap');
@@ -637,6 +638,7 @@
         if (atual && !textoEvitar.includes(atual)) textoEvitar.push(atual);
         const data = await postJson('/api/clips/' + cfg.id + '/split/sugerir-texto', {
           tom: textoTomEl?.value || 'natural',
+          tamanho: textoIaTamEl?.value || 'curto',
           texto_atual: atual,
           evitar: textoEvitar.slice(-8),
           titulo: capaTituloEl ? capaTituloEl.value.trim() : '',

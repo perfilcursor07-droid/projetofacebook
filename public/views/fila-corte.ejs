@@ -227,7 +227,7 @@
                   </div>
 
                   <div class="flex flex-wrap items-end gap-2">
-                    <label class="min-w-[8rem] flex-1">
+                    <label class="min-w-[7rem] flex-1">
                       <span class="text-[11px] text-slate-500">Tom da IA</span>
                       <select id="split-texto-tom"
                         class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-fuchsia-500 focus:outline-none">
@@ -237,6 +237,15 @@
                         <option value="curiosidade">Curiosidade</option>
                         <option value="emocional">Emocional</option>
                         <option value="factual">Factual</option>
+                      </select>
+                    </label>
+                    <label class="w-[7.5rem] shrink-0">
+                      <span class="text-[11px] text-slate-500">Tamanho</span>
+                      <select id="split-texto-ia-tamanho"
+                        class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-fuchsia-500 focus:outline-none">
+                        <option value="curto" selected>Curto</option>
+                        <option value="medio">Médio</option>
+                        <option value="grande">Grande</option>
                       </select>
                     </label>
                     <button type="button" id="btn-split-sugerir-texto"
@@ -437,5 +446,5 @@
       bgmPresets: <%- JSON.stringify(presetsLista) %>,
     };
   </script>
-  <script src="/js/fila-corte.js?v=20260731h"></script>
+  <script src="/js/fila-corte.js?v=20260731j"></script>
 <%- include('partials/app-end') %>
