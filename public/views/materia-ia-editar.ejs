@@ -19,11 +19,12 @@
   const canRepublish = st === 'publicado';
   const isReel = matter.tipo_publicacao === 'reel';
   const imageUrl = matter.imagem_url || '';
+  const imagemFonteUrl = String(matter.imagem_fonte_url || '').trim();
   const videoUrl = matter.video_path ? '/media/' + String(matter.video_path).replace(/^\/+/, '') : '';
   const reelProcessing = isReel && (!videoUrl || String(matter.materia || '').startsWith('⏳'));
   const canReloadBrand =
     !isReel &&
-    (Boolean(matter.imagem_fonte_url) ||
+    (Boolean(imagemFonteUrl) ||
       (!matter.imagem_path && /^https?:\/\//i.test(String(imageUrl))));
   const fonteUrl = String(matter.fonte_url || '').trim();
   const fonteTitulo = String(matter.fonte_titulo || '').trim();
@@ -37,7 +38,7 @@
   const canGerarReelNarrado =
     Boolean(matter.imagem_path) ||
     /^https?:\/\//i.test(String(imageUrl || '')) ||
-    /^https?:\/\//i.test(String(matter.imagem_fonte_url || ''));
+    /^https?:\/\//i.test(String(imagemFonteUrl || ''));
 %>
 
   <main class="mx-auto max-w-9xl px-3 py-3 sm:px-5 sm:py-4">
@@ -469,14 +470,18 @@
             </div>
             <div class="p-2">
               <div id="matter-img-frame-preview" class="relative overflow-hidden rounded border border-slate-800 bg-slate-900/50">
-                <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="block h-auto w-full object-cover" />
+                <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="relative z-10 block h-auto w-full object-cover" />
+                <% if (canEdit && imagemFonteUrl) { %>
+                  <img id="matter-img-fonte" src="<%= imagemFonteUrl %>" alt="Foto de origem"
+                    class="pointer-events-none absolute inset-0 z-0 hidden h-full w-full object-cover" />
+                <% } %>
               </div>
               <% if (canEdit) { %>
                 <div id="matter-art-frame" class="mt-2 space-y-2 rounded-lg border border-slate-700/80 bg-slate-950/60 p-2">
                   <div>
                     <p class="text-[11px] font-medium text-slate-300">Enquadramento</p>
                     <p class="mt-0.5 text-[10px] leading-relaxed text-slate-500">
-                      Zoom para aproximar ou mostrar mais. Depois ajuste ←→ e ↑↓. Clique em aplicar para regenerar a arte.
+                      O zoom mexe só na foto. A marca (logo/título) fica fixa e é aplicada por cima ao clicar em aplicar.
                     </p>
                   </div>
                   <label class="block">
@@ -651,6 +656,7 @@
       isReel: <%= isReel ? 'true' : 'false' %>,
       reelProcessing: <%= reelProcessing ? 'true' : 'false' %>,
       videoUrl: <%- JSON.stringify(videoUrl || null) %>,
+      imagemFonteUrl: <%- JSON.stringify(imagemFonteUrl || null) %>,
       listUrl: '/minhas-materias',
       ultimoAgendamento: <%- JSON.stringify(typeof ultimoAgendamento !== 'undefined' ? ultimoAgendamento : null) %>,
       proximoSlotLocal: <%- JSON.stringify(typeof proximoSlotLocal !== 'undefined' ? proximoSlotLocal : null) %>,
@@ -671,5 +677,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260731frame"></script>
+  <script src="/js/materia-ia-editar.js?v=20260731frame3"></script>
 <%- include('partials/app-end') %>

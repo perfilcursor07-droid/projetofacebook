@@ -129,15 +129,24 @@ router.post('/matters/:id/arte/enquadrar', async (req, res, next) => {
       return res.status(400).json({ error: 'A arte de uma matéria publicada não pode ser alterada' });
     }
 
-    const sourceUrl =
-      matter.imagem_fonte_url ||
-      (!matter.imagem_path && /^https?:\/\//i.test(String(matter.imagem_url || ''))
-        ? matter.imagem_url
-        : null);
+    // Sempre a FOTO de origem — nunca a arte já composta com Minha marca (/media/artes/).
+    let sourceUrl = String(matter.imagem_fonte_url || '').trim();
+    if (/\/media\/artes\//i.test(sourceUrl)) {
+      sourceUrl = '';
+    }
+    if (
+      !sourceUrl &&
+      !matter.imagem_path &&
+      /^https?:\/\//i.test(String(matter.imagem_url || '')) &&
+      !/\/media\/artes\//i.test(String(matter.imagem_url || ''))
+    ) {
+      sourceUrl = String(matter.imagem_url).trim();
+    }
 
     if (!sourceUrl) {
       return res.status(400).json({
-        error: 'A foto original não está disponível. Escolha outra imagem para gerar a arte novamente.',
+        error:
+          'A foto original não está disponível para enquadrar. Escolha outra imagem (o zoom não pode usar a arte com marca).',
       });
     }
 
@@ -153,6 +162,7 @@ router.post('/matters/:id/arte/enquadrar', async (req, res, next) => {
         ? Number(req.body.offset_y)
         : 50;
 
+    // Zoom/pan só na foto; Minha marca é desenhada por cima depois (sem zoom).
     const artwork = await composeMatterArtwork({
       userId: req.session.userId,
       matterId,
@@ -168,6 +178,7 @@ router.post('/matters/:id/arte/enquadrar', async (req, res, next) => {
       ok: true,
       matter: artwork.matter,
       imagemUrl: artwork.publicUrl,
+      imagemFonteUrl: artwork.matter?.imagem_fonte_url || sourceUrl,
       arteModelo: artwork.modelId,
       hasLogo: artwork.hasLogo,
       zoom,

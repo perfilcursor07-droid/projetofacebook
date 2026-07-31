@@ -1221,6 +1221,7 @@ async function aplicarImagemUrl(req, res, next) {
       ok: true,
       matter: artwork.matter,
       imagemUrl: artwork.publicUrl,
+      imagemFonteUrl: artwork.matter?.imagem_fonte_url || imageUrl,
       hasLogo: artwork.hasLogo,
       imagemAutor,
     });
@@ -1281,6 +1282,7 @@ async function aplicarColagemDuasImagens(req, res, next) {
       ok: true,
       matter: artwork.matter,
       imagemUrl: artwork.publicUrl,
+      imagemFonteUrl: artwork.matter?.imagem_fonte_url || null,
       hasLogo: artwork.hasLogo,
       layout,
     });

@@ -39,20 +39,22 @@
     imgEl.src = withCache;
     if (imgWrap) imgWrap.classList.remove('hidden');
     syncDownloadArtLink(withCache);
-    // Após regenerar no servidor, a prévia CSS volta ao neutro
-    // (o corte já está “assado” na nova arte).
+    if (opts.imagemFonteUrl) setFontePreviewUrl(opts.imagemFonteUrl);
+    else if (opts.matter?.imagem_fonte_url) setFontePreviewUrl(opts.matter.imagem_fonte_url);
+    else if (opts.imagemFonte) setFontePreviewUrl(opts.imagemFonte);
+    // Após regenerar no servidor, volta a mostrar a arte com marca (sem zoom na marca).
     if (opts.resetFrame !== false) {
       if (artZoom) artZoom.value = '100';
       if (artOffsetX) artOffsetX.value = '50';
       if (artOffsetY) artOffsetY.value = '50';
-      resetArtFramePreviewCss();
+      showBrandedArtPreview();
       if (artZoomValor) artZoomValor.textContent = '100%';
       if (artOffsetXValor) artOffsetXValor.textContent = '50%';
       if (artOffsetYValor) artOffsetYValor.textContent = '50%';
     }
   }
 
-  /* —— Enquadramento da arte destacada —— */
+  /* —— Enquadramento: zoom só na FOTO de origem; marca entra ao aplicar —— */
   const artZoom = document.getElementById('art-zoom');
   const artOffsetX = document.getElementById('art-offset-x');
   const artOffsetY = document.getElementById('art-offset-y');
@@ -62,6 +64,27 @@
   const btnArtEnquadrar = document.getElementById('btn-art-enquadrar');
   const artFramePreview = document.getElementById('matter-img-frame-preview');
 
+  function getFontePreviewEl() {
+    let el = document.getElementById('matter-img-fonte');
+    if (!el && artFramePreview && cfg.imagemFonteUrl) {
+      el = document.createElement('img');
+      el.id = 'matter-img-fonte';
+      el.alt = 'Foto de origem';
+      el.className =
+        'pointer-events-none absolute inset-0 z-0 hidden h-full w-full object-cover';
+      artFramePreview.appendChild(el);
+    }
+    return el;
+  }
+
+  function setFontePreviewUrl(url) {
+    if (!url) return;
+    cfg.imagemFonteUrl = url;
+    const el = getFontePreviewEl();
+    if (el) {
+      el.src = url + (String(url).includes('?') ? '&' : '?') + 't=' + Date.now();
+    }
+  }
   function readArtFrame() {
     return {
       zoom: Math.min(160, Math.max(80, Number(artZoom?.value ?? 100) || 100)),
@@ -70,55 +93,98 @@
     };
   }
 
-  function resetArtFramePreviewCss() {
-    if (!imgEl) return;
-    imgEl.style.objectFit = 'cover';
-    imgEl.style.objectPosition = '50% 50%';
-    imgEl.style.transform = 'none';
-    imgEl.style.transformOrigin = '50% 50%';
-    imgEl.style.width = '100%';
-    imgEl.style.height = 'auto';
-    imgEl.style.position = '';
-    imgEl.style.left = '';
-    imgEl.style.top = '';
-    imgEl.style.maxWidth = '';
-    if (artFramePreview) {
-      artFramePreview.style.aspectRatio = '';
+  function clearMediaPreviewStyles(el) {
+    if (!el) return;
+    el.style.objectFit = '';
+    el.style.objectPosition = '';
+    el.style.transform = '';
+    el.style.transformOrigin = '';
+    el.style.width = '';
+    el.style.height = '';
+    el.style.position = '';
+    el.style.left = '';
+    el.style.top = '';
+    el.style.maxWidth = '';
+    el.style.inset = '';
+  }
+
+  function applyMediaPreviewStyles(el, zoom, offsetX, offsetY) {
+    if (!el) return;
+    const z = zoom / 100;
+    el.style.objectFit = 'cover';
+    el.style.objectPosition = offsetX + '% ' + offsetY + '%';
+    el.style.position = 'absolute';
+    el.style.maxWidth = 'none';
+    el.style.inset = 'auto';
+    if (z >= 1) {
+      el.style.width = '100%';
+      el.style.height = '100%';
+      el.style.left = '0';
+      el.style.top = '0';
+      el.style.transform = z > 1.001 ? 'scale(' + z + ')' : 'none';
+      el.style.transformOrigin = offsetX + '% ' + offsetY + '%';
+    } else {
+      const w = z * 100;
+      const h = z * 100;
+      el.style.width = w + '%';
+      el.style.height = h + '%';
+      el.style.left = ((100 - w) * offsetX) / 100 + '%';
+      el.style.top = ((100 - h) * offsetY) / 100 + '%';
+      el.style.transform = 'none';
     }
   }
 
+  function showBrandedArtPreview() {
+    const imgFonteEl = getFontePreviewEl();
+    clearMediaPreviewStyles(imgEl);
+    clearMediaPreviewStyles(imgFonteEl);
+    if (imgEl) {
+      imgEl.classList.remove('hidden');
+      imgEl.style.position = 'relative';
+      imgEl.style.zIndex = '10';
+      imgEl.style.width = '100%';
+      imgEl.style.height = 'auto';
+      imgEl.style.objectFit = 'cover';
+    }
+    if (imgFonteEl) {
+      imgFonteEl.classList.add('hidden');
+    }
+    if (artFramePreview) artFramePreview.style.aspectRatio = '';
+  }
+
   function applyArtFramePreview() {
-    if (!imgEl) return;
     const { zoom, offsetX, offsetY } = readArtFrame();
     if (artZoomValor) artZoomValor.textContent = zoom + '%';
     if (artOffsetXValor) artOffsetXValor.textContent = offsetX + '%';
     if (artOffsetYValor) artOffsetYValor.textContent = offsetY + '%';
 
-    // Prévia rápida no browser (a arte final só muda ao clicar em Aplicar).
-    if (artFramePreview) {
-      artFramePreview.style.aspectRatio = '4 / 5';
+    const fonteUrl = String(cfg.imagemFonteUrl || '').trim();
+    const framingActive = zoom !== 100 || offsetX !== 50 || offsetY !== 50;
+    const imgFonteEl = getFontePreviewEl();
+
+    // Sem foto de origem: não dá para pré-visualizar sem zoom na marca.
+    if (!fonteUrl || !imgFonteEl) {
+      if (framingActive) {
+        setStatus('Foto de origem indisponível — o zoom só funciona na imagem (sem a marca).', true);
+      }
+      showBrandedArtPreview();
+      return;
     }
-    const z = zoom / 100;
-    imgEl.style.objectFit = 'cover';
-    imgEl.style.objectPosition = offsetX + '% ' + offsetY + '%';
-    imgEl.style.position = 'absolute';
-    imgEl.style.maxWidth = 'none';
-    if (z >= 1) {
-      imgEl.style.width = '100%';
-      imgEl.style.height = '100%';
-      imgEl.style.left = '0';
-      imgEl.style.top = '0';
-      imgEl.style.transform = z > 1.001 ? 'scale(' + z + ')' : 'none';
-      imgEl.style.transformOrigin = offsetX + '% ' + offsetY + '%';
-    } else {
-      const w = z * 100;
-      const h = z * 100;
-      imgEl.style.width = w + '%';
-      imgEl.style.height = h + '%';
-      imgEl.style.left = ((100 - w) * offsetX) / 100 + '%';
-      imgEl.style.top = ((100 - h) * offsetY) / 100 + '%';
-      imgEl.style.transform = 'none';
+
+    if (!framingActive) {
+      showBrandedArtPreview();
+      return;
     }
+
+    // Prévia: só a FOTO (origem). A arte com Minha marca fica escondida.
+    if (artFramePreview) artFramePreview.style.aspectRatio = '4 / 5';
+    if (imgEl) imgEl.classList.add('hidden');
+    imgFonteEl.classList.remove('hidden');
+    const bare = fonteUrl.split('?')[0];
+    if (!String(imgFonteEl.src || '').includes(bare)) {
+      imgFonteEl.src = fonteUrl;
+    }
+    applyMediaPreviewStyles(imgFonteEl, zoom, offsetX, offsetY);
   }
 
   [artZoom, artOffsetX, artOffsetY].forEach((el) => {
@@ -127,10 +193,14 @@
 
   btnArtEnquadrar?.addEventListener('click', async () => {
     const frame = readArtFrame();
+    if (!cfg.imagemFonteUrl) {
+      setStatus('Não há foto de origem. Escolha outra imagem antes de enquadrar.', true);
+      return;
+    }
     const original = btnArtEnquadrar.textContent;
     btnArtEnquadrar.disabled = true;
     btnArtEnquadrar.textContent = 'Aplicando…';
-    setStatus('Regenerando a arte com o enquadramento…');
+    setStatus('Enquadrando só a foto e reaplicando Minha marca…');
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/enquadrar', {
         method: 'POST',
@@ -145,10 +215,12 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao enquadrar a arte');
       if (data.imagemUrl) {
-        setArtImage(data.imagemUrl);
+        setArtImage(data.imagemUrl, {
+          imagemFonteUrl: data.imagemFonteUrl || cfg.imagemFonteUrl,
+        });
         imgWrap?.classList.remove('hidden');
       }
-      setStatus('Enquadramento aplicado à arte ✓');
+      setStatus('Foto enquadrada — marca reaplicada por cima ✓');
     } catch (err) {
       setStatus(err.message || 'Erro ao enquadrar', true);
     } finally {
@@ -156,8 +228,6 @@
       btnArtEnquadrar.textContent = original || 'Aplicar enquadramento';
     }
   });
-
-  if (artZoom) applyArtFramePreview();
 
   function montarLegendaCompleta() {
     const titulo = String(tituloEl?.value || '').trim();
@@ -270,7 +340,7 @@
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Falha ao salvar');
     if (data.imagemUrl && imgEl) {
-      setArtImage(data.imagemUrl);
+      setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
       imgWrap?.classList.remove('hidden');
     }
     if (data.aviso) setStatus(data.aviso);
@@ -316,7 +386,7 @@
         tituloSugestoes.push(data.titulo);
       }
       if (data.imagemUrl && imgEl) {
-        setArtImage(data.imagemUrl);
+        setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
       const reelVideo = document.getElementById('matter-reel-video');
@@ -557,7 +627,7 @@
       if (!res.ok) throw new Error(data.error || 'Falha ao publicar');
 
       if (data.imagemUrl && imgEl) {
-        setArtImage(data.imagemUrl);
+        setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
 
@@ -773,7 +843,7 @@
       if (!res.ok) throw new Error(data.error || 'Falha ao trocar a imagem');
 
       if (data.imagemUrl && imgEl) {
-        setArtImage(data.imagemUrl);
+        setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
       clearImageSelection();
@@ -805,7 +875,7 @@
       if (!res.ok) throw new Error(data.error || 'Falha ao recarregar o modelo da marca');
 
       if (data.imagemUrl && imgEl) {
-        setArtImage(data.imagemUrl);
+        setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
       setStatus('Modelo, logo e cores atuais aplicados à arte ✓');
@@ -962,7 +1032,7 @@
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || 'Falha ao montar colagem');
       if (j.imagemUrl && imgEl) {
-        setArtImage(j.imagemUrl);
+        setArtImage(j.imagemUrl, { matter: j.matter, imagemFonteUrl: j.imagemFonteUrl || j.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
       setStatus('Arte com 2 imagens pronta.');
@@ -1008,7 +1078,7 @@
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || 'Falha ao aplicar imagem');
       if (j.imagemUrl && imgEl) {
-        setArtImage(j.imagemUrl);
+        setArtImage(j.imagemUrl, { matter: j.matter, imagemFonteUrl: j.imagemFonteUrl || j.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
       const materiaEl = document.getElementById('matter-materia');
@@ -1277,7 +1347,7 @@
       if (!res.ok) throw new Error(data.error || 'Não foi possível buscar a imagem da fonte');
 
       if (data.imagemUrl && imgEl) {
-        setArtImage(data.imagemUrl);
+        setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
       setStatus(data.aviso || 'Imagem da fonte aplicada e arte gerada ✓');
