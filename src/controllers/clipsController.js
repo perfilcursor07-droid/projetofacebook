@@ -196,6 +196,11 @@ async function removerCapa(req, res, next) {
       arquivo_sem_capa: null,
       // Mantém o título para facilitar gerar de novo; só tira a capa do arquivo.
       capa_status: 'pendente',
+      // Se o backup de velocidade era o arquivo COM capa, descarta — senão a próxima
+      // aplicação de velocidade traz a intro de volta.
+      ...(clip.arquivo_sem_speed && /_capa_/i.test(String(clip.arquivo_sem_speed))
+        ? { arquivo_sem_speed: clip.arquivo_sem_capa, playback_speed: clip.playback_speed || 1 }
+        : {}),
     });
     res.json({
       ok: true,
@@ -482,6 +487,7 @@ async function aplicarVelocidade(req, res, next) {
     const clipSpeedService = require('../services/clipSpeedService');
     const result = await clipSpeedService.aplicarVelocidadeNoClip({
       clipId: clip.id,
+      userId: req.session.userId,
       speed: body.speed ?? body.velocidade ?? body.playback_speed,
     });
     res.json(result);

@@ -590,6 +590,10 @@
       const data = await postJson('/api/clips/' + cfg.id + '/velocidade', { speed: s });
       appliedSpeed = Number(data.speed) || s;
       if (data.video_url) atualizarVideoPrincipal(data.video_url);
+      if (data.capa_status) {
+        state.capaStatus = data.capa_status;
+        syncCapaUi(data.capa_status);
+      }
       const video = document.getElementById('clip-video');
       if (video) video.playbackRate = 1;
       if (speedMsg) {
