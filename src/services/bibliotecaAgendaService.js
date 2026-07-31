@@ -185,8 +185,14 @@ async function enriquecerMatchedKeywords(userId, itens) {
 async function sincronizarComMaterias(userId, itens) {
   const lista = Array.isArray(itens) ? itens : [];
   for (const row of lista) {
-    if (!row.matter_id) continue;
     const agendaSt = String(row.status || '');
+    if (!row.matter_id) {
+      if (agendaSt === 'confirmado') {
+        await BibliotecaAgenda.update(row.id, { status: 'pendente' });
+        row.status = 'pendente';
+      }
+      continue;
+    }
     const matterSt = String(row.matter_status || '');
     try {
       if (matterSt === 'publicado' && agendaSt !== 'publicado') {

@@ -340,6 +340,25 @@ async function removerMateria(req, res, next) {
     if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
       return res.status(404).json({ error: 'Matéria não encontrada' });
     }
+    try {
+      const db = require('../config/db');
+      await db('biblioteca_agenda')
+        .where({ user_id: req.session.userId, matter_id: matterId })
+        .whereNotIn('status', ['cancelado', 'publicado'])
+        .update({
+          status: 'pendente',
+          matter_id: null,
+          updated_at: db.fn.now(),
+        });
+      await db('ai_fila_jobs')
+        .where({ matter_id: matterId, status: 'pendente' })
+        .update({
+          status: 'cancelado',
+          erro: 'Matéria excluída — agenda voltou para pré-agendada',
+        });
+    } catch (syncErr) {
+      console.warn('[materias-ia] remover sync agenda:', syncErr.message);
+    }
     await AiMatters.deleteByUser(matterId, req.session.userId);
     res.json({ ok: true, id: matterId });
   } catch (err) {
