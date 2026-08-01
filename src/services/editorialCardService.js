@@ -955,7 +955,7 @@ function buildOverlay({
         return { type: 'text', lines: textLines, fontSize: headFont, lineHeight: Math.round(headFont * 1.06) };
       });
 
-      const bandGapBefore = hh(28);
+      const bandGapBefore = hh(12);
       let totalH = 0;
       for (let i = 0; i < blocks.length; i += 1) {
         if (i > 0 && blocks[i].type === 'band' && blocks[i - 1].type === 'text') {
@@ -968,7 +968,7 @@ function buildOverlay({
       headFont = Math.max(minFont, Math.round(headFont * 0.92));
     }
 
-    const bandGapBefore = hh(28);
+    const bandGapBefore = hh(12);
     let totalTextH = 0;
     for (let i = 0; i < blocks.length; i += 1) {
       if (i > 0 && blocks[i].type === 'band' && blocks[i - 1].type === 'text') {
