@@ -386,6 +386,78 @@ async function buscarSerperRedes(termo, { redes = REDES_SOCIAIS_PADRAO, porRede 
 }
 
 /**
+ * Posts de redes sociais pelo endpoint WEB do Brave (o de notícias não indexa
+ * redes). Plano free do Brave limita ~1 req/s, então aqui vai em série.
+ */
+async function buscarBraveWebRedes(termo, { redes = REDES_SOCIAIS_PADRAO, porRede = 5 } = {}) {
+  if (!env.braveSearchApiKey) return [];
+  const count = Math.max(1, Math.min(20, Number(porRede) || 5));
+  const out = [];
+
+  for (const site of redes) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const { data } = await axios.get('https://api.search.brave.com/res/v1/web/search', {
+        params: { q: `${termo} ${site}`.slice(0, 200), count, country: 'BR', search_lang: 'pt-br' },
+        headers: { Accept: 'application/json', 'X-Subscription-Token': env.braveSearchApiKey },
+        timeout: 15000,
+      });
+      for (const r of data?.web?.results || []) {
+        out.push({
+          id: slugId(r.title, r.url),
+          titulo: limparTitulo(r.title),
+          link: r.url,
+          resumo: limparResumo(r.description),
+          data: r.page_age || r.age || null,
+          dataTimestamp: parsearDataPub(r.page_age || r.age),
+          nicho: termo,
+          fonte: 'Brave redes',
+          veiculo: r.meta_url?.hostname || 'Rede social',
+          tipoFonte: 'rede_social',
+          recente: true,
+          redeSocial: true,
+        });
+      }
+    } catch (err) {
+      console.warn('Brave redes:', err.response?.status || '', err.response?.data?.message || err.message);
+    }
+    // Respeita o limite de 1 req/s do plano free
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+
+  return out;
+}
+
+/**
+ * Busca posts em redes sociais com fallback entre provedores e motivo quando
+ * não há resultado — para a apuração explicar o vazio em vez de sumir.
+ * @returns {Promise<{ itens: any[], avisos: string[] }>}
+ */
+async function buscarPostsRedesSociais(termo, { redes = REDES_SOCIAIS_PADRAO, porRede = 5 } = {}) {
+  const avisos = [];
+  let itens = [];
+
+  if (env.serperApiKey) {
+    itens = await buscarSerperRedes(termo, { redes, porRede });
+    if (!itens.length) avisos.push('o Serper não devolveu posts (cota diária do plano free ou nada indexado)');
+  } else {
+    avisos.push('SERPER_API_KEY não está configurada no servidor');
+  }
+
+  if (!itens.length) {
+    if (env.braveSearchApiKey) {
+      itens = await buscarBraveWebRedes(termo, { redes: redes.slice(0, 4), porRede });
+      if (!itens.length) avisos.push('o Brave também não devolveu posts para este tema');
+    } else {
+      avisos.push('BRAVE_SEARCH_API_KEY não está configurada no servidor');
+    }
+  }
+
+  return { itens, avisos };
+}
+
+/**
  * Pesquisa assuntos por palavras-chave.
  */
 async function pesquisarNichos(palavrasChave, quantidadePorNicho = 8, opcoes = {}) {
@@ -463,6 +535,8 @@ module.exports = {
   buscarGoogleNewsEmAlta,
   buscarBraveNews,
   buscarSerperRedes,
+  buscarBraveWebRedes,
+  buscarPostsRedesSociais,
   REDES_SOCIAIS_PADRAO,
   REDES_SOCIAIS_AMPLAS,
   itemEhRecente,

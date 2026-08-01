@@ -2852,7 +2852,7 @@ async function coletarFatosNaWeb({
     normalizarPeriodo,
     itemDentroDoPeriodo,
     rotuloPeriodo,
-    buscarSerperRedes,
+    buscarPostsRedesSociais,
     REDES_SOCIAIS_PADRAO,
     REDES_SOCIAIS_AMPLAS,
   } = require('./newsResearch');
@@ -2974,12 +2974,13 @@ async function coletarFatosNaWeb({
   // 1c) Redes sociais (Instagram, Facebook, YouTube, X, TikTok, Threads…)
   if (incluirRedes && fontes.length < limite) {
     const redes = redesAmplas ? REDES_SOCIAIS_AMPLAS : REDES_SOCIAIS_PADRAO;
+    let redesIndisponiveis = false;
     for (const q of queries.slice(0, 2)) {
-      if (fontes.length >= limite) break;
+      if (fontes.length >= limite || redesIndisponiveis) break;
       try {
         emitir({ tipo: 'buscando', consulta: q, redes: true, periodo: rotulo });
         // eslint-disable-next-line no-await-in-loop
-        const posts = await buscarSerperRedes(q, { redes, porRede: 5 });
+        const { itens: posts, avisos } = await buscarPostsRedesSociais(q, { redes, porRede: 5 });
         const dentro = posts.filter((t) => {
           if (itemDentroDoPeriodo(t, cfgPeriodo)) return true;
           foraDoPeriodo += 1;
@@ -2993,6 +2994,12 @@ async function coletarFatosNaWeb({
           periodo: rotulo,
           redes: true,
         });
+        // Sem posts: diz o porquê, em vez de mostrar só "0 resultados"
+        if (!dentro.length && avisos.length) {
+          emitir({ tipo: 'redes-indisponivel', motivo: avisos.join(' · '), consulta: q });
+          // Provedor fora do ar/sem chave: não repete a espera na próxima consulta
+          if (!posts.length) redesIndisponiveis = true;
+        }
         for (const p of dentro) {
           if (fontes.length >= limite) break;
           adicionarFonte({

@@ -747,6 +747,11 @@ async function responder({
                 ? `${evento.total} resultado(s)${onde} no período (${descartados} fora da janela, descartados)`
                 : `${evento.total} resultado(s)${onde} encontrados`,
             });
+          } else if (evento.tipo === 'redes-indisponivel') {
+            registrarPasso({
+              kind: 'aviso',
+              texto: `Redes sociais sem resultado: ${evento.motivo}. A matéria segue com as fontes de notícias.`,
+            });
           } else if (evento.tipo === 'lendo') {
             lidas += 1;
             if (lidas <= 20) {
