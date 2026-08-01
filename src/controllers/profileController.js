@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const sharp = require('sharp');
 const Users = require('../models/Users');
 const { env } = require('../config/env');
+const { buildBrandModelPreviewPng } = require('../services/editorialCardService');
 const {
   ART_MODELS,
   DEFAULT_ART_MODEL,
@@ -49,6 +51,47 @@ function removeStorageFile(relativePath) {
   }
 }
 
+/** Assinatura curta das opções que mudam o desenho — invalida o cache das miniaturas. */
+function brandPreviewVersion(profile = {}) {
+  const parts = [
+    profile.marca_categoria,
+    profile.marca_rodape,
+    profile.marca_nome,
+    profile.marca_cor_primaria,
+    profile.marca_cor_secundaria,
+    profile.marca_fonte,
+    profile.marca_titulo_cor,
+    profile.marca_titulo_tamanho,
+    profile.logo_path,
+    profile.updated_at ? new Date(profile.updated_at).getTime() : '',
+  ];
+  return crypto.createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 12);
+}
+
+/** PNG de pré-visualização de um modelo de arte, renderizado pelo gerador real. */
+async function artModelPreview(req, res, next) {
+  try {
+    const modelId = String(req.params.model || '');
+    if (!isArtModel(modelId)) return res.status(404).end();
+
+    const profile = await Users.findById(req.session.userId);
+    if (!profile) return res.status(404).end();
+
+    const png = await buildBrandModelPreviewPng({
+      user: profile,
+      model: modelId,
+      width: 432,
+      height: 540,
+    });
+
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'private, max-age=86400');
+    return res.end(png);
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function show(req, res, next) {
   try {
     const profile = await Users.findById(req.session.userId);
@@ -56,6 +99,7 @@ async function show(req, res, next) {
     res.render('minha-marca', {
       title: 'Minha marca',
       profile,
+      previewVersion: brandPreviewVersion(profile),
       artModels: ART_MODELS,
       defaultArtModel: DEFAULT_ART_MODEL,
       videoBrandModels: VIDEO_BRAND_MODELS,
@@ -173,4 +217,4 @@ async function update(req, res, next) {
   }
 }
 
-module.exports = { show, update };
+module.exports = { show, update, artModelPreview };

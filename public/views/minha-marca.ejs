@@ -146,27 +146,12 @@
                 <input type="radio" name="marca_modelo_arte_ui" value="<%= model.id %>" class="peer sr-only js-modelo-arte"
                   <%= (profile.marca_modelo_arte || defaultArtModel) === model.id ? 'checked' : '' %> />
                 <span class="block overflow-hidden rounded-xl border-2 border-slate-600 bg-slate-950 transition peer-checked:border-emerald-400 peer-checked:ring-2 peer-checked:ring-emerald-400/25 hover:border-slate-400">
-                  <span class="relative flex aspect-[4/5] flex-col overflow-hidden bg-gradient-to-br from-slate-600 via-slate-900 to-black p-2">
-                    <span class="pointer-events-none absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black via-black/50 to-transparent"></span>
-                    <% if (model.id === 'urgente_alerta') { %>
-                      <span class="absolute inset-x-0 top-0 z-10 bg-red-600 py-0.5 text-center text-[9px] font-black tracking-wide text-white">URGENTE!</span>
-                    <% } %>
-                    <span class="relative z-10 mt-auto space-y-1">
-                      <% if (model.id === 'citacao_marcador') { %>
-                        <span class="block text-left text-[8px] font-bold text-white">Manchete:</span>
-                        <span class="inline-block bg-yellow-400 px-1 text-[8px] font-black text-slate-950">'Citação'</span>
-                      <% } else if (model.id === 'urgente_alerta') { %>
-                        <span class="block text-center text-[8px] font-black leading-tight text-yellow-400">VAZA REAÇÃO</span>
-                        <span class="block text-center text-[8px] font-black leading-tight text-white">DENTRO DO STF</span>
-                        <span class="mx-auto block w-fit bg-red-600 px-1 text-[7px] font-black leading-tight text-white">E REVELA SUSPEITA</span>
-                      <% } else { %>
-                        <span class="block text-center text-[8px] font-bold tracking-wide text-white">ÚLTIMAS</span>
-                        <span class="mx-auto block h-1 w-full rounded bg-gradient-to-r from-yellow-400 to-orange-400"></span>
-                        <span class="block pb-1 text-center text-[9px] font-black leading-tight text-white">TÍTULO DA<br />NOTÍCIA</span>
-                      <% } %>
-                    </span>
+                  <img src="/minha-marca/preview/<%= model.id %>.png?v=<%= previewVersion %>"
+                    alt="Prévia do modelo <%= model.name %>" width="432" height="540" loading="lazy" decoding="async"
+                    class="block aspect-[4/5] w-full bg-slate-900 object-cover" />
+                  <span class="block border-t border-slate-700 px-2 py-1.5">
+                    <span class="block truncate text-center text-xs font-semibold text-white"><%= model.name %></span>
                   </span>
-                  <span class="block truncate border-t border-slate-700 px-2 py-1.5 text-center text-xs font-semibold text-white"><%= model.name %></span>
                 </span>
               </label>
             <% }) %>

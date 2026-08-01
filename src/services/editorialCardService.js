@@ -1506,6 +1506,78 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
  * PNG transparente só com Minha marca (gradiente + título + logo).
  * Serve para prévia de enquadramento: foto zoom por baixo, marca fixa por cima.
  */
+/** Foto sintética neutra usada como fundo das miniaturas de modelo. */
+async function buildPreviewPhoto(w, h) {
+  const svg = Buffer.from(`
+    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#64748b"/>
+          <stop offset="55%" stop-color="#3b4756"/>
+          <stop offset="100%" stop-color="#1c2430"/>
+        </linearGradient>
+        <radialGradient id="spot" cx="50%" cy="32%" r="48%">
+          <stop offset="0%" stop-color="#dbe3ec" stop-opacity=".95"/>
+          <stop offset="100%" stop-color="#dbe3ec" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="${w}" height="${h}" fill="url(#bg)"/>
+      <ellipse cx="${Math.round(w * 0.5)}" cy="${Math.round(h * 0.3)}" rx="${Math.round(w * 0.23)}" ry="${Math.round(h * 0.19)}" fill="url(#spot)"/>
+      <ellipse cx="${Math.round(w * 0.5)}" cy="${Math.round(h * 0.74)}" rx="${Math.round(w * 0.36)}" ry="${Math.round(h * 0.28)}" fill="#94a3b8" opacity=".38"/>
+    </svg>`);
+  return sharp(svg).png().toBuffer();
+}
+
+/**
+ * Miniatura real de um modelo de arte, usando o mesmo renderizador das artes finais.
+ * Serve para o usuário comparar os modelos em Minha marca.
+ */
+async function buildBrandModelPreviewPng({
+  user,
+  model,
+  title,
+  width = 432,
+  height = 540,
+} = {}) {
+  const { normalizeArtModel } = require('./editorialCardModels');
+  const modelId = normalizeArtModel(model);
+  const w = Math.max(160, Math.round(Number(width) || 432));
+  const h = Math.max(200, Math.round(Number(height) || 540));
+  const primary = normalizeColor(user?.marca_cor_primaria, '#ffbd59');
+  const secondary = normalizeColor(user?.marca_cor_secundaria, '#fb923c');
+  const brandName = String(user?.marca_nome || '').trim();
+  const headline = String(title || '').replace(/\s+/g, ' ').trim()
+    || 'Lula arruma briga ao defender Lulinha: "quem quer me atacar começa por ele"';
+
+  const base = await buildPreviewPhoto(w, h);
+  const titleLines = wrapTitle(headline, modelId === 'estilo_fatos' || modelId === 'citacao_marcador' ? 30 : 27, 5);
+  const logo = await buildLogoComposite(user?.logo_path, w, {
+    model: modelId,
+    canvasHeight: h,
+    titleLineCount: titleLines.length,
+  });
+  const overlay = buildOverlay({
+    title: headline,
+    category: user?.marca_categoria || 'ÚLTIMAS',
+    footer: user?.marca_rodape || brandName,
+    brandName,
+    primary,
+    secondary,
+    hasLogo: Boolean(logo),
+    model: modelId,
+    width: w,
+    height: h,
+    fontId: user?.marca_fonte,
+    titleColorId: user?.marca_titulo_cor,
+    titleSizeId: user?.marca_titulo_tamanho,
+  });
+
+  const composites = [{ input: overlay, left: 0, top: 0 }];
+  if (logo) composites.push(logo);
+
+  return sharp(base).composite(composites).png({ compressionLevel: 9 }).toBuffer();
+}
+
 async function buildBrandOverlayPng({ title, user } = {}) {
   if (!title) throw new Error('Informe o título da arte');
   if (!user?.id) throw new Error('Usuário inválido para compor a arte');
@@ -1573,6 +1645,7 @@ module.exports = {
   createEditorialCard,
   composeBrandOverlayOnImage,
   buildBrandOverlayPng,
+  buildBrandModelPreviewPng,
   removeEditorialCard,
   wrapTitle,
   wrapTextLines,
