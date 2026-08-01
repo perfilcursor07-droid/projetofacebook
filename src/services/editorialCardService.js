@@ -1456,13 +1456,13 @@ async function buildDualCollageBuffer(bufferA, bufferB, opts = {}) {
     .toBuffer();
 }
 
-async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offsetY } = {}) {
+async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offsetY, model } = {}) {
   if (!sourceUrl) throw new Error('A matéria não possui imagem editorial para compor a arte');
   if (!title) throw new Error('Informe o título da arte');
   if (!user?.id) throw new Error('Usuário inválido para compor a arte');
 
-  const { normalizeArtModel } = require('./editorialCardModels');
-  const modelId = normalizeArtModel(user.marca_modelo_arte);
+  const { resolveArtModelForMatter } = require('./editorialCardModels');
+  const modelId = resolveArtModelForMatter(user, model);
   const source = await fetchImage(sourceUrl);
   const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');

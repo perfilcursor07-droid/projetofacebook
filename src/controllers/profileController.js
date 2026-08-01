@@ -140,6 +140,10 @@ async function update(req, res, next) {
       return res.redirect(`/minha-marca?error=${encodeURIComponent('Selecione um modelo de arte válido.')}`);
     }
 
+    const { normalizeOptionalArtModel } = require('../services/editorialCardModels');
+    let requestedSecondary = normalizeOptionalArtModel(req.body.marca_modelo_arte_secundario);
+    if (requestedSecondary === requestedModel) requestedSecondary = null;
+
     const requestedVideoModel = String(
       req.body.marca_video_modelo || current.marca_video_modelo || DEFAULT_VIDEO_BRAND_MODEL
     );
@@ -164,6 +168,7 @@ async function update(req, res, next) {
       marca_cor_primaria: color(req.body.marca_cor_primaria, '#ffbd59'),
       marca_cor_secundaria: color(req.body.marca_cor_secundaria, '#fb923c'),
       marca_modelo_arte: requestedModel,
+      marca_modelo_arte_secundario: requestedSecondary,
       marca_video_modelo: normalizeVideoBrandModel(requestedVideoModel),
     };
 
@@ -175,7 +180,12 @@ async function update(req, res, next) {
           ? req.body.marca_titulo_tamanho
           : current.marca_titulo_tamanho
       );
+      patch.marca_modelo_arte = requestedModel;
+      patch.marca_modelo_arte_secundario = requestedSecondary;
     } else {
+      // Aba vídeo: não sobrescreve modelos de arte
+      delete patch.marca_modelo_arte;
+      delete patch.marca_modelo_arte_secundario;
       patch.marca_video_cor_destaque = color(
         req.body.marca_video_cor_destaque || current.marca_video_cor_destaque,
         '#facc15'

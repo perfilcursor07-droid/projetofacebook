@@ -927,6 +927,8 @@
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/regenerar', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelo: cfg.arteModelo || undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao recarregar o modelo da marca');
@@ -935,6 +937,11 @@
         setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
+      if (data.arteModelo) cfg.arteModelo = data.arteModelo;
+      if (data.titulo) {
+        const tituloEl = document.getElementById('matter-titulo');
+        if (tituloEl) tituloEl.value = data.titulo;
+      }
       setStatus('Modelo, logo e cores atuais aplicados à arte ✓');
     } catch (err) {
       setStatus(err.message, true);
@@ -942,6 +949,56 @@
       reloadBrandButton.disabled = false;
       reloadBrandButton.textContent = originalLabel;
     }
+  });
+
+  async function aplicarModeloArte(modelId) {
+    if (!modelId) return;
+    setStatus('Aplicando modelo “' + modelId + '”…');
+    document.querySelectorAll('.js-matter-art-model').forEach((b) => {
+      b.disabled = true;
+    });
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/regenerar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelo: modelId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao trocar o modelo');
+
+      cfg.arteModelo = data.arteModelo || modelId;
+      document.querySelectorAll('.js-matter-art-model').forEach((b) => {
+        const on = b.dataset.model === cfg.arteModelo;
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        b.classList.toggle('border-emerald-400', on);
+        b.classList.toggle('ring-1', on);
+        b.classList.toggle('ring-emerald-400/30', on);
+        b.classList.toggle('border-slate-700', !on);
+      });
+      if (data.imagemUrl && imgEl) {
+        setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
+        imgWrap?.classList.remove('hidden');
+      }
+      if (data.titulo) {
+        const tituloEl = document.getElementById('matter-titulo');
+        if (tituloEl) tituloEl.value = data.titulo;
+      }
+      setStatus('Modelo aplicado à imagem destacada ✓');
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      document.querySelectorAll('.js-matter-art-model').forEach((b) => {
+        b.disabled = false;
+      });
+    }
+  }
+
+  document.querySelectorAll('.js-matter-art-model').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const modelId = btn.dataset.model;
+      if (!modelId || modelId === cfg.arteModelo) return;
+      aplicarModeloArte(modelId);
+    });
   });
 
   function setSuggestLoading(on) {

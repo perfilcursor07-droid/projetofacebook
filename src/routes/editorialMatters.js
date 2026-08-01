@@ -126,6 +126,7 @@ router.post('/matters/:id/arte/regenerar', async (req, res, next) => {
       sourceUrl,
       title: matter.titulo,
       force: true,
+      model: req.body?.modelo || req.body?.model || req.body?.arte_modelo || null,
       zoom: req.body?.zoom,
       offsetX: req.body?.offsetX ?? req.body?.offset_x,
       offsetY: req.body?.offsetY ?? req.body?.offset_y,
@@ -137,6 +138,7 @@ router.post('/matters/:id/arte/regenerar', async (req, res, next) => {
       imagemUrl: artwork.publicUrl,
       arteModelo: artwork.modelId,
       hasLogo: artwork.hasLogo,
+      titulo: artwork.matter?.titulo || matter.titulo,
     });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });

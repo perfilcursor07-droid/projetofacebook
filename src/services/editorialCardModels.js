@@ -59,6 +59,9 @@ const ART_MODELS = Object.freeze([
 ]);
 
 const ART_MODEL_IDS = new Set(ART_MODELS.map((model) => model.id));
+const ART_MODEL_BY_ID = Object.freeze(
+  Object.fromEntries(ART_MODELS.map((model) => [model.id, model]))
+);
 
 function isArtModel(value) {
   return ART_MODEL_IDS.has(String(value || ''));
@@ -68,4 +71,42 @@ function normalizeArtModel(value) {
   return isArtModel(value) ? String(value) : DEFAULT_ART_MODEL;
 }
 
-module.exports = { ART_MODELS, DEFAULT_ART_MODEL, isArtModel, normalizeArtModel };
+/** Secundário opcional — null se vazio ou inválido. */
+function normalizeOptionalArtModel(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === 'none' || raw === 'nenhum') return null;
+  return isArtModel(raw) ? raw : null;
+}
+
+/**
+ * Principal + secundário (se distinto) cadastrados em Minha marca.
+ */
+function getUserArtModelChoices(user) {
+  const primary = normalizeArtModel(user?.marca_modelo_arte);
+  let secondary = normalizeOptionalArtModel(user?.marca_modelo_arte_secundario);
+  if (secondary === primary) secondary = null;
+
+  const choices = [{ ...ART_MODEL_BY_ID[primary], role: 'principal' }];
+  if (secondary && ART_MODEL_BY_ID[secondary]) {
+    choices.push({ ...ART_MODEL_BY_ID[secondary], role: 'secundario' });
+  }
+  return { primary, secondary, choices };
+}
+
+/** Modelo efetivo da arte: preferência da matéria/request, senão principal. */
+function resolveArtModelForMatter(user, preferred) {
+  const { primary, secondary } = getUserArtModelChoices(user);
+  const pref = String(preferred || '').trim();
+  if (pref && (pref === primary || pref === secondary)) return pref;
+  return primary;
+}
+
+module.exports = {
+  ART_MODELS,
+  DEFAULT_ART_MODEL,
+  isArtModel,
+  normalizeArtModel,
+  normalizeOptionalArtModel,
+  getUserArtModelChoices,
+  resolveArtModelForMatter,
+};

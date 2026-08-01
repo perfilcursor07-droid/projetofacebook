@@ -599,14 +599,31 @@ async function showMatter(req, res, next) {
     }
 
     let marcaModeloArte = null;
+    let artModelChoices = [];
+    let brandPreviewVersion = Date.now();
     try {
       const Users = require('../models/Users');
       const user = await Users.findById(req.session.userId);
-      const { normalizeArtModel } = require('../services/editorialCardModels');
+      const {
+        normalizeArtModel,
+        getUserArtModelChoices,
+        resolveArtModelForMatter,
+      } = require('../services/editorialCardModels');
       marcaModeloArte = normalizeArtModel(user?.marca_modelo_arte);
+      const picked = getUserArtModelChoices(user);
+      artModelChoices = picked.choices;
+      brandPreviewVersion = [
+        user?.updated_at || '',
+        user?.marca_modelo_arte || '',
+        user?.marca_modelo_arte_secundario || '',
+        user?.marca_cor_primaria || '',
+        user?.logo_path || '',
+      ].join('|');
+
       // Matérias antigas sem [[ ]] / (( )): aplica markup e regenera a imagem destacada
+      const activeModel = resolveArtModelForMatter(user, matter.arte_modelo);
       if (
-        marcaModeloArte === 'urgente_alerta' &&
+        activeModel === 'urgente_alerta' &&
         ['rascunho', 'pronto', 'erro', 'agendado'].includes(String(matter.status || ''))
       ) {
         const {
@@ -632,6 +649,7 @@ async function showMatter(req, res, next) {
                   sourceUrl,
                   title: marked,
                   force: true,
+                  model: activeModel,
                 });
                 Object.assign(matter, artwork.matter || {});
               } catch (artErr) {
@@ -645,6 +663,8 @@ async function showMatter(req, res, next) {
       console.warn('[showMatter] marca modelo:', err.message);
     }
 
+    const arteModeloAtivo = String(matter.arte_modelo || marcaModeloArte || '').trim();
+
     return res.render('materia-ia-editar', {
       title: matter.titulo || 'Matéria IA',
       matter,
@@ -655,6 +675,9 @@ async function showMatter(req, res, next) {
       horarioAtualAgendado,
       agendaBiblioteca,
       marcaModeloArte,
+      artModelChoices,
+      arteModeloAtivo,
+      brandPreviewVersion,
       success: req.query.success || null,
       error: req.query.error || null,
     });

@@ -1,7 +1,7 @@
 const AiMatters = require('../models/AiMatters');
 const Users = require('../models/Users');
 const { env } = require('../config/env');
-const { createEditorialCard, removeEditorialCard, ART_WIDTH, ART_HEIGHT } = require('./editorialCardService');
+const { createEditorialCard, removeEditorialCard, ART_WIDTH, ART_HEIGHT, ensureTituloUrgenteAlerta, stripAlertMarks } = require('./editorialCardService');
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
@@ -82,6 +82,7 @@ async function composeMatterArtwork({
   zoom,
   offsetX,
   offsetY,
+  model,
 } = {}) {
   const matter = await AiMatters.findById(matterId);
   if (!matter || Number(matter.user_id) !== Number(userId)) {
@@ -93,13 +94,16 @@ async function composeMatterArtwork({
   const finalTitleRaw = String(title || matter.titulo || '').trim();
   const user = await Users.findById(userId);
   if (!user) throw new Error('Usuário da matéria não encontrado');
-  const { normalizeArtModel } = require('./editorialCardModels');
-  const modelId = normalizeArtModel(user.marca_modelo_arte);
+  const { resolveArtModelForMatter } = require('./editorialCardModels');
+  const modelId = resolveArtModelForMatter(user, model || matter.arte_modelo);
 
-  let finalTitle = finalTitleRaw;
+  let titleForArt = finalTitleRaw;
+  let titleToStore = finalTitleRaw;
   if (modelId === 'urgente_alerta') {
-    const { ensureTituloUrgenteAlerta } = require('./editorialCardService');
-    finalTitle = ensureTituloUrgenteAlerta(finalTitleRaw);
+    titleForArt = ensureTituloUrgenteAlerta(finalTitleRaw);
+    titleToStore = titleForArt;
+  } else {
+    titleForArt = stripAlertMarks(finalTitleRaw);
   }
 
   const source = sourceUrl || matter.imagem_fonte_url ||
@@ -126,7 +130,7 @@ async function composeMatterArtwork({
     !hasFrame &&
     currentFile &&
     sizeOk &&
-    finalTitle === String(matter.titulo || '').trim() &&
+    titleToStore === String(matter.titulo || '').trim() &&
     matter.arte_modelo === modelId
   ) {
     return {
@@ -142,16 +146,17 @@ async function composeMatterArtwork({
 
   const card = await createEditorialCard({
     sourceUrl: source,
-    title: finalTitle,
+    title: titleForArt,
     user,
     zoom,
     offsetX,
     offsetY,
+    model: modelId,
   });
 
   try {
     await AiMatters.update(matter.id, {
-      titulo: finalTitle,
+      titulo: titleToStore,
       imagem_path: card.relativePath,
       imagem_url: card.publicUrl,
       imagem_fonte_url: source,

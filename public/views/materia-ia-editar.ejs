@@ -137,7 +137,7 @@
               <input id="matter-titulo" <%= canEdit ? '' : 'readonly' %> value="<%= matter.titulo || '' %>"
                 placeholder="Adicionar título"
                 class="w-full border-0 bg-transparent text-xl font-semibold leading-snug text-white placeholder:text-slate-600 focus:outline-none focus:ring-0 sm:text-2xl <%= canEdit ? '' : 'opacity-80' %>" />
-              <% if (typeof marcaModeloArte !== 'undefined' && marcaModeloArte === 'urgente_alerta') { %>
+              <% if (typeof marcaModeloArte !== 'undefined' && (marcaModeloArte === 'urgente_alerta' || (typeof artModelChoices !== 'undefined' && artModelChoices.some((m) => m.id === 'urgente_alerta')))) { %>
                 <p class="mt-1.5 pb-1 text-[11px] leading-relaxed text-slate-500">
                   Modelo <span class="text-slate-400">Urgente alerta</span>:
                   use <code class="text-yellow-400/90">[[palavra]]</code> na cor principal e
@@ -475,6 +475,31 @@
                 <span class="text-[10px] text-slate-500">4:5</span>
               </div>
             </div>
+            <% if (canEdit && typeof artModelChoices !== 'undefined' && artModelChoices.length > 1) { %>
+              <div id="matter-art-models" class="border-b border-slate-800 px-3 py-2">
+                <p class="text-[10px] font-medium text-slate-400">Modelo da arte</p>
+                <div class="mt-1.5 grid grid-cols-2 gap-2">
+                  <% artModelChoices.forEach((m) => {
+                    const ativo = String(typeof arteModeloAtivo !== 'undefined' ? arteModeloAtivo : '') === m.id;
+                  %>
+                    <button type="button"
+                      class="js-matter-art-model group overflow-hidden rounded-lg border text-left transition <%= ativo ? 'border-emerald-400 ring-1 ring-emerald-400/30' : 'border-slate-700 hover:border-slate-500' %>"
+                      data-model="<%= m.id %>"
+                      aria-pressed="<%= ativo ? 'true' : 'false' %>"
+                      title="<%= m.description %>">
+                      <img src="/minha-marca/preview/<%= m.id %>.png?v=<%= typeof brandPreviewVersion !== 'undefined' ? brandPreviewVersion : '' %>"
+                        alt="<%= m.name %>" class="aspect-[4/5] w-full bg-slate-900 object-cover" loading="lazy" />
+                      <span class="block border-t border-slate-800 px-1.5 py-1">
+                        <span class="block truncate text-[10px] font-semibold text-white"><%= m.name %></span>
+                        <span class="text-[9px] <%= m.role === 'principal' ? 'text-emerald-400/80' : 'text-sky-400/80' %>">
+                          <%= m.role === 'principal' ? 'Principal' : 'Secundário' %>
+                        </span>
+                      </span>
+                    </button>
+                  <% }) %>
+                </div>
+              </div>
+            <% } %>
             <div class="p-2">
               <div id="matter-img-frame-preview" class="relative overflow-hidden rounded border border-slate-800 bg-slate-900/50">
                 <% if (canEdit && imagemFonteUrl) { %>
@@ -666,6 +691,8 @@
       reelProcessing: <%= reelProcessing ? 'true' : 'false' %>,
       videoUrl: <%- JSON.stringify(videoUrl || null) %>,
       imagemFonteUrl: <%- JSON.stringify(imagemFonteUrl || null) %>,
+      arteModelo: <%- JSON.stringify(typeof arteModeloAtivo !== 'undefined' ? arteModeloAtivo : null) %>,
+      artModelChoices: <%- JSON.stringify(typeof artModelChoices !== 'undefined' ? artModelChoices : []) %>,
       listUrl: '/minhas-materias',
       ultimoAgendamento: <%- JSON.stringify(typeof ultimoAgendamento !== 'undefined' ? ultimoAgendamento : null) %>,
       proximoSlotLocal: <%- JSON.stringify(typeof proximoSlotLocal !== 'undefined' ? proximoSlotLocal : null) %>,
@@ -686,5 +713,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260731frame4"></script>
+  <script src="/js/materia-ia-editar.js?v=20260801models2"></script>
 <%- include('partials/app-end') %>

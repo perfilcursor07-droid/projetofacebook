@@ -39,6 +39,7 @@
     <form action="/minha-marca" method="POST" enctype="multipart/form-data" class="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <input type="hidden" name="marca_tab" value="<%= activeTab %>" />
       <input type="hidden" name="marca_modelo_arte" value="<%= profile.marca_modelo_arte || defaultArtModel %>" id="hidden-modelo-arte" />
+      <input type="hidden" name="marca_modelo_arte_secundario" value="<%= profile.marca_modelo_arte_secundario || '' %>" id="hidden-modelo-arte-sec" />
       <input type="hidden" name="marca_video_modelo" value="<%= videoModeloAtual %>" id="hidden-modelo-video" />
 
       <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
@@ -138,9 +139,14 @@
         </div>
 
         <div class="mt-7 border-t border-slate-800 pt-6">
-          <h3 class="text-sm font-semibold text-white">Modelo da arte (imagem)</h3>
-          <p class="mt-1 text-xs text-slate-500">Usado nas artes das Matérias IA — não no Reel.</p>
-          <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <h3 class="text-sm font-semibold text-white">Modelos da arte (imagem)</h3>
+          <p class="mt-1 text-xs text-slate-500">
+            Escolha até <strong class="font-medium text-slate-300">2 modelos</strong>: o principal (padrão) e um secundário opcional.
+            No editor da matéria você troca entre eles sem voltar aqui.
+          </p>
+
+          <p class="mt-4 text-xs font-semibold uppercase tracking-wider text-emerald-400/90">Principal</p>
+          <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <% artModels.forEach((model) => { %>
               <label class="cursor-pointer" title="<%= model.description %>">
                 <input type="radio" name="marca_modelo_arte_ui" value="<%= model.id %>" class="peer sr-only js-modelo-arte"
@@ -148,6 +154,34 @@
                 <span class="block overflow-hidden rounded-xl border-2 border-slate-600 bg-slate-950 transition peer-checked:border-emerald-400 peer-checked:ring-2 peer-checked:ring-emerald-400/25 hover:border-slate-400">
                   <img src="/minha-marca/preview/<%= model.id %>.png?v=<%= previewVersion %>"
                     alt="Prévia do modelo <%= model.name %>" width="432" height="540" loading="lazy" decoding="async"
+                    class="block aspect-[4/5] w-full bg-slate-900 object-cover" />
+                  <span class="block border-t border-slate-700 px-2 py-1.5">
+                    <span class="block truncate text-center text-xs font-semibold text-white"><%= model.name %></span>
+                  </span>
+                </span>
+              </label>
+            <% }) %>
+          </div>
+
+          <% const secAtual = profile.marca_modelo_arte_secundario || ''; %>
+          <p class="mt-6 text-xs font-semibold uppercase tracking-wider text-sky-400/90">Secundário <span class="font-normal text-slate-500">(opcional)</span></p>
+          <p class="mt-1 text-[11px] text-slate-500">Aparece junto do principal no editor da matéria para troca rápida.</p>
+          <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <label class="cursor-pointer" title="Sem modelo secundário">
+              <input type="radio" name="marca_modelo_arte_sec_ui" value="" class="peer sr-only js-modelo-arte-sec"
+                <%= !secAtual ? 'checked' : '' %> />
+              <span class="flex aspect-[4/5] flex-col items-center justify-center rounded-xl border-2 border-slate-600 bg-slate-950 px-2 text-center transition peer-checked:border-sky-400 peer-checked:ring-2 peer-checked:ring-sky-400/25 hover:border-slate-400">
+                <span class="text-xs font-semibold text-slate-300">Nenhum</span>
+                <span class="mt-1 text-[10px] text-slate-500">Só o principal</span>
+              </span>
+            </label>
+            <% artModels.forEach((model) => { %>
+              <label class="cursor-pointer js-sec-model-label" data-model-id="<%= model.id %>" title="<%= model.description %>">
+                <input type="radio" name="marca_modelo_arte_sec_ui" value="<%= model.id %>" class="peer sr-only js-modelo-arte-sec"
+                  <%= secAtual === model.id ? 'checked' : '' %> />
+                <span class="block overflow-hidden rounded-xl border-2 border-slate-600 bg-slate-950 transition peer-checked:border-sky-400 peer-checked:ring-2 peer-checked:ring-sky-400/25 hover:border-slate-400">
+                  <img src="/minha-marca/preview/<%= model.id %>.png?v=<%= previewVersion %>"
+                    alt="Prévia secundário <%= model.name %>" width="432" height="540" loading="lazy" decoding="async"
                     class="block aspect-[4/5] w-full bg-slate-900 object-cover" />
                   <span class="block border-t border-slate-700 px-2 py-1.5">
                     <span class="block truncate text-center text-xs font-semibold text-white"><%= model.name %></span>
@@ -291,6 +325,7 @@
     const titleSizeInput = document.getElementById('title-size-input');
     const titleSizeValue = document.getElementById('title-size-value');
     const hiddenArte = document.getElementById('hidden-modelo-arte');
+    const hiddenArteSec = document.getElementById('hidden-modelo-arte-sec');
     const hiddenVideo = document.getElementById('hidden-modelo-video');
     let previewObjectUrl = null;
 
@@ -303,11 +338,38 @@
     const removeLogoCard = document.querySelector('[data-remove-logo]');
     if (removeLogoCard && logoInput) logoInput.closest('label').insertAdjacentElement('afterend', removeLogoCard);
 
+    function syncSecundarioVsPrincipal() {
+      const principal = hiddenArte?.value || '';
+      document.querySelectorAll('.js-sec-model-label').forEach((label) => {
+        const id = label.getAttribute('data-model-id');
+        const input = label.querySelector('input');
+        const same = id === principal;
+        label.classList.toggle('opacity-40', same);
+        label.classList.toggle('pointer-events-none', same);
+        if (input) {
+          input.disabled = same;
+          if (same && input.checked) {
+            const none = document.querySelector('.js-modelo-arte-sec[value=""]');
+            if (none) none.checked = true;
+            if (hiddenArteSec) hiddenArteSec.value = '';
+          }
+        }
+      });
+    }
+
     document.querySelectorAll('.js-modelo-arte').forEach((el) => {
       el.addEventListener('change', () => {
         if (el.checked && hiddenArte) hiddenArte.value = el.value;
+        syncSecundarioVsPrincipal();
       });
     });
+    document.querySelectorAll('.js-modelo-arte-sec').forEach((el) => {
+      el.addEventListener('change', () => {
+        if (el.checked && hiddenArteSec) hiddenArteSec.value = el.value || '';
+      });
+    });
+    syncSecundarioVsPrincipal();
+
     document.querySelectorAll('.js-modelo-video').forEach((el) => {
       el.addEventListener('change', () => {
         if (el.checked && hiddenVideo) hiddenVideo.value = el.value;
