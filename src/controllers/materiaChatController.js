@@ -95,6 +95,7 @@ async function enviar(req, res, next) {
       tom: body.tom || 'natural',
       periodo: body.periodo || undefined,
       palavrasChave: body.palavrasChave || null,
+      modo: body.modo === 'pautas' ? 'pautas' : 'escrever',
       onEvent: enviarEvento,
     });
     return res.end();

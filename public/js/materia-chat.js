@@ -19,6 +19,7 @@
     toggleWeb: document.getElementById('chat-toggle-web'),
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
+    modoBtns: document.querySelectorAll('.chat-modo-btn'),
   };
 
   if (!el.mensagens || !el.input) return;
@@ -30,6 +31,7 @@
     pesquisarWeb: true,
     enviando: false,
     controller: null,
+    modo: 'escrever',
   };
 
   async function api(url, opts = {}) {
@@ -413,6 +415,90 @@
     return box;
   }
 
+  /**
+   * Cartões das matérias encontradas no modo "Pesquisar pautas".
+   * Escolher uma monta o pedido de reescrita com furo e já envia.
+   */
+  function blocoPautas(pautas = []) {
+    if (!Array.isArray(pautas) || !pautas.length) return null;
+
+    const box = document.createElement('div');
+    box.className = 'space-y-2';
+
+    const titulo = document.createElement('p');
+    titulo.className = 'text-[11px] font-semibold uppercase tracking-wider text-emerald-400/80';
+    titulo.textContent = `Escolha a matéria para reescrever (${pautas.length})`;
+    box.appendChild(titulo);
+
+    pautas.forEach((pauta, indice) => {
+      const card = document.createElement('article');
+      card.className =
+        'rounded-xl border border-slate-800 bg-slate-950/60 p-3 transition hover:border-emerald-500/40';
+
+      const meta = document.createElement('div');
+      meta.className = 'flex items-center gap-2';
+      const num = document.createElement('span');
+      num.className =
+        'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-slate-300';
+      num.textContent = String(indice + 1);
+      meta.appendChild(num);
+      const veiculo = document.createElement('span');
+      veiculo.className = 'truncate text-[11px] font-medium text-slate-400';
+      veiculo.textContent = pauta.veiculo || 'Web';
+      meta.appendChild(veiculo);
+      card.appendChild(meta);
+
+      const h = document.createElement('p');
+      h.className = 'mt-1.5 text-sm font-semibold leading-snug text-white';
+      h.textContent = pauta.titulo || 'Sem título';
+      card.appendChild(h);
+
+      if (pauta.resumo) {
+        const r = document.createElement('p');
+        r.className = 'mt-1 text-xs leading-relaxed text-slate-400';
+        r.textContent = pauta.resumo;
+        card.appendChild(r);
+      }
+
+      const acoes = document.createElement('div');
+      acoes.className = 'mt-2.5 flex flex-wrap items-center gap-2';
+
+      const escrever = criarBotao(
+        'Reescrever com furo',
+        'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400'
+      );
+      escrever.addEventListener('click', () => {
+        if (state.enviando) return;
+        definirModo('escrever');
+        el.input.value = [
+          'Reescreva esta matéria com furo de reportagem, texto totalmente original e sem plagiar:',
+          `Título: ${pauta.titulo || ''}`,
+          `Veículo: ${pauta.veiculo || ''}`,
+          `Link: ${pauta.url || ''}`,
+          'Pesquise também mais informações recentes sobre esse assunto para acrescentar contexto e dados novos.',
+        ].join('\n');
+        enviar();
+      });
+      acoes.appendChild(escrever);
+
+      if (pauta.url) {
+        const abrir = document.createElement('a');
+        abrir.href = pauta.url;
+        abrir.target = '_blank';
+        abrir.rel = 'noopener';
+        abrir.className =
+          'rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-white';
+        abrir.textContent = 'Ler original ↗';
+        acoes.appendChild(abrir);
+      }
+
+      card.appendChild(acoes);
+      box.appendChild(card);
+    });
+
+    return box;
+  }
+
   function blocoAssistente(mensagem) {
     const wrap = document.createElement('div');
     wrap.className = 'space-y-2';
@@ -429,6 +515,9 @@
     corpo.className = 'space-y-3';
     renderTexto(corpo, mensagem.content);
     wrap.appendChild(corpo);
+
+    const pautas = blocoPautas(mensagem.pautas || []);
+    if (pautas) wrap.appendChild(pautas);
 
     const fontes = blocoFontes(mensagem.fontes || []);
     if (fontes) wrap.appendChild(fontes);
@@ -505,6 +594,32 @@
     el.periodo?.classList.toggle('hidden', !on);
   }
 
+  /**
+   * 'escrever' = já escreve a matéria.
+   * 'pautas'  = pesquisa o tema e lista matérias para o usuário escolher.
+   */
+  function definirModo(novo) {
+    state.modo = novo === 'pautas' ? 'pautas' : 'escrever';
+    el.modoBtns?.forEach((btn) => {
+      const ativo = btn.dataset.chatModo === state.modo;
+      btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+      btn.className = ativo
+        ? 'chat-modo-btn rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-950'
+        : 'chat-modo-btn rounded-lg px-3 py-1 text-xs font-medium text-slate-400 hover:text-white';
+    });
+    // Pesquisar pautas depende da busca na web
+    if (state.modo === 'pautas' && !state.pesquisarWeb) {
+      state.pesquisarWeb = true;
+      aplicarToggleWeb();
+    }
+    if (el.input) {
+      el.input.placeholder =
+        state.modo === 'pautas'
+          ? 'Digite o tema para pesquisar. Ex.: Polêmica Silas Malafaia'
+          : 'Descreva o assunto, cole um link ou peça um ajuste…';
+    }
+  }
+
   function setEnviando(on) {
     state.enviando = on;
     el.enviar.disabled = on;
@@ -522,13 +637,14 @@
 
     esconderVazio();
     el.input.value = '';
-    el.input.placeholder = 'Peça a matéria, tire uma dúvida ou peça um ajuste (Enter envia, Shift+Enter pula linha)';
     setEnviando(true);
     const janela = el.periodo?.selectedOptions?.[0]?.textContent?.trim() || '';
     setStatus(
-      state.pesquisarWeb
-        ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''}…`
-        : 'Escrevendo…'
+      state.modo === 'pautas'
+        ? `Procurando matérias sobre o tema${janela ? ` — ${janela.toLowerCase()}` : ''}…`
+        : state.pesquisarWeb
+          ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''}…`
+          : 'Escrevendo…'
     );
 
     el.mensagens.appendChild(blocoUsuario({ content: texto }));
@@ -557,6 +673,7 @@
           pesquisarWeb: state.pesquisarWeb,
           tom: el.tom?.value || 'natural',
           periodo: el.periodo?.value || '7d',
+          modo: state.modo,
         }),
       });
 
@@ -593,6 +710,12 @@
           parcial += evento.texto || '';
           renderTexto(corpo, parcial);
           scrollFim();
+        } else if (evento.tipo === 'pautas') {
+          const cartoes = blocoPautas(evento.pautas || []);
+          if (cartoes) {
+            wrap.appendChild(cartoes);
+            scrollFim();
+          }
         } else if (evento.tipo === 'fim') {
           state.chatId = evento.chatId;
           const pronto = blocoAssistente(evento.mensagem);
@@ -654,6 +777,12 @@
   el.toggleWeb?.addEventListener('click', () => {
     state.pesquisarWeb = !state.pesquisarWeb;
     aplicarToggleWeb();
+    // Sem busca não há como listar pautas
+    if (!state.pesquisarWeb && state.modo === 'pautas') definirModo('escrever');
+  });
+
+  el.modoBtns?.forEach((btn) => {
+    btn.addEventListener('click', () => definirModo(btn.dataset.chatModo));
   });
 
   el.input.addEventListener('keydown', (ev) => {
@@ -691,6 +820,7 @@
     if (state.iniciado) return;
     state.iniciado = true;
     aplicarToggleWeb();
+    definirModo(state.modo);
     await carregarConversas();
     let salvo = null;
     try {

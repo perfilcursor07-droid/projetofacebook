@@ -352,6 +352,8 @@ function citacoesQueSaoTitulos(resposta, fontes = []) {
 function serializarMensagem(row) {
   const conteudo = String(row.content || '');
   const info = row.role === 'assistant' ? interpretarResposta(conteudo) : null;
+  const guardadas = parseJson(row.fontes, []);
+  const pautas = (Array.isArray(guardadas) ? guardadas : []).filter((f) => f && f.ehPauta);
   return {
     id: row.id,
     role: row.role,
@@ -359,7 +361,8 @@ function serializarMensagem(row) {
     titulo: row.titulo || info?.titulo || null,
     hashtags: parseJson(row.hashtags, []),
     passos: parseJson(row.passos, []),
-    fontes: parseJson(row.fontes, []),
+    pautas,
+    fontes: pautas.length ? [] : guardadas,
     pesquisouWeb: Boolean(row.pesquisou_web),
     matterId: row.matter_id || null,
     ehMateria: row.role === 'assistant' ? Boolean(info?.ehMateria) : false,
@@ -432,8 +435,12 @@ async function responder({
   tom = 'natural',
   periodo = PERIODO_PADRAO,
   palavrasChave = null,
+  modo = 'escrever',
   onEvent = () => {},
 }) {
+  // 'pautas': pesquisa o tema e devolve a lista de matérias para o usuário
+  // escolher qual quer reescrever, em vez de já escrever a matéria.
+  const modoPautas = String(modo) === 'pautas';
   const deepseekService = require('./deepseekService');
   const materiaIaService = require('./materiaIaService');
   deepseekService.assertDeepseek();
@@ -489,7 +496,7 @@ async function responder({
   };
 
   /** Salva a resposta na conversa e avisa o front (usado no fluxo normal e na checagem). */
-  const finalizar = async (resposta, { fontesUsadas = [], usouWeb = false } = {}) => {
+  const finalizar = async (resposta, { fontesUsadas = [], usouWeb = false, pautas = null } = {}) => {
     const info = interpretarResposta(resposta);
     const assistantId = await AiChatMessages.create({
       chat_id: chat.id,
@@ -498,8 +505,10 @@ async function responder({
       titulo: info.titulo || null,
       hashtags: JSON.stringify(info.hashtags || []),
       passos: JSON.stringify(passos),
+      // Lista de pautas fica no mesmo campo de fontes, marcada com ehPauta
+      // para o chat reabrir a conversa já com os cartões de escolha.
       fontes: JSON.stringify(
-        (fontesUsadas || []).map((f) => ({ veiculo: f.veiculo, titulo: f.titulo, url: f.url }))
+        pautas || (fontesUsadas || []).map((f) => ({ veiculo: f.veiculo, titulo: f.titulo, url: f.url }))
       ),
       pesquisou_web: usouWeb ? 1 : 0,
     });
@@ -550,7 +559,8 @@ async function responder({
   // O usuário pode desligar a busca dentro do próprio texto
   const pediuSemPesquisa =
     /\b(n[ãa]o\s+(pesquis|busqu|procur)|sem\s+(pesquis|busca|buscar|internet))/i.test(pedido);
-  let usarPesquisa = Boolean(pesquisarWeb) && !pediuSemPesquisa;
+  // Listar pautas exige busca — é o objetivo do modo.
+  let usarPesquisa = modoPautas || (Boolean(pesquisarWeb) && !pediuSemPesquisa);
 
   let fontes = [];
   let blocoFatos = null;
@@ -583,7 +593,7 @@ async function responder({
         /\b(pesquis|busc|complement|outras fontes|na web|na internet|confirme|confirmar)\b/i.test(
           resto
         );
-      if (resto.length < 50 && !pediuComplementoWeb && usarPesquisa) {
+      if (resto.length < 50 && !pediuComplementoWeb && usarPesquisa && !modoPautas) {
         usarPesquisa = false;
         registrarPasso({
           kind: 'pensando',
@@ -646,7 +656,7 @@ async function responder({
       fontesWeb = await materiaIaService.coletarFatosNaWeb({
         consultas: consultas.slice(0, 4),
         periodo: periodoFinal,
-        max: temFonteDoLink ? 4 : 6,
+        max: modoPautas ? 8 : temFonteDoLink ? 4 : 6,
         resumoContexto: pedido.slice(0, 300),
         logPrefix: '[materia-chat]',
         onProgress: (evento) => {
@@ -708,6 +718,41 @@ async function responder({
       });
       usarPesquisa = false;
     }
+  }
+
+  // Modo pautas: para aqui e devolve a lista para o usuário escolher.
+  if (modoPautas) {
+    const tema = pedido.replace(/\s+/g, ' ').trim().slice(0, 120);
+    const pautas = fontes
+      .filter((f) => f.url && f.titulo)
+      .map((f) => ({
+        veiculo: f.veiculo || 'Web',
+        titulo: f.titulo,
+        url: f.url,
+        resumo: String(f.resumo || f.trecho || '').replace(/\s+/g, ' ').trim().slice(0, 320),
+        ehPauta: true,
+      }));
+
+    onEvent({ tipo: 'inicio-resposta' });
+
+    if (!pautas.length) {
+      const { rotuloPeriodo } = require('./newsResearch');
+      const aviso = [
+        `Não encontrei matérias sobre “${tema}” no período escolhido (${rotuloPeriodo(periodoFinal)}).`,
+        'Aumente o período, tente outras palavras ou cole o link da matéria que você quer reescrever.',
+      ].join('\n\n');
+      onEvent({ tipo: 'delta', texto: aviso });
+      return finalizar(aviso, { fontesUsadas: [], usouWeb: true });
+    }
+
+    registrarPasso({
+      kind: 'fontes',
+      texto: `${pautas.length} pauta(s) encontradas para escolher`,
+    });
+    const resumo = `Encontrei ${pautas.length} matéria(s) sobre “${tema}”. Escolha qual você quer reescrever com furo de reportagem — o texto sai original, sem plágio, e eu pesquiso mais informações sobre ela.`;
+    onEvent({ tipo: 'delta', texto: resumo });
+    onEvent({ tipo: 'pautas', pautas });
+    return finalizar(resumo, { usouWeb: true, pautas });
   }
 
   // Portão anti-invenção: pedido que AFIRMA um fato só passa se a apuração confirmar.
