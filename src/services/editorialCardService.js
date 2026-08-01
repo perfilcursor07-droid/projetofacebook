@@ -955,18 +955,36 @@ function buildOverlay({
         return { type: 'text', lines: textLines, fontSize: headFont, lineHeight: Math.round(headFont * 1.06) };
       });
 
-      const totalH = blocks.reduce((sum, block) => sum + block.lines.length * block.lineHeight, 0);
+      const bandGapBefore = hh(28);
+      let totalH = 0;
+      for (let i = 0; i < blocks.length; i += 1) {
+        if (i > 0 && blocks[i].type === 'band' && blocks[i - 1].type === 'text') {
+          totalH += bandGapBefore;
+        }
+        totalH += blocks[i].lines.length * blocks[i].lineHeight;
+      }
       const available = H - bannerH - hh(40) - (hasLogo ? hh(196) : hh(116));
       if (totalH <= available || headFont <= minFont) break;
       headFont = Math.max(minFont, Math.round(headFont * 0.92));
     }
 
-    const totalTextH = blocks.reduce((sum, block) => sum + block.lines.length * block.lineHeight, 0);
+    const bandGapBefore = hh(28);
+    let totalTextH = 0;
+    for (let i = 0; i < blocks.length; i += 1) {
+      if (i > 0 && blocks[i].type === 'band' && blocks[i - 1].type === 'text') {
+        totalTextH += bandGapBefore;
+      }
+      totalTextH += blocks[i].lines.length * blocks[i].lineHeight;
+    }
     const bottomReserve = hasLogo ? hh(196) : hh(116);
     let cursor = Math.max(bannerH + hh(40), H - bottomReserve - totalTextH);
 
     let textParts = '';
-    for (const block of blocks) {
+    for (let i = 0; i < blocks.length; i += 1) {
+      const block = blocks[i];
+      if (i > 0 && block.type === 'band' && blocks[i - 1].type === 'text') {
+        cursor += bandGapBefore;
+      }
       if (block.type === 'band') {
         textParts += renderHighlightedLines(block.lines, {
           x: x(540),
