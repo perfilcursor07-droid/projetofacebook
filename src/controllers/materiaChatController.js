@@ -100,8 +100,20 @@ async function enviar(req, res, next) {
     });
     return res.end();
   } catch (err) {
-    if (!res.headersSent) return next(err);
-    enviarEvento({ tipo: 'erro', erro: err.message || 'Falha ao gerar a resposta' });
+    // Erro de banco/driver traz SQL e dados na mensagem: fica no log, não na tela.
+    const ehErroInterno = Boolean(err.sql || err.sqlMessage || err.code);
+    if (ehErroInterno) {
+      console.error('[materia-chat] erro interno:', err.code || '', err.sqlMessage || err.message);
+    }
+    const paraUsuario = ehErroInterno
+      ? 'Não consegui salvar esta resposta agora. Tente enviar de novo.'
+      : err.message || 'Falha ao gerar a resposta';
+
+    if (!res.headersSent) {
+      if (ehErroInterno) return res.status(500).json({ error: paraUsuario });
+      return next(err);
+    }
+    enviarEvento({ tipo: 'erro', erro: paraUsuario });
     return res.end();
   }
 }

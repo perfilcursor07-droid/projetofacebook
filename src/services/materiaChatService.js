@@ -349,6 +349,25 @@ function citacoesQueSaoTitulos(resposta, fontes = []) {
   return suspeitas.slice(0, 3);
 }
 
+/**
+ * Deixa texto de fonte externa seguro para gravar no MySQL.
+ * Cortar com slice() pode partir um par de surrogates (emoji) no meio e gerar
+ * UTF-8 inválido, que o banco recusa — aqui o corte é limpo.
+ */
+function limparParaBanco(valor, max = 500) {
+  let texto = String(valor ?? '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (max > 0 && texto.length > max) texto = texto.slice(0, max);
+  // Remove surrogates órfãos (inclusive os criados pelo corte acima)
+  return texto
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '')
+    .replace(/([^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/g, '$1')
+    .trim();
+}
+
 function serializarMensagem(row) {
   const conteudo = String(row.content || '');
   const info = row.role === 'assistant' ? interpretarResposta(conteudo) : null;
@@ -498,20 +517,63 @@ async function responder({
   /** Salva a resposta na conversa e avisa o front (usado no fluxo normal e na checagem). */
   const finalizar = async (resposta, { fontesUsadas = [], usouWeb = false, pautas = null } = {}) => {
     const info = interpretarResposta(resposta);
-    const assistantId = await AiChatMessages.create({
+
+    // Passos e fontes vêm de páginas externas: limita volume e limpa o texto
+    // antes de gravar, para um resumo malformado não derrubar a conversa.
+    const passosSalvos = passos.slice(-40).map((p) => ({
+      kind: p.kind,
+      texto: limparParaBanco(p.texto, 300),
+      ...(p.url ? { url: limparParaBanco(p.url, 500) } : {}),
+    }));
+
+    const fontesSalvas = pautas
+      ? pautas.slice(0, 12).map((p) => ({
+          veiculo: limparParaBanco(p.veiculo, 120),
+          titulo: limparParaBanco(p.titulo, 300),
+          url: limparParaBanco(p.url, 500),
+          resumo: limparParaBanco(p.resumo, 320),
+          ehPauta: true,
+        }))
+      : (fontesUsadas || []).slice(0, 12).map((f) => ({
+          veiculo: limparParaBanco(f.veiculo, 120),
+          titulo: limparParaBanco(f.titulo, 300),
+          url: limparParaBanco(f.url, 500),
+        }));
+
+    const registro = {
       chat_id: chat.id,
       role: 'assistant',
       content: resposta,
-      titulo: info.titulo || null,
+      titulo: info.titulo ? limparParaBanco(info.titulo, 180) : null,
       hashtags: JSON.stringify(info.hashtags || []),
-      passos: JSON.stringify(passos),
+      passos: JSON.stringify(passosSalvos),
       // Lista de pautas fica no mesmo campo de fontes, marcada com ehPauta
       // para o chat reabrir a conversa já com os cartões de escolha.
-      fontes: JSON.stringify(
-        pautas || (fontesUsadas || []).map((f) => ({ veiculo: f.veiculo, titulo: f.titulo, url: f.url }))
-      ),
+      fontes: JSON.stringify(fontesSalvas),
       pesquisou_web: usouWeb ? 1 : 0,
-    });
+    };
+
+    let assistantId;
+    try {
+      assistantId = await AiChatMessages.create(registro);
+    } catch (err) {
+      // Não perde a resposta por causa dos metadados da apuração.
+      console.error(
+        '[materia-chat] falha ao salvar mensagem:',
+        err.code || '',
+        err.sqlMessage || err.message
+      );
+      assistantId = await AiChatMessages.create({
+        chat_id: chat.id,
+        role: 'assistant',
+        content: registro.content,
+        titulo: registro.titulo,
+        hashtags: '[]',
+        passos: '[]',
+        fontes: '[]',
+        pesquisou_web: registro.pesquisou_web,
+      });
+    }
     await AiChats.touch(chat.id);
     const salva = await AiChatMessages.findById(assistantId);
     const mensagem = serializarMensagem(salva);
@@ -726,10 +788,10 @@ async function responder({
     const pautas = fontes
       .filter((f) => f.url && f.titulo)
       .map((f) => ({
-        veiculo: f.veiculo || 'Web',
-        titulo: f.titulo,
-        url: f.url,
-        resumo: String(f.resumo || f.trecho || '').replace(/\s+/g, ' ').trim().slice(0, 320),
+        veiculo: limparParaBanco(f.veiculo, 120) || 'Web',
+        titulo: limparParaBanco(f.titulo, 300),
+        url: limparParaBanco(f.url, 500),
+        resumo: limparParaBanco(f.resumo || f.trecho, 320),
         ehPauta: true,
       }));
 

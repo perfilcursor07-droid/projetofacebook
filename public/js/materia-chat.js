@@ -756,10 +756,16 @@
       if (err.name === 'AbortError') {
         setStatus('Geração interrompida');
       } else {
-        setStatus(err.message);
+        // Mensagem longa (ex.: erro técnico) não pode estourar o layout do chat.
+        const curta = String(err.message || 'Falha ao gerar a resposta')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 300);
+        setStatus(curta.slice(0, 120));
         const p = document.createElement('p');
-        p.className = 'text-sm text-rose-300';
-        p.textContent = err.message;
+        p.className =
+          'max-h-24 overflow-hidden break-words rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200';
+        p.textContent = curta;
         corpo.appendChild(p);
       }
     } finally {
