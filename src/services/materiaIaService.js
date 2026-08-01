@@ -2830,6 +2830,8 @@ async function coletarFatosNaWeb({
   resumoContexto = null,
   logPrefix = '[pesquisa-web]',
   onProgress = null,
+  incluirRedes = false,
+  redesAmplas = false,
 } = {}) {
   // Usado pelo chat de matérias para mostrar "buscando / encontrados / lendo".
   const emitir = (evento) => {
@@ -2850,6 +2852,9 @@ async function coletarFatosNaWeb({
     normalizarPeriodo,
     itemDentroDoPeriodo,
     rotuloPeriodo,
+    buscarSerperRedes,
+    REDES_SOCIAIS_PADRAO,
+    REDES_SOCIAIS_AMPLAS,
   } = require('./newsResearch');
 
   const cfgPeriodo = normalizarPeriodo(periodo || '180d');
@@ -2861,7 +2866,7 @@ async function coletarFatosNaWeb({
     .filter((q, i, arr) => q.length >= 8 && arr.indexOf(q) === i);
   if (!queries.length) return [];
 
-  const limite = Math.max(1, Math.min(8, Number(max) || 5));
+  const limite = Math.max(1, Math.min(24, Number(max) || 5));
   const urlExcluida = excluirUrl ? normalizarUrlFonte(excluirUrl) : '';
   const fontes = [];
   const vistosUrl = new Set(urlExcluida ? [urlExcluida] : []);
@@ -2888,54 +2893,126 @@ async function coletarFatosNaWeb({
       titulo: tit || queries[0],
       resumo: String(f.resumo || '').slice(0, 500),
       trecho: trecho.slice(0, 2500),
+      ...(f.ehRedeSocial || f.redeSocial ? { ehRedeSocial: true } : {}),
     });
   }
 
-  // 1) Mesmas fontes de /conteudo (Google News + Brave), sem apurar tudo (mais rápido)
-  for (const q of queries.slice(0, 2)) {
-    if (fontes.length >= limite) break;
-    try {
-      const when = whenParaGoogle(cfgPeriodo);
-      emitir({ tipo: 'buscando', consulta: q, periodo: rotulo });
-      const brutos = [
-        ...(await buscarGoogleNewsRss(q, { when })),
-        ...(await buscarBraveNews(q, cfgPeriodo)),
-      ];
-      const encontrados = brutos.filter((t) => {
-        if (itemDentroDoPeriodo(t, cfgPeriodo)) return true;
-        foraDoPeriodo += 1;
-        return false;
-      });
-      emitir({
-        tipo: 'encontrados',
-        consulta: q,
-        total: encontrados.length,
-        descartados: brutos.length - encontrados.length,
-        periodo: rotulo,
-      });
-      for (const t of encontrados.slice(0, 12)) {
-        if (fontes.length >= limite) break;
-        const url = t.link;
-        if (!url || normalizarUrlFonte(url) === urlExcluida) continue;
-        let meta = null;
-        try {
-          emitir({ tipo: 'lendo', url, veiculo: t.veiculo || t.fonte || null, titulo: t.titulo || null });
-          meta = await extrairMetadadosArtigo(url);
-        } catch {
-          /* ignore */
-        }
-        adicionarFonte({
-          titulo: meta?.titulo || t.titulo,
-          url: meta?.url || url,
-          veiculo: meta?.veiculo || t.veiculo || t.fonte,
-          resumo: meta?.resumo || t.resumo,
-          trecho: meta?.trecho || t.resumo,
+  // Reserva parte da cota para redes sociais: sem isso, as notícias enchem o
+  // limite primeiro e nenhuma rede entra na apuração.
+  const reservaRedes = incluirRedes ? Math.min(6, Math.max(2, Math.ceil(limite * 0.35))) : 0;
+  const cotaNoticias = Math.max(2, limite - reservaRedes);
+
+  // 1) Mesmas fontes de /conteudo (Google News + Brave), sem apurar tudo (mais rápido).
+  // Leitura em lotes paralelos: mais fontes sem multiplicar o tempo de espera.
+  const LOTE_LEITURA = 4;
+  async function coletarNoticias(teto) {
+    for (const q of queries.slice(0, 4)) {
+      if (fontes.length >= teto) break;
+      try {
+        const when = whenParaGoogle(cfgPeriodo);
+        emitir({ tipo: 'buscando', consulta: q, periodo: rotulo });
+        // eslint-disable-next-line no-await-in-loop
+        const [gnews, brave] = await Promise.all([
+          buscarGoogleNewsRss(q, { when }).catch(() => []),
+          buscarBraveNews(q, cfgPeriodo).catch(() => []),
+        ]);
+        const brutos = [...gnews, ...brave];
+        const encontrados = brutos.filter((t) => {
+          if (itemDentroDoPeriodo(t, cfgPeriodo)) return true;
+          foraDoPeriodo += 1;
+          return false;
         });
+        emitir({
+          tipo: 'encontrados',
+          consulta: q,
+          total: encontrados.length,
+          descartados: brutos.length - encontrados.length,
+          periodo: rotulo,
+        });
+
+        const candidatos = encontrados
+          .slice(0, 20)
+          .filter((t) => t.link && normalizarUrlFonte(t.link) !== urlExcluida);
+
+        for (let i = 0; i < candidatos.length && fontes.length < teto; i += LOTE_LEITURA) {
+          const lote = candidatos.slice(i, i + LOTE_LEITURA);
+          // eslint-disable-next-line no-await-in-loop
+          const lidos = await Promise.all(
+            lote.map(async (t) => {
+              emitir({
+                tipo: 'lendo',
+                url: t.link,
+                veiculo: t.veiculo || t.fonte || null,
+                titulo: t.titulo || null,
+              });
+              try {
+                return { t, meta: await extrairMetadadosArtigo(t.link) };
+              } catch {
+                return { t, meta: null };
+              }
+            })
+          );
+          for (const { t, meta } of lidos) {
+            if (fontes.length >= teto) break;
+            adicionarFonte({
+              titulo: meta?.titulo || t.titulo,
+              url: meta?.url || t.link,
+              veiculo: meta?.veiculo || t.veiculo || t.fonte,
+              resumo: meta?.resumo || t.resumo,
+              trecho: meta?.trecho || t.resumo,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`${logPrefix} busca noticias:`, err.message);
       }
-    } catch (err) {
-      console.warn(`${logPrefix} busca noticias:`, err.message);
     }
   }
+
+  await coletarNoticias(cotaNoticias);
+
+  // 1c) Redes sociais (Instagram, Facebook, YouTube, X, TikTok, Threads…)
+  if (incluirRedes && fontes.length < limite) {
+    const redes = redesAmplas ? REDES_SOCIAIS_AMPLAS : REDES_SOCIAIS_PADRAO;
+    for (const q of queries.slice(0, 2)) {
+      if (fontes.length >= limite) break;
+      try {
+        emitir({ tipo: 'buscando', consulta: q, redes: true, periodo: rotulo });
+        // eslint-disable-next-line no-await-in-loop
+        const posts = await buscarSerperRedes(q, { redes, porRede: 5 });
+        const dentro = posts.filter((t) => {
+          if (itemDentroDoPeriodo(t, cfgPeriodo)) return true;
+          foraDoPeriodo += 1;
+          return false;
+        });
+        emitir({
+          tipo: 'encontrados',
+          consulta: q,
+          total: dentro.length,
+          descartados: posts.length - dentro.length,
+          periodo: rotulo,
+          redes: true,
+        });
+        for (const p of dentro) {
+          if (fontes.length >= limite) break;
+          adicionarFonte({
+            titulo: p.titulo,
+            url: p.link,
+            veiculo: p.veiculo || 'Rede social',
+            resumo: p.resumo,
+            trecho: p.resumo,
+            ehRedeSocial: true,
+          });
+        }
+      } catch (err) {
+        console.warn(`${logPrefix} redes sociais:`, err.message);
+      }
+    }
+  }
+
+  // Só quando houve cota reservada: se as redes renderam pouco (ou faltou a
+  // chave do Serper), a sobra volta para as notícias em vez de se perder.
+  if (incluirRedes && fontes.length < limite) await coletarNoticias(limite);
 
   // 1b) Se ainda vazio, pipeline completo (com apuração) como em Pautas com IA
   if (!fontes.length && queries[0]) {

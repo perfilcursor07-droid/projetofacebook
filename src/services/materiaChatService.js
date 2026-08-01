@@ -698,6 +698,12 @@ async function responder({
     } catch (err) {
       console.warn('[materia-chat] consultas:', err.message);
     }
+
+    // Garante variação de consultas para alcançar mais veículos
+    if (consultas.length === 1) {
+      const extra = String(consultas[0]).replace(/\s+/g, ' ').trim();
+      if (extra.length >= 8) consultas.push(`${extra} repercussão`);
+    }
     if (!consultas.length) {
       const semUrls = urlsSociais
         .reduce((t, u) => t.replace(u, ' '), pedido)
@@ -716,28 +722,34 @@ async function responder({
     let fontesWeb = [];
     try {
       fontesWeb = await materiaIaService.coletarFatosNaWeb({
-        consultas: consultas.slice(0, 4),
+        consultas: consultas.slice(0, 6),
         periodo: periodoFinal,
-        max: modoPautas ? 8 : temFonteDoLink ? 4 : 6,
+        // Apuração ampla: mais sites e também redes sociais
+        max: modoPautas ? 20 : temFonteDoLink ? 8 : 14,
+        incluirRedes: true,
+        redesAmplas: true,
         resumoContexto: pedido.slice(0, 300),
         logPrefix: '[materia-chat]',
         onProgress: (evento) => {
           if (evento.tipo === 'buscando') {
             registrarPasso({
               kind: 'busca',
-              texto: `Pesquisando na web (${evento.periodo || janela}): “${evento.consulta}”`,
+              texto: evento.redes
+                ? `Procurando em redes sociais (Instagram, Facebook, YouTube, X, TikTok…): “${evento.consulta}”`
+                : `Pesquisando na web (${evento.periodo || janela}): “${evento.consulta}”`,
             });
           } else if (evento.tipo === 'encontrados') {
             const descartados = Number(evento.descartados || 0);
+            const onde = evento.redes ? ' em redes sociais' : '';
             registrarPasso({
               kind: 'encontrados',
               texto: descartados
-                ? `${evento.total} resultado(s) no período (${descartados} fora da janela, descartados)`
-                : `${evento.total} resultado(s) encontrados`,
+                ? `${evento.total} resultado(s)${onde} no período (${descartados} fora da janela, descartados)`
+                : `${evento.total} resultado(s)${onde} encontrados`,
             });
           } else if (evento.tipo === 'lendo') {
             lidas += 1;
-            if (lidas <= 8) {
+            if (lidas <= 20) {
               registrarPasso({
                 kind: 'lendo',
                 texto: `Lendo ${evento.veiculo || 'página'}: ${evento.titulo || evento.url}`,

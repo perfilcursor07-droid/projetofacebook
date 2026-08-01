@@ -319,27 +319,43 @@ async function buscarBraveNews(termo, periodo = 1) {
   }
 }
 
-async function buscarSerperRedes(termo) {
+/** Redes cobertas na apuração social. Ampliar aqui reflete em toda a app. */
+const REDES_SOCIAIS_PADRAO = Object.freeze([
+  'site:instagram.com',
+  'site:facebook.com',
+  'site:youtube.com',
+]);
+
+/** Cobertura ampliada, usada quando se quer varrer o máximo de redes. */
+const REDES_SOCIAIS_AMPLAS = Object.freeze([
+  'site:instagram.com',
+  'site:facebook.com',
+  'site:youtube.com',
+  'site:x.com OR site:twitter.com',
+  'site:tiktok.com',
+  'site:threads.net',
+  'site:linkedin.com/posts',
+  'site:reddit.com',
+]);
+
+async function buscarSerperRedes(termo, { redes = REDES_SOCIAIS_PADRAO, porRede = 5 } = {}) {
   if (!env.serperApiKey) return [];
-  // Plano free rejeita queries com vários OR site: — busca por rede em chamadas simples
-  const redes = [
-    'site:instagram.com',
-    'site:facebook.com',
-    'site:youtube.com',
-  ];
-  const out = [];
-  for (const site of redes) {
-    try {
-      const { data } = await axios.post(
-        'https://google.serper.dev/search',
-        { q: `${termo} ${site}`.slice(0, 200), num: 5, gl: 'br', hl: 'pt-br' },
-        {
-          headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
-          timeout: 15000,
-        }
-      );
-      for (const r of data?.organic || []) {
-        out.push({
+  const num = Math.max(1, Math.min(10, Number(porRede) || 5));
+
+  // Plano free rejeita queries com vários OR site: — uma chamada por rede.
+  // Em paralelo para não somar o tempo de cada busca.
+  const resultados = await Promise.all(
+    redes.map(async (site) => {
+      try {
+        const { data } = await axios.post(
+          'https://google.serper.dev/search',
+          { q: `${termo} ${site}`.slice(0, 200), num, gl: 'br', hl: 'pt-br' },
+          {
+            headers: { 'X-API-KEY': env.serperApiKey, 'Content-Type': 'application/json' },
+            timeout: 15000,
+          }
+        );
+        return (data?.organic || []).map((r) => ({
           id: slugId(r.title, r.link),
           titulo: limparTitulo(r.title),
           link: r.link,
@@ -358,13 +374,15 @@ async function buscarSerperRedes(termo) {
           tipoFonte: 'rede_social',
           recente: true,
           redeSocial: true,
-        });
+        }));
+      } catch (err) {
+        console.warn('Serper redes:', err.response?.data?.message || err.message);
+        return [];
       }
-    } catch (err) {
-      console.warn('Serper redes:', err.response?.data?.message || err.message);
-    }
-  }
-  return out;
+    })
+  );
+
+  return resultados.flat();
 }
 
 /**
@@ -445,6 +463,8 @@ module.exports = {
   buscarGoogleNewsEmAlta,
   buscarBraveNews,
   buscarSerperRedes,
+  REDES_SOCIAIS_PADRAO,
+  REDES_SOCIAIS_AMPLAS,
   itemEhRecente,
   itemDentroDoPeriodo,
   titulosSimilares,
