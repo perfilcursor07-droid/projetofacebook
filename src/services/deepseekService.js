@@ -30,6 +30,33 @@ function assertDeepseek() {
   }
 }
 
+/** Instruções de marcação do título quando Minha marca = Urgente alerta. */
+function blocoTituloMarcaArte(marcaModeloArte) {
+  const { normalizeArtModel } = require('./editorialCardModels');
+  if (normalizeArtModel(marcaModeloArte) !== 'urgente_alerta') return null;
+  return [
+    'MODELO DE ARTE “URGENTE ALERTA” (obrigatório no campo titulo):',
+    '- Inclua 1–3 trechos em [[assim]] (ficam na cor principal da marca na imagem destacada).',
+    '- Inclua 1 trecho curto (3–8 palavras) em ((assim)) (vira faixa vermelha na arte).',
+    '- Os marcadores [[ ]] e (( )) fazem parte do título — NÃO use aspas no lugar deles.',
+    '- Exemplo de formato: [[Vaza reação]] dentro do STF ((e revela suspeita)) para afastar [[Mendonça]]',
+    '- Título ≤ 130 caracteres no total (marcadores contam). Texto visível sem marcadores ≤ 110.',
+  ].join('\n');
+}
+
+/** Aplica markup Urgente alerta no título (IA + fallback heurístico). */
+function finalizarTituloComMarca(titulo, marcaModeloArte) {
+  const { normalizeArtModel } = require('./editorialCardModels');
+  let t = String(titulo || '').replace(/\s+/g, ' ').trim();
+  if (!t) return t;
+  if (normalizeArtModel(marcaModeloArte) !== 'urgente_alerta') {
+    return t.slice(0, 120);
+  }
+  const { ensureTituloUrgenteAlerta } = require('./editorialCardService');
+  t = ensureTituloUrgenteAlerta(t);
+  return t.slice(0, 140);
+}
+
 async function chatCompletion(messages, { temperature = 0.78, json = true, thinking = false } = {}) {
   assertDeepseek();
   const body = {
@@ -319,7 +346,15 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
   return artigo;
 }
 
-async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo, informacoes, tom = 'natural' }) {
+async function gerarMateriaImagem({
+  promptUsuario,
+  descricaoImagem,
+  autor,
+  termo,
+  informacoes,
+  tom = 'natural',
+  marcaModeloArte = null,
+}) {
   const tema = String(promptUsuario || informacoes || '').trim();
   const fatos = String(informacoes || '').trim();
   if (!tema && !fatos) {
@@ -330,6 +365,7 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
 
   const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
   const tomDesc = TITULO_TOMES[tomKey];
+  const blocoMarca = blocoTituloMarcaArte(marcaModeloArte);
 
   const userContent = [
     'Crie uma matéria ORIGINAL estilo News Gospel para um post de FOTO no Facebook.',
@@ -345,6 +381,7 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
     autor ? `Autor da foto (crédito se fizer sentido): ${autor}` : null,
     'ESTRUTURA: lead com quem + fato → desenvolvimento com detalhes das infos → encerre no fato (sem oração final).',
     'Título próprio, curto e chamativo (máx. 110 chars) — baseado nas infos, sem clickbait mentiroso.',
+    blocoMarca,
     'Parágrafos curtos com linha em branco. Alvo: 1700–2100 caracteres (máximo útil Face/Insta).',
     'NÃO inclua bloco Fontes:/créditos no campo materia — o sistema anexa depois.',
     'Responda JSON: {"titulo":"...","materia":"...","hashtags":["..."]}',
@@ -352,7 +389,11 @@ async function gerarMateriaImagem({ promptUsuario, descricaoImagem, autor, termo
     .filter(Boolean)
     .join('\n');
 
-  return chatJson(userContent, sortearTemperatura(tomKey === 'polemico'));
+  const artigo = await chatJson(userContent, sortearTemperatura(tomKey === 'polemico'));
+  return {
+    ...artigo,
+    titulo: finalizarTituloComMarca(artigo.titulo, marcaModeloArte),
+  };
 }
 
 function systemPromptNoticia(
@@ -420,6 +461,7 @@ async function gerarMateriaNoticiaFacebook({
   contextoAprendizado = null,
   traduzirFonte = false,
   factualEstrito = false,
+  marcaModeloArte = null,
 }) {
   assertDeepseek();
 
@@ -550,6 +592,7 @@ async function gerarMateriaNoticiaFacebook({
     'NÃO inclua créditos/Fontes no campo materia — o sistema anexa automaticamente (uma vez só).',
     'NÃO feche com oração, “Que Deus…”, “Seguimos em oração” nem “Amém” nas últimas linhas — encerre no fato.',
     'MODELO DE TOM (inspire-se, não copie): "O ator X tem se dedicado ao chamado…", "Em meio à devastação… uma notícia trouxe esperança…".',
+    blocoTituloMarcaArte(marcaModeloArte),
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -702,6 +745,7 @@ Retorne JSON completo atualizado.`,
 
   return {
     ...artigo,
+    titulo: finalizarTituloComMarca(artigo.titulo, marcaModeloArte),
     _chars: qualidade.chars,
     _qualidadeOk: qualidade.ok,
     _avisoQualidade: mensagemAvisoQualidade(qualidade),
@@ -1613,6 +1657,7 @@ async function sugerirTituloMateria({
   fonteTitulo,
   tom = 'natural',
   evitar = [],
+  marcaModeloArte = null,
 }) {
   assertDeepseek();
   const tomKey = TITULO_TOMES[tom] ? tom : 'natural';
@@ -1621,6 +1666,8 @@ async function sugerirTituloMateria({
     .map((t) => String(t || '').trim())
     .filter(Boolean)
     .slice(0, 8);
+  const blocoMarca = blocoTituloMarcaArte(marcaModeloArte);
+  const maxTitulo = blocoMarca ? 130 : 120;
 
   const baseMessages = (attempt) => [
     {
@@ -1628,11 +1675,12 @@ async function sugerirTituloMateria({
       content: `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
 Regras:
 - Responda APENAS JSON válido: {"titulo":"sua manchete aqui"}
-- Uma manchete em português do Brasil, 70–110 caracteres (máx 120).
+- Uma manchete em português do Brasil, 70–110 caracteres (máx ${maxTitulo}${blocoMarca ? ', contando marcadores [[ ]] e (( ))' : ''}).
 - NÃO invente fatos que não estejam no texto.
 - NÃO use clickbait mentiroso, Caps Lock excessivo nem pontos de exclamação em série.
 - Tom pedido: ${tomDesc}
 - OBRIGATÓRIO: a manchete deve ser SUBSTANCIALMENTE diferente do título atual (mude ângulo, sujeito ou formulação).
+${blocoMarca ? `\n${blocoMarca}\n` : ''}
 ${
   tomKey === 'polemico'
     ? `
@@ -1652,6 +1700,10 @@ REGRAS EXTRA — TOM POLÊMICO (obrigatório):
 ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastante a estrutura da frase.' : ''}${
         attempt > 1 && tomKey === 'polemico'
           ? '\n- Ainda está fraco: aumente o confronto e mude completamente a formulação.'
+          : ''
+      }${
+        attempt > 1 && blocoMarca
+          ? '\n- Inclua de fato [[destaques]] e ((faixa vermelha)) no título.'
           : ''
       }`,
     },
@@ -1691,7 +1743,7 @@ ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastan
       temperature: Math.min(temp, 1.3),
       json: true,
     });
-    const titulo = parseTituloFromAi(raw);
+    const titulo = finalizarTituloComMarca(parseTituloFromAi(raw), marcaModeloArte);
     ultimoTitulo = titulo;
     if (titulo && !tituloJaUsado(titulo, tituloAtual, evitarList)) {
       return { titulo, tom: tomKey };
@@ -1983,6 +2035,7 @@ async function gerarMateriaComPesquisa({
   angulo = null,
   tom = 'natural',
   autor = null,
+  marcaModeloArte = null,
 }) {
   assertDeepseek();
   const infos = String(pedido || '').trim();
@@ -1995,6 +2048,7 @@ async function gerarMateriaComPesquisa({
 
   const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
   const tomDesc = TITULO_TOMES[tomKey];
+  const blocoMarca = blocoTituloMarcaArte(marcaModeloArte);
 
   const raw = await chatCompletion(
     [
@@ -2020,7 +2074,7 @@ ESTRUTURA:
 - Lead com o fato central → desenvolvimento com os dados e falas apuradas → fechamento no fato (sem oração final).
 - Parágrafos curtos separados por linha em branco. Alvo: 1700–2100 caracteres.
 - NÃO inclua bloco "Fontes:" nem URLs no campo materia — o sistema anexa "Fonte: Globo, UOL" depois.
-
+${blocoMarca ? `\n${blocoMarca}\n` : ''}
 Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosUsados":["fato + veículo"],"aviso":""}`,
       },
       {
@@ -2043,6 +2097,7 @@ Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosU
   );
 
   const artigo = parseArtigoJson(raw);
+  artigo.titulo = finalizarTituloComMarca(artigo.titulo, marcaModeloArte);
   let extras = {};
   try {
     extras = JSON.parse(raw) || {};

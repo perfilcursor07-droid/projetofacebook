@@ -485,16 +485,21 @@ function estimateTextWidth(text, fontSize) {
  * Quebra texto pela largura em px (não só por contagem de chars),
  * mantendo nomes compostos juntos quando couber.
  */
-function wrapTextToWidth(value, { maxWidth, fontSize, maxLines = 5, glueNames = true } = {}) {
-  const words = String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+function wrapTextToWidth(value, { maxWidth, fontSize, maxLines = 5, glueNames = true, keepAlertMarks = false } = {}) {
+  const words = keepAlertMarks
+    ? splitWordsKeepingAlertMarks(value)
+    : String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   if (!words.length) return [];
-  const units = glueNames ? glueNameUnits(words) : words;
-  const fits = (text) => estimateTextWidth(text, fontSize) <= maxWidth;
+  const units = glueNames && !keepAlertMarks ? glueNameUnits(words) : words;
+  const measure = (text) => (keepAlertMarks ? stripAlertMarks(text) : text);
+  const fits = (text) => estimateTextWidth(measure(text), fontSize) <= maxWidth;
   const lines = [];
   let current = '';
 
   const pushUnit = (unit) => {
-    const parts = String(unit).split(' ').filter(Boolean);
+    const parts = keepAlertMarks
+      ? [String(unit)]
+      : String(unit).split(' ').filter(Boolean);
     // Nome composto largo demais: quebra em palavras (último recurso)
     if (parts.length > 1 && !fits(unit) && !current) {
       for (const p of parts) {
@@ -576,6 +581,91 @@ function stripAlertMarks(value) {
   return String(value || '').replace(/\[\[|\]\]/g, '').replace(/\(\(|\)\)/g, '');
 }
 
+/** Título já tem destaque e/ou faixa do modelo Urgente alerta. */
+function tituloTemMarkupAlerta(value) {
+  const s = String(value || '');
+  return /\[\[[^\]]+\]\]/.test(s) || /\(\([^)]+\)\)/.test(s);
+}
+
+/**
+ * Garante [[destaque]] + ((faixa)) no título do modelo Urgente alerta.
+ * Se a IA já marcou, mantém; senão aplica heurística estável para a arte 4:5.
+ */
+function ensureTituloUrgenteAlerta(titulo) {
+  const raw = String(titulo || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return raw;
+
+  if (tituloTemMarkupAlerta(raw)) {
+    const hasDestaque = /\[\[[^\]]+\]\]/.test(raw);
+    const hasFaixa = /\(\([^)]+\)\)/.test(raw);
+    if (hasDestaque && hasFaixa) return raw;
+    // Só um tipo: completa o que falta com o restante limpo
+    if (hasDestaque && !hasFaixa) {
+      const plain = stripAlertMarks(raw).replace(/\s+/g, ' ').trim();
+      const words = plain.split(' ').filter(Boolean);
+      if (words.length >= 6) {
+        const nTail = Math.min(6, Math.max(3, Math.floor(words.length * 0.35)));
+        const tail = words.slice(-nTail).join(' ');
+        // Evita duplicar o trecho já em [[ ]]
+        if (tail && !raw.includes(`((${tail}))`)) {
+          return `${raw.replace(/\s*$/, '')} ((${tail}))`;
+        }
+      }
+      return raw;
+    }
+    if (hasFaixa && !hasDestaque) {
+      const before = raw.split('((')[0].replace(/\s+/g, ' ').trim();
+      const words = before.split(' ').filter(Boolean);
+      if (words.length >= 2) {
+        const nHead = Math.min(4, Math.max(2, words.length));
+        const head = words.slice(0, nHead).join(' ');
+        const rest = words.slice(nHead).join(' ');
+        const faixaPart = raw.slice(raw.indexOf('(('));
+        return `[[${head}]]${rest ? ` ${rest}` : ''} ${faixaPart}`.replace(/\s+/g, ' ').trim();
+      }
+      return raw;
+    }
+    return raw;
+  }
+
+  const text = stripAlertMarks(raw);
+
+  // "Citação": complemento  →  [[citação]]: ((complemento))
+  const quoteColon = text.match(/^[“"'](.+?)[”"']\s*[:\-–—]\s*(.+)$/);
+  if (quoteColon) {
+    const left = quoteColon[1].trim();
+    const right = quoteColon[2].trim();
+    if (right.split(/\s+/).length >= 2) return `[[${left}]]: ((${right}))`;
+    return `[[${left}]]: ${right}`;
+  }
+
+  // Manchete: subtítulo  →  [[manchete]]: ((subtítulo))
+  const colonParts = text.split(/\s*[:\-–—]\s*/);
+  if (colonParts.length >= 2) {
+    const head = colonParts[0].replace(/^[“"']|[”"']$/g, '').trim();
+    const tail = colonParts.slice(1).join(': ').trim();
+    const headWords = head.split(/\s+/).filter(Boolean);
+    if (head && tail && headWords.length <= 12) {
+      return `[[${head}]]: ((${tail}))`;
+    }
+  }
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= 3) return `[[${text}]]`;
+  if (words.length <= 5) {
+    const mid = Math.ceil(words.length / 2);
+    return `[[${words.slice(0, mid).join(' ')}]] ((${words.slice(mid).join(' ')}))`;
+  }
+
+  const nHead = Math.min(4, Math.max(2, Math.floor(words.length * 0.32)));
+  const nTail = Math.min(6, Math.max(3, Math.floor(words.length * 0.32)));
+  const head = words.slice(0, nHead).join(' ');
+  const mid = words.slice(nHead, words.length - nTail).join(' ');
+  const tail = words.slice(words.length - nTail).join(' ');
+  if (mid) return `[[${head}]] ${mid} ((${tail}))`;
+  return `[[${head}]] ((${tail}))`;
+}
+
 /**
  * Divide o título em blocos de manchete e faixas ((assim)), preservando a ordem.
  * @returns {Array<{ type: 'text'|'band', value: string }>}
@@ -613,6 +703,17 @@ function parseMarkedSegments(line) {
   }
   if (last < text.length) segments.push({ text: text.slice(last), mark: false });
   return segments.filter((segment) => segment.text !== '');
+}
+
+/** Tokens que preservam [[destaque]] e ((faixa)) juntos na quebra de linha. */
+function splitWordsKeepingAlertMarks(value) {
+  const s = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!s) return [];
+  const tokens = [];
+  const re = /(\[\[[^\]]+\]\]|\(\([^)]+\)\)|[^\s]+)/g;
+  let m;
+  while ((m = re.exec(s))) tokens.push(m[1]);
+  return tokens;
 }
 
 /** Linhas de manchete com palavras [[destacadas]] em outra cor, sem caixa. */
@@ -849,6 +950,7 @@ function buildOverlay({
           fontSize: headFont,
           maxLines: 4,
           glueNames: false,
+          keepAlertMarks: true,
         });
         return { type: 'text', lines: textLines, fontSize: headFont, lineHeight: Math.round(headFont * 1.06) };
       });
@@ -1481,6 +1583,9 @@ module.exports = {
   fetchImage,
   fetchImageWithFallback,
   buildDualCollageBuffer,
+  stripAlertMarks,
+  tituloTemMarkupAlerta,
+  ensureTituloUrgenteAlerta,
   ART_WIDTH: WIDTH,
   ART_HEIGHT: HEIGHT,
 };

@@ -473,12 +473,15 @@ async function sugerirTituloCapa(req, res, next) {
     }
 
     const evitar = Array.isArray(body.evitar) ? body.evitar : [];
+    const Users = require('../models/Users');
+    const user = await Users.findById(req.session.userId);
     const result = await deepseekService.sugerirTituloMateria({
       tituloAtual: String(body.titulo_atual || clip.capa_titulo || '').trim(),
       materia: materia || String(video.titulo || video.termo_busca || ''),
       fonteTitulo: video.titulo || video.termo_busca || null,
       tom,
       evitar,
+      marcaModeloArte: user?.marca_modelo_arte || null,
     });
 
     res.json({ ok: true, titulo: result.titulo, tom: result.tom || tom });

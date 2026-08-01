@@ -598,6 +598,53 @@ async function showMatter(req, res, next) {
       console.warn('[showMatter] ultimo agendamento:', err.message);
     }
 
+    let marcaModeloArte = null;
+    try {
+      const Users = require('../models/Users');
+      const user = await Users.findById(req.session.userId);
+      const { normalizeArtModel } = require('../services/editorialCardModels');
+      marcaModeloArte = normalizeArtModel(user?.marca_modelo_arte);
+      // Matérias antigas sem [[ ]] / (( )): aplica markup e regenera a imagem destacada
+      if (
+        marcaModeloArte === 'urgente_alerta' &&
+        ['rascunho', 'pronto', 'erro', 'agendado'].includes(String(matter.status || ''))
+      ) {
+        const {
+          ensureTituloUrgenteAlerta,
+          tituloTemMarkupAlerta,
+        } = require('../services/editorialCardService');
+        const cur = String(matter.titulo || '').trim();
+        if (cur && !tituloTemMarkupAlerta(cur)) {
+          const marked = ensureTituloUrgenteAlerta(cur);
+          if (marked && marked !== cur) {
+            await AiMatters.update(matter.id, { titulo: marked, titulo_ia: marked });
+            matter.titulo = marked;
+            const sourceUrl =
+              matter.imagem_fonte_url ||
+              (!matter.imagem_path && /^https?:\/\//i.test(String(matter.imagem_url || ''))
+                ? matter.imagem_url
+                : null);
+            if (sourceUrl) {
+              try {
+                const artwork = await composeMatterArtwork({
+                  userId: req.session.userId,
+                  matterId: matter.id,
+                  sourceUrl,
+                  title: marked,
+                  force: true,
+                });
+                Object.assign(matter, artwork.matter || {});
+              } catch (artErr) {
+                console.warn('[showMatter] arte urgente:', artErr.message);
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[showMatter] marca modelo:', err.message);
+    }
+
     return res.render('materia-ia-editar', {
       title: matter.titulo || 'Matéria IA',
       matter,
@@ -607,6 +654,7 @@ async function showMatter(req, res, next) {
       proximoSlotLabel,
       horarioAtualAgendado,
       agendaBiblioteca,
+      marcaModeloArte,
       success: req.query.success || null,
       error: req.query.error || null,
     });
@@ -966,12 +1014,15 @@ async function sugerirTitulo(req, res, next) {
     const tituloAtual = tituloNaTela || String(matter.titulo || '').trim();
     const materiaNaTela = String(req.body?.materia || '').trim();
 
+    const Users = require('../models/Users');
+    const user = await Users.findById(req.session.userId);
     const sugerido = await deepseekService.sugerirTituloMateria({
       tituloAtual,
       materia: materiaNaTela || matter.materia,
       fonteTitulo: matter.fonte_titulo,
       tom,
       evitar: [...evitar, matter.titulo, tituloAtual].filter(Boolean),
+      marcaModeloArte: user?.marca_modelo_arte || null,
     });
 
     const patch = {

@@ -401,7 +401,14 @@ function sanitizeFacebookMentions(text) {
  * O título ainda é usado para removê-lo do início do corpo quando incluirTitulo=false.
  */
 function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, incluirTitulo = true } = {}) {
-  const title = String(titulo || '').replace(/\s+/g, ' ').trim();
+  // [[destaque]] / ((faixa)) são só para a arte 4:5 — na legenda do FB vão limpos.
+  let title = String(titulo || '').replace(/\s+/g, ' ').trim();
+  try {
+    const { stripAlertMarks } = require('./editorialCardService');
+    title = stripAlertMarks(title).replace(/\s+/g, ' ').trim();
+  } catch {
+    title = title.replace(/\[\[|\]\]/g, '').replace(/\(\(|\)\)/g, '').replace(/\s+/g, ' ').trim();
+  }
   let working = removerFechamentoOracao(String(materia || ''));
   const extracted = extrairHashtagsDoTexto(working);
   let body = extracted.body;

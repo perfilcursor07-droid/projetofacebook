@@ -137,6 +137,13 @@
               <input id="matter-titulo" <%= canEdit ? '' : 'readonly' %> value="<%= matter.titulo || '' %>"
                 placeholder="Adicionar título"
                 class="w-full border-0 bg-transparent text-xl font-semibold leading-snug text-white placeholder:text-slate-600 focus:outline-none focus:ring-0 sm:text-2xl <%= canEdit ? '' : 'opacity-80' %>" />
+              <% if (typeof marcaModeloArte !== 'undefined' && marcaModeloArte === 'urgente_alerta') { %>
+                <p class="mt-1.5 pb-1 text-[11px] leading-relaxed text-slate-500">
+                  Modelo <span class="text-slate-400">Urgente alerta</span>:
+                  use <code class="text-yellow-400/90">[[palavra]]</code> na cor principal e
+                  <code class="text-red-400/90">((frase))</code> na faixa vermelha da imagem destacada.
+                </p>
+              <% } %>
               <% if (canEdit) { %>
                 <div class="mt-2 flex flex-wrap items-center gap-2 pb-3">
                   <label class="flex items-center gap-1.5 text-[11px] text-slate-500">

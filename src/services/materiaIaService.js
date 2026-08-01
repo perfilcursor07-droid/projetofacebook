@@ -241,6 +241,17 @@ async function gerarPreviewDeTopico(
     }
   }
 
+  let marcaModeloArte = null;
+  if (userId) {
+    try {
+      const Users = require('../models/Users');
+      const user = await Users.findById(userId);
+      marcaModeloArte = user?.marca_modelo_arte || null;
+    } catch {
+      /* ignore */
+    }
+  }
+
   const gerado = await gerarMateriaNoticiaFacebook({
     tituloReferencia: apurado.titulo,
     resumoReferencia: apurado.resumo,
@@ -264,6 +275,7 @@ async function gerarPreviewDeTopico(
         )
     ),
     factualEstrito,
+    marcaModeloArte,
   });
 
   const capa = await escolherImagemCapa(apurado, gerado);
@@ -1962,6 +1974,13 @@ async function gerarMateriaManual({
   } = require('./editorialGuidelinesFb');
 
   const avisos = [];
+  let userBrand = null;
+  try {
+    const Users = require('../models/Users');
+    userBrand = await Users.findById(userId);
+  } catch {
+    /* ignore */
+  }
   let fontesPesquisa = [];
   let consultasUsadas = [];
 
@@ -2018,6 +2037,7 @@ async function gerarMateriaManual({
         angulo,
         tom,
         autor: creditoImagem || null,
+        marcaModeloArte: userBrand?.marca_modelo_arte || null,
       })
     : await deepseekService.gerarMateriaImagem({
         informacoes: fatos,
@@ -2025,6 +2045,7 @@ async function gerarMateriaManual({
         descricaoImagem: null,
         autor: creditoImagem || null,
         tom,
+        marcaModeloArte: userBrand?.marca_modelo_arte || null,
       });
 
   if (gerado.aviso) avisos.push(gerado.aviso);

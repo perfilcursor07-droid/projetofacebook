@@ -90,15 +90,22 @@ async function composeMatterArtwork({
     throw err;
   }
 
-  const finalTitle = String(title || matter.titulo || '').trim();
-  const source = sourceUrl || matter.imagem_fonte_url ||
-    (!matter.imagem_path && isRemoteUrl(matter.imagem_url) ? matter.imagem_url : null);
-  if (!source) throw new Error('A matéria não possui foto de origem para criar a arte');
-
+  const finalTitleRaw = String(title || matter.titulo || '').trim();
   const user = await Users.findById(userId);
   if (!user) throw new Error('Usuário da matéria não encontrado');
   const { normalizeArtModel } = require('./editorialCardModels');
   const modelId = normalizeArtModel(user.marca_modelo_arte);
+
+  let finalTitle = finalTitleRaw;
+  if (modelId === 'urgente_alerta') {
+    const { ensureTituloUrgenteAlerta } = require('./editorialCardService');
+    finalTitle = ensureTituloUrgenteAlerta(finalTitleRaw);
+  }
+
+  const source = sourceUrl || matter.imagem_fonte_url ||
+    (!matter.imagem_path && isRemoteUrl(matter.imagem_url) ? matter.imagem_url : null);
+  if (!source) throw new Error('A matéria não possui foto de origem para criar a arte');
+
   const currentFile = resolveArtworkPath(matter.imagem_path);
   const hasFrame =
     zoom != null || offsetX != null || offsetY != null;
