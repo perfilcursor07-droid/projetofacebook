@@ -148,10 +148,17 @@
                 <span class="block overflow-hidden rounded-xl border-2 border-slate-600 bg-slate-950 transition peer-checked:border-emerald-400 peer-checked:ring-2 peer-checked:ring-emerald-400/25 hover:border-slate-400">
                   <span class="relative flex aspect-[4/5] flex-col overflow-hidden bg-gradient-to-br from-slate-600 via-slate-900 to-black p-2">
                     <span class="pointer-events-none absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black via-black/50 to-transparent"></span>
+                    <% if (model.id === 'urgente_alerta') { %>
+                      <span class="absolute inset-x-0 top-0 z-10 bg-red-600 py-0.5 text-center text-[9px] font-black tracking-wide text-white">URGENTE!</span>
+                    <% } %>
                     <span class="relative z-10 mt-auto space-y-1">
                       <% if (model.id === 'citacao_marcador') { %>
                         <span class="block text-left text-[8px] font-bold text-white">Manchete:</span>
                         <span class="inline-block bg-yellow-400 px-1 text-[8px] font-black text-slate-950">'Citação'</span>
+                      <% } else if (model.id === 'urgente_alerta') { %>
+                        <span class="block text-center text-[8px] font-black leading-tight text-yellow-400">VAZA REAÇÃO</span>
+                        <span class="block text-center text-[8px] font-black leading-tight text-white">DENTRO DO STF</span>
+                        <span class="mx-auto block w-fit bg-red-600 px-1 text-[7px] font-black leading-tight text-white">E REVELA SUSPEITA</span>
                       <% } else { %>
                         <span class="block text-center text-[8px] font-bold tracking-wide text-white">ÚLTIMAS</span>
                         <span class="mx-auto block h-1 w-full rounded bg-gradient-to-r from-yellow-400 to-orange-400"></span>
@@ -163,6 +170,16 @@
                 </span>
               </label>
             <% }) %>
+          </div>
+
+          <div class="mt-5 rounded-xl border border-red-500/25 bg-red-500/5 px-4 py-3 text-xs leading-relaxed text-slate-400">
+            <strong class="block font-semibold text-slate-300">Modelo “Urgente alerta”</strong>
+            A faixa do topo usa o campo <span class="text-slate-300">Categoria</span> (ex.: <span class="text-slate-300">URGENTE!</span>).
+            No título da matéria, use <code class="text-yellow-300">[[palavra]]</code> para pintar na cor principal e
+            <code class="text-red-300">((frase))</code> para criar a faixa vermelha.
+            <span class="mt-1.5 block text-slate-500">
+              Ex.: <span class="text-slate-300">[[Vaza reação]] dentro do STF ((e revela suspeita de articulação)) para “afastar” [[Mendonça]]</span>
+            </span>
           </div>
         </div>
         <% } else { %>

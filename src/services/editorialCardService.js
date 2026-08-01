@@ -571,6 +571,73 @@ function renderTitleLines(lines, { x, y, lineHeight, anchor = 'middle', classNam
   )).join('');
 }
 
+/** Remove os marcadores [[destaque]] e ((faixa)) do texto. */
+function stripAlertMarks(value) {
+  return String(value || '').replace(/\[\[|\]\]/g, '').replace(/\(\(|\)\)/g, '');
+}
+
+/**
+ * Divide o título em blocos de manchete e faixas ((assim)), preservando a ordem.
+ * @returns {Array<{ type: 'text'|'band', value: string }>}
+ */
+function parseAlertBlocks(title) {
+  const raw = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return [];
+  const blocks = [];
+  const re = /\(\(([^)]+)\)\)/g;
+  let last = 0;
+  let match;
+  while ((match = re.exec(raw))) {
+    const before = raw.slice(last, match.index).trim();
+    if (before) blocks.push({ type: 'text', value: before });
+    const band = match[1].trim();
+    if (band) blocks.push({ type: 'band', value: band });
+    last = match.index + match[0].length;
+  }
+  const tail = raw.slice(last).trim();
+  if (tail) blocks.push({ type: 'text', value: tail });
+  return blocks.length ? blocks : [{ type: 'text', value: raw }];
+}
+
+/** Separa uma linha em trechos normais e trechos marcados com [[destaque]]. */
+function parseMarkedSegments(line) {
+  const text = String(line || '');
+  const segments = [];
+  const re = /\[\[([^\]]+)\]\]/g;
+  let last = 0;
+  let match;
+  while ((match = re.exec(text))) {
+    if (match.index > last) segments.push({ text: text.slice(last, match.index), mark: false });
+    segments.push({ text: match[1], mark: true });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) segments.push({ text: text.slice(last), mark: false });
+  return segments.filter((segment) => segment.text !== '');
+}
+
+/** Linhas de manchete com palavras [[destacadas]] em outra cor, sem caixa. */
+function renderMarkedTitleLines(lines, {
+  x,
+  y,
+  lineHeight,
+  anchor = 'middle',
+  className = 'title',
+  markFill,
+}) {
+  return lines.map((line, index) => {
+    const segments = parseMarkedSegments(line);
+    const inner = segments.length
+      ? segments
+          .map((segment) => (segment.mark
+            ? `<tspan fill="${markFill}">${escapeXml(segment.text)}</tspan>`
+            : `<tspan>${escapeXml(segment.text)}</tspan>`))
+          .join('')
+      : escapeXml(stripAlertMarks(line));
+    return `
+      <text x="${x}" y="${y + index * lineHeight}" text-anchor="${anchor}" class="${className}" xml:space="preserve">${inner}</text>`;
+  }).join('');
+}
+
 /** Posição vertical do título no modelo Estilo Fatos (base 1350). */
 function fatosTitleTopBase(lineCount) {
   if (lineCount <= 2) return 1085;
@@ -626,9 +693,11 @@ function buildOverlay({
   const baseMaxChars = modelId === 'estilo_fatos' || modelId === 'citacao_marcador' ? 30
     : modelId === 'faixa_classica' || modelId === 'impacto_central' ? 27
     : modelId === 'minimalista' || modelId === 'faixa_topo' ? 25
+    : modelId === 'urgente_alerta' ? 22
     : 24;
   const maxChars = Math.max(16, baseMaxChars + (sizeMeta?.maxCharsBonus || 0));
   const isCitacao = modelId === 'citacao_marcador';
+  const isUrgente = modelId === 'urgente_alerta';
   // tamanho escolhido em Minha marca (30–50, padrão 43), escalado ao canvas
   let fontSize = Math.round((sizeMeta?.px || 43) * Math.min(sx, sy) * (isCitacao ? 1.12 : 1));
   let lineHeight = Math.round(fontSize * (modelId === 'estilo_fatos' || isCitacao ? 1.14 : 1.08));
@@ -638,7 +707,7 @@ function buildOverlay({
   // Quebra por largura real + reduz fonte se ainda passar (evita corte nas laterais).
   const textMaxW = W - ww(modelId === 'bloco_inferior' || modelId === 'barra_lateral' || modelId === 'canto_solido' || modelId === 'minimalista' ? 160 : 120);
   let lines = [];
-  if (!isCitacao) {
+  if (!isCitacao && !isUrgente) {
     const titleUpper = String(title || '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
     for (let attempt = 0; attempt < 8; attempt += 1) {
       lines = wrapTextToWidth(titleUpper, {
@@ -745,6 +814,92 @@ function buildOverlay({
             anchor: 'middle',
           })
         : ''}`;
+  } else if (isUrgente) {
+    const alertRed = '#cc1417';
+    const bannerH = hh(158);
+    const textMaxW = W - ww(76);
+    const bandMaxW = textMaxW - ww(40);
+    const minFont = Math.round(30 * Math.min(sx, sy));
+
+    // Faixa de plantão no topo, com a categoria ocupando a largura disponível.
+    const bannerText = String(category || 'URGENTE!').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
+    let bannerFont = Math.round(108 * Math.min(sx, sy));
+    const bannerMaxW = W - ww(90);
+    while (bannerFont > Math.round(38 * Math.min(sx, sy)) && estimateTextWidth(bannerText, bannerFont) > bannerMaxW) {
+      bannerFont = Math.round(bannerFont * 0.93);
+    }
+
+    // Manchete e faixas vermelhas mantêm a ordem escrita pelo usuário.
+    let headFont = fontSize;
+    let blocks = [];
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const bandFont = Math.round(headFont * 0.66);
+      blocks = parseAlertBlocks(String(title || '').toLocaleUpperCase('pt-BR')).map((block) => {
+        if (block.type === 'band') {
+          const bandLines = wrapTextToWidth(stripAlertMarks(block.value), {
+            maxWidth: bandMaxW,
+            fontSize: bandFont,
+            maxLines: 2,
+            glueNames: false,
+          });
+          return { type: 'band', lines: bandLines, fontSize: bandFont, lineHeight: Math.round(bandFont * 1.52) };
+        }
+        const textLines = wrapTextToWidth(block.value, {
+          maxWidth: textMaxW,
+          fontSize: headFont,
+          maxLines: 4,
+          glueNames: false,
+        });
+        return { type: 'text', lines: textLines, fontSize: headFont, lineHeight: Math.round(headFont * 1.06) };
+      });
+
+      const totalH = blocks.reduce((sum, block) => sum + block.lines.length * block.lineHeight, 0);
+      const available = H - bannerH - hh(40) - (hasLogo ? hh(196) : hh(116));
+      if (totalH <= available || headFont <= minFont) break;
+      headFont = Math.max(minFont, Math.round(headFont * 0.92));
+    }
+
+    const totalTextH = blocks.reduce((sum, block) => sum + block.lines.length * block.lineHeight, 0);
+    const bottomReserve = hasLogo ? hh(196) : hh(116);
+    let cursor = Math.max(bannerH + hh(40), H - bottomReserve - totalTextH);
+
+    let textParts = '';
+    for (const block of blocks) {
+      if (block.type === 'band') {
+        textParts += renderHighlightedLines(block.lines, {
+          x: x(540),
+          y: cursor + Math.round(block.fontSize * 0.92),
+          lineHeight: block.lineHeight,
+          fontSize: block.fontSize,
+          padX: Math.round(24 * sx),
+          padY: Math.round(11 * sy),
+          bg: alertRed,
+          textFill: '#ffffff',
+          fontFamily: titleFontFamily,
+          maxWidth: textMaxW,
+          anchor: 'middle',
+        });
+      } else {
+        textParts += renderMarkedTitleLines(block.lines, {
+          x: x(540),
+          y: cursor + Math.round(block.fontSize * 0.82),
+          lineHeight: block.lineHeight,
+          anchor: 'middle',
+          className: 'title-urgente',
+          markFill: primary,
+        });
+      }
+      cursor += block.lines.length * block.lineHeight;
+    }
+
+    headFontCss = headFont;
+    layout = `
+      <rect x="0" y="0" width="${W}" height="${bannerH}" fill="${alertRed}"/>
+      <text x="${x(540)}" y="${Math.round(bannerH * 0.72)}" text-anchor="middle" fill="#ffffff"
+        font-family="${titleFontFamily}" font-weight="900" font-size="${bannerFont}px"
+        letter-spacing="${Math.max(1, Math.round(2 * sx))}">${escapeXml(bannerText)}</text>
+      ${textParts}
+      ${hasLogo ? '' : `<text x="${x(540)}" y="${H - hh(52)}" text-anchor="middle" class="footer">${safeFooter}</text>`}`;
   } else if (modelId === 'estilo_fatos') {
     const titleTop = y(fatosTitleTopBase(lines.length));
     layout = `
@@ -828,8 +983,8 @@ function buildOverlay({
       const brandY = y(fatosTitleTopBase(lines.length) - 95);
       fallbackBrand = `
         <text x="${x(540)}" y="${brandY}" text-anchor="middle" class="brand-fatos">${escapeXml(brandLabel)}</text>`;
-    } else if (modelId === 'citacao_marcador') {
-      // Sem texto de marca/handle — só a logo (se houver) no divisor
+    } else if (modelId === 'citacao_marcador' || isUrgente) {
+      // Sem placa de marca no topo: a faixa/divisor já ocupa esse espaço.
       fallbackBrand = '';
     } else {
       fallbackBrand = `
@@ -838,7 +993,7 @@ function buildOverlay({
     }
   }
 
-  const shadeStops = modelId === 'estilo_fatos'
+  const shadeStops = modelId === 'estilo_fatos' || isUrgente
     ? `
           <stop offset="0%" stop-color="#000" stop-opacity="0"/>
           <stop offset="38%" stop-color="#000" stop-opacity="0"/>
@@ -881,6 +1036,7 @@ function buildOverlay({
           .category-dark { fill: #111827; filter: none; }
           .title { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${fontSize}px; fill: ${titleFill}; filter: url(#shadow); }
           .title-citacao { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${headFontCss}px; fill: #ffffff; filter: url(#shadow); }
+          .title-urgente { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${headFontCss}px; fill: #ffffff; filter: url(#shadow); }
           .title-mark { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${punchFontCssFinal}px; fill: #111111; filter: none; }
           .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(1 * sx))}px; fill: ${primary}; filter: url(#shadow); }
         </style>
@@ -962,8 +1118,9 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
   const ch = Math.max(320, Math.round(Number(options.canvasHeight) || HEIGHT));
   const isFatos = modelId === 'estilo_fatos';
   const isCitacao = modelId === 'citacao_marcador';
-  const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : 560) / 1080));
-  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : 125) / 1080));
+  const isUrgente = modelId === 'urgente_alerta';
+  const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : isUrgente ? 330 : 560) / 1080));
+  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : isUrgente ? 130 : 125) / 1080));
   const input = await sharp(absolute)
     .resize(maxW, maxH, { fit: 'inside', withoutEnlargement: true })
     .png()
@@ -980,6 +1137,9 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
     // Logo acima do bloco de texto, no divisor
     const approxTextTop = Math.round(980 * sy);
     top = Math.max(Math.round(640 * sy), approxTextTop - input.info.height - Math.round(36 * sy));
+  } else if (isUrgente) {
+    // Logo centralizada no rodapé, abaixo da manchete.
+    top = Math.max(0, ch - input.info.height - Math.round((ch / 1350) * 46));
   }
 
   return {
