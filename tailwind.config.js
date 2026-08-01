@@ -5,6 +5,7 @@ module.exports = {
     extend: {
       maxWidth: {
         '8xl': '88rem',
+        '9xl': '96rem',
       },
       fontFamily: {
         sans: ['Segoe UI', 'ui-sans-serif', 'system-ui', 'sans-serif'],
