@@ -32,7 +32,24 @@
     enviando: false,
     controller: null,
     modo: 'escrever',
+    // Pautas da última pesquisa e quais já viraram matéria nesta conversa
+    ultimasPautas: [],
+    pautasEscritas: new Set(),
   };
+
+  /** URL da pauta que um pedido de reescrita aponta (linha "Link: ..."). */
+  function urlDoPedido(texto) {
+    const m = String(texto || '').match(/^\s*Link:\s*(https?:\/\/\S+)/im);
+    return m ? m[1].trim() : null;
+  }
+
+  function marcarPautaEscrita(url) {
+    if (url) state.pautasEscritas.add(String(url).trim());
+  }
+
+  function pautaJaEscrita(url) {
+    return Boolean(url) && state.pautasEscritas.has(String(url).trim());
+  }
 
   async function api(url, opts = {}) {
     const res = await fetch(url, {
@@ -136,6 +153,8 @@
 
   function limparMensagens() {
     el.mensagens.replaceChildren();
+    state.ultimasPautas = [];
+    state.pautasEscritas = new Set();
     if (el.vazio) {
       el.mensagens.appendChild(el.vazio);
       el.vazio.classList.remove('hidden');
@@ -419,11 +438,30 @@
    * Cartões das matérias encontradas no modo "Pesquisar pautas".
    * Escolher uma monta o pedido de reescrita com furo e já envia.
    */
+  /** Monta o pedido de reescrita da pauta e já envia. */
+  function pedirReescrita(pauta) {
+    if (state.enviando) return;
+    definirModo('escrever');
+    el.input.value = [
+      'Reescreva esta matéria com furo de reportagem, texto totalmente original e sem plagiar:',
+      `Título: ${pauta.titulo || ''}`,
+      `Veículo: ${pauta.veiculo || ''}`,
+      `Link: ${pauta.url || ''}`,
+      'Pesquise também mais informações recentes sobre esse assunto para acrescentar contexto e dados novos.',
+    ].join('\n');
+    marcarPautaEscrita(pauta.url);
+    enviar();
+  }
+
   function blocoPautas(pautas = []) {
     if (!Array.isArray(pautas) || !pautas.length) return null;
 
+    // Guarda para o atalho "continuar desta pesquisa" depois da matéria
+    state.ultimasPautas = pautas;
+
     const box = document.createElement('div');
     box.className = 'space-y-2';
+    box.dataset.pautas = '1';
 
     const titulo = document.createElement('p');
     titulo.className = 'text-[11px] font-semibold uppercase tracking-wider text-emerald-400/80';
@@ -431,12 +469,15 @@
     box.appendChild(titulo);
 
     pautas.forEach((pauta, indice) => {
+      const escrita = pautaJaEscrita(pauta.url);
+
       const card = document.createElement('article');
-      card.className =
-        'rounded-xl border border-slate-800 bg-slate-950/60 p-3 transition hover:border-emerald-500/40';
+      card.className = escrita
+        ? 'rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3'
+        : 'rounded-xl border border-slate-800 bg-slate-950/60 p-3 transition hover:border-emerald-500/40';
 
       const meta = document.createElement('div');
-      meta.className = 'flex items-center gap-2';
+      meta.className = 'flex flex-wrap items-center gap-2';
       const num = document.createElement('span');
       num.className =
         'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-slate-300';
@@ -446,6 +487,13 @@
       veiculo.className = 'truncate text-[11px] font-medium text-slate-400';
       veiculo.textContent = pauta.veiculo || 'Web';
       meta.appendChild(veiculo);
+      const selo = document.createElement('span');
+      selo.className = escrita
+        ? 'rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300'
+        : 'hidden';
+      selo.textContent = 'Já escrita ✓';
+      selo.dataset.selo = '1';
+      meta.appendChild(selo);
       card.appendChild(meta);
 
       const h = document.createElement('p');
@@ -464,20 +512,21 @@
       acoes.className = 'mt-2.5 flex flex-wrap items-center gap-2';
 
       const escrever = criarBotao(
-        'Reescrever com furo',
-        'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400'
+        escrita ? 'Escrever de novo' : 'Reescrever com furo',
+        escrita
+          ? 'rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-white'
+          : 'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400'
       );
       escrever.addEventListener('click', () => {
-        if (state.enviando) return;
-        definirModo('escrever');
-        el.input.value = [
-          'Reescreva esta matéria com furo de reportagem, texto totalmente original e sem plagiar:',
-          `Título: ${pauta.titulo || ''}`,
-          `Veículo: ${pauta.veiculo || ''}`,
-          `Link: ${pauta.url || ''}`,
-          'Pesquise também mais informações recentes sobre esse assunto para acrescentar contexto e dados novos.',
-        ].join('\n');
-        enviar();
+        // Marca o cartão na hora, sem esperar recarregar a conversa
+        selo.className =
+          'rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300';
+        selo.textContent = 'Já escrita ✓';
+        escrever.textContent = 'Escrever de novo';
+        escrever.className =
+          'rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-white';
+        card.className = 'rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3';
+        pedirReescrita(pauta);
       });
       acoes.appendChild(escrever);
 
@@ -499,7 +548,88 @@
     return box;
   }
 
-  function blocoAssistente(mensagem) {
+  /**
+   * Depois da matéria pronta: escolher outra pauta da mesma pesquisa
+   * ou começar uma pesquisa nova, sem precisar rolar a conversa.
+   */
+  function blocoContinuar() {
+    const pautas = state.ultimasPautas || [];
+    if (!pautas.length) return null;
+
+    const restantes = pautas.filter((p) => !pautaJaEscrita(p.url));
+
+    const box = document.createElement('div');
+    box.className = 'mt-3 rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 sm:p-3';
+
+    const titulo = document.createElement('p');
+    titulo.className = 'text-[11px] font-semibold uppercase tracking-wider text-slate-500';
+    titulo.textContent = restantes.length
+      ? `Continuar desta pesquisa — ${restantes.length} pauta(s) restante(s)`
+      : 'Você já escreveu todas as pautas desta pesquisa';
+    box.appendChild(titulo);
+
+    if (restantes.length) {
+      const lista = document.createElement('div');
+      lista.className = 'mt-2 space-y-1.5';
+      restantes.slice(0, 6).forEach((pauta) => {
+        const linha = document.createElement('button');
+        linha.type = 'button';
+        linha.className =
+          'flex w-full items-start gap-2 rounded-lg border border-slate-800 px-2.5 py-2 text-left transition hover:border-emerald-500/50 hover:bg-slate-900';
+        const seta = document.createElement('span');
+        seta.className = 'mt-0.5 shrink-0 text-[11px] text-emerald-400';
+        seta.textContent = '↻';
+        linha.appendChild(seta);
+        const txt = document.createElement('span');
+        txt.className = 'min-w-0';
+        const t = document.createElement('span');
+        t.className = 'block text-xs font-medium leading-snug text-slate-200';
+        t.textContent = pauta.titulo || 'Sem título';
+        txt.appendChild(t);
+        const v = document.createElement('span');
+        v.className = 'mt-0.5 block text-[10px] text-slate-500';
+        v.textContent = pauta.veiculo || 'Web';
+        txt.appendChild(v);
+        linha.appendChild(txt);
+        linha.addEventListener('click', () => pedirReescrita(pauta));
+        lista.appendChild(linha);
+      });
+      box.appendChild(lista);
+    }
+
+    const acoes = document.createElement('div');
+    acoes.className = 'mt-2.5 flex flex-wrap items-center gap-2';
+
+    const nova = criarBotao(
+      'Nova pesquisa de pautas',
+      'rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20'
+    );
+    nova.addEventListener('click', () => {
+      definirModo('pautas');
+      el.input.value = '';
+      el.input.focus();
+      setStatus('Digite o novo tema e envie para ver as matérias.');
+    });
+    acoes.appendChild(nova);
+
+    if (restantes.length) {
+      const verLista = criarBotao(
+        'Ver a lista completa',
+        'rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-white'
+      );
+      verLista.addEventListener('click', () => {
+        const blocos = el.mensagens.querySelectorAll('[data-pautas="1"]');
+        const alvo = blocos[blocos.length - 1];
+        if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      acoes.appendChild(verLista);
+    }
+
+    box.appendChild(acoes);
+    return box;
+  }
+
+  function blocoAssistente(mensagem, { ultima = true } = {}) {
     const wrap = document.createElement('div');
     wrap.className = 'space-y-2';
 
@@ -522,7 +652,14 @@
     const fontes = blocoFontes(mensagem.fontes || []);
     if (fontes) wrap.appendChild(fontes);
 
-    if (mensagem.ehMateria) areaSalvar(mensagem, wrap);
+    if (mensagem.ehMateria) {
+      areaSalvar(mensagem, wrap);
+      // Atalhos só na última matéria, para não repetir a cada mensagem antiga
+      if (ultima) {
+        const continuar = blocoContinuar();
+        if (continuar) wrap.appendChild(continuar);
+      }
+    }
 
     return wrap;
   }
@@ -531,9 +668,16 @@
     limparMensagens();
     if (!mensagens.length) return;
     esconderVazio();
+    // Marca de antemão as pautas que já viraram matéria nesta conversa
     for (const m of mensagens) {
-      el.mensagens.appendChild(m.role === 'user' ? blocoUsuario(m) : blocoAssistente(m));
+      if (m.role === 'user') marcarPautaEscrita(urlDoPedido(m.content));
     }
+    mensagens.forEach((m, indice) => {
+      const ultima = indice === mensagens.length - 1;
+      el.mensagens.appendChild(
+        m.role === 'user' ? blocoUsuario(m) : blocoAssistente(m, { ultima })
+      );
+    });
     scrollFim();
   }
 
