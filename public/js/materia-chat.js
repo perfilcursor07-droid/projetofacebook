@@ -35,6 +35,9 @@
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
     ultimasPautas: [],
     pautasEscritas: new Set(),
+    // Reescrita de pauta: mantém a matéria ancorada no topo da leitura
+    ancorarTopo: false,
+    ancoradoAtivo: false,
   };
 
   /** URL da pauta que um pedido de reescrita aponta (linha "Link: ..."). */
@@ -77,6 +80,12 @@
 
   function scrollFim() {
     el.mensagens.scrollTop = el.mensagens.scrollHeight;
+  }
+
+  /** Coloca um bloco no topo da área de leitura, sem mexer na página. */
+  function ancorarNoTopo(bloco) {
+    if (!bloco) return;
+    el.mensagens.scrollTop = Math.max(0, bloco.offsetTop - el.mensagens.offsetTop);
   }
 
   /* ------------------------------ sidebar ------------------------------ */
@@ -227,7 +236,8 @@
       linha.appendChild(texto);
       lista.appendChild(linha);
       atualizarResumo();
-      scrollFim();
+      // Com a resposta ancorada no topo, rolar para o fim tiraria a matéria da tela
+      if (!state.ancoradoAtivo) scrollFim();
     }
 
     for (const p of passos) addPasso(p);
@@ -442,6 +452,10 @@
   function pedirReescrita(pauta) {
     if (state.enviando) return;
     definirModo('escrever');
+    // Recolhe a lista longa e ancora a matéria no topo: o usuário lê de cima,
+    // sem precisar rolar até o fim da conversa.
+    el.mensagens.querySelectorAll('[data-pautas="1"]').forEach((b) => b.colapsar?.());
+    state.ancorarTopo = true;
     el.input.value = [
       'Reescreva esta matéria com furo de reportagem, texto totalmente original e sem plagiar:',
       `Título: ${pauta.titulo || ''}`,
@@ -463,10 +477,37 @@
     box.className = 'space-y-2';
     box.dataset.pautas = '1';
 
+    const cabecalho = document.createElement('div');
+    cabecalho.className = 'flex flex-wrap items-center justify-between gap-2';
     const titulo = document.createElement('p');
     titulo.className = 'text-[11px] font-semibold uppercase tracking-wider text-emerald-400/80';
     titulo.textContent = `Escolha a matéria para reescrever (${pautas.length})`;
-    box.appendChild(titulo);
+    cabecalho.appendChild(titulo);
+
+    const alternar = criarBotao(
+      'Recolher lista',
+      'rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-emerald-500 hover:text-white'
+    );
+    cabecalho.appendChild(alternar);
+    box.appendChild(cabecalho);
+
+    const lista = document.createElement('div');
+    lista.className = 'space-y-2';
+    box.appendChild(lista);
+
+    box.expandir = () => {
+      lista.classList.remove('hidden');
+      alternar.textContent = 'Recolher lista';
+    };
+    box.colapsar = () => {
+      lista.classList.add('hidden');
+      const escritas = pautas.filter((p) => pautaJaEscrita(p.url)).length;
+      alternar.textContent = `Mostrar lista (${pautas.length - escritas} restantes)`;
+    };
+    alternar.addEventListener('click', () => {
+      if (lista.classList.contains('hidden')) box.expandir();
+      else box.colapsar();
+    });
 
     pautas.forEach((pauta, indice) => {
       const escrita = pautaJaEscrita(pauta.url);
@@ -542,7 +583,7 @@
       }
 
       card.appendChild(acoes);
-      box.appendChild(card);
+      lista.appendChild(card);
     });
 
     return box;
@@ -620,7 +661,9 @@
       verLista.addEventListener('click', () => {
         const blocos = el.mensagens.querySelectorAll('[data-pautas="1"]');
         const alvo = blocos[blocos.length - 1];
-        if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (!alvo) return;
+        alvo.expandir?.();
+        ancorarNoTopo(alvo);
       });
       acoes.appendChild(verLista);
     }
@@ -802,7 +845,14 @@
     corpo.className = 'space-y-3';
     wrap.appendChild(corpo);
     el.mensagens.appendChild(wrap);
-    scrollFim();
+
+    // Reescrita de pauta: fixa o começo da resposta na tela em vez de
+    // empurrar a rolagem para o fim a cada pedaço de texto.
+    const ancorado = state.ancorarTopo === true;
+    state.ancorarTopo = false;
+    state.ancoradoAtivo = ancorado;
+    if (ancorado) ancorarNoTopo(wrap);
+    else scrollFim();
 
     let parcial = '';
     state.controller = new AbortController();
@@ -853,19 +903,22 @@
         } else if (evento.tipo === 'delta') {
           parcial += evento.texto || '';
           renderTexto(corpo, parcial);
-          scrollFim();
+          if (!ancorado) scrollFim();
         } else if (evento.tipo === 'pautas') {
           const cartoes = blocoPautas(evento.pautas || []);
           if (cartoes) {
             wrap.appendChild(cartoes);
-            scrollFim();
+            if (!ancorado) scrollFim();
           }
         } else if (evento.tipo === 'fim') {
           state.chatId = evento.chatId;
           const pronto = blocoAssistente(evento.mensagem);
           wrap.replaceWith(pronto);
           setStatus('');
-          scrollFim();
+          // Matéria reescrita começa visível no topo; as pautas restantes
+          // ficam logo abaixo dela, no bloco "Continuar desta pesquisa".
+          if (ancorado) ancorarNoTopo(pronto);
+          else scrollFim();
           carregarConversas();
         } else if (evento.tipo === 'erro') {
           throw new Error(evento.erro || 'Falha ao gerar a resposta');
@@ -914,6 +967,7 @@
       }
     } finally {
       state.controller = null;
+      state.ancoradoAtivo = false;
       setEnviando(false);
     }
   }
