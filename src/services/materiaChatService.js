@@ -627,6 +627,8 @@ async function responder({
   let fontes = [];
   let blocoFatos = null;
   let temFonteDoLink = false;
+  // Assunto extraído do post, usado para buscar contexto quando o pedido é só o link
+  let assuntoDoLink = '';
 
   // 1) Links FB / IG / YT colados no chat → legenda, descrição ou legendas
   if (urlsSociais.length) {
@@ -651,16 +653,25 @@ async function responder({
         .reduce((t, u) => t.replace(u, ' '), pedido)
         .replace(/\s+/g, ' ')
         .trim();
-      const pediuComplementoWeb =
-        /\b(pesquis|busc|complement|outras fontes|na web|na internet|confirme|confirmar)\b/i.test(
-          resto
-        );
-      if (resto.length < 50 && !pediuComplementoWeb && usarPesquisa && !modoPautas) {
+      const pediuSemComplemento = /\b(s[óo]\s+(o\s+)?link|apenas\s+(o\s+)?link|sem\s+pesquis)/i.test(resto);
+      if (pediuSemComplemento) {
         usarPesquisa = false;
         registrarPasso({
           kind: 'pensando',
-          texto:
-            'Usando só o conteúdo do link. Para cruzar com reportagens, diga “pesquise também” ou acrescente o assunto.',
+          texto: 'Usando só o conteúdo do link, como você pediu.',
+        });
+      } else if (resto.length < 50 && usarPesquisa && !modoPautas) {
+        // Só o link: a legenda sozinha rende matéria curta. Cruza com
+        // reportagens do mesmo assunto para dar contexto real ao texto.
+        assuntoDoLink = String(fontes[0]?.titulo || fontes[0]?.resumo || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 120);
+        registrarPasso({
+          kind: 'pensando',
+          texto: assuntoDoLink
+            ? `Post lido. Buscando reportagens sobre “${assuntoDoLink}” para dar contexto à matéria.`
+            : 'Post lido. Buscando reportagens sobre o mesmo assunto para dar contexto.',
         });
       }
     }
@@ -691,8 +702,9 @@ async function responder({
     let consultas = [];
     try {
       const sugestao = await deepseekService.sugerirConsultasPesquisa({
-        pedido,
-        palavrasChave: palavrasChave || null,
+        // Com link colado sozinho, o assunto vem do próprio post
+        pedido: assuntoDoLink ? `${assuntoDoLink} ${pedido}`.trim() : pedido,
+        palavrasChave: palavrasChave || assuntoDoLink || null,
       });
       consultas = sugestao.consultas || [];
     } catch (err) {
@@ -725,7 +737,7 @@ async function responder({
         consultas: consultas.slice(0, 6),
         periodo: periodoFinal,
         // Apuração ampla: mais sites e também redes sociais
-        max: modoPautas ? 20 : temFonteDoLink ? 8 : 14,
+        max: modoPautas ? 20 : temFonteDoLink ? 12 : 14,
         incluirRedes: true,
         redesAmplas: true,
         resumoContexto: pedido.slice(0, 300),

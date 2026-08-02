@@ -415,24 +415,58 @@
   });
 
   const tituloSugestoes = [];
-  document.getElementById('btn-sugerir-titulo')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-sugerir-titulo');
-    const tomEl = document.getElementById('matter-titulo-tom');
+  const tomEl = document.getElementById('matter-titulo-tom');
+  const manualWrap = document.getElementById('matter-titulo-manual-wrap');
+  const manualEl = document.getElementById('matter-titulo-manual');
+  const btnSugerirTitulo = document.getElementById('btn-sugerir-titulo');
+
+  function syncTituloTomUi() {
+    const isManual = tomEl?.value === 'manual';
+    manualWrap?.classList.toggle('hidden', !isManual);
+    if (btnSugerirTitulo && !btnSugerirTitulo.disabled) {
+      btnSugerirTitulo.textContent = isManual ? 'Reescrever título' : 'Sugerir título';
+    }
+  }
+  tomEl?.addEventListener('change', () => {
+    syncTituloTomUi();
+    if (tomEl.value === 'manual') {
+      if (manualEl && !String(manualEl.value || '').trim() && tituloEl?.value) {
+        manualEl.value = String(tituloEl.value || '').trim();
+      }
+      manualEl?.focus();
+    }
+  });
+  syncTituloTomUi();
+
+  btnSugerirTitulo?.addEventListener('click', async () => {
+    const btn = btnSugerirTitulo;
+    const tom = tomEl?.value || 'natural';
+    const rascunhoManual = String(manualEl?.value || '').trim();
+    if (tom === 'manual' && rascunhoManual.length < 8) {
+      setStatus('No tom Manual, escreva o rascunho do título no campo abaixo.', true);
+      manualEl?.focus();
+      return;
+    }
     const original = btn?.textContent;
     if (btn) {
       btn.disabled = true;
-      btn.textContent = 'Gerando título…';
+      btn.textContent = tom === 'manual' ? 'Reescrevendo…' : 'Gerando título…';
     }
-    setStatus('A IA está sugerindo outro título…');
+    setStatus(
+      tom === 'manual'
+        ? 'A IA está reescrevendo o seu rascunho…'
+        : 'A IA está sugerindo outro título…'
+    );
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/sugerir-titulo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tom: tomEl?.value || 'natural',
+          tom,
           evitar: tituloSugestoes.slice(-8),
           tituloAtual: String(tituloEl?.value || '').trim(),
           materia: String(materiaEl?.value || '').trim(),
+          rascunhoManual: tom === 'manual' ? rascunhoManual : undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -457,14 +491,16 @@
             ? 'Novo título aplicado e capa do Reel atualizada ✓'
             : data.imagemUrl
               ? 'Novo título aplicado e arte atualizada ✓'
-              : 'Novo título aplicado ✓')
+              : tom === 'manual'
+                ? 'Título reescrito a partir do seu rascunho ✓'
+                : 'Novo título aplicado ✓')
       );
     } catch (err) {
       setStatus(err.message, true);
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = original || 'Sugerir outro título';
+        btn.textContent = tom === 'manual' ? 'Reescrever título' : original || 'Sugerir título';
       }
     }
   });

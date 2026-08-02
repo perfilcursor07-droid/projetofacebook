@@ -1036,6 +1036,7 @@ async function sugerirTitulo(req, res, next) {
     const tituloNaTela = String(req.body?.tituloAtual || '').trim();
     const tituloAtual = tituloNaTela || String(matter.titulo || '').trim();
     const materiaNaTela = String(req.body?.materia || '').trim();
+    const rascunhoManual = String(req.body?.rascunhoManual || req.body?.rascunho || '').trim();
 
     const Users = require('../models/Users');
     const user = await Users.findById(req.session.userId);
@@ -1046,6 +1047,7 @@ async function sugerirTitulo(req, res, next) {
       tom,
       evitar: [...evitar, matter.titulo, tituloAtual].filter(Boolean),
       marcaModeloArte: user?.marca_modelo_arte || null,
+      rascunhoManual,
     });
 
     const patch = {

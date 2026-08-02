@@ -145,22 +145,33 @@
                 </p>
               <% } %>
               <% if (canEdit) { %>
-                <div class="mt-2 flex flex-wrap items-center gap-2 pb-3">
-                  <label class="flex items-center gap-1.5 text-[11px] text-slate-500">
-                    <span>Tom</span>
-                    <select id="matter-titulo-tom" class="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 focus:border-emerald-500 focus:outline-none">
-                      <option value="natural" selected>Natural</option>
-                      <option value="polemico">Polêmico (forte)</option>
-                      <option value="direto">Direto</option>
-                      <option value="curiosidade">Curiosidade</option>
-                      <option value="emocional">Emocional</option>
-                      <option value="factual">Factual</option>
-                    </select>
-                  </label>
-                  <button type="button" id="btn-sugerir-titulo"
-                    class="rounded border border-slate-600 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-sky-300">
-                    Sugerir título
-                  </button>
+                <div class="mt-2 space-y-2 pb-3">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <label class="flex items-center gap-1.5 text-[11px] text-slate-500">
+                      <span>Tom</span>
+                      <select id="matter-titulo-tom" class="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 focus:border-emerald-500 focus:outline-none">
+                        <option value="natural" selected>Natural</option>
+                        <option value="polemico">Polêmico (forte)</option>
+                        <option value="direto">Direto</option>
+                        <option value="curiosidade">Curiosidade</option>
+                        <option value="emocional">Emocional</option>
+                        <option value="factual">Factual</option>
+                        <option value="manual">Manual (eu escrevo)</option>
+                      </select>
+                    </label>
+                    <button type="button" id="btn-sugerir-titulo"
+                      class="rounded border border-slate-600 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-sky-300">
+                      Sugerir título
+                    </button>
+                  </div>
+                  <div id="matter-titulo-manual-wrap" class="hidden">
+                    <label for="matter-titulo-manual" class="mb-1 block text-[11px] text-slate-500">
+                      Seu rascunho — a IA reescreve mantendo o que você quer
+                    </label>
+                    <textarea id="matter-titulo-manual" rows="2"
+                      placeholder="Cole ou escreva aqui o título do seu jeito…"
+                      class="w-full resize-y rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
+                  </div>
                 </div>
               <% } else { %>
                 <div class="pb-3"></div>
@@ -713,5 +724,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260801models2"></script>
+  <script src="/js/materia-ia-editar.js?v=20260801manual1"></script>
 <%- include('partials/app-end') %>

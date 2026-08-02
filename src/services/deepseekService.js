@@ -1584,6 +1584,9 @@ const TITULO_TOMES = {
   curiosidade: 'Curiosidade: abre lacuna ou pergunta implícita que faz a pessoa querer ler.',
   emocional: 'Emocional e humano: ângulo de sentimento/fé, sem melodramático falso.',
   factual: 'Factual e sóbrio: máximo de precisão, mínimo de adjetivo.',
+  manual:
+    'MANUAL: o usuário já escreveu o rascunho da manchete. Reescreva para ficar limpo e impactante, ' +
+    'mas MANTENHA o sentido, os nomes, o ângulo e a intenção do rascunho. Não invente outro tema.',
 };
 
 function normalizeTituloCmp(text) {
@@ -1658,21 +1661,46 @@ async function sugerirTituloMateria({
   tom = 'natural',
   evitar = [],
   marcaModeloArte = null,
+  rascunhoManual = '',
 }) {
   assertDeepseek();
   const tomKey = TITULO_TOMES[tom] ? tom : 'natural';
   const tomDesc = TITULO_TOMES[tomKey];
+  const rascunho = String(rascunhoManual || '').trim();
+  if (tomKey === 'manual' && rascunho.length < 8) {
+    const err = new Error('No tom Manual, escreva o rascunho do título (pelo menos algumas palavras).');
+    err.status = 400;
+    throw err;
+  }
   const evitarList = (Array.isArray(evitar) ? evitar : [])
     .map((t) => String(t || '').trim())
     .filter(Boolean)
     .slice(0, 8);
   const blocoMarca = blocoTituloMarcaArte(marcaModeloArte);
   const maxTitulo = blocoMarca ? 130 : 120;
+  const isManual = tomKey === 'manual';
 
   const baseMessages = (attempt) => [
     {
       role: 'system',
-      content: `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
+      content: isManual
+        ? `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
+Modo MANUAL — reescreva o rascunho do usuário.
+Regras:
+- Responda APENAS JSON válido: {"titulo":"sua manchete aqui"}
+- Uma manchete em português do Brasil, 70–110 caracteres (máx ${maxTitulo}${blocoMarca ? ', contando marcadores [[ ]] e (( ))' : ''}).
+- OBRIGATÓRIO: preserve o SENTIDO, os NOMES, o ÂNGULO e a INTENÇÃO do rascunho do usuário.
+- Pode melhorar clareza, ritmo e impacto; corrija gramática e corte o que for redundante.
+- NÃO invente fatos novos nem mude o tema/ângulo para outro.
+- NÃO use Caps Lock excessivo nem pontos de exclamação em série.
+- Tom: ${tomDesc}
+${blocoMarca ? `\n${blocoMarca}\n` : ''}
+${attempt > 1 ? '- A versão anterior ficou idêntica ou fraca. Melhore a formulação SEM mudar o sentido do rascunho.' : ''}${
+            attempt > 1 && blocoMarca
+              ? '\n- Inclua de fato [[destaques]] e ((faixa vermelha)) no título.'
+              : ''
+          }`
+        : `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
 Regras:
 - Responda APENAS JSON válido: {"titulo":"sua manchete aqui"}
 - Uma manchete em português do Brasil, 70–110 caracteres (máx ${maxTitulo}${blocoMarca ? ', contando marcadores [[ ]] e (( ))' : ''}).
@@ -1698,41 +1726,58 @@ REGRAS EXTRA — TOM POLÊMICO (obrigatório):
     : ''
 }
 ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastante a estrutura da frase.' : ''}${
-        attempt > 1 && tomKey === 'polemico'
-          ? '\n- Ainda está fraco: aumente o confronto e mude completamente a formulação.'
-          : ''
-      }${
-        attempt > 1 && blocoMarca
-          ? '\n- Inclua de fato [[destaques]] e ((faixa vermelha)) no título.'
-          : ''
-      }`,
+            attempt > 1 && tomKey === 'polemico'
+              ? '\n- Ainda está fraco: aumente o confronto e mude completamente a formulação.'
+              : ''
+          }${
+            attempt > 1 && blocoMarca
+              ? '\n- Inclua de fato [[destaques]] e ((faixa vermelha)) no título.'
+              : ''
+          }`,
     },
     {
       role: 'user',
-      content: [
-        `Tom: ${tomKey}${tomKey === 'polemico' ? ' (POLÊMICO FORTE — não suavize)' : ''}`,
-        tituloAtual ? `Título atual (NÃO repetir):\n${tituloAtual}` : null,
-        evitarList.length ? `Também NÃO use estes:\n- ${evitarList.join('\n- ')}` : null,
-        fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
-        materia ? `Texto da matéria:\n${String(materia).slice(0, 2500)}` : null,
-        attempt > 1
-          ? tomKey === 'polemico'
-            ? 'Gere UMA manchete NOVA, bem mais polêmica e com estrutura diferente.'
-            : 'Gere UMA manchete NOVA, com palavras e estrutura bem diferentes.'
-          : tomKey === 'polemico'
-            ? 'Gere UMA manchete polêmica de verdade (tensão/confronto), fiel aos fatos.'
-            : 'Gere UMA manchete nova nesse tom.',
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
+      content: isManual
+        ? [
+            'Tom: manual (reescrever rascunho do usuário, mantendo o que ele quer)',
+            `Rascunho do usuário (base obrigatória — reescreva, não ignore):\n${rascunho}`,
+            tituloAtual && normalizeTituloCmp(tituloAtual) !== normalizeTituloCmp(rascunho)
+              ? `Título atual na matéria (referência):\n${tituloAtual}`
+              : null,
+            materia ? `Texto da matéria (só para contexto factual):\n${String(materia).slice(0, 2000)}` : null,
+            attempt > 1
+              ? 'Reescreva de novo o MESMO rascunho, com formulação um pouco melhor, sem mudar o sentido.'
+              : 'Reescreva o rascunho como manchete pronta, mantendo o que o usuário quer dizer.',
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+        : [
+            `Tom: ${tomKey}${tomKey === 'polemico' ? ' (POLÊMICO FORTE — não suavize)' : ''}`,
+            tituloAtual ? `Título atual (NÃO repetir):\n${tituloAtual}` : null,
+            evitarList.length ? `Também NÃO use estes:\n- ${evitarList.join('\n- ')}` : null,
+            fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
+            materia ? `Texto da matéria:\n${String(materia).slice(0, 2500)}` : null,
+            attempt > 1
+              ? tomKey === 'polemico'
+                ? 'Gere UMA manchete NOVA, bem mais polêmica e com estrutura diferente.'
+                : 'Gere UMA manchete NOVA, com palavras e estrutura bem diferentes.'
+              : tomKey === 'polemico'
+                ? 'Gere UMA manchete polêmica de verdade (tensão/confronto), fiel aos fatos.'
+                : 'Gere UMA manchete nova nesse tom.',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
     },
   ];
 
   let ultimoTitulo = '';
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const temp =
-      attempt === 1
+    const temp = isManual
+      ? attempt === 1
+        ? 0.55
+        : 0.7
+      : attempt === 1
         ? tomKey === 'polemico'
           ? 1.05
           : 0.88
@@ -1745,9 +1790,21 @@ ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastan
     });
     const titulo = finalizarTituloComMarca(parseTituloFromAi(raw), marcaModeloArte);
     ultimoTitulo = titulo;
-    if (titulo && !tituloJaUsado(titulo, tituloAtual, evitarList)) {
+    if (!titulo) continue;
+    // Manual: aceita se for válido; só rejeita cópia idêntica ao rascunho bruto na 1ª tentativa.
+    if (isManual) {
+      if (attempt === 1 && normalizeTituloCmp(titulo) === normalizeTituloCmp(rascunho)) {
+        continue;
+      }
       return { titulo, tom: tomKey };
     }
+    if (!tituloJaUsado(titulo, tituloAtual, evitarList)) {
+      return { titulo, tom: tomKey };
+    }
+  }
+
+  if (isManual && ultimoTitulo) {
+    return { titulo: ultimoTitulo, tom: tomKey };
   }
 
   const err = new Error(
@@ -2285,6 +2342,12 @@ COMO RESPONDER:
   · NÃO escreva bloco "Fontes:", "Fonte:", "Foto:" nem URLs no fim — o sistema monta isso ao salvar.
 - Se o editor fizer uma PERGUNTA (ex.: "onde ele falou isso?", "qual a fonte?"): responda direto e curto, citando os veículos das fontes. Não escreva matéria nesse caso.
 - Se o editor pedir um ajuste ("deixe mais curto", "acrescente X", "troque o título"): reescreva a MATÉRIA INTEIRA já ajustada, não só o trecho.
+
+TAMANHO DA MATÉRIA (aproveite TODO o material apurado):
+- Com material suficiente nas fontes: corpo de 1700 a 2100 caracteres, em 5 a 8 parágrafos curtos.
+- Não pare no resumo do fato: use tudo que as fontes trazem — quem é a pessoa/instituição, o que foi dito (com aspas literais), quando e onde, números e datas, reação e desdobramentos documentados, histórico do caso.
+- Post de rede social como base: contextualize com as reportagens apuradas (o que é o assunto, por que importa, o que já se sabe) em vez de repetir a legenda.
+- Se as fontes realmente derem pouco: escreva a matéria curta e, na última linha, avise o editor em 1 frase o que falta apurar. NUNCA alongue com frase vazia, opinião, suposição ou repetição — texto curto e checado é melhor que longo e inventado.
 
 REGRA DE OURO — só fato real (a mais importante de todas):
 - O pedido do editor é uma HIPÓTESE, não um fato. Só trate como fato o que estiver nos TRECHOS DAS FONTES.
