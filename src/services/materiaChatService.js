@@ -231,11 +231,23 @@ function interpretarResposta(conteudo) {
   if (!bruto) return { ehMateria: false, titulo: null, corpo: '', hashtags: [] };
 
   const { body, tags } = extrairHashtagsDoTexto(bruto);
-  const linhas = String(body || '')
-    .split('\n')
-    .map((l) => l.trim());
+
+  // Remove preâmbulo conversacional antes da matéria real.
+  // A IA pode responder: "A matéria é sobre X...\n---\nTítulo real\n\n..."
+  let textoUtil = String(body || '');
+  const sepMatch = textoUtil.match(/\n-{3,}\s*\n/);
+  if (sepMatch) {
+    const sepIdx = sepMatch.index;
+    const antesSep = textoUtil.slice(0, sepIdx).trim();
+    const depoisSep = textoUtil.slice(sepIdx + sepMatch[0].length).trim();
+    if (antesSep.length < 600 && depoisSep.length > 400) {
+      textoUtil = depoisSep;
+    }
+  }
+
+  const linhas = textoUtil.split('\n').map((l) => l.trim());
   const primeira = linhas.find((l) => l.length > 0) || '';
-  const restoTexto = body.slice(body.indexOf(primeira) + primeira.length).trim();
+  const restoTexto = textoUtil.slice(textoUtil.indexOf(primeira) + primeira.length).trim();
   const paragrafos = restoTexto.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
 
   const tituloLimpo = primeira
