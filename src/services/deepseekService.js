@@ -2255,9 +2255,18 @@ Corte ou reescreva obrigatoriamente:
 - Atribuição a jornalista, coluna, programa ou veículo que não esteja nas fontes.
 - Título que afirme algo mais forte do que as fontes sustentam (ex.: dizer que houve "racha" quando as fontes só falam de divergência).
 
+NÃO CORTE (isto é trabalho correto do redator, não erro):
+- PARÁFRASE de fato que está nas fontes. Reescrever com outras palavras é OBRIGATÓRIO pelo anti-plágio — se o fato está na fonte, a frase é válida mesmo com palavras diferentes.
+- Ligação lógica entre dois fatos que estão nas fontes (ex.: fonte diz "gerou um legado" e "família de 5 filhos"; escrever que o legado se reflete na família é válido).
+- Contexto descritivo já contido nas fontes (quem é a pessoa, onde congrega, desde quando, números da família).
+- Ordem, divisão em parágrafos, subtítulos e escolha de ângulo — isso é edição, não invenção.
+- Se o fato está na fonte e só a redação mudou, MANTENHA a frase como o redator escreveu.
+
 Regras da devolução:
 - NÃO acrescente informação nova, nem "para completar".
 - Mantenha o formato: 1ª linha título, corpo em parágrafos curtos, última linha as hashtags.
+- PRESERVE A EXTENSÃO: só remova o que for infundado. É erro encurtar a matéria por estilo, por preferir frase literal da fonte ou por "ajustar" paráfrase correta.
+- Quando a fonte for post de rede social, a legenda inteira é fonte válida — tudo que ela afirma pode ser usado.
 - Se sobrar pouco conteúdo, entregue a matéria mais curta — texto curto e checado é melhor que texto grande e furado.
 - Mantenha o tom e o estilo do original no que for verdadeiro.
 
@@ -2346,7 +2355,7 @@ COMO RESPONDER:
 TAMANHO DA MATÉRIA (aproveite TODO o material apurado):
 - Com material suficiente nas fontes: corpo de 1700 a 2100 caracteres, em 5 a 8 parágrafos curtos.
 - Não pare no resumo do fato: use tudo que as fontes trazem — quem é a pessoa/instituição, o que foi dito (com aspas literais), quando e onde, números e datas, reação e desdobramentos documentados, histórico do caso.
-- Post de rede social como base: contextualize com as reportagens apuradas (o que é o assunto, por que importa, o que já se sabe) em vez de repetir a legenda.
+- Post de rede social como base: aproveite TODOS os dados da legenda (nome completo, idade, falas entre aspas, números de família, igreja e desde quando, conselhos e mensagens) e organize em parágrafos com lead, desenvolvimento e fechamento. Se houver reportagens apuradas, some o contexto delas; se não houver, construa a matéria com o conteúdo do post — sem repetir a legenda em bloco e sem inventar.
 - Se as fontes realmente derem pouco: escreva a matéria curta e, na última linha, avise o editor em 1 frase o que falta apurar. NUNCA alongue com frase vazia, opinião, suposição ou repetição — texto curto e checado é melhor que longo e inventado.
 
 REGRA DE OURO — só fato real (a mais importante de todas):
