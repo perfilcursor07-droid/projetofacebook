@@ -4,79 +4,24 @@
     <%- include('partials/content-nav', { contentTab: 'media' }) %>
 
     <div>
-      <h1 class="text-2xl font-semibold text-white">Vídeo e imagem</h1>
-      <p class="mt-1 text-sm text-slate-400">Busque, envie ou importe mídias para continuar na fila.</p>
+      <h1 class="text-2xl font-semibold text-white">Vídeos</h1>
+      <p class="mt-1 text-sm text-slate-400">Busque no YouTube, envie um arquivo ou importe por link para a fila.</p>
     </div>
 
     <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/40 p-4 sm:p-5">
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="inline-flex rounded-xl border border-slate-700 bg-slate-950 p-1" role="tablist" aria-label="Tipo de conteúdo">
-          <button type="button" data-tipo="videos" class="tipo-btn inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.2l4.4 3.1c.66.47 1.6 0 1.6-.82V7.92c0-.81-.94-1.29-1.6-.82L16 10.2V7a2 2 0 0 0-2-2H4Z"/></svg>
-            Vídeos
-          </button>
-          <button type="button" data-tipo="imagens" class="tipo-btn inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-slate-300 hover:text-white">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5Zm3.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM5 19l4.5-6 3.5 4.5L15.5 14 19 19H5Z"/></svg>
-            Imagens
-          </button>
-        </div>
+      <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Como trazer o vídeo</p>
+      <div class="inline-flex w-full flex-wrap gap-1 rounded-xl border border-slate-700 bg-slate-950 p-1 sm:w-auto" role="tablist" aria-label="Modo de busca">
+        <button type="button" data-yt-modo="palavra" class="yt-modo-btn flex-1 rounded-lg bg-red-500 px-4 py-2.5 text-sm font-semibold text-white sm:flex-none">
+          Palavra-chave
+        </button>
+        <button type="button" data-yt-modo="upload" class="yt-modo-btn flex-1 rounded-lg px-4 py-2.5 text-sm text-slate-300 hover:text-white sm:flex-none">
+          Upload
+        </button>
+        <button type="button" data-yt-modo="link" class="yt-modo-btn flex-1 rounded-lg px-4 py-2.5 text-sm text-slate-300 hover:text-white sm:flex-none">
+          Por link
+        </button>
       </div>
 
-      <div id="fonte-wrap" class="mt-4">
-        <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Fonte</p>
-        <div class="grid gap-2 sm:grid-cols-3" role="tablist" aria-label="Fonte da busca">
-          <button type="button" data-fonte="pexels" aria-pressed="true"
-            class="fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500">
-            <span class="fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-slate-950">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3h8.5A5.5 5.5 0 0 1 20 8.5a5.5 5.5 0 0 1-4.5 5.41V21H6V3Zm4 2v14h1.5v-7h3a3.5 3.5 0 1 0 0-7H10Zm1.5 2h3a1.5 1.5 0 1 1 0 3h-3V7Z"/></svg>
-            </span>
-            <span class="min-w-0">
-              <span class="block text-sm font-semibold text-white">Pexels</span>
-              <span class="block truncate text-xs text-slate-400">Livre de direitos</span>
-            </span>
-          </button>
-
-          <button type="button" data-fonte="youtube" aria-pressed="false"
-            class="fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all border-slate-700 bg-slate-950/60 hover:border-slate-500">
-            <span class="fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-red-500">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 7.2a2.51 2.51 0 0 0-1.77-1.78C18.25 5 12 5 12 5s-6.25 0-7.83.42A2.51 2.51 0 0 0 2.4 7.2 26.3 26.3 0 0 0 2 12a26.3 26.3 0 0 0 .4 4.8 2.51 2.51 0 0 0 1.77 1.78C5.75 19 12 19 12 19s6.25 0 7.83-.42a2.51 2.51 0 0 0 1.77-1.78A26.3 26.3 0 0 0 22 12a26.3 26.3 0 0 0-.4-4.8ZM10 15.5v-7l6 3.5-6 3.5Z"/></svg>
-            </span>
-            <span class="min-w-0">
-              <span class="block text-sm font-semibold text-white">YouTube</span>
-              <span class="block truncate text-xs text-slate-400">+ FB · IG · Upload</span>
-            </span>
-          </button>
-
-          <button type="button" data-fonte="tiktok" aria-pressed="false"
-            class="fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all border-slate-700 bg-slate-950/60 hover:border-slate-500">
-            <span class="fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-fuchsia-400">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6 2h-3.09v13.67a2.9 2.9 0 1 1-2.9-2.9c.2 0 .4.02.59.06V9.69a6.04 6.04 0 0 0-.59-.03 6.02 6.02 0 1 0 6.02 6.02V8.42a7.6 7.6 0 0 0 4.37 1.37V6.7A4.48 4.48 0 0 1 16.6 2Z"/></svg>
-            </span>
-            <span class="min-w-0">
-              <span class="block text-sm font-semibold text-white">TikTok</span>
-              <span class="block truncate text-xs text-slate-400">Perfil @usuário</span>
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Abas internas do YouTube -->
-      <div id="youtube-modos" class="mt-4 hidden">
-        <p class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Como trazer o vídeo</p>
-        <div class="inline-flex w-full flex-wrap gap-1 rounded-xl border border-slate-700 bg-slate-950 p-1 sm:w-auto" role="tablist" aria-label="Modo YouTube">
-          <button type="button" data-yt-modo="palavra" class="yt-modo-btn flex-1 rounded-lg bg-red-500 px-4 py-2.5 text-sm font-semibold text-white sm:flex-none">
-            Palavra-chave
-          </button>
-          <button type="button" data-yt-modo="upload" class="yt-modo-btn flex-1 rounded-lg px-4 py-2.5 text-sm text-slate-300 hover:text-white sm:flex-none">
-            Upload
-          </button>
-          <button type="button" data-yt-modo="link" class="yt-modo-btn flex-1 rounded-lg px-4 py-2.5 text-sm text-slate-300 hover:text-white sm:flex-none">
-            Por link (YT · FB · IG)
-          </button>
-        </div>
-      </div>
-
-      <!-- Painel: palavra-chave (Pexels / TikTok / YouTube) -->
       <div id="panel-palavra" class="mt-4">
         <form id="search-form" class="flex flex-col gap-3">
           <div class="flex flex-col gap-3 sm:flex-row">
@@ -84,7 +29,7 @@
               type="search"
               name="termo"
               id="termo"
-              placeholder="Ex: motivação, receita rápida, pregação…"
+              placeholder="Ex: motivação shorts, receita rápida, pregação…"
               class="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
               required
             />
@@ -97,7 +42,7 @@
             </button>
           </div>
 
-          <div id="youtube-filters" class="hidden flex-wrap items-center gap-1.5">
+          <div id="youtube-filters" class="flex flex-wrap items-center gap-1.5">
             <span class="mr-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Duração</span>
             <button type="button" class="dur-chip rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-slate-950" data-max="60" data-shorts="1">Shorts ≤60s</button>
             <button type="button" class="dur-chip rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-400 hover:border-slate-500 hover:text-slate-200" data-max="180" data-shorts="0">Curtos ≤3min</button>
@@ -107,7 +52,6 @@
         </form>
       </div>
 
-      <!-- Painel: upload (YouTube) -->
       <div id="panel-upload" class="mt-4 hidden">
         <div class="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
           <h2 class="text-sm font-semibold text-white">Enviar meu vídeo</h2>
@@ -124,27 +68,22 @@
         </div>
       </div>
 
-      <!-- Painel: por link (YouTube / Facebook / Instagram) — vários de uma vez -->
       <div id="panel-link" class="mt-4 hidden">
         <div class="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
           <h2 class="text-sm font-semibold text-white">Importar por link</h2>
           <p class="mt-1 text-xs text-slate-500">
-            Cole links do <strong class="font-medium text-slate-300">YouTube</strong>,
+            Cole o link de um vídeo do <strong class="font-medium text-slate-300">YouTube</strong>,
             <strong class="font-medium text-slate-300">Facebook</strong> ou
-            <strong class="font-medium text-slate-300">Instagram</strong>
-            (vídeo/Reel). <strong class="font-medium text-slate-400">Um por linha</strong> — até 20 por vez.
+            <strong class="font-medium text-slate-300">Instagram</strong> (Reel).
           </p>
           <form id="import-form" class="mt-3 space-y-3">
-            <textarea id="import-urls" rows="6" required
-              placeholder="https://www.youtube.com/watch?v=...&#10;https://www.facebook.com/reel/...&#10;https://www.instagram.com/reel/...&#10;https://fb.watch/..."
-              class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
-            <div class="flex flex-wrap items-center gap-3">
-              <button type="submit" id="import-btn"
-                class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
-                Importar todos
-              </button>
-              <span id="import-count" class="text-xs text-slate-500"></span>
-            </div>
+            <input id="import-url" type="url" required
+              placeholder="https://www.youtube.com/watch?v=… ou https://www.facebook.com/reel/…"
+              class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+            <button type="submit" id="import-btn"
+              class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
+              Importar
+            </button>
           </form>
           <p id="import-status" class="mt-3 text-sm text-slate-400"></p>
           <p class="mt-2 text-xs text-amber-300/80">
@@ -152,45 +91,10 @@
           </p>
         </div>
       </div>
-
-      <p id="fonte-hint" class="mt-3 text-xs text-slate-500">Pexels: vídeos/fotos licenciados para uso comercial.</p>
     </div>
 
     <div id="search-status" class="mt-4 text-sm text-slate-400"></div>
     <div id="results" class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"></div>
-
-    <!-- Upload / link para Pexels e TikTok (fora das abas YT) -->
-    <div id="extra-import" class="mt-10 rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
-      <h2 class="text-sm font-semibold text-white">Upload ou importar por link</h2>
-      <p class="mt-1 text-xs text-slate-500">Arquivo próprio · YouTube · Facebook · Instagram · TikTok — vários links de uma vez</p>
-      <div class="mt-4 grid gap-4 lg:grid-cols-2">
-        <section>
-          <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Enviar arquivo</h3>
-          <form id="upload-form-extra" class="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <input type="file" name="arquivo" id="upload-file-extra" accept=".mp4,.mov,.mkv,.webm,.avi,.m4v" required
-              class="w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:text-slate-100 hover:file:bg-slate-600" />
-            <button type="submit" id="upload-btn-extra"
-              class="shrink-0 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
-              Enviar
-            </button>
-          </form>
-          <p id="upload-status-extra" class="mt-3 text-sm text-slate-400"></p>
-        </section>
-        <section>
-          <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Links (vários)</h3>
-          <form id="import-form-extra" class="mt-2 space-y-2">
-            <textarea id="import-urls-extra" rows="4" required
-              placeholder="YouTube, Facebook, Instagram ou TikTok — um link por linha…"
-              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"></textarea>
-            <button type="submit" id="import-btn-extra"
-              class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
-              Importar todos
-            </button>
-          </form>
-          <p id="import-status-extra" class="mt-3 text-sm text-slate-400"></p>
-        </section>
-      </div>
-    </div>
   </main>
 
   <script>
@@ -199,72 +103,18 @@
     const statusEl = document.getElementById('search-status');
     const resultsEl = document.getElementById('results');
     const searchBtn = document.getElementById('search-btn');
-    const tipoBtns = document.querySelectorAll('.tipo-btn');
-    const fonteBtns = document.querySelectorAll('.fonte-btn');
-    const fonteWrap = document.getElementById('fonte-wrap');
-    const fonteHint = document.getElementById('fonte-hint');
-    const youtubeFilters = document.getElementById('youtube-filters');
-    const youtubeModos = document.getElementById('youtube-modos');
     const ytModoBtns = document.querySelectorAll('.yt-modo-btn');
     const panelPalavra = document.getElementById('panel-palavra');
     const panelUpload = document.getElementById('panel-upload');
     const panelLink = document.getElementById('panel-link');
-    const extraImport = document.getElementById('extra-import');
     const durChips = document.querySelectorAll('.dur-chip');
-    const importUrls = document.getElementById('import-urls');
-    const importCount = document.getElementById('import-count');
 
-    let tipo = 'videos';
-    let fonte = 'pexels';
     let ytModo = 'palavra';
     let lastTermo = '';
     let ytMaxDuration = '60';
     let ytShortsOnly = true;
 
-    const FONTE_HINTS = {
-      pexels: 'Pexels: vídeos/fotos licenciados para uso comercial.',
-      youtube: 'YouTube: palavra-chave, upload ou link. Na aba Por link também aceita Facebook e Instagram.',
-      tiktok: 'TikTok: digite um @usuário (ex.: @tiktok). Ou importe vários links na seção abaixo.',
-    };
-
-    const FONTE_STYLES = {
-      pexels: {
-        card: 'border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500',
-        icon: 'bg-emerald-500 text-slate-950',
-        iconIdle: 'bg-slate-800 text-emerald-400',
-      },
-      youtube: {
-        card: 'border-red-500 bg-red-500/10 ring-1 ring-red-500',
-        icon: 'bg-red-600 text-white',
-        iconIdle: 'bg-slate-800 text-red-500',
-      },
-      tiktok: {
-        card: 'border-fuchsia-500 bg-fuchsia-500/10 ring-1 ring-fuchsia-500',
-        icon: 'bg-fuchsia-500 text-slate-950',
-        iconIdle: 'bg-slate-800 text-fuchsia-400',
-      },
-    };
-    const CARD_BASE = 'fonte-btn group flex items-center gap-3 rounded-xl border p-3 text-left transition-all';
-    const CARD_IDLE = 'border-slate-700 bg-slate-950/60 hover:border-slate-500';
-    const ICON_BASE = 'fonte-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg';
-
-    function contarLinksNoTexto(texto) {
-      return String(texto || '')
-        .split(/[\n\r,;]+/)
-        .map((u) => u.trim())
-        .filter((u) => /^https?:\/\//i.test(u)).length;
-    }
-
-    function syncImportCount() {
-      if (!importCount || !importUrls) return;
-      const n = contarLinksNoTexto(importUrls.value);
-      importCount.textContent = n ? n + ' link(s) detectado(s)' : '';
-    }
-
     function syncYoutubeFiltersUi() {
-      const show = tipo === 'videos' && fonte === 'youtube' && ytModo === 'palavra';
-      youtubeFilters.classList.toggle('hidden', !show);
-      youtubeFilters.classList.toggle('flex', show);
       durChips.forEach((chip) => {
         const active =
           String(chip.dataset.max) === String(ytMaxDuration) &&
@@ -276,26 +126,14 @@
     }
 
     function syncYtModoUi() {
-      const isYt = tipo === 'videos' && fonte === 'youtube';
-      youtubeModos.classList.toggle('hidden', !isYt);
-      extraImport.classList.toggle('hidden', isYt);
-
       ytModoBtns.forEach((btn) => {
         const on = btn.dataset.ytModo === ytModo;
-        btn.classList.toggle('bg-red-500', on && isYt);
-        btn.classList.toggle('text-white', on && isYt);
+        btn.classList.toggle('bg-red-500', on);
+        btn.classList.toggle('text-white', on);
         btn.classList.toggle('font-semibold', on);
         btn.classList.toggle('text-slate-300', !on);
         btn.classList.toggle('hover:text-white', !on);
       });
-
-      if (!isYt) {
-        panelPalavra.classList.remove('hidden');
-        panelUpload.classList.add('hidden');
-        panelLink.classList.add('hidden');
-        syncYoutubeFiltersUi();
-        return;
-      }
 
       panelPalavra.classList.toggle('hidden', ytModo !== 'palavra');
       panelUpload.classList.toggle('hidden', ytModo !== 'upload');
@@ -307,59 +145,6 @@
       }
       syncYoutubeFiltersUi();
     }
-
-    function setFonteActive(next) {
-      fonte = next;
-      fonteBtns.forEach((b) => {
-        const f = b.dataset.fonte;
-        const active = f === fonte;
-        const style = FONTE_STYLES[f];
-        b.className = CARD_BASE + ' ' + (active ? style.card : CARD_IDLE);
-        b.setAttribute('aria-pressed', String(active));
-        const icon = b.querySelector('.fonte-icon');
-        if (icon) icon.className = ICON_BASE + ' ' + (active ? style.icon : style.iconIdle);
-      });
-      fonteHint.textContent = FONTE_HINTS[fonte] || '';
-      if (fonte === 'tiktok') {
-        termoInput.placeholder = 'Ex.: @tiktok';
-      } else if (fonte === 'youtube') {
-        termoInput.placeholder = 'Ex: motivação shorts, receita rápida…';
-        ytModo = 'palavra';
-      } else {
-        termoInput.placeholder = 'Ex: motivação, receita rápida…';
-      }
-      syncYtModoUi();
-    }
-
-    tipoBtns.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        tipo = btn.dataset.tipo;
-        tipoBtns.forEach((b) => {
-          const active = b === btn;
-          b.classList.toggle('bg-emerald-500', active);
-          b.classList.toggle('text-slate-950', active);
-          b.classList.toggle('font-semibold', active);
-          b.classList.toggle('text-slate-300', !active);
-          b.classList.toggle('hover:text-white', !active);
-        });
-        if (tipo === 'imagens') {
-          fonteWrap.classList.add('hidden');
-          setFonteActive('pexels');
-        } else {
-          fonteWrap.classList.remove('hidden');
-          syncYtModoUi();
-        }
-        if (lastTermo && (fonte !== 'youtube' || ytModo === 'palavra')) searchContent(lastTermo);
-      });
-    });
-
-    fonteBtns.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        if (tipo !== 'videos') return;
-        setFonteActive(btn.dataset.fonte);
-        if (lastTermo && (fonte !== 'youtube' || ytModo === 'palavra')) searchContent(lastTermo);
-      });
-    });
 
     ytModoBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -373,11 +158,9 @@
         ytMaxDuration = chip.dataset.max;
         ytShortsOnly = chip.dataset.shorts === '1';
         syncYoutubeFiltersUi();
-        if (lastTermo && fonte === 'youtube' && ytModo === 'palavra') searchContent(lastTermo);
+        if (lastTermo && ytModo === 'palavra') searchContent(lastTermo);
       });
     });
-
-    importUrls?.addEventListener('input', syncImportCount);
 
     function formatDuration(seconds) {
       if (!seconds && seconds !== 0) return '—';
@@ -401,14 +184,10 @@
       return 'bg-black/75 text-white';
     }
 
-    function cardHtml(item, isVideo) {
-      const isLink = item.source === 'youtube' || item.source === 'tiktok' || (item.url && !item.pexelsId);
-      const sourceLabel = item.source === 'youtube' ? 'YouTube' : item.source === 'tiktok' ? 'TikTok' : 'Pexels';
-      const isShort = Boolean(item.isShort || (item.duracao != null && item.duracao <= 60 && item.source === 'youtube'));
+    function cardHtml(item) {
+      const isShort = Boolean(item.isShort || (item.duracao != null && item.duracao <= 60));
       const title = item.titulo || item.autor || 'Sem título';
-      const meta = isVideo
-        ? (item.qualidade ? escapeHtml(item.qualidade) : '')
-        : (item.largura && item.altura ? item.largura + '×' + item.altura : 'foto');
+      const meta = item.qualidade ? escapeHtml(item.qualidade) : '';
 
       return `
         <article class="group flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/50 transition hover:border-slate-600">
@@ -420,9 +199,9 @@
             <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20"></div>
             <div class="absolute left-2 top-2 flex flex-wrap gap-1.5">
               ${isShort ? `<span class="rounded-md bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Short</span>` : ''}
-              <span class="rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-slate-200">${sourceLabel}</span>
+              <span class="rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-slate-200">YouTube</span>
             </div>
-            ${isVideo ? `<span class="absolute bottom-2 right-2 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${durationBadgeClass(item)}">${formatDuration(item.duracao)}</span>` : ''}
+            <span class="absolute bottom-2 right-2 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${durationBadgeClass(item)}">${formatDuration(item.duracao)}</span>
           </div>
           <div class="flex flex-1 flex-col gap-3 p-3.5">
             <div class="min-w-0">
@@ -434,11 +213,7 @@
                 <button
                   type="button"
                   class="select-btn flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
-                  data-mode="${isLink ? 'link' : 'pexels'}"
                   data-url="${escapeHtml(item.url || '')}"
-                  data-pexels-id="${escapeHtml(item.pexelsId || '')}"
-                  data-fonte="${escapeHtml(item.source || fonte)}"
-                  data-tipo="${isVideo ? 'videos' : 'imagens'}"
                 >
                   Adicionar à fila
                 </button>
@@ -454,28 +229,20 @@
 
     async function searchContent(termo) {
       lastTermo = termo;
-      const label = tipo === 'imagens' ? 'Pexels' : (fonte === 'youtube' ? 'YouTube' : fonte === 'tiktok' ? 'TikTok' : 'Pexels');
-      statusEl.textContent = 'Buscando em ' + label + '…';
+      statusEl.textContent = 'Buscando no YouTube…';
       resultsEl.innerHTML = '';
       searchBtn.disabled = true;
 
       try {
-        let url = '/api/' + tipo + '/search?termo=' + encodeURIComponent(termo);
-        if (tipo === 'videos') {
-          url += '&fonte=' + encodeURIComponent(fonte);
-          if (fonte === 'youtube') {
-            url += '&per_page=100';
-            url += '&max_duration=' + encodeURIComponent(ytMaxDuration);
-            if (ytShortsOnly) url += '&shorts_only=1';
-          }
-          if (fonte === 'tiktok') url += '&per_page=60';
-        }
+        let url = '/api/videos/search?termo=' + encodeURIComponent(termo) + '&fonte=youtube&per_page=100';
+        url += '&max_duration=' + encodeURIComponent(ytMaxDuration);
+        if (ytShortsOnly) url += '&shorts_only=1';
 
         const res = await fetch(url);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha na busca');
 
-        const items = data.videos || data.photos || [];
+        const items = data.videos || [];
         let statusText = (data.totalResults ?? items.length) + ' resultado(s)';
         if (data.shortsCount != null) statusText += ' · ' + data.shortsCount + ' short(s)';
         if (data.aviso) statusText += ' · ' + data.aviso;
@@ -485,7 +252,7 @@
           statusEl.textContent = data.aviso || 'Nenhum resultado para este termo.';
           return;
         }
-        resultsEl.innerHTML = items.map((item) => cardHtml(item, tipo === 'videos')).join('');
+        resultsEl.innerHTML = items.map((item) => cardHtml(item)).join('');
       } catch (err) {
         statusEl.textContent = err.message || 'Erro ao buscar';
       } finally {
@@ -500,7 +267,11 @@
       searchContent(termo);
     });
 
-    async function handleUpload(fileInput, statusNode, btn, formEl) {
+    document.getElementById('upload-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById('upload-file');
+      const statusNode = document.getElementById('upload-status');
+      const btn = document.getElementById('upload-btn');
       const file = fileInput.files[0];
       if (!file) return;
       btn.disabled = true;
@@ -512,132 +283,63 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha no upload');
         statusNode.innerHTML = 'Enviado! <a href="/fila" class="text-emerald-400 hover:text-emerald-300">Ver na fila →</a>';
-        formEl.reset();
+        e.target.reset();
       } catch (err) {
         statusNode.textContent = err.message;
       } finally {
         btn.disabled = false;
       }
-    }
-
-    async function handleImportLote(textarea, statusNode, btn, formEl, fonteHintVal) {
-      const urls = textarea.value.trim();
-      if (!urls) return;
-      const n = contarLinksNoTexto(urls);
-      if (!n) {
-        statusNode.textContent = 'Cole ao menos um link válido (http/https), um por linha.';
-        return;
-      }
-      btn.disabled = true;
-      statusNode.textContent = 'Importando ' + n + ' link(s)…';
-      try {
-        const res = await fetch('/api/videos/import-lote', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ urls, fonte: fonteHintVal || fonte }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Falha na importação');
-        const parts = [
-          data.criados + ' novo(s)',
-          data.jaExistiam ? data.jaExistiam + ' já na fila' : '',
-          data.falhas ? data.falhas + ' falha(s)' : '',
-        ].filter(Boolean);
-        statusNode.innerHTML =
-          'Pronto: ' +
-          parts.join(' · ') +
-          '. <a href="/fila" class="text-emerald-400 hover:text-emerald-300">Acompanhar na fila →</a>';
-        if (data.falhas && Array.isArray(data.resultados)) {
-          const errs = data.resultados
-            .filter((r) => !r.ok)
-            .slice(0, 3)
-            .map((r) => escapeHtml(r.error || 'erro'))
-            .join('; ');
-          if (errs) {
-            statusNode.innerHTML +=
-              '<span class="mt-1 block text-xs text-amber-300/90">' + errs + '</span>';
-          }
-        }
-        formEl.reset();
-        syncImportCount();
-      } catch (err) {
-        statusNode.textContent = err.message;
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    document.getElementById('upload-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await handleUpload(
-        document.getElementById('upload-file'),
-        document.getElementById('upload-status'),
-        document.getElementById('upload-btn'),
-        e.target
-      );
-    });
-
-    document.getElementById('upload-form-extra')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await handleUpload(
-        document.getElementById('upload-file-extra'),
-        document.getElementById('upload-status-extra'),
-        document.getElementById('upload-btn-extra'),
-        e.target
-      );
     });
 
     document.getElementById('import-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      await handleImportLote(
-        document.getElementById('import-urls'),
-        document.getElementById('import-status'),
-        document.getElementById('import-btn'),
-        e.target,
-        'youtube'
-      );
-    });
-
-    document.getElementById('import-form-extra')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await handleImportLote(
-        document.getElementById('import-urls-extra'),
-        document.getElementById('import-status-extra'),
-        document.getElementById('import-btn-extra'),
-        e.target,
-        fonte
-      );
+      const input = document.getElementById('import-url');
+      const statusNode = document.getElementById('import-status');
+      const btn = document.getElementById('import-btn');
+      const url = String(input.value || '').trim();
+      if (!/^https?:\/\//i.test(url)) {
+        statusNode.textContent = 'Cole um link válido (http/https).';
+        return;
+      }
+      btn.disabled = true;
+      statusNode.textContent = 'Importando…';
+      try {
+        const res = await fetch('/api/videos/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, fonte: 'youtube' }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha na importação');
+        statusNode.innerHTML =
+          (data.created === false ? 'Já estava na fila. ' : 'Importado! ') +
+          '<a href="/fila" class="text-emerald-400 hover:text-emerald-300">Acompanhar na fila →</a>';
+        e.target.reset();
+      } catch (err) {
+        statusNode.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
     });
 
     resultsEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('.select-btn');
       if (!btn) return;
 
-      const btnTipo = btn.dataset.tipo;
-      const mode = btn.dataset.mode;
       btn.disabled = true;
       const original = btn.textContent;
       btn.textContent = 'Salvando…';
 
       try {
-        let res;
-        if (mode === 'link') {
-          res = await fetch('/api/videos/import', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              url: btn.dataset.url,
-              termo: lastTermo || termoInput.value.trim(),
-              fonte: btn.dataset.fonte,
-            }),
-          });
-        } else {
-          res = await fetch('/api/' + btnTipo + '/' + encodeURIComponent(btn.dataset.pexelsId) + '/select', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ termo: lastTermo || termoInput.value.trim() }),
-          });
-        }
+        const res = await fetch('/api/videos/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: btn.dataset.url,
+            termo: lastTermo || termoInput.value.trim(),
+            fonte: 'youtube',
+          }),
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha ao salvar');
 

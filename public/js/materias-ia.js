@@ -52,12 +52,6 @@
       const modo = btn.dataset.miaModo;
       document.getElementById('mia-buscar')?.classList.toggle('hidden', modo !== 'buscar');
       document.getElementById('mia-alta')?.classList.toggle('hidden', modo !== 'alta');
-      document.getElementById('mia-radar')?.classList.toggle('hidden', modo !== 'radar');
-      document.getElementById('mia-link')?.classList.toggle('hidden', modo !== 'link');
-      document.getElementById('mia-auto')?.classList.toggle('hidden', modo !== 'auto');
-      document.getElementById('mia-manual')?.classList.toggle('hidden', modo !== 'manual');
-      if (modo === 'auto') loadMonitores();
-      if (modo === 'radar' || modo === 'link') loadLinksSalvos();
     });
   });
 

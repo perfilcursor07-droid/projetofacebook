@@ -8,6 +8,7 @@
     lista: document.getElementById('chat-lista'),
     busca: document.getElementById('chat-busca'),
     nova: document.getElementById('chat-nova'),
+    novaTop: document.getElementById('chat-nova-top'),
     titulo: document.getElementById('chat-titulo'),
     renomear: document.getElementById('chat-renomear'),
     mensagens: document.getElementById('chat-mensagens'),
@@ -20,6 +21,10 @@
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
     modoBtns: document.querySelectorAll('.chat-modo-btn'),
+    sidebar: document.getElementById('chat-sidebar'),
+    drawerOpen: document.getElementById('chat-drawer-open'),
+    drawerClose: document.getElementById('chat-drawer-close'),
+    drawerBackdrop: document.getElementById('chat-drawer-backdrop'),
   };
 
   if (!el.mensagens || !el.input) return;
@@ -78,6 +83,27 @@
     if (el.status) el.status.textContent = texto || '';
   }
 
+  function isMobileDrawer() {
+    return window.matchMedia('(max-width: 1023px)').matches;
+  }
+
+  function openDrawer() {
+    if (!isMobileDrawer()) return;
+    el.sidebar?.classList.add('is-open');
+    el.drawerBackdrop?.classList.add('is-visible');
+    el.drawerBackdrop?.removeAttribute('hidden');
+    el.drawerBackdrop?.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('mia-chat-drawer-open');
+  }
+
+  function closeDrawer() {
+    el.sidebar?.classList.remove('is-open');
+    el.drawerBackdrop?.classList.remove('is-visible');
+    el.drawerBackdrop?.setAttribute('hidden', '');
+    el.drawerBackdrop?.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('mia-chat-drawer-open');
+  }
+
   function scrollFim() {
     el.mensagens.scrollTop = el.mensagens.scrollHeight;
   }
@@ -100,7 +126,7 @@
 
     if (!itens.length) {
       const p = document.createElement('p');
-      p.className = 'px-1 py-2 text-xs text-slate-500';
+      p.className = 'mia-chat-list-empty';
       p.textContent = filtro ? 'Nenhuma conversa encontrada' : 'Nenhuma conversa ainda';
       el.lista.appendChild(p);
       return;
@@ -109,21 +135,18 @@
     for (const c of itens) {
       const linha = document.createElement('div');
       const ativo = Number(c.id) === Number(state.chatId);
-      linha.className = `group flex items-center gap-1 rounded-lg px-2 py-1.5 ${
-        ativo ? 'bg-emerald-500/15 text-emerald-100' : 'text-slate-300 hover:bg-slate-800/70'
-      }`;
+      linha.className = `mia-chat-conv${ativo ? ' is-active' : ''}`;
 
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'min-w-0 flex-1 truncate text-left text-xs sm:text-sm';
+      btn.className = 'mia-chat-conv-btn';
       btn.textContent = c.titulo || 'Nova conversa';
       btn.title = c.titulo || 'Nova conversa';
       btn.addEventListener('click', () => abrirConversa(c.id));
 
       const excluir = document.createElement('button');
       excluir.type = 'button';
-      excluir.className =
-        'shrink-0 rounded px-1 text-xs text-slate-500 opacity-0 transition group-hover:opacity-100 hover:text-rose-300';
+      excluir.className = 'mia-chat-conv-del';
       excluir.textContent = '✕';
       excluir.title = 'Excluir conversa';
       excluir.addEventListener('click', async (ev) => {
@@ -152,7 +175,8 @@
     } catch (err) {
       el.lista.replaceChildren();
       const p = document.createElement('p');
-      p.className = 'px-1 py-2 text-xs text-rose-300';
+      p.className = 'mia-chat-list-empty';
+      p.style.color = '#fda4af';
       p.textContent = err.message;
       el.lista.appendChild(p);
     }
@@ -176,10 +200,9 @@
 
   function blocoUsuario(mensagem) {
     const wrap = document.createElement('div');
-    wrap.className = 'flex justify-end';
+    wrap.className = 'mia-msg-user';
     const bolha = document.createElement('div');
-    bolha.className =
-      'max-w-[92%] whitespace-pre-wrap rounded-2xl bg-emerald-500/15 px-3 py-2 text-sm text-emerald-50 sm:max-w-[85%] sm:px-4 sm:py-2.5';
+    bolha.className = 'mia-msg-user-bubble';
     bolha.textContent = mensagem.content || '';
     wrap.appendChild(bolha);
     return wrap;
@@ -188,11 +211,11 @@
   /** Bloco "raciocínio" recolhível, como o do DeepSeek. */
   function criarPassos(passos = []) {
     const box = document.createElement('details');
-    box.className = 'rounded-xl border border-slate-800 bg-slate-950/60 px-2.5 py-2 text-[11px] sm:px-3 sm:text-xs';
+    box.className = 'mia-msg-panel';
     box.open = true;
 
     const resumo = document.createElement('summary');
-    resumo.className = 'cursor-pointer list-none text-slate-400 hover:text-slate-200';
+    resumo.className = '';
     box.appendChild(resumo);
 
     const lista = document.createElement('div');
@@ -264,10 +287,10 @@
       const ehTitulo =
         podeTerTitulo && container.childElementCount === 0 && texto.length <= 200 && !texto.includes('\n');
       p.className = ehHashtags
-        ? 'text-xs font-medium text-emerald-300 sm:text-sm'
+        ? 'mia-msg-ai-tags'
         : ehTitulo
-          ? 'text-sm font-semibold leading-snug text-white sm:text-base'
-          : 'whitespace-pre-wrap text-sm leading-relaxed text-slate-200';
+          ? 'mia-msg-ai-title'
+          : 'mia-msg-ai-text';
       p.textContent = texto.replace(/\*\*(.+?)\*\*/g, '$1');
       container.appendChild(p);
     };
@@ -293,9 +316,9 @@
   function blocoFontes(fontes = []) {
     if (!fontes.length) return null;
     const box = document.createElement('details');
-    box.className = 'rounded-xl border border-slate-800 bg-slate-950/60 px-2.5 py-2 text-[11px] sm:px-3 sm:text-xs';
+    box.className = 'mia-msg-panel';
     const resumo = document.createElement('summary');
-    resumo.className = 'cursor-pointer list-none text-slate-400 hover:text-slate-200';
+    resumo.className = '';
     resumo.textContent = `Fontes da apuração (${fontes.length})`;
     box.appendChild(resumo);
     const ul = document.createElement('ul');
@@ -323,7 +346,7 @@
 
   function areaSalvar(mensagem, container) {
     const box = document.createElement('div');
-    box.className = 'mt-3 rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 sm:p-3';
+    box.className = 'mia-msg-panel mt-1';
 
     const info = document.createElement('p');
     info.className = 'text-xs text-slate-400';
@@ -474,25 +497,22 @@
     state.ultimasPautas = pautas;
 
     const box = document.createElement('div');
-    box.className = 'space-y-2';
+    box.className = 'mia-msg-pautas';
     box.dataset.pautas = '1';
 
     const cabecalho = document.createElement('div');
-    cabecalho.className = 'flex flex-wrap items-center justify-between gap-2';
+    cabecalho.className = 'mia-msg-pautas-head';
     const titulo = document.createElement('p');
-    titulo.className = 'text-[11px] font-semibold uppercase tracking-wider text-emerald-400/80';
+    titulo.className = 'mia-msg-pautas-title';
     titulo.textContent = `Escolha a matéria para reescrever (${pautas.length})`;
     cabecalho.appendChild(titulo);
 
-    const alternar = criarBotao(
-      'Recolher lista',
-      'rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-emerald-500 hover:text-white'
-    );
+    const alternar = criarBotao('Recolher lista', 'mia-chat-ghost-btn');
     cabecalho.appendChild(alternar);
     box.appendChild(cabecalho);
 
     const lista = document.createElement('div');
-    lista.className = 'space-y-2';
+    lista.className = 'mia-msg-pautas-list';
     box.appendChild(lista);
 
     box.expandir = () => {
@@ -513,60 +533,51 @@
       const escrita = pautaJaEscrita(pauta.url);
 
       const card = document.createElement('article');
-      card.className = escrita
-        ? 'rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3'
-        : 'rounded-xl border border-slate-800 bg-slate-950/60 p-3 transition hover:border-emerald-500/40';
+      card.className = escrita ? 'mia-msg-pauta is-done' : 'mia-msg-pauta';
 
       const meta = document.createElement('div');
-      meta.className = 'flex flex-wrap items-center gap-2';
+      meta.className = 'mia-msg-pauta-meta';
       const num = document.createElement('span');
-      num.className =
-        'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-slate-300';
+      num.className = 'mia-msg-pauta-num';
       num.textContent = String(indice + 1);
       meta.appendChild(num);
       const veiculo = document.createElement('span');
-      veiculo.className = 'truncate text-[11px] font-medium text-slate-400';
+      veiculo.className = 'mia-msg-pauta-veiculo';
       veiculo.textContent = pauta.veiculo || 'Web';
       meta.appendChild(veiculo);
       const selo = document.createElement('span');
-      selo.className = escrita
-        ? 'rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300'
-        : 'hidden';
+      selo.className = escrita ? 'mia-msg-pauta-selo' : 'hidden';
       selo.textContent = 'Já escrita ✓';
       selo.dataset.selo = '1';
       meta.appendChild(selo);
       card.appendChild(meta);
 
       const h = document.createElement('p');
-      h.className = 'mt-1.5 text-sm font-semibold leading-snug text-white';
+      h.className = 'mia-msg-pauta-titulo';
       h.textContent = pauta.titulo || 'Sem título';
       card.appendChild(h);
 
       if (pauta.resumo) {
         const r = document.createElement('p');
-        r.className = 'mt-1 text-xs leading-relaxed text-slate-400';
+        r.className = 'mia-msg-pauta-resumo';
         r.textContent = pauta.resumo;
         card.appendChild(r);
       }
 
       const acoes = document.createElement('div');
-      acoes.className = 'mt-2.5 flex flex-wrap items-center gap-2';
+      acoes.className = 'mia-msg-pauta-acoes';
 
       const escrever = criarBotao(
         escrita ? 'Escrever de novo' : 'Reescrever com furo',
-        escrita
-          ? 'rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-white'
-          : 'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400'
+        escrita ? 'mia-chat-ghost-btn' : 'mia-chat-btn-primary'
       );
       escrever.addEventListener('click', () => {
         // Marca o cartão na hora, sem esperar recarregar a conversa
-        selo.className =
-          'rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300';
+        selo.className = 'mia-msg-pauta-selo';
         selo.textContent = 'Já escrita ✓';
         escrever.textContent = 'Escrever de novo';
-        escrever.className =
-          'rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-white';
-        card.className = 'rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3';
+        escrever.className = 'mia-chat-ghost-btn';
+        card.className = 'mia-msg-pauta is-done';
         pedirReescrita(pauta);
       });
       acoes.appendChild(escrever);
@@ -576,8 +587,7 @@
         abrir.href = pauta.url;
         abrir.target = '_blank';
         abrir.rel = 'noopener';
-        abrir.className =
-          'rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500 hover:text-white';
+        abrir.className = 'mia-chat-ghost-btn';
         abrir.textContent = 'Ler original ↗';
         acoes.appendChild(abrir);
       }
@@ -600,7 +610,7 @@
     const restantes = pautas.filter((p) => !pautaJaEscrita(p.url));
 
     const box = document.createElement('div');
-    box.className = 'mt-3 rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 sm:p-3';
+    box.className = 'mia-msg-panel mt-1';
 
     const titulo = document.createElement('p');
     titulo.className = 'text-[11px] font-semibold uppercase tracking-wider text-slate-500';
@@ -674,7 +684,7 @@
 
   function blocoAssistente(mensagem, { ultima = true } = {}) {
     const wrap = document.createElement('div');
-    wrap.className = 'space-y-2';
+    wrap.className = 'mia-msg-ai';
 
     if (Array.isArray(mensagem.passos) && mensagem.passos.length) {
       const passos = criarPassos(mensagem.passos);
@@ -685,7 +695,7 @@
     }
 
     const corpo = document.createElement('div');
-    corpo.className = 'space-y-3';
+    corpo.className = 'mia-msg-ai-body';
     renderTexto(corpo, mensagem.content);
     wrap.appendChild(corpo);
 
@@ -737,6 +747,7 @@
     el.renomear?.classList.add('hidden');
     limparMensagens();
     renderConversas();
+    closeDrawer();
     el.input.focus();
   }
 
@@ -760,6 +771,7 @@
       renderMensagens(chat.mensagens || []);
       renderConversas();
       setStatus('');
+      closeDrawer();
     } catch (err) {
       setStatus(err.message);
     }
@@ -771,12 +783,11 @@
     if (!el.toggleWeb) return;
     const on = state.pesquisarWeb;
     el.toggleWeb.setAttribute('aria-pressed', on ? 'true' : 'false');
-    el.toggleWeb.className = on
-      ? 'flex items-center gap-1.5 rounded-full border border-emerald-500/60 bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-200'
-      : 'flex items-center gap-1.5 rounded-full border border-slate-700 px-3 py-1 text-xs font-medium text-slate-400';
-    el.toggleWeb.firstElementChild.className = on
-      ? 'h-1.5 w-1.5 rounded-full bg-emerald-400'
-      : 'h-1.5 w-1.5 rounded-full bg-slate-600';
+    el.toggleWeb.className = on ? 'mia-chat-chip is-on' : 'mia-chat-chip';
+    const dot = el.toggleWeb.querySelector('.mia-chat-chip-dot') || el.toggleWeb.firstElementChild;
+    if (dot) {
+      dot.className = 'mia-chat-chip-dot';
+    }
     // Período só faz sentido com a busca ligada
     el.periodo?.classList.toggle('hidden', !on);
   }
@@ -791,8 +802,8 @@
       const ativo = btn.dataset.chatModo === state.modo;
       btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
       btn.className = ativo
-        ? 'chat-modo-btn rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-950'
-        : 'chat-modo-btn rounded-lg px-3 py-1 text-xs font-medium text-slate-400 hover:text-white';
+        ? 'chat-modo-btn mia-chat-seg-btn is-active'
+        : 'chat-modo-btn mia-chat-seg-btn';
     });
     // Pesquisar pautas depende da busca na web
     if (state.modo === 'pautas' && !state.pesquisarWeb) {
@@ -824,6 +835,7 @@
 
     esconderVazio();
     el.input.value = '';
+    autoGrowInput();
     setEnviando(true);
     const janela = el.periodo?.selectedOptions?.[0]?.textContent?.trim() || '';
     setStatus(
@@ -838,11 +850,11 @@
     scrollFim();
 
     const wrap = document.createElement('div');
-    wrap.className = 'space-y-2';
+    wrap.className = 'mia-msg-ai';
     const passos = criarPassos([]);
     wrap.appendChild(passos);
     const corpo = document.createElement('div');
-    corpo.className = 'space-y-3';
+    corpo.className = 'mia-msg-ai-body';
     wrap.appendChild(corpo);
     el.mensagens.appendChild(wrap);
 
@@ -960,8 +972,9 @@
           .slice(0, 300);
         setStatus(curta.slice(0, 120));
         const p = document.createElement('p');
-        p.className =
-          'max-h-24 overflow-hidden break-words rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200';
+        p.className = 'mia-msg-panel';
+        p.style.borderColor = 'rgba(244, 63, 94, 0.35)';
+        p.style.color = '#fecdd3';
         p.textContent = curta;
         corpo.appendChild(p);
       }
@@ -977,6 +990,16 @@
   el.enviar.addEventListener('click', enviar);
   el.parar?.addEventListener('click', () => state.controller?.abort());
   el.nova?.addEventListener('click', novaConversa);
+  el.novaTop?.addEventListener('click', novaConversa);
+  el.drawerOpen?.addEventListener('click', openDrawer);
+  el.drawerClose?.addEventListener('click', closeDrawer);
+  el.drawerBackdrop?.addEventListener('click', closeDrawer);
+  window.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') closeDrawer();
+  });
+  window.addEventListener('resize', () => {
+    if (!isMobileDrawer()) closeDrawer();
+  });
   el.busca?.addEventListener('input', renderConversas);
   el.toggleWeb?.addEventListener('click', () => {
     state.pesquisarWeb = !state.pesquisarWeb;
@@ -995,6 +1018,14 @@
       enviar();
     }
   });
+
+  function autoGrowInput() {
+    if (!el.input) return;
+    el.input.style.height = 'auto';
+    el.input.style.height = `${Math.min(el.input.scrollHeight, 144)}px`;
+  }
+  el.input.addEventListener('input', autoGrowInput);
+  autoGrowInput();
 
   el.renomear?.addEventListener('click', async () => {
     if (!state.chatId) return;
@@ -1015,7 +1046,11 @@
 
   document.querySelectorAll('.chat-exemplo').forEach((btn) => {
     btn.addEventListener('click', () => {
-      el.input.value = btn.textContent.trim();
+      const textoEl = btn.querySelector('.mia-chat-prompt-text');
+      const texto = (textoEl?.textContent || btn.textContent || '').trim();
+      if (btn.dataset.modoExemplo === 'pautas') definirModo('pautas');
+      el.input.value = texto;
+      autoGrowInput();
       el.input.focus();
     });
   });

@@ -85,7 +85,7 @@ app.get('/conteudo', requireAuth, require('./controllers/materiasIaController').
 app.get('/materia-manual', requireAuth, (_req, res) => renderPage(res, 'materia-manual', 'Matéria manual'));
 app.get('/conteudo/lote', requireAuth, require('./controllers/materiasIaController').showLotePage);
 app.get('/viralizar', requireAuth, require('./controllers/viralizarController').page);
-app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Vídeo e imagem'));
+app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Vídeos'));
 app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController').listPage);
 app.get('/biblioteca', requireAuth, require('./controllers/bibliotecaController').listPage);
 app.get('/biblioteca/agendar', requireAuth, require('./controllers/bibliotecaController').agendarPage);
