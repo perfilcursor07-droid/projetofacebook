@@ -752,6 +752,19 @@ async function responder({
               kind: 'aviso',
               texto: `Redes sociais sem resultado: ${evento.motivo}. A matéria segue com as fontes de notícias.`,
             });
+          } else if (evento.tipo === 'redes-descartadas') {
+            const partes = [];
+            if (evento.semConteudo) partes.push(`${evento.semConteudo} sem conteúdo (perfil/login)`);
+            if (evento.semData) partes.push(`${evento.semData} sem data confirmada no período`);
+            registrarPasso({
+              kind: 'encontrados',
+              texto: `Posts descartados: ${partes.join(' · ')}`,
+            });
+          } else if (evento.tipo === 'fora-do-tema') {
+            registrarPasso({
+              kind: 'encontrados',
+              texto: `${evento.total} resultado(s) descartados por fugir do assunto pesquisado`,
+            });
           } else if (evento.tipo === 'lendo') {
             lidas += 1;
             if (lidas <= 20) {

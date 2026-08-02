@@ -2853,6 +2853,8 @@ async function coletarFatosNaWeb({
     itemDentroDoPeriodo,
     rotuloPeriodo,
     buscarPostsRedesSociais,
+    ehPostSocial,
+    textoDeBuscaInutil,
     REDES_SOCIAIS_PADRAO,
     REDES_SOCIAIS_AMPLAS,
   } = require('./newsResearch');
@@ -2871,6 +2873,41 @@ async function coletarFatosNaWeb({
   const fontes = [];
   const vistosUrl = new Set(urlExcluida ? [urlExcluida] : []);
   const vistosTitulo = [];
+  let foraDoTema = 0;
+
+  // —— Relevância: evita que buscas de fallback tragam assunto alheio ——
+  const semAcento = (s) =>
+    String(s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+  const IRRELEVANTES = new Set([
+    'sobre', 'para', 'como', 'mais', 'menos', 'pelo', 'pela', 'entre', 'apos',
+    'contra', 'ainda', 'onde', 'quando', 'porque', 'disse', 'falou', 'afirmou',
+    'noticia', 'noticias', 'ultimas', 'hoje', 'agora', 'video', 'foto',
+  ]);
+
+  const termosChave = [
+    ...new Set(
+      queries
+        .flatMap((q) => semAcento(q).split(/[^a-z0-9]+/))
+        .filter((t) => t.length >= 4 && !IRRELEVANTES.has(t))
+    ),
+  ];
+  // 1 termo → exige ele; 2+ termos → exige ao menos 2 (nome próprio + contexto)
+  const minimoTermos = termosChave.length <= 1 ? termosChave.length : 2;
+
+  function combinaComOTema(...textos) {
+    if (!termosChave.length) return true;
+    const alvo = semAcento(textos.filter(Boolean).join(' '));
+    let achados = 0;
+    for (const t of termosChave) {
+      if (alvo.includes(t)) achados += 1;
+      if (achados >= minimoTermos) return true;
+    }
+    return false;
+  }
 
   function adicionarFonte(f) {
     if (!f) return;
@@ -2885,6 +2922,11 @@ async function coletarFatosNaWeb({
     if (tit && vistosTitulo.some((x) => titulosSimilares(x, tit))) return;
     const trecho = String(f.trecho || f.contextoApuracao || f.resumo || f.snippet || '').trim();
     if (trecho.length < 40) return;
+    // Fora do assunto pesquisado: não entra na apuração
+    if (!combinaComOTema(tit, f.resumo, trecho)) {
+      foraDoTema += 1;
+      return;
+    }
     if (urlKey) vistosUrl.add(urlKey);
     if (tit) vistosTitulo.push(tit);
     fontes.push({
@@ -3000,8 +3042,24 @@ async function coletarFatosNaWeb({
           // Provedor fora do ar/sem chave: não repete a espera na próxima consulta
           if (!posts.length) redesIndisponiveis = true;
         }
+        // Redes exigem: post de verdade (não perfil/login), texto aproveitável
+        // e data conhecida dentro da janela — senão entra post antigo.
+        let semData = 0;
+        let semConteudo = 0;
         for (const p of dentro) {
           if (fontes.length >= limite) break;
+          if (!ehPostSocial(p.link)) {
+            semConteudo += 1;
+            continue;
+          }
+          if (textoDeBuscaInutil(p.resumo)) {
+            semConteudo += 1;
+            continue;
+          }
+          if (!p.dataTimestamp) {
+            semData += 1;
+            continue;
+          }
           adicionarFonte({
             titulo: p.titulo,
             url: p.link,
@@ -3009,6 +3067,15 @@ async function coletarFatosNaWeb({
             resumo: p.resumo,
             trecho: p.resumo,
             ehRedeSocial: true,
+          });
+        }
+        if (semData || semConteudo) {
+          emitir({
+            tipo: 'redes-descartadas',
+            consulta: q,
+            semData,
+            semConteudo,
+            periodo: rotulo,
           });
         }
       } catch (err) {
@@ -3104,11 +3171,13 @@ async function coletarFatosNaWeb({
   }
 
   const resultado = fontes.slice(0, limite);
+  if (foraDoTema) emitir({ tipo: 'fora-do-tema', total: foraDoTema });
   emitir({
     tipo: 'fontes',
     total: resultado.length,
     periodo: rotulo,
     foraDoPeriodo,
+    foraDoTema,
     fontes: resultado.map((f) => ({ veiculo: f.veiculo, url: f.url, titulo: f.titulo })),
   });
   return resultado;

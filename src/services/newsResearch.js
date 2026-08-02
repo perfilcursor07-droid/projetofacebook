@@ -35,6 +35,88 @@ function parsearDataPub(dataStr) {
   return Number.isNaN(t) ? 0 : t;
 }
 
+const MESES_PT = {
+  janeiro: 0, fevereiro: 1, marco: 2, março: 2, abril: 3, maio: 4, junho: 5,
+  julho: 6, agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11,
+};
+
+/**
+ * Extrai data de textos de busca/post ("Jul 28, 2025", "28 de julho de 2025",
+ * "há 3 horas", "2 days ago"). O Date.parse sozinho falha nesses formatos e é
+ * por isso que posts antigos passavam pelo filtro de período.
+ */
+function extrairDataDeTexto(texto) {
+  const s = String(texto || '');
+  if (!s) return 0;
+
+  // "Jul 28, 2025" / "May 18, 2017"
+  const en = s.match(/\b([A-Z][a-z]{2,8})\s+(\d{1,2}),\s*(\d{4})\b/);
+  if (en) {
+    const t = Date.parse(`${en[1]} ${en[2]}, ${en[3]}`);
+    if (!Number.isNaN(t)) return t;
+  }
+
+  // "28 de julho de 2025"
+  const pt = s.match(/\b(\d{1,2})\s+de\s+([a-zçã]+)\s+de\s+(\d{4})\b/i);
+  if (pt) {
+    const mes = MESES_PT[pt[2].toLowerCase()];
+    if (mes != null) return new Date(Number(pt[3]), mes, Number(pt[1])).getTime();
+  }
+
+  // "28/07/2025"
+  const br = s.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+  if (br) return new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1])).getTime();
+
+  // Relativos: "há 3 horas", "3 hours ago", "2 dias atrás", "1 week ago"
+  const rel = s.match(/(?:h[áa]\s+)?(\d{1,3})\s*(minuto|minutes?|min|hora|hours?|dia|days?|semana|weeks?|m[êe]s|months?|ano|years?)s?\b\s*(?:atr[áa]s|ago)?/i);
+  if (rel) {
+    const n = Number(rel[1]);
+    const u = rel[2].toLowerCase();
+    const MIN = 60000;
+    if (/^min/.test(u)) return Date.now() - n * MIN;
+    if (/^hora|^hour/.test(u)) return Date.now() - n * 60 * MIN;
+    if (/^dia|^day/.test(u)) return Date.now() - n * 24 * 60 * MIN;
+    if (/^semana|^week/.test(u)) return Date.now() - n * 7 * 24 * 60 * MIN;
+    if (/^m[êe]s|^month/.test(u)) return Date.now() - n * 30 * 24 * 60 * MIN;
+    if (/^ano|^year/.test(u)) return Date.now() - n * 365 * 24 * 60 * MIN;
+  }
+
+  return 0;
+}
+
+/** Só URLs de post/vídeo servem de fonte — perfil e login não têm conteúdo. */
+function ehPostSocial(url) {
+  const u = String(url || '');
+  if (!/^https?:\/\//i.test(u)) return false;
+  return (
+    /instagram\.com\/(p|reel|reels|tv)\//i.test(u) ||
+    /facebook\.com\/.+\/(posts|videos|photos)\//i.test(u) ||
+    /facebook\.com\/(permalink\.php|story\.php|photo|watch|reel)/i.test(u) ||
+    /(x|twitter)\.com\/[^/]+\/status\/\d+/i.test(u) ||
+    /tiktok\.com\/@[^/]+\/video\/\d+/i.test(u) ||
+    /threads\.(net|com)\/@[^/]+\/post\//i.test(u) ||
+    /youtube\.com\/(watch\?|shorts\/)/i.test(u) ||
+    /youtu\.be\//i.test(u) ||
+    /reddit\.com\/r\/[^/]+\/comments\//i.test(u) ||
+    /linkedin\.com\/posts\//i.test(u)
+  );
+}
+
+/** Descarta textos de placeholder que os buscadores devolvem sem conteúdo. */
+function textoDeBuscaInutil(texto) {
+  const s = String(texto || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (s.length < 40) return true;
+  return (
+    s.includes('we cannot provide a description') ||
+    s.includes('log in to facebook') ||
+    s.includes('explore the things you love') ||
+    s.includes('entrar no facebook') ||
+    s.includes('sign up now to get your own personalized timeline') ||
+    s.includes('this page isn') ||
+    s.includes('página não disponível')
+  );
+}
+
 function slugId(titulo, link) {
   const base = `${titulo || ''}|${link || ''}`.toLowerCase().replace(/\s+/g, ' ').slice(0, 120);
   let hash = 0;
@@ -361,7 +443,9 @@ async function buscarSerperRedes(termo, { redes = REDES_SOCIAIS_PADRAO, porRede 
           link: r.link,
           resumo: limparResumo(r.snippet),
           data: r.date || null,
-          dataTimestamp: parsearDataPub(r.date),
+          // Data do post costuma vir só no texto do resultado (ex.: "Jul 28, 2025")
+          dataTimestamp:
+            parsearDataPub(r.date) || extrairDataDeTexto(`${r.snippet || ''} ${r.title || ''}`),
           nicho: termo,
           fonte: 'Serper redes',
           veiculo: (() => {
@@ -409,7 +493,9 @@ async function buscarBraveWebRedes(termo, { redes = REDES_SOCIAIS_PADRAO, porRed
           link: r.url,
           resumo: limparResumo(r.description),
           data: r.page_age || r.age || null,
-          dataTimestamp: parsearDataPub(r.page_age || r.age),
+          dataTimestamp:
+            parsearDataPub(r.page_age || r.age) ||
+            extrairDataDeTexto(`${r.description || ''} ${r.title || ''}`),
           nicho: termo,
           fonte: 'Brave redes',
           veiculo: r.meta_url?.hostname || 'Rede social',
@@ -537,6 +623,9 @@ module.exports = {
   buscarSerperRedes,
   buscarBraveWebRedes,
   buscarPostsRedesSociais,
+  extrairDataDeTexto,
+  ehPostSocial,
+  textoDeBuscaInutil,
   REDES_SOCIAIS_PADRAO,
   REDES_SOCIAIS_AMPLAS,
   itemEhRecente,
