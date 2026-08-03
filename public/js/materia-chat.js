@@ -201,11 +201,114 @@
   function blocoUsuario(mensagem) {
     const wrap = document.createElement('div');
     wrap.className = 'mia-msg-user';
+    wrap.dataset.userMsg = '1';
+
     const bolha = document.createElement('div');
     bolha.className = 'mia-msg-user-bubble';
     bolha.textContent = mensagem.content || '';
     wrap.appendChild(bolha);
+
+    // Botão de editar (aparece ao hover)
+    const editarBtn = document.createElement('button');
+    editarBtn.type = 'button';
+    editarBtn.className = 'mia-msg-edit-btn';
+    editarBtn.title = 'Editar e regenerar';
+    editarBtn.setAttribute('aria-label', 'Editar mensagem');
+    editarBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    editarBtn.addEventListener('click', () => iniciarEdicao(wrap, mensagem.content || ''));
+    wrap.appendChild(editarBtn);
+
     return wrap;
+  }
+
+  function iniciarEdicao(wrapElement, textoOriginal) {
+    if (state.enviando) return;
+
+    // Substitui a bolha e o botão editar por um textarea + ações
+    const conteudoAnterior = wrapElement.innerHTML;
+    wrapElement.innerHTML = '';
+    wrapElement.classList.add('mia-msg-user--editing');
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'mia-msg-edit-textarea';
+    textarea.value = textoOriginal;
+    textarea.rows = Math.min(8, Math.max(2, textoOriginal.split('\n').length));
+    wrapElement.appendChild(textarea);
+
+    const acoes = document.createElement('div');
+    acoes.className = 'mia-msg-edit-actions';
+
+    const salvarBtn = document.createElement('button');
+    salvarBtn.type = 'button';
+    salvarBtn.className = 'mia-msg-edit-save';
+    salvarBtn.textContent = 'Enviar editado';
+    acoes.appendChild(salvarBtn);
+
+    const cancelarBtn = document.createElement('button');
+    cancelarBtn.type = 'button';
+    cancelarBtn.className = 'mia-msg-edit-cancel';
+    cancelarBtn.textContent = 'Cancelar';
+    acoes.appendChild(cancelarBtn);
+
+    wrapElement.appendChild(acoes);
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    cancelarBtn.addEventListener('click', () => {
+      wrapElement.innerHTML = conteudoAnterior;
+      wrapElement.classList.remove('mia-msg-user--editing');
+    });
+
+    salvarBtn.addEventListener('click', () => {
+      const novoTexto = textarea.value.trim();
+      if (novoTexto.length < 3) {
+        textarea.focus();
+        return;
+      }
+      confirmarEdicao(wrapElement, novoTexto);
+    });
+
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelarBtn.click();
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        salvarBtn.click();
+      }
+    });
+  }
+
+  function confirmarEdicao(wrapElement, novoTexto) {
+    // Remove todas as mensagens depois desta (user + assistant)
+    let proximo = wrapElement.nextElementSibling;
+    while (proximo) {
+      const aRemover = proximo;
+      proximo = proximo.nextElementSibling;
+      aRemover.remove();
+    }
+
+    // Restaura a bolha com o novo texto
+    wrapElement.innerHTML = '';
+    wrapElement.classList.remove('mia-msg-user--editing');
+    const novaBolha = document.createElement('div');
+    novaBolha.className = 'mia-msg-user-bubble';
+    novaBolha.textContent = novoTexto;
+    wrapElement.appendChild(novaBolha);
+
+    const editarBtn = document.createElement('button');
+    editarBtn.type = 'button';
+    editarBtn.className = 'mia-msg-edit-btn';
+    editarBtn.title = 'Editar e regenerar';
+    editarBtn.setAttribute('aria-label', 'Editar mensagem');
+    editarBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    editarBtn.addEventListener('click', () => iniciarEdicao(wrapElement, novoTexto));
+    wrapElement.appendChild(editarBtn);
+
+    // Reenvia a mensagem editada à IA
+    el.input.value = novoTexto;
+    enviar();
   }
 
   /** Bloco "raciocínio" recolhível, como o do DeepSeek. */

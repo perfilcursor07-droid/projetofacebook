@@ -548,6 +548,103 @@ body.mia-chat-drawer-open {
 .mia-msg-user {
   display: flex;
   justify-content: flex-end;
+  position: relative;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.mia-msg-edit-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  margin-top: 0.25rem;
+}
+.mia-msg-edit-btn svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+.mia-msg-user:hover .mia-msg-edit-btn,
+.mia-msg-user:focus-within .mia-msg-edit-btn {
+  opacity: 1;
+}
+.mia-msg-edit-btn:hover {
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.12);
+}
+
+/* Estado de edição */
+.mia-msg-user--editing {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+.mia-msg-edit-textarea {
+  width: min(88%, 36rem);
+  min-height: 3.5rem;
+  max-height: 14rem;
+  border-radius: 0.75rem;
+  border: 1px solid #4f46e5;
+  background: #0f172a;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: #f4f4f5;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+.mia-msg-edit-textarea:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+.mia-msg-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.mia-msg-edit-save {
+  border: none;
+  border-radius: 0.5rem;
+  background: #10b981;
+  color: #022c22;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.mia-msg-edit-save:hover {
+  background: #34d399;
+}
+.mia-msg-edit-cancel {
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.mia-msg-edit-cancel:hover {
+  color: #e2e8f0;
+  border-color: #475569;
+}
+@media (min-width: 640px) {
+  .mia-msg-edit-textarea {
+    width: min(75%, 36rem);
+    padding: 0.7rem 1rem;
+  }
 }
 
 .mia-msg-user-bubble {
