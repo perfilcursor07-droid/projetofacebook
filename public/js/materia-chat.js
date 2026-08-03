@@ -300,6 +300,26 @@
         fecharParagrafo();
         continue;
       }
+      // Marcador de separação entre matérias não é texto para o leitor.
+      if (/^#{1,6}\s*mat[eé]ria\s*\d+\b/i.test(linha.trim())) {
+        fecharParagrafo();
+        continue;
+      }
+      // "# 1. Título" começa uma nova matéria: vira título próprio.
+      const tituloNumerado = linha
+        .trim()
+        .match(/^(?:#{1,6}\s*|\*{2}\s*)?(\d{1,2})\s*[.)]\s+(\S.{10,200})$/);
+      if (tituloNumerado) {
+        fecharParagrafo();
+        const p = document.createElement('p');
+        p.className = 'mia-msg-ai-title';
+        p.textContent = `${tituloNumerado[1]}. ${tituloNumerado[2]
+          .replace(/\*\*(.+?)\*\*/g, '$1')
+          .replace(/\*+$/g, '')
+          .trim()}`;
+        container.appendChild(p);
+        continue;
+      }
       paragrafo.push(linha);
     }
     fecharParagrafo();
@@ -449,6 +469,155 @@
       link.textContent = `Rascunho #${mensagem.matterId} — abrir`;
       aviso.appendChild(link);
     }
+
+    container.appendChild(box);
+  }
+
+  /**
+   * Resposta com várias matérias: um cartão por matéria, com botão próprio,
+   * além de "Salvar todas". Cada uma vira um rascunho separado.
+   */
+  function areaSalvarVarias(mensagem, container) {
+    const box = document.createElement('div');
+    box.className = 'mia-msg-panel mt-1';
+
+    const materias = mensagem.materias || [];
+    const info = document.createElement('p');
+    info.className = 'text-xs text-slate-300';
+    info.textContent = `A IA escreveu ${materias.length} matérias. Salve todas de uma vez ou uma por uma.`;
+    box.appendChild(info);
+
+    const topo = document.createElement('div');
+    topo.className = 'mt-2 flex flex-wrap items-center gap-2';
+    const salvarTodas = criarBotao(
+      `Salvar as ${materias.length} como rascunho`,
+      'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400'
+    );
+    const credito = document.createElement('input');
+    credito.type = 'text';
+    credito.placeholder = 'Crédito da foto (opcional)';
+    credito.className =
+      'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none sm:w-56';
+    const avisoTodas = document.createElement('span');
+    avisoTodas.className = 'text-xs text-slate-400';
+    topo.appendChild(salvarTodas);
+    topo.appendChild(credito);
+    topo.appendChild(avisoTodas);
+    box.appendChild(topo);
+
+    const lista = document.createElement('div');
+    lista.className = 'mt-3 space-y-2';
+    box.appendChild(lista);
+
+    const marcarSalva = (linhaBtn, avisoEl, matterId) => {
+      linhaBtn.disabled = true;
+      linhaBtn.textContent = 'Rascunho salvo';
+      linhaBtn.classList.add('opacity-60');
+      avisoEl.replaceChildren();
+      const link = document.createElement('a');
+      link.href = `/materias-ia/${matterId}`;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.className = 'text-emerald-300 underline hover:text-emerald-200';
+      link.textContent = `Rascunho #${matterId} — abrir`;
+      avisoEl.appendChild(link);
+    };
+
+    const controles = [];
+
+    materias.forEach((materia, i) => {
+      const linha = document.createElement('div');
+      linha.className =
+        'flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2';
+
+      const txt = document.createElement('span');
+      txt.className = 'min-w-0 flex-1';
+      const t = document.createElement('span');
+      t.className = 'block text-xs font-medium text-white';
+      t.textContent = `${i + 1}. ${materia.titulo}`;
+      txt.appendChild(t);
+      if (materia.previa) {
+        const p = document.createElement('span');
+        p.className = 'mt-0.5 block text-[11px] text-slate-500';
+        p.textContent = `${materia.previa}…`;
+        txt.appendChild(p);
+      }
+      linha.appendChild(txt);
+
+      const acoes = document.createElement('span');
+      acoes.className = 'flex shrink-0 items-center gap-2';
+      const btn = criarBotao(
+        'Salvar rascunho',
+        'rounded-lg border border-emerald-600/60 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:border-emerald-400'
+      );
+      const aviso = document.createElement('span');
+      aviso.className = 'text-[11px] text-slate-400';
+      acoes.appendChild(btn);
+      acoes.appendChild(aviso);
+      linha.appendChild(acoes);
+
+      if (!materia.salvavel) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50');
+        aviso.textContent = 'texto curto';
+      }
+
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.classList.add('opacity-60');
+        aviso.textContent = 'Salvando…';
+        try {
+          const data = await api(`${API}/mensagens/${mensagem.id}/materia`, {
+            method: 'POST',
+            body: JSON.stringify({
+              indice: materia.indice,
+              creditoImagem: credito.value.trim() || null,
+            }),
+          });
+          marcarSalva(btn, aviso, data.matterId);
+        } catch (err) {
+          aviso.textContent = err.message;
+          btn.disabled = false;
+          btn.classList.remove('opacity-60');
+        }
+      });
+
+      if (materia.matterId) marcarSalva(btn, aviso, materia.matterId);
+
+      controles.push({ materia, btn, aviso });
+      lista.appendChild(linha);
+    });
+
+    salvarTodas.addEventListener('click', async () => {
+      salvarTodas.disabled = true;
+      salvarTodas.classList.add('opacity-60');
+      avisoTodas.textContent = 'Salvando rascunhos…';
+      try {
+        const data = await api(`${API}/mensagens/${mensagem.id}/materias`, {
+          method: 'POST',
+          body: JSON.stringify({ creditoImagem: credito.value.trim() || null }),
+        });
+        for (const salva of data.salvas || []) {
+          const alvo = controles.find((c) => Number(c.materia.indice) === Number(salva.indice));
+          if (alvo) marcarSalva(alvo.btn, alvo.aviso, salva.matterId);
+        }
+        avisoTodas.replaceChildren();
+        const resumo = document.createElement('span');
+        resumo.className = 'text-emerald-300';
+        resumo.textContent = data.mensagem || 'Rascunhos criados.';
+        avisoTodas.appendChild(resumo);
+        const abrir = document.createElement('a');
+        abrir.href = '/minhas-materias';
+        abrir.className = 'ml-2 text-emerald-300 underline hover:text-emerald-200';
+        abrir.textContent = 'ver em Matérias salvas';
+        avisoTodas.appendChild(abrir);
+        salvarTodas.textContent = 'Rascunhos salvos';
+      } catch (err) {
+        avisoTodas.textContent = err.message;
+        salvarTodas.disabled = false;
+        salvarTodas.classList.remove('opacity-60');
+      }
+    });
 
     container.appendChild(box);
   }
@@ -704,6 +873,15 @@
 
     const fontes = blocoFontes(mensagem.fontes || []);
     if (fontes) wrap.appendChild(fontes);
+
+    if (Array.isArray(mensagem.materias) && mensagem.materias.length >= 2) {
+      areaSalvarVarias(mensagem, wrap);
+      if (ultima) {
+        const continuar = blocoContinuar();
+        if (continuar) wrap.appendChild(continuar);
+      }
+      return wrap;
+    }
 
     if (mensagem.ehMateria) {
       areaSalvar(mensagem, wrap);

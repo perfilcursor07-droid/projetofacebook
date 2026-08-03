@@ -13,6 +13,7 @@ router.patch('/chat/conversas/:id', chatController.renomear);
 router.delete('/chat/conversas/:id', chatController.excluir);
 router.post('/chat/conversas/:id/mensagens', chatController.enviar);
 router.post('/chat/mensagens/:messageId/materia', chatController.salvarMateria);
+router.post('/chat/mensagens/:messageId/materias', chatController.salvarTodasAsMaterias);
 
 router.post('/pesquisar', controller.pesquisar);
 router.post('/em-alta', controller.emAlta);

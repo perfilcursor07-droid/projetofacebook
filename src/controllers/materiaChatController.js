@@ -126,6 +126,23 @@ async function salvarMateria(req, res, next) {
       facebookPageId: req.body?.facebookPageId || req.body?.facebook_page_id || null,
       imagemUrl: req.body?.imagemUrl || req.body?.imagem_url || null,
       creditoImagem: req.body?.creditoImagem || req.body?.credito_imagem || null,
+      indice: req.body?.indice ?? req.body?.index ?? null,
+    });
+    return res.status(201).json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+/** Salva todas as matérias de uma resposta que trouxe várias. */
+async function salvarTodasAsMaterias(req, res, next) {
+  try {
+    const resultado = await chatService.salvarTodasAsMateriasDoChat({
+      userId: req.session.userId,
+      messageId: Number(req.params.messageId),
+      facebookPageId: req.body?.facebookPageId || req.body?.facebook_page_id || null,
+      creditoImagem: req.body?.creditoImagem || req.body?.credito_imagem || null,
     });
     return res.status(201).json({ ok: true, ...resultado });
   } catch (err) {
@@ -142,4 +159,5 @@ module.exports = {
   excluir,
   enviar,
   salvarMateria,
+  salvarTodasAsMaterias,
 };

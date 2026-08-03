@@ -274,6 +274,67 @@ function interpretarResposta(conteudo) {
   };
 }
 
+/**
+ * Uma resposta pode conter várias matérias ("escreva 5 matérias sobre X").
+ * Reconhece os separadores que a IA usa: "### MATERIA 1", "# 1. Título",
+ * "## 2. Título" ou "**1. Título**" no começo da linha.
+ * @returns {Array<{indice:number, titulo:string, corpo:string, hashtags:string[], conteudo:string}>}
+ */
+function separarMaterias(conteudo) {
+  const bruto = String(conteudo || '').replace(/\r\n/g, '\n').trim();
+  if (!bruto) return [];
+
+  const linhas = bruto.split('\n');
+  const cortes = [];
+
+  linhas.forEach((linha, i) => {
+    const l = linha.trim();
+    if (!l) return;
+    // "### MATERIA 2" (marcador pedido no prompt)
+    if (/^#{1,6}\s*mat[eé]ria\s*\d+\b/i.test(l)) {
+      cortes.push({ linha: i, pularLinha: true });
+      return;
+    }
+    // "# 1. Título" / "## 2) Título" / "**3. Título**"
+    if (/^(?:#{1,6}\s*|\*{2}\s*)?\d{1,2}\s*[.)]\s+\S/.test(l) && l.length <= 220) {
+      const semNumero = l.replace(/^(?:#{1,6}\s*|\*{2}\s*)?\d{1,2}\s*[.)]\s+/, '').trim();
+      // Título de matéria é frase, não item curto de lista.
+      if (semNumero.length >= 15) cortes.push({ linha: i, pularLinha: false });
+    }
+  });
+
+  if (cortes.length < 2) return [];
+
+  const blocos = [];
+  cortes.forEach((corte, idx) => {
+    const inicio = corte.pularLinha ? corte.linha + 1 : corte.linha;
+    const fim = idx + 1 < cortes.length ? cortes[idx + 1].linha : linhas.length;
+    let texto = linhas.slice(inicio, fim).join('\n').trim();
+    if (corte.pularLinha === false) {
+      // Remove a numeração do título, mantendo o texto do título.
+      texto = texto.replace(/^(?:#{1,6}\s*|\*{2}\s*)?\d{1,2}\s*[.)]\s+/, '');
+    }
+    if (texto) blocos.push(texto);
+  });
+
+  const materias = [];
+  blocos.forEach((bloco, i) => {
+    const info = interpretarResposta(bloco);
+    const titulo = info.titulo || bloco.split('\n')[0].replace(/^#{1,6}\s*/, '').trim();
+    if (!titulo) return;
+    materias.push({
+      indice: i,
+      titulo: String(titulo).slice(0, 180),
+      corpo: info.corpo || bloco,
+      hashtags: info.hashtags || [],
+      conteudo: bloco,
+      salvavel: String(info.corpo || bloco).trim().length >= 120,
+    });
+  });
+
+  return materias.filter((m) => m.salvavel).length >= 2 ? materias : [];
+}
+
 function normalizarTexto(texto) {
   return String(texto || '')
     .toLocaleLowerCase('pt-BR')
@@ -385,6 +446,9 @@ function serializarMensagem(row) {
   const info = row.role === 'assistant' ? interpretarResposta(conteudo) : null;
   const guardadas = parseJson(row.fontes, []);
   const pautas = (Array.isArray(guardadas) ? guardadas : []).filter((f) => f && f.ehPauta);
+  const multiplas = row.role === 'assistant' ? separarMaterias(conteudo) : [];
+  const salvos = parseJson(row.matter_ids, {}) || {};
+
   return {
     id: row.id,
     role: row.role,
@@ -396,7 +460,17 @@ function serializarMensagem(row) {
     fontes: pautas.length ? [] : guardadas,
     pesquisouWeb: Boolean(row.pesquisou_web),
     matterId: row.matter_id || null,
-    ehMateria: row.role === 'assistant' ? Boolean(info?.ehMateria) : false,
+    // Quando a resposta traz várias matérias, cada uma vira um rascunho próprio.
+    materias: multiplas.map((m) => ({
+      indice: m.indice,
+      titulo: m.titulo,
+      previa: String(m.corpo || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+      hashtags: m.hashtags,
+      salvavel: m.salvavel,
+      matterId: salvos[String(m.indice)] || null,
+    })),
+    ehMateria:
+      row.role === 'assistant' ? Boolean(info?.ehMateria) || multiplas.length >= 2 : false,
     createdAt: row.created_at,
   };
 }
@@ -1050,6 +1124,7 @@ async function salvarMateriaDoChat({
   facebookPageId = null,
   imagemUrl = null,
   creditoImagem = null,
+  indice = null,
 }) {
   const { montarRodapeMateriaComFontes } = require('./editorialGuidelinesFb');
   const materiaIaService = require('./materiaIaService');
@@ -1059,15 +1134,46 @@ async function salvarMateriaDoChat({
     throw erro('Mensagem não encontrada', 404);
   }
   if (row.role !== 'assistant') throw erro('Só é possível salvar a resposta da IA', 400);
-  if (row.matter_id) {
+
+  // Resposta com várias matérias: cada índice salva um rascunho separado.
+  const multiplas = separarMaterias(row.content);
+  const idx = indice == null || indice === '' ? null : Number(indice);
+  const escolhida =
+    idx != null && multiplas.length ? multiplas.find((m) => Number(m.indice) === idx) : null;
+  if (idx != null && multiplas.length && !escolhida) {
+    throw erro('Matéria não encontrada nesta resposta', 404);
+  }
+
+  const salvosPrev = parseJson(row.matter_ids, {}) || {};
+  if (escolhida) {
+    const jaSalvo = salvosPrev[String(escolhida.indice)];
+    if (jaSalvo) {
+      const existente = await AiMatters.findById(jaSalvo);
+      if (existente) {
+        return {
+          matterId: existente.id,
+          redirect: `/materias-ia/${existente.id}`,
+          indice: escolhida.indice,
+          jaExistia: true,
+        };
+      }
+    }
+  } else if (row.matter_id) {
     const existente = await AiMatters.findById(row.matter_id);
     if (existente) {
       return { matterId: existente.id, redirect: `/materias-ia/${existente.id}`, jaExistia: true };
     }
   }
 
-  const info = interpretarResposta(row.content);
-  const corpo = String(info.corpo || row.content || '').trim();
+  const info = escolhida
+    ? {
+        titulo: escolhida.titulo,
+        corpo: escolhida.corpo,
+        hashtags: escolhida.hashtags,
+        ehMateria: true,
+      }
+    : interpretarResposta(row.content);
+  const corpo = String(info.corpo || (escolhida ? escolhida.conteudo : row.content) || '').trim();
   if (corpo.length < 120) throw erro('Essa resposta é curta demais para virar matéria', 400);
 
   const fontes = parseJson(row.fontes, []);
@@ -1130,7 +1236,15 @@ async function salvarMateriaDoChat({
     error_message: null,
   });
 
-  await AiChatMessages.update(row.id, { matter_id: matterId });
+  if (escolhida) {
+    const mapa = { ...salvosPrev, [String(escolhida.indice)]: matterId };
+    const patch = { matter_ids: JSON.stringify(mapa) };
+    // matter_id continua apontando para o primeiro rascunho salvo da mensagem.
+    if (!row.matter_id) patch.matter_id = matterId;
+    await AiChatMessages.update(row.id, patch);
+  } else {
+    await AiChatMessages.update(row.id, { matter_id: matterId });
+  }
 
   if (imagemUrl && /^https?:\/\//i.test(imagemUrl)) {
     try {
@@ -1151,7 +1265,67 @@ async function salvarMateriaDoChat({
     }
   }
 
-  return { matterId, redirect: `/materias-ia/${matterId}` };
+  return {
+    matterId,
+    redirect: `/materias-ia/${matterId}`,
+    ...(escolhida ? { indice: escolhida.indice } : {}),
+  };
+}
+
+/**
+ * Salva de uma vez todas as matérias de uma resposta com várias
+ * (ex.: "escreva 5 matérias sobre X" → 5 rascunhos).
+ */
+async function salvarTodasAsMateriasDoChat({
+  userId,
+  messageId,
+  facebookPageId = null,
+  creditoImagem = null,
+}) {
+  const row = await AiChatMessages.findByIdWithChat(messageId);
+  if (!row || Number(row.chat_user_id) !== Number(userId)) {
+    throw erro('Mensagem não encontrada', 404);
+  }
+
+  const multiplas = separarMaterias(row.content);
+  if (multiplas.length < 2) {
+    throw erro('Esta resposta tem só uma matéria. Use “Salvar como rascunho”.', 400);
+  }
+
+  const salvas = [];
+  const erros = [];
+
+  for (const materia of multiplas) {
+    if (!materia.salvavel) {
+      erros.push({ indice: materia.indice, titulo: materia.titulo, error: 'Texto curto demais' });
+      continue;
+    }
+    try {
+      const r = await salvarMateriaDoChat({
+        userId,
+        messageId,
+        facebookPageId,
+        creditoImagem,
+        indice: materia.indice,
+      });
+      salvas.push({
+        indice: materia.indice,
+        titulo: materia.titulo,
+        matterId: r.matterId,
+        redirect: r.redirect,
+        jaExistia: Boolean(r.jaExistia),
+      });
+    } catch (err) {
+      erros.push({ indice: materia.indice, titulo: materia.titulo, error: err.message });
+    }
+  }
+
+  return {
+    total: multiplas.length,
+    salvas,
+    erros,
+    mensagem: `${salvas.length} rascunho(s) criado(s)${erros.length ? ` · ${erros.length} falha(s)` : ''}.`,
+  };
 }
 
 module.exports = {
@@ -1162,5 +1336,7 @@ module.exports = {
   excluirConversa,
   responder,
   salvarMateriaDoChat,
+  salvarTodasAsMateriasDoChat,
   interpretarResposta,
+  separarMaterias,
 };

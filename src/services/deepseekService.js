@@ -2349,6 +2349,7 @@ COMO RESPONDER:
   · Pode usar subtítulos curtos para organizar blocos (ex.: "O que diz o decreto", "A reação do governo").
   · Feche com uma linha de hashtags (3 a 6), começando com #.
   · NÃO escreva bloco "Fontes:", "Fonte:", "Foto:" nem URLs no fim — o sistema monta isso ao salvar.
+- Se o editor pedir VÁRIAS MATÉRIAS (ex.: "escreva 5 matérias sobre X"): entregue TODAS na mesma resposta, uma após a outra, e separe cada uma com uma linha começando por "### MATERIA n" (ex.: "### MATERIA 1", "### MATERIA 2"). Depois dessa linha vem o título na linha seguinte, o corpo e as hashtags daquela matéria. Cada matéria precisa ser sobre um fato/ângulo DIFERENTE e ter suas próprias hashtags. Não escreva introdução antes da primeira nem conclusão depois da última.
 - Se o editor fizer uma PERGUNTA (ex.: "onde ele falou isso?", "qual a fonte?"): responda direto e curto, citando os veículos das fontes. Não escreva matéria nesse caso.
 - Se o editor pedir um ajuste ("deixe mais curto", "acrescente X", "troque o título"): reescreva a MATÉRIA INTEIRA já ajustada, não só o trecho.
 
