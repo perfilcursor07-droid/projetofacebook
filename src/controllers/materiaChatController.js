@@ -61,6 +61,21 @@ async function excluir(req, res, next) {
   }
 }
 
+/** Editar um pedido: apaga a mensagem e tudo que veio depois dela. */
+async function apagarDaMensagem(req, res, next) {
+  try {
+    const resultado = await chatService.apagarMensagemEmDiante({
+      userId: req.session.userId,
+      chatId: Number(req.params.id),
+      messageId: Number(req.params.messageId),
+    });
+    return res.json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 /**
  * Resposta em NDJSON: cada linha é um evento (passo da pesquisa, pedaço do
  * texto, fim). O front lê com fetch + ReadableStream.
@@ -157,6 +172,7 @@ module.exports = {
   obter,
   renomear,
   excluir,
+  apagarDaMensagem,
   enviar,
   salvarMateria,
   salvarTodasAsMaterias,

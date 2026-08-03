@@ -198,33 +198,37 @@
     el.vazio?.classList.add('hidden');
   }
 
+  const ICONE_LAPIS =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+
   function blocoUsuario(mensagem) {
     const wrap = document.createElement('div');
     wrap.className = 'mia-msg-user';
     wrap.dataset.userMsg = '1';
+    if (mensagem.id) wrap.dataset.msgId = String(mensagem.id);
 
     const bolha = document.createElement('div');
     bolha.className = 'mia-msg-user-bubble';
     bolha.textContent = mensagem.content || '';
     wrap.appendChild(bolha);
 
-    // Botão de editar (aparece ao hover)
     const editarBtn = document.createElement('button');
     editarBtn.type = 'button';
     editarBtn.className = 'mia-msg-edit-btn';
-    editarBtn.title = 'Editar e regenerar';
+    editarBtn.title = 'Editar e gerar de novo';
     editarBtn.setAttribute('aria-label', 'Editar mensagem');
-    editarBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
-    editarBtn.addEventListener('click', () => iniciarEdicao(wrap, mensagem.content || ''));
+    editarBtn.innerHTML = ICONE_LAPIS;
+    editarBtn.addEventListener('click', () => iniciarEdicao(wrap));
     wrap.appendChild(editarBtn);
 
     return wrap;
   }
 
-  function iniciarEdicao(wrapElement, textoOriginal) {
+  function iniciarEdicao(wrapElement) {
     if (state.enviando) return;
 
-    // Substitui a bolha e o botão editar por um textarea + ações
+    const textoOriginal = wrapElement.querySelector('.mia-msg-user-bubble')?.textContent || '';
+    // Guarda o conteúdo para o Cancelar restaurar sem recriar listeners perdidos
     const conteudoAnterior = wrapElement.innerHTML;
     wrapElement.innerHTML = '';
     wrapElement.classList.add('mia-msg-user--editing');

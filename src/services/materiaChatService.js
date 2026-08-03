@@ -520,6 +520,23 @@ async function renomearConversa({ userId, chatId, titulo }) {
   return { id: chat.id, titulo: novo };
 }
 
+/**
+ * Editar um pedido invalida o que veio depois dele: apaga a mensagem
+ * e todas as seguintes para a IA responder de novo, sem histórico duplicado.
+ */
+async function apagarMensagemEmDiante({ userId, chatId, messageId }) {
+  const chat = await AiChats.findByIdForUser(chatId, userId);
+  if (!chat) throw erro('Conversa não encontrada', 404);
+
+  const alvo = await AiChatMessages.findById(messageId);
+  if (!alvo || Number(alvo.chat_id) !== Number(chat.id)) {
+    throw erro('Mensagem não encontrada', 404);
+  }
+
+  const removidas = await AiChatMessages.removeFromId(chat.id, alvo.id);
+  return { removidas: Number(removidas || 0) };
+}
+
 async function excluirConversa({ userId, chatId }) {
   const chat = await AiChats.findByIdForUser(chatId, userId);
   if (!chat) throw erro('Conversa não encontrada', 404);
@@ -1343,6 +1360,7 @@ module.exports = {
   obterConversa,
   renomearConversa,
   excluirConversa,
+  apagarMensagemEmDiante,
   responder,
   salvarMateriaDoChat,
   salvarTodasAsMateriasDoChat,

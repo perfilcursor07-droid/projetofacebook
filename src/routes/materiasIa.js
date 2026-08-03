@@ -12,6 +12,7 @@ router.get('/chat/conversas/:id', chatController.obter);
 router.patch('/chat/conversas/:id', chatController.renomear);
 router.delete('/chat/conversas/:id', chatController.excluir);
 router.post('/chat/conversas/:id/mensagens', chatController.enviar);
+router.delete('/chat/conversas/:id/mensagens/:messageId', chatController.apagarDaMensagem);
 router.post('/chat/mensagens/:messageId/materia', chatController.salvarMateria);
 router.post('/chat/mensagens/:messageId/materias', chatController.salvarTodasAsMaterias);
 

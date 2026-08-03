@@ -39,6 +39,17 @@ const AiChatMessages = {
   remove(id) {
     return db(this.table).where({ id }).del();
   },
+
+  /**
+   * Apaga a mensagem e todas as seguintes da conversa.
+   * Usado ao editar um pedido: o que veio depois deixa de valer.
+   */
+  removeFromId(chatId, messageId) {
+    return db(this.table)
+      .where({ chat_id: chatId })
+      .andWhere('id', '>=', messageId)
+      .del();
+  },
 };
 
 module.exports = AiChatMessages;
