@@ -1241,7 +1241,16 @@ async function salvarMateriaDoChat({
     const patch = { matter_ids: JSON.stringify(mapa) };
     // matter_id continua apontando para o primeiro rascunho salvo da mensagem.
     if (!row.matter_id) patch.matter_id = matterId;
-    await AiChatMessages.update(row.id, patch);
+    try {
+      await AiChatMessages.update(row.id, patch);
+    } catch (err) {
+      // Se a coluna matter_ids ainda não existe (migração não rodou), não perde
+      // o rascunho já criado: grava só o vínculo antigo.
+      console.warn('[materia-chat] matter_ids indisponível:', err.code || err.message);
+      if (!row.matter_id) {
+        await AiChatMessages.update(row.id, { matter_id: matterId });
+      }
+    }
   } else {
     await AiChatMessages.update(row.id, { matter_id: matterId });
   }
