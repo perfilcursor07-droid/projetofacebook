@@ -323,6 +323,10 @@ function interpretarResposta(conteudo) {
   // Remove preâmbulo conversacional antes da matéria real.
   // A IA pode responder: "A matéria é sobre X...\n---\nTítulo real\n\n..."
   let textoUtil = String(body || '');
+
+  // Marcador "### MATERIA 1" sobrando numa resposta com uma matéria só:
+  // sem tirar, o título viraria "MATERIA 1" e a matéria não seria salvável.
+  textoUtil = textoUtil.replace(/^\s*#{0,6}\s*mat[eé]ria\s*\d+\s*[:.\-–—]?\s*\n+/i, '').trim();
   const sepMatch = textoUtil.match(/\n-{3,}\s*\n/);
   if (sepMatch) {
     const sepIdx = sepMatch.index;
@@ -508,6 +512,94 @@ function citacoesQueSaoTitulos(resposta, fontes = []) {
     if (bate) suspeitas.push(frase.length > 90 ? `${frase.slice(0, 90)}…` : frase);
   }
   return suspeitas.slice(0, 3);
+}
+
+/** Aspas que ficaram no idioma da fonte estrangeira (erro visível na publicação). */
+function citacoesNaoTraduzidas(resposta) {
+  const achados = [];
+  const rx = /[“"]([^”"]{20,400})[”"]/g;
+  let match;
+  while ((match = rx.exec(String(resposta || ''))) !== null) {
+    const frase = match[1].replace(/\s+/g, ' ').trim();
+    const en = (
+      frase
+        .toLowerCase()
+        .match(/\b(the|and|was|were|is|are|had|have|been|she|he|his|her|they|that|with|about|for|from|all|been)\b/g) ||
+      []
+    ).length;
+    const pt = (
+      frase.toLowerCase().match(/\b(que|não|para|com|uma|dos|das|foi|era|ele|ela|muito|isso|como|mas)\b/g) || []
+    ).length;
+    if (en >= 3 && en > pt) achados.push(frase.length > 90 ? `${frase.slice(0, 90)}…` : frase);
+  }
+  return achados.slice(0, 3);
+}
+
+/** Fonte em inglês/espanhol: a matéria sai em português e as falas são traduzidas. */
+function fonteEmOutroIdioma(fontes = []) {
+  const texto = (Array.isArray(fontes) ? fontes : [])
+    .filter((f) => f?.fonteColada)
+    .map((f) => `${f?.titulo || ''} ${f?.trecho || f?.resumo || ''}`)
+    .join(' ')
+    .toLowerCase();
+  if (texto.length < 200) return false;
+
+  const marcasEn = (
+    texto.match(
+      /\b(the|and|said|was|were|have|has|been|with|from|that|this|police|church|according)\b/g
+    ) || []
+  ).length;
+  const marcasPt = (
+    texto.match(/\b(que|não|para|com|uma|dos|das|foi|era|segundo|polícia|igreja|disse)\b/g) || []
+  ).length;
+  return marcasEn >= 12 && marcasEn > marcasPt * 2;
+}
+
+/**
+ * O crédito da fonte é obrigatório na matéria: se a IA não citou o veículo do
+ * link colado, a atribuição entra no primeiro parágrafo do corpo.
+ */
+function garantirCitacaoDoVeiculo(resposta, fontesColadas = []) {
+  const texto = String(resposta || '');
+  const lista = (Array.isArray(fontesColadas) ? fontesColadas : []).filter((f) => f?.veiculo);
+  if (!texto.trim() || !lista.length) return { texto, inserido: null };
+
+  const { nomeCurtoFonte } = require('./editorialGuidelinesFb');
+  const nomes = [];
+  for (const f of lista.slice(0, 3)) {
+    const cheio = String(f.veiculo).replace(/\s+/g, ' ').trim();
+    const curto = nomeCurtoFonte(f.veiculo, f.url);
+    for (const n of [cheio, curto]) {
+      if (n && !nomes.includes(n)) nomes.push(n);
+    }
+  }
+
+  const alvo = normalizarTexto(texto);
+  const jaCita = nomes.some((n) => {
+    const norm = normalizarTexto(n);
+    return norm.length >= 3 && alvo.includes(norm);
+  });
+  if (jaCita) return { texto, inserido: null };
+
+  const nome = nomeCurtoFonte(lista[0].veiculo, lista[0].url);
+  const linhas = texto.split('\n');
+  // 1ª linha é o título; a atribuição entra no fim do primeiro parágrafo do corpo.
+  let idx = -1;
+  for (let i = 1; i < linhas.length; i += 1) {
+    if (linhas[i].trim().length >= 80 && !/^#/.test(linhas[i].trim())) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 0) return { texto, inserido: null };
+
+  const paragrafo = linhas[idx].trimEnd().replace(/\s*$/, '');
+  const comCredito = /[.!?…]$/.test(paragrafo)
+    ? `${paragrafo} A informação foi divulgada pela ${nome}.`
+    : `${paragrafo}. A informação foi divulgada pela ${nome}.`;
+  linhas[idx] = comCredito;
+
+  return { texto: linhas.join('\n'), inserido: nome };
 }
 
 /**
@@ -1173,6 +1265,19 @@ async function responder({
 
   const historico = anteriores.map((m) => ({ role: m.role, content: m.content }));
 
+  // Fontes que o editor colou: o nome do veículo tem de sair citado na matéria.
+  const fontesColadas = fontes.filter((f) => f?.fonteColada || f?.ehRedeSocial);
+  const veiculosColados = fontesColadas
+    .map((f) => ({ veiculo: f.veiculo, url: f.url || null }))
+    .filter((f) => f.veiculo);
+  const fonteEstrangeira = fonteEmOutroIdioma(fontes);
+  if (fonteEstrangeira) {
+    registrarPasso({
+      kind: 'pensando',
+      texto: 'Fonte em outro idioma: traduzindo os fatos e as falas para português.',
+    });
+  }
+
   let resposta = '';
   try {
     resposta = await deepseekService.conversarMateria({
@@ -1181,6 +1286,8 @@ async function responder({
       fatosFontes: blocoFatos,
       tom,
       permitirSemConfirmacao: usuarioInsiste,
+      veiculosColados,
+      fonteEstrangeira,
       onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
     });
   } catch (err) {
@@ -1195,7 +1302,15 @@ async function responder({
     const lista = [];
     try {
       const { detectarCitacoesInventadas } = require('./editorialGuidelinesFb');
-      for (const fala of citacoesSemFonte(texto, contexto)) lista.push(`fala sem fonte: “${fala}”`);
+      // Fonte em outro idioma: a fala traduzida nunca bate palavra por palavra
+      // com o original — comparar aqui só geraria alarme falso.
+      if (fonteEstrangeira) {
+        for (const fala of citacoesNaoTraduzidas(texto)) {
+          lista.push(`fala ainda no idioma da fonte (traduza): “${fala}”`);
+        }
+      } else {
+        for (const fala of citacoesSemFonte(texto, contexto)) lista.push(`fala sem fonte: “${fala}”`);
+      }
       for (const expr of expressoesSemFonte(texto, contexto)) {
         lista.push(`bastidor sem fonte: "${expr}"`);
       }
@@ -1240,6 +1355,8 @@ async function responder({
         fatosFontes: blocoFatos,
         pedido,
         suspeitas: levantarSuspeitas(resposta),
+        fonteEstrangeira,
+        veiculosColados,
       });
       if (revisao.revisaoDescartada) {
         registrarPasso({
@@ -1266,6 +1383,19 @@ async function responder({
         kind: 'aviso',
         texto: 'Não consegui rodar a revisão contra as fontes — confira o texto antes de publicar.',
       });
+    }
+  }
+
+  // Crédito da fonte: o nome do site precisa aparecer no texto da matéria
+  if (ehMateriaGerada && fontesColadas.length) {
+    const { texto: comCredito, inserido } = garantirCitacaoDoVeiculo(resposta, fontesColadas);
+    if (inserido) {
+      resposta = comCredito;
+      registrarPasso({
+        kind: 'fontes',
+        texto: `Crédito da fonte acrescentado no texto: ${inserido}`,
+      });
+      // O texto final chega ao front no evento "fim" (mensagem já salva).
     }
   }
 
@@ -1523,4 +1653,6 @@ module.exports = {
   separarMaterias,
   extrairUrlsDoTexto,
   extrairFontesDeArtigos,
+  garantirCitacaoDoVeiculo,
+  fonteEmOutroIdioma,
 };

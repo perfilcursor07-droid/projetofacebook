@@ -97,11 +97,15 @@ function limparMarkdownReader(texto) {
 
 async function extrairMetadadosViaJina(urlReal) {
   try {
+    // O r.jina.ai passou a exigir chave: sem ela a resposta é 403 e o fallback
+    // não serve para nada. Com JINA_API_KEY no .env o leitor volta a funcionar.
+    const jinaKey = String(process.env.JINA_API_KEY || '').trim();
     const res = await axios.get(`https://r.jina.ai/${urlReal}`, {
       headers: {
         'User-Agent': USER_AGENT,
         Accept: 'text/plain,*/*;q=0.8',
         'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        ...(jinaKey ? { Authorization: `Bearer ${jinaKey}` } : {}),
       },
       timeout: 20000,
       maxRedirects: 3,
@@ -117,7 +121,7 @@ async function extrairMetadadosViaJina(urlReal) {
       .split(/\n{2,}|\.\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/)
       .map((p) => p.replace(/\s+/g, ' ').trim())
       .filter((p) => p.length >= 80 && !/^https?:\/\//i.test(p));
-    const trecho = paragrafos.slice(0, 8).join('\n\n');
+    const trecho = paragrafos.slice(0, 16).join('\n\n');
     if (!trecho && !titulo) return null;
     return {
       url: urlReal,
@@ -358,6 +362,13 @@ function paragrafoUtil(t) {
   if (t.length < 40) return false;
   if (/^(publicidade|continua após a publicidade|leia também|veja também|compartilhe|siga-nos|newsletter)$/i.test(t)) return false;
   if (/cookies?|termos de uso|política de privacidade|assine|login|cadastre-se/i.test(t)) return false;
+  // Barra de navegação/rodapé que vem dentro de <p> em sites internacionais (BBC, Sky…)
+  if (/british broadcasting corporation|bbc in other languages|copyright \d{4}|todos os direitos reservados/i.test(t)) {
+    return false;
+  }
+  if (/^(?:home|news|sport|business|technology|health|culture|arts|travel|earth|audio|video|live|weather)\b[\s|·]/i.test(t)) {
+    return false;
+  }
   const letras = (t.match(/\p{L}/gu) || []).length;
   return letras >= 28;
 }
@@ -369,7 +380,7 @@ function extrairParagrafos(html) {
       .split(/(?:\n{2,}|(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ]))/)
       .map((p) => limparTextoArtigo(p))
       .filter(paragrafoUtil)
-      .slice(0, 10);
+      .slice(0, 20);
   }
 
   const paragrafosDe = (trechoHtml) => {
@@ -512,7 +523,7 @@ async function extrairMetadadosArtigo(url) {
       titulo: titulo || null,
       resumo: resumo || null,
       imagem: imagem || null,
-      trecho: paragrafos.slice(0, 12).join('\n\n'),
+      trecho: paragrafos.slice(0, 20).join('\n\n'),
       autor: autor || null,
       veiculo: veiculoMeta || veiculoHost,
       veiculoHost,

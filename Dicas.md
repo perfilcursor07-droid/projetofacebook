@@ -19,10 +19,10 @@ pm2 save
 pm2 logs viralizeai --lines 50
 
 SUBIR GIT
+
 git add .
 git commit -m "feat: sua mensagem aqui"
 git push origin main
-
 
 rapido
 su - viralizeai

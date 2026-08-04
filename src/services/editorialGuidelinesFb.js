@@ -774,7 +774,8 @@ function nomeCurtoFonte(veiculo, url) {
   if (/oglobo|globo\.com/.test(blob) || /\bglobo\b/.test(blob)) return 'Globo';
   if (/estadao|estadão/.test(blob)) return 'Estadão';
   if (/\bcnn\b/.test(blob)) return 'CNN';
-  if (/\bbbc\b/.test(blob)) return 'BBC';
+  if (/bbc news brasil/.test(blob)) return 'BBC News Brasil';
+  if (/\bbbc\b/.test(blob)) return 'BBC News';
   if (/veja\.abril|\bveja\b/.test(blob)) return 'Veja';
   if (/gazetadopovo|gazeta do povo/.test(blob)) return 'Gazeta do Povo';
   if (/brasil247|brasil\s*247/.test(blob)) return 'Brasil 247';
@@ -1046,6 +1047,7 @@ module.exports = {
   formatFacebookCaption,
   sanitizeFacebookMentions,
   montarFonteCredito,
+  nomeCurtoFonte,
   estiloCreditoDaPagina,
   limparAutorArtigo,
   quebrarEmParagrafos,

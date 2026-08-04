@@ -4,46 +4,65 @@ require('dotenv').config();
 const URL_TESTE = process.argv[2] || 'https://www.bbc.com/news/articles/cn8nvg7zllxo';
 
 (async () => {
-  const { extrairMetadadosArtigo } = require('./src/services/articleSource');
+  const chatService = require('./src/services/materiaChatService');
   const materiaIaService = require('./src/services/materiaIaService');
   const deepseekService = require('./src/services/deepseekService');
   const { montarRodapeMateriaComFontes } = require('./src/services/editorialGuidelinesFb');
 
-  const meta = await extrairMetadadosArtigo(URL_TESTE);
-  const fonte = {
-    veiculo: meta.veiculo || meta.veiculoHost,
-    veiculoHost: meta.veiculoHost,
-    titulo: meta.titulo,
-    url: meta.url,
-    resumo: (meta.resumo || '').slice(0, 400),
-    trecho: (meta.trecho || '').slice(0, 9000),
-    fonteColada: true,
-  };
+  const { fontes, falhas } = await chatService.extrairFontesDeArtigos([URL_TESTE], {
+    onPasso: (p) => console.log(`[passo:${p.kind}] ${p.texto}`),
+  });
+  console.log('falhas:', falhas);
+  if (!fontes.length) process.exit(1);
+  const fonte = fontes[0];
   console.log('FONTE:', { veiculo: fonte.veiculo, titulo: fonte.titulo, trechoLen: fonte.trecho.length });
 
-  const blocoFatos = materiaIaService.montarBlocoFatos([fonte]);
-  console.log('\nblocoFatos len:', blocoFatos.length);
-  console.log(blocoFatos.slice(0, 400));
+  const estrangeira = chatService.fonteEmOutroIdioma(fontes);
+  console.log('fonteEstrangeira:', estrangeira);
 
-  console.log('\n=== checarPedidoNasFontes ===');
-  const checagem = await deepseekService.checarPedidoNasFontes({ pedido: URL_TESTE, fatosFontes: blocoFatos });
-  console.log(checagem);
+  const blocoFatos = materiaIaService.montarBlocoFatos(fontes);
+  const veiculosColados = [{ veiculo: fonte.veiculo, url: fonte.url }];
 
   console.log('\n=== conversarMateria ===');
-  const raw = await deepseekService.conversarMateria({
+  let resposta = await deepseekService.conversarMateria({
     pedido: URL_TESTE,
     historico: [],
     fatosFontes: blocoFatos,
     tom: 'natural',
+    veiculosColados,
+    fonteEstrangeira: estrangeira,
   });
-  console.log(raw);
+  console.log(resposta);
 
-  console.log('\n=== rodape ===');
-  const rodape = montarRodapeMateriaComFontes({ materia: raw, fontes: [fonte], creditoImagem: null });
-  console.log('--- materia final ---');
-  console.log(rodape.materia.slice(-600));
-  console.log('--- fonteCredito ---');
+  console.log('\n=== interpretarResposta ===');
+  const info = chatService.interpretarResposta(resposta);
+  console.log({ ehMateria: info.ehMateria, titulo: info.titulo, hashtags: info.hashtags });
+
+  console.log('\n=== revisarMateriaContraFontes ===');
+  const revisao = await deepseekService.revisarMateriaContraFontes({
+    texto: resposta,
+    fatosFontes: blocoFatos,
+    pedido: URL_TESTE,
+    suspeitas: [],
+    fonteEstrangeira: estrangeira,
+    veiculosColados,
+  });
+  console.log('problemas:', revisao.problemas, '| descartada:', Boolean(revisao.revisaoDescartada));
+  if (revisao.texto) resposta = revisao.texto;
+
+  const { texto: comCredito, inserido } = chatService.garantirCitacaoDoVeiculo(resposta, fontes);
+  console.log('\ncredito inserido automaticamente:', inserido);
+  resposta = comCredito;
+
+  console.log('\n=== TEXTO FINAL ===');
+  console.log(resposta);
+
+  const rodape = montarRodapeMateriaComFontes({ materia: resposta, fontes, creditoImagem: null });
+  console.log('\n=== MATERIA SALVA (rodape) ===');
+  console.log(rodape.materia);
+  console.log('\n--- fonte_credito ---');
   console.log(rodape.fonteCredito);
+  console.log('\ncita veiculo no corpo:', /BBC/i.test(rodape.materia));
 })().catch((e) => {
   console.error('FALHOU:', e.message);
   process.exit(1);

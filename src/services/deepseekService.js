@@ -2234,7 +2234,14 @@ Responda APENAS JSON:
  * frase por frase contra os trechos das fontes e devolve a versão limpa,
  * sem bastidor inventado, sem fala que não existe e sem número sem lastro.
  */
-async function revisarMateriaContraFontes({ texto, fatosFontes, pedido = null, suspeitas = [] }) {
+async function revisarMateriaContraFontes({
+  texto,
+  fatosFontes,
+  pedido = null,
+  suspeitas = [],
+  fonteEstrangeira = false,
+  veiculosColados = [],
+}) {
   assertDeepseek();
   const materia = String(texto || '').trim();
   const blocoFatos = String(fatosFontes || '').trim();
@@ -2277,6 +2284,18 @@ Responda APENAS JSON:
         role: 'user',
         content: [
           pedido ? `PEDIDO ORIGINAL DO EDITOR:\n${String(pedido).slice(0, 1200)}` : null,
+          fonteEstrangeira
+            ? [
+                'ATENÇÃO: a fonte está em outro idioma e a matéria está em português. Fala entre aspas TRADUZIDA da fonte é válida — não corte por "não aparecer literalmente". Só corte se a fonte não tiver aquela fala em nenhum idioma.',
+                'Se sobrou alguma frase ou aspas em inglês/espanhol no texto, TRADUZA para o português mantendo o sentido — a matéria não pode ter trecho em outro idioma.',
+              ].join('\n')
+            : null,
+          (Array.isArray(veiculosColados) ? veiculosColados : []).length
+            ? `MANTENHA a citação do veículo no corpo (${veiculosColados
+                .map((v) => (typeof v === 'string' ? v : v?.veiculo || ''))
+                .filter(Boolean)
+                .join(', ')}): é o crédito da fonte que o editor colou, não é invenção.`
+            : null,
           `MATÉRIA A REVISAR:\n${materia.slice(0, 9000)}`,
           `TRECHOS DAS FONTES (única base permitida):\n${blocoFatos.slice(0, 18000)}`,
           suspeitas.length
@@ -2325,6 +2344,8 @@ async function conversarMateria({
   tom = 'natural',
   onDelta = null,
   permitirSemConfirmacao = false,
+  veiculosColados = [],
+  fonteEstrangeira = false,
 }) {
   assertDeepseek();
   const texto = String(pedido || '').trim();
@@ -2349,6 +2370,7 @@ COMO RESPONDER:
   · Pode usar subtítulos curtos para organizar blocos (ex.: "O que diz o decreto", "A reação do governo").
   · Feche com uma linha de hashtags (3 a 6), começando com #.
   · NÃO escreva bloco "Fontes:", "Fonte:", "Foto:" nem URLs no fim — o sistema monta isso ao salvar.
+  · É UMA matéria só: comece direto pelo título. NUNCA escreva "### MATERIA 1", "MATÉRIA 1" nem numeração antes do título.
 - Se o editor pedir VÁRIAS MATÉRIAS (ex.: "escreva 5 matérias sobre X"): entregue TODAS na mesma resposta, uma após a outra, e separe cada uma com uma linha começando por "### MATERIA n" (ex.: "### MATERIA 1", "### MATERIA 2"). Depois dessa linha vem o título na linha seguinte, o corpo e as hashtags daquela matéria. Cada matéria precisa ser sobre um fato/ângulo DIFERENTE e ter suas próprias hashtags. Não escreva introdução antes da primeira nem conclusão depois da última.
 - Se o editor fizer uma PERGUNTA (ex.: "onde ele falou isso?", "qual a fonte?"): responda direto e curto, citando os veículos das fontes. Não escreva matéria nesse caso.
 - Se o editor pedir um ajuste ("deixe mais curto", "acrescente X", "troque o título"): reescreva a MATÉRIA INTEIRA já ajustada, não só o trecho.
@@ -2391,11 +2413,38 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
     if (content) messages.push({ role, content: content.slice(0, 6000) });
   }
 
+  // Link colado pelo editor: o nome do veículo tem de aparecer no corpo,
+  // como crédito da apuração ("segundo a BBC News").
+  const nomesColados = (Array.isArray(veiculosColados) ? veiculosColados : [])
+    .map((v) => String(typeof v === 'string' ? v : v?.veiculo || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .slice(0, 3);
+
+  const blocoFonteColada = nomesColados.length
+    ? [
+        `FONTE QUE O EDITOR COLOU: ${nomesColados.join(', ')}.`,
+        `OBRIGATÓRIO: cite ${nomesColados.length > 1 ? 'pelo menos um desses nomes' : `"${nomesColados[0]}"`} no corpo da matéria, com esse nome exato, do jeito jornalístico — "segundo a ${nomesColados[0]}", "de acordo com a ${nomesColados[0]}", "em reportagem da ${nomesColados[0]}". De preferência no 1º ou 2º parágrafo.`,
+        'Não troque o nome do veículo, não abrevie e não atribua a informação a outro veículo.',
+      ].join('\n')
+    : null;
+
+  const blocoTraducao = fonteEstrangeira
+    ? [
+        'A FONTE ESTÁ EM OUTRO IDIOMA: escreva a matéria TODA em português do Brasil.',
+        'PROIBIDO deixar qualquer frase, aspas ou trecho em inglês/espanhol no texto — nem entre aspas, nem em parênteses, nem como "no original".',
+        'Traduza cada fala entre aspas para o português mantendo o sentido literal, sem inventar palavra que a pessoa não disse.',
+        'Nomes de pessoas, cidades, igrejas e instituições ficam como no original.',
+      ].join('\n')
+    : null;
+
   messages.push({
     role: 'user',
     content: [
       texto.slice(0, 5000),
       `Tom editorial: ${tomDesc} [chave: ${tomKey}]`,
+      blocoFonteColada,
+      blocoTraducao,
       blocoFatos
         ? `TRECHOS DAS FONTES PESQUISADAS AGORA (use só fato verificável):\n${blocoFatos.slice(0, 18000)}`
         : 'SEM PESQUISA NOVA: use o que já está na conversa e o que o editor informou.',
