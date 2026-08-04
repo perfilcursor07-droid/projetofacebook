@@ -111,6 +111,7 @@ app.use('/api/imagens', requireAuth, require('./routes/imagens'));
 app.use('/api/facebook', requireAuth, require('./routes/facebook'));
 app.use('/api/clips', requireAuth, require('./routes/clips'));
 app.use('/api/publications', requireAuth, require('./routes/publications'));
+app.use('/api/materias-ia/chat-extras', requireAuth, require('./routes/materiaChatExtras'));
 app.use('/api/materias-ia', requireAuth, require('./routes/materiasIa'));
 app.use('/api/viralizar', requireAuth, require('./routes/viralizar'));
 app.use('/api/biblioteca', requireAuth, require('./routes/biblioteca'));
