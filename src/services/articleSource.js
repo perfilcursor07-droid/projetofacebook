@@ -372,13 +372,29 @@ function extrairParagrafos(html) {
       .slice(0, 10);
   }
 
+  const paragrafosDe = (trechoHtml) => {
+    const blocos = String(trechoHtml || '').match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+    const textos = [];
+    const vistos = new Set();
+    for (const bloco of blocos) {
+      const t = limparTextoArtigo(bloco);
+      if (!paragrafoUtil(t)) continue;
+      const key = t.slice(0, 120).toLowerCase();
+      if (vistos.has(key)) continue;
+      vistos.add(key);
+      textos.push(t);
+      if (textos.join(' ').length > 6000) break;
+    }
+    return textos;
+  };
+
   const principal = htmlPrincipal(html);
-  const blocos = principal.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
-  const textos = [];
-  for (const bloco of blocos) {
-    const t = limparTextoArtigo(bloco);
-    if (paragrafoUtil(t)) textos.push(t);
-    if (textos.join(' ').length > 6000) break;
+  let textos = paragrafosDe(principal);
+  // Alguns portais (g1, UOL) deixam o corpo fora de <article>/<main>: se o
+  // recorte rendeu pouco, varre a página inteira e fica com a versão maior.
+  if (textos.join(' ').length < 1200 && principal !== html) {
+    const completo = paragrafosDe(html);
+    if (completo.join(' ').length > textos.join(' ').length) textos = completo;
   }
   return textos;
 }

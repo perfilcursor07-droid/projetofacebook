@@ -236,7 +236,7 @@ function hostDoLink(url) {
  * para o link virar fonte documentada em vez de ser ignorado.
  */
 async function extrairFontesDeArtigos(urls, { onPasso } = {}) {
-  const { extrairMetadadosArtigo } = require('./articleSource');
+  const { extrairMetadadosArtigo, extrairMetadadosViaJina } = require('./articleSource');
 
   const fontes = [];
   const falhas = [];
@@ -259,8 +259,21 @@ async function extrairFontesDeArtigos(urls, { onPasso } = {}) {
       console.warn('[materia-chat] extrair artigo:', err.message);
     }
 
-    const trecho = String(meta?.trecho || '').trim();
+    let trecho = String(meta?.trecho || '').trim();
     const resumo = String(meta?.resumo || '').trim();
+
+    // O link colado é a base factual da matéria: corpo curto rende texto raso.
+    // Tenta o leitor alternativo e fica com a versão mais completa.
+    if (trecho.length < 900) {
+      try {
+        const viaJina = await extrairMetadadosViaJina(meta?.url || raw);
+        const outro = String(viaJina?.trecho || '').trim();
+        if (outro.length > trecho.length) trecho = outro;
+      } catch {
+        /* fallback opcional */
+      }
+    }
+
     const corpo =
       trecho.length >= 180 ? trecho : [resumo, trecho].filter(Boolean).join('\n\n').trim();
     const veiculo = meta?.veiculo || meta?.veiculoHost || host;
