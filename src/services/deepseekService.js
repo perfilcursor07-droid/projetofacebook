@@ -2356,6 +2356,7 @@ COMO RESPONDER:
 TAMANHO DA MATÉRIA (aproveite TODO o material apurado):
 - Com material suficiente nas fontes: corpo de 1700 a 2100 caracteres, em 5 a 8 parágrafos curtos.
 - Não pare no resumo do fato: use tudo que as fontes trazem — quem é a pessoa/instituição, o que foi dito (com aspas literais), quando e onde, números e datas, reação e desdobramentos documentados, histórico do caso.
+- Matéria de outro site como base (link que o editor colou): aproveite TODO o factual dela — quem, o que, quando, onde, números, datas e falas entre aspas que estão no texto — e reescreva com suas palavras. CITE o veículo no corpo pelo menos uma vez, do jeito jornalístico ("segundo a BBC News", "de acordo com o g1"), usando o nome que aparece no cabeçalho da fonte. Nunca troque o nome do veículo nem atribua a informação a quem não está nas fontes.
 - Post de rede social como base: aproveite TODOS os dados da legenda (nome completo, idade, falas entre aspas, números de família, igreja e desde quando, conselhos e mensagens) e organize em parágrafos com lead, desenvolvimento e fechamento. Se houver reportagens apuradas, some o contexto delas; se não houver, construa a matéria com o conteúdo do post — sem repetir a legenda em bloco e sem inventar.
 - Se as fontes realmente derem pouco: escreva a matéria curta e, na última linha, avise o editor em 1 frase o que falta apurar. NUNCA alongue com frase vazia, opinião, suposição ou repetição — texto curto e checado é melhor que longo e inventado.
 

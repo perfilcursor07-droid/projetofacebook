@@ -3187,8 +3187,15 @@ async function coletarFatosNaWeb({
 function montarBlocoFatos(fontes) {
   return (fontes || [])
     .map((f, i) => {
+      // Link que o próprio editor colou (post, vídeo ou matéria) é a base factual:
+      // entra inteiro. Fonte vinda de busca entra resumida, só como contexto.
       const limiteTrecho =
-        f?.plataforma === 'youtube' || f?.ehRedeSocial || f?.tipoFonte === 'rede_social' ? 9000 : 1800;
+        f?.plataforma === 'youtube' ||
+        f?.ehRedeSocial ||
+        f?.tipoFonte === 'rede_social' ||
+        f?.fonteColada
+          ? 9000
+          : 1800;
       return `Fonte ${i + 1} — ${f.veiculo || 'Web'}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo || ''}\nTrecho factual:\n${String(f.trecho || f.resumo || '').slice(0, limiteTrecho)}`;
     })
     .join('\n\n---\n\n');

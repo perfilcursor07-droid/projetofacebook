@@ -18,6 +18,22 @@ function decodificarHtml(texto) {
     .replace(/&#39;/gi, "'")
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>');
+  // Entidades numéricas que sobraram (&#x27; da BBC, &#8230; etc.)
+  t = t
+    .replace(/&#x([0-9a-f]{1,6});/gi, (_, hex) => {
+      try {
+        return String.fromCodePoint(parseInt(hex, 16));
+      } catch {
+        return ' ';
+      }
+    })
+    .replace(/&#(\d{1,7});/g, (_, dec) => {
+      try {
+        return String.fromCodePoint(Number(dec));
+      } catch {
+        return ' ';
+      }
+    });
   t = t
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<\/?[^>]+>/g, ' ')
@@ -264,8 +280,47 @@ async function resolverUrlNoticia(url) {
 function limparTextoArtigo(texto) {
   return decodificarHtml(texto)
     .replace(/\b(leia também|veja também|publicidade|continua após a publicidade)\b.*$/i, '')
+    // Botões de compartilhar que alguns sites (BBC, portais) deixam no mesmo bloco do texto
+    .replace(
+      /^(?:(?:share|save|add as preferred on google|sign in|follow|listen|watch|facebook|twitter|whatsapp|telegram|linkedin|compartilhar|salvar|imprimir|copiar link)[\s,·|—–-]*)+/i,
+      ''
+    )
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Nome do veículo publicado no JSON-LD (publisher/organization). */
+function extrairVeiculoJsonLd(html) {
+  const ldBlocks =
+    String(html || '').match(
+      /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+    ) || [];
+  for (const block of ldBlocks) {
+    const raw = block.replace(/^[\s\S]*?>/, '').replace(/<\/script>$/i, '');
+    try {
+      const data = JSON.parse(raw);
+      const nodes = Array.isArray(data)
+        ? data
+        : [data, ...(Array.isArray(data?.['@graph']) ? data['@graph'] : [])];
+      for (const node of nodes) {
+        const p = node?.publisher;
+        const nome =
+          (typeof p === 'string' && p) ||
+          p?.name ||
+          (Array.isArray(p) && (p[0]?.name || p[0])) ||
+          (/(?:News)?MediaOrganization|Organization/i.test(String(node?.['@type'] || '')) &&
+            node?.name) ||
+          null;
+        const limpo = String(nome || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (limpo && limpo.length <= 80) return limpo;
+      }
+    } catch {
+      /* ignore json */
+    }
+  }
+  return null;
 }
 
 function extrairArticleBodyJsonLd(html) {
@@ -426,7 +481,8 @@ async function extrairMetadadosArtigo(url) {
     const veiculoMeta =
       extrairMeta(html, 'og:site_name') ||
       extrairMeta(html, 'application-name') ||
-      extrairMeta(html, 'publisher');
+      extrairMeta(html, 'publisher') ||
+      extrairVeiculoJsonLd(html);
     const veiculoHost = (() => {
       try {
         return new URL(finalUrl).hostname.replace(/^www\./, '');
@@ -440,7 +496,7 @@ async function extrairMetadadosArtigo(url) {
       titulo: titulo || null,
       resumo: resumo || null,
       imagem: imagem || null,
-      trecho: paragrafos.slice(0, 8).join('\n\n'),
+      trecho: paragrafos.slice(0, 12).join('\n\n'),
       autor: autor || null,
       veiculo: veiculoMeta || veiculoHost,
       veiculoHost,

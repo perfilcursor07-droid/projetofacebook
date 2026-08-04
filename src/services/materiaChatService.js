@@ -221,6 +221,81 @@ async function extrairFontesDeLinks(urls, { onPasso } = {}) {
   return { fontes, falhas };
 }
 
+/** Host limpo da URL (sem www), ou null se o link for inválido. */
+function hostDoLink(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Links de sites de notícia colados no chat → veículo, título e corpo do texto.
+ * Usa o mesmo extrator do "reescrever link" (og tags + parágrafos + fallback Jina),
+ * para o link virar fonte documentada em vez de ser ignorado.
+ */
+async function extrairFontesDeArtigos(urls, { onPasso } = {}) {
+  const { extrairMetadadosArtigo } = require('./articleSource');
+
+  const fontes = [];
+  const falhas = [];
+
+  for (const raw of urls) {
+    const host = hostDoLink(raw);
+    if (!host) {
+      falhas.push({ url: raw, erro: 'Link inválido — confira o endereço.' });
+      continue;
+    }
+
+    if (typeof onPasso === 'function') {
+      onPasso({ kind: 'lendo', texto: `Abrindo ${host}: ${raw}`, url: raw });
+    }
+
+    let meta = null;
+    try {
+      meta = await extrairMetadadosArtigo(raw);
+    } catch (err) {
+      console.warn('[materia-chat] extrair artigo:', err.message);
+    }
+
+    const trecho = String(meta?.trecho || '').trim();
+    const resumo = String(meta?.resumo || '').trim();
+    const corpo =
+      trecho.length >= 180 ? trecho : [resumo, trecho].filter(Boolean).join('\n\n').trim();
+    const veiculo = meta?.veiculo || meta?.veiculoHost || host;
+
+    if (corpo.length < 120) {
+      falhas.push({
+        url: raw,
+        erro: `Não consegui ler o texto de ${veiculo}. O site pode exigir login/assinatura ou bloquear leitura — cole o texto da matéria aqui no chat.`,
+      });
+      continue;
+    }
+
+    fontes.push({
+      veiculo,
+      veiculoHost: meta?.veiculoHost || host,
+      titulo: meta?.titulo || `Matéria — ${veiculo}`,
+      url: meta?.url || raw,
+      resumo: (resumo || corpo).slice(0, 400),
+      trecho: corpo.slice(0, 9000),
+      imagem: meta?.imagem || null,
+      autor: meta?.autor || null,
+      fonteColada: true,
+    });
+
+    if (typeof onPasso === 'function') {
+      onPasso({
+        kind: 'fontes',
+        texto: `${veiculo}: ${corpo.length} caracteres de texto extraídos do link`,
+      });
+    }
+  }
+
+  return { fontes, falhas };
+}
+
 /**
  * A resposta do chat pode ser matéria ou só um recado/resposta curta.
  * Quando é matéria, separa título, corpo e hashtags para virar rascunho.
@@ -641,6 +716,10 @@ async function responder({
           veiculo: limparParaBanco(f.veiculo, 120),
           titulo: limparParaBanco(f.titulo, 300),
           url: limparParaBanco(f.url, 500),
+          // Marcas usadas ao salvar o rascunho (crédito da fonte e ordem do rodapé)
+          ...(f.ehRedeSocial ? { ehRedeSocial: true } : {}),
+          ...(f.plataforma ? { plataforma: f.plataforma } : {}),
+          ...(f.fonteColada ? { fonteColada: true } : {}),
         }));
 
     const registro = {
@@ -708,12 +787,22 @@ async function responder({
 
   const urlsNoPedido = extrairUrlsDoTexto(pedido);
   const urlsSociais = urlsNoPedido.filter((u) => classificarUrlFonte(u));
+  // Todo o resto é tratado como matéria/artigo de site: também precisa ser lido.
+  const urlsArtigos = urlsNoPedido.filter((u) => !classificarUrlFonte(u) && hostDoLink(u));
+  const urlsFonte = [...urlsSociais, ...urlsArtigos];
+
+  /** Pedido sem os links, para saber se o editor escreveu mais alguma coisa. */
+  const pedidoSemUrls = () =>
+    urlsFonte
+      .reduce((t, u) => t.replace(u, ' '), pedido)
+      .replace(/\s+/g, ' ')
+      .trim();
 
   // Pedido curto afirmando um fato = hipótese a checar antes de virar matéria
   // Colar só o link (ou “faça matéria” + link) também pede matéria.
   const pedeMateria =
     !pedidoDeAjuste &&
-    (Boolean(urlsSociais.length) ||
+    (Boolean(urlsFonte.length) ||
       (pedido.length < 700 &&
         /\b(mat[eé]ria|reportagem|escrev|escreva|fa[çc]a|monte|poste?|texto)\b/i.test(pedido)));
   const usuarioInsiste =
@@ -752,10 +841,7 @@ async function responder({
       blocoFatos = materiaIaService.montarBlocoFatos(fontes);
 
       // Pedido ≈ só o link: matéria sai do post/vídeo; pesquisa web só se pedirem.
-      const resto = urlsSociais
-        .reduce((t, u) => t.replace(u, ' '), pedido)
-        .replace(/\s+/g, ' ')
-        .trim();
+      const resto = pedidoSemUrls();
       const pediuSemComplemento = /\b(s[óo]\s+(o\s+)?link|apenas\s+(o\s+)?link|sem\s+pesquis)/i.test(resto);
       if (pediuSemComplemento) {
         usarPesquisa = false;
@@ -794,6 +880,61 @@ async function responder({
     }
   }
 
+  // 1b) Links de sites de notícia colados no chat → veículo, título e corpo do texto
+  if (urlsArtigos.length) {
+    registrarPasso({
+      kind: 'pensando',
+      texto: `Lendo ${urlsArtigos.length} link(s) de notícia: ${urlsArtigos
+        .map((u) => hostDoLink(u))
+        .filter(Boolean)
+        .join(', ')}`,
+    });
+    const { fontes: fontesArtigo, falhas } = await extrairFontesDeArtigos(urlsArtigos, {
+      onPasso: registrarPasso,
+    });
+
+    if (fontesArtigo.length) {
+      fontes = [...fontes, ...fontesArtigo];
+      temFonteDoLink = true;
+      registrarPasso({
+        kind: 'fontes',
+        texto: `Fonte do link: ${fontesArtigo.map((f) => f.veiculo).join(', ')}`,
+      });
+      blocoFatos = materiaIaService.montarBlocoFatos(fontes);
+
+      const resto = pedidoSemUrls();
+      const pediuSemComplemento =
+        /\b(s[óo]\s+(o\s+)?link|apenas\s+(o\s+)?link|sem\s+pesquis)/i.test(resto);
+      if (pediuSemComplemento) {
+        usarPesquisa = false;
+        registrarPasso({
+          kind: 'pensando',
+          texto: 'Usando só o conteúdo do link, como você pediu.',
+        });
+      } else if (resto.length < 50 && usarPesquisa && !modoPautas && !assuntoDoLink) {
+        // Só o link: a matéria sai dele e a busca serve para dar contexto real.
+        assuntoDoLink = String(fontesArtigo[0]?.titulo || fontesArtigo[0]?.resumo || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 120);
+        registrarPasso({
+          kind: 'pensando',
+          texto: assuntoDoLink
+            ? `Matéria lida. Buscando reportagens sobre “${assuntoDoLink}” para dar contexto.`
+            : 'Matéria lida. Buscando reportagens sobre o mesmo assunto para dar contexto.',
+        });
+      }
+    }
+
+    for (const f of falhas) {
+      registrarPasso({
+        kind: 'aviso',
+        texto: `Não li o link: ${f.erro}`,
+        url: f.url || null,
+      });
+    }
+  }
+
   if (usarPesquisa) {
     const { rotuloPeriodo } = require('./newsResearch');
     const janela = rotuloPeriodo(periodoFinal);
@@ -820,10 +961,7 @@ async function responder({
       if (extra.length >= 8) consultas.push(`${extra} repercussão`);
     }
     if (!consultas.length) {
-      const semUrls = urlsSociais
-        .reduce((t, u) => t.replace(u, ' '), pedido)
-        .replace(/\s+/g, ' ')
-        .trim();
+      const semUrls = pedidoSemUrls();
       const base = String(
         palavrasChave || semUrls || fontes[0]?.titulo || fontes[0]?.resumo || pedido
       )
@@ -915,7 +1053,7 @@ async function responder({
     } else if (!temFonteDoLink) {
       registrarPasso({
         kind: 'aviso',
-        texto: `Não achei fontes na web nesse período (${janela}). Aumente o período ou cole o link da fonte (Facebook, Instagram ou YouTube).`,
+        texto: `Não achei fontes na web nesse período (${janela}). Aumente o período ou cole o link da fonte (matéria de site, Facebook, Instagram ou YouTube).`,
       });
       usarPesquisa = false;
     } else {
@@ -977,12 +1115,10 @@ async function responder({
 
     const afirmaFato = !checagem || checagem.tipoPedido === 'fato';
     const naoConfirmado = !blocoFatos || (checagem && checagem.confirmado === false);
-    // Pedido = só o link (ou “faça matéria deste link”): o fato está no próprio post/vídeo
+    // Pedido = só o link (ou “faça matéria deste link”): o fato está no próprio
+    // post/vídeo/matéria que o editor colou, então não precisa de confirmação extra.
     const pedidoCentadoNoLink =
-      temFonteDoLink &&
-      (!checagem ||
-        checagem.tipoPedido === 'tema' ||
-        urlsSociais.some((u) => pedido.replace(u, '').replace(/\s+/g, ' ').trim().length < 40));
+      temFonteDoLink && (!checagem || checagem.tipoPedido === 'tema' || pedidoSemUrls().length < 40);
 
     if (afirmaFato && naoConfirmado && pedeMateria && !pedidoCentadoNoLink) {
       registrarPasso({
@@ -1225,6 +1361,12 @@ async function salvarMateriaDoChat({
     materia_ia: materia,
     hashtags: JSON.stringify(info.hashtags || []),
     fonte_titulo: (() => {
+      const colada = fontes.find((f) => f.fonteColada && f.veiculo);
+      if (colada) {
+        return row.pesquisou_web
+          ? `Chat de matérias + ${colada.veiculo} + pesquisa na web`
+          : `Chat de matérias + ${colada.veiculo}`;
+      }
       const rede = fontes.find((f) => f.ehRedeSocial);
       if (rede) {
         const plat =
@@ -1366,4 +1508,6 @@ module.exports = {
   salvarTodasAsMateriasDoChat,
   interpretarResposta,
   separarMaterias,
+  extrairUrlsDoTexto,
+  extrairFontesDeArtigos,
 };
