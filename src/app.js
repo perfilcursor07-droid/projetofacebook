@@ -85,7 +85,6 @@ app.get('/conteudo', requireAuth, require('./controllers/materiasIaController').
 app.get('/materia-manual', requireAuth, (_req, res) => renderPage(res, 'materia-manual', 'Matéria manual'));
 app.get('/conteudo/lote', requireAuth, require('./controllers/materiasIaController').showLotePage);
 app.get('/viralizar', requireAuth, require('./controllers/viralizarController').page);
-app.get('/grupos', requireAuth, require('./controllers/gruposController').listPage);
 app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Vídeos'));
 app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController').listPage);
 app.get('/biblioteca', requireAuth, require('./controllers/bibliotecaController').listPage);
@@ -114,7 +113,6 @@ app.use('/api/clips', requireAuth, require('./routes/clips'));
 app.use('/api/publications', requireAuth, require('./routes/publications'));
 app.use('/api/materias-ia', requireAuth, require('./routes/materiasIa'));
 app.use('/api/viralizar', requireAuth, require('./routes/viralizar'));
-app.use('/api/grupos', requireAuth, require('./routes/grupos'));
 app.use('/api/biblioteca', requireAuth, require('./routes/biblioteca'));
 app.use('/api/youtube-cookies', requireAuth, require('./routes/ytCookies'));
 app.use('/api/midias', require('./routes/midias'));

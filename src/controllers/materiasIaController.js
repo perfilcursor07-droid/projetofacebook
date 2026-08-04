@@ -298,35 +298,10 @@ async function publicar(req, res, next) {
       sync: Boolean(body.sync),
       forcar: Boolean(body.forcar || body.republicar),
     });
-
-    // Repostagem opcional nos Grupos selecionados (via Ayrshare).
-    // Nunca derruba a resposta da publicação na Página: erros ficam em `grupos`.
-    let gruposResultado = null;
-    const grupoIds = Array.isArray(body.gruposIds || body.grupo_ids)
-      ? body.gruposIds || body.grupo_ids
-      : [];
-    if (grupoIds.length && !result.queued) {
-      try {
-        const gruposService = require('../services/gruposService');
-        const atual = await AiMatters.findById(matterId);
-        const texto = [body.titulo || atual?.titulo, body.materia || atual?.materia]
-          .filter(Boolean)
-          .join('\n\n');
-        gruposResultado = await gruposService.publicarNosGrupos(req.session.userId, {
-          texto,
-          imagemUrl: result.imagemUrl || atual?.imagem_url || null,
-          grupoIds,
-        });
-      } catch (grpErr) {
-        gruposResultado = { erro: grpErr.message || 'Falha ao publicar nos grupos' };
-      }
-    }
-
     res.status(result.queued ? 202 : 200).json({
       ok: true,
       ...result,
       link: result.fbPostUrl || null,
-      grupos: gruposResultado,
     });
   } catch (err) {
     next(err);

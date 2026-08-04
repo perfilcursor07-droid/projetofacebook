@@ -12,44 +12,6 @@
   const btnBaixarArte = document.getElementById('btn-baixar-arte');
   const btnCopiarLegenda = document.getElementById('btn-copiar-legenda');
 
-  // —— Grupos para repostagem (opcional, via Ayrshare) ——
-  const gruposRepostBox = document.getElementById('grupos-repost');
-  const gruposRepostLista = document.getElementById('grupos-repost-lista');
-
-  function escapeHtmlG(t) {
-    return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  function gruposSelecionados() {
-    if (!gruposRepostLista) return [];
-    return [...gruposRepostLista.querySelectorAll('input.grupo-check:checked')].map((c) => Number(c.value));
-  }
-
-  async function carregarGruposRepost() {
-    if (!gruposRepostBox || !gruposRepostLista) return;
-    try {
-      const res = await fetch('/api/grupos');
-      if (!res.ok) return;
-      const data = await res.json();
-      const grupos = (data.grupos || []).filter((g) => g.ativo && g.tem_profile_key);
-      if (!grupos.length) return; // sem grupos publicáveis: não mostra a seção
-      gruposRepostLista.innerHTML = grupos
-        .map(
-          (g) => `
-          <label class="flex items-center gap-2 rounded-lg border border-slate-800 px-2 py-1.5 text-xs text-slate-300">
-            <input type="checkbox" class="grupo-check accent-emerald-500" value="${g.id}" ${g.padrao ? 'checked' : ''} />
-            <span class="min-w-0 flex-1 truncate">${escapeHtmlG(g.nome)}</span>
-            <span class="text-[10px] text-slate-500">${escapeHtmlG(g.nicho || '')}</span>
-          </label>`
-        )
-        .join('');
-      gruposRepostBox.classList.remove('hidden');
-    } catch {
-      /* silencioso: repostagem é opcional */
-    }
-  }
-  carregarGruposRepost();
-
   function setStatus(msg, isError) {
     if (!statusEl) return;
     statusEl.textContent = msg || '';
@@ -752,25 +714,10 @@
           sync: true,
           forcar: true,
           republicar: isRepublish,
-          gruposIds: gruposSelecionados(),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao publicar');
-
-      // Resumo da repostagem em grupos (não bloqueia o fluxo da Página)
-      if (data.grupos) {
-        const g = data.grupos;
-        if (g.erro) {
-          setStatus('Publicado na Página ✓ · grupos falharam: ' + g.erro, true);
-        } else {
-          const partes = [];
-          if (g.enviados?.length) partes.push(g.enviados.length + ' grupo(s) ✓');
-          if (g.falhas?.length) partes.push(g.falhas.length + ' falhou');
-          if (g.semChave?.length) partes.push(g.semChave.length + ' sem Profile-Key');
-          if (partes.length) console.log('[grupos] repostagem:', partes.join(' · '));
-        }
-      }
 
       if (data.imagemUrl && imgEl) {
         setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
