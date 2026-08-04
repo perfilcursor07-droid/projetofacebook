@@ -729,20 +729,6 @@
     container.appendChild(box);
   }
 
-  /** Avisos de checagem ficam visíveis, fora do bloco recolhido. */
-  function blocoAvisos(passos = []) {
-    const avisos = passos.filter((p) => p?.kind === 'aviso');
-    if (!avisos.length) return null;
-    const box = document.createElement('div');
-    box.className = 'rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200';
-    for (const a of avisos) {
-      const p = document.createElement('p');
-      p.textContent = a.texto || '';
-      box.appendChild(p);
-    }
-    return box;
-  }
-
   /**
    * Cartões das matérias encontradas no modo "Pesquisar pautas".
    * Escolher uma monta o pedido de reescrita com furo e já envia.
@@ -966,8 +952,8 @@
       const passos = criarPassos(mensagem.passos);
       passos.open = false;
       wrap.appendChild(passos);
-      const avisos = blocoAvisos(mensagem.passos);
-      if (avisos) wrap.appendChild(avisos);
+      // Os avisos ficam dentro de "Pesquisa e apuração": o painel laranja
+      // repetia a mesma lista e atrapalhava a leitura da matéria.
     }
 
     const corpo = document.createElement('div');

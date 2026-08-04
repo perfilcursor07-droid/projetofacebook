@@ -944,30 +944,6 @@ async function responder({
         texto: `${fontesLink.length} fonte(s) extraída(s) do(s) link(s)`,
       });
       blocoFatos = materiaIaService.montarBlocoFatos(fontes);
-
-      // Pedido ≈ só o link: matéria sai do post/vídeo; pesquisa web só se pedirem.
-      const resto = pedidoSemUrls();
-      const pediuSemComplemento = /\b(s[óo]\s+(o\s+)?link|apenas\s+(o\s+)?link|sem\s+pesquis)/i.test(resto);
-      if (pediuSemComplemento) {
-        usarPesquisa = false;
-        registrarPasso({
-          kind: 'pensando',
-          texto: 'Usando só o conteúdo do link, como você pediu.',
-        });
-      } else if (resto.length < 50 && usarPesquisa && !modoPautas) {
-        // Só o link: a legenda sozinha rende matéria curta. Cruza com
-        // reportagens do mesmo assunto para dar contexto real ao texto.
-        assuntoDoLink = String(fontes[0]?.titulo || fontes[0]?.resumo || '')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 120);
-        registrarPasso({
-          kind: 'pensando',
-          texto: assuntoDoLink
-            ? `Post lido. Buscando reportagens sobre “${assuntoDoLink}” para dar contexto à matéria.`
-            : 'Post lido. Buscando reportagens sobre o mesmo assunto para dar contexto.',
-        });
-      }
     }
     for (const f of falhas) {
       registrarPasso({
@@ -1006,29 +982,6 @@ async function responder({
         texto: `Fonte do link: ${fontesArtigo.map((f) => f.veiculo).join(', ')}`,
       });
       blocoFatos = materiaIaService.montarBlocoFatos(fontes);
-
-      const resto = pedidoSemUrls();
-      const pediuSemComplemento =
-        /\b(s[óo]\s+(o\s+)?link|apenas\s+(o\s+)?link|sem\s+pesquis)/i.test(resto);
-      if (pediuSemComplemento) {
-        usarPesquisa = false;
-        registrarPasso({
-          kind: 'pensando',
-          texto: 'Usando só o conteúdo do link, como você pediu.',
-        });
-      } else if (resto.length < 50 && usarPesquisa && !modoPautas && !assuntoDoLink) {
-        // Só o link: a matéria sai dele e a busca serve para dar contexto real.
-        assuntoDoLink = String(fontesArtigo[0]?.titulo || fontesArtigo[0]?.resumo || '')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 120);
-        registrarPasso({
-          kind: 'pensando',
-          texto: assuntoDoLink
-            ? `Matéria lida. Buscando reportagens sobre “${assuntoDoLink}” para dar contexto.`
-            : 'Matéria lida. Buscando reportagens sobre o mesmo assunto para dar contexto.',
-        });
-      }
     }
 
     for (const f of falhas) {
@@ -1038,6 +991,31 @@ async function responder({
         url: f.url || null,
       });
     }
+  }
+
+  // Link colado já é a fonte da matéria: o padrão é reescrever só com ele,
+  // sem pesquisa na web. A busca extra só entra se o editor pedir.
+  const pediuContextoExtra =
+    /\b(pesquis|busqu|busque|procur|mais informa|mais dados|contexto|complement|atualiz|repercuss|apure|apurar|cruz)/i.test(
+      pedidoSemUrls()
+    );
+  if (temFonteDoLink && usarPesquisa && !modoPautas && !pediuContextoExtra) {
+    usarPesquisa = false;
+    registrarPasso({
+      kind: 'pensando',
+      texto: 'Fonte do link é suficiente: reescrevendo sem pesquisa extra na web.',
+    });
+  } else if (temFonteDoLink && usarPesquisa && !modoPautas) {
+    assuntoDoLink = String(fontes[0]?.titulo || fontes[0]?.resumo || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 120);
+    registrarPasso({
+      kind: 'pensando',
+      texto: assuntoDoLink
+        ? `Link lido. Buscando reportagens sobre “${assuntoDoLink}” para dar contexto, como você pediu.`
+        : 'Link lido. Buscando reportagens para dar contexto, como você pediu.',
+    });
   }
 
   if (usarPesquisa) {
@@ -1207,9 +1185,13 @@ async function responder({
 
   // Portão anti-invenção: pedido que AFIRMA um fato só passa se a apuração confirmar.
   // Link social/YouTube já é fonte documentada — a checagem usa o texto extraído.
+  // Pedido = só o link (ou "faça uma matéria" + link): o fato está no próprio
+  // texto que o editor colou, então não gasta uma chamada de checagem.
+  const soReescreverOLink = temFonteDoLink && pedidoSemUrls().length < 40;
+
   if ((usarPesquisa || temFonteDoLink) && !pedidoDeAjuste && !usuarioInsiste) {
     let checagem = null;
-    if (blocoFatos) {
+    if (blocoFatos && !soReescreverOLink) {
       registrarPasso({ kind: 'checagem', texto: 'Checando o pedido contra as fontes…' });
       try {
         checagem = await deepseekService.checarPedidoNasFontes({ pedido, fatosFontes: blocoFatos });
@@ -1346,15 +1328,26 @@ async function responder({
     return finalizar(aviso, { fontesUsadas: [], usouWeb: false });
   }
 
+  const suspeitasIniciais = levantarSuspeitas(resposta);
+  // Reescrita do link colado: tudo veio de um texto só, então a revisão pesada
+  // (outra chamada de IA) só entra se a checagem local achou algo suspeito.
+  const pularRevisao = soReescreverOLink && !usarPesquisa && !suspeitasIniciais.length;
+  if (pularRevisao) {
+    registrarPasso({
+      kind: 'checagem',
+      texto: 'Texto conferido com o conteúdo do link — sem revisão extra.',
+    });
+  }
+
   // Revisão obrigatória do texto contra as fontes quando houve pesquisa
-  if (ehMateriaGerada && blocoFatos) {
+  if (ehMateriaGerada && blocoFatos && !pularRevisao) {
     registrarPasso({ kind: 'checagem', texto: 'Revisando a matéria frase por frase contra as fontes…' });
     try {
       const revisao = await deepseekService.revisarMateriaContraFontes({
         texto: resposta,
         fatosFontes: blocoFatos,
         pedido,
-        suspeitas: levantarSuspeitas(resposta),
+        suspeitas: suspeitasIniciais,
         fonteEstrangeira,
         veiculosColados,
       });
@@ -1371,8 +1364,12 @@ async function responder({
             ? `Revisão aplicada — ${revisao.problemas.length} trecho(s) sem lastro corrigidos`
             : 'Revisão aplicada no texto final',
         });
-        for (const p of revisao.problemas.slice(0, 5)) {
-          registrarPasso({ kind: 'aviso', texto: `Cortado na checagem: ${p}` });
+        for (const p of revisao.problemas.slice(0, 3)) {
+          const curto = String(p).replace(/\s+/g, ' ').trim();
+          registrarPasso({
+            kind: 'checagem',
+            texto: `Ajustado na checagem: ${curto.length > 140 ? `${curto.slice(0, 140)}…` : curto}`,
+          });
         }
       } else {
         registrarPasso({ kind: 'checagem', texto: 'Revisão sem correções: texto bate com as fontes' });
