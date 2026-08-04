@@ -10,6 +10,9 @@ const { uploadChatDoc } = require('../middleware/uploadChatDoc');
 
 const router = express.Router();
 
+/** Quantos assuntos o radar devolve por vez. */
+const LIMITE_TOPICOS = 20;
+
 /**
  * Temas que abrem por padrão ao clicar em "Em alta".
  * Cada tema tem consultas próprias: buscar só "política" traz notícia genérica
@@ -19,15 +22,15 @@ const router = express.Router();
 const TEMAS_PADRAO = Object.freeze([
   Object.freeze({
     rotulo: 'política',
-    consultas: Object.freeze(['política evangélicos', 'bancada evangélica']),
+    consultas: Object.freeze(['política evangélicos', 'bancada evangélica', 'deputado pastor']),
   }),
   Object.freeze({
     rotulo: 'igreja evangélica',
-    consultas: Object.freeze(['igreja evangélica', 'pastor igreja evangélica']),
+    consultas: Object.freeze(['igreja evangélica', 'pastor igreja evangélica', 'culto evangélico']),
   }),
   Object.freeze({
     rotulo: 'polêmica gospel',
-    consultas: Object.freeze(['polêmica gospel', 'cantor gospel polêmica']),
+    consultas: Object.freeze(['polêmica gospel', 'cantor gospel polêmica', 'cantora gospel']),
   }),
 ]);
 
@@ -104,7 +107,7 @@ function distribuirPorTema(agrupados, rotulos, limite) {
       rodou = true;
     }
   }
-  // Faltou fechar as 10? Completa com o que sobrou, do mais quente para o menos.
+  // Faltou fechar a lista? Completa com o que sobrou, do mais quente para o menos.
   for (const item of sobra) {
     if (escolhidos.length >= limite) break;
     escolhidos.push(item);
@@ -116,7 +119,7 @@ function distribuirPorTema(agrupados, rotulos, limite) {
  * Radar por tema, reaproveitando os coletores já existentes no projeto.
  * Cada coletor é tolerante a falha: chave de API vencida não derruba o radar.
  */
-async function radarPorTemas(temas, { horas = 24, limite = 10 } = {}) {
+async function radarPorTemas(temas, { horas = 24, limite = LIMITE_TOPICOS } = {}) {
   const nr = require('../services/newsResearch');
   const alvo = temas.slice(0, 5);
   const when = horas === 48 ? '2d' : '1d';
@@ -194,7 +197,7 @@ router.post('/em-alta', async (req, res, next) => {
     const usandoPadrao = temasDaBusca.length === 0;
     const temas = usandoPadrao ? TEMAS_PADRAO : temasDaBusca;
 
-    const resultado = await radarPorTemas(temas, { horas, limite: 10 });
+    const resultado = await radarPorTemas(temas, { horas, limite: LIMITE_TOPICOS });
 
     const topicos = (resultado.topicos || [])
       .filter((t) => t && t.titulo && (t.link || t.url))
@@ -213,6 +216,7 @@ router.post('/em-alta', async (req, res, next) => {
       horas,
       temas: temas.map((t) => t.rotulo),
       padrao: usandoPadrao,
+      limite: LIMITE_TOPICOS,
       totalAnalisado: Number(resultado.totalAnalisado) || 0,
       topicos,
     });
@@ -253,3 +257,4 @@ router.post('/anexos', (req, res, next) => {
 module.exports = router;
 module.exports.TEMAS_PADRAO = TEMAS_PADRAO;
 module.exports.radarPorTemas = radarPorTemas;
+module.exports.LIMITE_TOPICOS = LIMITE_TOPICOS;

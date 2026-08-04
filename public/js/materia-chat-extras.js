@@ -3,7 +3,7 @@
  * materia-chat.js. Não altera o chat existente: injeta os controles novos e
  * usa os elementos que já estão na página.
  *
- *  1. Botão "Em alta" ao lado de Escrever/Pautas — ao clicar já lista os 10
+ *  1. Botão "Em alta" ao lado de Escrever/Pautas — ao clicar já lista os
  *     assuntos do momento (política, igreja evangélica, polêmica gospel) e
  *     permite buscar outro tema. Clicar em um manda a IA escrever a matéria.
  *  2. Anexar PDF — o texto do arquivo entra no pedido enviado à IA.
@@ -11,6 +11,8 @@
 (() => {
   const API = '/api/materias-ia/chat-extras';
   const MAX_PDF_NO_PEDIDO = 12000;
+  /** Quantos esqueletos aparecem enquanto o radar carrega. */
+  const ESQUELETOS = 6;
 
   const el = {
     seg: document.querySelector('.mia-chat-seg'),
@@ -90,6 +92,32 @@
     .mia-x-card-tit { display: block; font-size: .8125rem; font-weight: 500; line-height: 1.35; color: #e2e8f0; }
     .mia-x-card-meta { display: block; margin-top: .2rem; font-size: .65rem; color: #64748b; }
     .mia-x-card-res { display: block; margin-top: .25rem; font-size: .7rem; line-height: 1.4; color: #94a3b8; }
+
+    .mia-x-carregando {
+      display: flex; align-items: center; gap: .5rem; margin: 0;
+      color: #cbd5e1; font-size: .8125rem; line-height: 1.4;
+    }
+    .mia-x-spin {
+      flex-shrink: 0; width: .9rem; height: .9rem; border-radius: 50%;
+      border: 2px solid rgba(148,163,184,.3); border-top-color: #10b981;
+      animation: mia-x-rodar .7s linear infinite;
+    }
+    @keyframes mia-x-rodar { to { transform: rotate(360deg); } }
+    .mia-x-skel {
+      height: 3.4rem; border-radius: .75rem; border: 1px solid #1e293b;
+      background-image: linear-gradient(90deg, rgba(15,23,42,.55) 25%, rgba(30,41,59,.8) 37%, rgba(15,23,42,.55) 63%);
+      background-size: 400% 100%;
+      animation: mia-x-brilho 1.4s ease infinite;
+    }
+    @keyframes mia-x-brilho { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+    .mia-x-erro {
+      border: 1px solid rgba(244,63,94,.35); border-radius: .75rem;
+      background: rgba(244,63,94,.08); padding: .6rem .7rem;
+      color: #fecdd3; font-size: .75rem; line-height: 1.45;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mia-x-spin, .mia-x-skel { animation: none; }
+    }
   `;
   document.head.appendChild(estilos);
 
@@ -119,13 +147,26 @@
     return document.querySelector(`.chat-modo-btn[data-chat-modo="${nome}"]`);
   }
 
+  /** Bloco do radar na thread: sempre marcado para ser substituído depois. */
+  function novoBlocoAlta() {
+    const wrap = document.createElement('div');
+    wrap.className = 'mia-msg-ai';
+    wrap.dataset.miaAlta = '1';
+    return wrap;
+  }
+
+  function mostrarBloco(wrap) {
+    el.mensagens.appendChild(wrap);
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   /* --------------------------- botão "Em alta" -------------------------- */
 
   const btnAlta = document.createElement('button');
   btnAlta.type = 'button';
   btnAlta.className = 'mia-chat-seg-btn mia-x-alta-btn';
   btnAlta.setAttribute('aria-pressed', 'false');
-  btnAlta.title = 'Mostra os 10 assuntos em alta agora para você escolher';
+  btnAlta.title = 'Mostra os assuntos em alta agora para você escolher';
   btnAlta.textContent = 'Em alta';
   el.seg.appendChild(btnAlta);
 
@@ -164,6 +205,73 @@
     el.enviar.click();
   }
 
+  /**
+   * Aviso de carregando com esqueletos. Entra na hora do clique para o usuário
+   * não olhar uma área vazia achando que nada aconteceu.
+   */
+  function renderCarregando(termo) {
+    limparBlocosAlta();
+    el.vazio?.classList.add('hidden');
+
+    const wrap = novoBlocoAlta();
+
+    const corpo = document.createElement('div');
+    corpo.className = 'mia-msg-ai-body';
+    const linha = document.createElement('p');
+    linha.className = 'mia-x-carregando';
+    linha.setAttribute('role', 'status');
+    linha.setAttribute('aria-live', 'polite');
+    const spin = document.createElement('span');
+    spin.className = 'mia-x-spin';
+    linha.appendChild(spin);
+    const txt = document.createElement('span');
+    txt.textContent = termo
+      ? `Carregando matérias em alta sobre “${termo}”… aguarde.`
+      : 'Carregando as matérias em alta agora… aguarde alguns segundos.';
+    linha.appendChild(txt);
+    corpo.appendChild(linha);
+    wrap.appendChild(corpo);
+
+    const box = document.createElement('div');
+    box.className = 'mia-x-alta';
+    const lista = document.createElement('div');
+    lista.className = 'mia-x-alta-list';
+    for (let i = 0; i < ESQUELETOS; i += 1) {
+      const skel = document.createElement('div');
+      skel.className = 'mia-x-skel';
+      lista.appendChild(skel);
+    }
+    box.appendChild(lista);
+    wrap.appendChild(box);
+
+    mostrarBloco(wrap);
+  }
+
+  function renderErro(mensagem, termo) {
+    limparBlocosAlta();
+    const wrap = novoBlocoAlta();
+
+    const box = document.createElement('div');
+    box.className = 'mia-x-alta';
+
+    const erro = document.createElement('p');
+    erro.className = 'mia-x-erro';
+    erro.textContent = mensagem || 'Não consegui carregar as matérias em alta.';
+    box.appendChild(erro);
+
+    const acoes = document.createElement('div');
+    acoes.className = 'mia-x-busca';
+    const tentar = document.createElement('button');
+    tentar.type = 'button';
+    tentar.textContent = 'Tentar de novo';
+    tentar.addEventListener('click', () => carregarAlta(termo || ''));
+    acoes.appendChild(tentar);
+    box.appendChild(acoes);
+
+    wrap.appendChild(box);
+    mostrarBloco(wrap);
+  }
+
   function renderAlta(data) {
     const topicos = data.topicos || [];
     const temas = data.temas || [];
@@ -172,9 +280,7 @@
     limparBlocosAlta();
     el.vazio?.classList.add('hidden');
 
-    const wrap = document.createElement('div');
-    wrap.className = 'mia-msg-ai';
-    wrap.dataset.miaAlta = '1';
+    const wrap = novoBlocoAlta();
 
     const corpo = document.createElement('div');
     corpo.className = 'mia-msg-ai-body';
@@ -285,20 +391,21 @@
     }
 
     wrap.appendChild(box);
-    el.mensagens.appendChild(wrap);
-    wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    mostrarBloco(wrap);
   }
 
   async function carregarAlta(busca = '') {
     if (carregandoAlta) return;
     carregandoAlta = true;
     btnAlta.disabled = true;
+
     const horas = el.periodo?.value === '24h' ? 24 : 48;
     const termo = String(busca || '').replace(/\s+/g, ' ').trim();
-    setStatus(termo ? `Buscando “${termo}” em alta…` : 'Carregando os assuntos em alta agora…');
-    document.querySelectorAll('.mia-x-busca button').forEach((b) => {
-      b.disabled = true;
-    });
+
+    setStatus(
+      termo ? `Carregando matérias em alta sobre “${termo}”…` : 'Carregando matérias em alta…'
+    );
+    renderCarregando(termo);
 
     try {
       const data = await apiJson(`${API}/em-alta`, {
@@ -308,10 +415,9 @@
       renderAlta(data);
       setStatus(`${(data.topicos || []).length} assunto(s) em alta`);
     } catch (err) {
-      setStatus(err.message || 'Falha ao buscar o radar');
-      document.querySelectorAll('.mia-x-busca button').forEach((b) => {
-        b.disabled = false;
-      });
+      const mensagem = err.message || 'Falha ao buscar o radar';
+      setStatus(mensagem);
+      renderErro(mensagem, termo);
     } finally {
       carregandoAlta = false;
       btnAlta.disabled = false;
