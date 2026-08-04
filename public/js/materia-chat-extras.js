@@ -3,8 +3,9 @@
  * materia-chat.js. Não altera o chat existente: injeta os controles novos e
  * usa os elementos que já estão na página.
  *
- *  1. Botão "Em alta" ao lado de Escrever/Pautas — lista os assuntos do
- *     momento; clicar em um manda a IA escrever a matéria.
+ *  1. Botão "Em alta" ao lado de Escrever/Pautas — ao clicar já lista os 10
+ *     assuntos do momento (política, igreja evangélica, polêmica gospel) e
+ *     permite buscar outro tema. Clicar em um manda a IA escrever a matéria.
  *  2. Anexar PDF — o texto do arquivo entra no pedido enviado à IA.
  */
 (() => {
@@ -14,6 +15,7 @@
   const el = {
     seg: document.querySelector('.mia-chat-seg'),
     tools: document.querySelector('.mia-chat-tools'),
+    composer: document.getElementById('chat-composer'),
     input: document.getElementById('chat-input'),
     enviar: document.getElementById('chat-enviar'),
     mensagens: document.getElementById('chat-mensagens'),
@@ -35,7 +37,7 @@
     .mia-x-anexo-btn, .mia-x-alta-btn { cursor: pointer; }
     .mia-x-chip {
       display: inline-flex; align-items: center; gap: .4rem;
-      max-width: 100%; margin-top: .5rem; padding: .35rem .5rem .35rem .6rem;
+      max-width: 100%; margin: .5rem 0 0; padding: .35rem .5rem .35rem .6rem;
       border: 1px solid rgba(16,185,129,.35); border-radius: .6rem;
       background: rgba(16,185,129,.1); color: #a7f3d0;
       font-size: .75rem; line-height: 1.3;
@@ -48,9 +50,29 @@
       background: transparent; color: #6ee7b7; cursor: pointer; font-size: .9rem; line-height: 1;
     }
     .mia-x-chip-x:hover { background: rgba(244,63,94,.2); color: #fecdd3; }
+
     .mia-x-alta { border: 1px solid #1e293b; border-radius: .9rem; background: rgba(2,6,23,.4); padding: .75rem; }
-    .mia-x-alta-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .6rem; }
+    .mia-x-alta-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
     .mia-x-alta-title { margin: 0; font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #64748b; }
+    .mia-x-temas { display: flex; flex-wrap: wrap; gap: .3rem; margin: .5rem 0 .1rem; }
+    .mia-x-tema {
+      border-radius: .35rem; padding: .1rem .4rem;
+      background: rgba(16,185,129,.12); color: #6ee7b7;
+      font-size: .65rem; font-weight: 500;
+    }
+    .mia-x-busca { display: flex; gap: .4rem; margin: .6rem 0; }
+    .mia-x-busca input {
+      flex: 1; min-width: 0; border: 1px solid #334155; border-radius: .5rem;
+      background: #020617; padding: .35rem .55rem; color: #e2e8f0; font-size: .75rem; outline: none;
+    }
+    .mia-x-busca input:focus { border-color: #10b981; }
+    .mia-x-busca button {
+      flex-shrink: 0; border: none; border-radius: .5rem; background: #10b981; color: #022c22;
+      padding: .35rem .7rem; font-size: .7rem; font-weight: 600; cursor: pointer;
+    }
+    .mia-x-busca button:hover { background: #34d399; }
+    .mia-x-busca button:disabled { opacity: .55; cursor: default; }
+
     .mia-x-alta-list { display: flex; flex-direction: column; gap: .5rem; }
     .mia-x-card {
       display: flex; gap: .6rem; width: 100%; text-align: left;
@@ -68,7 +90,6 @@
     .mia-x-card-tit { display: block; font-size: .8125rem; font-weight: 500; line-height: 1.35; color: #e2e8f0; }
     .mia-x-card-meta { display: block; margin-top: .2rem; font-size: .65rem; color: #64748b; }
     .mia-x-card-res { display: block; margin-top: .25rem; font-size: .7rem; line-height: 1.4; color: #94a3b8; }
-    .mia-x-alta-erro { font-size: .75rem; color: #fecdd3; }
   `;
   document.head.appendChild(estilos);
 
@@ -104,7 +125,7 @@
   btnAlta.type = 'button';
   btnAlta.className = 'mia-chat-seg-btn mia-x-alta-btn';
   btnAlta.setAttribute('aria-pressed', 'false');
-  btnAlta.title = 'Lista os assuntos que estão em alta agora para você escolher';
+  btnAlta.title = 'Mostra os 10 assuntos em alta agora para você escolher';
   btnAlta.textContent = 'Em alta';
   el.seg.appendChild(btnAlta);
 
@@ -112,16 +133,12 @@
     altaAtiva = ativa;
     btnAlta.setAttribute('aria-pressed', ativa ? 'true' : 'false');
     btnAlta.classList.toggle('is-active', ativa);
-    if (ativa) {
-      // Os dois modos nativos saem do estado ativo enquanto o radar manda.
-      document.querySelectorAll('.chat-modo-btn').forEach((b) => {
-        b.classList.remove('is-active');
-        b.setAttribute('aria-pressed', 'false');
-      });
-      el.input.placeholder = 'Opcional: filtre o radar por um tema. Ex.: pastor, gospel';
-    } else {
-      el.input.placeholder = 'Descreva o assunto, cole um link ou peça um ajuste…';
-    }
+    if (!ativa) return;
+    // Os dois modos nativos saem do estado ativo enquanto o radar manda.
+    document.querySelectorAll('.chat-modo-btn').forEach((b) => {
+      b.classList.remove('is-active');
+      b.setAttribute('aria-pressed', 'false');
+    });
   }
 
   // Voltar para Escrever/Pautas desliga o radar.
@@ -147,7 +164,11 @@
     el.enviar.click();
   }
 
-  function renderAlta({ topicos, horas, totalAnalisado }) {
+  function renderAlta(data) {
+    const topicos = data.topicos || [];
+    const temas = data.temas || [];
+    const horas = data.horas || 24;
+
     limparBlocosAlta();
     el.vazio?.classList.add('hidden');
 
@@ -159,29 +180,63 @@
     corpo.className = 'mia-msg-ai-body';
     const p = document.createElement('p');
     p.textContent = topicos.length
-      ? `Estes são os ${topicos.length} assuntos mais quentes das últimas ${horas}h (${totalAnalisado} analisados). Clique em um e eu escrevo a matéria.`
-      : `Não achei nada em alta nas últimas ${horas}h. Tente de novo em alguns minutos ou filtre por um tema no campo de texto.`;
+      ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Clique em um e eu escrevo a matéria.`
+      : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
     corpo.appendChild(p);
     wrap.appendChild(corpo);
 
+    const box = document.createElement('div');
+    box.className = 'mia-x-alta';
+
+    const head = document.createElement('div');
+    head.className = 'mia-x-alta-head';
+    const titulo = document.createElement('p');
+    titulo.className = 'mia-x-alta-title';
+    titulo.textContent = data.padrao ? 'Em alta agora' : 'Em alta — sua busca';
+    head.appendChild(titulo);
+    const recarregar = document.createElement('button');
+    recarregar.type = 'button';
+    recarregar.className = 'mia-chat-ghost-btn';
+    recarregar.textContent = 'Atualizar';
+    recarregar.addEventListener('click', () => carregarAlta(data.padrao ? '' : temas.join(', ')));
+    head.appendChild(recarregar);
+    box.appendChild(head);
+
+    if (temas.length) {
+      const chips = document.createElement('div');
+      chips.className = 'mia-x-temas';
+      temas.forEach((t) => {
+        const chip = document.createElement('span');
+        chip.className = 'mia-x-tema';
+        chip.textContent = t;
+        chips.appendChild(chip);
+      });
+      box.appendChild(chips);
+    }
+
+    // Busca fica dentro do painel: não disputa o campo de mensagem do chat.
+    const busca = document.createElement('div');
+    busca.className = 'mia-x-busca';
+    const campo = document.createElement('input');
+    campo.type = 'search';
+    campo.placeholder = 'Buscar outro tema. Ex.: Malafaia, política evangélica';
+    campo.setAttribute('aria-label', 'Buscar tema em alta');
+    if (!data.padrao) campo.value = temas.join(', ');
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.textContent = 'Buscar';
+    const disparar = () => carregarAlta(campo.value);
+    botao.addEventListener('click', disparar);
+    campo.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter') return;
+      ev.preventDefault();
+      disparar();
+    });
+    busca.appendChild(campo);
+    busca.appendChild(botao);
+    box.appendChild(busca);
+
     if (topicos.length) {
-      const box = document.createElement('div');
-      box.className = 'mia-x-alta';
-
-      const head = document.createElement('div');
-      head.className = 'mia-x-alta-head';
-      const titulo = document.createElement('p');
-      titulo.className = 'mia-x-alta-title';
-      titulo.textContent = `Em alta agora (${topicos.length})`;
-      head.appendChild(titulo);
-      const recarregar = document.createElement('button');
-      recarregar.type = 'button';
-      recarregar.className = 'mia-chat-ghost-btn';
-      recarregar.textContent = 'Atualizar';
-      recarregar.addEventListener('click', () => carregarAlta());
-      head.appendChild(recarregar);
-      box.appendChild(head);
-
       const lista = document.createElement('div');
       lista.className = 'mia-x-alta-list';
 
@@ -206,9 +261,9 @@
         const meta = document.createElement('span');
         meta.className = 'mia-x-card-meta';
         meta.textContent = [
+          t.tema ? t.tema : '',
           t.veiculo || 'Web',
           t.contagemFontes > 1 ? `${t.contagemFontes} fontes` : '',
-          t.calor ? `calor ${t.calor}` : '',
         ]
           .filter(Boolean)
           .join(' · ');
@@ -227,33 +282,36 @@
       });
 
       box.appendChild(lista);
-      wrap.appendChild(box);
     }
 
+    wrap.appendChild(box);
     el.mensagens.appendChild(wrap);
     wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  async function carregarAlta() {
+  async function carregarAlta(busca = '') {
     if (carregandoAlta) return;
     carregandoAlta = true;
-    const horas = el.periodo?.value === '24h' ? 24 : 48;
-    const extras = String(el.input.value || '').replace(/\s+/g, ' ').trim();
-    setStatus(extras ? `Buscando o que está em alta sobre “${extras}”…` : 'Buscando o que está em alta agora…');
     btnAlta.disabled = true;
+    const horas = el.periodo?.value === '24h' ? 24 : 48;
+    const termo = String(busca || '').replace(/\s+/g, ' ').trim();
+    setStatus(termo ? `Buscando “${termo}” em alta…` : 'Carregando os assuntos em alta agora…');
+    document.querySelectorAll('.mia-x-busca button').forEach((b) => {
+      b.disabled = true;
+    });
+
     try {
       const data = await apiJson(`${API}/em-alta`, {
         method: 'POST',
-        body: JSON.stringify({ palavrasExtras: extras, horas }),
+        body: JSON.stringify({ busca: termo, horas }),
       });
-      renderAlta({
-        topicos: data.topicos || [],
-        horas: data.horas || horas,
-        totalAnalisado: data.totalAnalisado || 0,
-      });
+      renderAlta(data);
       setStatus(`${(data.topicos || []).length} assunto(s) em alta`);
     } catch (err) {
       setStatus(err.message || 'Falha ao buscar o radar');
+      document.querySelectorAll('.mia-x-busca button').forEach((b) => {
+        b.disabled = false;
+      });
     } finally {
       carregandoAlta = false;
       btnAlta.disabled = false;
@@ -262,7 +320,7 @@
 
   btnAlta.addEventListener('click', () => {
     marcarAlta(true);
-    carregarAlta();
+    carregarAlta('');
   });
 
   /* ---------------------------- anexo em PDF ---------------------------- */
@@ -281,8 +339,10 @@
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> PDF';
   el.tools.appendChild(btnAnexo);
 
+  // O chip fica logo abaixo do campo de texto, fora da barra de ferramentas.
   const chipWrap = document.createElement('div');
-  el.tools.parentElement?.appendChild(chipWrap);
+  if (el.composer) el.composer.insertBefore(chipWrap, el.input.nextSibling);
+  else el.tools.parentElement?.appendChild(chipWrap);
 
   function renderChip() {
     chipWrap.replaceChildren();
