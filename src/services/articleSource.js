@@ -988,6 +988,7 @@ module.exports = {
   decodificarHtml,
   apurarTopico,
   extrairMetadadosArtigo,
+  extrairMetadadosViaJina,
   extrairImagemCapa,
   resolverUrlNoticia,
   buscarFontesPorTitulo,
