@@ -603,6 +603,28 @@ function garantirCitacaoDoVeiculo(resposta, fontesColadas = []) {
 }
 
 /**
+ * Com Web desligada e link colado: monta rodapé padrão (Fonte + Foto + hashtags)
+ * no final da matéria, para o editor já ver o crédito antes de salvar.
+ */
+function montarRespostaComRodapeOffline(resposta, fontes = []) {
+  const { montarRodapeMateriaComFontes } = require('./editorialGuidelinesFb');
+  const info = interpretarResposta(resposta);
+  if (!info.ehMateria || !info.titulo) return resposta;
+
+  const fontesRodape = (Array.isArray(fontes) ? fontes : []).filter((f) => f?.veiculo);
+  if (!fontesRodape.length) return resposta;
+
+  const rodape = montarRodapeMateriaComFontes({
+    materia: info.corpo,
+    fontes: fontesRodape,
+    creditoImagem: 'Reprodução',
+    hashtags: info.hashtags,
+  });
+
+  return `${info.titulo}\n\n${rodape.materia}`;
+}
+
+/**
  * Deixa texto de fonte externa seguro para gravar no MySQL.
  * Cortar com slice() pode partir um par de surrogates (emoji) no meio e gerar
  * UTF-8 inválido, que o banco recusa — aqui o corte é limpo.
@@ -1386,16 +1408,23 @@ async function responder({
     }
   }
 
-  // Crédito da fonte: o nome do site precisa aparecer no texto da matéria
+  // Crédito da fonte no texto
   if (ehMateriaGerada && fontesColadas.length) {
-    const { texto: comCredito, inserido } = garantirCitacaoDoVeiculo(resposta, fontesColadas);
-    if (inserido) {
-      resposta = comCredito;
+    if (soReescritaDoLink) {
+      resposta = montarRespostaComRodapeOffline(resposta, fontes);
       registrarPasso({
         kind: 'fontes',
-        texto: `Crédito da fonte acrescentado no texto: ${inserido}`,
+        texto: 'Fonte e foto de crédito anexadas ao final da matéria.',
       });
-      // O texto final chega ao front no evento "fim" (mensagem já salva).
+    } else {
+      const { texto: comCredito, inserido } = garantirCitacaoDoVeiculo(resposta, fontesColadas);
+      if (inserido) {
+        resposta = comCredito;
+        registrarPasso({
+          kind: 'fontes',
+          texto: `Crédito da fonte acrescentado no texto: ${inserido}`,
+        });
+      }
     }
   }
 

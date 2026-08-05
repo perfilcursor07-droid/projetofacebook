@@ -60,11 +60,19 @@ async function storeMatterSourceImage({ userId, matterId, buffer }) {
       .resize(3600, 3600, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 95, chromaSubsampling: '4:4:4', mozjpeg: true })
       .toFile(outputPath);
-  } catch (_err) {
+  } catch (err) {
     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-    const err = new Error('Não foi possível ler a imagem. Envie um arquivo PNG, JPG ou WebP válido.');
-    err.status = 400;
-    throw err;
+    const msg = String(err?.message || err || '');
+    if (/heif|heic|bad seek|bitstream not supported/i.test(msg)) {
+      const e = new Error(
+        'Não foi possível ler a imagem (formato HEIF/HEIC). Envie um arquivo PNG ou JPG.'
+      );
+      e.status = 400;
+      throw e;
+    }
+    const e = new Error('Não foi possível ler a imagem. Envie um arquivo PNG, JPG ou WebP válido.');
+    e.status = 400;
+    throw e;
   }
 
   return {

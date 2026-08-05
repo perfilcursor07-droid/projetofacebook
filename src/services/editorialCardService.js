@@ -104,6 +104,31 @@ function looksLikeImageBuffer(buf) {
   return false;
 }
 
+function friendlyImageProcessingError(err) {
+  const msg = String(err?.message || err || '');
+  if (/heif|heic|bad seek|bitstream not supported|unsupported image format/i.test(msg)) {
+    return new Error(
+      'Esta foto está em formato HEIF/HEIC (comum em sites como BBC). Escolha outra imagem JPG ou PNG na matéria.'
+    );
+  }
+  return err instanceof Error ? err : new Error(msg || 'Falha ao processar imagem');
+}
+
+/** Converte buffer de imagem para JPEG — evita falha com HEIF/AVIF quando o decoder existe. */
+async function decodeImageBuffer(buffer) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) {
+    throw new Error('Imagem vazia ou inválida');
+  }
+  try {
+    return await sharp(buffer, { failOn: 'none', limitInputPixels: 40_000_000 })
+      .rotate()
+      .jpeg({ quality: 95, mozjpeg: true })
+      .toBuffer();
+  } catch (err) {
+    throw friendlyImageProcessingError(err);
+  }
+}
+
 async function fetchImage(url) {
   const storedSource = resolveStoredSourcePath(url);
   if (storedSource) {
@@ -130,7 +155,7 @@ async function fetchImage(url) {
       'User-Agent': isMetaCdn
         ? 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'
         : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      Accept: 'image/jpeg,image/png,image/webp,image/apng,image/*;q=0.8',
       Referer: isMetaCdn
         ? 'https://www.facebook.com/'
         : isBraveCdn
@@ -1463,7 +1488,12 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
 
   const { resolveArtModelForMatter } = require('./editorialCardModels');
   const modelId = resolveArtModelForMatter(user, model);
-  const source = await fetchImage(sourceUrl);
+  let source = await fetchImage(sourceUrl);
+  try {
+    source = await decodeImageBuffer(source);
+  } catch (err) {
+    throw friendlyImageProcessingError(err);
+  }
   const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
   const brandName = String(user.marca_nome || '').trim();
