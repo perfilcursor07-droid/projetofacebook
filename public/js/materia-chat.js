@@ -331,12 +331,22 @@
 
     function atualizarResumo() {
       const total = lista.childElementCount;
-      resumo.textContent = total ? `Pesquisa e apuração (${total} etapas)` : 'Pesquisa e apuração';
+      const kinds = [...lista.querySelectorAll('[data-passo-kind]')].map((el) => el.dataset.passoKind);
+      // "lendo" também aparece ao abrir o link colado — pesquisa web = busca/resultados.
+      const temPesquisaWeb = kinds.some((k) => ['busca', 'encontrados'].includes(k));
+      if (!total) {
+        resumo.textContent = temPesquisaWeb ? 'Pesquisa e apuração' : 'Leitura e reescrita';
+        return;
+      }
+      resumo.textContent = temPesquisaWeb
+        ? `Pesquisa e apuração (${total} etapas)`
+        : `Leitura e reescrita (${total} etapas)`;
     }
 
     function addPasso(passo) {
       const linha = document.createElement('div');
       linha.className = 'flex items-start gap-2 text-slate-400';
+      if (passo.kind) linha.dataset.passoKind = passo.kind;
 
       const ponto = document.createElement('span');
       const cor =

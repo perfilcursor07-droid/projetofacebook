@@ -1329,17 +1329,20 @@ async function responder({
   }
 
   const suspeitasIniciais = levantarSuspeitas(resposta);
-  // Reescrita do link colado: tudo veio de um texto só, então a revisão pesada
-  // (outra chamada de IA) só entra se a checagem local achou algo suspeito.
-  const pularRevisao = soReescreverOLink && !usarPesquisa && !suspeitasIniciais.length;
-  if (pularRevisao) {
+  // Web desligada (ou link sem pedido de contexto): só reescreve/traduz o link.
+  // Não gasta revisão contra fontes nem “conferência” — o editor pediu reescrita, não apuração.
+  const soReescritaDoLink = Boolean(temFonteDoLink && !usarPesquisa);
+  const pularRevisao = soReescritaDoLink || (soReescreverOLink && !suspeitasIniciais.length);
+  if (soReescritaDoLink && ehMateriaGerada) {
     registrarPasso({
-      kind: 'checagem',
-      texto: 'Texto conferido com o conteúdo do link — sem revisão extra.',
+      kind: 'fontes',
+      texto: fonteEstrangeira
+        ? 'Reescrita do link em português (sem plágio) — sem pesquisa em outras fontes.'
+        : 'Reescrita do link sem plágio — sem pesquisa em outras fontes.',
     });
   }
 
-  // Revisão obrigatória do texto contra as fontes quando houve pesquisa
+  // Revisão frase a frase só quando houve pesquisa/apuração na web
   if (ehMateriaGerada && blocoFatos && !pularRevisao) {
     registrarPasso({ kind: 'checagem', texto: 'Revisando a matéria frase por frase contra as fontes…' });
     try {
