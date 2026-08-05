@@ -44,6 +44,23 @@ function tituloDoTexto(texto, fallback) {
   return String(primeiraLinha || fallback || '').slice(0, 140) || null;
 }
 
+function comentariosInstagram(media) {
+  const candidatos = [
+    ...(media?.edge_media_to_parent_comment?.edges || []).map((e) => e?.node),
+    ...(media?.edge_media_preview_comment?.edges || []).map((e) => e?.node),
+    ...(Array.isArray(media?.preview_comments) ? media.preview_comments : []),
+  ];
+  const vistos = new Set();
+  return candidatos
+    .map((c) => ({
+      autor: textoLimpo(c?.owner?.username || c?.user?.username),
+      texto: textoLimpo(c?.text),
+      curtidas: Number(c?.edge_liked_by?.count ?? c?.comment_like_count ?? c?.like_count) || 0,
+    }))
+    .filter((c) => c.texto.length >= 20 && !vistos.has(c.texto) && vistos.add(c.texto))
+    .slice(0, 8);
+}
+
 function shortcodeInstagram(value) {
   const match = String(value || '').match(/instagram\.com\/(?:p|reel|reels|tv)\/([^/?#]+)/i);
   return match?.[1] || null;
@@ -86,6 +103,7 @@ function normalizarInstagram(payload, url) {
     publicadoEm: normalizarData(media.taken_at_timestamp),
     autorUrl: username ? `https://www.instagram.com/${username}/` : null,
     postId: shortcode || null,
+    comentarios: comentariosInstagram(media),
   };
 }
 

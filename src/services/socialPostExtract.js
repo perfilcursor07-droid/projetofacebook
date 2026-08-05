@@ -70,6 +70,24 @@ function textoGenericoSocial(texto) {
   return false;
 }
 
+function extrairComentariosDoMedia(media, limite = 8) {
+  const candidatos = [
+    ...(media?.edge_media_to_parent_comment?.edges || []).map((e) => e?.node),
+    ...(media?.edge_media_preview_comment?.edges || []).map((e) => e?.node),
+    ...(Array.isArray(media?.preview_comments) ? media.preview_comments : []),
+  ];
+  const vistos = new Set();
+  return candidatos
+    .map((c) => ({
+      autor: String(c?.owner?.username || c?.user?.username || '').trim(),
+      texto: String(c?.text || '').trim(),
+      curtidas: Number(c?.edge_liked_by?.count ?? c?.comment_like_count ?? c?.like_count) || 0,
+    }))
+    .filter((c) => c.texto.length >= 20 && !vistos.has(c.texto) && vistos.add(c.texto))
+    .sort((a, b) => b.curtidas - a.curtidas)
+    .slice(0, limite);
+}
+
 function detectarPlataformaSocial(url) {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
@@ -298,6 +316,18 @@ function extrairDadosDoHtmlInstagram(html, url) {
       null;
   }
 
+  // Prints/cards do carrossel podem trazer detalhes e comentários na descrição
+  // de acessibilidade. Restringe ao perfil do post para ignorar recomendações.
+  const conteudoVisual = [];
+  const autorNormalizado = String(veiculo || '').replace(/^@/, '').toLowerCase();
+  for (const match of html.matchAll(/"accessibility_caption"\s*:\s*"((?:\\.|[^"\\])*)"/g)) {
+    const descricao = unescapeJsonString(match[1]).replace(/\s+/g, ' ').trim();
+    if (descricao.length < 40) continue;
+    if (autorNormalizado && !descricao.toLowerCase().includes(autorNormalizado)) continue;
+    if (!conteudoVisual.includes(descricao)) conteudoVisual.push(descricao.slice(0, 1200));
+    if (conteudoVisual.length >= 5) break;
+  }
+
   if (texto && texto.length >= 40) {
     return {
       url,
@@ -306,6 +336,7 @@ function extrairDadosDoHtmlInstagram(html, url) {
       imagem: imagem || null,
       veiculo,
       metodo: 'ig-html',
+      conteudoVisual,
       signals,
     };
   }
@@ -317,6 +348,7 @@ function extrairDadosDoHtmlInstagram(html, url) {
     imagem: imagem || null,
     veiculo,
     metodo: 'ig-html',
+    conteudoVisual,
     signals,
     empty: true,
   };
@@ -675,6 +707,7 @@ async function extrairViaInstagramApi(url) {
             veiculo,
             metodo: 'ig-api',
             postId: shortcodeRetornado || code,
+            comentarios: extrairComentariosDoMedia(media),
           };
         }
         if (imagem && texto && texto.length >= 20) {
@@ -686,6 +719,7 @@ async function extrairViaInstagramApi(url) {
             veiculo,
             metodo: 'ig-api',
             postId: shortcodeRetornado || code,
+            comentarios: extrairComentariosDoMedia(media),
           };
         }
       } catch (err) {
@@ -967,6 +1001,12 @@ function mesclarExtracao(melhor, extra) {
   if (!out.publicadoEm && extra.publicadoEm) out.publicadoEm = extra.publicadoEm;
   if (!out.autorUrl && extra.autorUrl) out.autorUrl = extra.autorUrl;
   if (!out.postId && extra.postId) out.postId = extra.postId;
+  if ((!out.comentarios || !out.comentarios.length) && extra.comentarios?.length) {
+    out.comentarios = extra.comentarios;
+  }
+  if ((!out.conteudoVisual || !out.conteudoVisual.length) && extra.conteudoVisual?.length) {
+    out.conteudoVisual = extra.conteudoVisual;
+  }
   if (extra.url && !/\/login/i.test(extra.url)) out.url = extra.url;
   if (extra.metodo) {
     out.metodo = out.metodo ? `${out.metodo}+${extra.metodo}` : extra.metodo;
@@ -1004,6 +1044,8 @@ async function extrairPostSocial(url, opts = {}) {
     publicadoEm: null,
     autorUrl: null,
     postId: null,
+    comentarios: [],
+    conteudoVisual: [],
   };
 
   const shortcodeSolicitado = plataforma === 'instagram' ? extrairShortcodeIg(link) : null;

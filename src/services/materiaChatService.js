@@ -203,15 +203,33 @@ async function extrairFontesDeLinks(urls, { onPasso } = {}) {
         }
       }
 
+      const comentarios = (Array.isArray(social.comentarios) ? social.comentarios : [])
+        .filter((c) => String(c?.texto || '').trim().length >= 20)
+        .slice(0, 6);
+      const conteudoVisual = (Array.isArray(social.conteudoVisual) ? social.conteudoVisual : [])
+        .filter(Boolean)
+        .slice(0, 4);
+      if (conteudoVisual.length) {
+        trecho += `\n\nCONTEÚDO VISÍVEL NAS IMAGENS DO POST:\n${conteudoVisual
+          .map((t) => `- ${String(t).slice(0, 1000)}`)
+          .join('\n')}`;
+      }
+      if (comentarios.length) {
+        trecho += `\n\nREPERCUSSÃO NOS COMENTÁRIOS PÚBLICOS (opiniões, não fatos):\n${comentarios
+          .map((c) => `- @${c.autor || 'usuário'}: “${String(c.texto).slice(0, 500)}”${c.curtidas ? ` (${c.curtidas} curtida(s))` : ''}`)
+          .join('\n')}`;
+      }
+
       fontes.push({
         veiculo: social.veiculo || rotulo,
         titulo: social.titulo || texto.slice(0, 120),
         url: social.url || link,
         resumo: texto.slice(0, 400),
-        trecho: trecho.slice(0, 5000),
+        trecho: trecho.slice(0, 9000),
         ehRedeSocial: true,
         plataforma: tipo,
         imagem: social.imagem || null,
+        comentarios,
       });
     } catch (err) {
       console.warn(`[materia-chat] extrair ${tipo}:`, err.message);
