@@ -4,6 +4,7 @@ const AiMatters = require('../models/AiMatters');
 
 const PERIODOS = ['24h', '3d', '7d', '15d', '30d', '60d', '90d', '180d'];
 const PERIODO_PADRAO = '7d';
+const MAX_URLS_PEDIDO = 12;
 
 function erro(mensagem, status = 400) {
   const err = new Error(mensagem);
@@ -40,7 +41,7 @@ function extrairUrlsDoTexto(texto) {
     vistos.add(limpa);
     urls.push(limpa);
   }
-  return urls.slice(0, 4);
+  return urls.slice(0, MAX_URLS_PEDIDO);
 }
 
 function classificarUrlFonte(url) {
@@ -912,6 +913,11 @@ async function responder({
       pedido
     );
 
+  const pedidoEmLote =
+    /\b(uma\s+para\s+cada|cada\s+(pauta|assunto|link)|selecionad[ao]s?|v[aá]rias\s+mat[eé]rias|\d+\s+mat[eé]rias)\b/i.test(
+      pedido
+    );
+
   const urlsNoPedido = extrairUrlsDoTexto(pedido);
   const urlsSociais = urlsNoPedido.filter((u) => classificarUrlFonte(u));
   // Todo o resto é tratado como matéria/artigo de site: também precisa ser lido.
@@ -1222,12 +1228,13 @@ async function responder({
       }
     }
 
-    const afirmaFato = !checagem || checagem.tipoPedido === 'fato';
+    const afirmaFato = !pedidoEmLote && (!checagem || checagem.tipoPedido === 'fato');
     const naoConfirmado = !blocoFatos || (checagem && checagem.confirmado === false);
     // Pedido = só o link (ou “faça matéria deste link”): o fato está no próprio
     // post/vídeo/matéria que o editor colou, então não precisa de confirmação extra.
     const pedidoCentadoNoLink =
-      temFonteDoLink && (!checagem || checagem.tipoPedido === 'tema' || pedidoSemUrls().length < 40);
+      temFonteDoLink &&
+      (pedidoEmLote || !checagem || checagem.tipoPedido === 'tema' || pedidoSemUrls().length < 40);
 
     if (afirmaFato && naoConfirmado && pedeMateria && !pedidoCentadoNoLink) {
       registrarPasso({

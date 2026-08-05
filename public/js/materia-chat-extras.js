@@ -11,6 +11,7 @@
 (() => {
   const API = '/api/materias-ia/chat-extras';
   const MAX_PDF_NO_PEDIDO = 12000;
+  const MAX_TOPICOS_LOTE = 8;
   /** Quantos esqueletos aparecem enquanto o radar carrega. */
   const ESQUELETOS = 6;
 
@@ -75,6 +76,24 @@
     .mia-x-busca button:hover { background: #34d399; }
     .mia-x-busca button:disabled { opacity: .55; cursor: default; }
 
+    .mia-x-lote {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+      margin: .45rem 0 .65rem;
+    }
+    .mia-x-lote button {
+      border-radius: .5rem; padding: .35rem .65rem;
+      font-size: .7rem; font-weight: 600; cursor: pointer;
+    }
+    .mia-x-lote-select {
+      border: 1px solid #334155; background: transparent; color: #cbd5e1;
+    }
+    .mia-x-lote-select:hover { border-color: rgba(16,185,129,.6); color: #fff; }
+    .mia-x-lote-gerar {
+      border: none; background: #10b981; color: #022c22;
+    }
+    .mia-x-lote-gerar:hover { background: #34d399; }
+    .mia-x-lote-gerar:disabled { opacity: .55; cursor: default; }
+
     .mia-x-alta-list { display: flex; flex-direction: column; gap: .5rem; }
     .mia-x-card {
       display: flex; gap: .6rem; width: 100%; text-align: left;
@@ -82,6 +101,12 @@
       padding: .6rem .7rem; cursor: pointer; transition: border-color .15s, background .15s;
     }
     .mia-x-card:hover { border-color: rgba(16,185,129,.55); background: rgba(15,23,42,.9); }
+    .mia-x-card.is-selected { border-color: rgba(16,185,129,.65); background: rgba(16,185,129,.08); }
+    .mia-x-card-check {
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      width: 1.2rem; height: 1.4rem;
+    }
+    .mia-x-card-check input { width: 1rem; height: 1rem; accent-color: #10b981; cursor: pointer; }
     .mia-x-card-pos {
       flex-shrink: 0; display: flex; align-items: center; justify-content: center;
       width: 1.4rem; height: 1.4rem; border-radius: .4rem;
@@ -92,6 +117,18 @@
     .mia-x-card-tit { display: block; font-size: .8125rem; font-weight: 500; line-height: 1.35; color: #e2e8f0; }
     .mia-x-card-meta { display: block; margin-top: .2rem; font-size: .65rem; color: #64748b; }
     .mia-x-card-res { display: block; margin-top: .25rem; font-size: .7rem; line-height: 1.4; color: #94a3b8; }
+    .mia-x-card-actions { flex-shrink: 0; display: flex; align-items: flex-start; }
+    .mia-x-card-gerar {
+      border: 1px solid rgba(16,185,129,.45); border-radius: .5rem;
+      background: rgba(16,185,129,.12); color: #a7f3d0;
+      padding: .25rem .5rem; font-size: .68rem; font-weight: 600; cursor: pointer;
+    }
+    .mia-x-card-gerar:hover { border-color: rgba(16,185,129,.8); color: #fff; }
+    @media (max-width: 560px) {
+      .mia-x-card { flex-wrap: wrap; }
+      .mia-x-card-txt { flex-basis: calc(100% - 4rem); }
+      .mia-x-card-actions { width: 100%; justify-content: flex-end; }
+    }
 
     .mia-x-carregando {
       display: flex; align-items: center; gap: .5rem; margin: 0;
@@ -191,18 +228,54 @@
     el.mensagens.querySelectorAll('[data-mia-alta="1"]').forEach((n) => n.remove());
   }
 
-  function pedirMateriaDoTopico(topico) {
+  function textoPedidoTopicosSelecionados(topicos = []) {
+    const lista = (Array.isArray(topicos) ? topicos : []).filter(Boolean);
+    if (lista.length <= 1) {
+      const topico = lista[0] || {};
+      return [
+        'Escreva uma matéria sobre este assunto que está em alta agora, com furo de reportagem, texto totalmente original e sem plagiar:',
+        `Título: ${topico.titulo || ''}`,
+        `Veículo: ${topico.veiculo || ''}`,
+        `Link: ${topico.url || ''}`,
+        'Pesquise também mais informações recentes sobre esse assunto para acrescentar contexto e dados novos.',
+      ].join('\n');
+    }
+
+    const blocos = lista.map((topico, indice) =>
+      [
+        `### ASSUNTO ${indice + 1}`,
+        `Título: ${topico.titulo || ''}`,
+        `Veículo: ${topico.veiculo || ''}`,
+        `Link: ${topico.url || ''}`,
+        topico.resumo ? `Resumo: ${topico.resumo}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n')
+    );
+
+    return [
+      `Escreva ${lista.length} matérias, uma para cada assunto selecionado em alta agora, com furo de reportagem, texto totalmente original e sem plagiar.`,
+      'Entregue tudo na mesma resposta. Separe cada texto com "### MATERIA n", seguido do título, corpo e hashtags daquela matéria.',
+      'Não misture os fatos: cada matéria deve usar o assunto/link correspondente como base principal.',
+      '',
+      ...blocos,
+      '',
+      'Pesquise também mais informações recentes sobre cada assunto para acrescentar contexto e dados novos.',
+    ].join('\n');
+  }
+
+  function pedirMateriaDosTopicos(topicos) {
+    const lista = (Array.isArray(topicos) ? topicos : []).filter(Boolean);
+    if (!lista.length) return;
     marcarAlta(false);
     botaoModo('escrever')?.click();
-    el.input.value = [
-      'Escreva uma matéria sobre este assunto que está em alta agora, com furo de reportagem, texto totalmente original e sem plagiar:',
-      `Título: ${topico.titulo || ''}`,
-      `Veículo: ${topico.veiculo || ''}`,
-      `Link: ${topico.url || ''}`,
-      'Pesquise também mais informações recentes sobre esse assunto para acrescentar contexto e dados novos.',
-    ].join('\n');
+    el.input.value = textoPedidoTopicosSelecionados(lista);
     el.input.dispatchEvent(new Event('input', { bubbles: true }));
     el.enviar.click();
+  }
+
+  function pedirMateriaDoTopico(topico) {
+    pedirMateriaDosTopicos([topico]);
   }
 
   /**
@@ -286,7 +359,7 @@
     corpo.className = 'mia-msg-ai-body';
     const p = document.createElement('p');
     p.textContent = topicos.length
-      ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Clique em um e eu escrevo a matéria.`
+      ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais e eu escrevo tudo de uma vez.`
       : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
     corpo.appendChild(p);
     wrap.appendChild(corpo);
@@ -343,13 +416,80 @@
     box.appendChild(busca);
 
     if (topicos.length) {
+      const selecionados = new Map();
+      const itens = [];
+
+      const lote = document.createElement('div');
+      lote.className = 'mia-x-lote';
+      const selecionar = document.createElement('button');
+      selecionar.type = 'button';
+      selecionar.className = 'mia-x-lote-select';
+      selecionar.textContent = `Selecionar até ${Math.min(MAX_TOPICOS_LOTE, topicos.length)}`;
+      const gerar = document.createElement('button');
+      gerar.type = 'button';
+      gerar.className = 'mia-x-lote-gerar';
+      gerar.textContent = 'Gerar selecionados';
+      gerar.disabled = true;
+      lote.appendChild(selecionar);
+      lote.appendChild(gerar);
+      box.appendChild(lote);
+
+      function atualizarLote() {
+        const total = selecionados.size;
+        gerar.disabled = total === 0;
+        gerar.textContent = total ? `Gerar ${total} selecionado(s)` : 'Gerar selecionados';
+        selecionar.textContent = total
+          ? 'Limpar seleção'
+          : `Selecionar até ${Math.min(MAX_TOPICOS_LOTE, topicos.length)}`;
+      }
+
+      selecionar.addEventListener('click', () => {
+        if (selecionados.size) {
+          selecionados.clear();
+          itens.forEach((item) => {
+            item.input.checked = false;
+            item.card.classList.remove('is-selected');
+          });
+          atualizarLote();
+          return;
+        }
+
+        itens.forEach((item, indice) => {
+          const marcar = indice < MAX_TOPICOS_LOTE;
+          item.input.checked = marcar;
+          item.card.classList.toggle('is-selected', marcar);
+          if (marcar) selecionados.set(item.key, item.topico);
+        });
+        if (itens.length > MAX_TOPICOS_LOTE) {
+          setStatus(`Selecionei os ${MAX_TOPICOS_LOTE} primeiros assuntos. Gere esse lote e depois escolha mais.`);
+        }
+        atualizarLote();
+      });
+
+      gerar.addEventListener('click', () => {
+        const alvos = [...selecionados.values()];
+        if (!alvos.length) {
+          setStatus('Marque ao menos um assunto.');
+          return;
+        }
+        pedirMateriaDosTopicos(alvos);
+      });
+
       const lista = document.createElement('div');
       lista.className = 'mia-x-alta-list';
 
       topicos.forEach((t, i) => {
-        const card = document.createElement('button');
-        card.type = 'button';
+        const key = t.url || `${i}:${t.titulo || ''}:${t.veiculo || ''}`;
+        const card = document.createElement('article');
         card.className = 'mia-x-card';
+
+        const checkWrap = document.createElement('label');
+        checkWrap.className = 'mia-x-card-check';
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.setAttribute('aria-label', `Selecionar assunto ${i + 1}`);
+        checkWrap.appendChild(check);
+        card.appendChild(checkWrap);
 
         const pos = document.createElement('span');
         pos.className = 'mia-x-card-pos';
@@ -383,10 +523,43 @@
         }
 
         card.appendChild(txt);
-        card.addEventListener('click', () => pedirMateriaDoTopico(t));
+
+        const acoes = document.createElement('span');
+        acoes.className = 'mia-x-card-actions';
+        const gerarUm = document.createElement('button');
+        gerarUm.type = 'button';
+        gerarUm.className = 'mia-x-card-gerar';
+        gerarUm.textContent = 'Gerar';
+        gerarUm.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          pedirMateriaDoTopico(t);
+        });
+        acoes.appendChild(gerarUm);
+        card.appendChild(acoes);
+
+        checkWrap.addEventListener('click', (ev) => ev.stopPropagation());
+        check.addEventListener('change', () => {
+          if (check.checked && !selecionados.has(key) && selecionados.size >= MAX_TOPICOS_LOTE) {
+            check.checked = false;
+            setStatus(`Selecione no máximo ${MAX_TOPICOS_LOTE} assuntos por vez.`);
+            return;
+          }
+          if (check.checked) selecionados.set(key, t);
+          else selecionados.delete(key);
+          card.classList.toggle('is-selected', check.checked);
+          atualizarLote();
+        });
+        card.addEventListener('click', (ev) => {
+          if (ev.target.closest('button,a,input,label')) return;
+          check.checked = !check.checked;
+          check.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        itens.push({ input: check, card, key, topico: t });
         lista.appendChild(card);
       });
 
+      atualizarLote();
       box.appendChild(lista);
     }
 

@@ -3,6 +3,7 @@
 (() => {
   const API = '/api/materias-ia/chat';
   const STORAGE_KEY = 'mia_chat_atual';
+  const MAX_PAUTAS_LOTE = 8;
 
   const el = {
     lista: document.getElementById('chat-lista'),
@@ -45,10 +46,10 @@
     ancoradoAtivo: false,
   };
 
-  /** URL da pauta que um pedido de reescrita aponta (linha "Link: ..."). */
-  function urlDoPedido(texto) {
-    const m = String(texto || '').match(/^\s*Link:\s*(https?:\/\/\S+)/im);
-    return m ? m[1].trim() : null;
+  /** URLs das pautas que um pedido de reescrita aponta (linhas "Link: ..."). */
+  function urlsDoPedido(texto) {
+    const matches = String(texto || '').matchAll(/^\s*Link:\s*(https?:\/\/\S+)/gim);
+    return [...matches].map((m) => String(m[1] || '').trim()).filter(Boolean);
   }
 
   function marcarPautaEscrita(url) {
@@ -743,23 +744,63 @@
    * Cartões das matérias encontradas no modo "Pesquisar pautas".
    * Escolher uma monta o pedido de reescrita com furo e já envia.
    */
+  function textoPedidoPautasSelecionadas(pautas = []) {
+    const lista = (Array.isArray(pautas) ? pautas : []).filter(Boolean);
+    if (lista.length <= 1) {
+      const pauta = lista[0] || {};
+      return [
+        'Reescreva esta matéria com furo de reportagem, texto totalmente original e sem plagiar:',
+        `Título: ${pauta.titulo || ''}`,
+        `Veículo: ${pauta.veiculo || ''}`,
+        `Link: ${pauta.url || ''}`,
+        'Pesquise também mais informações recentes sobre esse assunto para acrescentar contexto e dados novos.',
+      ].join('\n');
+    }
+
+    const blocos = lista.map((pauta, indice) =>
+      [
+        `### PAUTA ${indice + 1}`,
+        `Título: ${pauta.titulo || ''}`,
+        `Veículo: ${pauta.veiculo || ''}`,
+        `Link: ${pauta.url || ''}`,
+        pauta.resumo ? `Resumo: ${pauta.resumo}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n')
+    );
+
+    return [
+      `Escreva ${lista.length} matérias, uma para cada pauta selecionada, com furo de reportagem, texto totalmente original e sem plagiar.`,
+      'Entregue tudo na mesma resposta. Separe cada texto com "### MATERIA n", seguido do título, corpo e hashtags daquela matéria.',
+      'Não misture os fatos: cada matéria deve usar a pauta/link correspondente como base principal.',
+      '',
+      ...blocos,
+      '',
+      'Pesquise também mais informações recentes sobre cada assunto para acrescentar contexto e dados novos.',
+    ].join('\n');
+  }
+
+  function marcarPautasComoEscritas(pautas = []) {
+    (Array.isArray(pautas) ? pautas : []).forEach((pauta) => marcarPautaEscrita(pauta?.url));
+  }
+
   /** Monta o pedido de reescrita da pauta e já envia. */
-  function pedirReescrita(pauta) {
+  function pedirReescritaLote(pautas) {
     if (state.enviando) return;
+    const lista = (Array.isArray(pautas) ? pautas : []).filter(Boolean);
+    if (!lista.length) return;
     definirModo('escrever');
     // Recolhe a lista longa e ancora a matéria no topo: o usuário lê de cima,
     // sem precisar rolar até o fim da conversa.
     el.mensagens.querySelectorAll('[data-pautas="1"]').forEach((b) => b.colapsar?.());
     state.ancorarTopo = true;
-    el.input.value = [
-      'Reescreva esta matéria com furo de reportagem, texto totalmente original e sem plagiar:',
-      `Título: ${pauta.titulo || ''}`,
-      `Veículo: ${pauta.veiculo || ''}`,
-      `Link: ${pauta.url || ''}`,
-      'Pesquise também mais informações recentes sobre esse assunto para acrescentar contexto e dados novos.',
-    ].join('\n');
-    marcarPautaEscrita(pauta.url);
+    el.input.value = textoPedidoPautasSelecionadas(lista);
+    marcarPautasComoEscritas(lista);
     enviar();
+  }
+
+  function pedirReescrita(pauta) {
+    pedirReescritaLote([pauta]);
   }
 
   function blocoPautas(pautas = []) {
@@ -771,21 +812,89 @@
     const box = document.createElement('div');
     box.className = 'mia-msg-pautas';
     box.dataset.pautas = '1';
+    const selecionadas = new Map();
+    const checkboxes = [];
 
     const cabecalho = document.createElement('div');
     cabecalho.className = 'mia-msg-pautas-head';
     const titulo = document.createElement('p');
     titulo.className = 'mia-msg-pautas-title';
-    titulo.textContent = `Escolha a matéria para reescrever (${pautas.length})`;
+    titulo.textContent = `Escolha uma ou mais matérias para reescrever (${pautas.length})`;
     cabecalho.appendChild(titulo);
 
+    const acoesCabecalho = document.createElement('div');
+    acoesCabecalho.className = 'mia-msg-pautas-head-actions';
+    const selecionarTodas = criarBotao(
+      `Selecionar até ${Math.min(MAX_PAUTAS_LOTE, pautas.length)}`,
+      'mia-chat-ghost-btn'
+    );
+    const gerarSelecionadas = criarBotao(
+      'Gerar selecionadas',
+      'mia-chat-btn-primary mia-msg-pautas-batch-btn'
+    );
+    gerarSelecionadas.disabled = true;
+    gerarSelecionadas.classList.add('opacity-60');
     const alternar = criarBotao('Recolher lista', 'mia-chat-ghost-btn');
-    cabecalho.appendChild(alternar);
+    acoesCabecalho.appendChild(selecionarTodas);
+    acoesCabecalho.appendChild(gerarSelecionadas);
+    acoesCabecalho.appendChild(alternar);
+    cabecalho.appendChild(acoesCabecalho);
     box.appendChild(cabecalho);
 
     const lista = document.createElement('div');
     lista.className = 'mia-msg-pautas-list';
     box.appendChild(lista);
+
+    function atualizarLote() {
+      const total = selecionadas.size;
+      gerarSelecionadas.disabled = total === 0 || state.enviando;
+      gerarSelecionadas.classList.toggle('opacity-60', total === 0 || state.enviando);
+      gerarSelecionadas.textContent = total
+        ? `Gerar ${total} selecionada(s)`
+        : 'Gerar selecionadas';
+      selecionarTodas.textContent = total
+        ? 'Limpar seleção'
+        : `Selecionar até ${Math.min(MAX_PAUTAS_LOTE, pautas.length)}`;
+    }
+
+    selecionarTodas.addEventListener('click', () => {
+      if (selecionadas.size) {
+        selecionadas.clear();
+        checkboxes.forEach((item) => {
+          item.input.checked = false;
+          item.card.classList.remove('is-selected');
+        });
+        atualizarLote();
+        return;
+      }
+
+      checkboxes.forEach((item, indice) => {
+        const marcar = indice < MAX_PAUTAS_LOTE;
+        item.input.checked = marcar;
+        item.card.classList.toggle('is-selected', marcar);
+        if (marcar) selecionadas.set(item.key, item.pauta);
+      });
+      if (checkboxes.length > MAX_PAUTAS_LOTE) {
+        setStatus(`Selecionei as ${MAX_PAUTAS_LOTE} primeiras pautas. Gere esse lote e depois escolha mais.`);
+      }
+      atualizarLote();
+    });
+
+    gerarSelecionadas.addEventListener('click', () => {
+      const alvos = [...selecionadas.values()];
+      if (!alvos.length) {
+        setStatus('Marque ao menos uma pauta.');
+        return;
+      }
+      if (alvos.length > MAX_PAUTAS_LOTE) {
+        setStatus(`Selecione no máximo ${MAX_PAUTAS_LOTE} pautas por vez.`);
+        return;
+      }
+      checkboxes
+        .filter((item) => selecionadas.has(item.key))
+        .forEach((item) => item.marcarEscrita());
+      pedirReescritaLote(alvos);
+    });
 
     box.expandir = () => {
       lista.classList.remove('hidden');
@@ -803,12 +912,20 @@
 
     pautas.forEach((pauta, indice) => {
       const escrita = pautaJaEscrita(pauta.url);
+      const key = pauta.url || `${indice}:${pauta.titulo || ''}:${pauta.veiculo || ''}`;
 
       const card = document.createElement('article');
       card.className = escrita ? 'mia-msg-pauta is-done' : 'mia-msg-pauta';
 
       const meta = document.createElement('div');
       meta.className = 'mia-msg-pauta-meta';
+      const selecionar = document.createElement('label');
+      selecionar.className = 'mia-msg-pauta-check';
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.setAttribute('aria-label', `Selecionar pauta ${indice + 1}`);
+      selecionar.appendChild(check);
+      meta.appendChild(selecionar);
       const num = document.createElement('span');
       num.className = 'mia-msg-pauta-num';
       num.textContent = String(indice + 1);
@@ -843,16 +960,41 @@
         escrita ? 'Escrever de novo' : 'Reescrever com furo',
         escrita ? 'mia-chat-ghost-btn' : 'mia-chat-btn-primary'
       );
-      escrever.addEventListener('click', () => {
-        // Marca o cartão na hora, sem esperar recarregar a conversa
+      const marcarEscrita = () => {
+        selecionadas.delete(key);
+        check.checked = false;
+        card.classList.remove('is-selected');
         selo.className = 'mia-msg-pauta-selo';
         selo.textContent = 'Já escrita ✓';
         escrever.textContent = 'Escrever de novo';
         escrever.className = 'mia-chat-ghost-btn';
         card.className = 'mia-msg-pauta is-done';
+        atualizarLote();
+      };
+      selecionar.addEventListener('click', (ev) => ev.stopPropagation());
+      check.addEventListener('change', () => {
+        if (check.checked && !selecionadas.has(key) && selecionadas.size >= MAX_PAUTAS_LOTE) {
+          check.checked = false;
+          setStatus(`Selecione no máximo ${MAX_PAUTAS_LOTE} pautas por vez.`);
+          return;
+        }
+        if (check.checked) selecionadas.set(key, pauta);
+        else selecionadas.delete(key);
+        card.classList.toggle('is-selected', check.checked);
+        atualizarLote();
+      });
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('button,a,input,label')) return;
+        check.checked = !check.checked;
+        check.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      escrever.addEventListener('click', () => {
+        // Marca o cartão na hora, sem esperar recarregar a conversa
+        marcarEscrita();
         pedirReescrita(pauta);
       });
       acoes.appendChild(escrever);
+      checkboxes.push({ input: check, card, key, pauta, marcarEscrita });
 
       if (pauta.url) {
         const abrir = document.createElement('a');
@@ -868,6 +1010,7 @@
       lista.appendChild(card);
     });
 
+    atualizarLote();
     return box;
   }
 
@@ -1004,7 +1147,7 @@
     esconderVazio();
     // Marca de antemão as pautas que já viraram matéria nesta conversa
     for (const m of mensagens) {
-      if (m.role === 'user') marcarPautaEscrita(urlDoPedido(m.content));
+      if (m.role === 'user') urlsDoPedido(m.content).forEach(marcarPautaEscrita);
     }
     mensagens.forEach((m, indice) => {
       const ultima = indice === mensagens.length - 1;

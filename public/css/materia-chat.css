@@ -1053,6 +1053,18 @@ body.mia-chat-drawer-open {
   gap: 0.5rem;
 }
 
+.mia-msg-pautas-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.mia-msg-pautas-batch-btn:disabled {
+  cursor: default;
+}
+
 .mia-msg-pautas-title {
   margin: 0;
   font-size: 0.6875rem;
@@ -1080,6 +1092,11 @@ body.mia-chat-drawer-open {
   border-color: rgba(16, 185, 129, 0.35);
 }
 
+.mia-msg-pauta.is-selected {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.08);
+}
+
 .mia-msg-pauta.is-done {
   border-color: rgba(16, 185, 129, 0.28);
   background: rgba(16, 185, 129, 0.06);
@@ -1090,6 +1107,21 @@ body.mia-chat-drawer-open {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.45rem;
+}
+
+.mia-msg-pauta-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.mia-msg-pauta-check input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #10b981;
+  cursor: pointer;
 }
 
 .mia-msg-pauta-num {
