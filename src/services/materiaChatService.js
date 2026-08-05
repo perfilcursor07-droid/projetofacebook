@@ -862,6 +862,7 @@ async function responder({
           veiculo: limparParaBanco(f.veiculo, 120),
           titulo: limparParaBanco(f.titulo, 300),
           url: limparParaBanco(f.url, 500),
+          ...(f.imagem ? { imagem: limparParaBanco(f.imagem, 1200) } : {}),
           // Marcas usadas ao salvar o rascunho (crédito da fonte e ordem do rodapé)
           ...(f.ehRedeSocial ? { ehRedeSocial: true } : {}),
           ...(f.plataforma ? { plataforma: f.plataforma } : {}),
@@ -931,7 +932,7 @@ async function responder({
       pedido
     );
 
-  const pedidoEmLote =
+  let pedidoEmLote =
     /\b(uma\s+para\s+cada|cada\s+(pauta|assunto|link)|selecionad[ao]s?|v[aá]rias\s+mat[eé]rias|\d+\s+mat[eé]rias)\b/i.test(
       pedido
     );
@@ -941,6 +942,9 @@ async function responder({
   // Todo o resto é tratado como matéria/artigo de site: também precisa ser lido.
   const urlsArtigos = urlsNoPedido.filter((u) => !classificarUrlFonte(u) && hostDoLink(u));
   const urlsFonte = [...urlsSociais, ...urlsArtigos];
+  // Vários links já significam "uma matéria para cada link", mesmo sem o
+  // editor escrever essa instrução por extenso.
+  if (urlsFonte.length > 1) pedidoEmLote = true;
 
   /** Pedido sem os links, para saber se o editor escreveu mais alguma coisa. */
   const pedidoSemUrls = () =>
@@ -1310,10 +1314,22 @@ async function responder({
     });
   }
 
+  const pedidoParaGeracao =
+    pedidoEmLote && fontes.length > 1
+      ? [
+          `Escreva ${fontes.length} matérias separadas, uma para cada fonte lida com sucesso.`,
+          'Separe obrigatoriamente cada texto com "### MATERIA n".',
+          'Cada matéria deve usar SOMENTE a Fonte n correspondente. Não misture pessoas, falas ou fatos entre os links.',
+          'Em cada bloco, escreva título, corpo completo e hashtags.',
+          '',
+          pedido,
+        ].join('\n')
+      : pedido;
+
   let resposta = '';
   try {
     resposta = await deepseekService.conversarMateria({
-      pedido,
+      pedido: pedidoParaGeracao,
       historico,
       fatosFontes: blocoFatos,
       tom,
@@ -1530,6 +1546,9 @@ async function salvarMateriaDoChat({
   if (corpo.length < 120) throw erro('Essa resposta é curta demais para virar matéria', 400);
 
   const fontes = parseJson(row.fontes, []);
+  const fontesLista = Array.isArray(fontes) ? fontes : [];
+  const fonteDoIndice = escolhida ? fontesLista[Number(escolhida.indice)] : null;
+  const fontesDaMateria = fonteDoIndice ? [fonteDoIndice] : fontesLista;
   let pageId = facebookPageId || row.chat_page_id || null;
   if (pageId) {
     const page = await materiaIaService.resolvePage(userId, pageId);
@@ -1543,14 +1562,20 @@ async function salvarMateriaDoChat({
 
   const rodape = montarRodapeMateriaComFontes({
     materia: corpo,
-    fontes,
+    fontes: fontesDaMateria,
     creditoImagem: creditoImagem || 'Reprodução',
     hashtags: info.hashtags || parseJson(row.hashtags, []),
   });
   const materia = rodape.materia;
 
   const titulo = info.titulo || row.titulo || 'Matéria do chat';
-  const fontePrincipal = Array.isArray(fontes) ? fontes[0] : null;
+  const fontePrincipal = fontesDaMateria[0] || null;
+  const imagemFonte =
+    imagemUrl && /^https?:\/\//i.test(imagemUrl)
+      ? imagemUrl
+      : /^https?:\/\//i.test(String(fontePrincipal?.imagem || ''))
+        ? String(fontePrincipal.imagem)
+        : null;
 
   const [matterId] = await AiMatters.create({
     user_id: userId,
@@ -1561,13 +1586,13 @@ async function salvarMateriaDoChat({
     materia_ia: materia,
     hashtags: JSON.stringify(info.hashtags || []),
     fonte_titulo: (() => {
-      const colada = fontes.find((f) => f.fonteColada && f.veiculo);
+      const colada = fontesDaMateria.find((f) => f.fonteColada && f.veiculo);
       if (colada) {
         return row.pesquisou_web
           ? `Chat de matérias + ${colada.veiculo} + pesquisa na web`
           : `Chat de matérias + ${colada.veiculo}`;
       }
-      const rede = fontes.find((f) => f.ehRedeSocial);
+      const rede = fontesDaMateria.find((f) => f.ehRedeSocial);
       if (rede) {
         const plat =
           rede.plataforma === 'youtube'
@@ -1585,13 +1610,13 @@ async function salvarMateriaDoChat({
     })(),
     fonte_url: fontePrincipal?.url || null,
     fonte_resumo: String(row.chat_titulo || '').slice(0, 1500) || null,
-    contexto_apuracao: fontes.length
-      ? fontes.map((f) => `${f.veiculo || 'Web'} — ${f.url || ''}`).join('\n').slice(0, 8000)
+    contexto_apuracao: fontesDaMateria.length
+      ? fontesDaMateria.map((f) => `${f.veiculo || 'Web'} — ${f.url || ''}`).join('\n').slice(0, 8000)
       : null,
     fonte_credito: rodape.fonteCredito || null,
     status: 'rascunho',
     tipo_publicacao: 'foto',
-    imagem_url: imagemUrl && /^https?:\/\//i.test(imagemUrl) ? imagemUrl : null,
+    imagem_url: imagemFonte,
     error_message: null,
   });
 
@@ -1614,21 +1639,21 @@ async function salvarMateriaDoChat({
     await AiChatMessages.update(row.id, { matter_id: matterId });
   }
 
-  if (imagemUrl && /^https?:\/\//i.test(imagemUrl)) {
+  if (imagemFonte) {
     try {
       const { composeMatterArtwork } = require('./matterArtworkService');
       await composeMatterArtwork({
         userId,
         matterId,
-        sourceUrl: imagemUrl,
+        sourceUrl: imagemFonte,
         title: titulo,
         force: true,
       });
     } catch (err) {
       console.warn('[materia-chat] arte:', err.message);
       await AiMatters.update(matterId, {
-        imagem_url: imagemUrl,
-        imagem_fonte_url: imagemUrl,
+        imagem_url: imagemFonte,
+        imagem_fonte_url: imagemFonte,
       });
     }
   }
