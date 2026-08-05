@@ -44,6 +44,11 @@ function tituloDoTexto(texto, fallback) {
   return String(primeiraLinha || fallback || '').slice(0, 140) || null;
 }
 
+function shortcodeInstagram(value) {
+  const match = String(value || '').match(/instagram\.com\/(?:p|reel|reels|tv)\/([^/?#]+)/i);
+  return match?.[1] || null;
+}
+
 function normalizarInstagram(payload, url) {
   const media = payload?.data?.xdt_shortcode_media || payload?.xdt_shortcode_media || null;
   if (!media || typeof media !== 'object') return null;
@@ -80,6 +85,7 @@ function normalizarInstagram(payload, url) {
     videoUrl,
     publicadoEm: normalizarData(media.taken_at_timestamp),
     autorUrl: username ? `https://www.instagram.com/${username}/` : null,
+    postId: shortcode || null,
   };
 }
 
@@ -176,6 +182,21 @@ async function extrairPost(url, plataformaInformada = null) {
     plataforma === 'instagram'
       ? normalizarInstagram(response.data, link)
       : normalizarFacebook(response.data, link);
+
+  // Nunca aceita texto de outro post. Provedores podem, em casos raros, devolver
+  // uma resposta antiga/em cache; sem esta checagem a legenda errada vira fonte.
+  if (plataforma === 'instagram' && normalizado) {
+    const solicitado = shortcodeInstagram(link);
+    const retornado = normalizado.postId || shortcodeInstagram(normalizado.url);
+    if (solicitado && retornado && solicitado.toLowerCase() !== retornado.toLowerCase()) {
+      const err = new Error(
+        `ScrapeCreators retornou outro post do Instagram (solicitado ${solicitado}, recebido ${retornado})`
+      );
+      err.status = 502;
+      err.code = 'SOCIAL_POST_MISMATCH';
+      throw err;
+    }
+  }
 
   if (!normalizado || (!normalizado.texto && !normalizado.imagem && !normalizado.videoUrl)) {
     if (

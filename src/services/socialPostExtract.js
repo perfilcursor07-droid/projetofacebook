@@ -633,6 +633,14 @@ async function extrairViaInstagramApi(url) {
         }
         if (!media || typeof media !== 'object') continue;
 
+        const shortcodeRetornado = String(media.code || media.shortcode || '').trim();
+        if (shortcodeRetornado && shortcodeRetornado.toLowerCase() !== code.toLowerCase()) {
+          console.warn(
+            `[socialPost] ig-api: descartou post divergente solicitado=${code} recebido=${shortcodeRetornado}`
+          );
+          continue;
+        }
+
         const textoRaw =
           media.caption?.text ||
           media.edge_media_to_caption?.edges?.[0]?.node?.text ||
@@ -657,6 +665,7 @@ async function extrairViaInstagramApi(url) {
             imagem: imagem || null,
             veiculo,
             metodo: 'ig-api',
+            postId: shortcodeRetornado || code,
           };
         }
         if (imagem && texto && texto.length >= 20) {
@@ -667,6 +676,7 @@ async function extrairViaInstagramApi(url) {
             imagem,
             veiculo,
             metodo: 'ig-api',
+            postId: shortcodeRetornado || code,
           };
         }
       } catch (err) {
@@ -947,6 +957,7 @@ function mesclarExtracao(melhor, extra) {
   if (out.isVideo == null && extra.isVideo != null) out.isVideo = extra.isVideo;
   if (!out.publicadoEm && extra.publicadoEm) out.publicadoEm = extra.publicadoEm;
   if (!out.autorUrl && extra.autorUrl) out.autorUrl = extra.autorUrl;
+  if (!out.postId && extra.postId) out.postId = extra.postId;
   if (extra.url && !/\/login/i.test(extra.url)) out.url = extra.url;
   if (extra.metodo) {
     out.metodo = out.metodo ? `${out.metodo}+${extra.metodo}` : extra.metodo;
@@ -983,6 +994,25 @@ async function extrairPostSocial(url, opts = {}) {
     videoUrl: null,
     publicadoEm: null,
     autorUrl: null,
+    postId: null,
+  };
+
+  const shortcodeSolicitado = plataforma === 'instagram' ? extrairShortcodeIg(link) : null;
+  const incorporar = (extra) => {
+    if (!extra) return;
+    if (shortcodeSolicitado) {
+      const shortcodeRetornado = extra.postId || extrairShortcodeIg(extra.url);
+      if (
+        shortcodeRetornado &&
+        shortcodeRetornado.toLowerCase() !== shortcodeSolicitado.toLowerCase()
+      ) {
+        console.warn(
+          `[socialPost] descartou resposta de outro post solicitado=${shortcodeSolicitado} recebido=${shortcodeRetornado} metodo=${extra.metodo || '?'}`
+        );
+        return;
+      }
+    }
+    melhor = mesclarExtracao(melhor, extra);
   };
 
   const scrapeCreators = require('./scrapeCreatorsSocial');
@@ -991,7 +1021,7 @@ async function extrairPostSocial(url, opts = {}) {
   // 1) ScrapeCreators — provedor principal para posts individuais IG/FB.
   if (scrapeCreators.isConfigured()) {
     try {
-      melhor = mesclarExtracao(melhor, await scrapeCreators.extrairPost(link, plataforma));
+      incorporar(await scrapeCreators.extrairPost(link, plataforma));
     } catch (err) {
       scrapeCreatorsFalhou = true;
       console.warn('[socialPost] scrapecreators:', err.message);
@@ -1007,43 +1037,43 @@ async function extrairPostSocial(url, opts = {}) {
   // 2) Open Graph e métodos legados complementam somente campos ausentes/incompletos.
   if (precisaTexto() || !melhor.imagem) {
     try {
-      melhor = mesclarExtracao(melhor, await extrairViaOg(link));
+      incorporar(await extrairViaOg(link));
     } catch (err) {
       console.warn('[socialPost] og:', err.message);
     }
   }
 
   if (plataforma === 'instagram' && (precisaTexto() || !melhor.imagem)) {
-    melhor = mesclarExtracao(melhor, await extrairViaInstagramApi(link));
+    incorporar(await extrairViaInstagramApi(link));
   }
 
   if (plataforma === 'instagram' && (precisaTexto() || !melhor.imagem)) {
-    melhor = mesclarExtracao(melhor, await extrairViaInstagramEmbed(link));
+    incorporar(await extrairViaInstagramEmbed(link));
   }
   if (plataforma === 'instagram' && precisaTexto()) {
-    melhor = mesclarExtracao(melhor, await extrairViaInstagramMirror(link));
+    incorporar(await extrairViaInstagramMirror(link));
   }
 
   if (plataforma === 'facebook' && (precisaTexto() || !melhor.imagem)) {
-    melhor = mesclarExtracao(melhor, await extrairViaOembed(link));
+    incorporar(await extrairViaOembed(link));
   }
 
   if (precisaTexto() || !melhor.imagem) {
     try {
-      melhor = mesclarExtracao(melhor, await extrairViaJina(link));
+      incorporar(await extrairViaJina(link));
     } catch (err) {
       console.warn('[socialPost] jina:', err.message);
     }
   }
 
   if (plataforma === 'facebook' && (precisaTexto() || !melhor.imagem)) {
-    melhor = mesclarExtracao(melhor, await extrairViaMbasic(link));
+    incorporar(await extrairViaMbasic(link));
   }
 
   // yt-dlp — Instagram /p/ (foto) costuma HTTP 400; só tenta reel/tv.
   const igEhVideo = /instagram\.com\/(reel|reels|tv)\//i.test(link);
   if ((precisaTexto() || !melhor.imagem) && (plataforma !== 'instagram' || igEhVideo)) {
-    melhor = mesclarExtracao(melhor, await extrairViaYtDlp(link));
+    incorporar(await extrairViaYtDlp(link));
   } else if (plataforma === 'instagram' && !igEhVideo && precisaTexto()) {
     console.warn('[socialPost] yt-dlp: pulado (post foto /p/ — use API ou cookies)');
   }
