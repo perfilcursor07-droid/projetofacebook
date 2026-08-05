@@ -199,6 +199,13 @@ function extrairDadosDoHtmlInstagram(html, url) {
   let texto = parsedOg.texto;
   let imagem = parsedOg.imagem;
   let veiculo = parsedOg.veiculo;
+  // Na página canônica, og:description pertence ao post solicitado. O HTML da SPA
+  // também contém captions de posts recomendados; escolher uma delas só por ser
+  // mais longa mistura publicações diferentes.
+  const textoOgConfiavel = Boolean(
+    texto && texto.length >= 40 && !textoGenericoSocial(texto)
+  );
+  signals.usedOgText = textoOgConfiavel;
 
   const captionRes = [
     /"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/,
@@ -207,14 +214,16 @@ function extrairDadosDoHtmlInstagram(html, url) {
     /"xdt_shortcode_media"[\s\S]{0,4000}?"text"\s*:\s*"((?:\\.|[^"\\])*)"/,
   ];
 
-  for (const re of captionRes) {
-    const m = html.match(re);
-    if (!m?.[1]) continue;
-    let candidate = unescapeJsonString(m[1]);
-    candidate = limparLegendaInstagram(candidate) || candidate;
-    if (candidate && candidate.length >= 20 && candidate.length > (texto?.length || 0)) {
-      texto = candidate;
-      break;
+  if (!textoOgConfiavel) {
+    for (const re of captionRes) {
+      const m = html.match(re);
+      if (!m?.[1]) continue;
+      let candidate = unescapeJsonString(m[1]);
+      candidate = limparLegendaInstagram(candidate) || candidate;
+      if (candidate && candidate.length >= 20 && candidate.length > (texto?.length || 0)) {
+        texto = candidate;
+        break;
+      }
     }
   }
 
@@ -707,7 +716,7 @@ async function extrairViaInstagramApi(url) {
         const { html, finalUrl } = await fetchHtml(pageUrl, attempt.ua, extra);
         const extracted = extrairDadosDoHtmlInstagram(html, finalUrl || url);
         const sig = extracted?.signals
-          ? `login=${extracted.signals.hasLogin} og=${extracted.signals.hasOgDesc} captionJson=${extracted.signals.hasCaptionText} xdt=${extracted.signals.hasXdt} embedCap=${extracted.signals.hasClassCaption}`
+          ? `login=${extracted.signals.hasLogin} og=${extracted.signals.hasOgDesc} usedOg=${extracted.signals.usedOgText} captionJson=${extracted.signals.hasCaptionText} xdt=${extracted.signals.hasXdt} embedCap=${extracted.signals.hasClassCaption}`
           : '';
         console.warn(
           `[socialPost] ig-html: cookie=${Boolean(attempt.cookie)} ua=${attempt.ua.slice(0, 18)} url=${pageUrl.slice(-36)} len=${html.length} ${sig}`

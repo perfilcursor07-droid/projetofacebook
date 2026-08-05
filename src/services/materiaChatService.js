@@ -1274,7 +1274,10 @@ async function responder({
   registrarPasso({ kind: 'escrevendo', texto: 'Escrevendo…' });
   onEvent({ tipo: 'inicio-resposta' });
 
-  const historico = anteriores.map((m) => ({ role: m.role, content: m.content }));
+  // Um link novo é uma pauta nova. Não deixa uma matéria anterior da conversa
+  // competir com a legenda que acabou de ser extraída do post atual.
+  const historicoBase = urlsFonte.length && !pedidoDeAjuste ? [] : anteriores;
+  const historico = historicoBase.map((m) => ({ role: m.role, content: m.content }));
 
   // Fontes que o editor colou: o nome do veículo tem de sair citado na matéria.
   const fontesColadas = fontes.filter((f) => f?.fonteColada || f?.ehRedeSocial);
@@ -1359,9 +1362,9 @@ async function responder({
 
   const suspeitasIniciais = levantarSuspeitas(resposta);
   // Web desligada (ou link sem pedido de contexto): só reescreve/traduz o link.
-  // Não gasta revisão contra fontes nem “conferência” — o editor pediu reescrita, não apuração.
+  // Mesmo assim, revisa a resposta contra a legenda para impedir mistura de pauta.
   const soReescritaDoLink = Boolean(temFonteDoLink && !usarPesquisa);
-  const pularRevisao = soReescritaDoLink || (soReescreverOLink && !suspeitasIniciais.length);
+  const pularRevisao = !temFonteDoLink && soReescreverOLink && !suspeitasIniciais.length;
   if (soReescritaDoLink && ehMateriaGerada) {
     registrarPasso({
       kind: 'fontes',
