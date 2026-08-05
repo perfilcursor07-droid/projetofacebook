@@ -1314,30 +1314,54 @@ async function responder({
     });
   }
 
-  const pedidoParaGeracao =
-    pedidoEmLote && fontes.length > 1
-      ? [
-          `Escreva ${fontes.length} matérias separadas, uma para cada fonte lida com sucesso.`,
-          'Separe obrigatoriamente cada texto com "### MATERIA n".',
-          'Cada matéria deve usar SOMENTE a Fonte n correspondente. Não misture pessoas, falas ou fatos entre os links.',
-          'Em cada bloco, escreva título, corpo completo e hashtags.',
-          '',
-          pedido,
-        ].join('\n')
-      : pedido;
-
   let resposta = '';
   try {
-    resposta = await deepseekService.conversarMateria({
-      pedido: pedidoParaGeracao,
-      historico,
-      fatosFontes: blocoFatos,
-      tom,
-      permitirSemConfirmacao: usuarioInsiste,
-      veiculosColados,
-      fonteEstrangeira,
-      onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
-    });
+    if (pedidoEmLote && fontes.length > 1) {
+      const partes = [];
+      const instrucaoExtra = pedidoSemUrls();
+      for (let indiceFonte = 0; indiceFonte < fontes.length; indiceFonte += 1) {
+        const fonteAtual = fontes[indiceFonte];
+        const marcador = `### MATERIA ${indiceFonte + 1}`;
+        registrarPasso({
+          kind: 'escrevendo',
+          texto: `Escrevendo matéria ${indiceFonte + 1} de ${fontes.length}: ${fonteAtual.veiculo || fonteAtual.url || 'link'}`,
+        });
+        onEvent({ tipo: 'delta', texto: `${indiceFonte ? '\n\n' : ''}${marcador}\n` });
+
+        const textoMateria = await deepseekService.conversarMateria({
+          pedido: [
+            'Escreva UMA matéria somente sobre a fonte abaixo.',
+            'Não use fatos, pessoas ou falas dos outros links enviados pelo editor.',
+            instrucaoExtra && instrucaoExtra.length >= 8 ? `Instrução adicional: ${instrucaoExtra}` : null,
+            `Link desta matéria: ${fonteAtual.url || ''}`,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+          historico: [],
+          fatosFontes: materiaIaService.montarBlocoFatos([fonteAtual]),
+          tom,
+          permitirSemConfirmacao: usuarioInsiste,
+          veiculosColados: fonteAtual.veiculo
+            ? [{ veiculo: fonteAtual.veiculo, url: fonteAtual.url || null }]
+            : [],
+          fonteEstrangeira: fonteEmOutroIdioma([fonteAtual]),
+          onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
+        });
+        partes.push(`${marcador}\n${textoMateria}`);
+      }
+      resposta = partes.join('\n\n');
+    } else {
+      resposta = await deepseekService.conversarMateria({
+        pedido,
+        historico,
+        fatosFontes: blocoFatos,
+        tom,
+        permitirSemConfirmacao: usuarioInsiste,
+        veiculosColados,
+        fonteEstrangeira,
+        onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
+      });
+    }
   } catch (err) {
     await AiChats.touch(chat.id);
     throw err;

@@ -395,6 +395,7 @@
     // Só matéria tem 1ª linha de título; resposta curta é texto normal
     const podeTerTitulo = bruto.trim().length > 500;
     let paragrafo = [];
+    let proximoParagrafoEhTitulo = false;
 
     const fecharParagrafo = () => {
       if (!paragrafo.length) return;
@@ -403,7 +404,10 @@
       const p = document.createElement('p');
       const ehHashtags = /^#[^\s#]+(\s+#[^\s#]+)*$/.test(texto.trim());
       const ehTitulo =
-        podeTerTitulo && container.childElementCount === 0 && texto.length <= 200 && !texto.includes('\n');
+        podeTerTitulo &&
+        (proximoParagrafoEhTitulo || container.childElementCount === 0) &&
+        texto.length <= 200 &&
+        !texto.includes('\n');
       p.className = ehHashtags
         ? 'mia-msg-ai-tags'
         : ehTitulo
@@ -411,6 +415,7 @@
           : 'mia-msg-ai-text';
       p.textContent = texto.replace(/\*\*(.+?)\*\*/g, '$1');
       container.appendChild(p);
+      proximoParagrafoEhTitulo = false;
     };
 
     for (const linha of linhas) {
@@ -421,6 +426,7 @@
       // Marcador de separação entre matérias não é texto para o leitor.
       if (/^#{1,6}\s*mat[eé]ria\s*\d+\b/i.test(linha.trim())) {
         fecharParagrafo();
+        proximoParagrafoEhTitulo = true;
         continue;
       }
       // "# 1. Título" começa uma nova matéria: vira título próprio.
