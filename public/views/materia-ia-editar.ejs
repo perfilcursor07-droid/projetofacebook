@@ -514,8 +514,11 @@
             <div class="p-2">
               <div id="matter-img-frame-preview" class="relative overflow-hidden rounded border border-slate-800 bg-slate-900/50">
                 <% if (canEdit && imagemFonteUrl) { %>
+                  <img id="matter-img-fonte-bg" src="<%= imagemFonteUrl %>" alt="" aria-hidden="true"
+                    class="pointer-events-none absolute inset-0 z-0 hidden h-full w-full object-cover"
+                    style="filter: blur(24px); opacity: .4; transform: scale(1.1)" />
                   <img id="matter-img-fonte" src="<%= imagemFonteUrl %>" alt="Foto de origem"
-                    class="pointer-events-none absolute inset-0 z-0 hidden h-full w-full object-cover" />
+                    class="pointer-events-none absolute inset-0 z-10 hidden h-full w-full object-cover" />
                 <% } %>
                 <img id="matter-img-marca" alt="Minha marca"
                   class="pointer-events-none absolute inset-0 z-20 hidden h-full w-full object-fill" />
@@ -526,7 +529,7 @@
                   <div>
                     <p class="text-[11px] font-medium text-slate-300">Enquadramento</p>
                     <p class="mt-0.5 text-[10px] leading-relaxed text-slate-500">
-                      Zoom e posição mexem só na foto. A marca fica fixa por cima na prévia e na arte final.
+                      Abaixo de 100%, a foto aparece inteira no formato 4:5 (1080×1350) do Facebook. A marca fica fixa por cima.
                     </p>
                   </div>
                   <label class="block">
@@ -724,5 +727,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260801manual1"></script>
+  <script src="/js/materia-ia-editar.js?v=20260805contain1"></script>
 <%- include('partials/app-end') %>

@@ -64,6 +64,23 @@
   const btnArtEnquadrar = document.getElementById('btn-art-enquadrar');
   const artFramePreview = document.getElementById('matter-img-frame-preview');
 
+  function getFonteBackgroundEl() {
+    let el = document.getElementById('matter-img-fonte-bg');
+    if (!el && artFramePreview && cfg.imagemFonteUrl) {
+      el = document.createElement('img');
+      el.id = 'matter-img-fonte-bg';
+      el.alt = '';
+      el.setAttribute('aria-hidden', 'true');
+      el.className =
+        'pointer-events-none absolute inset-0 z-0 hidden h-full w-full object-cover';
+      el.style.filter = 'blur(24px)';
+      el.style.opacity = '.4';
+      el.style.transform = 'scale(1.1)';
+      artFramePreview.prepend(el);
+    }
+    return el;
+  }
+
   function getFontePreviewEl() {
     let el = document.getElementById('matter-img-fonte');
     if (!el && artFramePreview && cfg.imagemFonteUrl) {
@@ -71,7 +88,7 @@
       el.id = 'matter-img-fonte';
       el.alt = 'Foto de origem';
       el.className =
-        'pointer-events-none absolute inset-0 z-0 hidden h-full w-full object-cover';
+        'pointer-events-none absolute inset-0 z-10 hidden h-full w-full object-cover';
       artFramePreview.appendChild(el);
     }
     return el;
@@ -84,6 +101,8 @@
     if (el) {
       el.src = url + (String(url).includes('?') ? '&' : '?') + 't=' + Date.now();
     }
+    const bgEl = getFonteBackgroundEl();
+    if (bgEl) bgEl.src = url + (String(url).includes('?') ? '&' : '?') + 't=' + Date.now();
   }
   function readArtFrame() {
     return {
@@ -111,7 +130,9 @@
   function applyMediaPreviewStyles(el, zoom, offsetX, offsetY) {
     if (!el) return;
     const z = zoom / 100;
-    el.style.objectFit = 'cover';
+    // Abaixo de 100%, replica a arte final: a foto inteira cabe no canvas 4:5.
+    // Em 100% ou mais, cover permite aproximar e reposicionar normalmente.
+    el.style.objectFit = z < 1 ? 'contain' : 'cover';
     el.style.objectPosition = offsetX + '% ' + offsetY + '%';
     el.style.position = 'absolute';
     el.style.maxWidth = 'none';
@@ -178,6 +199,7 @@
 
   function showBrandedArtPreview() {
     const imgFonteEl = getFontePreviewEl();
+    const imgFonteBgEl = getFonteBackgroundEl();
     const imgMarcaEl = getMarcaOverlayEl();
     clearMediaPreviewStyles(imgEl);
     clearMediaPreviewStyles(imgFonteEl);
@@ -190,6 +212,7 @@
       imgEl.style.objectFit = 'cover';
     }
     if (imgFonteEl) imgFonteEl.classList.add('hidden');
+    if (imgFonteBgEl) imgFonteBgEl.classList.add('hidden');
     if (imgMarcaEl) imgMarcaEl.classList.add('hidden');
     if (artFramePreview) artFramePreview.style.aspectRatio = '';
   }
@@ -203,6 +226,7 @@
     const fonteUrl = String(cfg.imagemFonteUrl || '').trim();
     const framingActive = zoom !== 100 || offsetX !== 50 || offsetY !== 50;
     const imgFonteEl = getFontePreviewEl();
+    const imgFonteBgEl = getFonteBackgroundEl();
     const imgMarcaEl = getMarcaOverlayEl();
 
     if (!framingActive) {
@@ -225,6 +249,9 @@
       imgFonteEl.src = fonteUrl;
     }
     applyMediaPreviewStyles(imgFonteEl, zoom, offsetX, offsetY);
+    if (imgFonteBgEl) {
+      imgFonteBgEl.classList.toggle('hidden', zoom >= 100);
+    }
 
     const marca = await ensureMarcaOverlay();
     if (marca) {
