@@ -127,9 +127,36 @@ async function escolherImagemCapa(topico, gerado) {
     };
   }
 
-  // A Pexels não é uma fonte editorial de pessoas públicas. Se a fonte original não
-  // forneceu foto, não substitui Malafaia/Flávio Bolsonaro por igreja ou política genérica.
-  if (pautaTemPessoaNomeada(topico, gerado)) return { url: null };
+  const temPessoaNomeada = pautaTemPessoaNomeada(topico, gerado);
+
+  // Sem foto na fonte, tenta primeiro a busca editorial disponível no editor
+  // (SerpApi → Serper → Brave), antes de deixar a agenda "sem foto".
+  try {
+    const { sugerirImagensParaMateria } = require('./imageSuggestService');
+    const sugestao = await sugerirImagensParaMateria({
+      titulo: gerado?.titulo || topico?.titulo || '',
+      materia: gerado?.materia || topico?.resumo || '',
+      fonteTitulo: topico?.veiculo || topico?.fonte || null,
+      limite: 6,
+    });
+    const primeira = (sugestao?.imagens || []).find(
+      (img) => /^https?:\/\//i.test(String(img?.url || '')) && img.origem !== 'fonte'
+    );
+    if (primeira) {
+      return {
+        url: primeira.url,
+        autor: primeira.autor || null,
+        fonte: primeira.fonte || sugestao.fontePreferida || null,
+        titulo: primeira.titulo || gerado?.titulo || topico?.titulo || null,
+        origem: primeira.origem || 'busca-editorial',
+      };
+    }
+  } catch (err) {
+    console.warn('escolherImagemCapa busca editorial:', err.message);
+  }
+
+  // A Pexels não é uma fonte editorial adequada para pessoa pública.
+  if (temPessoaNomeada) return { url: null };
   if (!env.pexelsApiKey) return { url: null };
 
   try {

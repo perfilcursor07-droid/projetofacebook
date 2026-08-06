@@ -113,7 +113,8 @@ function parseProposedAt(runAt) {
 }
 
 function mapItem(row) {
-  let thumb = row.matter_imagem_url || row.post_thumbnail || null;
+  let thumb =
+    row.matter_imagem_url || row.matter_imagem_fonte_url || row.post_thumbnail || null;
   if (row.matter_imagem_path) {
     thumb = `/media/${String(row.matter_imagem_path).replace(/\\/g, '/')}`;
   }
@@ -147,6 +148,116 @@ function mapItem(row) {
       !['publicado'].includes(st) &&
       !['publicado'].includes(matterSt),
   };
+}
+
+// Evita repetir buscas externas a cada atualização da página quando um provedor
+// estiver temporariamente sem crédito ou a foto remota estiver indisponível.
+const reparoImagemTentadoEm = new Map();
+
+async function repararImagemItemAgenda(userId, row) {
+  const matterId = Number(row?.matter_id);
+  if (
+    !matterId ||
+    row.matter_imagem_path ||
+    row.matter_imagem_url ||
+    row.matter_imagem_fonte_url ||
+    row.post_thumbnail
+  ) {
+    return false;
+  }
+
+  const ultima = reparoImagemTentadoEm.get(matterId) || 0;
+  if (Date.now() - ultima < 30 * 60_000) return false;
+  reparoImagemTentadoEm.set(matterId, Date.now());
+
+  const matter = await AiMatters.findById(matterId);
+  if (!matter || Number(matter.user_id) !== Number(userId)) return false;
+  if (matter.imagem_path || matter.imagem_url || matter.status === 'publicado') return false;
+
+  try {
+    const { composeMatterArtwork } = require('./matterArtworkService');
+    let imagem = null;
+
+    // Primeiro tenta novamente a capa da própria reportagem: é a opção mais fiel.
+    if (/^https?:\/\//i.test(String(matter.fonte_url || ''))) {
+      try {
+        const { extrairMetadadosArtigo } = require('./articleSource');
+        const meta = await extrairMetadadosArtigo(matter.fonte_url);
+        if (/^https?:\/\//i.test(String(meta?.imagem || ''))) {
+          imagem = { url: meta.imagem, origem: 'fonte', fonte: meta.veiculo || row.fonte_nome };
+        }
+      } catch (err) {
+        console.warn(`[agenda] recapturar capa matéria #${matterId}:`, err.message);
+      }
+    }
+
+    if (!imagem) {
+      const { sugerirImagensParaMateria } = require('./imageSuggestService');
+      const sugestao = await sugerirImagensParaMateria({
+        titulo: matter.titulo || row.post_titulo || '',
+        materia: matter.materia || row.post_resumo || '',
+        fonteTitulo: matter.fonte_titulo || row.fonte_nome || null,
+        limite: 5,
+      });
+      imagem = (sugestao?.imagens || []).find(
+        (img) => /^https?:\/\//i.test(String(img?.url || '')) && img.origem !== 'fonte'
+      );
+    }
+    if (!imagem?.url) return false;
+
+    try {
+      await composeMatterArtwork({
+        userId,
+        matterId,
+        sourceUrl: imagem.url,
+        title: matter.titulo,
+        force: true,
+      });
+    } catch (err) {
+      // Mesmo se a composição 4:5 falhar, exibe a foto editorial encontrada.
+      await AiMatters.update(matterId, {
+        imagem_url: imagem.url,
+        imagem_fonte_url: imagem.url,
+        error_message: String(err.message || '').slice(0, 500) || null,
+      });
+    }
+
+    if (row.post_id && !row.post_thumbnail) {
+      await BibliotecaPosts.update(row.post_id, { thumbnail: imagem.url }).catch(() => {});
+    }
+    return true;
+  } catch (err) {
+    console.warn(`[agenda] reparar foto matéria #${matterId}:`, err.message);
+    return false;
+  }
+}
+
+async function repararImagensFaltantesAgenda(userId, itens, { limite = 6 } = {}) {
+  const faltantes = (itens || [])
+    .filter(
+      (row) =>
+        row.matter_id &&
+        !row.matter_imagem_path &&
+        !row.matter_imagem_url &&
+        !row.matter_imagem_fonte_url &&
+        !row.post_thumbnail &&
+        Date.now() - (reparoImagemTentadoEm.get(Number(row.matter_id)) || 0) >= 30 * 60_000 &&
+        !['publicado'].includes(String(row.status || ''))
+    )
+    .slice(0, Math.max(1, Number(limite) || 6));
+  if (!faltantes.length) return 0;
+
+  let proximo = 0;
+  let reparados = 0;
+  const worker = async () => {
+    while (proximo < faltantes.length) {
+      const row = faltantes[proximo];
+      proximo += 1;
+      if (await repararImagemItemAgenda(userId, row)) reparados += 1;
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  return reparados;
 }
 
 /**
@@ -505,6 +616,15 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
 
   // Itens antigos sem matched_keyword: deriva das palavras-chave atuais e grava
   itens = await enriquecerMatchedKeywords(userId, itens || []);
+
+  if (reparar) {
+    try {
+      const reparados = await repararImagensFaltantesAgenda(userId, itens, { limite: 6 });
+      if (reparados > 0) itens = await fetchItens();
+    } catch (err) {
+      console.warn('[agenda] reparar imagens:', err.message);
+    }
+  }
 
   return (itens || []).map(mapItem);
 }

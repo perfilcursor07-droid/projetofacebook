@@ -39,6 +39,7 @@ const BibliotecaAgenda = {
         'm.status as matter_status',
         'm.imagem_path as matter_imagem_path',
         'm.imagem_url as matter_imagem_url',
+        'm.imagem_fonte_url as matter_imagem_fonte_url',
         'm.scheduled_at as matter_scheduled_at',
         'm.published_at as matter_published_at',
         'm.tipo_publicacao as matter_tipo',
