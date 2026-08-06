@@ -128,7 +128,7 @@
       %>
       <form id="agenda-montar-form" class="space-y-3">
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
-          <label class="block sm:col-span-2 lg:col-span-5">
+          <label class="block sm:col-span-2 lg:col-span-4">
             <span class="text-xs font-medium text-slate-400">Página do Facebook</span>
             <select id="agenda-page" required
               class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30">
@@ -141,11 +141,19 @@
             </select>
           </label>
           <label class="block lg:col-span-2">
+            <span class="text-xs font-medium text-slate-400">Agendar para</span>
+            <select id="agenda-dia"
+              class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30">
+              <option value="amanha">Amanhã</option>
+              <option value="hoje">Hoje (a partir de agora)</option>
+            </select>
+          </label>
+          <label class="block lg:col-span-2">
             <span class="text-xs font-medium text-slate-400">Máx. novos itens</span>
             <input id="agenda-max" type="number" min="1" max="48" value="20"
               class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30" />
           </label>
-          <button type="submit" class="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-amber-400 lg:col-span-3">
+          <button type="submit" id="agenda-btn-montar" class="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-amber-400 lg:col-span-2">
             Montar agenda de amanhã
           </button>
           <button type="button" id="agenda-btn-compactar"
@@ -495,5 +503,5 @@
       opacity: 1;
     }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260730i"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260806a"></script>
 <%- include('partials/app-end') %>

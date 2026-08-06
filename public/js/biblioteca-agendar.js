@@ -182,6 +182,7 @@
     e.preventDefault();
     const page = document.getElementById('agenda-page')?.value || '';
     const max = Number(document.getElementById('agenda-max')?.value || 20);
+    const dia = document.getElementById('agenda-dia')?.value === 'hoje' ? 'hoje' : 'amanha';
     const usarKeywords = Boolean(document.getElementById('agenda-usar-keywords')?.checked);
     if (!page) {
       setMsg('Selecione a Página do Facebook.', true);
@@ -192,7 +193,7 @@
         true,
         usarKeywords
           ? 'Montando agenda só com posts das suas palavras-chave…'
-          : 'Montando agenda de amanhã (pode demorar se for gerar várias matérias)…'
+          : `Montando agenda de ${dia === 'hoje' ? 'hoje' : 'amanhã'} (pode demorar se for gerar várias matérias)…`
       );
       setMsg('');
       const data = await api('/api/biblioteca/agenda/montar', {
@@ -202,6 +203,7 @@
           max_itens: max,
           somente_sites: true,
           usar_keywords: usarKeywords,
+          dia,
         }),
       });
       const de = data.de ? String(data.de).replace('T', ' ') : null;
@@ -231,6 +233,17 @@
       setBusy(false);
     }
   });
+
+  const agendaDia = document.getElementById('agenda-dia');
+  const agendaBtnMontar = document.getElementById('agenda-btn-montar');
+  const atualizarTextoBotaoDia = () => {
+    if (agendaBtnMontar) {
+      agendaBtnMontar.textContent =
+        agendaDia?.value === 'hoje' ? 'Montar agenda de hoje' : 'Montar agenda de amanhã';
+    }
+  };
+  agendaDia?.addEventListener('change', atualizarTextoBotaoDia);
+  atualizarTextoBotaoDia();
 
   document.getElementById('agenda-btn-limpar-kw')?.addEventListener('click', async () => {
     if (

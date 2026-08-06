@@ -92,6 +92,31 @@ function buildSlots({
   return free.slice(0, lim);
 }
 
+/** Horários de hoje: primeiro agora e os demais a cada 30 minutos. */
+function buildSlotsHoje({
+  endHour = DEFAULT_END_HOUR,
+  max = DEFAULT_MAX_ITENS,
+  ocupadosKeys = null,
+} = {}) {
+  const ocupados = ocupadosKeys instanceof Set
+    ? ocupadosKeys
+    : new Set(Array.isArray(ocupadosKeys) ? ocupadosKeys : []);
+  const lim = Math.min(48, Math.max(1, Number(max) || DEFAULT_MAX_ITENS));
+  const hoje = diaHojeKey();
+  const atual = new Date();
+  atual.setSeconds(0, 0);
+  const slots = [];
+
+  for (let i = 0; i < 48 && slots.length < lim; i += 1) {
+    const slot = new Date(atual.getTime() + i * SLOT_MINUTES * 60 * 1000);
+    const local = toDatetimeLocal(slot);
+    if (local.slice(0, 10) !== hoje) break;
+    if (Number(local.slice(11, 13)) > Number(endHour)) break;
+    if (!ocupados.has(chaveHorario(slot))) slots.push(slot);
+  }
+  return slots;
+}
+
 function toDatetimeLocal(date) {
   const d = new Date(date);
   const ms = d.getTime() - 3 * 60 * 60 * 1000;
@@ -890,7 +915,11 @@ async function montarAgendaAmanha({
   somenteSites = true,
   usarKeywords = false,
   keywords = null,
+  dia = 'amanha',
 } = {}) {
+  const agendarHoje = String(dia || '').trim().toLowerCase() === 'hoje';
+  const dayKey = agendarHoje ? diaHojeKey() : diaAmanhaKey();
+  const rotuloDia = agendarHoje ? 'hoje' : 'amanhã';
   const page = await bibliotecaService.resolvePage(userId, facebookPageId);
   if (!page) {
     const err = new Error('Selecione uma Página do Facebook válida');
@@ -928,19 +957,30 @@ async function montarAgendaAmanha({
 
   const maxPedidos = Math.min(48, Math.max(1, Number(maxItens) || DEFAULT_MAX_ITENS));
   // Fecha buracos (ex. 08:30 → 10:30) antes de encaixar novos
-  await compactarHorariosDoDia(userId, { dayKey: diaAmanhaKey() });
+  if (!agendarHoje) await compactarHorariosDoDia(userId, { dayKey });
 
-  const itensDia = await itensAgendaDoDia(userId);
+  const itensDia = await itensAgendaDoDia(userId, dayKey);
   const ocupadosKeys = new Set(itensDia.map((r) => chaveHorario(r.proposed_at)));
-  const ultimoOcupado = await ultimoHorarioOcupadoAmanha(userId);
+  const ultimoOcupado = itensDia.length
+    ? itensDia.reduce((ultimo, item) => {
+        const horario = asAgendaDate(item.proposed_at);
+        return !ultimo || horario > ultimo ? horario : ultimo;
+      }, null)
+    : null;
   // Prefere gaps livres no meio do dia; se afterDate bloquear tudo, buildSlots cai nos livres por ocupadosKeys
-  const slots = buildSlots({
-    startHour: Number(startHour) || DEFAULT_START_HOUR,
-    endHour: Number(endHour) || DEFAULT_END_HOUR,
-    max: maxPedidos,
-    afterDate: null,
-    ocupadosKeys,
-  });
+  const slots = agendarHoje
+    ? buildSlotsHoje({
+        endHour: Number(endHour) || DEFAULT_END_HOUR,
+        max: maxPedidos,
+        ocupadosKeys,
+      })
+    : buildSlots({
+        startHour: Number(startHour) || DEFAULT_START_HOUR,
+        endHour: Number(endHour) || DEFAULT_END_HOUR,
+        max: maxPedidos,
+        afterDate: null,
+        ocupadosKeys,
+      });
 
   if (!slots.length) {
     if (removidosSemKw > 0) {
@@ -957,8 +997,8 @@ async function montarAgendaAmanha({
     const ate = ultimoOcupado ? toDatetimeLocal(ultimoOcupado).replace('T', ' ') : null;
     const err = new Error(
       ate
-        ? `Agenda de amanhã já está cheia até ${ate} (janela ${startHour}h–${endHour}h). Exclua algum item ou use “Reorganizar 30 em 30”.`
-        : `Não há horários livres amanhã na janela ${startHour}h–${endHour}h.`
+        ? `Agenda de ${rotuloDia} já está cheia até ${ate} (limite ${endHour}h). Exclua algum item ou use “Reorganizar 30 em 30”.`
+        : `Não há horários livres para ${rotuloDia} até ${endHour}h.`
     );
     err.status = 422;
     throw err;
@@ -1340,8 +1380,11 @@ async function confirmarAgendamento(userId, id) {
     err.status = 400;
     throw err;
   }
-  // Evita “agendar pra agora” por engano (ex.: 15:42 quando são 15:41)
+  // Para hoje, um horário imediato publica ao confirmar. Nos demais casos, exige margem.
   if (runAtDate.getTime() < Date.now() + 5 * 60_000) {
+    if (toDatetimeLocal(runAtDate).slice(0, 10) === diaHojeKey()) {
+      return publicarAgora(userId, id);
+    }
     const err = new Error(
       'Horário muito próximo ou no passado. Ajuste a data/hora (ex.: amanhã 7h–22h) e confirme de novo.'
     );

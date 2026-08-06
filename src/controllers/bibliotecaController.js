@@ -550,6 +550,7 @@ async function montarAgenda(req, res, next) {
         body.usar_keywords === 1 ||
         body.usar_keywords === '1' ||
         body.filtrar_keywords === true,
+      dia: String(body.dia || body.day || 'amanha').toLowerCase() === 'hoje' ? 'hoje' : 'amanha',
     });
     res.json({ ok: true, ...result });
   } catch (err) {
