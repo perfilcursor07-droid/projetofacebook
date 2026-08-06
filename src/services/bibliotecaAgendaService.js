@@ -991,7 +991,6 @@ async function montarAgendaAmanha({
         filtroKeywords: true,
         keywordsUsadas: keywordsList.length,
         mensagem: `Removidos ${removidosSemKw} item(ns) fora das palavras-chave. Sem horários livres restantes — rode de novo ou exclua mais itens.`,
-        itens: await listarAgenda(userId, { aba: 'agendada' }),
       };
     }
     const ate = ultimoOcupado ? toDatetimeLocal(ultimoOcupado).replace('T', ' ') : null;
@@ -1168,7 +1167,6 @@ async function montarAgendaAmanha({
         filtroKeywords: Boolean(keywordsFiltro),
         keywordsUsadas: keywordsList.length,
         mensagem: `Removidos ${removidosSemKw} item(ns) fora das palavras-chave. Nenhum post novo encaixado nesta rodada — tente de novo.`,
-        itens: await listarAgenda(userId, { aba: 'agendada' }),
       };
     }
     const detalhe = erros[0]?.erro || 'não foi possível gerar ou encaixar matérias';
@@ -1193,7 +1191,6 @@ async function montarAgendaAmanha({
     dia: toDatetimeLocal(primeiro).slice(0, 10),
     filtroKeywords: Boolean(keywordsFiltro),
     keywordsUsadas: keywordsList.length,
-    itens: await listarAgenda(userId, { aba: 'agendada' }),
   };
 }
 
