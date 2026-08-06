@@ -43,6 +43,7 @@
     vozFinal: '',
     recognition: null,
     modo: 'escrever',
+    salvandoPautas: false,
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
     ultimasPautas: [],
     pautasEscritas: new Set(),
@@ -815,6 +816,19 @@
     pedirReescritaLote([pauta]);
   }
 
+  async function salvarRascunhosDePautas(pautas = []) {
+    const lista = (Array.isArray(pautas) ? pautas : []).filter(Boolean).slice(0, MAX_PAUTAS_LOTE);
+    if (!lista.length) throw new Error('Selecione ao menos uma pauta.');
+    return api(`${API}/pautas/rascunhos`, {
+      method: 'POST',
+      body: JSON.stringify({
+        pautas: lista,
+        pesquisarWeb: state.pesquisarWeb,
+        periodo: el.periodo?.value || '30d',
+      }),
+    });
+  }
+
   function blocoPautas(pautas = []) {
     if (!Array.isArray(pautas) || !pautas.length) return null;
 
@@ -831,7 +845,7 @@
     cabecalho.className = 'mia-msg-pautas-head';
     const titulo = document.createElement('p');
     titulo.className = 'mia-msg-pautas-title';
-    titulo.textContent = `Escolha uma ou mais matérias para reescrever (${pautas.length})`;
+    titulo.textContent = `Escolha uma ou mais pautas para salvar (${pautas.length})`;
     cabecalho.appendChild(titulo);
 
     const acoesCabecalho = document.createElement('div');
@@ -840,14 +854,18 @@
       `Selecionar até ${Math.min(MAX_PAUTAS_LOTE, pautas.length)}`,
       'mia-chat-ghost-btn'
     );
-    const gerarSelecionadas = criarBotao(
-      'Gerar selecionadas',
+    const salvarSelecionadas = criarBotao(
+      'Salvar rascunhos',
       'mia-chat-btn-primary mia-msg-pautas-batch-btn'
     );
+    salvarSelecionadas.disabled = true;
+    salvarSelecionadas.classList.add('opacity-60');
+    const gerarSelecionadas = criarBotao('Gerar no chat', 'mia-chat-ghost-btn');
     gerarSelecionadas.disabled = true;
     gerarSelecionadas.classList.add('opacity-60');
     const alternar = criarBotao('Recolher lista', 'mia-chat-ghost-btn');
     acoesCabecalho.appendChild(selecionarTodas);
+    acoesCabecalho.appendChild(salvarSelecionadas);
     acoesCabecalho.appendChild(gerarSelecionadas);
     acoesCabecalho.appendChild(alternar);
     cabecalho.appendChild(acoesCabecalho);
@@ -859,11 +877,14 @@
 
     function atualizarLote() {
       const total = selecionadas.size;
-      gerarSelecionadas.disabled = total === 0 || state.enviando;
-      gerarSelecionadas.classList.toggle('opacity-60', total === 0 || state.enviando);
-      gerarSelecionadas.textContent = total
-        ? `Gerar ${total} selecionada(s)`
-        : 'Gerar selecionadas';
+      const ocupado = state.enviando || state.salvandoPautas;
+      salvarSelecionadas.disabled = total === 0 || ocupado;
+      salvarSelecionadas.classList.toggle('opacity-60', total === 0 || ocupado);
+      salvarSelecionadas.textContent = total
+        ? `Salvar ${total} rascunho(s)`
+        : 'Salvar rascunhos';
+      gerarSelecionadas.disabled = total === 0 || ocupado;
+      gerarSelecionadas.classList.toggle('opacity-60', total === 0 || ocupado);
       selecionarTodas.textContent = total
         ? 'Limpar seleção'
         : `Selecionar até ${Math.min(MAX_PAUTAS_LOTE, pautas.length)}`;
@@ -887,9 +908,53 @@
         if (marcar) selecionadas.set(item.key, item.pauta);
       });
       if (checkboxes.length > MAX_PAUTAS_LOTE) {
-        setStatus(`Selecionei as ${MAX_PAUTAS_LOTE} primeiras pautas. Gere esse lote e depois escolha mais.`);
+        setStatus(`Selecionei as ${MAX_PAUTAS_LOTE} primeiras pautas. Salve esse lote e depois escolha mais.`);
       }
       atualizarLote();
+    });
+
+    salvarSelecionadas.addEventListener('click', async () => {
+      const alvos = [...selecionadas.values()];
+      if (!alvos.length) {
+        setStatus('Marque ao menos uma pauta.');
+        return;
+      }
+      if (alvos.length > MAX_PAUTAS_LOTE) {
+        setStatus(`Selecione no máximo ${MAX_PAUTAS_LOTE} pautas por vez.`);
+        return;
+      }
+      const itensSelecionados = checkboxes.filter((item) => selecionadas.has(item.key));
+      state.salvandoPautas = true;
+      salvarSelecionadas.textContent = 'Salvando rascunhos...';
+      setStatus(`Gerando e salvando ${alvos.length} rascunho(s) das pautas selecionadas...`);
+      atualizarLote();
+      try {
+        const data = await salvarRascunhosDePautas(alvos);
+        (data.salvas || []).forEach((salva) => {
+          const item = itensSelecionados[Number(salva.indice) - 1];
+          if (item) item.marcarEscrita();
+        });
+        setStatus(data.mensagem || 'Rascunhos criados.');
+        const aviso = document.createElement('div');
+        aviso.className = 'mia-msg-panel mt-1 text-xs text-emerald-200';
+        const link = document.createElement('a');
+        link.href = '/minhas-materias';
+        link.className = 'text-emerald-300 underline hover:text-emerald-200';
+        link.textContent = data.mensagem || 'Rascunhos criados. Abrir Matérias salvas';
+        aviso.appendChild(link);
+        if (data.erros?.length) {
+          const falhas = document.createElement('span');
+          falhas.className = 'ml-2 text-amber-300';
+          falhas.textContent = `${data.erros.length} falha(s).`;
+          aviso.appendChild(falhas);
+        }
+        box.insertBefore(aviso, lista);
+      } catch (err) {
+        setStatus(err.message);
+      } finally {
+        state.salvandoPautas = false;
+        atualizarLote();
+      }
     });
 
     gerarSelecionadas.addEventListener('click', () => {

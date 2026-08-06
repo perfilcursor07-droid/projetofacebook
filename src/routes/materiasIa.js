@@ -15,6 +15,7 @@ router.post('/chat/conversas/:id/mensagens', chatController.enviar);
 router.delete('/chat/conversas/:id/mensagens/:messageId', chatController.apagarDaMensagem);
 router.post('/chat/mensagens/:messageId/materia', chatController.salvarMateria);
 router.post('/chat/mensagens/:messageId/materias', chatController.salvarTodasAsMaterias);
+router.post('/chat/pautas/rascunhos', chatController.salvarPautasComoRascunhos);
 
 router.post('/pesquisar', controller.pesquisar);
 router.post('/em-alta', controller.emAlta);

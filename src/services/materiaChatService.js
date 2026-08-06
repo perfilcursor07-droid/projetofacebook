@@ -1770,6 +1770,109 @@ async function salvarTodasAsMateriasDoChat({
   };
 }
 
+function limparPautaParaRascunho(pauta) {
+  if (!pauta || typeof pauta !== 'object') return null;
+  const titulo = String(pauta.titulo || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  const url = String(pauta.url || pauta.link || '').trim().slice(0, 600);
+  const veiculo = String(pauta.veiculo || pauta.fonte || 'Web')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  const resumo = String(pauta.resumo || pauta.trecho || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1200);
+  if (!titulo && !url && !resumo) return null;
+  return { titulo, url, veiculo, resumo };
+}
+
+function montarInformacoesDaPauta(pauta) {
+  return [
+    'Gere uma materia jornalistica original a partir desta pauta selecionada na pesquisa.',
+    'Reescreva sem plagiar, nao copie trechos do veiculo original e nao misture com outra pauta.',
+    'Busque um angulo de furo de reportagem: explique a repercussao, contexto, bastidores publicos, impacto para o publico evangelico/gospel e o que ainda precisa ser acompanhado.',
+    '',
+    pauta.titulo ? `Titulo da pauta: ${pauta.titulo}` : null,
+    pauta.veiculo ? `Veiculo/Fonte: ${pauta.veiculo}` : null,
+    pauta.url ? `Link principal: ${pauta.url}` : null,
+    pauta.resumo ? `Resumo encontrado: ${pauta.resumo}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * Fluxo curto para o modo "Pesquisar pautas": seleciona as pautas encontradas,
+ * gera cada materia em separado e ja salva como rascunho.
+ */
+async function salvarPautasComoRascunhos({
+  userId,
+  pautas = [],
+  facebookPageId = null,
+  pesquisarWeb = true,
+  periodo = '30d',
+}) {
+  const lista = (Array.isArray(pautas) ? pautas : [])
+    .map(limparPautaParaRascunho)
+    .filter(Boolean)
+    .slice(0, 8);
+
+  if (!lista.length) throw erro('Selecione ao menos uma pauta para salvar.', 400);
+
+  const materiaIaService = require('./materiaIaService');
+  const salvas = [];
+  const erros = [];
+
+  for (let i = 0; i < lista.length; i += 1) {
+    const pauta = lista[i];
+    try {
+      const payload = {
+        userId,
+        facebookPageId,
+        informacoes: montarInformacoesDaPauta(pauta),
+        angulo: 'Furo de reportagem para publico gospel/evangelico, com contexto e repercussao',
+        tom: 'natural',
+        pesquisarWeb,
+        palavrasChave: [pauta.titulo, pauta.veiculo].filter(Boolean).join(' '),
+        periodo,
+        imagemUrl: null,
+        creditoImagem: pauta.veiculo || 'Reproducao',
+      };
+      let result;
+      try {
+        result = await materiaIaService.gerarMateriaManual(payload);
+      } catch (err) {
+        if (!pesquisarWeb || err.status !== 422) throw err;
+        result = await materiaIaService.gerarMateriaManual({ ...payload, pesquisarWeb: false });
+      }
+      salvas.push({
+        indice: i + 1,
+        titulo: result.matter?.titulo || pauta.titulo || 'Materia',
+        matterId: result.matter?.id,
+        redirect: result.matter?.id ? `/materias-ia/${result.matter.id}` : '/minhas-materias',
+        pauta,
+      });
+    } catch (err) {
+      erros.push({
+        indice: i + 1,
+        titulo: pauta.titulo || 'Pauta',
+        error: err.message || 'Falha ao gerar rascunho',
+      });
+    }
+  }
+
+  if (!salvas.length) {
+    throw erro(erros[0]?.error || 'Nao foi possivel salvar os rascunhos das pautas.', 422);
+  }
+
+  return {
+    total: lista.length,
+    salvas,
+    erros,
+    mensagem: `${salvas.length} rascunho(s) criado(s)${erros.length ? ` - ${erros.length} falha(s)` : ''}.`,
+  };
+}
+
 module.exports = {
   listarConversas,
   criarConversa,
@@ -1780,6 +1883,7 @@ module.exports = {
   responder,
   salvarMateriaDoChat,
   salvarTodasAsMateriasDoChat,
+  salvarPautasComoRascunhos,
   interpretarResposta,
   separarMaterias,
   extrairUrlsDoTexto,

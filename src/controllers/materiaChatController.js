@@ -166,6 +166,23 @@ async function salvarTodasAsMaterias(req, res, next) {
   }
 }
 
+/** Gera e salva rascunhos diretamente a partir das pautas selecionadas. */
+async function salvarPautasComoRascunhos(req, res, next) {
+  try {
+    const resultado = await chatService.salvarPautasComoRascunhos({
+      userId: req.session.userId,
+      pautas: req.body?.pautas,
+      facebookPageId: req.body?.facebookPageId || req.body?.facebook_page_id || null,
+      pesquisarWeb: req.body?.pesquisarWeb !== false && req.body?.pesquisar_web !== false,
+      periodo: req.body?.periodo || '30d',
+    });
+    return res.status(201).json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 module.exports = {
   listar,
   criar,
@@ -176,4 +193,5 @@ module.exports = {
   enviar,
   salvarMateria,
   salvarTodasAsMaterias,
+  salvarPautasComoRascunhos,
 };
