@@ -44,6 +44,23 @@ function extrairUrlsDoTexto(texto) {
   return urls.slice(0, MAX_URLS_PEDIDO);
 }
 
+function normalizarUrlComparacao(url) {
+  return String(url || '')
+    .replace(/[.,;:!?]+$/g, '')
+    .replace(/\/+$/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function limiteMateriasDoPedido(texto) {
+  const raw = String(texto || '');
+  const m = raw.match(/\b(\d{1,2})\s+mat[eé]rias\b/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return Math.min(n, MAX_URLS_PEDIDO);
+}
+
 function classificarUrlFonte(url) {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
@@ -945,6 +962,9 @@ async function responder({
   // Vários links já significam "uma matéria para cada link", mesmo sem o
   // editor escrever essa instrução por extenso.
   if (urlsFonte.length > 1) pedidoEmLote = true;
+  const limiteMateriasLote = pedidoEmLote
+    ? limiteMateriasDoPedido(pedido) || (urlsFonte.length > 1 ? urlsFonte.length : null)
+    : null;
 
   /** Pedido sem os links, para saber se o editor escreveu mais alguma coisa. */
   const pedidoSemUrls = () =>
@@ -1319,12 +1339,17 @@ async function responder({
     if (pedidoEmLote && fontes.length > 1) {
       const partes = [];
       const instrucaoExtra = pedidoSemUrls();
-      for (let indiceFonte = 0; indiceFonte < fontes.length; indiceFonte += 1) {
-        const fonteAtual = fontes[indiceFonte];
+      const urlsSelecionadas = new Set(urlsFonte.map(normalizarUrlComparacao).filter(Boolean));
+      const fontesDoLote = (urlsSelecionadas.size
+        ? fontes.filter((f) => urlsSelecionadas.has(normalizarUrlComparacao(f?.url)))
+        : fontes
+      ).slice(0, limiteMateriasLote || urlsFonte.length || fontes.length);
+      for (let indiceFonte = 0; indiceFonte < fontesDoLote.length; indiceFonte += 1) {
+        const fonteAtual = fontesDoLote[indiceFonte];
         const marcador = `### MATERIA ${indiceFonte + 1}`;
         registrarPasso({
           kind: 'escrevendo',
-          texto: `Escrevendo matéria ${indiceFonte + 1} de ${fontes.length}: ${fonteAtual.veiculo || fonteAtual.url || 'link'}`,
+          texto: `Escrevendo matéria ${indiceFonte + 1} de ${fontesDoLote.length}: ${fonteAtual.veiculo || fonteAtual.url || 'link'}`,
         });
         onEvent({ tipo: 'delta', texto: `${indiceFonte ? '\n\n' : ''}${marcador}\n` });
 

@@ -255,6 +255,7 @@
 
     return [
       `Escreva ${lista.length} matérias, uma para cada assunto selecionado em alta agora, com furo de reportagem, texto totalmente original e sem plagiar.`,
+      `Limite obrigatório: escreva exatamente ${lista.length} matérias e pare na MATERIA ${lista.length}. Não crie assunto extra, variação, resumo adicional nem continuação.`,
       'Entregue tudo na mesma resposta. Separe cada texto com "### MATERIA n", seguido do título, corpo e hashtags daquela matéria.',
       'Não misture os fatos: cada matéria deve usar o assunto/link correspondente como base principal.',
       '',
