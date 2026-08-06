@@ -978,6 +978,45 @@ body.mia-chat-drawer-open {
   color: #fecdd3;
 }
 
+.mia-chat-voice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--mia-chat-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: #d1d5db;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.12s;
+  flex-shrink: 0;
+}
+
+.mia-chat-voice:hover:not(:disabled) {
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #a7f3d0;
+  transform: scale(1.04);
+}
+
+.mia-chat-voice.is-recording,
+.mia-chat-voice[aria-pressed='true'] {
+  border-color: rgba(244, 63, 94, 0.6);
+  background: rgba(244, 63, 94, 0.16);
+  color: #fecdd3;
+}
+
+.mia-chat-voice:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.mia-chat-voice svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
 .mia-chat-send {
   display: inline-flex;
   align-items: center;

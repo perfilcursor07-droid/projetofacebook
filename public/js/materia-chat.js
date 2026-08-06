@@ -16,6 +16,7 @@
     vazio: document.getElementById('chat-vazio'),
     input: document.getElementById('chat-input'),
     enviar: document.getElementById('chat-enviar'),
+    voz: document.getElementById('chat-voz'),
     parar: document.getElementById('chat-parar'),
     status: document.getElementById('chat-status'),
     toggleWeb: document.getElementById('chat-toggle-web'),
@@ -37,6 +38,10 @@
     pesquisarWeb: true,
     enviando: false,
     controller: null,
+    vozAtiva: false,
+    vozBase: '',
+    vozFinal: '',
+    recognition: null,
     modo: 'escrever',
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
     ultimasPautas: [],
@@ -1253,6 +1258,110 @@
     el.enviar.disabled = on;
     el.enviar.classList.toggle('opacity-60', on);
     el.parar?.classList.toggle('hidden', !on);
+    if (on && state.vozAtiva) pararVoz();
+  }
+
+  function juntarVoz(base, finalizado, parcial) {
+    const partes = [base, finalizado, parcial]
+      .map((p) => String(p || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    return partes.join('\n').trimStart();
+  }
+
+  function setVozAtiva(on) {
+    state.vozAtiva = on;
+    if (!el.voz) return;
+    el.voz.classList.toggle('is-recording', on);
+    el.voz.setAttribute('aria-pressed', on ? 'true' : 'false');
+    el.voz.title = on ? 'Parar gravação de voz' : 'Gravar áudio para escrever';
+    el.voz.setAttribute('aria-label', el.voz.title);
+  }
+
+  function pararVoz() {
+    if (!state.recognition || !state.vozAtiva) return;
+    try {
+      state.recognition.stop();
+    } catch {
+      setVozAtiva(false);
+    }
+  }
+
+  function iniciarVoz() {
+    if (!el.voz || state.enviando) return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      el.voz.disabled = true;
+      setStatus('Seu navegador não suporta ditado por voz aqui.');
+      return;
+    }
+
+    if (state.vozAtiva) {
+      pararVoz();
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    state.recognition = recognition;
+    state.vozBase = String(el.input.value || '').trim();
+    state.vozFinal = '';
+
+    recognition.lang = 'pt-BR';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      setVozAtiva(true);
+      setStatus('Ouvindo… fale sua matéria.');
+    };
+
+    recognition.onresult = (event) => {
+      let parcial = '';
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const trecho = String(event.results[i][0]?.transcript || '').trim();
+        if (!trecho) continue;
+        if (event.results[i].isFinal) state.vozFinal = `${state.vozFinal} ${trecho}`.trim();
+        else parcial = `${parcial} ${trecho}`.trim();
+      }
+      el.input.value = juntarVoz(state.vozBase, state.vozFinal, parcial);
+      el.input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    recognition.onerror = (event) => {
+      const erro = event.error || '';
+      if (erro === 'not-allowed' || erro === 'service-not-allowed') {
+        setStatus('Permita o microfone no navegador para gravar por voz.');
+      } else if (erro === 'no-speech') {
+        setStatus('Não ouvi nada. Clique no microfone e tente de novo.');
+      } else {
+        setStatus('Não consegui gravar por voz agora.');
+      }
+    };
+
+    recognition.onend = () => {
+      setVozAtiva(false);
+      state.recognition = null;
+      state.vozBase = '';
+      state.vozFinal = '';
+      if (!state.enviando) setStatus('');
+      el.input.focus();
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setStatus('Não consegui iniciar o microfone.');
+      setVozAtiva(false);
+    }
+  }
+
+  function prepararVoz() {
+    if (!el.voz) return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      el.voz.disabled = true;
+      el.voz.title = 'Ditado por voz indisponível neste navegador';
+      el.voz.setAttribute('aria-label', el.voz.title);
+    }
   }
 
   async function enviar() {
@@ -1418,6 +1527,7 @@
   /* ------------------------------ eventos ------------------------------ */
 
   el.enviar.addEventListener('click', enviar);
+  el.voz?.addEventListener('click', iniciarVoz);
   el.parar?.addEventListener('click', () => state.controller?.abort());
   el.nova?.addEventListener('click', novaConversa);
   el.novaTop?.addEventListener('click', novaConversa);
@@ -1488,6 +1598,7 @@
   async function iniciar() {
     if (state.iniciado) return;
     state.iniciado = true;
+    prepararVoz();
     aplicarToggleWeb();
     definirModo(state.modo);
     await carregarConversas();

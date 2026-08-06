@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260805lote" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260805voz" />
 
   <main class="mia-chat">
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -134,6 +134,14 @@
 
               <div class="mia-chat-send-row">
                 <button type="button" id="chat-parar" class="mia-chat-stop hidden">Parar</button>
+                <button type="button" id="chat-voz" class="mia-chat-voice" title="Gravar áudio para escrever" aria-label="Gravar áudio para escrever" aria-pressed="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <path d="M12 19v3"/>
+                    <path d="M8 22h8"/>
+                  </svg>
+                </button>
                 <button type="button" id="chat-enviar" class="mia-chat-send" title="Enviar (Enter)" aria-label="Enviar">
                   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87.99l.01 4.61c0 .81.88 1.32 1.39.91z"/>
@@ -148,6 +156,6 @@
     </div>
   </main>
 
-  <script src="/js/materia-chat.js?v=20260805lote2"></script>
+  <script src="/js/materia-chat.js?v=20260805voz"></script>
   <script src="/js/materia-chat-extras.js?v=20260805lote"></script>
 <%- include('partials/app-end') %>
