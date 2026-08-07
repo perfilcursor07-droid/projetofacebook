@@ -7,6 +7,7 @@
  */
 const express = require('express');
 const { uploadChatDoc } = require('../middleware/uploadChatDoc');
+const { uploadMatterImage } = require('../middleware/uploadMatterImage');
 
 const router = express.Router();
 
@@ -250,6 +251,65 @@ router.post('/anexos', (req, res, next) => {
     } catch (err) {
       if (err.status) return res.status(err.status).json({ error: err.message });
       return next(err);
+    }
+  });
+});
+
+/**
+ * Imagem como fonte: roda OCR local, informa se existe texto legível e devolve
+ * o conteúdo para o navegador anexar ao pedido da matéria.
+ */
+router.post('/anexos-imagem', (req, res, next) => {
+  uploadMatterImage(req, res, async (uploadError) => {
+    if (uploadError) {
+      const mensagem =
+        uploadError.code === 'LIMIT_FILE_SIZE'
+          ? 'Imagem muito grande. O limite é 12 MB.'
+          : uploadError.message || 'Falha ao receber a imagem';
+      return res.status(uploadError.status || 400).json({ error: mensagem });
+    }
+
+    try {
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ error: 'Escolha uma imagem para enviar.' });
+      }
+      const { analisarTextoDaImagem } = require('../services/imageOcrService');
+      const analise = await analisarTextoDaImagem(req.file.buffer);
+      const nome = limpar(req.file.originalname || 'imagem', 200) || 'imagem';
+
+      if (!analise.temTexto) {
+        return res.status(422).json({
+          error:
+            'Não encontrei texto legível suficiente nessa imagem. Envie um print mais nítido, sem corte e com letras maiores.',
+          analise: {
+            nome,
+            confianca: analise.confianca,
+            palavras: analise.palavras,
+            largura: analise.largura,
+            altura: analise.altura,
+          },
+        });
+      }
+
+      return res.json({
+        ok: true,
+        anexo: {
+          nome,
+          tipo: 'imagem',
+          texto: analise.texto,
+          confianca: analise.confianca,
+          palavras: analise.palavras,
+          largura: analise.largura,
+          altura: analise.altura,
+          truncado: analise.truncado,
+        },
+      });
+    } catch (err) {
+      console.error('[chat-imagem] OCR:', err.message);
+      if (err.status) return res.status(err.status).json({ error: err.message });
+      return res.status(502).json({
+        error: 'Não consegui ler essa imagem agora. Tente novamente com um arquivo PNG ou JPG mais nítido.',
+      });
     }
   });
 });

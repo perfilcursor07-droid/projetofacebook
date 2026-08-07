@@ -7,6 +7,7 @@
  *     assuntos do momento (política, igreja evangélica, polêmica gospel) e
  *     permite buscar outro tema. Clicar em um manda a IA escrever a matéria.
  *  2. Anexar PDF — o texto do arquivo entra no pedido enviado à IA.
+ *  3. Anexar imagem — OCR identifica o texto do print e o transforma em pauta.
  */
 (() => {
   const API = '/api/materias-ia/chat-extras';
@@ -30,6 +31,7 @@
   if (!el.seg || !el.tools || !el.input || !el.enviar || !el.mensagens) return;
 
   let anexo = null;
+  let anexoImagem = null;
   let altaAtiva = false;
   let carregandoAlta = false;
 
@@ -37,7 +39,7 @@
 
   const estilos = document.createElement('style');
   estilos.textContent = `
-    .mia-x-anexo-btn, .mia-x-alta-btn { cursor: pointer; }
+    .mia-x-anexo-btn, .mia-x-imagem-btn, .mia-x-alta-btn { cursor: pointer; }
     .mia-x-chip {
       display: inline-flex; align-items: center; gap: .4rem;
       max-width: 100%; margin: .5rem 0 0; padding: .35rem .5rem .35rem .6rem;
@@ -619,6 +621,20 @@
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> PDF';
   el.tools.appendChild(btnAnexo);
 
+  const inputImagem = document.createElement('input');
+  inputImagem.type = 'file';
+  inputImagem.accept = 'image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp';
+  inputImagem.hidden = true;
+  document.body.appendChild(inputImagem);
+
+  const btnImagem = document.createElement('button');
+  btnImagem.type = 'button';
+  btnImagem.className = 'mia-chat-chip mia-x-imagem-btn';
+  btnImagem.title = 'Enviar uma imagem ou print; a IA lê o texto e cria a matéria';
+  btnImagem.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> Imagem';
+  el.tools.appendChild(btnImagem);
+
   // O chip fica logo abaixo do campo de texto, fora da barra de ferramentas.
   const chipWrap = document.createElement('div');
   if (el.composer) el.composer.insertBefore(chipWrap, el.input.nextSibling);
@@ -626,42 +642,51 @@
 
   function renderChip() {
     chipWrap.replaceChildren();
-    if (!anexo) return;
 
-    const chip = document.createElement('span');
-    chip.className = 'mia-x-chip';
+    const criarChip = (dados, tipo) => {
+      if (!dados) return;
+      const chip = document.createElement('span');
+      chip.className = 'mia-x-chip';
 
-    const nome = document.createElement('span');
-    nome.className = 'mia-x-chip-nome';
-    nome.textContent = anexo.nome;
-    chip.appendChild(nome);
+      const nome = document.createElement('span');
+      nome.className = 'mia-x-chip-nome';
+      nome.textContent = dados.nome;
+      chip.appendChild(nome);
 
-    const meta = document.createElement('span');
-    meta.className = 'mia-x-chip-meta';
-    meta.textContent = [
-      anexo.paginas ? `${anexo.paginas} pág.` : '',
-      anexo.truncado ? 'texto cortado' : '',
-    ]
-      .filter(Boolean)
-      .join(' · ');
-    chip.appendChild(meta);
+      const meta = document.createElement('span');
+      meta.className = 'mia-x-chip-meta';
+      meta.textContent = (tipo === 'imagem'
+        ? [
+            dados.palavras ? `${dados.palavras} palavras` : '',
+            Number.isFinite(Number(dados.confianca)) ? `OCR ${dados.confianca}%` : '',
+          ]
+        : [dados.paginas ? `${dados.paginas} pág.` : '', dados.truncado ? 'texto cortado' : '']
+      )
+        .filter(Boolean)
+        .join(' · ');
+      chip.appendChild(meta);
 
-    const fechar = document.createElement('button');
-    fechar.type = 'button';
-    fechar.className = 'mia-x-chip-x';
-    fechar.setAttribute('aria-label', `Remover ${anexo.nome}`);
-    fechar.textContent = '×';
-    fechar.addEventListener('click', () => {
-      anexo = null;
-      renderChip();
-      setStatus('PDF removido.');
-    });
-    chip.appendChild(fechar);
+      const fechar = document.createElement('button');
+      fechar.type = 'button';
+      fechar.className = 'mia-x-chip-x';
+      fechar.setAttribute('aria-label', `Remover ${dados.nome}`);
+      fechar.textContent = '×';
+      fechar.addEventListener('click', () => {
+        if (tipo === 'imagem') anexoImagem = null;
+        else anexo = null;
+        renderChip();
+        setStatus(`${tipo === 'imagem' ? 'Imagem' : 'PDF'} removido.`);
+      });
+      chip.appendChild(fechar);
+      chipWrap.appendChild(chip);
+    };
 
-    chipWrap.appendChild(chip);
+    criarChip(anexo, 'pdf');
+    criarChip(anexoImagem, 'imagem');
   }
 
   btnAnexo.addEventListener('click', () => inputArquivo.click());
+  btnImagem.addEventListener('click', () => inputImagem.click());
 
   inputArquivo.addEventListener('change', async () => {
     const arquivo = inputArquivo.files?.[0];
@@ -698,25 +723,76 @@
     }
   });
 
+  inputImagem.addEventListener('change', async () => {
+    const arquivo = inputImagem.files?.[0];
+    inputImagem.value = '';
+    if (!arquivo) return;
+
+    btnImagem.disabled = true;
+    setStatus(`Procurando texto em ${arquivo.name}…`);
+    try {
+      const dados = new FormData();
+      dados.append('imagem', arquivo);
+      const res = await fetch(`${API}/anexos-imagem`, { method: 'POST', body: dados });
+      const bruto = await res.text();
+      let data = null;
+      try {
+        data = bruto ? JSON.parse(bruto) : null;
+      } catch {
+        data = null;
+      }
+      if (!res.ok) throw new Error(data?.error || `Falha ao analisar a imagem (${res.status})`);
+
+      anexoImagem = data.anexo;
+      renderChip();
+      setStatus(
+        `Texto encontrado em ${anexoImagem.nome}: ${anexoImagem.palavras} palavra(s). Escreva o que quer e envie.`
+      );
+      el.input.focus();
+    } catch (err) {
+      anexoImagem = null;
+      renderChip();
+      setStatus(err.message || 'Não consegui ler o texto da imagem');
+    } finally {
+      btnImagem.disabled = false;
+    }
+  });
+
   /**
    * Injeta o conteúdo do PDF no pedido pouco antes do chat enviar.
    * Roda na fase de captura, então acontece antes do handler do materia-chat.js.
    */
   function injetarAnexoNoPedido() {
-    if (!anexo || el.enviar.disabled) return;
+    if ((!anexo && !anexoImagem) || el.enviar.disabled) return;
     const base =
       String(el.input.value || '').replace(/\s+$/g, '').trim() ||
-      `Faça uma matéria com base no PDF ${anexo.nome}`;
-    el.input.value = [
-      base,
+      (anexoImagem
+        ? `Faça uma matéria com base no texto desta imagem: ${anexoImagem.nome}`
+        : `Faça uma matéria com base no PDF ${anexo.nome}`);
+    const partes = [base];
+    if (anexo) {
+      partes.push(
+        '',
+        `--- Conteúdo do PDF anexado (${anexo.nome}) ---`,
+        String(anexo.texto || '').slice(0, MAX_PDF_NO_PEDIDO),
+        '--- fim do PDF ---'
+      );
+    }
+    if (anexoImagem) {
+      partes.push(
+        '',
+        `--- Texto detectado por OCR na imagem (${anexoImagem.nome}) ---`,
+        String(anexoImagem.texto || '').slice(0, MAX_PDF_NO_PEDIDO),
+        '--- fim do texto da imagem ---'
+      );
+    }
+    partes.push(
       '',
-      `--- Conteúdo do PDF anexado (${anexo.nome}) ---`,
-      String(anexo.texto || '').slice(0, MAX_PDF_NO_PEDIDO),
-      '--- fim do PDF ---',
-      '',
-      'Use o conteúdo do PDF acima como base factual da matéria. Não invente dados que não estejam nele.',
-    ].join('\n');
+      'Use o conteúdo anexado como pista factual. Pesquise na web para confirmar nomes, datas e contexto antes de escrever. Não invente dados e não copie o texto literalmente.'
+    );
+    el.input.value = partes.join('\n');
     anexo = null;
+    anexoImagem = null;
     renderChip();
   }
 

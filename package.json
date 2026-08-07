@@ -20,6 +20,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@tesseract.js-data/por": "^1.0.0",
     "apify-client": "^2.23.4",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
@@ -38,6 +39,7 @@
     "pdf-parse": "1.1.1",
     "sharp": "^0.33.5",
     "tailwindcss": "3.4.17",
+    "tesseract.js": "^7.0.0",
     "youtube-dl-exec": "^3.1.9"
   }
 }
