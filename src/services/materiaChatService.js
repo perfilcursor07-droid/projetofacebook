@@ -3,7 +3,10 @@ const AiChatMessages = require('../models/AiChatMessages');
 const AiMatters = require('../models/AiMatters');
 
 const PERIODOS = ['24h', '3d', '7d', '15d', '30d', '60d', '90d', '180d'];
-const PERIODO_PADRAO = '7d';
+// Um pedido de tema (sem link) precisa de contexto suficiente para virar matéria
+// completa. Sete dias continua disponível no seletor, mas não é uma boa janela
+// padrão para assuntos institucionais, políticos ou eleitorais.
+const PERIODO_PADRAO = '30d';
 const MAX_URLS_PEDIDO = 12;
 
 function erro(mensagem, status = 400) {
@@ -1185,6 +1188,67 @@ async function responder({
       });
     } catch (err) {
       console.warn('[materia-chat] pesquisa:', err.message);
+    }
+
+    // Tema amplo não pode virar um texto de três linhas só porque a janela
+    // escolhida trouxe pouca apuração. Quando o pedido não exige atualidade
+    // imediata, complementa a pesquisa com histórico de até 180 dias.
+    const pedidoAmplo =
+      !temFonteDoLink &&
+      !modoPautas &&
+      /\b(sobre|panorama|cen[aá]rio|pol[ií]tica|elei[cç][aã]o|conven[cç][aã]o|2026)\b/i.test(pedido) &&
+      !/\b(hoje|agora|nesta semana|esta semana|[uú]ltimas?\s+(?:24|48)\s+horas|[uú]ltimos?\s+dias|recente)\b/i.test(pedido);
+    const volumeApurado = fontesWeb.reduce(
+      (total, fonte) => total + String(fonte?.trecho || fonte?.resumo || '').trim().length,
+      0
+    );
+    if (
+      pedidoAmplo &&
+      periodoFinal !== '180d' &&
+      (fontesWeb.length < 4 || volumeApurado < 4500)
+    ) {
+      registrarPasso({
+        kind: 'pensando',
+        texto: 'Pouco material na janela inicial; ampliando a apuração para 180 dias…',
+      });
+      try {
+        const historicas = await materiaIaService.coletarFatosNaWeb({
+          consultas: consultas.slice(0, 6),
+          periodo: '180d',
+          max: 14,
+          incluirRedes: true,
+          redesAmplas: true,
+          resumoContexto: pedido.slice(0, 300),
+          logPrefix: '[materia-chat:ampliada]',
+          onProgress: (evento) => {
+            if (evento.tipo === 'lendo') {
+              lidas += 1;
+              if (lidas <= 20) {
+                registrarPasso({
+                  kind: 'lendo',
+                  texto: `Aprofundando em ${evento.veiculo || 'página'}: ${evento.titulo || evento.url}`,
+                  url: evento.url || null,
+                });
+              }
+            }
+          },
+        });
+        const urlsVistas = new Set(
+          fontesWeb.map((fonte) => normalizarUrlComparacao(fonte?.url)).filter(Boolean)
+        );
+        for (const fonte of historicas) {
+          const url = normalizarUrlComparacao(fonte?.url);
+          if (url && urlsVistas.has(url)) continue;
+          if (url) urlsVistas.add(url);
+          fontesWeb.push(fonte);
+        }
+        registrarPasso({
+          kind: 'fontes',
+          texto: `${fontesWeb.length} fonte(s) reunidas após ampliar a apuração`,
+        });
+      } catch (err) {
+        console.warn('[materia-chat] pesquisa ampliada:', err.message);
+      }
     }
 
     if (fontesWeb.length) {

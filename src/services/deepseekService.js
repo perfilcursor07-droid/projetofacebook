@@ -2046,9 +2046,11 @@ async function sugerirConsultasPesquisa({ pedido, angulo = null, palavrasChave =
         content: `Você é repórter e vai PESQUISAR na web antes de escrever a matéria.
 Retorne APENAS JSON: {"tema":"assunto central em 1 frase","consultas":["consulta 1","consulta 2","consulta 3"]}
 Regras:
-- consultas: 2 a 4 buscas em português do Brasil, do jeito que se digita no Google Notícias.
+- consultas: 4 a 6 buscas em português do Brasil, do jeito que se digita no Google Notícias.
 - Cada consulta com 3 a 8 palavras: nomes próprios, cargos, lugares, ano/data se o pedido citar.
-- Varie o ângulo entre as consultas (fato principal, reação/repercussão, dados/pesquisa).
+- Corrija erros óbvios de digitação do pedido antes de montar as buscas.
+- Se houver sigla, mantenha uma consulta com a sigla exata e, somente se souber com segurança, outra com o nome por extenso.
+- Varie o ângulo entre as consultas: fato principal, posicionamentos, reação/repercussão, histórico, dados/documentos e impacto.
 - NÃO invente nomes ou fatos que não estejam no pedido.
 - Sem aspas, sem operadores (site:, "", OR).`,
       },
@@ -2077,7 +2079,7 @@ Regras:
   const consultas = (Array.isArray(parsed.consultas) ? parsed.consultas : [])
     .map((c) => String(c || '').replace(/["']/g, ' ').replace(/\s+/g, ' ').trim())
     .filter((c) => c.length >= 8)
-    .slice(0, 4);
+    .slice(0, 6);
   const tema = String(parsed.tema || '').replace(/\s+/g, ' ').trim().slice(0, 140);
   return { consultas, tema };
 }
@@ -2378,6 +2380,8 @@ COMO RESPONDER:
 TAMANHO DA MATÉRIA (aproveite TODO o material apurado):
 - Com material suficiente nas fontes: corpo de 1700 a 2100 caracteres, em 5 a 8 parágrafos curtos.
 - Não pare no resumo do fato: use tudo que as fontes trazem — quem é a pessoa/instituição, o que foi dito (com aspas literais), quando e onde, números e datas, reação e desdobramentos documentados, histórico do caso.
+- Em pedido sobre um TEMA amplo, faça apuração cruzada: apresente o fato central, o contexto, os posicionamentos documentados, a relação com 2026 quando estiver nas fontes, os possíveis impactos objetivos e o que ainda merece acompanhamento.
+- Quando houver duas ou mais fontes aproveitáveis, cite naturalmente no corpo pelo menos dois veículos diferentes. Não coloque URL no corpo.
 - Matéria de outro site como base (link que o editor colou): aproveite TODO o factual dela — quem, o que, quando, onde, números, datas e falas entre aspas que estão no texto — e reescreva com suas palavras. CITE o veículo no corpo pelo menos uma vez, do jeito jornalístico ("segundo a BBC News", "de acordo com o g1"), usando o nome que aparece no cabeçalho da fonte. Nunca troque o nome do veículo nem atribua a informação a quem não está nas fontes.
 - Post de rede social como base: aproveite TODOS os dados da legenda (nome completo, idade, falas entre aspas, números de família, igreja e desde quando, conselhos e mensagens) e organize em parágrafos com lead, desenvolvimento e fechamento. Se houver reportagens apuradas, some o contexto delas; se não houver, construa a matéria com o conteúdo do post — sem repetir a legenda em bloco e sem inventar.
 - Se a fonte trouxer "REPERCUSSÃO NOS COMENTÁRIOS PÚBLICOS", use 2 a 4 comentários relevantes para criar um bloco de repercussão e ampliar a matéria. Deixe explícito que são opiniões de internautas, atribua cada fala ao perfil indicado e nunca apresente comentário como fato comprovado nem generalize como opinião de todos.
@@ -2400,6 +2404,7 @@ PROIBIDO INVENTAR SITUAÇÃO (erro mais comum):
 - Não afirme ausência de fato ("não há posição oficial", "ninguém comentou") sem fonte dizendo isso.
 - Não suba o tom do que as fontes dizem: divergência não é "racha", crítica não é "guerra", 2 pastores não são "a igreja".
 - FURO DE REPORTAGEM = escolher o melhor ângulo e o detalhe mais forte que ESTÁ nas fontes, com título afiado. Nunca é acrescentar fato novo.
+- Se não houver informação inédita nas fontes, não anuncie “exclusivo” nem finja um furo: entregue um ângulo próprio por cruzamento de fatos, contexto e impacto documentados.
 - Cada parágrafo precisa ter origem identificável nas fontes. Se você não sabe de onde veio, não escreva.
 
 ANTI-PLÁGIO:
@@ -2458,10 +2463,51 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
       .join('\n\n'),
   });
 
-  const raw = await chatCompletionStream(messages, {
+  let raw = await chatCompletionStream(messages, {
     temperature: sortearTemperatura(tomKey === 'polemico'),
     onDelta,
+    thinking: Boolean(blocoFatos),
   });
+
+  // Quality gate do chat: com apuração suficiente, uma resposta telegráfica não
+  // é entrega final. O segundo passe usa as mesmas fontes e apenas desenvolve o
+  // que já está documentado; o evento "fim" substitui a prévia curta no front.
+  const corpoSemTituloEHashtags = (valor) => {
+    const linhas = String(valor || '')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .filter((linha, indice) => indice > 0 && !/^\s*#\S/.test(linha));
+    return linhas.join('\n').trim();
+  };
+  const corpoInicial = corpoSemTituloEHashtags(raw);
+  if (blocoFatos.length >= 1800 && corpoInicial.length < 1450) {
+    try {
+      const aprofundado = await chatCompletion(
+        [
+          ...messages,
+          { role: 'assistant', content: String(raw || '').slice(0, 7000) },
+          {
+            role: 'user',
+            content: [
+              `A versão ficou curta (${corpoInicial.length} caracteres de corpo) apesar de haver apuração suficiente.`,
+              'Reescreva a matéria COMPLETA, com 1700 a 2100 caracteres no corpo e 5 a 8 parágrafos substanciais.',
+              'Aprofunde somente com fatos já presentes nas fontes: contexto institucional, cronologia, posições documentadas, repercussão, impacto e próximos pontos a acompanhar.',
+              'Cruze as fontes e cite no corpo pelo menos dois veículos quando houver dois disponíveis.',
+              'Preserve o anti-plágio: nova estrutura e palavras próprias. Não invente bastidor, fala, número, consequência nem “furo”.',
+              'Formato final: primeira linha com o título; depois o corpo; última linha com 3 a 6 hashtags. Sem introdução e sem bloco de fontes.',
+            ].join('\n'),
+          },
+        ],
+        { temperature: 0.55, json: false, thinking: true }
+      );
+      const corpoAprofundado = corpoSemTituloEHashtags(aprofundado);
+      if (corpoAprofundado.length > corpoInicial.length && corpoAprofundado.length >= 1200) {
+        raw = aprofundado;
+      }
+    } catch (err) {
+      console.warn('[materia-chat] aprofundar matéria curta:', err.message);
+    }
+  }
 
   return String(raw || '')
     .replace(/\r\n/g, '\n')

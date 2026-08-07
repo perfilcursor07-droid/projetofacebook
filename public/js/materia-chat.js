@@ -1268,7 +1268,7 @@
       state.pesquisarWeb = chat.pesquisarWeb !== false;
       aplicarToggleWeb();
       if (el.tom) el.tom.value = chat.tom || 'natural';
-      if (el.periodo) el.periodo.value = chat.periodo || '7d';
+      if (el.periodo) el.periodo.value = chat.periodo || '30d';
       renderMensagens(chat.mensagens || []);
       renderConversas();
       setStatus('');
@@ -1483,7 +1483,7 @@
           texto,
           pesquisarWeb: state.pesquisarWeb,
           tom: el.tom?.value || 'natural',
-          periodo: el.periodo?.value || '7d',
+          periodo: el.periodo?.value || '30d',
           modo: state.modo,
         }),
       });
