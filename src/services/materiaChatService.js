@@ -1175,6 +1175,7 @@ async function responder({
     });
 
     let consultas = [];
+    let temaPesquisa = '';
     const pedidoParaPesquisa = pedidoDeAjuste && contextoMateriaAnterior
       ? `Assunto da matéria anterior: ${contextoMateriaAnterior}\nAjuste solicitado: ${pedido}`
       : assuntoDoLink
@@ -1188,6 +1189,7 @@ async function responder({
         palavrasChave: palavrasChave || assuntoDoLink || contextoMateriaAnterior || null,
       });
       consultas = sugestao.consultas || [];
+      temaPesquisa = sugestao.tema || '';
     } catch (err) {
       console.warn('[materia-chat] consultas:', err.message);
     }
@@ -1206,6 +1208,30 @@ async function responder({
         .trim()
         .slice(0, 120);
       if (base.length >= 8) consultas = [base];
+    }
+
+    // O modelo às vezes devolve só 1–2 consultas. Para uma pauta ampla isso
+    // concentra a apuração no primeiro evento encontrado. Garante ângulos
+    // editoriais diferentes antes de coletar as páginas.
+    const baseAprofundamento = String(
+      temaPesquisa || contextoMateriaAnterior || consultas[0] || pedidoSemUrls() || pedido
+    )
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 110);
+    if (baseAprofundamento.length >= 8 && consultas.length < 4) {
+      for (const complemento of [
+        'estrutura e posicionamento',
+        'ações documentos e lideranças',
+        'apoios articulações eleições',
+        'controvérsias e contrapontos',
+      ]) {
+        const consulta = `${baseAprofundamento} ${complemento}`.trim();
+        if (!consultas.some((item) => normalizarTexto(item) === normalizarTexto(consulta))) {
+          consultas.push(consulta);
+        }
+        if (consultas.length >= 4) break;
+      }
     }
 
     let lidas = 0;
@@ -1360,6 +1386,37 @@ async function responder({
         texto: `Sem reportagens extras na web (${janela}) — a matéria sai com o conteúdo do link.`,
       });
       usarPesquisa = false;
+    }
+  }
+
+  // Antes de escrever uma pauta pesquisada e ampla, sintetiza as fontes em um
+  // dossiê. Isso impede que a matéria se limite ao primeiro simpósio/evento e
+  // deixa explícitos estrutura, iniciativas, falas, apoios e contrapontos.
+  if (!modoPautas && usarPesquisa && blocoFatos && fontes.length >= 2) {
+    registrarPasso({
+      kind: 'pensando',
+      texto: 'Cruzando as fontes e montando o dossiê da matéria…',
+    });
+    try {
+      const dossie = await deepseekService.montarDossieApuracao({
+        pedido: pedidoDeAjuste && contextoMateriaAnterior
+          ? `${contextoMateriaAnterior}\nAjuste solicitado: ${pedido}`
+          : pedido,
+        fatosFontes: blocoFatos,
+      });
+      if (dossie) {
+        blocoFatos = `DOSSIÊ EDITORIAL EXTRAÍDO DAS FONTES (não substitui os trechos originais):\n${dossie}\n\n--- FONTES ORIGINAIS ---\n\n${blocoFatos}`;
+        registrarPasso({
+          kind: 'fontes',
+          texto: 'Dossiê concluído: contexto, cronologia, posições e controvérsias organizados',
+        });
+      }
+    } catch (err) {
+      console.warn('[materia-chat] dossiê:', err.message);
+      registrarPasso({
+        kind: 'aviso',
+        texto: 'Não consegui montar o dossiê; a matéria seguirá diretamente com as fontes lidas.',
+      });
     }
   }
 

@@ -2086,6 +2086,89 @@ Regras:
 }
 
 /**
+ * Transforma fontes dispersas em um dossiê editorial antes da redação.
+ * É o passo que evita responder a um tema amplo usando apenas o primeiro evento
+ * encontrado na busca.
+ */
+async function montarDossieApuracao({ pedido, fatosFontes }) {
+  assertDeepseek();
+  const tema = String(pedido || '').trim();
+  const fontes = String(fatosFontes || '').trim();
+  if (!tema || !fontes) return '';
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é editor de investigação e pauta. Antes que outro redator escreva, transforme as fontes pesquisadas em um DOSSIÊ factual completo.
+
+Regras absolutas:
+- Use SOMENTE fatos presentes nos trechos fornecidos.
+- Não invente ligação, apoio, cargo, data, número, fala, bastidor ou consequência.
+- Diferencie posição oficial da instituição, fala individual de dirigente, presença em evento e apoio eleitoral. Uma coisa não prova automaticamente a outra.
+- Para cada fato, indique o veículo que o sustenta.
+- Falas entre aspas devem ser literais e curtas.
+- Se duas fontes divergirem, registre a divergência.
+- Identifique o melhor ângulo jornalístico e também o contraponto/controvérsia documentado, se existir.
+- Não escreva a matéria ainda.
+
+Responda APENAS JSON:
+{
+  "assuntoCentral":"...",
+  "anguloPrincipal":"...",
+  "contextoInstitucional":["fato — veículo"],
+  "cronologia":["data/período: fato — veículo"],
+  "acoesEstrategias":["fato — veículo"],
+  "falasDocumentadas":["quem: fala literal — veículo"],
+  "apoiosOuArticulacoes":["fato com limite exato do que a fonte prova — veículo"],
+  "controversiasEContrapontos":["fato — veículo"],
+  "impactosDocumentados":["fato — veículo"],
+  "lacunas":["o que não foi possível confirmar"]
+}`,
+      },
+      {
+        role: 'user',
+        content: `PAUTA PEDIDA PELO EDITOR:\n${tema.slice(0, 3000)}\n\nFONTES PESQUISADAS:\n${fontes.slice(0, 26000)}\n\nMonte o dossiê factual para uma matéria completa.`,
+      },
+    ],
+    { temperature: 0.15, json: true, thinking: true }
+  );
+
+  let dossie;
+  try {
+    dossie = JSON.parse(raw) || {};
+  } catch {
+    return '';
+  }
+
+  const linhas = [];
+  const simples = (rotulo, valor) => {
+    const texto = String(valor || '').replace(/\s+/g, ' ').trim();
+    if (texto) linhas.push(`${rotulo}: ${texto}`);
+  };
+  const lista = (rotulo, valores) => {
+    const itens = (Array.isArray(valores) ? valores : [])
+      .map((valor) => String(valor || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 12);
+    if (!itens.length) return;
+    linhas.push(`${rotulo}:\n- ${itens.join('\n- ')}`);
+  };
+
+  simples('Assunto central', dossie.assuntoCentral);
+  simples('Ângulo principal sustentado', dossie.anguloPrincipal);
+  lista('Contexto institucional', dossie.contextoInstitucional);
+  lista('Cronologia', dossie.cronologia);
+  lista('Ações e estratégias', dossie.acoesEstrategias);
+  lista('Falas documentadas', dossie.falasDocumentadas);
+  lista('Apoios ou articulações', dossie.apoiosOuArticulacoes);
+  lista('Controvérsias e contrapontos', dossie.controversiasEContrapontos);
+  lista('Impactos documentados', dossie.impactosDocumentados);
+  lista('Lacunas da apuração', dossie.lacunas);
+  return linhas.join('\n\n').slice(0, 10000);
+}
+
+/**
  * Escreve a matéria a partir do pedido/infos do usuário + fatos reais coletados na web.
  * Sem fontes vira matéria só com o que o usuário informou.
  */
@@ -2145,7 +2228,7 @@ Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosU
           `Tom editorial obrigatório (título e corpo): ${tomDesc} [chave: ${tomKey}]`,
           autor ? `Crédito da foto: ${autor}` : null,
           blocoFatos
-            ? `TRECHOS DAS FONTES PESQUISADAS (use só o que for fato verificável):\n${blocoFatos.slice(0, 18000)}`
+            ? `TRECHOS DAS FONTES PESQUISADAS (use só o que for fato verificável):\n${blocoFatos.slice(0, 32000)}`
             : 'SEM PESQUISA NA WEB: use somente as informações do usuário e não acrescente dados externos.',
           'Escreva a matéria.',
         ]
@@ -2210,7 +2293,7 @@ Responda APENAS JSON:
       },
       {
         role: 'user',
-        content: `PEDIDO DO EDITOR:\n${texto.slice(0, 2000)}\n\nTRECHOS DAS FONTES:\n${blocoFatos.slice(0, 18000)}\n\nAs fontes confirmam o fato central do pedido?`,
+        content: `PEDIDO DO EDITOR:\n${texto.slice(0, 2000)}\n\nTRECHOS DAS FONTES:\n${blocoFatos.slice(0, 32000)}\n\nAs fontes confirmam o fato central do pedido?`,
       },
     ],
     { temperature: 0.1, json: true }
@@ -2300,7 +2383,7 @@ Responda APENAS JSON:
                 .join(', ')}): é o crédito da fonte que o editor colou, não é invenção.`
             : null,
           `MATÉRIA A REVISAR:\n${materia.slice(0, 9000)}`,
-          `TRECHOS DAS FONTES (única base permitida):\n${blocoFatos.slice(0, 18000)}`,
+          `TRECHOS DAS FONTES (única base permitida):\n${blocoFatos.slice(0, 32000)}`,
           suspeitas.length
             ? `TRECHOS QUE O SISTEMA JÁ MARCOU COMO SUSPEITOS:\n- ${suspeitas.slice(0, 8).join('\n- ')}`
             : null,
@@ -2381,9 +2464,11 @@ COMO RESPONDER:
 - Se o editor pedir um ajuste ("deixe mais curto", "acrescente X", "troque o título"): reescreva a MATÉRIA INTEIRA já ajustada, não só o trecho.
 
 TAMANHO DA MATÉRIA (aproveite TODO o material apurado):
-- Com material suficiente nas fontes: corpo de 1700 a 2100 caracteres, em 5 a 8 parágrafos curtos.
+- Com material suficiente nas fontes: corpo de 2600 a 3800 caracteres, em 7 a 12 parágrafos curtos. Tema amplo deve parecer reportagem completa, não legenda resumida.
 - Não pare no resumo do fato: use tudo que as fontes trazem — quem é a pessoa/instituição, o que foi dito (com aspas literais), quando e onde, números e datas, reação e desdobramentos documentados, histórico do caso.
 - Em pedido sobre um TEMA amplo, faça apuração cruzada: apresente o fato central, o contexto, os posicionamentos documentados, a relação com 2026 quando estiver nas fontes, os possíveis impactos objetivos e o que ainda merece acompanhamento.
+- Em tema institucional/político amplo, organize a matéria nesta lógica, usando apenas os blocos sustentados: contexto da instituição → estrutura política → iniciativas e documentos → falas de lideranças → apoios/articulações → controvérsia/contraponto → próximos movimentos.
+- Use subtítulos curtos quando ajudarem a separar pelo menos três desses blocos. Não use emojis como substitutos de informação.
 - Quando houver duas ou mais fontes aproveitáveis, cite naturalmente no corpo pelo menos dois veículos diferentes. Não coloque URL no corpo.
 - Matéria de outro site como base (link que o editor colou): aproveite TODO o factual dela — quem, o que, quando, onde, números, datas e falas entre aspas que estão no texto — e reescreva com suas palavras. CITE o veículo no corpo pelo menos uma vez, do jeito jornalístico ("segundo a BBC News", "de acordo com o g1"), usando o nome que aparece no cabeçalho da fonte. Nunca troque o nome do veículo nem atribua a informação a quem não está nas fontes.
 - Post de rede social como base: aproveite TODOS os dados da legenda (nome completo, idade, falas entre aspas, números de família, igreja e desde quando, conselhos e mensagens) e organize em parágrafos com lead, desenvolvimento e fechamento. Se houver reportagens apuradas, some o contexto delas; se não houver, construa a matéria com o conteúdo do post — sem repetir a legenda em bloco e sem inventar.
@@ -2457,7 +2542,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
       blocoFonteColada,
       blocoTraducao,
       blocoFatos
-        ? `TRECHOS DAS FONTES PESQUISADAS AGORA (use só fato verificável):\n${blocoFatos.slice(0, 18000)}`
+        ? `TRECHOS DAS FONTES PESQUISADAS AGORA (use só fato verificável):\n${blocoFatos.slice(0, 32000)}`
         : 'SEM PESQUISA NOVA: use o que já está na conversa e o que o editor informou.',
       permitirSemConfirmacao
         ? 'O EDITOR ASSUME A RESPONSABILIDADE e pediu a matéria mesmo sem confirmação nas fontes: escreva, mas continua PROIBIDO inventar falas entre aspas, números, datas e atribuições a veículos. Deixe claro no texto que a informação é atribuída ao que o editor relatou e que não há confirmação oficial.'
@@ -2484,7 +2569,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
     return linhas.join('\n').trim();
   };
   const corpoInicial = corpoSemTituloEHashtags(raw);
-  if (blocoFatos.length >= 1800 && corpoInicial.length < 1450) {
+  if (blocoFatos.length >= 1800 && corpoInicial.length < 2300) {
     try {
       const aprofundado = await chatCompletion(
         [
@@ -2494,7 +2579,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
             role: 'user',
             content: [
               `A versão ficou curta (${corpoInicial.length} caracteres de corpo) apesar de haver apuração suficiente.`,
-              'Reescreva a matéria COMPLETA, com 1700 a 2100 caracteres no corpo e 5 a 8 parágrafos substanciais.',
+              'Reescreva a matéria COMPLETA, com 2600 a 3800 caracteres no corpo e 7 a 12 parágrafos substanciais.',
               'Aprofunde somente com fatos já presentes nas fontes: contexto institucional, cronologia, posições documentadas, repercussão, impacto e próximos pontos a acompanhar.',
               'Cruze as fontes e cite no corpo pelo menos dois veículos quando houver dois disponíveis.',
               'Preserve o anti-plágio: nova estrutura e palavras próprias. Não invente bastidor, fala, número, consequência nem “furo”.',
@@ -2505,7 +2590,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
         { temperature: 0.55, json: false, thinking: true }
       );
       const corpoAprofundado = corpoSemTituloEHashtags(aprofundado);
-      if (corpoAprofundado.length > corpoInicial.length && corpoAprofundado.length >= 1200) {
+      if (corpoAprofundado.length > corpoInicial.length && corpoAprofundado.length >= 2000) {
         raw = aprofundado;
       }
     } catch (err) {
@@ -2887,6 +2972,7 @@ module.exports = {
   reescreverMateriaComInfo,
   enriquecerMateriaComFatos,
   sugerirConsultasPesquisa,
+  montarDossieApuracao,
   gerarMateriaComPesquisa,
   conversarMateria,
   checarPedidoNasFontes,
