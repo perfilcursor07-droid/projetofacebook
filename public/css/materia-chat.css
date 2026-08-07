@@ -724,6 +724,78 @@ body.mia-chat-drawer-open {
   display: none;
 }
 
+.mia-progress {
+  overflow: hidden;
+  padding: 0;
+}
+
+.mia-progress-summary {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.55rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.mia-progress-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #cbd5e1;
+}
+
+.mia-progress.is-live .mia-progress-current {
+  color: #e2e8f0;
+}
+
+.mia-progress-meta {
+  color: #64748b;
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.mia-progress-spinner,
+.mia-progress-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+}
+
+.mia-progress-spinner {
+  border: 2px solid rgba(148, 163, 184, 0.25);
+  border-top-color: #34d399;
+  border-radius: 999px;
+  animation: mia-progress-spin 0.75s linear infinite;
+}
+
+.mia-progress-check {
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.14);
+  color: #6ee7b7;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.mia-progress-list {
+  max-height: 14rem;
+  overflow-y: auto;
+  border-top: 1px solid var(--mia-chat-border);
+  padding: 0.65rem 0.8rem 0.75rem;
+}
+
+@keyframes mia-progress-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mia-progress-spinner { animation: none; }
+}
+
 /* —— Composer —— */
 .mia-chat-composer-wrap {
   flex-shrink: 0;

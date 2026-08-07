@@ -2114,6 +2114,9 @@ Regras absolutas:
 
 Responda APENAS JSON:
 {
+  "tipoPedido":"tema"|"fato",
+  "fatoCentralConfirmado":true|false,
+  "confirmacaoResumo":"o que as fontes confirmam sobre o pedido, em até 3 frases",
   "assuntoCentral":"...",
   "anguloPrincipal":"...",
   "contextoInstitucional":["fato — veículo"],
@@ -2165,7 +2168,15 @@ Responda APENAS JSON:
   lista('Controvérsias e contrapontos', dossie.controversiasEContrapontos);
   lista('Impactos documentados', dossie.impactosDocumentados);
   lista('Lacunas da apuração', dossie.lacunas);
-  return linhas.join('\n\n').slice(0, 10000);
+  return {
+    texto: linhas.join('\n\n').slice(0, 10000),
+    tipoPedido: dossie.tipoPedido === 'fato' ? 'fato' : 'tema',
+    confirmado: dossie.fatoCentralConfirmado === true,
+    confirmacaoResumo: String(dossie.confirmacaoResumo || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 700),
+  };
 }
 
 /**

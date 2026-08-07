@@ -1050,6 +1050,8 @@ async function responder({
 
   let fontes = [];
   let blocoFatos = null;
+  let checagemDoDossie = null;
+  let pesquisaExigeDossie = false;
   let temFonteDoLink = false;
   // Assunto extraído do post, usado para buscar contexto quando o pedido é só o link
   let assuntoDoLink = '';
@@ -1181,6 +1183,10 @@ async function responder({
       : assuntoDoLink
         ? `${assuntoDoLink} ${pedido}`.trim()
         : pedido;
+    pesquisaExigeDossie =
+      /\b(como|panorama|posicionamento|atua[cç][aã]o|estrat[eé]gia|influ[eê]ncia|crescimento|estrutura|papel|rela[cç][aã]o|hist[oó]ria|mobiliza[cç][aã]o|articula[cç][aã]o)\b/i.test(
+        pedidoParaPesquisa
+      );
     try {
       const sugestao = await deepseekService.sugerirConsultasPesquisa({
         // Em continuação, pesquisa o TEMA anterior; nunca a instrução isolada
@@ -1241,7 +1247,7 @@ async function responder({
         consultas: consultas.slice(0, 6),
         periodo: periodoFinal,
         // Apuração ampla: mais sites e também redes sociais
-        max: modoPautas ? 20 : temFonteDoLink ? 12 : 14,
+        max: modoPautas ? 16 : temFonteDoLink ? 10 : pesquisaExigeDossie ? 10 : 8,
         incluirRedes: true,
         redesAmplas: true,
         resumoContexto: pedidoParaPesquisa.slice(0, 500),
@@ -1392,7 +1398,7 @@ async function responder({
   // Antes de escrever uma pauta pesquisada e ampla, sintetiza as fontes em um
   // dossiê. Isso impede que a matéria se limite ao primeiro simpósio/evento e
   // deixa explícitos estrutura, iniciativas, falas, apoios e contrapontos.
-  if (!modoPautas && usarPesquisa && blocoFatos && fontes.length >= 2) {
+  if (!modoPautas && pesquisaExigeDossie && usarPesquisa && blocoFatos && fontes.length >= 2) {
     registrarPasso({
       kind: 'pensando',
       texto: 'Cruzando as fontes e montando o dossiê da matéria…',
@@ -1404,8 +1410,15 @@ async function responder({
           : pedido,
         fatosFontes: blocoFatos,
       });
-      if (dossie) {
-        blocoFatos = `DOSSIÊ EDITORIAL EXTRAÍDO DAS FONTES (não substitui os trechos originais):\n${dossie}\n\n--- FONTES ORIGINAIS ---\n\n${blocoFatos}`;
+      if (dossie?.texto) {
+        blocoFatos = `DOSSIÊ EDITORIAL EXTRAÍDO DAS FONTES (não substitui os trechos originais):\n${dossie.texto}\n\n--- FONTES ORIGINAIS ---\n\n${blocoFatos}`;
+        checagemDoDossie = {
+          tipoPedido: dossie.tipoPedido,
+          confirmado: dossie.confirmado,
+          oQueAsFontesDizem: dossie.confirmacaoResumo,
+          oQueFalta: dossie.confirmado ? '' : 'O fato central não foi confirmado no dossiê.',
+          sugestao: dossie.tipoPedido === 'tema' ? 'Escrever somente com os fatos organizados no dossiê.' : '',
+        };
         registrarPasso({
           kind: 'fontes',
           texto: 'Dossiê concluído: contexto, cronologia, posições e controvérsias organizados',
@@ -1462,8 +1475,8 @@ async function responder({
   const soReescreverOLink = temFonteDoLink && pedidoSemUrls().length < 40;
 
   if ((usarPesquisa || temFonteDoLink) && !pedidoDeAjuste && !usuarioInsiste) {
-    let checagem = null;
-    if (blocoFatos && !soReescreverOLink) {
+    let checagem = checagemDoDossie;
+    if (blocoFatos && !soReescreverOLink && !checagem) {
       registrarPasso({ kind: 'checagem', texto: 'Checando o pedido contra as fontes…' });
       try {
         checagem = await deepseekService.checarPedidoNasFontes({ pedido, fatosFontes: blocoFatos });

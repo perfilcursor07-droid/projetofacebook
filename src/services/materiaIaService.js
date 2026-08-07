@@ -3007,9 +3007,15 @@ async function coletarFatosNaWeb({
   // 1) Mesmas fontes de /conteudo (Google News + Brave), sem apurar tudo (mais rápido).
   // Leitura em lotes paralelos: mais fontes sem multiplicar o tempo de espera.
   const LOTE_LEITURA = 4;
+  const consultasNoticiasProcessadas = new Set();
   async function coletarNoticias(teto) {
     for (const q of queries.slice(0, 4)) {
       if (fontes.length >= teto) break;
+      const chaveConsulta = semAcento(q).replace(/\s+/g, ' ').trim();
+      // A segunda passagem serve para consultar ângulos que ainda não rodaram,
+      // não para repetir Google/Brave e reler as mesmas páginas.
+      if (consultasNoticiasProcessadas.has(chaveConsulta)) continue;
+      consultasNoticiasProcessadas.add(chaveConsulta);
       try {
         const when = whenParaGoogle(cfgPeriodo);
         emitir({ tipo: 'buscando', consulta: q, periodo: rotulo });
@@ -3032,9 +3038,26 @@ async function coletarFatosNaWeb({
           periodo: rotulo,
         });
 
-        const candidatos = encontrados
-          .slice(0, 20)
-          .filter((t) => t.link && normalizarUrlFonte(t.link) !== urlExcluida);
+        const candidatos = [];
+        const urlsCandidatas = new Set();
+        const titulosCandidatos = [];
+        for (const item of encontrados.slice(0, 20)) {
+          if (!item.link || normalizarUrlFonte(item.link) === urlExcluida) continue;
+          const urlItem = normalizarUrlFonte(item.link);
+          const tituloItem = String(item.titulo || '').trim();
+          if (urlItem && (vistosUrl.has(urlItem) || urlsCandidatas.has(urlItem))) continue;
+          if (
+            tituloItem &&
+            [...vistosTitulo, ...titulosCandidatos].some((titulo) =>
+              titulosSimilares(titulo, tituloItem)
+            )
+          ) {
+            continue;
+          }
+          if (urlItem) urlsCandidatas.add(urlItem);
+          if (tituloItem) titulosCandidatos.push(tituloItem);
+          candidatos.push(item);
+        }
 
         for (let i = 0; i < candidatos.length && fontes.length < teto; i += LOTE_LEITURA) {
           const lote = candidatos.slice(i, i + LOTE_LEITURA);
@@ -3077,7 +3100,7 @@ async function coletarFatosNaWeb({
   if (incluirRedes && fontes.length < limite) {
     const redes = redesAmplas ? REDES_SOCIAIS_AMPLAS : REDES_SOCIAIS_PADRAO;
     let redesIndisponiveis = false;
-    for (const q of queries.slice(0, 2)) {
+    for (const q of queries.slice(0, 1)) {
       if (fontes.length >= limite || redesIndisponiveis) break;
       try {
         emitir({ tipo: 'buscando', consulta: q, redes: true, periodo: rotulo });

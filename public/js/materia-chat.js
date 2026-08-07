@@ -323,34 +323,50 @@
   }
 
   /** Bloco "raciocínio" recolhível, como o do DeepSeek. */
-  function criarPassos(passos = []) {
+  function criarPassos(passos = [], { ativo = false } = {}) {
     const box = document.createElement('details');
-    box.className = 'mia-msg-panel';
-    box.open = true;
+    box.className = ativo ? 'mia-msg-panel mia-progress is-live' : 'mia-msg-panel mia-progress';
+    box.open = false;
 
     const resumo = document.createElement('summary');
-    resumo.className = '';
+    resumo.className = 'mia-progress-summary';
+    const indicador = document.createElement('span');
+    indicador.className = ativo ? 'mia-progress-spinner' : 'mia-progress-check';
+    indicador.setAttribute('aria-hidden', 'true');
+    indicador.textContent = ativo ? '' : '✓';
+    resumo.appendChild(indicador);
+
+    const resumoTexto = document.createElement('span');
+    resumoTexto.className = 'mia-progress-current';
+    resumo.appendChild(resumoTexto);
+
+    const resumoMeta = document.createElement('span');
+    resumoMeta.className = 'mia-progress-meta';
+    resumo.appendChild(resumoMeta);
     box.appendChild(resumo);
 
     const lista = document.createElement('div');
-    lista.className = 'mt-2 space-y-1';
+    lista.className = 'mia-progress-list mt-2 space-y-1';
     box.appendChild(lista);
+    let ultimoPasso = null;
 
     function atualizarResumo() {
       const total = lista.childElementCount;
       const kinds = [...lista.querySelectorAll('[data-passo-kind]')].map((el) => el.dataset.passoKind);
       // "lendo" também aparece ao abrir o link colado — pesquisa web = busca/resultados.
       const temPesquisaWeb = kinds.some((k) => ['busca', 'encontrados'].includes(k));
-      if (!total) {
-        resumo.textContent = temPesquisaWeb ? 'Pesquisa e apuração' : 'Leitura e reescrita';
-        return;
+      const rotulo = temPesquisaWeb ? 'Pesquisa e apuração' : 'Leitura e reescrita';
+      if (ativo) {
+        resumoTexto.textContent = ultimoPasso?.texto || `${rotulo}…`;
+        resumoMeta.textContent = total ? String(total) : '';
+      } else {
+        resumoTexto.textContent = `${rotulo} concluída`;
+        resumoMeta.textContent = total ? `${total} etapas · ver detalhes` : '';
       }
-      resumo.textContent = temPesquisaWeb
-        ? `Pesquisa e apuração (${total} etapas)`
-        : `Leitura e reescrita (${total} etapas)`;
     }
 
     function addPasso(passo) {
+      ultimoPasso = passo || null;
       const linha = document.createElement('div');
       linha.className = 'flex items-start gap-2 text-slate-400';
       if (passo.kind) linha.dataset.passoKind = passo.kind;
@@ -383,8 +399,6 @@
       linha.appendChild(texto);
       lista.appendChild(linha);
       atualizarResumo();
-      // Com a resposta ancorada no topo, rolar para o fim tiraria a matéria da tela
-      if (!state.ancoradoAtivo) scrollFim();
     }
 
     for (const p of passos) addPasso(p);
@@ -1456,7 +1470,7 @@
 
     const wrap = document.createElement('div');
     wrap.className = 'mia-msg-ai';
-    const passos = criarPassos([]);
+    const passos = criarPassos([], { ativo: true });
     wrap.appendChild(passos);
     const corpo = document.createElement('div');
     corpo.className = 'mia-msg-ai-body';
