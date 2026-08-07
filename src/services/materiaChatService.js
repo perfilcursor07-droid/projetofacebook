@@ -687,6 +687,11 @@ function serializarMensagem(row) {
   const info = row.role === 'assistant' ? interpretarResposta(conteudo) : null;
   const guardadas = parseJson(row.fontes, []);
   const pautas = (Array.isArray(guardadas) ? guardadas : []).filter((f) => f && f.ehPauta);
+  // Trechos completos ficam no banco para dar continuidade factual ao chat,
+  // mas o navegador só precisa dos metadados exibidos no painel de fontes.
+  const fontesVisiveis = (Array.isArray(guardadas) ? guardadas : [])
+    .filter((f) => f && !f.ehPauta)
+    .map(({ trecho, ...fonte }) => fonte);
   const multiplas = row.role === 'assistant' ? separarMaterias(conteudo) : [];
   const salvos = parseJson(row.matter_ids, {}) || {};
 
@@ -698,7 +703,7 @@ function serializarMensagem(row) {
     hashtags: parseJson(row.hashtags, []),
     passos: parseJson(row.passos, []),
     pautas,
-    fontes: pautas.length ? [] : guardadas,
+    fontes: pautas.length ? [] : fontesVisiveis,
     pesquisouWeb: Boolean(row.pesquisou_web),
     matterId: row.matter_id || null,
     // Quando a resposta traz várias matérias, cada uma vira um rascunho próprio.
@@ -882,6 +887,10 @@ async function responder({
           veiculo: limparParaBanco(f.veiculo, 120),
           titulo: limparParaBanco(f.titulo, 300),
           url: limparParaBanco(f.url, 500),
+          // Mantém a base factual para pedidos seguintes como "mais polêmica",
+          // "deixe mais completa" ou "troque o título" continuarem no tema.
+          ...(f.resumo ? { resumo: limparParaBanco(f.resumo, 500) } : {}),
+          ...(f.trecho ? { trecho: limparParaBanco(f.trecho, 3500) } : {}),
           ...(f.imagem ? { imagem: limparParaBanco(f.imagem, 1200) } : {}),
           // Marcas usadas ao salvar o rascunho (crédito da fonte e ordem do rodapé)
           ...(f.ehRedeSocial ? { ehRedeSocial: true } : {}),
@@ -946,11 +955,49 @@ async function responder({
     return partes.join('\n\n');
   };
 
-  // Ajuste da matéria que já está na conversa não passa pela checagem
-  const pedidoDeAjuste =
-    /\b(mais curto|mais longo|encurt|resum|troqu|troca|mud[ae]|ajust|acrescent|adicion|melhor|refa[çc]|corrig|tire|remova|mesma mat[eé]ria|esse texto|nesse texto)/i.test(
+  const ultimaMateriaAnterior = [...anteriores]
+    .reverse()
+    .find((mensagem) => mensagem?.role === 'assistant' && interpretarResposta(mensagem.content).ehMateria);
+  const fontesDaMateriaAnterior = ultimaMateriaAnterior
+    ? parseJson(ultimaMateriaAnterior.fontes, []).filter((fonte) => fonte && !fonte.ehPauta)
+    : [];
+  const infoMateriaAnterior = ultimaMateriaAnterior
+    ? interpretarResposta(ultimaMateriaAnterior.content)
+    : null;
+
+  const pedidoIndicaNovaPauta =
+    /\b(?:nova|outra)\s+(?:pauta|mat[eé]ria|reportagem|assunto|tema)\b|\b(?:fa[çc]a|escreva|crie|quero)\s+(?:uma\s+)?(?:nova\s+|outra\s+)?(?:mat[eé]ria|reportagem)\s+sobre\b/i.test(
       pedido
     );
+  const pedidoCurtoDeContinuidade =
+    Boolean(ultimaMateriaAnterior) &&
+    pedido.length <= 320 &&
+    !pedidoIndicaNovaPauta &&
+    !/https?:\/\//i.test(pedido) &&
+    /\b(quero|deix[ae]|fa[çc]a|ficou|est[aá]|pode|coloque|inclua|use|mantenha|retire|tente|gostei|vers[aã]o|t[ií]tulo|texto|mat[eé]ria|mais|menos|tom|foco|[aâ]ngulo|comece|termine)\b/i.test(
+      pedido
+    );
+
+  // Ajustes curtos devem ser entendidos como continuação da última matéria,
+  // do mesmo jeito que num chat: "mais polêmica", "mais forte", "outro título".
+  const pedidoDeAjuste =
+    Boolean(ultimaMateriaAnterior) &&
+    !modoPautas &&
+    !pedidoIndicaNovaPauta &&
+    (pedidoCurtoDeContinuidade ||
+      /\b(mais\s+(?:curt[ao]|long[ao]|complet[ao]|detalhad[ao]|pol[eê]mic[ao]|forte|impactante|diret[ao]|emocionante|jornal[ií]stic[ao])|encurt|resum|troqu|troca|mud[ae]|ajust|acrescent|adicion|aprofund|desenvolv|melhor|refa[çc]|reescrev|corrig|tire|remova|outro\s+t[ií]tulo|nova\s+vers[aã]o|mesma\s+mat[eé]ria|esse\s+texto|nesse\s+texto|essa\s+mat[eé]ria|nesta\s+mat[eé]ria)/i.test(
+        pedido
+      ));
+
+  const contextoMateriaAnterior = pedidoDeAjuste
+    ? [
+        infoMateriaAnterior?.titulo || ultimaMateriaAnterior?.titulo,
+        fontesDaMateriaAnterior.map((fonte) => fonte.titulo).filter(Boolean).slice(0, 4).join(' | '),
+      ]
+        .filter(Boolean)
+        .join(' — ')
+        .slice(0, 700)
+    : '';
 
   let pedidoEmLote =
     /\b(uma\s+para\s+cada|cada\s+(pauta|assunto|link)|selecionad[ao]s?|v[aá]rias\s+mat[eé]rias|\d+\s+mat[eé]rias)\b/i.test(
@@ -993,12 +1040,40 @@ async function responder({
     /\b(n[ãa]o\s+(pesquis|busqu|procur)|sem\s+(pesquis|busca|buscar|internet))/i.test(pedido);
   // Listar pautas exige busca — é o objetivo do modo.
   let usarPesquisa = modoPautas || (Boolean(pesquisarWeb) && !pediuSemPesquisa);
+  const ajustePedeNovaApuracao =
+    /\b(pesquis|busqu|procur|atualiz|mais\s+informa|mais\s+dados|novos?\s+dados|complement|apure|apurar|cruz|repercuss|coment[aá]rios?)\b/i.test(
+      pedido
+    );
+  // Mudança apenas editorial reutiliza a apuração anterior. Só volta à web
+  // quando o editor pedir explicitamente mais dados, atualização ou repercussão.
+  if (pedidoDeAjuste && !ajustePedeNovaApuracao) usarPesquisa = false;
 
   let fontes = [];
   let blocoFatos = null;
   let temFonteDoLink = false;
   // Assunto extraído do post, usado para buscar contexto quando o pedido é só o link
   let assuntoDoLink = '';
+
+  if (pedidoDeAjuste && ultimaMateriaAnterior) {
+    fontes = [...fontesDaMateriaAnterior];
+    const fatosGuardados = fontes.some((fonte) => fonte?.trecho || fonte?.resumo)
+      ? materiaIaService.montarBlocoFatos(fontes)
+      : '';
+    // Conversas antigas não guardavam os trechos das fontes. Nelas, a matéria
+    // anterior já revisada vira a base mínima para uma mudança apenas editorial.
+    blocoFatos = [
+      fatosGuardados,
+      `MATÉRIA ANTERIOR JÁ REVISADA (mantenha o mesmo assunto e os mesmos fatos):\n${String(
+        ultimaMateriaAnterior.content || ''
+      ).slice(0, 9000)}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n---\n\n');
+    registrarPasso({
+      kind: 'pensando',
+      texto: `Continuando a matéria anterior: ${infoMateriaAnterior?.titulo || 'mesmo assunto'}`,
+    });
+  }
 
   // 1) Links FB / IG / YT colados no chat → legenda, descrição ou legendas
   if (urlsSociais.length) {
@@ -1010,7 +1085,7 @@ async function responder({
       onPasso: registrarPasso,
     });
     if (fontesLink.length) {
-      fontes = fontesLink;
+      fontes = [...fontes, ...fontesLink];
       temFonteDoLink = true;
       registrarPasso({
         kind: 'fontes',
@@ -1100,11 +1175,17 @@ async function responder({
     });
 
     let consultas = [];
+    const pedidoParaPesquisa = pedidoDeAjuste && contextoMateriaAnterior
+      ? `Assunto da matéria anterior: ${contextoMateriaAnterior}\nAjuste solicitado: ${pedido}`
+      : assuntoDoLink
+        ? `${assuntoDoLink} ${pedido}`.trim()
+        : pedido;
     try {
       const sugestao = await deepseekService.sugerirConsultasPesquisa({
-        // Com link colado sozinho, o assunto vem do próprio post
-        pedido: assuntoDoLink ? `${assuntoDoLink} ${pedido}`.trim() : pedido,
-        palavrasChave: palavrasChave || assuntoDoLink || null,
+        // Em continuação, pesquisa o TEMA anterior; nunca a instrução isolada
+        // (por exemplo, "mais polêmica recente Brasil").
+        pedido: pedidoParaPesquisa,
+        palavrasChave: palavrasChave || assuntoDoLink || contextoMateriaAnterior || null,
       });
       consultas = sugestao.consultas || [];
     } catch (err) {
@@ -1137,7 +1218,7 @@ async function responder({
         max: modoPautas ? 20 : temFonteDoLink ? 12 : 14,
         incluirRedes: true,
         redesAmplas: true,
-        resumoContexto: pedido.slice(0, 300),
+        resumoContexto: pedidoParaPesquisa.slice(0, 500),
         logPrefix: '[materia-chat]',
         onProgress: (evento) => {
           if (evento.tipo === 'buscando') {
@@ -1193,10 +1274,10 @@ async function responder({
     // Tema amplo não pode virar um texto de três linhas só porque a janela
     // escolhida trouxe pouca apuração. Quando o pedido não exige atualidade
     // imediata, complementa a pesquisa com histórico de até 180 dias.
-    const pedidoAmplo =
-      !temFonteDoLink &&
-      !modoPautas &&
-      /\b(sobre|panorama|cen[aá]rio|pol[ií]tica|elei[cç][aã]o|conven[cç][aã]o|2026)\b/i.test(pedido) &&
+      const pedidoAmplo =
+        !temFonteDoLink &&
+        !modoPautas &&
+        /\b(sobre|panorama|cen[aá]rio|pol[ií]tica|elei[cç][aã]o|conven[cç][aã]o|2026)\b/i.test(pedidoParaPesquisa) &&
       !/\b(hoje|agora|nesta semana|esta semana|[uú]ltimas?\s+(?:24|48)\s+horas|[uú]ltimos?\s+dias|recente)\b/i.test(pedido);
     const volumeApurado = fontesWeb.reduce(
       (total, fonte) => total + String(fonte?.trecho || fonte?.resumo || '').trim().length,
@@ -1218,7 +1299,7 @@ async function responder({
           max: 14,
           incluirRedes: true,
           redesAmplas: true,
-          resumoContexto: pedido.slice(0, 300),
+          resumoContexto: pedidoParaPesquisa.slice(0, 500),
           logPrefix: '[materia-chat:ampliada]',
           onProgress: (evento) => {
             if (evento.tipo === 'lendo') {

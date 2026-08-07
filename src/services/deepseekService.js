@@ -2366,6 +2366,8 @@ async function conversarMateria({
 ${blocoEstiloNewsGospel()}
 
 COMO RESPONDER:
+- A conversa tem continuidade. Expressões como "mais polêmica", "mais completa", "troque o título", "aprofunde" e "faça outra versão" referem-se à ÚLTIMA MATÉRIA. Mantenha assunto, pessoas, instituições e fatos; altere somente o que o editor pediu.
+- Nunca transforme uma instrução de estilo em pauta nova. Exemplo: "quero mais polêmica" significa dar tom mais incisivo à mesma matéria, não pesquisar polêmicas aleatórias.
 - Se o editor pedir uma MATÉRIA (ou pedir para ajustar/refazer a matéria anterior): entregue a matéria pronta em texto puro.
   · 1ª linha = TÍTULO (máx. 110 caracteres), sem "Título:" e sem aspas em volta.
   · Depois o corpo em parágrafos curtos separados por linha em branco.

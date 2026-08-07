@@ -2922,12 +2922,45 @@ async function coletarFatosNaWeb({
         .filter((t) => t.length >= 4 && !IRRELEVANTES.has(t))
     ),
   ];
+  const TERMOS_AMPLOS = new Set([
+    'brasil', 'brasileiro', 'brasileira', 'politica', 'eleicao', 'eleicoes',
+    'gospel', 'evangelico', 'evangelica', 'igreja', 'igrejas', 'cristao', 'cristaos',
+    'repercussao', 'posicionamento', 'impacto', 'historico', 'noticias',
+  ]);
+  const tokensPorConsulta = queries.map((q) => [
+    ...new Set(
+      semAcento(q)
+        .split(/[^a-z0-9]+/)
+        .filter((t) => t.length >= 4 && !IRRELEVANTES.has(t))
+    ),
+  ]);
+  const frequenciaTermos = new Map();
+  for (const tokens of tokensPorConsulta) {
+    for (const token of tokens) {
+      frequenciaTermos.set(token, Number(frequenciaTermos.get(token) || 0) + 1);
+    }
+  }
+  const minimoFrequenciaAncora = Math.max(2, Math.ceil(queries.length * 0.5));
+  const termosAncora = [...frequenciaTermos.entries()]
+    .filter(
+      ([termo, frequencia]) =>
+        frequencia >= minimoFrequenciaAncora &&
+        termo.length >= 5 &&
+        !TERMOS_AMPLOS.has(termo) &&
+        !/^\d+$/.test(termo)
+    )
+    .map(([termo]) => termo);
   // 1 termo → exige ele; 2+ termos → exige ao menos 2 (nome próprio + contexto)
   const minimoTermos = termosChave.length <= 1 ? termosChave.length : 2;
 
   function combinaComOTema(...textos) {
     if (!termosChave.length) return true;
     const alvo = semAcento(textos.filter(Boolean).join(' '));
+    // Se todas/maioria das consultas repetem uma entidade específica (CGADB,
+    // nome de pessoa etc.), resultados genéricos de "política 2026" não entram.
+    if (termosAncora.length && !termosAncora.some((termo) => alvo.includes(termo))) {
+      return false;
+    }
     let achados = 0;
     for (const t of termosChave) {
       if (alvo.includes(t)) achados += 1;
