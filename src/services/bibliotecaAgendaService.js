@@ -11,6 +11,11 @@ const DEFAULT_END_HOUR = 22;
 const DEFAULT_MAX_ITENS = 20;
 /** Evita timeout ao gerar muitas matérias com IA numa só requisição. */
 const MAX_AI_GERACOES_POR_RODADA = 25;
+/**
+ * Montar agenda deve responder rapido. Quando o post ainda nao tem materia,
+ * ele entra como pre-agendado e a materia e gerada no Confirmar/Publicar.
+ */
+const GERAR_MATERIAS_AO_MONTAR = false;
 
 /** Amanhã 00:00 America/Araguaina (UTC−3) como instante UTC. */
 function startOfTomorrowAraguaina() {
@@ -916,6 +921,7 @@ async function montarAgendaAmanha({
   usarKeywords = false,
   keywords = null,
   dia = 'amanha',
+  gerarMaterias = GERAR_MATERIAS_AO_MONTAR,
 } = {}) {
   const agendarHoje = String(dia || '').trim().toLowerCase() === 'hoje';
   const dayKey = agendarHoje ? diaHojeKey() : diaAmanhaKey();
@@ -1107,7 +1113,7 @@ async function montarAgendaAmanha({
         else if (['publicado', 'agendado'].includes(String(matter.status))) continue;
       }
 
-      if (!matterId) {
+      if (!matterId && gerarMaterias) {
         if (aiGens >= MAX_AI_GERACOES_POR_RODADA) {
           erros.push({
             postId: post.id,
@@ -1135,7 +1141,7 @@ async function montarAgendaAmanha({
           user_id: userId,
           facebook_page_id: page.id,
           post_id: post.id,
-          matter_id: matterId,
+          matter_id: matterId || null,
           proposed_at: proposedAt,
           status: 'pendente',
           matched_keyword: matchedKeyword || null,
@@ -1143,7 +1149,7 @@ async function montarAgendaAmanha({
         criados.push({
           id,
           postId: post.id,
-          matterId,
+          matterId: matterId || null,
           proposedAt,
           matched_keyword: matchedKeyword || null,
         });
@@ -1184,6 +1190,7 @@ async function montarAgendaAmanha({
     criados: criados.length,
     erros,
     slotsUsados: criados.length,
+    pendentesSemMateria: criados.filter((item) => !item.matterId).length,
     removidosSemKw,
     continuidade: ultimoOcupado ? toDatetimeLocal(ultimoOcupado) : null,
     de: toDatetimeLocal(primeiro),
@@ -1470,16 +1477,17 @@ async function cancelarAgendamentosPendentesDaBiblioteca(userId) {
 
 async function publicarAgora(userId, id) {
   const item = await getItemOwned(userId, id);
-  if (!item.matter_id) {
+  const matterId = await garantirMatterNoItemAgenda(userId, item);
+  if (!matterId) {
     const err = new Error('Item sem matéria vinculada');
     err.status = 422;
     throw err;
   }
-  const pub = await materiaIaService.publicarMateria(userId, item.matter_id, {
+  const pub = await materiaIaService.publicarMateria(userId, matterId, {
     facebook_page_id: item.facebook_page_id,
     sync: true,
   });
-  await BibliotecaAgenda.update(item.id, { status: 'publicado' });
+  await BibliotecaAgenda.update(item.id, { status: 'publicado', matter_id: matterId });
   return { ok: true, publication: pub };
 }
 
