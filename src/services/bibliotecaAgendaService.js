@@ -290,6 +290,51 @@ async function repararImagensFaltantesAgenda(userId, itens, { limite = 6 } = {})
   return reparados;
 }
 
+async function extrairImagemPostComTimeout(url, timeoutMs = 6000) {
+  const { extrairMetadadosArtigo } = require('./articleSource');
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs));
+  return Promise.race([extrairMetadadosArtigo(url), timeout]);
+}
+
+async function repararThumbnailsPostsAgenda(userId, itens, { limite = 8 } = {}) {
+  const faltantes = (itens || [])
+    .filter(
+      (row) =>
+        row.post_id &&
+        row.post_url &&
+        !row.post_thumbnail &&
+        !row.matter_imagem_path &&
+        !row.matter_imagem_url &&
+        !row.matter_imagem_fonte_url &&
+        /^https?:\/\//i.test(String(row.post_url || '')) &&
+        String(row.fonte_plataforma || '').toLowerCase() === 'site' &&
+        !['publicado'].includes(String(row.status || ''))
+    )
+    .slice(0, Math.max(1, Number(limite) || 8));
+  if (!faltantes.length) return 0;
+
+  let proximo = 0;
+  let reparados = 0;
+  const worker = async () => {
+    while (proximo < faltantes.length) {
+      const row = faltantes[proximo];
+      proximo += 1;
+      try {
+        const meta = await extrairImagemPostComTimeout(row.post_url);
+        const imagem = String(meta?.imagem || '').trim();
+        if (!/^https?:\/\//i.test(imagem)) continue;
+        await BibliotecaPosts.update(row.post_id, { thumbnail: imagem }).catch(() => {});
+        row.post_thumbnail = imagem;
+        reparados += 1;
+      } catch (err) {
+        console.warn(`[agenda] reparar thumbnail post #${row.post_id}:`, err.message);
+      }
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  return reparados;
+}
+
 /**
  * Preenche matched_keyword em itens antigos (antes da coluna existir)
  * usando as palavras-chave salvas do usuário.
@@ -646,6 +691,15 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
 
   // Itens antigos sem matched_keyword: deriva das palavras-chave atuais e grava
   itens = await enriquecerMatchedKeywords(userId, itens || []);
+
+  if (reparar) {
+    try {
+      const thumbs = await repararThumbnailsPostsAgenda(userId, itens, { limite: 8 });
+      if (thumbs > 0) itens = await fetchItens();
+    } catch (err) {
+      console.warn('[agenda] reparar thumbnails:', err.message);
+    }
+  }
 
   if (reparar) {
     try {
