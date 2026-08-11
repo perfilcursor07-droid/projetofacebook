@@ -91,6 +91,16 @@
     }
     return Array.from({ length: end - start + 1 }, (_, i) => start + i);
   }
+  function artThumbUrl(item) {
+    if (item && item.imagem_path) {
+      return '/media/' + String(item.imagem_path).replace(/^\/+/, '').replace(/\\/g, '/');
+    }
+    const img = String(item?.imagem_url || '').trim();
+    if (/^https?:\/\//i.test(img) || img.startsWith('/')) return img;
+    const fonte = String(item?.imagem_fonte_url || '').trim();
+    if (/^https?:\/\//i.test(fonte) || fonte.startsWith('/')) return fonte;
+    return '';
+  }
   const pages = pageWindow(pag.page, pag.totalPages, 5);
   const fromItem = pag.total === 0 ? 0 : (pag.page - 1) * pag.perPage + 1;
   const toItem = Math.min(pag.page * pag.perPage, pag.total);
@@ -208,6 +218,7 @@
       <ul id="mia-matters-list" class="mt-2 divide-y divide-slate-800/80 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
         <% mattersList.forEach((item) => {
           const st = item.status || 'rascunho';
+          const thumbUrl = artThumbUrl(item);
           const viewsLabel = formatViews(item.pub_fb_views);
           const likesLabel = formatViews(item.pub_fb_likes);
           const commentsLabel = formatViews(item.pub_fb_comments);
@@ -226,6 +237,16 @@
                   aria-label="Selecionar rascunho" />
               </label>
             <% } %>
+            <a href="/materias-ia/<%= item.id %>"
+              class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-800 bg-slate-950 sm:h-14 sm:w-14"
+              title="Abrir matéria">
+              <% if (thumbUrl) { %>
+                <img src="<%= thumbUrl %>" alt="" loading="lazy"
+                  class="h-full w-full object-cover transition duration-150 group-hover:scale-[1.03]" />
+              <% } else { %>
+                <span class="px-1 text-center text-[9px] leading-tight text-slate-600">sem arte</span>
+              <% } %>
+            </a>
             <div class="min-w-0 flex-1">
               <div class="flex min-w-0 items-center gap-1.5">
                 <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
@@ -264,7 +285,7 @@
             </div>
             <div class="flex shrink-0 items-center gap-1">
               <%
-                const hasImg = Boolean(item.imagem_path) || /^https?:\/\//i.test(String(item.imagem_url || '')) || /^https?:\/\//i.test(String(item.imagem_fonte_url || ''));
+                const hasImg = Boolean(thumbUrl);
               %>
               <% if (hasImg) { %>
                 <button type="button"
