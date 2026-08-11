@@ -42,8 +42,6 @@
 %>
 
   <main class="mx-auto max-w-9xl px-3 py-3 sm:px-5 sm:py-4">
-    <%- include('partials/content-nav', { contentTab: 'matters' }) %>
-
     <% if (success) { %><div class="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"><%= success %></div><% } %>
     <% if (error) { %><div class="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200"><%= error %></div><% } %>
     <p id="matter-status" class="mb-2 hidden text-sm text-slate-400 empty:hidden"></p>
