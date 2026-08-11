@@ -1916,6 +1916,92 @@ Regras:
   };
 }
 
+async function revisarMateriaManual({ titulo, materia, hashtags = [] } = {}) {
+  assertDeepseek();
+  const texto = String(materia || '').trim();
+  if (texto.length < 40) {
+    const err = new Error('Não há texto suficiente para revisar.');
+    err.status = 400;
+    throw err;
+  }
+  const tagsHint = Array.isArray(hashtags) && hashtags.length
+    ? hashtags.map((h) => String(h).replace(/^#/, '')).slice(0, 6).join(', ')
+    : null;
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é editor de texto jornalístico para páginas do Facebook.
+Revise uma matéria escrita manualmente pelo usuário.
+Regras:
+- Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."]}
+- Corrija gramática, concordância, pontuação, fluidez e organização dos parágrafos.
+- Pode deixar o título mais forte, inclusive polêmico se o texto permitir, mas sem clickbait mentiroso.
+- NÃO invente fatos, nomes, datas, números ou acusações que não estejam no texto original.
+- Preserve o sentido e a opinião/foco do usuário.
+- Português do Brasil, parágrafos curtos separados por linha em branco.
+- 3 a 5 hashtags sem # no JSON.`,
+      },
+      {
+        role: 'user',
+        content: [
+          titulo ? `Título atual: ${String(titulo).slice(0, 180)}` : null,
+          tagsHint ? `Hashtags atuais: ${tagsHint}` : null,
+          `Texto manual:\n${texto.slice(0, 5000)}`,
+          'Revise e devolva a melhor versão pronta para postagem.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+    { temperature: 0.45, json: true }
+  );
+
+  let parsed = {};
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    const m = String(raw).match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        parsed = JSON.parse(m[0]);
+      } catch {
+        parsed = {};
+      }
+    }
+  }
+
+  const novoTitulo = String(parsed.titulo || titulo || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  let novaMateria = String(parsed.materia || '').replace(/\r\n/g, '\n').trim();
+  if (!novaMateria) {
+    const err = new Error('A IA não devolveu o texto revisado. Tente de novo.');
+    err.status = 502;
+    throw err;
+  }
+  novaMateria = novaMateria
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .join('\n\n');
+
+  let novasHashtags = Array.isArray(parsed.hashtags)
+    ? parsed.hashtags.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean).slice(0, 6)
+    : [];
+  if (!novasHashtags.length && Array.isArray(hashtags)) {
+    novasHashtags = hashtags.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean).slice(0, 6);
+  }
+
+  return {
+    titulo: novoTitulo || String(titulo || '').trim(),
+    materia: novaMateria.slice(0, 5000),
+    hashtags: novasHashtags,
+  };
+}
+
 /**
  * Enriquece a matéria com FATOS de outras fontes (Brave/web), sem plágio.
  * Reescreve com as próprias palavras; só incorpora dados verificáveis das fontes.
@@ -2981,6 +3067,7 @@ module.exports = {
   sugerirTituloMateria,
   sugerirTextoSplitVideo,
   reescreverMateriaComInfo,
+  revisarMateriaManual,
   enriquecerMateriaComFatos,
   sugerirConsultasPesquisa,
   montarDossieApuracao,

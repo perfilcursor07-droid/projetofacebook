@@ -23,6 +23,7 @@ router.post('/radar-face', controller.radarFace);
 router.post('/reescrever-link', controller.reescreverLink);
 router.post('/gerar', controller.gerar);
 router.post('/gerar-preview', controller.gerarPreview);
+router.post('/manual', controller.criarManual);
 router.post('/gerar-lote', controller.gerarLote);
 router.post('/gerar-manual', (req, res, next) => {
   uploadMatterImage(req, res, (uploadError) => {
@@ -47,6 +48,7 @@ router.post('/matters/:id/views', controller.atualizarViews);
 router.get('/matters/:id/views', controller.atualizarViews);
 router.get('/matters/:id/engajamento-debug', controller.engajamentoDebug);
 router.post('/matters/:id/sugerir-titulo', controller.sugerirTitulo);
+router.post('/matters/:id/revisar-texto', controller.revisarTextoManual);
 router.post('/matters/:id/reescrever-com-info', controller.reescreverComInfo);
 router.post('/matters/:id/enriquecer-fontes', controller.enriquecerFontes);
 router.post('/matters/:id/buscar-imagem-fonte', controller.buscarImagemFonte);

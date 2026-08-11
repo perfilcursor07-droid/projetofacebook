@@ -426,6 +426,58 @@ async function salvarMateria({ userId, facebookPageId, gerado, topico, tipoPubli
   return AiMatters.findById(id);
 }
 
+async function criarMateriaManual({
+  userId,
+  facebookPageId = null,
+  titulo,
+  materia,
+  hashtags = [],
+  fonteCredito = null,
+  tipoPublicacao = 'foto',
+} = {}) {
+  const tituloLimpo = String(titulo || '').replace(/\s+/g, ' ').trim();
+  const materiaLimpa = String(materia || '').replace(/\r\n/g, '\n').trim();
+  if (tituloLimpo.length < 3) {
+    const err = new Error('Escreva um título para a matéria manual.');
+    err.status = 400;
+    throw err;
+  }
+  if (materiaLimpa.length < 40) {
+    const err = new Error('Escreva o texto da matéria manual antes de criar o rascunho.');
+    err.status = 400;
+    throw err;
+  }
+  const tags = Array.isArray(hashtags)
+    ? hashtags.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean).slice(0, 6)
+    : String(hashtags || '')
+        .split(/[,\s#]+/)
+        .map((h) => h.trim())
+        .filter(Boolean)
+        .slice(0, 6);
+  const tipo = tipoPublicacao === 'texto' ? 'texto' : 'foto';
+
+  const [id] = await AiMatters.create({
+    user_id: userId,
+    facebook_page_id: facebookPageId || null,
+    titulo: tituloLimpo,
+    materia: materiaLimpa,
+    titulo_ia: null,
+    materia_ia: null,
+    hashtags: JSON.stringify(tags),
+    fonte_titulo: 'Matéria manual',
+    fonte_url: null,
+    fonte_resumo: null,
+    fonte_credito: String(fonteCredito || '').trim() || null,
+    contexto_apuracao: 'Criada manualmente pelo usuário.',
+    status: 'rascunho',
+    tipo_publicacao: tipo,
+    imagem_url: null,
+    error_message: null,
+  });
+
+  return AiMatters.findById(id);
+}
+
 async function publicarMateria(userId, matterId, overrides = {}) {
   let matter = await AiMatters.findById(matterId);
   if (!matter || matter.user_id !== userId) {
@@ -3456,6 +3508,7 @@ module.exports = {
   limparTextoReelSocial,
   tituloCurtoReel,
   salvarMateria,
+  criarMateriaManual,
   publicarMateria,
   gerarEPublicarLote,
   criarMonitor,

@@ -219,6 +219,16 @@
                 <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
               </summary>
               <div class="space-y-3 border-t border-slate-800 px-3 py-3">
+                <div class="rounded border border-sky-500/25 bg-sky-500/5 p-3">
+                  <p class="text-xs font-medium text-slate-200">Texto manual</p>
+                  <p class="mt-0.5 text-[11px] leading-snug text-slate-500">
+                    Corrige gramÃ¡tica, clareza e ritmo sem acrescentar fatos novos.
+                  </p>
+                  <button type="button" id="btn-revisar-texto-manual"
+                    class="mt-2 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/20">
+                    Corrigir texto com IA
+                  </button>
+                </div>
                 <div class="rounded border border-slate-800/80 bg-slate-900/50 p-3">
                   <p class="text-xs font-medium text-slate-200">Mais fatos na web</p>
                   <p class="mt-0.5 text-[11px] leading-snug text-slate-500">
@@ -727,5 +737,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260805contain1"></script>
+  <script src="/js/materia-ia-editar.js?v=20260811manual"></script>
 <%- include('partials/app-end') %>

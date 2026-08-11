@@ -532,6 +532,58 @@
     }
   });
 
+  document.getElementById('btn-revisar-texto-manual')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-revisar-texto-manual');
+    const materiaAtual = String(materiaEl?.value || '').trim();
+    if (materiaAtual.length < 40) {
+      setStatus('Escreva o texto da matéria antes de pedir correção.', true);
+      materiaEl?.focus();
+      return;
+    }
+    const original = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Corrigindo...';
+    }
+    setStatus('A IA está corrigindo gramática, clareza e ritmo sem acrescentar fatos...');
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/revisar-texto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titulo: tituloEl?.value || '',
+          materia: materiaAtual,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao revisar o texto');
+
+      if (data.titulo && tituloEl) tituloEl.value = data.titulo;
+      if (data.materia && materiaEl) {
+        materiaEl.value = data.materia;
+        materiaEl.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+
+      const tagsLine = document.getElementById('matter-hashtags-line');
+      const tagsWrap = document.getElementById('matter-hashtags-wrap');
+      if (Array.isArray(data.hashtags) && data.hashtags.length && tagsLine) {
+        tagsLine.textContent = data.hashtags
+          .map((h) => '#' + String(h).replace(/^#/, ''))
+          .join(' ');
+        tagsWrap?.classList.remove('hidden');
+        tagsLine.parentElement?.classList.remove('hidden');
+      }
+      setStatus('Texto corrigido com IA ✓');
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original || 'Corrigir texto com IA';
+      }
+    }
+  });
+
   document.getElementById('btn-reescrever-info')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-reescrever-info');
     const infoEl = document.getElementById('matter-info-extra');

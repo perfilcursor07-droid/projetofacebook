@@ -255,6 +255,80 @@ async function gerarPreview(req, res, next) {
   }
 }
 
+async function criarManual(req, res, next) {
+  try {
+    const body = req.body || {};
+    const facebookPageId = await resolvePageId(req.session.userId, body);
+    const matter = await materiaIaService.criarMateriaManual({
+      userId: req.session.userId,
+      facebookPageId,
+      titulo: body.titulo,
+      materia: body.materia || body.texto,
+      hashtags: body.hashtags,
+      fonteCredito: body.fonteCredito || body.fonte_credito,
+      tipoPublicacao: body.tipoPublicacao || body.tipo_publicacao || 'foto',
+    });
+    res.status(201).json({
+      ok: true,
+      matter,
+      redirect: `/materias-ia/${matter.id}`,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+async function revisarTextoManual(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'Matéria já publicada. Gere uma nova para revisar.' });
+    }
+
+    const deepseekService = require('../services/deepseekService');
+    deepseekService.assertDeepseek();
+
+    let hashtags = [];
+    try {
+      hashtags = Array.isArray(matter.hashtags)
+        ? matter.hashtags
+        : JSON.parse(matter.hashtags || '[]');
+    } catch {
+      hashtags = [];
+    }
+
+    const revisado = await deepseekService.revisarMateriaManual({
+      titulo: String(req.body?.titulo || matter.titulo || '').trim(),
+      materia: String(req.body?.materia || matter.materia || '').trim(),
+      hashtags,
+    });
+
+    await AiMatters.update(matterId, {
+      titulo: revisado.titulo,
+      materia: revisado.materia,
+      hashtags: JSON.stringify(revisado.hashtags || []),
+      status: matter.status === 'agendado' ? 'agendado' : 'rascunho',
+      error_message: null,
+    });
+
+    res.json({
+      ok: true,
+      titulo: revisado.titulo,
+      materia: revisado.materia,
+      hashtags: revisado.hashtags || [],
+      matter: await AiMatters.findById(matterId),
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 async function gerarLote(req, res, next) {
   try {
     const body = req.body || {};
@@ -1576,6 +1650,7 @@ module.exports = {
   gerar,
   reescreverLink,
   gerarPreview,
+  criarManual,
   gerarLote,
   publicar,
   listarMaterias,
@@ -1584,6 +1659,7 @@ module.exports = {
   removerMateriasLote,
   atualizarMateria,
   sugerirTitulo,
+  revisarTextoManual,
   reescreverComInfo,
   enriquecerFontes,
   buscarImagemFonte,

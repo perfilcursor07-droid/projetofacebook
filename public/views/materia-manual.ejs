@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260807progresso" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260811manual" />
 
   <main class="mia-chat">
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -63,6 +63,10 @@
               Peça uma matéria, cole um link do Facebook, Instagram ou YouTube, ou pesquise pautas na web.
             </p>
             <div class="mia-chat-prompts">
+              <button type="button" id="chat-criar-manual" class="mia-chat-prompt">
+                <span class="mia-chat-prompt-label">Manual</span>
+                <span class="mia-chat-prompt-text">Escrever minha propria materia e abrir no editor</span>
+              </button>
               <button type="button" class="chat-exemplo mia-chat-prompt">
                 <span class="mia-chat-prompt-label">Escrever</span>
                 <span class="mia-chat-prompt-text">Faça uma matéria sobre católicos e evangélicos juntos na política em 2026</span>
@@ -80,6 +84,24 @@
                 <span class="mia-chat-prompt-text">Pesquise pautas sobre polêmicas gospel desta semana</span>
               </button>
             </div>
+            <form id="chat-manual-form" class="mia-manual-draft hidden">
+              <div class="mia-manual-draft-head">
+                <p>Criar materia manual</p>
+                <button type="button" id="chat-manual-fechar" aria-label="Fechar">×</button>
+              </div>
+              <input id="chat-manual-titulo" type="text" maxlength="180" placeholder="Titulo da materia" />
+              <textarea id="chat-manual-texto" rows="8" placeholder="Escreva ou cole aqui o texto da materia..."></textarea>
+              <div class="mia-manual-draft-row">
+                <input id="chat-manual-tags" type="text" maxlength="180" placeholder="Hashtags opcionais: gospel, politica..." />
+                <select id="chat-manual-tipo" title="Tipo de publicacao">
+                  <option value="foto" selected>Foto + arte</option>
+                  <option value="texto">Texto</option>
+                </select>
+              </div>
+              <textarea id="chat-manual-credito" rows="2" placeholder="Credito/fonte opcional"></textarea>
+              <button type="submit">Criar rascunho e editar</button>
+              <p id="chat-manual-status"></p>
+            </form>
           </div>
         </div>
 
@@ -156,6 +178,77 @@
     </div>
   </main>
 
+  <script>
+    (function () {
+      const openBtn = document.getElementById('chat-criar-manual');
+      const form = document.getElementById('chat-manual-form');
+      const closeBtn = document.getElementById('chat-manual-fechar');
+      const statusEl = document.getElementById('chat-manual-status');
+      const tituloEl = document.getElementById('chat-manual-titulo');
+      const textoEl = document.getElementById('chat-manual-texto');
+      const tagsEl = document.getElementById('chat-manual-tags');
+      const tipoEl = document.getElementById('chat-manual-tipo');
+      const creditoEl = document.getElementById('chat-manual-credito');
+      function setManualStatus(text, erro) {
+        if (!statusEl) return;
+        statusEl.textContent = text || '';
+        statusEl.style.color = erro ? '#fda4af' : '#94a3b8';
+      }
+      openBtn?.addEventListener('click', () => {
+        form?.classList.remove('hidden');
+        tituloEl?.focus();
+      });
+      closeBtn?.addEventListener('click', () => {
+        form?.classList.add('hidden');
+        setManualStatus('');
+      });
+      form?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const titulo = String(tituloEl?.value || '').trim();
+        const materia = String(textoEl?.value || '').trim();
+        if (titulo.length < 3) {
+          setManualStatus('Escreva um titulo.', true);
+          tituloEl?.focus();
+          return;
+        }
+        if (materia.length < 40) {
+          setManualStatus('Escreva o texto da materia.', true);
+          textoEl?.focus();
+          return;
+        }
+        const btn = form.querySelector('button[type="submit"]');
+        const original = btn?.textContent;
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = 'Criando...';
+        }
+        setManualStatus('Salvando rascunho manual...');
+        try {
+          const res = await fetch('/api/materias-ia/manual', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+              titulo,
+              materia,
+              hashtags: String(tagsEl?.value || '').trim(),
+              fonteCredito: String(creditoEl?.value || '').trim(),
+              tipoPublicacao: tipoEl?.value || 'foto',
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Nao foi possivel criar a materia manual.');
+          location.href = data.redirect || (data.matter?.id ? '/materias-ia/' + data.matter.id : '/minhas-materias');
+        } catch (err) {
+          setManualStatus(err.message, true);
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = original || 'Criar rascunho e editar';
+          }
+        }
+      });
+    })();
+  </script>
   <script src="/js/materia-chat.js?v=20260807progresso"></script>
   <script src="/js/materia-chat-extras.js?v=20260807imagemocr"></script>
 <%- include('partials/app-end') %>
