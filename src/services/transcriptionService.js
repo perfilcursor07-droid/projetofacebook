@@ -298,13 +298,22 @@ function canRunPython(cmd, args = ['--version']) {
 
 /**
  * Resolve o interpretador Python disponível.
- * Preferência: PYTHON_PATH > python > py -3 > python3
+ * Preferência: PYTHON_PATH > .venv do projeto > python > py -3 > python3
  * Evita forçar py -3.10 (quebra se só houver 3.11/3.12/3.13).
  */
 function resolvePythonCommand() {
   const configured = (env.pythonPath || '').trim();
   if (configured && canRunPython(configured, ['--version'])) {
     return { cmd: configured, prefixArgs: [] };
+  }
+
+  const projectRoot = path.resolve(__dirname, '../..');
+  const virtualEnvPython =
+    process.platform === 'win32'
+      ? path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
+      : path.join(projectRoot, '.venv', 'bin', 'python');
+  if (fs.existsSync(virtualEnvPython) && canRunPython(virtualEnvPython, ['--version'])) {
+    return { cmd: virtualEnvPython, prefixArgs: [] };
   }
 
   const candidates =
@@ -337,7 +346,7 @@ function runPythonTranscribe(wavPath) {
   if (!python) {
     return Promise.reject(
       new Error(
-        'Python não encontrado. Instale Python 3.9+ e rode: pip install -r scripts/requirements.txt (ou defina PYTHON_PATH no .env)'
+        'Python não encontrado. Crie o ambiente com: python3 -m venv .venv && ./.venv/bin/python -m pip install -r scripts/requirements.txt'
       )
     );
   }
@@ -359,7 +368,7 @@ function runPythonTranscribe(wavPath) {
     child.on('error', (err) => {
       reject(
         new Error(
-          `Falha ao iniciar Python (${python.cmd}): ${err.message}. Defina PYTHON_PATH no .env ou rode: pip install -r scripts/requirements.txt`
+          `Falha ao iniciar Python (${python.cmd}): ${err.message}. Recrie o ambiente .venv e instale scripts/requirements.txt.`
         )
       );
     });
@@ -403,7 +412,7 @@ function assertWhisperAvailable() {
   const python = resolvePythonCommand();
   if (!python) {
     const err = new Error(
-      'Whisper não está instalado no servidor. Configure Python e rode: python3 -m pip install -r scripts/requirements.txt'
+      'Whisper não está instalado no servidor. Rode: python3 -m venv .venv && ./.venv/bin/python -m pip install -r scripts/requirements.txt'
     );
     err.status = 503;
     throw err;
@@ -416,7 +425,7 @@ function assertWhisperAvailable() {
   );
   if (probe.status !== 0) {
     const err = new Error(
-      'faster-whisper não está instalado no servidor. Rode: python3 -m pip install -r scripts/requirements.txt'
+      'faster-whisper não está instalado no servidor. Rode: ./.venv/bin/python -m pip install -r scripts/requirements.txt'
     );
     err.status = 503;
     throw err;

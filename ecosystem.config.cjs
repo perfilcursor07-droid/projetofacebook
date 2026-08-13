@@ -29,6 +29,8 @@ module.exports = {
         // NVM do viralizeai vem PRIMEIRO: /usr/local/bin/node é symlink para o
         // NVM de outro usuário (sem permissão) e quebra o desafio JS do YouTube.
         PATH: '/home/viralizeai/.nvm/versions/node/v22.23.1/bin:/usr/local/bin:/usr/bin:/bin',
+        // Ambiente isolado usado pelo faster-whisper para transcrever Reels/vídeos.
+        PYTHON_PATH: '/home/viralizeai/htdocs/www.viralizeai.online/.venv/bin/python',
         YTDLP_PATH: '/usr/local/bin/yt-dlp',
         YTDLP_JS_RUNTIME: 'node',
         YTDLP_COOKIES_FILE: '/home/viralizeai/secrets/youtube-cookies.txt',
