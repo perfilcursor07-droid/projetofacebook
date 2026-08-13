@@ -51,7 +51,9 @@ function normalizarUrlSocial(url) {
 }
 
 function extrairShortcodeIg(url) {
-  const m = String(url || '').match(/instagram\.com\/(?:p|reel|reels|tv)\/([^/?#]+)/i);
+  const m = String(url || '').match(
+    /instagram\.com\/(?:[a-z0-9._]+\/)?(?:p|reel|reels|tv)\/([^/?#]+)/i
+  );
   return m?.[1] || null;
 }
 
@@ -559,6 +561,7 @@ async function extrairViaInstagramMirror(url) {
   const tipoOriginal = String(url).match(/instagram\.com\/(p|reel|reels|tv)\//i)?.[1] || 'p';
   const tipo = /reel|reels|tv/i.test(tipoOriginal) ? 'reel' : 'p';
   const mirrors = [
+    `https://boberx.com/${tipo}/${code}/`,
     `https://hhinstagram.com/${tipo}/${code}/`,
     `https://www.ddinstagram.com/${tipo}/${code}/`,
     `https://ddinstagram.com/${tipo}/${code}/`,
@@ -573,7 +576,7 @@ async function extrairViaInstagramMirror(url) {
       const codeConfirmado = codeDeclarado || codeFinal;
       const postCorreto =
         Boolean(codeConfirmado) && codeConfirmado.toLowerCase() === code.toLowerCase();
-      let texto = String(parsed.texto || '').trim();
+      let texto = limparLegendaInstagram(parsed.texto) || String(parsed.texto || '').trim();
       if (/^[❤❤️]/u.test(texto)) {
         texto = texto.replace(/^.{0,80}💬\s*[\d.,]+\s*[KMB]?\s*/iu, '').trim();
       }
@@ -593,6 +596,10 @@ async function extrairViaInstagramMirror(url) {
       if (postCorreto && !respostaInvalida && texto.length >= 40) {
         parsed.url = url;
         parsed.texto = texto;
+        const autorCanonical = String(canonical || '').match(
+          /instagram\.com\/([a-z0-9._]+)\/(?:p|reel|reels|tv)\//i
+        )?.[1];
+        if (autorCanonical) parsed.veiculo = autorCanonical;
         if (/^@[a-z0-9._]+$/i.test(String(parsed.titulo || ''))) {
           parsed.veiculo = String(parsed.titulo).replace(/^@/, '');
           parsed.titulo = texto.slice(0, 140);

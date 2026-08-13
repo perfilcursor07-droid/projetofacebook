@@ -60,6 +60,15 @@ async function coletarPostPorUrl(url) {
     throw new Error(`Bright Data nao coletou o post: ${message}`);
   }
 
+  const providerError =
+    response.data?.error ||
+    response.data?.message ||
+    (Array.isArray(response.data) &&
+      (response.data[0]?.error || response.data[0]?.message || response.data[0]?.__error));
+  if (providerError) {
+    throw new Error(`Bright Data nao coletou o post: ${providerError}`);
+  }
+
   const rows = Array.isArray(response.data)
     ? response.data
     : Array.isArray(response.data?.data)
