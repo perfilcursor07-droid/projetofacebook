@@ -65,6 +65,8 @@ const env = {
   elevenLabsModelId: process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2',
   /** Apify — Radar Face (Trends + posts públicos FB) */
   apifyToken: process.env.APIFY_TOKEN || '',
+  apifyIgPostActor:
+    process.env.APIFY_IG_POST_ACTOR || 'apify/instagram-scraper',
   apifyFbSearchActor:
     process.env.APIFY_FB_SEARCH_ACTOR || 'scrapeforge/facebook-search-posts',
   /** Actor para posts de UMA página/perfil (não busca por keyword) */

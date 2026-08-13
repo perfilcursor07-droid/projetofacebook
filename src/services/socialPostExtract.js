@@ -1028,7 +1028,7 @@ function mesclarExtracao(melhor, extra) {
   const confiancaTexto = (metodo) => {
     if (metodo === 'manual') return 4;
     if (
-      ['scrapecreators', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror'].includes(metodo)
+      ['scrapecreators', 'brightdata', 'apify-ig', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror'].includes(metodo)
     ) {
       return 3;
     }
@@ -1145,6 +1145,19 @@ async function extrairPostSocial(url, opts = {}) {
     incorporar(await extrairViaInstagramMirror(link));
   }
 
+  // Provedor com proxy residencial. A coleta por URL evita os bloqueios de
+  // datacenter do Instagram e retorna legenda e imagens do post exato.
+  if (plataforma === 'instagram' && (!melhor.texto || !melhor.imagem)) {
+    const brightdata = require('./brightdataInstagram');
+    if (brightdata.isConfigured()) {
+      try {
+        incorporar(await brightdata.coletarPostPorUrl(link));
+      } catch (err) {
+        console.warn('[socialPost] brightdata:', err.message);
+      }
+    }
+  }
+
   const scrapeCreators = require('./scrapeCreatorsSocial');
   let scrapeCreatorsFalhou = false;
 
@@ -1158,6 +1171,18 @@ async function extrairPostSocial(url, opts = {}) {
     }
   }
 
+
+  if (plataforma === 'instagram' && (!melhor.texto || !melhor.imagem)) {
+    const apifyInstagram = require('./apifyInstagramPostService');
+    if (apifyInstagram.isConfigured()) {
+      try {
+        incorporar(await apifyInstagram.extrairPost(link));
+      } catch (err) {
+        console.warn('[socialPost] apify-ig:', err.message);
+      }
+    }
+  }
+
   // O extrator oEmbed já suporta os dois produtos da Meta. Tenta a API oficial
   // também no Instagram antes de depender do HTML público, que varia por região.
   if (plataforma === 'instagram' && (!melhor.texto || !melhor.imagem)) {
@@ -1168,7 +1193,7 @@ async function extrairPostSocial(url, opts = {}) {
   const precisaTexto = () =>
     !melhor.texto ||
     (textoGenericoSocial(melhor.texto) &&
-      !['scrapecreators', 'manual', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror'].includes(
+      !['scrapecreators', 'brightdata', 'apify-ig', 'manual', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror'].includes(
         melhor.textoMetodo
       ));
 

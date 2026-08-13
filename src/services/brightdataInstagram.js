@@ -7,6 +7,7 @@ const { env } = require('../config/env');
 
 const TRIGGER_URL = 'https://api.brightdata.com/datasets/v3/trigger';
 const SNAPSHOT_URL = 'https://api.brightdata.com/datasets/v3/snapshot';
+const SCRAPE_URL = 'https://api.brightdata.com/datasets/v3/scrape';
 const POSTS_DATASET = 'gd_lk5ns7kz21pck8jpis';
 
 function isConfigured() {
@@ -17,6 +18,93 @@ function headers() {
   return {
     Authorization: `Bearer ${env.brightdataApiToken}`,
     'Content-Type': 'application/json',
+  };
+}
+
+function shortcodeDaUrl(url) {
+  return String(url || '').match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i)?.[1] || null;
+}
+
+function primeiraUrl(values) {
+  for (const value of values) {
+    if (typeof value === 'string' && /^https?:\/\//i.test(value)) return value;
+    if (value && typeof value === 'object') {
+      const nested = value.url || value.src || value.image_url || value.video_url;
+      if (typeof nested === 'string' && /^https?:\/\//i.test(nested)) return nested;
+    }
+  }
+  return null;
+}
+
+/** Coleta sincronamente um post publico pelo permalink exato. */
+async function coletarPostPorUrl(url) {
+  if (!isConfigured()) return null;
+
+  const postUrl = String(url || '').trim();
+  const shortcode = shortcodeDaUrl(postUrl);
+  if (!shortcode) return null;
+
+  const response = await axios.post(
+    SCRAPE_URL,
+    { input: [{ url: postUrl }] },
+    {
+      params: { dataset_id: POSTS_DATASET, include_errors: true },
+      headers: headers(),
+      timeout: 120000,
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.status >= 400) {
+    const message = response.data?.message || response.data?.error || `HTTP ${response.status}`;
+    throw new Error(`Bright Data nao coletou o post: ${message}`);
+  }
+
+  const rows = Array.isArray(response.data)
+    ? response.data
+    : Array.isArray(response.data?.data)
+      ? response.data.data
+      : [];
+  const raw = rows.find((item) => {
+    const recebido = item?.shortcode || item?.content_id || shortcodeDaUrl(item?.url);
+    return recebido && String(recebido).toLowerCase() === shortcode.toLowerCase();
+  });
+  if (!raw || raw.__error) return null;
+
+  const texto = String(raw.description || raw.caption || raw.title || '').trim();
+  if (texto.length < 20) return null;
+
+  const fotos = [
+    ...(Array.isArray(raw.photos) ? raw.photos : []),
+    ...(Array.isArray(raw.images) ? raw.images : []),
+    raw.thumbnail,
+    raw.display_url,
+    raw.image_url,
+  ];
+  const videos = [
+    ...(Array.isArray(raw.videos) ? raw.videos : []),
+    raw.video_url,
+  ];
+  const imagem = primeiraUrl(fotos);
+  const videoUrl = primeiraUrl(videos);
+  const veiculo = String(raw.user_posted || raw.owner_username || raw.username || '').trim() || null;
+
+  return {
+    url: postUrl,
+    titulo: texto.slice(0, 140),
+    texto,
+    imagem,
+    veiculo,
+    autorUrl: veiculo ? `https://www.instagram.com/${veiculo}/` : null,
+    publicadoEm: raw.date_posted || raw.timestamp || null,
+    isVideo: Boolean(videoUrl) || /video|reel/i.test(String(raw.content_type || '')),
+    videoUrl,
+    postId: shortcode,
+    conteudoVisual: fotos
+      .map((item) => primeiraUrl([item]))
+      .filter(Boolean)
+      .map((mediaUrl) => ({ tipo: 'imagem', url: mediaUrl })),
+    metodo: 'brightdata',
   };
 }
 
@@ -142,6 +230,7 @@ function extrairShortcode(url) {
 
 module.exports = {
   isConfigured,
+  coletarPostPorUrl,
   dispararColeta,
   obterResultado,
 };
