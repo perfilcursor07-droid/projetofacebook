@@ -20,6 +20,7 @@
     parar: document.getElementById('chat-parar'),
     status: document.getElementById('chat-status'),
     toggleWeb: document.getElementById('chat-toggle-web'),
+    toggleTranscricao: document.getElementById('chat-toggle-transcricao'),
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
     modoBtns: document.querySelectorAll('.chat-modo-btn'),
@@ -36,6 +37,7 @@
     chatId: null,
     conversas: [],
     pesquisarWeb: true,
+    transcreverVideo: false,
     enviando: false,
     controller: null,
     vozAtiva: false,
@@ -1307,6 +1309,16 @@
     el.periodo?.classList.toggle('hidden', !on);
   }
 
+  function aplicarToggleTranscricao() {
+    if (!el.toggleTranscricao) return;
+    const on = state.transcreverVideo;
+    el.toggleTranscricao.setAttribute('aria-pressed', on ? 'true' : 'false');
+    el.toggleTranscricao.classList.toggle('is-on', on);
+    el.toggleTranscricao.title = on
+      ? 'Ligado: usar legendas ou transcrever o áudio do vídeo'
+      : 'Extrair legendas ou transcrever o áudio do vídeo enviado';
+  }
+
   /**
    * 'escrever' = já escreve a matéria.
    * 'pautas'  = pesquisa o tema e lista matérias para o usuário escolher.
@@ -1338,6 +1350,7 @@
     el.enviar.disabled = on;
     el.enviar.classList.toggle('opacity-60', on);
     el.parar?.classList.toggle('hidden', !on);
+    if (el.toggleTranscricao) el.toggleTranscricao.disabled = on;
     if (on && state.vozAtiva) pararVoz();
   }
 
@@ -1496,6 +1509,7 @@
         body: JSON.stringify({
           texto,
           pesquisarWeb: state.pesquisarWeb,
+          transcreverVideo: state.transcreverVideo,
           tom: el.tom?.value || 'natural',
           periodo: el.periodo?.value || '30d',
           modo: state.modo,
@@ -1627,6 +1641,10 @@
     // Sem busca não há como listar pautas
     if (!state.pesquisarWeb && state.modo === 'pautas') definirModo('escrever');
   });
+  el.toggleTranscricao?.addEventListener('click', () => {
+    state.transcreverVideo = !state.transcreverVideo;
+    aplicarToggleTranscricao();
+  });
 
   el.modoBtns?.forEach((btn) => {
     btn.addEventListener('click', () => definirModo(btn.dataset.chatModo));
@@ -1680,6 +1698,7 @@
     state.iniciado = true;
     prepararVoz();
     aplicarToggleWeb();
+    aplicarToggleTranscricao();
     definirModo(state.modo);
     await carregarConversas();
     let salvo = null;

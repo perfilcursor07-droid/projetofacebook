@@ -3,12 +3,27 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const youtubedlExec = require('youtube-dl-exec');
 const { runYtDlp } = require('./ytDlpAuth');
-const youtubedl = (url, flags) => runYtDlp(youtubedlExec, url, flags);
 const { env } = require('../config/env');
 const { extractAudioWav } = require('./ffmpegService');
 const { storageAbsolutePath } = require('./downloadService');
 
 const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/transcribe.py');
+const MAX_URL_AUDIO_BYTES = 300 * 1024 * 1024;
+const MAX_URL_DURATION_SECONDS = 45 * 60;
+
+function ytDlpExecutable() {
+  const configured = String(process.env.YTDLP_PATH || '').trim();
+  if (configured && fs.existsSync(configured)) return youtubedlExec.create(configured);
+
+  for (const candidate of ['/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp']) {
+    if (fs.existsSync(candidate)) return youtubedlExec.create(candidate);
+  }
+  return youtubedlExec;
+}
+
+function runYtDlpForUrl(url, flags) {
+  return runYtDlp(ytDlpExecutable(), url, flags);
+}
 
 function cleanVttText(value) {
   return String(value || '')
@@ -128,7 +143,7 @@ async function trySubtitlesFromUrl(url) {
   const outTemplate = path.join(tmpDir, 'subs');
 
   try {
-    await youtubedl(url, {
+    await runYtDlpForUrl(url, {
       skipDownload: true,
       writeSub: true,
       writeAutoSub: true,
@@ -158,6 +173,95 @@ async function trySubtitlesFromUrl(url) {
     };
   } catch {
     return null;
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function inspectUrlMedia(url) {
+  try {
+    return await runYtDlpForUrl(url, {
+      dumpSingleJson: true,
+      skipDownload: true,
+      noPlaylist: true,
+      noWarnings: true,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function assertUrlMediaLimits(info) {
+  const duration = Number(info?.duration) || 0;
+  if (duration > MAX_URL_DURATION_SECONDS) {
+    const err = new Error('O vídeo passa de 45 minutos. Envie um vídeo menor para transcrever o áudio.');
+    err.status = 422;
+    throw err;
+  }
+
+  const estimatedBytes = Number(info?.filesize || info?.filesize_approx) || 0;
+  if (estimatedBytes > MAX_URL_AUDIO_BYTES) {
+    const err = new Error('O áudio deste vídeo é grande demais para transcrição automática.');
+    err.status = 422;
+    throw err;
+  }
+}
+
+/**
+ * Obtém a fala de um link social. Usa legendas prontas primeiro e, quando
+ * necessário, baixa somente o áudio para transcrição local com Whisper.
+ */
+async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = true } = {}) {
+  const original = String(sourceUrl || '').trim();
+  const directMedia = String(mediaUrl || '').trim();
+  if (!/^https?:\/\//i.test(original)) {
+    const err = new Error('Link de vídeo inválido para transcrição');
+    err.status = 400;
+    throw err;
+  }
+
+  if (preferSubtitles) {
+    const subtitles = await trySubtitlesFromUrl(original);
+    if (subtitles?.text && String(subtitles.text).trim().length >= 20) return subtitles;
+  }
+
+  const downloadUrl = /^https?:\/\//i.test(directMedia) ? directMedia : original;
+  const info = await inspectUrlMedia(downloadUrl);
+  assertUrlMediaLimits(info);
+
+  const tmpDir = path.resolve(env.storagePath, 'tmp', `url_audio_${Date.now()}`);
+  const output = path.join(tmpDir, 'source.%(ext)s');
+  const wavPath = path.join(tmpDir, 'audio.wav');
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  try {
+    await runYtDlpForUrl(downloadUrl, {
+      format: 'bestaudio/best',
+      output,
+      noPlaylist: true,
+      noWarnings: true,
+      maxFilesize: '300M',
+    });
+
+    const downloaded = fs
+      .readdirSync(tmpDir)
+      .map((name) => path.join(tmpDir, name))
+      .find((file) => file !== wavPath && !/\.(?:part|ytdl)$/i.test(file) && fs.statSync(file).isFile());
+    if (!downloaded) throw new Error('Não foi possível baixar o áudio deste vídeo.');
+    if (fs.statSync(downloaded).size > MAX_URL_AUDIO_BYTES) {
+      throw new Error('O áudio deste vídeo é grande demais para transcrição automática.');
+    }
+
+    await extractAudioWav(downloaded, wavPath);
+    const result = await runPythonTranscribe(wavPath);
+    if (!result?.text || String(result.text).trim().length < 20) {
+      throw new Error('Não encontrei fala suficiente no áudio deste vídeo.');
+    }
+    return { ...result, source: 'faster-whisper-url' };
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -318,4 +422,10 @@ async function transcribeClip({ clipPath, sourceUrl }) {
   }
 }
 
-module.exports = { transcribeClip, trySubtitlesFromUrl, resolvePythonCommand, parseVtt };
+module.exports = {
+  transcribeClip,
+  transcribeUrl,
+  trySubtitlesFromUrl,
+  resolvePythonCommand,
+  parseVtt,
+};

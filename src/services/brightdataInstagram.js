@@ -213,6 +213,12 @@ function normalizarPosts(posts, handle) {
 
       const caption = p.description || p.caption || p.title || null;
       const url = p.url || `https://www.instagram.com/${isVideo ? 'reel' : 'p'}/${shortcode}/`;
+      const mediaUrl =
+        p.video_url ||
+        p.videoUrl ||
+        (Array.isArray(p.videos)
+          ? p.videos.map((video) => video?.url || video?.src || video).find(Boolean)
+          : null);
 
       return {
         externalId: String(shortcode),
@@ -221,6 +227,7 @@ function normalizarPosts(posts, handle) {
         url,
         resumo: caption ? String(caption).slice(0, 400) : null,
         thumbnail: p.thumbnail || p.display_url || p.image_url || null,
+        mediaUrl: isVideo ? mediaUrl || null : null,
         publicadoEm: p.date_posted
           ? new Date(p.date_posted)
           : p.timestamp

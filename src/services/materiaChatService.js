@@ -220,15 +220,59 @@ function fonteDoPostSalvo(post, url, plataforma) {
     ehRedeSocial: true,
     plataforma,
     imagem: post?.thumbnail || null,
+    mediaUrl: post?.media_url || null,
+    isVideo:
+      String(post?.media_type || '').toLowerCase() === 'video' ||
+      /\/(?:reel|reels|videos|watch|tv)\//i.test(String(post?.url || url)),
     bibliotecaPostId: post?.id || null,
   };
+}
+
+async function transcreverVideoComoFonte(
+  url,
+  { mediaUrl = null, onPasso, rotulo = 'vídeo' } = {}
+) {
+  if (typeof onPasso === 'function') {
+    onPasso({
+      kind: 'lendo',
+      texto: `Procurando legendas ou transcrevendo o áudio do ${rotulo}…`,
+      url,
+    });
+  }
+
+  try {
+    const { transcribeUrl } = require('./transcriptionService');
+    const resultado = await transcribeUrl({ sourceUrl: url, mediaUrl, preferSubtitles: true });
+    const texto = String(resultado?.text || '').trim();
+    if (texto.length < 20) return null;
+
+    if (typeof onPasso === 'function') {
+      const origem = resultado.source === 'yt-dlp-subtitles' ? 'legendas' : 'áudio';
+      onPasso({
+        kind: 'fontes',
+        texto: `Transcrição obtida pelo ${origem} (${texto.length} caracteres)`,
+        url,
+      });
+    }
+    return texto;
+  } catch (err) {
+    console.warn(`[materia-chat] transcrição ${rotulo}:`, err.message);
+    if (typeof onPasso === 'function') {
+      onPasso({
+        kind: 'aviso',
+        texto: `Não consegui transcrever o áudio do ${rotulo}: ${err.message}`,
+        url,
+      });
+    }
+    return null;
+  }
 }
 
 /**
  * YouTube → título + descrição (+ legendas/auto-captions se existirem).
  * Não baixa o vídeo inteiro.
  */
-async function extrairYoutubeComoFonte(url, { onPasso } = {}) {
+async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false } = {}) {
   const fs = require('fs');
   const youtubedlPkg = require('youtube-dl-exec');
   const { runYtDlp } = require('./ytDlpAuth');
@@ -262,14 +306,14 @@ async function extrairYoutubeComoFonte(url, { onPasso } = {}) {
   const veiculo = String(info.uploader || info.channel || 'YouTube').trim();
   let trecho = [titulo ? `Título: ${titulo}` : null, descricao || null].filter(Boolean).join('\n\n');
 
-  // Legendas/auto-captions enriquecem o factual (fala do vídeo)
+  // Com a opcao ativa, usa Whisper quando nao existem legendas prontas.
   try {
-    const { trySubtitlesFromUrl } = require('./transcriptionService');
-    const subs = await trySubtitlesFromUrl(url);
-    if (subs?.text && String(subs.text).trim().length >= 40) {
-      const transcricao = String(subs.text).trim();
+    const transcricao = transcreverVideo
+      ? await transcreverVideoComoFonte(url, { onPasso, rotulo: 'YouTube' })
+      : String((await require('./transcriptionService').trySubtitlesFromUrl(url))?.text || '').trim();
+    if (String(transcricao || '').length >= 40) {
       trecho = `${trecho}\n\nTranscrição/legendas:\n${transcricao.slice(0, 12000)}`;
-      if (typeof onPasso === 'function') {
+      if (!transcreverVideo && typeof onPasso === 'function') {
         onPasso({
           kind: 'fontes',
           texto: `Transcrição do YouTube encontrada (${transcricao.length} caracteres)`,
@@ -303,7 +347,10 @@ async function extrairYoutubeComoFonte(url, { onPasso } = {}) {
  * Extrai legenda/texto de FB, IG ou YT colados no chat.
  * Devolve fontes no formato do montarBlocoFatos.
  */
-async function extrairFontesDeLinks(urls, { userId, onPasso, textoManual = '' } = {}) {
+async function extrairFontesDeLinks(
+  urls,
+  { userId, onPasso, textoManual = '', transcreverVideo = false } = {}
+) {
   const {
     isSocialPostUrl,
     extrairPostSocial,
@@ -325,7 +372,7 @@ async function extrairFontesDeLinks(urls, { userId, onPasso, textoManual = '' } 
 
     try {
       if (tipo === 'youtube') {
-        fontes.push(await extrairYoutubeComoFonte(raw, { onPasso }));
+        fontes.push(await extrairYoutubeComoFonte(raw, { onPasso, transcreverVideo }));
         continue;
       }
 
@@ -344,6 +391,19 @@ async function extrairFontesDeLinks(urls, { userId, onPasso, textoManual = '' } 
           const postSalvo = await buscarPostSocialNaBiblioteca(userId, link, tipo);
           const fonteSalva = fonteDoPostSalvo(postSalvo, link, tipo);
           if (fonteSalva) {
+            if (transcreverVideo && fonteSalva.isVideo) {
+              const transcricao = await transcreverVideoComoFonte(link, {
+                mediaUrl: fonteSalva.mediaUrl || null,
+                onPasso,
+                rotulo,
+              });
+              if (transcricao) {
+                fonteSalva.trecho = `${fonteSalva.trecho}\n\nTRANSCRIÇÃO DO ÁUDIO DO VÍDEO:\n${transcricao.slice(0, 12000)}`.slice(
+                  0,
+                  14000
+                );
+              }
+            }
             fontes.push(fonteSalva);
             console.info(
               `[materia-chat] ${tipo}: post #${postSalvo.id} recuperado da Biblioteca`
@@ -374,9 +434,20 @@ async function extrairFontesDeLinks(urls, { userId, onPasso, textoManual = '' } 
         continue;
       }
 
-      // Em vídeo, tenta legendas se a legenda for curta
+      // Com a opcao ativa, transcreve o audio; sem ela, tenta apenas legendas.
       let trecho = texto;
-      if (texto.length < 220 && /reel|reels|videos|fb\.watch|\/tv\//i.test(link)) {
+      const ehVideo =
+        social.isVideo === true || /reel|reels|videos|fb\.watch|\/tv\//i.test(link);
+      if (transcreverVideo && ehVideo) {
+        const transcricao = await transcreverVideoComoFonte(link, {
+          mediaUrl: social.videoUrl || null,
+          onPasso,
+          rotulo,
+        });
+        if (transcricao) {
+          trecho = `${texto}\n\nTRANSCRIÇÃO DO ÁUDIO DO VÍDEO:\n${transcricao.slice(0, 12000)}`;
+        }
+      } else if (texto.length < 220 && ehVideo) {
         try {
           const { trySubtitlesFromUrl } = require('./transcriptionService');
           const subs = await trySubtitlesFromUrl(link);
@@ -969,6 +1040,7 @@ async function responder({
   periodo = PERIODO_PADRAO,
   palavrasChave = null,
   modo = 'escrever',
+  transcreverVideo = false,
   onEvent = () => {},
 }) {
   // 'pautas': pesquisa o tema e devolve a lista de matérias para o usuário
@@ -1264,6 +1336,7 @@ async function responder({
       userId,
       onPasso: registrarPasso,
       textoManual: textoManualDoPost,
+      transcreverVideo: Boolean(transcreverVideo),
     });
     falhasLinksSociais = falhas;
     if (fontesLink.length) {

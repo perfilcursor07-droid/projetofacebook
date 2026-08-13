@@ -24,6 +24,16 @@ function thumbnailDoItem(item) {
   );
 }
 
+function videoDoItem(item) {
+  return (
+    item?.video_versions?.[0]?.url ||
+    item?.carousel_media?.find((media) => media?.video_versions?.[0]?.url)?.video_versions?.[0]
+      ?.url ||
+    item?.video_url ||
+    null
+  );
+}
+
 function normalizarItem(item, handle) {
   if (!item || typeof item !== 'object') return null;
 
@@ -54,6 +64,7 @@ function normalizarItem(item, handle) {
     url: String(url),
     resumo: caption ? String(caption).trim().slice(0, 400) : null,
     thumbnail: thumbnailDoItem(item),
+    mediaUrl: isVideo ? videoDoItem(item) : null,
     publicadoEm: normalizarData(item.taken_at || item.caption?.created_at_utc),
   };
 }

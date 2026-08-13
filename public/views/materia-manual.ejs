@@ -114,6 +114,15 @@
                   Web
                 </button>
 
+                <button type="button" id="chat-toggle-transcricao" aria-pressed="false"
+                  title="Extrair legendas ou transcrever o áudio do vídeo enviado"
+                  class="mia-chat-chip">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 7v10"/><path d="M20 10v4"/>
+                  </svg>
+                  Áudio
+                </button>
+
                 <select id="chat-periodo" title="Período da busca"
                   class="mia-chat-select">
                   <option value="24h">24h</option>
@@ -266,6 +275,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260807progresso"></script>
+  <script src="/js/materia-chat.js?v=20260813transcricao"></script>
   <script src="/js/materia-chat-extras.js?v=20260807imagemocr"></script>
 <%- include('partials/app-end') %>

@@ -855,6 +855,11 @@ async function coletarInstagramAuthenticatedApi(handle) {
         item.image_versions2?.candidates?.[0]?.url ||
         item.carousel_media?.[0]?.image_versions2?.candidates?.[0]?.url ||
         null;
+      const mediaUrl =
+        item.video_versions?.[0]?.url ||
+        item.carousel_media?.find((media) => media?.video_versions?.[0]?.url)?.video_versions?.[0]
+          ?.url ||
+        null;
       return {
         externalId: String(shortcode),
         mediaType: isReel ? 'video' : 'image',
@@ -862,6 +867,7 @@ async function coletarInstagramAuthenticatedApi(handle) {
         url: `https://www.instagram.com/${isReel ? 'reel' : 'p'}/${shortcode}/`,
         resumo: caption ? String(caption).slice(0, 400) : null,
         thumbnail,
+        mediaUrl: isReel ? mediaUrl : null,
         publicadoEm: item.taken_at ? new Date(Number(item.taken_at) * 1000) : null,
       };
     })
@@ -957,6 +963,7 @@ async function coletarInstagramWebApi(fonte) {
       url: `https://www.instagram.com/${pathPart}/${shortcode}/`,
       resumo: caption ? String(caption).slice(0, 400) : null,
       thumbnail: n.thumbnail_src || n.display_url || n.thumbnail_url || null,
+      mediaUrl: isReel ? n.video_url || n.video_versions?.[0]?.url || null : null,
       publicadoEm: n.taken_at_timestamp
         ? new Date(n.taken_at_timestamp * 1000)
         : n.taken_at
@@ -1469,6 +1476,7 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
         url,
         resumo: resumoFinal,
         thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
+        media_url: item.mediaUrl ? String(item.mediaUrl).slice(0, 8000) : null,
         media_type: normalizarTipoMidia(item),
         publicado_em: item.publicadoEm || null,
         status: 'novo',
@@ -1536,6 +1544,7 @@ async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
             ? String(item.resumo).slice(0, 2000)
             : null,
         thumbnail: item.thumbnail ? String(item.thumbnail).slice(0, 1000) : null,
+        media_url: item.mediaUrl ? String(item.mediaUrl).slice(0, 8000) : null,
         media_type: normalizarTipoMidia(item),
         publicado_em: item.publicadoEm || null,
         status: 'visto',

@@ -101,6 +101,10 @@ async function enviar(req, res, next) {
     res.write(`${JSON.stringify(evento)}\n`);
   };
 
+  // Transcrição local pode levar alguns minutos. Mantém o stream vivo sem
+  // adicionar etapas visíveis enquanto yt-dlp/Whisper processam o áudio.
+  const heartbeat = setInterval(() => enviarEvento({ tipo: 'ping' }), 15_000);
+
   try {
     await chatService.responder({
       userId: req.session.userId,
@@ -111,10 +115,15 @@ async function enviar(req, res, next) {
       periodo: body.periodo || undefined,
       palavrasChave: body.palavrasChave || null,
       modo: body.modo === 'pautas' ? 'pautas' : 'escrever',
+      transcreverVideo: ['1', 'true', 'on', 'sim'].includes(
+        String(body.transcreverVideo ?? '').toLowerCase()
+      ),
       onEvent: enviarEvento,
     });
+    clearInterval(heartbeat);
     return res.end();
   } catch (err) {
+    clearInterval(heartbeat);
     // Erro de banco/driver traz SQL e dados na mensagem: fica no log, não na tela.
     const ehErroInterno = Boolean(err.sql || err.sqlMessage || err.code);
     if (ehErroInterno) {

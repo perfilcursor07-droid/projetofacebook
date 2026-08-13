@@ -1106,6 +1106,12 @@ body.mia-chat-drawer-open {
   color: #a7f3d0;
 }
 
+.mia-chat-chip svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: 0 0 auto;
+}
+
 .mia-chat-chip-dot {
   width: 0.375rem;
   height: 0.375rem;
