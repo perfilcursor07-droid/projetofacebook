@@ -559,8 +559,7 @@ async function extrairViaInstagramMirror(url) {
   const tipoOriginal = String(url).match(/instagram\.com\/(p|reel|reels|tv)\//i)?.[1] || 'p';
   const tipo = /reel|reels|tv/i.test(tipoOriginal) ? 'reel' : 'p';
   const mirrors = [
-    `https://uuinstagram.com/${tipo}/${code}/`,
-    `https://toinstagram.com/${tipo}/${code}/`,
+    `https://hhinstagram.com/${tipo}/${code}/`,
     `https://www.ddinstagram.com/${tipo}/${code}/`,
     `https://ddinstagram.com/${tipo}/${code}/`,
   ];
@@ -568,10 +567,36 @@ async function extrairViaInstagramMirror(url) {
     try {
       const { html, finalUrl } = await fetchHtml(mirror, CRAWLER_UA);
       const parsed = parseOgFromHtml(html, finalUrl || mirror);
+      const canonical = pickMeta(html, 'og:url');
+      const codeDeclarado = extrairShortcodeIg(canonical);
       const codeFinal = extrairShortcodeIg(finalUrl) || extrairShortcodeIg(parsed.url);
-      const postCorreto = !codeFinal || codeFinal.toLowerCase() === code.toLowerCase();
-      if (postCorreto && parsed.texto && parsed.texto.length >= 40) {
+      const codeConfirmado = codeDeclarado || codeFinal;
+      const postCorreto =
+        Boolean(codeConfirmado) && codeConfirmado.toLowerCase() === code.toLowerCase();
+      let texto = String(parsed.texto || '').trim();
+      if (/^[❤❤️]/u.test(texto)) {
+        texto = texto.replace(/^.{0,80}💬\s*[\d.,]+\s*[KMB]?\s*/iu, '').trim();
+      }
+      if (/…|\.\.\.$/.test(texto)) {
+        const semReticencias = texto.replace(/(?:…|\.\.\.)\s*$/, '').trim();
+        const fimCompleto = Math.max(
+          semReticencias.lastIndexOf('.'),
+          semReticencias.lastIndexOf('!'),
+          semReticencias.lastIndexOf('?')
+        );
+        if (fimCompleto >= 80) texto = semReticencias.slice(0, fimCompleto + 1).trim();
+      }
+      const respostaInvalida =
+        /post not found|preview unavailable|did not provide public media|out of requests/i.test(
+          `${parsed.titulo || ''} ${texto}`
+        );
+      if (postCorreto && !respostaInvalida && texto.length >= 40) {
         parsed.url = url;
+        parsed.texto = texto;
+        if (/^@[a-z0-9._]+$/i.test(String(parsed.titulo || ''))) {
+          parsed.veiculo = String(parsed.titulo).replace(/^@/, '');
+          parsed.titulo = texto.slice(0, 140);
+        }
         parsed.metodo = 'ig-mirror';
         parsed.postId = code;
         return parsed;
