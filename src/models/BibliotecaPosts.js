@@ -46,6 +46,39 @@ const BibliotecaPosts = {
     return q;
   },
 
+  findSocialCandidates(
+    userId,
+    { plataforma, externalIds = [], urlNeedles = [], exactUrls = [], limit = 40 } = {}
+  ) {
+    const ids = [...new Set(externalIds.map((value) => String(value || '').trim()).filter(Boolean))];
+    const needles = [
+      ...new Set(urlNeedles.map((value) => String(value || '').trim()).filter(Boolean)),
+    ];
+    const urls = [...new Set(exactUrls.map((value) => String(value || '').trim()).filter(Boolean))];
+
+    if (!ids.length && !needles.length && !urls.length) return Promise.resolve([]);
+
+    return db(`${this.table} as p`)
+      .leftJoin('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
+      .where('p.user_id', userId)
+      .modify((query) => {
+        if (plataforma) query.andWhere('f.plataforma', plataforma);
+      })
+      .andWhere(function matchSocialPost() {
+        if (ids.length) this.whereIn('p.external_id', ids);
+        for (const needle of needles) this.orWhere('p.url', 'like', `%${needle}%`);
+        if (urls.length) this.orWhereIn('p.url', urls);
+      })
+      .orderByRaw('COALESCE(p.publicado_em, p.created_at) DESC')
+      .limit(Math.min(100, Math.max(1, Number(limit) || 40)))
+      .select(
+        'p.*',
+        'f.nome as fonte_nome',
+        'f.plataforma as fonte_plataforma',
+        'f.handle as fonte_handle'
+      );
+  },
+
   /**
    * Candidatos à análise/piloto: prioriza posts NOVOS e recentes por fonte.
    * Evita que a mesma base antiga monopolize “Melhores para publicar”.

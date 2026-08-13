@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260811manual" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260812manualoverlay" />
 
   <main class="mia-chat">
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -56,52 +56,37 @@
           </div>
         </header>
 
+        <div class="mia-chat-shortcuts">
+          <div class="mia-chat-prompts" role="toolbar" aria-label="Atalhos de matéria">
+            <button type="button" id="chat-criar-manual" class="mia-chat-prompt" title="Escrever minha propria materia e abrir no editor">
+              <span class="mia-chat-prompt-label">Manual</span>
+              <span class="mia-chat-prompt-text">Escrever minha propria materia e abrir no editor</span>
+            </button>
+            <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria sobre católicos e evangélicos juntos na política em 2026">
+              <span class="mia-chat-prompt-label">Escrever</span>
+              <span class="mia-chat-prompt-text">Faça uma matéria sobre católicos e evangélicos juntos na política em 2026</span>
+            </button>
+            <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria sobre o crescimento das igrejas evangélicas no Brasil">
+              <span class="mia-chat-prompt-label">Escrever</span>
+              <span class="mia-chat-prompt-text">Faça uma matéria sobre o crescimento das igrejas evangélicas no Brasil</span>
+            </button>
+            <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria deste link:">
+              <span class="mia-chat-prompt-label">Link</span>
+              <span class="mia-chat-prompt-text">Faça uma matéria deste link:</span>
+            </button>
+            <button type="button" class="chat-exemplo mia-chat-prompt" data-modo-exemplo="pautas" title="Pesquise pautas sobre polêmicas gospel desta semana">
+              <span class="mia-chat-prompt-label">Pautas</span>
+              <span class="mia-chat-prompt-text">Pesquise pautas sobre polêmicas gospel desta semana</span>
+            </button>
+          </div>
+        </div>
+
         <div id="chat-mensagens" class="mia-chat-messages">
           <div id="chat-vazio" class="mia-chat-empty">
             <h1 class="mia-chat-empty-title">Como posso ajudar?</h1>
             <p class="mia-chat-empty-sub">
               Peça uma matéria, cole um link do Facebook, Instagram ou YouTube, ou pesquise pautas na web.
             </p>
-            <div class="mia-chat-prompts">
-              <button type="button" id="chat-criar-manual" class="mia-chat-prompt">
-                <span class="mia-chat-prompt-label">Manual</span>
-                <span class="mia-chat-prompt-text">Escrever minha propria materia e abrir no editor</span>
-              </button>
-              <button type="button" class="chat-exemplo mia-chat-prompt">
-                <span class="mia-chat-prompt-label">Escrever</span>
-                <span class="mia-chat-prompt-text">Faça uma matéria sobre católicos e evangélicos juntos na política em 2026</span>
-              </button>
-              <button type="button" class="chat-exemplo mia-chat-prompt">
-                <span class="mia-chat-prompt-label">Escrever</span>
-                <span class="mia-chat-prompt-text">Faça uma matéria sobre o crescimento das igrejas evangélicas no Brasil</span>
-              </button>
-              <button type="button" class="chat-exemplo mia-chat-prompt">
-                <span class="mia-chat-prompt-label">Link</span>
-                <span class="mia-chat-prompt-text">Faça uma matéria deste link:</span>
-              </button>
-              <button type="button" class="chat-exemplo mia-chat-prompt" data-modo-exemplo="pautas">
-                <span class="mia-chat-prompt-label">Pautas</span>
-                <span class="mia-chat-prompt-text">Pesquise pautas sobre polêmicas gospel desta semana</span>
-              </button>
-            </div>
-            <form id="chat-manual-form" class="mia-manual-draft hidden">
-              <div class="mia-manual-draft-head">
-                <p>Criar materia manual</p>
-                <button type="button" id="chat-manual-fechar" aria-label="Fechar">×</button>
-              </div>
-              <input id="chat-manual-titulo" type="text" maxlength="180" placeholder="Titulo da materia" />
-              <textarea id="chat-manual-texto" rows="8" placeholder="Escreva ou cole aqui o texto da materia..."></textarea>
-              <div class="mia-manual-draft-row">
-                <input id="chat-manual-tags" type="text" maxlength="180" placeholder="Hashtags opcionais: gospel, politica..." />
-                <select id="chat-manual-tipo" title="Tipo de publicacao">
-                  <option value="foto" selected>Foto + arte</option>
-                  <option value="texto">Texto</option>
-                </select>
-              </div>
-              <textarea id="chat-manual-credito" rows="2" placeholder="Credito/fonte opcional"></textarea>
-              <button type="submit">Criar rascunho e editar</button>
-              <p id="chat-manual-status"></p>
-            </form>
           </div>
         </div>
 
@@ -174,6 +159,26 @@
           </div>
           <p class="mia-chat-hint">Enter envia · Shift+Enter quebra linha</p>
         </div>
+
+        <div id="chat-manual-backdrop" class="mia-manual-backdrop hidden" hidden></div>
+        <form id="chat-manual-form" class="mia-manual-draft hidden" aria-modal="true" role="dialog" aria-labelledby="chat-manual-titulo-label">
+          <div class="mia-manual-draft-head">
+            <p id="chat-manual-titulo-label">Criar materia manual</p>
+            <button type="button" id="chat-manual-fechar" aria-label="Fechar">×</button>
+          </div>
+          <input id="chat-manual-titulo" type="text" maxlength="180" placeholder="Titulo da materia" />
+          <textarea id="chat-manual-texto" rows="8" placeholder="Escreva ou cole aqui o texto da materia..."></textarea>
+          <div class="mia-manual-draft-row">
+            <input id="chat-manual-tags" type="text" maxlength="180" placeholder="Hashtags opcionais: gospel, politica..." />
+            <select id="chat-manual-tipo" title="Tipo de publicacao">
+              <option value="foto" selected>Foto + arte</option>
+              <option value="texto">Texto</option>
+            </select>
+          </div>
+          <textarea id="chat-manual-credito" rows="2" placeholder="Credito/fonte opcional"></textarea>
+          <button type="submit">Criar rascunho e editar</button>
+          <p id="chat-manual-status"></p>
+        </form>
       </section>
     </div>
   </main>
@@ -182,6 +187,7 @@
     (function () {
       const openBtn = document.getElementById('chat-criar-manual');
       const form = document.getElementById('chat-manual-form');
+      const backdrop = document.getElementById('chat-manual-backdrop');
       const closeBtn = document.getElementById('chat-manual-fechar');
       const statusEl = document.getElementById('chat-manual-status');
       const tituloEl = document.getElementById('chat-manual-titulo');
@@ -189,18 +195,29 @@
       const tagsEl = document.getElementById('chat-manual-tags');
       const tipoEl = document.getElementById('chat-manual-tipo');
       const creditoEl = document.getElementById('chat-manual-credito');
+      const chatMain = document.querySelector('.mia-chat-main');
       function setManualStatus(text, erro) {
         if (!statusEl) return;
         statusEl.textContent = text || '';
         statusEl.style.color = erro ? '#fda4af' : '#94a3b8';
       }
+      function setManualOpen(open) {
+        form?.classList.toggle('hidden', !open);
+        backdrop?.classList.toggle('hidden', !open);
+        if (backdrop) backdrop.hidden = !open;
+        chatMain?.classList.toggle('is-manual-open', open);
+        if (!open) setManualStatus('');
+      }
       openBtn?.addEventListener('click', () => {
-        form?.classList.remove('hidden');
+        setManualOpen(true);
         tituloEl?.focus();
       });
-      closeBtn?.addEventListener('click', () => {
-        form?.classList.add('hidden');
-        setManualStatus('');
+      closeBtn?.addEventListener('click', () => setManualOpen(false));
+      backdrop?.addEventListener('click', () => setManualOpen(false));
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && form && !form.classList.contains('hidden')) {
+          setManualOpen(false);
+        }
       });
       form?.addEventListener('submit', async (e) => {
         e.preventDefault();

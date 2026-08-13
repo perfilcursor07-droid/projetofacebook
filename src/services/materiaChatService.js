@@ -85,6 +85,145 @@ function classificarUrlFonte(url) {
   return null;
 }
 
+function normalizarUrlSocialParaComparacao(url) {
+  try {
+    const parsed = new URL(String(url || '').trim());
+    parsed.hash = '';
+    parsed.hostname = parsed.hostname.replace(/^(?:www\.|m\.)/i, '').toLowerCase();
+    [
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'utm_content',
+      'utm_term',
+      'igsh',
+      'fbclid',
+      '__tn__',
+      '__cft__',
+    ].forEach((key) => parsed.searchParams.delete(key));
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    return parsed.href.toLowerCase();
+  } catch {
+    return normalizarUrlComparacao(url);
+  }
+}
+
+function identidadePostSocial(url, plataforma) {
+  const ids = new Set();
+  const urlNeedles = new Set();
+  let canonical = normalizarUrlSocialParaComparacao(url);
+
+  try {
+    const parsed = new URL(String(url || '').trim());
+    const pathname = decodeURIComponent(parsed.pathname || '');
+
+    if (plataforma === 'instagram') {
+      const match = pathname.match(/\/(?:p|reel|reels|tv)\/([^/?#]+)/i);
+      if (match?.[1]) {
+        ids.add(match[1]);
+        urlNeedles.add(`/${match[1]}`);
+        urlNeedles.add(`/${match[1]}/`);
+        canonical = `instagram:${match[1].toLowerCase()}`;
+      }
+    }
+
+    if (plataforma === 'facebook') {
+      for (const key of ['fbid', 'story_fbid', 'v', 'video_id']) {
+        const value = String(parsed.searchParams.get(key) || '').trim();
+        if (value) ids.add(value);
+      }
+
+      const patterns = [
+        /\/(?:posts|videos|reel)\/([^/?#]+)/i,
+        /\/share\/(?:p|r|v)\/([^/?#]+)/i,
+        /\/photos\/[^/?#]+\/([^/?#]+)/i,
+      ];
+      for (const pattern of patterns) {
+        const match = pathname.match(pattern);
+        if (match?.[1]) ids.add(match[1]);
+      }
+
+      const first = [...ids][0];
+      if (first) canonical = `facebook:${first.toLowerCase()}`;
+      for (const id of ids) {
+        urlNeedles.add(`/${id}`);
+        urlNeedles.add(`fbid=${id}`);
+        urlNeedles.add(`story_fbid=${id}`);
+        urlNeedles.add(`v=${id}`);
+      }
+    }
+  } catch {
+    /* URL validation happens in the caller. */
+  }
+
+  return {
+    ids: [...ids],
+    urlNeedles: [...urlNeedles],
+    canonical,
+  };
+}
+
+function postDaBibliotecaCorresponde(post, url, plataforma) {
+  const alvo = identidadePostSocial(url, plataforma);
+  const candidato = identidadePostSocial(post?.url, plataforma);
+  const idsAlvo = new Set(alvo.ids.map((id) => id.toLowerCase()));
+  const idsCandidato = new Set([
+    ...candidato.ids.map((id) => id.toLowerCase()),
+    String(post?.external_id || '').trim().toLowerCase(),
+  ]);
+
+  if (idsAlvo.size) return [...idsAlvo].some((id) => idsCandidato.has(id));
+  return Boolean(alvo.canonical && alvo.canonical === candidato.canonical);
+}
+
+async function buscarPostSocialNaBiblioteca(userId, url, plataforma) {
+  if (!userId || !['instagram', 'facebook'].includes(plataforma)) return null;
+
+  const BibliotecaPosts = require('../models/BibliotecaPosts');
+  const identidade = identidadePostSocial(url, plataforma);
+  const exactUrls = [String(url || '').trim(), normalizarUrlSocialParaComparacao(url)].filter(Boolean);
+  const candidatos = await BibliotecaPosts.findSocialCandidates(userId, {
+    plataforma,
+    externalIds: identidade.ids,
+    urlNeedles: identidade.urlNeedles,
+    exactUrls,
+  });
+
+  return candidatos.find((post) => postDaBibliotecaCorresponde(post, url, plataforma)) || null;
+}
+
+function fonteDoPostSalvo(post, url, plataforma) {
+  const resumo = String(post?.resumo || '').trim();
+  const titulo = String(post?.titulo || '').trim();
+  const tituloUtil = !/^(?:post|publica[cç][aã]o)(?:\s+do|\s+@|$)/i.test(titulo) ? titulo : '';
+  const texto = resumo.length >= 40 ? resumo : tituloUtil.length >= 80 ? tituloUtil : '';
+  if (!texto) return null;
+
+  const trecho = [
+    tituloUtil && !texto.toLowerCase().includes(tituloUtil.toLowerCase())
+      ? `Titulo registrado: ${tituloUtil}`
+      : null,
+    `Texto da publicacao salvo na Biblioteca:\n${texto}`,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  const veiculo =
+    String(post?.fonte_nome || post?.fonte_handle || '').trim() ||
+    (plataforma === 'instagram' ? 'Instagram' : 'Facebook');
+
+  return {
+    veiculo,
+    titulo: tituloUtil || texto.slice(0, 120),
+    url: String(post?.url || url).trim(),
+    resumo: texto.slice(0, 400),
+    trecho: trecho.slice(0, 9000),
+    ehRedeSocial: true,
+    plataforma,
+    imagem: post?.thumbnail || null,
+    bibliotecaPostId: post?.id || null,
+  };
+}
+
 /**
  * YouTube → título + descrição (+ legendas/auto-captions se existirem).
  * Não baixa o vídeo inteiro.
@@ -164,7 +303,7 @@ async function extrairYoutubeComoFonte(url, { onPasso } = {}) {
  * Extrai legenda/texto de FB, IG ou YT colados no chat.
  * Devolve fontes no formato do montarBlocoFatos.
  */
-async function extrairFontesDeLinks(urls, { onPasso, textoManual = '' } = {}) {
+async function extrairFontesDeLinks(urls, { userId, onPasso, textoManual = '' } = {}) {
   const {
     isSocialPostUrl,
     extrairPostSocial,
@@ -197,6 +336,30 @@ async function extrairFontesDeLinks(urls, { onPasso, textoManual = '' } = {}) {
           erro: `Link de ${rotulo} não parece ser um post/foto/Reel. Use o link da publicação.`,
         });
         continue;
+      }
+
+      const temTextoManual = urls.length === 1 && String(textoManual || '').trim().length >= 40;
+      if (!temTextoManual) {
+        try {
+          const postSalvo = await buscarPostSocialNaBiblioteca(userId, link, tipo);
+          const fonteSalva = fonteDoPostSalvo(postSalvo, link, tipo);
+          if (fonteSalva) {
+            fontes.push(fonteSalva);
+            console.info(
+              `[materia-chat] ${tipo}: post #${postSalvo.id} recuperado da Biblioteca`
+            );
+            if (typeof onPasso === 'function') {
+              onPasso({
+                kind: 'fontes',
+                texto: `Legenda${fonteSalva.imagem ? ' e imagem' : ''} encontradas na Biblioteca (${fonteSalva.veiculo})`,
+                url: fonteSalva.url,
+              });
+            }
+            continue;
+          }
+        } catch (err) {
+          console.warn(`[materia-chat] consultar Biblioteca (${tipo}):`, err.message);
+        }
       }
 
       const social = await extrairPostSocial(link, {
@@ -1098,6 +1261,7 @@ async function responder({
       texto: `Lendo ${urlsSociais.length} link(s) de Facebook/Instagram/YouTube…`,
     });
     const { fontes: fontesLink, falhas } = await extrairFontesDeLinks(urlsSociais, {
+      userId,
       onPasso: registrarPasso,
       textoManual: textoManualDoPost,
     });
