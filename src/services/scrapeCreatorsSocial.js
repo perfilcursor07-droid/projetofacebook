@@ -66,24 +66,67 @@ function shortcodeInstagram(value) {
   return match?.[1] || null;
 }
 
+function encontrarMediaInstagram(payload, shortcodeEsperado) {
+  const esperado = String(shortcodeEsperado || '').toLowerCase();
+  const fila = [{ value: payload, depth: 0 }];
+  const vistos = new Set();
+  let fallback = null;
+
+  while (fila.length) {
+    const { value, depth } = fila.shift();
+    if (!value || typeof value !== 'object' || vistos.has(value) || depth > 7) continue;
+    vistos.add(value);
+
+    const code = textoLimpo(value.shortcode || value.code);
+    const temLegenda = Boolean(
+      textoLimpo(value.caption?.text || value.caption || value.caption_text) ||
+        textoLimpo(value.edge_media_to_caption?.edges?.[0]?.node?.text)
+    );
+    const pareceMedia = Boolean(
+      code || temLegenda || value.display_url || value.image_versions2 || value.video_url
+    );
+
+    if (pareceMedia) {
+      if (code && esperado && code.toLowerCase() === esperado) return value;
+      if (!fallback && (!esperado || !code)) fallback = value;
+    }
+
+    for (const child of Array.isArray(value) ? value : Object.values(value)) {
+      if (child && typeof child === 'object') fila.push({ value: child, depth: depth + 1 });
+    }
+  }
+
+  return fallback;
+}
+
 function normalizarInstagram(payload, url) {
-  const media = payload?.data?.xdt_shortcode_media || payload?.xdt_shortcode_media || null;
+  const solicitado = shortcodeInstagram(url);
+  const media = encontrarMediaInstagram(payload, solicitado);
   if (!media || typeof media !== 'object') return null;
 
-  const texto = textoLimpo(media.edge_media_to_caption?.edges?.[0]?.node?.text);
-  const owner = media.owner || {};
-  const username = textoLimpo(owner.username);
-  const nome = textoLimpo(owner.full_name);
-  const shortcode = textoLimpo(media.shortcode);
+  const texto = textoLimpo(
+    media.edge_media_to_caption?.edges?.[0]?.node?.text ||
+      media.caption?.text ||
+      media.caption ||
+      media.caption_text ||
+      media.description
+  );
+  const owner = media.owner || media.user || {};
+  const username = textoLimpo(owner.username || media.username);
+  const nome = textoLimpo(owner.full_name || media.full_name);
+  const shortcode = textoLimpo(media.shortcode || media.code);
   const resources = Array.isArray(media.display_resources) ? media.display_resources : [];
   const sidecarImage = media.edge_sidecar_to_children?.edges?.[0]?.node?.display_url;
   const imagem =
     textoLimpo(media.display_url) ||
+    textoLimpo(media.image_url) ||
+    textoLimpo(media.thumbnail_url) ||
+    textoLimpo(media.image_versions2?.candidates?.[0]?.url) ||
     textoLimpo(media.thumbnail_src) ||
     textoLimpo(resources[resources.length - 1]?.src) ||
     textoLimpo(sidecarImage) ||
     null;
-  const videoUrl = textoLimpo(media.video_url) || null;
+  const videoUrl = textoLimpo(media.video_url || media.video_versions?.[0]?.url) || null;
   const isVideo = Boolean(media.is_video || videoUrl || /clips|video/i.test(String(media.product_type || '')));
   const canonicalUrl = shortcode
     ? `https://www.instagram.com/${isVideo ? 'reel' : 'p'}/${shortcode}/`

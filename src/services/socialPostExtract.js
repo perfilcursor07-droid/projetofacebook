@@ -539,6 +539,7 @@ async function extrairViaInstagramEmbed(url) {
             imagem,
             veiculo,
             metodo: 'ig-embed',
+            postId: code,
           };
         }
       } catch (err) {
@@ -566,6 +567,7 @@ async function extrairViaInstagramMirror(url) {
       if (parsed.texto && parsed.texto.length >= 40) {
         parsed.url = url;
         parsed.metodo = 'ig-mirror';
+        parsed.postId = code;
         return parsed;
       }
     } catch (err) {
@@ -755,7 +757,16 @@ async function extrairViaInstagramApi(url) {
         console.warn(
           `[socialPost] ig-html: cookie=${Boolean(attempt.cookie)} ua=${attempt.ua.slice(0, 18)} url=${pageUrl.slice(-36)} len=${html.length} ${sig}`
         );
-        if (extracted && !extracted.empty && extracted.texto && extracted.texto.length >= 40) {
+        const veioDoPostSolicitado = pageUrl.includes('/embed/')
+          ? Boolean(extracted?.signals?.hasClassCaption || extracted?.signals?.usedOgText)
+          : Boolean(extracted?.signals?.usedOgText);
+        if (
+          veioDoPostSolicitado &&
+          extracted &&
+          !extracted.empty &&
+          extracted.texto &&
+          extracted.texto.length >= 40
+        ) {
           console.warn(`[socialPost] ig-html: ok (${extracted.texto.length} chars)`);
           return {
             url,
@@ -764,6 +775,7 @@ async function extrairViaInstagramApi(url) {
             imagem: extracted.imagem,
             veiculo: extracted.veiculo,
             metodo: 'ig-cookie-html',
+            postId: code,
           };
         }
       }
@@ -982,13 +994,23 @@ async function extrairViaMbasic(url) {
 function mesclarExtracao(melhor, extra) {
   if (!extra) return melhor;
   const out = { ...melhor };
-  const textoAtualConfiavel = ['scrapecreators', 'manual'].includes(out.textoMetodo);
-  const textoNovoConfiavel = ['scrapecreators', 'manual'].includes(extra.metodo);
+  const confiancaTexto = (metodo) => {
+    if (metodo === 'manual') return 4;
+    if (
+      ['scrapecreators', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror'].includes(metodo)
+    ) {
+      return 3;
+    }
+    if (metodo === 'og' || metodo === 'oembed' || metodo === 'yt-dlp') return 2;
+    return 1;
+  };
+  const confiancaAtual = confiancaTexto(out.textoMetodo);
+  const confiancaNova = confiancaTexto(extra.metodo);
   if (
     extra.texto &&
     (!out.texto ||
-      (!textoAtualConfiavel &&
-        (textoNovoConfiavel || extra.texto.length > out.texto.length)))
+      confiancaNova > confiancaAtual ||
+      (confiancaNova === confiancaAtual && extra.texto.length > out.texto.length))
   ) {
     out.texto = extra.texto;
     out.textoMetodo = extra.metodo || null;
@@ -1083,7 +1105,9 @@ async function extrairPostSocial(url, opts = {}) {
   const precisaTexto = () =>
     !melhor.texto ||
     (textoGenericoSocial(melhor.texto) &&
-      !['scrapecreators', 'manual'].includes(melhor.textoMetodo));
+      !['scrapecreators', 'manual', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror'].includes(
+        melhor.textoMetodo
+      ));
 
   // 2) Open Graph e métodos legados complementam somente campos ausentes/incompletos.
   if (precisaTexto() || !melhor.imagem) {
@@ -1109,7 +1133,9 @@ async function extrairPostSocial(url, opts = {}) {
     incorporar(await extrairViaOembed(link));
   }
 
-  if (precisaTexto() || !melhor.imagem) {
+  // O leitor genérico pode devolver conteúdo recomendado da página do Instagram
+  // sem indicar o shortcode. Em posts do Instagram isso não é uma fonte segura.
+  if (plataforma !== 'instagram' && (precisaTexto() || !melhor.imagem)) {
     try {
       incorporar(await extrairViaJina(link));
     } catch (err) {

@@ -1053,6 +1053,7 @@ async function responder({
   let checagemDoDossie = null;
   let pesquisaExigeDossie = false;
   let temFonteDoLink = false;
+  let falhasLinksSociais = [];
   // Assunto extraído do post, usado para buscar contexto quando o pedido é só o link
   let assuntoDoLink = '';
 
@@ -1086,6 +1087,7 @@ async function responder({
     const { fontes: fontesLink, falhas } = await extrairFontesDeLinks(urlsSociais, {
       onPasso: registrarPasso,
     });
+    falhasLinksSociais = falhas;
     if (fontesLink.length) {
       fontes = [...fontes, ...fontesLink];
       temFonteDoLink = true;
@@ -1141,6 +1143,27 @@ async function responder({
         url: f.url || null,
       });
     }
+  }
+
+  // Um único link social precisa ser lido de forma inequívoca. Se a extração
+  // falhar, pesquisar o nome da plataforma na web pode trocar completamente a pauta.
+  if (urlsFonte.length === 1 && urlsSociais.length === 1 && !temFonteDoLink) {
+    usarPesquisa = false;
+    const detalhe = String(falhasLinksSociais[0]?.erro || '').trim();
+    const resposta = [
+      'Não consegui confirmar o conteúdo deste link do Instagram/Facebook/YouTube, então não gerei a matéria para evitar usar outro conteúdo.',
+      detalhe || null,
+      'Cole a legenda do post junto com o link e envie novamente. Vou usar esse texto como a fonte principal.',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    registrarPasso({
+      kind: 'aviso',
+      texto: 'Link social não confirmado: geração interrompida para não trocar a pauta.',
+    });
+    onEvent({ tipo: 'inicio-resposta' });
+    onEvent({ tipo: 'delta', texto: resposta });
+    return finalizar(resposta, { fontesUsadas: [], usouWeb: false });
   }
 
   // Link colado já é a fonte da matéria: o padrão é reescrever só com ele,
