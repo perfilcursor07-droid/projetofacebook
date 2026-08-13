@@ -164,7 +164,7 @@ async function extrairYoutubeComoFonte(url, { onPasso } = {}) {
  * Extrai legenda/texto de FB, IG ou YT colados no chat.
  * Devolve fontes no formato do montarBlocoFatos.
  */
-async function extrairFontesDeLinks(urls, { onPasso } = {}) {
+async function extrairFontesDeLinks(urls, { onPasso, textoManual = '' } = {}) {
   const {
     isSocialPostUrl,
     extrairPostSocial,
@@ -199,7 +199,9 @@ async function extrairFontesDeLinks(urls, { onPasso } = {}) {
         continue;
       }
 
-      const social = await extrairPostSocial(link);
+      const social = await extrairPostSocial(link, {
+        textoManual: urls.length === 1 ? textoManual : '',
+      });
       const texto = String(social.texto || '').trim();
       if (texto.length < 40) {
         falhas.push({
@@ -1023,6 +1025,17 @@ async function responder({
       .replace(/\s+/g, ' ')
       .trim();
 
+  const textoManualDoPost = (() => {
+    if (urlsSociais.length !== 1 || urlsFonte.length !== 1) return '';
+    const semLink = pedidoSemUrls()
+      .replace(
+        /^\s*(?:fa[cç]a|crie|escreva|monte)?\s*(?:uma\s+)?(?:mat[eé]ria|reportagem|texto)?\s*(?:deste|desse|do|sobre)?\s*(?:link|post|instagram|facebook)?\s*[:\-–—]*\s*/i,
+        ''
+      )
+      .trim();
+    return semLink.length >= 80 ? semLink : '';
+  })();
+
   // Pedido curto afirmando um fato = hipótese a checar antes de virar matéria
   // Colar só o link (ou “faça matéria” + link) também pede matéria.
   const pedeMateria =
@@ -1086,6 +1099,7 @@ async function responder({
     });
     const { fontes: fontesLink, falhas } = await extrairFontesDeLinks(urlsSociais, {
       onPasso: registrarPasso,
+      textoManual: textoManualDoPost,
     });
     falhasLinksSociais = falhas;
     if (fontesLink.length) {

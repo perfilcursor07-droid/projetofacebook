@@ -1070,6 +1070,26 @@ async function extrairPostSocial(url, opts = {}) {
     conteudoVisual: [],
   };
 
+  // Quando o editor cola a legenda, ela é a fonte mais confiável e dispensa
+  // provedores externos. Isso também mantém o fluxo utilizável se o Instagram
+  // bloquear o servidor ou se o serviço de scraping estiver indisponível.
+  if (textoManual.length >= 40) {
+    const primeiraFrase = textoManual
+      .split(/(?<=[.!?])\s+/)
+      .map((parte) => parte.trim())
+      .find((parte) => parte.length >= 20);
+    return {
+      ...melhor,
+      titulo: String(primeiraFrase || textoManual).slice(0, 140),
+      texto: textoManual,
+      textoMetodo: 'manual',
+      imagem: /^https?:\/\//i.test(imagemManual) ? imagemManual : null,
+      veiculo: plataforma === 'instagram' ? 'Instagram' : 'Facebook',
+      metodo: 'manual',
+      postId: plataforma === 'instagram' ? extrairShortcodeIg(link) : null,
+    };
+  }
+
   const shortcodeSolicitado = plataforma === 'instagram' ? extrairShortcodeIg(link) : null;
   const incorporar = (extra) => {
     if (!extra) return;
@@ -1099,6 +1119,12 @@ async function extrairPostSocial(url, opts = {}) {
       scrapeCreatorsFalhou = true;
       console.warn('[socialPost] scrapecreators:', err.message);
     }
+  }
+
+  // O extrator oEmbed já suporta os dois produtos da Meta. Tenta a API oficial
+  // também no Instagram antes de depender do HTML público, que varia por região.
+  if (plataforma === 'instagram') {
+    incorporar(await extrairViaOembed(link));
   }
 
   // Legendas curtas vindas da API são confiáveis; nos demais métodos, texto curto pode ser ruído.
