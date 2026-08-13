@@ -229,14 +229,16 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
     if (subtitles?.text && String(subtitles.text).trim().length >= 20) return subtitles;
   }
 
-  const downloadUrl = /^https?:\/\//i.test(directMedia) ? directMedia : original;
+  const usingDirectMedia = /^https?:\/\//i.test(directMedia);
+  const downloadUrl = usingDirectMedia ? directMedia : original;
   const info = await inspectUrlMedia(downloadUrl);
   assertUrlMediaLimits(info);
 
-  const tmpDir = path.resolve(env.storagePath, 'tmp', `url_audio_${Date.now()}`);
+  const tmpRoot = path.resolve(env.storagePath, 'tmp');
+  fs.mkdirSync(tmpRoot, { recursive: true });
+  const tmpDir = fs.mkdtempSync(path.join(tmpRoot, 'url_audio_'));
   const output = path.join(tmpDir, 'source.%(ext)s');
   const wavPath = path.join(tmpDir, 'audio.wav');
-  fs.mkdirSync(tmpDir, { recursive: true });
 
   try {
     await runYtDlpForUrl(downloadUrl, {
@@ -262,6 +264,13 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
       throw new Error('Não encontrei fala suficiente no áudio deste vídeo.');
     }
     return { ...result, source: 'faster-whisper-url' };
+  } catch (err) {
+    // URLs diretas do CDN do Instagram expiram. Se isso aconteceu, deixa o
+    // yt-dlp resolver novamente a mídia a partir do permalink original.
+    if (usingDirectMedia) {
+      return transcribeUrl({ sourceUrl: original, mediaUrl: null, preferSubtitles: false });
+    }
+    throw err;
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
