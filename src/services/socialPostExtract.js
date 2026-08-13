@@ -556,15 +556,21 @@ async function extrairViaInstagramEmbed(url) {
 async function extrairViaInstagramMirror(url) {
   const code = extrairShortcodeIg(url);
   if (!code) return null;
+  const tipoOriginal = String(url).match(/instagram\.com\/(p|reel|reels|tv)\//i)?.[1] || 'p';
+  const tipo = /reel|reels|tv/i.test(tipoOriginal) ? 'reel' : 'p';
   const mirrors = [
-    `https://www.ddinstagram.com/p/${code}/`,
-    `https://ddinstagram.com/p/${code}/`,
+    `https://uuinstagram.com/${tipo}/${code}/`,
+    `https://toinstagram.com/${tipo}/${code}/`,
+    `https://www.ddinstagram.com/${tipo}/${code}/`,
+    `https://ddinstagram.com/${tipo}/${code}/`,
   ];
   for (const mirror of mirrors) {
     try {
       const { html, finalUrl } = await fetchHtml(mirror, CRAWLER_UA);
       const parsed = parseOgFromHtml(html, finalUrl || mirror);
-      if (parsed.texto && parsed.texto.length >= 40) {
+      const codeFinal = extrairShortcodeIg(finalUrl) || extrairShortcodeIg(parsed.url);
+      const postCorreto = !codeFinal || codeFinal.toLowerCase() === code.toLowerCase();
+      if (postCorreto && parsed.texto && parsed.texto.length >= 40) {
         parsed.url = url;
         parsed.metodo = 'ig-mirror';
         parsed.postId = code;
@@ -1108,11 +1114,17 @@ async function extrairPostSocial(url, opts = {}) {
     melhor = mesclarExtracao(melhor, extra);
   };
 
+  // Para Instagram público, tenta primeiro os mirrors de Open Graph. Além de
+  // não consumirem créditos, eles devolvem legenda e imagem no mesmo acesso.
+  if (plataforma === 'instagram') {
+    incorporar(await extrairViaInstagramMirror(link));
+  }
+
   const scrapeCreators = require('./scrapeCreatorsSocial');
   let scrapeCreatorsFalhou = false;
 
   // 1) ScrapeCreators — provedor principal para posts individuais IG/FB.
-  if (scrapeCreators.isConfigured()) {
+  if (scrapeCreators.isConfigured() && (!melhor.texto || !melhor.imagem)) {
     try {
       incorporar(await scrapeCreators.extrairPost(link, plataforma));
     } catch (err) {
@@ -1123,7 +1135,7 @@ async function extrairPostSocial(url, opts = {}) {
 
   // O extrator oEmbed já suporta os dois produtos da Meta. Tenta a API oficial
   // também no Instagram antes de depender do HTML público, que varia por região.
-  if (plataforma === 'instagram') {
+  if (plataforma === 'instagram' && (!melhor.texto || !melhor.imagem)) {
     incorporar(await extrairViaOembed(link));
   }
 
@@ -1147,12 +1159,8 @@ async function extrairPostSocial(url, opts = {}) {
   if (plataforma === 'instagram' && (precisaTexto() || !melhor.imagem)) {
     incorporar(await extrairViaInstagramApi(link));
   }
-
-  if (plataforma === 'instagram' && (precisaTexto() || !melhor.imagem)) {
-    incorporar(await extrairViaInstagramEmbed(link));
-  }
   if (plataforma === 'instagram' && precisaTexto()) {
-    incorporar(await extrairViaInstagramMirror(link));
+    incorporar(await extrairViaInstagramEmbed(link));
   }
 
   if (plataforma === 'facebook' && (precisaTexto() || !melhor.imagem)) {
