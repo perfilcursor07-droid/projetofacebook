@@ -115,9 +115,10 @@ async function enviar(req, res, next) {
       periodo: body.periodo || undefined,
       palavrasChave: body.palavrasChave || null,
       modo: body.modo === 'pautas' ? 'pautas' : 'escrever',
-      transcreverVideo: ['1', 'true', 'on', 'sim'].includes(
-        String(body.transcreverVideo ?? '').toLowerCase()
-      ),
+      transcreverVideo:
+        body.transcreverVideo == null
+          ? true
+          : ['1', 'true', 'on', 'sim'].includes(String(body.transcreverVideo).toLowerCase()),
       onEvent: enviarEvento,
     });
     clearInterval(heartbeat);

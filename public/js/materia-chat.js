@@ -37,7 +37,7 @@
     chatId: null,
     conversas: [],
     pesquisarWeb: true,
-    transcreverVideo: false,
+    transcreverVideo: true,
     enviando: false,
     controller: null,
     vozAtiva: false,
@@ -357,13 +357,22 @@
       const kinds = [...lista.querySelectorAll('[data-passo-kind]')].map((el) => el.dataset.passoKind);
       // "lendo" também aparece ao abrir o link colado — pesquisa web = busca/resultados.
       const temPesquisaWeb = kinds.some((k) => ['busca', 'encontrados'].includes(k));
+      const audioTranscrito = kinds.includes('transcricao');
+      const audioFalhou = kinds.includes('transcricao-falhou');
       const rotulo = temPesquisaWeb ? 'Pesquisa e apuração' : 'Leitura e reescrita';
       if (ativo) {
         resumoTexto.textContent = ultimoPasso?.texto || `${rotulo}…`;
         resumoMeta.textContent = total ? String(total) : '';
       } else {
         resumoTexto.textContent = `${rotulo} concluída`;
-        resumoMeta.textContent = total ? `${total} etapas · ver detalhes` : '';
+        const audioStatus = audioTranscrito
+          ? 'áudio transcrito'
+          : audioFalhou
+            ? 'áudio não transcrito'
+            : null;
+        resumoMeta.textContent = total
+          ? `${total} etapas${audioStatus ? ` · ${audioStatus}` : ''} · ver detalhes`
+          : '';
       }
     }
 
@@ -375,11 +384,11 @@
 
       const ponto = document.createElement('span');
       const cor =
-        passo.kind === 'aviso'
+        passo.kind === 'aviso' || passo.kind === 'transcricao-falhou'
           ? 'bg-amber-400'
           : passo.kind === 'escrevendo'
             ? 'bg-violet-400'
-            : passo.kind === 'fontes' || passo.kind === 'encontrados'
+            : ['fontes', 'encontrados', 'transcricao'].includes(passo.kind)
               ? 'bg-emerald-400'
               : 'bg-slate-500';
       ponto.className = `mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${cor}`;

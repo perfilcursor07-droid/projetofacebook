@@ -229,6 +229,8 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
     if (subtitles?.text && String(subtitles.text).trim().length >= 20) return subtitles;
   }
 
+  assertWhisperAvailable();
+
   const usingDirectMedia = /^https?:\/\//i.test(directMedia);
   const downloadUrl = usingDirectMedia ? directMedia : original;
   const info = await inspectUrlMedia(downloadUrl);
@@ -395,6 +397,30 @@ function runPythonTranscribe(wavPath) {
       });
     });
   });
+}
+
+function assertWhisperAvailable() {
+  const python = resolvePythonCommand();
+  if (!python) {
+    const err = new Error(
+      'Whisper não está instalado no servidor. Configure Python e rode: python3 -m pip install -r scripts/requirements.txt'
+    );
+    err.status = 503;
+    throw err;
+  }
+
+  const probe = spawnSync(
+    python.cmd,
+    [...python.prefixArgs, '-c', 'import faster_whisper'],
+    { windowsHide: true, encoding: 'utf8', timeout: 15_000, env: process.env }
+  );
+  if (probe.status !== 0) {
+    const err = new Error(
+      'faster-whisper não está instalado no servidor. Rode: python3 -m pip install -r scripts/requirements.txt'
+    );
+    err.status = 503;
+    throw err;
+  }
 }
 
 /**

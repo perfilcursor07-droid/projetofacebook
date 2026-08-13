@@ -249,7 +249,7 @@ async function transcreverVideoComoFonte(
     if (typeof onPasso === 'function') {
       const origem = resultado.source === 'yt-dlp-subtitles' ? 'legendas' : 'áudio';
       onPasso({
-        kind: 'fontes',
+        kind: 'transcricao',
         texto: `Transcrição obtida pelo ${origem} (${texto.length} caracteres)`,
         url,
       });
@@ -259,7 +259,7 @@ async function transcreverVideoComoFonte(
     console.warn(`[materia-chat] transcrição ${rotulo}:`, err.message);
     if (typeof onPasso === 'function') {
       onPasso({
-        kind: 'aviso',
+        kind: 'transcricao-falhou',
         texto: `Não consegui transcrever o áudio do ${rotulo}: ${err.message}`,
         url,
       });
@@ -1040,7 +1040,7 @@ async function responder({
   periodo = PERIODO_PADRAO,
   palavrasChave = null,
   modo = 'escrever',
-  transcreverVideo = false,
+  transcreverVideo = true,
   onEvent = () => {},
 }) {
   // 'pautas': pesquisa o tema e devolve a lista de matérias para o usuário
@@ -1328,6 +1328,9 @@ async function responder({
 
   // 1) Links FB / IG / YT colados no chat → legenda, descrição ou legendas
   if (urlsSociais.length) {
+    console.info(
+      `[materia-chat] links sociais=${urlsSociais.length} transcreverVideo=${Boolean(transcreverVideo)}`
+    );
     registrarPasso({
       kind: 'pensando',
       texto: `Lendo ${urlsSociais.length} link(s) de Facebook/Instagram/YouTube…`,

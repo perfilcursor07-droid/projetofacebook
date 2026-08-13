@@ -1978,8 +1978,8 @@ async function gerarTextoDePostImpl({
   await BibliotecaPosts.update(post.id, {
     status: 'gerado_texto',
     matter_id: gerado.matter?.id || null,
-    titulo: postBase.titulo,
-    resumo: postBase.resumo,
+    titulo: postBase.titulo ? String(postBase.titulo).slice(0, 500) : null,
+    resumo: postBase.resumo ? String(postBase.resumo).slice(0, 2000) : null,
   });
 
   // Se o post já estava na agenda (pré-agendado), religa a matéria e preserva o horário.

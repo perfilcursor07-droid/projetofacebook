@@ -245,8 +245,23 @@ const BibliotecaPosts = {
     return db(this.table).where({ fonte_id: fonteId, external_id: String(externalId) }).first();
   },
 
-  create(data) {
-    return db(this.table).insert(data);
+  async create(data) {
+    try {
+      return await db(this.table).insert(data);
+    } catch (err) {
+      // Compatibilidade durante deploy: o app pode reiniciar alguns segundos
+      // antes de a migração que adiciona media_url terminar no servidor.
+      if (
+        Object.prototype.hasOwnProperty.call(data || {}, 'media_url') &&
+        (err.code === 'ER_BAD_FIELD_ERROR' || /unknown column ['"]?media_url/i.test(err.message || ''))
+      ) {
+        const semMediaUrl = { ...data };
+        delete semMediaUrl.media_url;
+        console.warn('[biblioteca] media_url ainda não existe; salvando post sem a mídia direta');
+        return db(this.table).insert(semMediaUrl);
+      }
+      throw err;
+    }
   },
 
   update(id, data) {
