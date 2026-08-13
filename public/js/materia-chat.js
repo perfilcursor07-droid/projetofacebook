@@ -36,7 +36,7 @@
     iniciado: false,
     chatId: null,
     conversas: [],
-    pesquisarWeb: true,
+    pesquisarWeb: false,
     transcreverVideo: true,
     enviando: false,
     controller: null,
@@ -1271,6 +1271,8 @@
     }
     el.titulo.textContent = 'Nova conversa';
     el.renomear?.classList.add('hidden');
+    state.pesquisarWeb = false;
+    aplicarToggleWeb();
     limparMensagens();
     renderConversas();
     closeDrawer();

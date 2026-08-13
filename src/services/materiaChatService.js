@@ -232,6 +232,9 @@ async function transcreverVideoComoFonte(
   url,
   { mediaUrl = null, onPasso, rotulo = 'vídeo' } = {}
 ) {
+  console.info(
+    `[materia-chat] iniciando transcrição ${rotulo}: ${url}${mediaUrl ? ' (mídia direta disponível)' : ''}`
+  );
   if (typeof onPasso === 'function') {
     onPasso({
       kind: 'lendo',
@@ -245,6 +248,10 @@ async function transcreverVideoComoFonte(
     const resultado = await transcribeUrl({ sourceUrl: url, mediaUrl, preferSubtitles: true });
     const texto = String(resultado?.text || '').trim();
     if (texto.length < 20) return null;
+
+    console.info(
+      `[materia-chat] transcrição ${rotulo}: concluída via ${resultado.source || 'provedor desconhecido'} (${texto.length} caracteres)`
+    );
 
     if (typeof onPasso === 'function') {
       const origem = resultado.source === 'yt-dlp-subtitles' ? 'legendas' : 'áudio';
@@ -391,7 +398,9 @@ async function extrairFontesDeLinks(
           const postSalvo = await buscarPostSocialNaBiblioteca(userId, link, tipo);
           const fonteSalva = fonteDoPostSalvo(postSalvo, link, tipo);
           if (fonteSalva) {
-            if (transcreverVideo && fonteSalva.isVideo) {
+            // O Instagram também publica vídeos em /p/, não apenas /reel/.
+            // Registros coletados por fallback podem chegar como "post" genérico.
+            if (transcreverVideo && (fonteSalva.isVideo || tipo === 'instagram')) {
               const transcricao = await transcreverVideoComoFonte(link, {
                 mediaUrl: fonteSalva.mediaUrl || null,
                 onPasso,
@@ -437,7 +446,10 @@ async function extrairFontesDeLinks(
       // Com a opcao ativa, transcreve o audio; sem ela, tenta apenas legendas.
       let trecho = texto;
       const ehVideo =
-        social.isVideo === true || /reel|reels|videos|fb\.watch|\/tv\//i.test(link);
+        social.isVideo === true ||
+        Boolean(social.videoUrl) ||
+        tipo === 'instagram' ||
+        /reel|reels|videos|fb\.watch|\/tv\//i.test(link);
       if (transcreverVideo && ehVideo) {
         const transcricao = await transcreverVideoComoFonte(link, {
           mediaUrl: social.videoUrl || null,

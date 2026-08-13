@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const youtubedlExec = require('youtube-dl-exec');
-const { runYtDlp } = require('./ytDlpAuth');
+const { runYtDlp, detectPlatformFromUrl } = require('./ytDlpAuth');
 const { env } = require('../config/env');
 const { extractAudioWav } = require('./ffmpegService');
 const { storageAbsolutePath } = require('./downloadService');
@@ -21,8 +21,21 @@ function ytDlpExecutable() {
   return youtubedlExec;
 }
 
-function runYtDlpForUrl(url, flags) {
-  return runYtDlp(ytDlpExecutable(), url, flags);
+function runYtDlpForUrl(url, flags, authOpts = {}) {
+  return runYtDlp(ytDlpExecutable(), url, flags, authOpts).catch(async (error) => {
+    if (authOpts.noCookies || !/instagram\.com/i.test(String(url || ''))) throw error;
+
+    // Uma sessão expirada pode bloquear até posts públicos. Repete sem cookies
+    // antes de concluir que o Instagram não disponibilizou a mídia.
+    try {
+      return await runYtDlp(ytDlpExecutable(), url, flags, {
+        platform: 'instagram',
+        noCookies: true,
+      });
+    } catch (publicError) {
+      throw publicError || error;
+    }
+  });
 }
 
 function cleanVttText(value) {
@@ -182,14 +195,14 @@ async function trySubtitlesFromUrl(url) {
   }
 }
 
-async function inspectUrlMedia(url) {
+async function inspectUrlMedia(url, authOpts = {}) {
   try {
     return await runYtDlpForUrl(url, {
       dumpSingleJson: true,
       skipDownload: true,
       noPlaylist: true,
       noWarnings: true,
-    });
+    }, authOpts);
   } catch {
     return null;
   }
@@ -233,7 +246,10 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
 
   const usingDirectMedia = /^https?:\/\//i.test(directMedia);
   const downloadUrl = usingDirectMedia ? directMedia : original;
-  const info = await inspectUrlMedia(downloadUrl);
+  const directAuth = usingDirectMedia
+    ? { platform: detectPlatformFromUrl(original), noCookies: true }
+    : {};
+  const info = await inspectUrlMedia(downloadUrl, directAuth);
   assertUrlMediaLimits(info);
 
   const tmpRoot = path.resolve(env.storagePath, 'tmp');
@@ -243,13 +259,17 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
   const wavPath = path.join(tmpDir, 'audio.wav');
 
   try {
-    await runYtDlpForUrl(downloadUrl, {
-      format: 'bestaudio/best',
-      output,
-      noPlaylist: true,
-      noWarnings: true,
-      maxFilesize: '300M',
-    });
+    await runYtDlpForUrl(
+      downloadUrl,
+      {
+        format: 'bestaudio/best',
+        output,
+        noPlaylist: true,
+        noWarnings: true,
+        maxFilesize: '300M',
+      },
+      directAuth
+    );
 
     const downloaded = fs
       .readdirSync(tmpDir)
