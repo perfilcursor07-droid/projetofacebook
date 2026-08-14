@@ -1,14 +1,15 @@
 /* Chat Matéria manual — visual próximo ao ChatGPT (só UI) */
 
 .mia-chat {
-  --mia-chat-bg: #0b0f19;
-  --mia-chat-sidebar: #0a0e17;
-  --mia-chat-surface: #151b2b;
-  --mia-chat-border: rgba(148, 163, 184, 0.12);
+  --mia-chat-bg: #101217;
+  --mia-chat-sidebar: #0b0d12;
+  --mia-chat-surface: #1b1e25;
+  --mia-chat-surface-hover: #22262e;
+  --mia-chat-border: rgba(148, 163, 184, 0.16);
   --mia-chat-text: #ececf1;
   --mia-chat-muted: #8e8ea0;
-  --mia-chat-accent: #10b981;
-  --mia-chat-user-bg: #2f3548;
+  --mia-chat-accent: #10a37f;
+  --mia-chat-user-bg: #282c35;
   --mia-chat-stream: 100%;
   padding: 0;
   margin: 0;
@@ -16,22 +17,28 @@
   overflow: hidden;
 }
 
+.mia-chat *,
+.mia-chat *::before,
+.mia-chat *::after {
+  letter-spacing: 0;
+}
+
 /* Desktop: coluna do chat mais larga (celulares ficam em 100% da tela) */
 @media (min-width: 1024px) {
   .mia-chat {
-    --mia-chat-stream: 56rem;
+    --mia-chat-stream: 52rem;
   }
 }
 
 @media (min-width: 1280px) {
   .mia-chat {
-    --mia-chat-stream: 68rem;
+    --mia-chat-stream: 54rem;
   }
 }
 
 @media (min-width: 1536px) {
   .mia-chat {
-    --mia-chat-stream: 76rem;
+    --mia-chat-stream: 56rem;
   }
 }
 
@@ -48,14 +55,14 @@
 @media (min-width: 1024px) {
   .mia-chat-shell {
     display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: 248px minmax(0, 1fr);
     height: 100svh;
   }
 }
 
 @media (min-width: 1280px) {
   .mia-chat-shell {
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 }
 
@@ -198,13 +205,13 @@ body.mia-chat-drawer-open {
 .mia-chat-new {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.5rem;
   width: 100%;
-  border-radius: 0.65rem;
-  border: 1px solid var(--mia-chat-border);
-  background: transparent;
-  padding: 0.65rem 0.85rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 0.65rem 0.7rem;
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--mia-chat-text);
@@ -212,8 +219,8 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-new:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--mia-chat-border);
 }
 
 .mia-chat-new-icon {
@@ -221,12 +228,28 @@ body.mia-chat-drawer-open {
   height: 1rem;
 }
 
+.mia-chat-search {
+  position: relative;
+  display: block;
+}
+
+.mia-chat-search > svg {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  width: 0.9rem;
+  height: 0.9rem;
+  color: #6f7582;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
 .mia-chat-search input {
   width: 100%;
   border-radius: 0.55rem;
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.04);
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.7rem 0.5rem 2rem;
   font-size: 0.8125rem;
   color: var(--mia-chat-text);
   outline: none;
@@ -448,10 +471,9 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-sidebar-foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  padding: 0.5rem 0.35rem 0.15rem;
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.4rem 0 0;
   border-top: 1px solid var(--mia-chat-border);
   margin-top: auto;
 }
@@ -463,12 +485,25 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-foot-link {
-  font-size: 0.6875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.15rem;
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.75rem;
   color: var(--mia-chat-muted);
 }
 
 .mia-chat-foot-link:hover {
-  color: #d1d5db;
+  color: #e5e7eb;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mia-chat-foot-link svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
 }
 
 /* —— Main thread —— */
@@ -511,10 +546,19 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-header-title p {
-  font-size: 0.9375rem;
-  font-weight: 500;
+  font-size: 0.875rem;
+  font-weight: 600;
   color: var(--mia-chat-text);
   margin: 0;
+}
+
+.mia-chat-header-title > span {
+  display: block;
+  margin-bottom: 0.05rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #707684;
 }
 
 .mia-chat-ghost-btn {
@@ -539,7 +583,7 @@ body.mia-chat-drawer-open {
   z-index: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0.75rem 0.65rem 1rem;
+  padding: 1rem 0.75rem 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -554,8 +598,8 @@ body.mia-chat-drawer-open {
 
 @media (min-width: 640px) {
   .mia-chat-messages {
-    padding: 1rem 1rem 1.5rem;
-    gap: 1.25rem;
+    padding: 1.5rem 1.5rem 2rem;
+    gap: 1.5rem;
   }
 }
 
@@ -572,25 +616,55 @@ body.mia-chat-drawer-open {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2rem;
   flex: 1;
-  min-height: min(28vh, 14rem);
-  padding: 1rem 0.25rem 1.25rem;
+  min-height: 100%;
+  padding: 2rem 0 1rem;
   text-align: center;
 }
 
 @media (min-width: 640px) {
   .mia-chat-empty {
-    min-height: min(36vh, 18rem);
-    padding: 1.5rem 0.5rem 2rem;
+    gap: 2.25rem;
+    padding: 3rem 0.5rem 2rem;
   }
+}
+
+.mia-chat-empty-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.mia-chat-empty-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 0.9rem;
+  border: 1px solid rgba(16, 163, 127, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(16, 163, 127, 0.1);
+  color: #70d9bd;
+}
+
+.mia-chat-empty-mark svg {
+  width: 1.4rem;
+  height: 1.4rem;
 }
 
 .mia-chat-empty-title {
   margin: 0;
-  font-size: clamp(1.25rem, 5vw, 1.875rem);
+  font-size: 1.5rem;
   font-weight: 600;
-  letter-spacing: -0.02em;
   color: #fff;
+}
+
+@media (min-width: 640px) {
+  .mia-chat-empty-title {
+    font-size: 1.75rem;
+  }
 }
 
 .mia-chat-empty-sub {
@@ -615,79 +689,86 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-shortcuts {
-  flex-shrink: 0;
-  position: relative;
-  z-index: 6;
-  border-bottom: 1px solid var(--mia-chat-border);
-  background: var(--mia-chat-bg);
-  padding: 0.4rem 0.65rem 0.5rem;
-}
-
-@media (min-width: 640px) {
-  .mia-chat-shortcuts {
-    padding: 0.45rem 1rem 0.55rem;
-  }
+  width: 100%;
+  max-width: 44rem;
 }
 
 .mia-chat-prompts {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.4rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
   margin: 0;
   width: 100%;
-  max-width: none;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
+  max-width: 100%;
+  overflow: visible;
   text-align: left;
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 640px) {
   .mia-chat-prompts {
-    flex-wrap: wrap;
-    overflow: visible;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 .mia-chat-prompt {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
   align-items: center;
-  gap: 0.4rem;
-  max-width: min(22rem, 82vw);
-  border-radius: 999px;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 4.25rem;
+  max-width: none;
+  border-radius: 0.5rem;
   border: 1px solid var(--mia-chat-border);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 0.38rem 0.7rem;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 0.65rem 0.75rem;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   text-align: left;
 }
 
 .mia-chat-prompt:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--mia-chat-surface-hover);
   border-color: rgba(148, 163, 184, 0.32);
 }
 
+.mia-chat-prompt > span:last-child {
+  min-width: 0;
+}
+
+.mia-chat-prompt-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #b8bdc8;
+}
+
+.mia-chat-prompt-icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .mia-chat-prompt-label {
-  flex-shrink: 0;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--mia-chat-accent);
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #e7e9ed;
 }
 
 .mia-chat-prompt-text {
+  display: -webkit-box;
+  margin-top: 0.15rem;
   font-size: 0.75rem;
   line-height: 1.3;
-  color: #d1d5db;
-  white-space: nowrap;
+  color: var(--mia-chat-muted);
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 /* User / assistant bubbles (classes aplicadas no JS) */
@@ -945,8 +1026,8 @@ body.mia-chat-drawer-open {
 /* —— Composer —— */
 .mia-chat-composer-wrap {
   flex-shrink: 0;
-  padding: 0.35rem 0.55rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(to top, var(--mia-chat-bg) 78%, transparent);
+  padding: 0.45rem 0.6rem calc(0.55rem + env(safe-area-inset-bottom, 0px));
+  background: var(--mia-chat-bg);
 }
 
 @media (min-width: 640px) {
@@ -959,17 +1040,17 @@ body.mia-chat-drawer-open {
   width: 100%;
   max-width: var(--mia-chat-stream);
   margin: 0 auto;
-  border-radius: 1.15rem;
+  border-radius: 1rem;
   border: 1px solid var(--mia-chat-border);
   background: var(--mia-chat-surface);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 8px 28px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.24);
   padding: 0.55rem 0.65rem 0.5rem;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 @media (min-width: 640px) {
   .mia-chat-composer {
-    border-radius: 1.35rem;
+    border-radius: 1rem;
     padding: 0.65rem 0.75rem 0.55rem;
   }
 }
@@ -1007,55 +1088,104 @@ body.mia-chat-drawer-open {
   padding: 0 0.1rem;
 }
 
-.mia-chat-tools {
+.mia-chat-toolbar-main {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
   flex: 1;
   min-width: 0;
 }
 
+.mia-chat-tools {
+  display: grid;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.mia-chat-more {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.mia-chat-more > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border: 1px solid var(--mia-chat-border);
+  border-radius: 999px;
+  color: #c5c9d2;
+  cursor: pointer;
+  list-style: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mia-chat-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mia-chat-more > summary:hover,
+.mia-chat-more[open] > summary {
+  border-color: rgba(148, 163, 184, 0.34);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.mia-chat-more > summary svg {
+  width: 1rem;
+  height: 1rem;
+  transition: transform 0.15s;
+}
+
+.mia-chat-more[open] > summary svg {
+  transform: rotate(45deg);
+}
+
+.mia-chat-more-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.6rem);
+  z-index: 25;
+  width: min(17rem, calc(100vw - 2rem));
+  border: 1px solid var(--mia-chat-border);
+  border-radius: 0.5rem;
+  background: #171a20;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+  padding: 0.55rem;
+}
+
+.mia-chat-more-menu .mia-chat-chip,
+.mia-chat-more-menu .mia-x-anexo-btn,
+.mia-chat-more-menu .mia-x-imagem-btn {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 2.35rem;
+  border-radius: 0.45rem;
+  padding: 0.45rem 0.55rem;
+}
+
+.mia-chat-tool-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7rem;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 2.35rem;
+  border-radius: 0.45rem;
+  padding: 0.3rem 0.55rem;
+  color: var(--mia-chat-muted);
+  font-size: 0.75rem;
+}
+
+.mia-chat-tool-field:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 @media (max-width: 639px) {
-  .mia-chat-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto;
-    align-items: center;
-    column-gap: 0.45rem;
-    row-gap: 0.35rem;
-  }
-
-  .mia-chat-tools {
-    grid-column: 1;
-    grid-row: 2;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 0.1rem;
-    mask-image: linear-gradient(to right, #000 92%, transparent);
-  }
-
-  .mia-chat-tools::-webkit-scrollbar {
-    display: none;
-  }
-
-  .mia-chat-tools > * {
-    flex-shrink: 0;
-  }
-
   .mia-chat-status:not(:empty) {
-    grid-column: 1 / -1;
-    grid-row: 1;
+    order: -1;
+    flex-basis: 100%;
     max-width: 100%;
-  }
-
-  .mia-chat-send-row {
-    grid-column: 2;
-    grid-row: 2;
-    align-self: center;
   }
 }
 
@@ -1066,6 +1196,13 @@ body.mia-chat-drawer-open {
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--mia-chat-border);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mia-chat-seg::-webkit-scrollbar {
+  display: none;
 }
 
 .mia-chat-seg-btn {
@@ -1077,6 +1214,8 @@ body.mia-chat-drawer-open {
   font-weight: 500;
   color: var(--mia-chat-muted);
   cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .mia-chat-seg-btn.is-active,
@@ -1124,7 +1263,7 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-select {
-  border-radius: 999px;
+  border-radius: 0.4rem;
   border: 1px solid var(--mia-chat-border);
   background-color: var(--mia-chat-surface);
   padding: 0.3rem 0.55rem;
@@ -1136,9 +1275,14 @@ body.mia-chat-drawer-open {
   cursor: pointer;
 }
 
+.mia-chat-tool-field .mia-chat-select {
+  width: 100%;
+  max-width: none;
+}
+
 @media (max-width: 639px) {
   .mia-chat-select {
-    max-width: 6.5rem;
+    max-width: 7rem;
     padding: 0.3rem 0.45rem;
   }
 }
@@ -1274,11 +1418,11 @@ body.mia-chat-drawer-open {
 
 .mia-chat-hint {
   display: none;
-  margin: 0.4rem auto 0;
+  margin: 0.3rem auto 0;
   max-width: var(--mia-chat-stream);
   text-align: center;
   font-size: 0.6875rem;
-  color: #52525b;
+  color: #626773;
 }
 
 @media (min-width: 640px) {

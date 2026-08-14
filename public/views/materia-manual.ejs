@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260812manualoverlay" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260814chatlayout2" />
 
   <main class="mia-chat">
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -23,6 +23,9 @@
         </button>
         <label class="mia-chat-search">
           <span class="sr-only">Buscar conversa</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+          </svg>
           <input id="chat-busca" type="search" placeholder="Buscar conversas…" autocomplete="off" />
         </label>
         <p class="mia-chat-sidebar-label mia-chat-desktop-only">Conversas</p>
@@ -30,8 +33,14 @@
           <p class="mia-chat-list-empty">Carregando…</p>
         </div>
         <div class="mia-chat-sidebar-foot">
-          <a href="/minhas-materias" class="mia-chat-foot-link">Matérias salvas</a>
-          <a href="/conteudo" class="mia-chat-foot-link">Criar conteúdo</a>
+          <a href="/minhas-materias" class="mia-chat-foot-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Matérias salvas
+          </a>
+          <a href="/conteudo" class="mia-chat-foot-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18M3 12h18"/></svg>
+            Criar conteúdo
+          </a>
         </div>
       </aside>
 
@@ -44,6 +53,7 @@
             </svg>
           </button>
           <div class="mia-chat-header-title">
+            <span>Matéria manual</span>
             <p id="chat-titulo" class="truncate">Nova conversa</p>
           </div>
           <div class="mia-chat-header-actions">
@@ -52,41 +62,41 @@
                 <path d="M12 5v14M5 12h14"/>
               </svg>
             </button>
-            <button type="button" id="chat-renomear" class="mia-chat-ghost-btn hidden">Renomear</button>
+            <button type="button" id="chat-renomear" class="mia-chat-icon-btn hidden" title="Renomear conversa" aria-label="Renomear conversa">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+            </button>
           </div>
         </header>
 
-        <div class="mia-chat-shortcuts">
-          <div class="mia-chat-prompts" role="toolbar" aria-label="Atalhos de matéria">
-            <button type="button" id="chat-criar-manual" class="mia-chat-prompt" title="Escrever minha propria materia e abrir no editor">
-              <span class="mia-chat-prompt-label">Manual</span>
-              <span class="mia-chat-prompt-text">Escrever minha propria materia e abrir no editor</span>
-            </button>
-            <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria sobre católicos e evangélicos juntos na política em 2026">
-              <span class="mia-chat-prompt-label">Escrever</span>
-              <span class="mia-chat-prompt-text">Faça uma matéria sobre católicos e evangélicos juntos na política em 2026</span>
-            </button>
-            <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria sobre o crescimento das igrejas evangélicas no Brasil">
-              <span class="mia-chat-prompt-label">Escrever</span>
-              <span class="mia-chat-prompt-text">Faça uma matéria sobre o crescimento das igrejas evangélicas no Brasil</span>
-            </button>
-            <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria deste link:">
-              <span class="mia-chat-prompt-label">Link</span>
-              <span class="mia-chat-prompt-text">Faça uma matéria deste link:</span>
-            </button>
-            <button type="button" class="chat-exemplo mia-chat-prompt" data-modo-exemplo="pautas" title="Pesquise pautas sobre polêmicas gospel desta semana">
-              <span class="mia-chat-prompt-label">Pautas</span>
-              <span class="mia-chat-prompt-text">Pesquise pautas sobre polêmicas gospel desta semana</span>
-            </button>
-          </div>
-        </div>
-
         <div id="chat-mensagens" class="mia-chat-messages">
           <div id="chat-vazio" class="mia-chat-empty">
-            <h1 class="mia-chat-empty-title">Como posso ajudar?</h1>
-            <p class="mia-chat-empty-sub">
-              Peça uma matéria, cole um link do Facebook, Instagram ou YouTube, ou pesquise pautas na web.
-            </p>
+            <div class="mia-chat-empty-copy">
+              <span class="mia-chat-empty-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z"/><path d="m18.5 15 .9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9Z"/></svg>
+              </span>
+              <h1 class="mia-chat-empty-title">Como posso ajudar?</h1>
+              <p class="mia-chat-empty-sub">Crie uma matéria, transforme um link em notícia ou encontre pautas recentes.</p>
+            </div>
+            <div class="mia-chat-shortcuts">
+              <div class="mia-chat-prompts" role="toolbar" aria-label="Atalhos de matéria">
+                <button type="button" id="chat-criar-manual" class="mia-chat-prompt" title="Escrever minha própria matéria e abrir no editor">
+                  <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></span>
+                  <span><span class="mia-chat-prompt-label">Criar manualmente</span><span class="mia-chat-prompt-text">Escreva seu próprio texto com ajuda da IA</span></span>
+                </button>
+                <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria deste link:">
+                  <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg></span>
+                  <span><span class="mia-chat-prompt-label">Transformar um link</span><span class="mia-chat-prompt-text">Instagram, Facebook, YouTube ou site</span></span>
+                </button>
+                <button type="button" class="chat-exemplo mia-chat-prompt" data-modo-exemplo="pautas" title="Pesquise pautas sobre polêmicas gospel desta semana">
+                  <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>
+                  <span><span class="mia-chat-prompt-label">Pesquisar pautas</span><span class="mia-chat-prompt-text">Encontre assuntos recentes para publicar</span></span>
+                </button>
+                <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria sobre o crescimento das igrejas evangélicas no Brasil">
+                  <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg></span>
+                  <span><span class="mia-chat-prompt-label">Escrever por assunto</span><span class="mia-chat-prompt-text">Desenvolva uma pauta a partir de uma ideia</span></span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -97,7 +107,58 @@
               class="mia-chat-input"></textarea>
 
             <div class="mia-chat-toolbar">
-              <div class="mia-chat-tools">
+              <div class="mia-chat-toolbar-main">
+                <details class="mia-chat-more" id="chat-ferramentas">
+                  <summary title="Ferramentas" aria-label="Abrir ferramentas">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  </summary>
+                  <div class="mia-chat-more-menu">
+                    <div class="mia-chat-tools">
+                      <button type="button" id="chat-toggle-web" aria-pressed="false"
+                        title="Ligado: a IA busca notícias recentes na web. Desligado: escreve apenas com o que você enviar."
+                        class="mia-chat-chip">
+                        <span class="mia-chat-chip-dot"></span>
+                        Pesquisar na web
+                      </button>
+
+                      <button type="button" id="chat-toggle-transcricao" aria-pressed="true"
+                        title="Ligado: usar legendas ou transcrever o áudio do vídeo"
+                        class="mia-chat-chip is-on">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                          <path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 7v10"/><path d="M20 10v4"/>
+                        </svg>
+                        Transcrever vídeo
+                      </button>
+
+                      <label class="mia-chat-tool-field">
+                        <span>Período da busca</span>
+                        <select id="chat-periodo" title="Período da busca" class="mia-chat-select">
+                          <option value="24h">24h</option>
+                          <option value="3d">3 dias</option>
+                          <option value="7d">7 dias</option>
+                          <option value="15d">15 dias</option>
+                          <option value="30d" selected>30 dias</option>
+                          <option value="60d">60 dias</option>
+                          <option value="90d">90 dias</option>
+                          <option value="180d">180 dias</option>
+                        </select>
+                      </label>
+
+                      <label class="mia-chat-tool-field">
+                        <span>Tom da escrita</span>
+                        <select id="chat-tom" title="Tom da escrita" class="mia-chat-select">
+                          <option value="natural" selected>Natural</option>
+                          <option value="polemico">Polêmico</option>
+                          <option value="direto">Direto</option>
+                          <option value="curiosidade">Curiosidade</option>
+                          <option value="emocional">Emocional</option>
+                          <option value="factual">Factual</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </details>
+
                 <div class="mia-chat-seg" role="group" aria-label="O que a IA deve fazer">
                   <button type="button" data-chat-modo="escrever" aria-pressed="true"
                     title="A IA já escreve a matéria com o que você pedir"
@@ -106,44 +167,6 @@
                     title="A IA pesquisa o tema e lista as matérias publicadas para você escolher"
                     class="chat-modo-btn mia-chat-seg-btn">Pautas</button>
                 </div>
-
-                <button type="button" id="chat-toggle-web" aria-pressed="false"
-                  title="Ligado: a IA busca notícias recentes na web. Desligado: escreve apenas com o que você enviar."
-                  class="mia-chat-chip">
-                  <span class="mia-chat-chip-dot"></span>
-                  Web
-                </button>
-
-                <button type="button" id="chat-toggle-transcricao" aria-pressed="true"
-                  title="Ligado: usar legendas ou transcrever o áudio do vídeo"
-                  class="mia-chat-chip is-on">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 7v10"/><path d="M20 10v4"/>
-                  </svg>
-                  Áudio
-                </button>
-
-                <select id="chat-periodo" title="Período da busca"
-                  class="mia-chat-select">
-                  <option value="24h">24h</option>
-                  <option value="3d">3 dias</option>
-                  <option value="7d">7 dias</option>
-                  <option value="15d">15 dias</option>
-                  <option value="30d" selected>30 dias</option>
-                  <option value="60d">60 dias</option>
-                  <option value="90d">90 dias</option>
-                  <option value="180d">180 dias</option>
-                </select>
-
-                <select id="chat-tom" title="Tom da escrita"
-                  class="mia-chat-select">
-                  <option value="natural" selected>Natural</option>
-                  <option value="polemico">Polêmico</option>
-                  <option value="direto">Direto</option>
-                  <option value="curiosidade">Curiosidade</option>
-                  <option value="emocional">Emocional</option>
-                  <option value="factual">Factual</option>
-                </select>
               </div>
 
               <span id="chat-status" class="mia-chat-status" aria-live="polite"></span>
@@ -205,6 +228,7 @@
       const tipoEl = document.getElementById('chat-manual-tipo');
       const creditoEl = document.getElementById('chat-manual-credito');
       const chatMain = document.querySelector('.mia-chat-main');
+      const ferramentas = document.getElementById('chat-ferramentas');
       function setManualStatus(text, erro) {
         if (!statusEl) return;
         statusEl.textContent = text || '';
@@ -223,7 +247,15 @@
       });
       closeBtn?.addEventListener('click', () => setManualOpen(false));
       backdrop?.addEventListener('click', () => setManualOpen(false));
+      document.addEventListener('pointerdown', (e) => {
+        if (ferramentas?.open && !ferramentas.contains(e.target)) {
+          ferramentas.removeAttribute('open');
+        }
+      });
       document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && ferramentas?.open) {
+          ferramentas.removeAttribute('open');
+        }
         if (e.key === 'Escape' && form && !form.classList.contains('hidden')) {
           setManualOpen(false);
         }
