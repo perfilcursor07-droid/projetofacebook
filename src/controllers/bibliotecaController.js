@@ -593,7 +593,7 @@ async function limparAgendaSemKeyword(req, res, next) {
   try {
     const agendaService = require('../services/bibliotecaAgendaService');
     const result = await agendaService.limparItensSemPalavraChave(req.session.userId, {
-      statuses: ['pendente', 'confirmado'],
+      statuses: ['pendente'],
       compactar: true,
     });
     const itens = await agendaService.listarAgenda(req.session.userId, {

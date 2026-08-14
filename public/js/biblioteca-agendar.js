@@ -248,7 +248,7 @@
   document.getElementById('agenda-btn-limpar-kw')?.addEventListener('click', async () => {
     if (
       !confirm(
-        'Remover da agenda todos os itens (pré-agendados e confirmados) que NÃO batem nas suas palavras-chave?'
+        'Remover da agenda todos os itens pré-agendados que NÃO batem nas suas palavras-chave?'
       )
     ) {
       return;

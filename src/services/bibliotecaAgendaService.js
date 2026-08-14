@@ -525,22 +525,29 @@ async function diasAtivosAgenda(userId) {
 }
 
 /**
- * Compacta pendentes + confirmados do dia em horários contínuos de 30 em 30 min.
+ * Compacta pendentes do dia em horários contínuos de 30 em 30 min.
  * Ex.: 08:00, 08:30, 10:30 → 08:00, 08:30, 09:00
  *
- * Não pula slots por causa de itens já "publicado" — a aba Agendada deve ficar
- * contínua; publicados ficam na outra aba e não devem abrir buraco na fila.
+ * Confirmados/publicados ficam fixos; a tela da Biblioteca organiza apenas pendentes.
  */
-async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
+async function compactarHorariosDoDia(userId, { dayKey = null, incluirConfirmados = false } = {}) {
   const day = dayKey || diaAmanhaKey();
   const todos = await itensAgendaDoDia(userId, day);
   const itens = todos
-    .filter((r) => r.status === 'pendente' || r.status === 'confirmado')
+    .filter((r) => r.status === 'pendente' || (incluirConfirmados && r.status === 'confirmado'))
     .sort((a, b) => a.proposed_at.getTime() - b.proposed_at.getTime());
   if (itens.length < 1) return { ajustados: 0, day };
 
   const slots = buildAllDaySlotsForDay(day);
   if (!slots.length) return { ajustados: 0, day };
+  const fixos = incluirConfirmados
+    ? new Set()
+    : new Set(
+        todos
+          .filter((r) => r.status === 'confirmado' || r.status === 'publicado')
+          .map((r) => chaveHorario(r.proposed_at))
+          .filter(Boolean)
+      );
 
   const firstMs = itens[0].proposed_at.getTime();
   let startIdx = 0;
@@ -550,14 +557,17 @@ async function compactarHorariosDoDia(userId, { dayKey = null } = {}) {
   }
 
   // Garante que todos cabem na janela 7h–22h
-  if (startIdx + itens.length > slots.length) {
-    startIdx = Math.max(0, slots.length - itens.length);
+  const slotsLivres = slots.filter((s, idx) => idx >= startIdx && !fixos.has(chaveHorario(s)));
+  if (slotsLivres.length < itens.length) {
+    const todosLivres = slots.filter((s) => !fixos.has(chaveHorario(s)));
+    const offset = Math.max(0, todosLivres.length - itens.length);
+    slotsLivres.splice(0, slotsLivres.length, ...todosLivres.slice(offset));
   }
 
   let ajustados = 0;
   const antes = itens.map((r) => chaveHorario(r.proposed_at));
   for (let i = 0; i < itens.length; i += 1) {
-    const slot = slots[startIdx + i];
+    const slot = slotsLivres[i];
     if (!slot) {
       console.warn(
         `[agenda] compactar user #${userId} ${day}: sem slot para item #${itens[i].id}`
@@ -656,7 +666,7 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
   let filterStatus = status;
 
   if (tab === 'agendada' || tab === 'agendadas' || tab === 'pendente') {
-    statuses = ['pendente', 'confirmado'];
+    statuses = ['pendente'];
     order = 'asc';
     filterStatus = null;
   } else if (tab === 'publicadas' || tab === 'publicado') {
@@ -677,8 +687,13 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
       order,
     });
 
+  const itensParaSincronizar = await BibliotecaAgenda.findByUser(userId, {
+    statuses: ['pendente', 'confirmado'],
+    limit: 200,
+    order: 'asc',
+  });
+  await sincronizarComMaterias(userId, itensParaSincronizar || []);
   let itens = await fetchItens();
-  await sincronizarComMaterias(userId, itens || []);
 
   if (reparar) {
     try {
@@ -1009,7 +1024,7 @@ async function montarAgendaAmanha({
   if (keywordsFiltro) {
     const limpeza = await limparItensSemPalavraChave(userId, {
       keywords: keywordsFiltro,
-      statuses: ['pendente', 'confirmado'],
+      statuses: ['pendente'],
       compactar: true,
     });
     removidosSemKw = limpeza.removidos || 0;
@@ -1634,7 +1649,7 @@ async function limparItensSemPalavraChave(
   const keywordsStr = kw.join(', ');
 
   const itens = await BibliotecaAgenda.findByUser(userId, {
-    statuses: Array.isArray(statuses) && statuses.length ? statuses : ['pendente', 'confirmado'],
+    statuses: Array.isArray(statuses) && statuses.length ? statuses : ['pendente'],
     limit: 200,
     order: 'asc',
   });

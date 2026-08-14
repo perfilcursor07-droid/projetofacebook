@@ -109,7 +109,7 @@
       <div class="space-y-2 border-t border-slate-800 px-3 py-2.5 text-xs leading-relaxed text-slate-400">
         <p>
           Você pode <strong class="font-medium text-slate-300">alterar data e horário</strong> de qualquer item
-          (pré-agendado ou confirmado) — só não para o passado. Ao excluir um item, os seguintes sobem
+          pré-agendado. Ao confirmar, ele sai desta tela; ao excluir um item, os seguintes sobem
           automaticamente para manter o intervalo de 30 minutos.
         </p>
         <p>
@@ -320,7 +320,7 @@
       <% } else { %>
       <p class="mt-3 text-xs text-slate-500">
         <% if (abaAtual === 'agendada') { %>
-          Pré-agendadas e já agendadas (confirmadas) — mesmas que aparecem em Matérias salvas. <span id="agenda-count" class="text-slate-400">(<%= lista.length %> nesta lista)</span>
+          Pré-agendadas da Biblioteca. Ao confirmar, a matéria sai daqui e fica em Matérias salvas &gt; Agendadas. <span id="agenda-count" class="text-slate-400">(<%= lista.length %> nesta lista)</span>
         <% } else { %>
           Já publicadas no Facebook. <span id="agenda-count" class="text-slate-400">(<%= lista.length %> nesta lista)</span>
         <% } %>
@@ -503,5 +503,5 @@
       opacity: 1;
     }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260806a"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260814preagenda1"></script>
 <%- include('partials/app-end') %>

@@ -70,7 +70,7 @@ const BibliotecaAgenda = {
       const st = String(r.status || '');
       if (st in out) out[st] = n;
     }
-    out.agendada = out.pendente + out.confirmado;
+    out.agendada = out.pendente;
     out.publicadas = out.publicado;
     return out;
   },
