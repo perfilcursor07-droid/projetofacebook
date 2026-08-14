@@ -111,6 +111,19 @@ async function buildInstagramCookieHeader() {
   return build();
 }
 
+/** c_user/xs etc. de YTDLP_FB_COOKIES_FILE (Netscape). */
+function buildFacebookCookieHeader() {
+  const { buildFacebookCookieHeader: build } = require('./facebookCookies');
+  return build();
+}
+
+/** Cookie header da plataforma do link, quando houver sessão configurada. */
+async function cookieHeaderParaUrl(url) {
+  if (/instagram\.com/i.test(url)) return (await buildInstagramCookieHeader()) || null;
+  if (/facebook\.com/i.test(url)) return buildFacebookCookieHeader();
+  return null;
+}
+
 function textoGenericoSocial(texto) {
   const t = String(texto || '').trim();
   if (!t) return true;
@@ -490,8 +503,7 @@ function parseOgFromHtml(html, finalUrl) {
 }
 
 async function extrairViaOg(url) {
-  const cookie =
-    /instagram\.com/i.test(url) ? await buildInstagramCookieHeader() : null;
+  const cookie = await cookieHeaderParaUrl(url);
   const extra = cookie ? { Cookie: cookie } : {};
 
   // Crawler UA primeiro (melhor OG); se falhar imagem/texto, tenta browser UA
@@ -1047,7 +1059,12 @@ async function extrairViaMbasic(url) {
     const u = new URL(normalizarUrlSocial(url));
     if (!u.hostname.includes('facebook.com')) return null;
     u.hostname = 'mbasic.facebook.com';
-    const { html, finalUrl } = await fetchHtml(u.toString(), BROWSER_UA);
+    const cookie = buildFacebookCookieHeader();
+    const { html, finalUrl } = await fetchHtml(
+      u.toString(),
+      BROWSER_UA,
+      cookie ? { Cookie: cookie } : {}
+    );
     if (/\/login/i.test(finalUrl) || /log in|entre no facebook/i.test(html.slice(0, 2000))) {
       return null;
     }
@@ -1077,13 +1094,74 @@ async function extrairViaMbasic(url) {
   }
 }
 
+/**
+ * HTML autenticado do Facebook (YTDLP_FB_COOKIES_FILE). É o caminho gratuito
+ * para posts que exigem login — o texto vem no JSON embutido, não no Open Graph.
+ */
+async function extrairViaFacebookHtml(url) {
+  const cookie = buildFacebookCookieHeader();
+  if (!cookie) return null;
+
+  try {
+    const { html, finalUrl } = await fetchHtml(normalizarUrlSocial(url), BROWSER_UA, {
+      Cookie: cookie,
+    });
+    if (/\/login|\/checkpoint/i.test(finalUrl)) {
+      console.warn('[socialPost] fb-html: sessão redirecionada para login/checkpoint');
+      return null;
+    }
+
+    // O post pedido é normalmente a maior mensagem da página; comentários e
+    // publicações sugeridas usam a mesma estrutura, então pegamos a mais longa.
+    const textos = [];
+    const padroes = [
+      /"message"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g,
+      /"message_preferred_body"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g,
+    ];
+    for (const re of padroes) {
+      for (const m of html.matchAll(re)) {
+        const candidato = unescapeJsonString(m[1]).trim();
+        if (candidato.length >= 40) textos.push(candidato);
+      }
+    }
+    textos.sort((a, b) => b.length - a.length);
+    const texto = textos[0] || null;
+
+    const parsed = parseOgFromHtml(html, finalUrl || url);
+    let imagem = parsed.imagem;
+    if (!imagem) {
+      const img =
+        html.match(/"photo_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i) ||
+        html.match(/"full_width_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i);
+      if (img?.[1]) imagem = img[1].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+    }
+
+    const autor =
+      html.match(/"actors"\s*:\s*\[\s*\{[^}]*?"name"\s*:\s*"((?:\\.|[^"\\])*)"/i)?.[1] || null;
+    const veiculo = autor ? unescapeJsonString(autor) : parsed.veiculo;
+
+    if (!texto && !imagem) return null;
+    return {
+      url,
+      titulo: texto ? texto.slice(0, 140) : parsed.titulo,
+      texto,
+      imagem: imagem || null,
+      veiculo,
+      metodo: 'fb-html',
+    };
+  } catch (err) {
+    console.warn('[socialPost] fb-html:', err.message);
+    return null;
+  }
+}
+
 function mesclarExtracao(melhor, extra) {
   if (!extra) return melhor;
   const out = { ...melhor };
   const confiancaTexto = (metodo) => {
     if (metodo === 'manual') return 4;
     if (
-      ['scrapecreators', 'brightdata', 'apify-ig', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror'].includes(metodo)
+      ['scrapecreators', 'brightdata', 'apify-ig', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror', 'fb-html'].includes(metodo)
     ) {
       return 3;
     }
@@ -1204,6 +1282,12 @@ async function extrairPostSocial(url, opts = {}) {
     incorporar(await extrairViaInstagramMirror(link));
   }
 
+  // Facebook com sessão configurada: o HTML autenticado traz a legenda completa
+  // sem consumir créditos de provedor. Tentamos antes dos serviços pagos.
+  if (plataforma === 'facebook') {
+    incorporar(await extrairViaFacebookHtml(link));
+  }
+
   // Provedor com proxy residencial. A coleta por URL evita os bloqueios de
   // datacenter do Instagram e retorna legenda e imagens do post exato.
   if (plataforma === 'instagram' && (!melhor.texto || !melhor.imagem)) {
@@ -1252,7 +1336,7 @@ async function extrairPostSocial(url, opts = {}) {
   const precisaTexto = () =>
     !melhor.texto ||
     (textoGenericoSocial(melhor.texto) &&
-      !['scrapecreators', 'brightdata', 'apify-ig', 'manual', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror'].includes(
+      !['scrapecreators', 'brightdata', 'apify-ig', 'manual', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror', 'fb-html'].includes(
         melhor.textoMetodo
       ));
 
@@ -1329,18 +1413,19 @@ async function extrairPostSocial(url, opts = {}) {
     const { diagnoseInstagramCookies } = require('./instagramCookies');
     const igDiag = plataforma === 'instagram' ? diagnoseInstagramCookies() : null;
     let mensagem;
-    if (scrapeCreators.isConfigured()) {
+    if (plataforma === 'facebook') {
+      const { diagnoseFacebookCookies } = require('./facebookCookies');
+      const fbDiag = diagnoseFacebookCookies();
+      mensagem = fbDiag.ok
+        ? 'A sessão do Facebook não conseguiu ler este post (pode estar privado, restrito ou a sessão caiu). Revalide com: node scripts/test-fb-cookies.js. Enquanto isso, cole a legenda em “Texto da postagem”.'
+        : `Este post exige login e não há sessão do Facebook configurada (${fbDiag.reason}). Exporte os cookies Netscape do Facebook para YTDLP_FB_COOKIES_FILE — isso destrava a leitura sem depender de créditos. Enquanto isso, cole a legenda em “Texto da postagem”.`;
+    } else if (scrapeCreators.isConfigured()) {
       mensagem =
-        plataforma === 'instagram'
-          ? 'Não foi possível obter a legenda deste post pelo provedor automático nem pelos métodos alternativos. O post pode estar privado, restrito ou indisponível. Cole a legenda em “Texto da postagem”.'
-          : 'Não foi possível obter a legenda deste post do Facebook pelo provedor automático nem pelos métodos alternativos. O post pode estar privado ou exigir login. Cole a legenda em “Texto da postagem” e, se puder, a URL da imagem.';
+        'Não foi possível obter a legenda deste post pelo provedor automático nem pelos métodos alternativos. O post pode estar privado, restrito ou indisponível. Cole a legenda em “Texto da postagem”.';
     } else {
-      mensagem =
-        plataforma === 'instagram'
-          ? igDiag?.ok
-            ? 'O Instagram bloqueou a leitura automática (sessão expirada, checkpoint ou post restrito). Atualize os cookies em YTDLP_IG_COOKIES_FILE ou cole a legenda em “Texto da postagem”.'
-            : `Cookies do Instagram inválidos (${igDiag?.reason || 'ausentes'}). Exporte de novo para /home/viralizeai/secrets/instagram-cookies.txt ou cole a legenda em “Texto da postagem”.`
-          : 'O Facebook bloqueou a leitura automática deste post (pede login no servidor). Cole a legenda do post no campo “Texto da postagem” (e, se puder, a URL da imagem) e gere de novo.';
+      mensagem = igDiag?.ok
+        ? 'O Instagram bloqueou a leitura automática (sessão expirada, checkpoint ou post restrito). Atualize os cookies em YTDLP_IG_COOKIES_FILE ou cole a legenda em “Texto da postagem”.'
+        : `Cookies do Instagram inválidos (${igDiag?.reason || 'ausentes'}). Exporte de novo para /home/viralizeai/secrets/instagram-cookies.txt ou cole a legenda em “Texto da postagem”.`;
     }
     const err = new Error(mensagem);
     err.status = 422;

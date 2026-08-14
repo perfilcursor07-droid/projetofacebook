@@ -36,6 +36,27 @@ app.listen(env.port, async () => {
     console.warn('[ig-cookies] diagnose:', err.message);
   }
   try {
+    const {
+      diagnoseFacebookCookies,
+      validateFacebookSession,
+    } = require('./services/facebookCookies');
+    const fb = diagnoseFacebookCookies();
+    console.log(
+      `[fb-cookies] ${fb.ok ? 'FORMATO OK' : 'FALHA'} — ${fb.reason}` +
+        (fb.file ? ` (${fb.file}, ${fb.size || 0}b, tabs=${fb.hasTabs})` : '')
+    );
+    if (fb.ok) {
+      const axios = require('axios');
+      const remote = await validateFacebookSession(axios);
+      console.log(
+        `[fb-session] ${remote.ok ? 'AUTENTICADA' : 'REJEITADA'} — ${remote.reason}` +
+          (remote.status ? ` (HTTP ${remote.status})` : '')
+      );
+    }
+  } catch (err) {
+    console.warn('[fb-cookies] diagnose:', err.message);
+  }
+  try {
     await recoverStuckJobs();
   } catch (err) {
     console.error('[recover] falhou:', err.message);

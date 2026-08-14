@@ -89,6 +89,13 @@ const env = {
       (require('fs').existsSync('/home/viralizeai/secrets/instagram-cookies.txt')
         ? '/home/viralizeai/secrets/instagram-cookies.txt'
         : ''),
+    /** Cookies Netscape do Facebook (posts que exigem login no servidor) */
+    fbCookiesFile:
+      process.env.YTDLP_FB_COOKIES_FILE ||
+      process.env.FACEBOOK_COOKIES_FILE ||
+      (require('fs').existsSync('/home/viralizeai/secrets/facebook-cookies.txt')
+        ? '/home/viralizeai/secrets/facebook-cookies.txt'
+        : ''),
     cookiesFromBrowser: process.env.YTDLP_COOKIES_FROM_BROWSER || '',
     /** ex.: node  |  node:/usr/local/bin/node  |  deno */
     jsRuntime: process.env.YTDLP_JS_RUNTIME || '',

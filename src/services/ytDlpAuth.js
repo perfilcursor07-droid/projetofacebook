@@ -58,10 +58,23 @@ function getYtDlpAuthFlags(opts = {}) {
 
   const platform = String(opts.platform || 'youtube').toLowerCase();
 
+  const rotulos = { instagram: 'Instagram', facebook: 'Facebook' };
+
   // Cookies explícitos na chamada
   if (opts.cookiesFile) {
-    const real = validateCookiesFile(opts.cookiesFile, platform === 'instagram' ? 'Instagram' : 'YouTube');
+    const real = validateCookiesFile(opts.cookiesFile, rotulos[platform] || 'YouTube');
     return real ? { cookies: real } : {};
+  }
+
+  // Facebook: arquivo próprio; sem ele o yt-dlp cai em "only available for
+  // registered users" nos posts que exigem login.
+  if (platform === 'facebook') {
+    const { resolveFbCookiesPath, resolveCleanFacebookCookiesFile } = require('./facebookCookies');
+    const fbFile = resolveFbCookiesPath();
+    if (!fbFile) return {};
+    validateCookiesFile(fbFile, 'Facebook');
+    const cleaned = resolveCleanFacebookCookiesFile();
+    return cleaned ? { cookies: cleaned } : {};
   }
 
   // Instagram: usa arquivo próprio (não misturar com cookies do YouTube)
@@ -141,15 +154,34 @@ function runYtDlp(executable, url, flags = {}, authOpts = {}) {
 
   return executable(url, merged).catch((error) => {
     const raw = String(error?.stderr || error?.message || '').toLowerCase();
-    const isIg = platform === 'instagram';
-    if (raw.includes('sign in') || raw.includes('not a bot') || raw.includes('confirm you') || raw.includes('login required')) {
-      const message = Object.keys(auth).length
-        ? isIg
-          ? 'A sessão do Instagram expirou. Atualize YTDLP_IG_COOKIES_FILE e tente novamente.'
-          : 'A sessão usada para acessar o YouTube expirou. Atualize os cookies e tente novamente.'
-        : isIg
-          ? 'O Instagram pediu autenticação. Configure YTDLP_IG_COOKIES_FILE (cookies Netscape do Instagram).'
-          : 'O YouTube solicitou autenticação. Configure YTDLP_COOKIES_FROM_BROWSER no ambiente local ou YTDLP_COOKIES_FILE no servidor.';
+    const temCookies = Object.keys(auth).length > 0;
+    const mensagensAuth = {
+      instagram: {
+        expirada: 'A sessão do Instagram expirou. Atualize YTDLP_IG_COOKIES_FILE e tente novamente.',
+        ausente:
+          'O Instagram pediu autenticação. Configure YTDLP_IG_COOKIES_FILE (cookies Netscape do Instagram).',
+      },
+      facebook: {
+        expirada: 'A sessão do Facebook expirou. Atualize YTDLP_FB_COOKIES_FILE e tente novamente.',
+        ausente:
+          'O Facebook pediu autenticação. Configure YTDLP_FB_COOKIES_FILE (cookies Netscape do Facebook).',
+      },
+      youtube: {
+        expirada: 'A sessão usada para acessar o YouTube expirou. Atualize os cookies e tente novamente.',
+        ausente:
+          'O YouTube solicitou autenticação. Configure YTDLP_COOKIES_FROM_BROWSER no ambiente local ou YTDLP_COOKIES_FILE no servidor.',
+      },
+    };
+    // "registered users" é a forma que o Facebook usa para exigir login.
+    if (
+      raw.includes('sign in') ||
+      raw.includes('not a bot') ||
+      raw.includes('confirm you') ||
+      raw.includes('login required') ||
+      raw.includes('registered users')
+    ) {
+      const textos = mensagensAuth[platform] || mensagensAuth.youtube;
+      const message = temCookies ? textos.expirada : textos.ausente;
       error.message = message;
       error.stderr = message;
     } else if (raw.includes('n challenge') || raw.includes('javascript runtime') || raw.includes('js runtime')) {
