@@ -1318,6 +1318,7 @@
     }
     // Período só faz sentido com a busca ligada
     el.periodo?.classList.toggle('hidden', !on);
+    el.periodo?.closest('.mia-chat-tool-field')?.classList.toggle('hidden', !on);
   }
 
   function aplicarToggleTranscricao() {

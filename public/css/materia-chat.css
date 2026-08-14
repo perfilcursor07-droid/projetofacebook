@@ -75,6 +75,7 @@
 }
 
 @media (min-width: 1024px) {
+  .mia-chat-icon-btn.mia-chat-mobile-only,
   .mia-chat-mobile-only {
     display: none;
   }
@@ -221,6 +222,10 @@ body.mia-chat-drawer-open {
 .mia-chat-new:hover {
   background: rgba(255, 255, 255, 0.09);
   border-color: var(--mia-chat-border);
+}
+
+.mia-chat-icon-btn.hidden {
+  display: none;
 }
 
 .mia-chat-new-icon {
@@ -621,6 +626,11 @@ body.mia-chat-drawer-open {
   min-height: 100%;
   padding: 2rem 0 1rem;
   text-align: center;
+}
+
+.mia-chat-empty.hidden,
+.mia-msg-pautas-list.hidden {
+  display: none;
 }
 
 @media (min-width: 640px) {
@@ -1177,15 +1187,40 @@ body.mia-chat-drawer-open {
   font-size: 0.75rem;
 }
 
+.mia-chat-tool-field.hidden {
+  display: none;
+}
+
 .mia-chat-tool-field:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 
 @media (max-width: 639px) {
+  .mia-chat-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.4rem;
+  }
+
+  .mia-chat-toolbar-main {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .mia-chat-seg {
+    flex: 1;
+  }
+
   .mia-chat-status:not(:empty) {
-    order: -1;
-    flex-basis: 100%;
+    grid-column: 1;
+    grid-row: 2;
     max-width: 100%;
+  }
+
+  .mia-chat-send-row {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
   }
 }
 

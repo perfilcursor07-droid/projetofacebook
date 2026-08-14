@@ -73,6 +73,7 @@
     }
     .mia-x-bases-title { margin: 0 0 .35rem; color: #fda4af; font-size: .68rem; font-weight: 600; }
     .mia-x-base { display: block; margin-top: .25rem; color: #cbd5e1; font-size: .68rem; line-height: 1.35; }
+    .mia-x-base.hidden { display: none; }
     .mia-x-base-meta { color: #64748b; }
     .mia-x-result-note { margin: .3rem 0 0; color: #64748b; font-size: .68rem; line-height: 1.35; }
     .mia-x-result-note.is-warning { color: #fcd34d; }
@@ -245,7 +246,7 @@
   btnPublico.className = 'mia-chat-seg-btn mia-x-publico-btn';
   btnPublico.setAttribute('aria-pressed', 'false');
   btnPublico.title = 'Sugere pautas novas com base no que viralizou na sua página';
-  btnPublico.textContent = 'Para meu público';
+  btnPublico.textContent = 'Meu público';
   el.seg.appendChild(btnPublico);
 
   function marcarPublico(ativa) {
