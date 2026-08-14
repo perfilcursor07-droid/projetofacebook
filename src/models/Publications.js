@@ -28,6 +28,25 @@ const Publications = {
       .limit(limit);
   },
 
+  /** Histórico textual enxuto para impedir sugestão de pautas já publicadas. */
+  historyForDedupe(userId, limit = 5000) {
+    return db(this.table)
+      .join('facebook_pages', 'publications.facebook_page_id', 'facebook_pages.id')
+      .join('facebook_accounts', 'facebook_pages.facebook_account_id', 'facebook_accounts.id')
+      .leftJoin('video_clips', 'publications.video_clip_id', 'video_clips.id')
+      .where('facebook_accounts.user_id', userId)
+      .select(
+        'publications.id',
+        'publications.facebook_page_id',
+        'publications.texto',
+        'publications.created_at',
+        'facebook_pages.page_name',
+        'video_clips.legenda_sugerida'
+      )
+      .orderBy('publications.created_at', 'desc')
+      .limit(Math.min(10000, Math.max(100, Number(limit) || 5000)));
+  },
+
   /** Reels publicados (ou na fila) pela página nas últimas 24h — limite da API é 30. */
   async countReelsLast24h(facebookPageId) {
     const [{ total }] = await db(this.table)

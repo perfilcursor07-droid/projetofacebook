@@ -447,11 +447,14 @@ function sementesFallbackDoPublico(materias, limit = 6) {
 
 async function consultasDoPublico(materias) {
   const titulos = (materias || [])
-    .slice(0, 10)
+    .slice(0, 20)
     .map((m, i) => `${i + 1}. ${String(m.titulo || '').trim()}`)
     .filter((linha) => linha.length > 3);
 
   if (!titulos.length) return [];
+
+  const fallback = sementesFallbackDoPublico(materias, 10);
+  let sugeridas = [];
 
   try {
     const deepseekService = require('./deepseekService');
@@ -466,12 +469,21 @@ async function consultasDoPublico(materias) {
       ].join('\n'),
       angulo: 'Novidades recentes com o mesmo perfil de interesse e potencial de engajamento',
     });
-    if (result?.consultas?.length) return result.consultas.slice(0, 6);
+    if (result?.consultas?.length) sugeridas = result.consultas;
   } catch (err) {
     console.warn('[pautas-publico] consultas IA:', err.message);
   }
 
-  return sementesFallbackDoPublico(materias, 6);
+  const vistas = new Set();
+  return [...sugeridas, ...fallback]
+    .map((consulta) => String(consulta || '').replace(/\s+/g, ' ').trim())
+    .filter((consulta) => {
+      const key = stripAccents(consulta);
+      if (consulta.length < 3 || vistas.has(key)) return false;
+      vistas.add(key);
+      return true;
+    })
+    .slice(0, 10);
 }
 
 /**
@@ -479,14 +491,14 @@ async function consultasDoPublico(materias) {
  * As materias antigas funcionam somente como sinais editoriais; elas nunca viram
  * pautas de repeticao diretamente.
  */
-async function curarPautasDoPublico({ userId, facebookPageId, limit = 16 } = {}) {
+async function curarPautasDoPublico({ userId, facebookPageId, limit = 30 } = {}) {
   const AiMatters = require('../models/AiMatters');
-  const lim = Math.min(20, Math.max(5, Number(limit) || 16));
+  const lim = Math.min(30, Math.max(20, Number(limit) || 30));
   const avisos = [];
 
   try {
     await materiaIaService.sincronizarEngajamentoRecentes(userId, {
-      limit: 24,
+      limit: 40,
       concurrency: 3,
     });
   } catch (err) {
@@ -513,7 +525,7 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 16 } = {})
     }))
     .filter((m) => ['alto', 'medio'].includes(m.classificacao?.nivel))
     .sort((a, b) => b.scoreEngajamento - a.scoreEngajamento)
-    .slice(0, 10);
+    .slice(0, 20);
 
   if (!basesVirais.length) {
     const err = new Error(
@@ -532,14 +544,17 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 16 } = {})
   }
 
   let encontradas = [];
-  try {
-    encontradas = await pesquisarNichos(consultas.join(', '), 7, {
-      incluirRedesSociais: false,
-      filtrarPeriodo: true,
-      periodo: '7d',
-    });
-  } catch (err) {
-    avisos.push(`Pesquisa: ${err.message}`);
+  for (const lote of chunk(consultas, 5)) {
+    try {
+      const resultado = await pesquisarNichos(lote.join(', '), 12, {
+        incluirRedesSociais: false,
+        filtrarPeriodo: true,
+        periodo: '7d',
+      });
+      encontradas = encontradas.concat(resultado || []);
+    } catch (err) {
+      avisos.push(`Pesquisa: ${err.message}`);
+    }
   }
 
   encontradas = dedupeTitulos(encontradas || []);
@@ -552,7 +567,13 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 16 } = {})
   const marcadas = await materiaIaService.marcarJaPublicados(
     userId,
     facebookPageId,
-    encontradas
+    encontradas,
+    {
+      todasPaginas: true,
+      incluirFeedPagina: true,
+      limiteHistorico: 5000,
+      limiteFeed: 300,
+    }
   );
   const limiteRecente = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const timestampDoTopico = (topico) => {
@@ -593,6 +614,11 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 16 } = {})
   }
 
   if (usadas.length) avisos.push(`${usadas.length} pauta(s) já usada(s) foram ocultadas.`);
+  if (topicos.length < 20) {
+    avisos.push(
+      `Foram encontradas ${topicos.length} pauta(s) realmente nova(s) nos últimos 7 dias; não completei a lista com matérias repetidas ou antigas.`
+    );
+  }
 
   return {
     topicos,

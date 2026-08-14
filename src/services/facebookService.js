@@ -598,6 +598,62 @@ async function findPagePostByContent(
   return null;
 }
 
+/**
+ * Lista posts recentes publicados diretamente na Página. É usado para evitar
+ * sugerir uma pauta que já está no Facebook, mesmo quando o post não nasceu
+ * dentro do ViralizeAI.
+ */
+async function listRecentPagePosts(pageAccessToken, pageId, { limit = 300 } = {}) {
+  const token = String(pageAccessToken || '').trim();
+  const id = String(pageId || '').trim();
+  const max = Math.min(500, Math.max(25, Number(limit) || 300));
+  if (!token || !id || /^(?:postsyncer|postpulse|ayrshare):/i.test(token)) return [];
+
+  const edges = ['published_posts', 'posts', 'feed'];
+  for (const edge of edges) {
+    const posts = [];
+    let nextUrl = `${GRAPH}/${encodeURIComponent(id)}/${edge}`;
+    let params = {
+      fields: 'id,message,created_time,permalink_url',
+      limit: Math.min(100, max),
+      access_token: token,
+    };
+
+    while (nextUrl && posts.length < max) {
+      let payload;
+      try {
+        const response = await axios.get(nextUrl, {
+          params,
+          timeout: 20000,
+          validateStatus: () => true,
+        });
+        payload = response.data;
+      } catch {
+        break;
+      }
+      params = undefined;
+      if (!payload || payload.error || !Array.isArray(payload.data)) break;
+
+      posts.push(
+        ...payload.data
+          .filter((post) => post?.id && String(post.message || '').trim())
+          .map((post) => ({
+            id: String(post.id),
+            message: String(post.message || '').trim(),
+            createdTime: post.created_time || null,
+            permalink: post.permalink_url || null,
+          }))
+      );
+      nextUrl = payload.paging?.next || null;
+      if (!payload.data.length) break;
+    }
+
+    if (posts.length) return posts.slice(0, max);
+  }
+
+  return [];
+}
+
 module.exports = {
   loginUrl,
   exchangeCodeForToken,
@@ -614,6 +670,7 @@ module.exports = {
   fetchPostViews,
   fetchPostEngagement,
   findPagePostByContent,
+  listRecentPagePosts,
   assertConfigured,
   REELS_DAILY_LIMIT,
 };

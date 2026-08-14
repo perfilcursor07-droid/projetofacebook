@@ -74,6 +74,8 @@
     .mia-x-bases-title { margin: 0 0 .35rem; color: #fda4af; font-size: .68rem; font-weight: 600; }
     .mia-x-base { display: block; margin-top: .25rem; color: #cbd5e1; font-size: .68rem; line-height: 1.35; }
     .mia-x-base-meta { color: #64748b; }
+    .mia-x-result-note { margin: .3rem 0 0; color: #64748b; font-size: .68rem; line-height: 1.35; }
+    .mia-x-result-note.is-warning { color: #fcd34d; }
     .mia-x-busca { display: flex; gap: .4rem; margin: .6rem 0; }
     .mia-x-busca input {
       flex: 1; min-width: 0; border: 1px solid #334155; border-radius: .5rem;
@@ -454,6 +456,18 @@
         ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais e eu escrevo tudo de uma vez.`
         : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
     corpo.appendChild(p);
+    if (paraPublico && Number(data.totalOcultado) > 0) {
+      const ocultadas = document.createElement('p');
+      ocultadas.className = 'mia-x-result-note';
+      ocultadas.textContent = `${Number(data.totalOcultado)} pauta(s) que já existem no sistema ou na Página foram ocultadas.`;
+      corpo.appendChild(ocultadas);
+    }
+    if (paraPublico && topicos.length < 20) {
+      const limite = document.createElement('p');
+      limite.className = 'mia-x-result-note is-warning';
+      limite.textContent = 'A lista ficou menor porque só entram pautas realmente novas e publicadas nos últimos 7 dias.';
+      corpo.appendChild(limite);
+    }
     wrap.appendChild(corpo);
 
     const box = document.createElement('div');
@@ -807,7 +821,7 @@
     try {
       const data = await apiJson(`${API}/para-meu-publico`, {
         method: 'POST',
-        body: JSON.stringify({ limit: 16 }),
+        body: JSON.stringify({ limit: 30 }),
       });
       renderAlta(data);
       setStatus(`${(data.topicos || []).length} pauta(s) sugerida(s) para o seu público`);

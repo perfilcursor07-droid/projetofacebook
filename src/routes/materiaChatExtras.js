@@ -244,7 +244,7 @@ router.post('/para-meu-publico', async (req, res, next) => {
     const resultado = await viralizarService.curarPautasDoPublico({
       userId: req.session.userId,
       facebookPageId,
-      limit: req.body?.limit || 16,
+      limit: req.body?.limit || 30,
     });
 
     const topicos = (resultado.topicos || []).map((topico) => ({

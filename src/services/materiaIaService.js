@@ -185,38 +185,83 @@ async function escolherImagemCapa(topico, gerado) {
 /**
  * Marca tópicos já usados/publicados na página (ou no usuário).
  */
-async function marcarJaPublicados(userId, facebookPageId, topicos) {
+async function marcarJaPublicados(userId, facebookPageId, topicos, opcoes = {}) {
   const lista = Array.isArray(topicos) ? topicos : [];
   if (!lista.length || !userId) return lista;
 
-  // Histórico maior para não sugerir de novo pautas já usadas na página
-  const matters = await AiMatters.findByUser(userId, 250);
+  const limiteHistorico = Math.min(10000, Math.max(250, Number(opcoes.limiteHistorico) || 1000));
+  const todasPaginas = Boolean(opcoes.todasPaginas);
+  const [matters, publications] = await Promise.all([
+    AiMatters.findByUser(userId, limiteHistorico),
+    Publications.historyForDedupe(userId, limiteHistorico).catch((err) => {
+      console.warn('[dedupe pautas] publicações:', err.message);
+      return [];
+    }),
+  ]);
   const urls = new Set();
   const titulos = [];
+  const normalizarUrl = (value) =>
+    String(value || '')
+      .split(/[?#]/)[0]
+      .toLowerCase()
+      .replace(/\/$/, '');
   for (const m of matters) {
-    if (facebookPageId && m.facebook_page_id && Number(m.facebook_page_id) !== Number(facebookPageId)) {
+    if (
+      !todasPaginas &&
+      facebookPageId &&
+      m.facebook_page_id &&
+      Number(m.facebook_page_id) !== Number(facebookPageId)
+    ) {
       continue;
     }
-    // Qualquer matéria já gerada (rascunho → agendado → publicado)
-    const usado =
-      m.status === 'publicado' ||
-      m.status === 'agendado' ||
-      m.status === 'pronto' ||
-      m.status === 'rascunho' ||
-      Boolean(m.publication_id);
-    if (!usado) continue;
-    if (m.fonte_url) urls.add(String(m.fonte_url).split(/[?#]/)[0].toLowerCase());
+    if (m.fonte_url) urls.add(normalizarUrl(m.fonte_url));
     if (m.fonte_titulo) titulos.push(m.fonte_titulo);
     if (m.titulo) titulos.push(m.titulo);
+    if (m.materia) {
+      const primeiraLinha = String(m.materia).split(/\n+/).find((linha) => linha.trim());
+      if (primeiraLinha) titulos.push(primeiraLinha.slice(0, 220));
+    }
+  }
+
+  for (const publication of publications) {
+    if (
+      !todasPaginas &&
+      facebookPageId &&
+      publication.facebook_page_id &&
+      Number(publication.facebook_page_id) !== Number(facebookPageId)
+    ) {
+      continue;
+    }
+    const texto = String(publication.texto || publication.legenda_sugerida || '').trim();
+    const tituloPublicado = texto.split(/\n+/).find((linha) => linha.trim());
+    if (tituloPublicado) titulos.push(tituloPublicado.slice(0, 300));
+  }
+
+  if (opcoes.incluirFeedPagina && facebookPageId) {
+    try {
+      const page = await resolvePage(userId, facebookPageId);
+      const posts = await facebookService.listRecentPagePosts(
+        page?.page_access_token,
+        page?.page_id,
+        { limit: Math.min(500, Math.max(100, Number(opcoes.limiteFeed) || 300)) }
+      );
+      for (const post of posts) {
+        const tituloPublicado = String(post.message || '').split(/\n+/).find((linha) => linha.trim());
+        if (tituloPublicado) titulos.push(tituloPublicado.slice(0, 300));
+      }
+    } catch (err) {
+      console.warn('[dedupe pautas] feed da página:', err.message);
+    }
   }
 
   return lista.map((t) => {
-    const link = String(t.link || '')
-      .split(/[?#]/)[0]
-      .toLowerCase();
+    const link = normalizarUrl(t.link || t.url);
     const jaPorUrl = Boolean(link && urls.has(link));
-    const jaPorTitulo = titulos.some(
-      (x) => mesmoAssuntoNoticia(t.titulo, x) || titulosParecidos(t.titulo, x)
+    const resumo = String(t.resumo || t.trecho || '').slice(0, 220);
+    const jaPorTitulo = titulos.some((x) =>
+      mesmoAssuntoNoticia(t.titulo, x) ||
+      titulosParecidos(t.titulo, x) ||
+      (resumo && mesmoAssuntoNoticia(resumo, x))
     );
     return { ...t, jaPublicado: jaPorUrl || jaPorTitulo };
   });
