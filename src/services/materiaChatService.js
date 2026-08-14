@@ -1062,6 +1062,14 @@ async function responder({
   const materiaIaService = require('./materiaIaService');
   deepseekService.assertDeepseek();
 
+  let contextoAprendizado = null;
+  try {
+    const learning = require('./editorialLearningService');
+    contextoAprendizado = await learning.obterContextoAprendizado(userId);
+  } catch (err) {
+    console.warn('[materia-chat] carregar memória editorial:', err.message);
+  }
+
   const pedido = String(texto || '').replace(/\s+$/g, '').trim();
   if (pedido.length < 3) throw erro('Escreva o que você quer que a IA faça', 400);
 
@@ -1874,6 +1882,7 @@ async function responder({
             ? [{ veiculo: fonteAtual.veiculo, url: fonteAtual.url || null }]
             : [],
           fonteEstrangeira: fonteEmOutroIdioma([fonteAtual]),
+          contextoAprendizado,
           onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
         });
         partes.push(`${marcador}\n${textoMateria}`);
@@ -1888,6 +1897,7 @@ async function responder({
         permitirSemConfirmacao: usuarioInsiste,
         veiculosColados,
         fonteEstrangeira,
+        contextoAprendizado,
         onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
       });
     }
@@ -2030,10 +2040,34 @@ async function responder({
     registrarPasso({ kind: 'aviso', texto: `Confira antes de publicar — ${suspeita}` });
   }
 
-  return finalizar(resposta, {
+  // Correções como “não invente fatos do Instagram” ou “sempre mantenha a
+  // fonte” viram memória da conta e passam a valer também em novas conversas.
+  try {
+    const learning = require('./editorialLearningService');
+    const memoria = await learning.registrarFeedbackDoChat({
+      userId,
+      pedido,
+      respostaAnterior: ultimaMateriaAnterior?.content || null,
+    });
+    if (memoria?.registered) {
+      registrarPasso({
+        kind: 'checagem',
+        texto: 'Preferência editorial lembrada para as próximas conversas.',
+      });
+      console.info(
+        `[materia-chat] memória editorial atualizada para user #${userId}: ${memoria.memorias.length} regra(s)`
+      );
+    }
+  } catch (err) {
+    console.warn('[materia-chat] aprender preferência:', err.message);
+  }
+
+  const finalizada = await finalizar(resposta, {
     fontesUsadas: fontes,
     usouWeb: Boolean(usarPesquisa || fontes.some((f) => !f.ehRedeSocial)),
   });
+
+  return finalizada;
 }
 
 /**

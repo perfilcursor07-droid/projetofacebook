@@ -21,6 +21,8 @@ const {
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 /** Preferir deepseek-v4-flash; deepseek-chat ainda funciona até a depreciação (2026-07-24). */
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || env.deepseekModel || 'deepseek-v4-flash';
+const DEEPSEEK_WRITER_MODEL =
+  process.env.DEEPSEEK_WRITER_MODEL || env.deepseekWriterModel || DEEPSEEK_MODEL;
 
 function assertDeepseek() {
   if (!env.deepseekApiKey) {
@@ -57,16 +59,20 @@ function finalizarTituloComMarca(titulo, marcaModeloArte) {
   return t.slice(0, 140);
 }
 
-async function chatCompletion(messages, { temperature = 0.78, json = true, thinking = false } = {}) {
+async function chatCompletion(
+  messages,
+  { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL } = {}
+) {
   assertDeepseek();
+  const selectedModel = String(model || DEEPSEEK_MODEL);
   const body = {
-    model: DEEPSEEK_MODEL,
+    model: selectedModel,
     temperature,
     response_format: json ? { type: 'json_object' } : undefined,
     messages,
   };
   // V4: thinking opcional (matérias) — desligado por padrão para custo/latência
-  if (String(DEEPSEEK_MODEL).includes('v4')) {
+  if (selectedModel.includes('v4')) {
     body.thinking = { type: thinking ? 'enabled' : 'disabled' };
     if (thinking) body.reasoning_effort = 'high';
   }
@@ -94,16 +100,23 @@ async function chatCompletion(messages, { temperature = 0.78, json = true, think
  */
 async function chatCompletionStream(
   messages,
-  { temperature = 0.75, onDelta = null, thinking = false, timeout = 180_000 } = {}
+  {
+    temperature = 0.75,
+    onDelta = null,
+    thinking = false,
+    timeout = 180_000,
+    model = DEEPSEEK_MODEL,
+  } = {}
 ) {
   assertDeepseek();
+  const selectedModel = String(model || DEEPSEEK_MODEL);
   const body = {
-    model: DEEPSEEK_MODEL,
+    model: selectedModel,
     temperature,
     messages,
     stream: true,
   };
-  if (String(DEEPSEEK_MODEL).includes('v4')) {
+  if (selectedModel.includes('v4')) {
     body.thinking = { type: thinking ? 'enabled' : 'disabled' };
     if (thinking) body.reasoning_effort = 'high';
   }
@@ -153,7 +166,12 @@ async function chatCompletionStream(
 
   if (full.trim()) return full.trim();
 
-  const raw = await chatCompletion(messages, { temperature, json: false, thinking });
+  const raw = await chatCompletion(messages, {
+    temperature,
+    json: false,
+    thinking,
+    model: selectedModel,
+  });
   if (typeof onDelta === 'function') onDelta(raw);
   return String(raw || '').trim();
 }
@@ -2601,6 +2619,7 @@ async function conversarMateria({
   permitirSemConfirmacao = false,
   veiculosColados = [],
   fonteEstrangeira = false,
+  contextoAprendizado = null,
 }) {
   assertDeepseek();
   const texto = String(pedido || '').trim();
@@ -2613,10 +2632,21 @@ async function conversarMateria({
   const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
   const tomDesc = TITULO_TOMES[tomKey];
   const blocoFatos = String(fatosFontes || '').trim();
+  let blocoMemoriaEditorial = null;
+  if (contextoAprendizado) {
+    try {
+      const { formatarContextoAprendizadoParaPrompt } = require('./editorialLearningService');
+      blocoMemoriaEditorial = formatarContextoAprendizadoParaPrompt(contextoAprendizado);
+    } catch {
+      blocoMemoriaEditorial = null;
+    }
+  }
 
   const system = `Você é repórter e redator de uma Página de notícias no Facebook/Instagram, conversando com o editor num chat.
 
 ${blocoEstiloNewsGospel()}
+
+${blocoMemoriaEditorial || ''}
 
 COMO RESPONDER:
 - A conversa tem continuidade. Expressões como "mais polêmica", "mais completa", "troque o título", "aprofunde" e "faça outra versão" referem-se à ÚLTIMA MATÉRIA. Mantenha assunto, pessoas, instituições e fatos; altere somente o que o editor pediu.
@@ -2725,6 +2755,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
     temperature: sortearTemperatura(tomKey === 'polemico'),
     onDelta,
     thinking: Boolean(blocoFatos),
+    model: DEEPSEEK_WRITER_MODEL,
   });
 
   // Quality gate do chat: com apuração suficiente, uma resposta telegráfica não
@@ -2756,7 +2787,12 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
             ].join('\n'),
           },
         ],
-        { temperature: 0.55, json: false, thinking: true }
+        {
+          temperature: 0.55,
+          json: false,
+          thinking: true,
+          model: DEEPSEEK_WRITER_MODEL,
+        }
       );
       const corpoAprofundado = corpoSemTituloEHashtags(aprofundado);
       if (corpoAprofundado.length > corpoInicial.length && corpoAprofundado.length >= 2000) {

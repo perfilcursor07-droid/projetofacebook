@@ -8,6 +8,10 @@ const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || env.deepseekModel || 'deeps
 
 const MAX_TRECHO = 4000;
 const DISTILL_EVERY = 3;
+const MAX_MEMORIAS_CHAT = 20;
+
+const PADRAO_FEEDBACK_CHAT =
+  /\b(aprend[ae]|lembre|memorize|sempre|nunca|prefir|eu gosto|eu n[aã]o gosto|n[aã]o quero|quero que (?:sempre|nunca|n[aã]o|use|mantenha|evite)|quando eu|quando for|da pr[oó]xima|pare de|evite|n[aã]o invent|use a legenda|use o [aá]udio|use a transcri[cç][aã]o|mantenha a fonte|n[aã]o apague a fonte|ficou errado|nada a ver|n[aã]o foi isso)\b/i;
 
 function normText(s) {
   return String(s || '')
@@ -216,6 +220,101 @@ async function atualizarRegrasEstilo(userId) {
   });
 }
 
+function memoriasComoLista(valor) {
+  return String(valor || '')
+    .split(/\r?\n/)
+    .map((linha) => linha.replace(/^\s*[-•*]\s*/, '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, MAX_MEMORIAS_CHAT);
+}
+
+/**
+ * Aprende preferências declaradas no chat e as mantém entre conversas.
+ * Não guarda fatos, nomes da pauta nem instruções que servem só para uma matéria.
+ */
+async function registrarFeedbackDoChat({ userId, pedido, respostaAnterior = null }) {
+  const texto = normText(pedido);
+  if (!userId || texto.length < 8 || !PADRAO_FEEDBACK_CHAT.test(texto)) {
+    return { registered: false };
+  }
+  if (!env.deepseekApiKey) return { registered: false, reason: 'sem_api' };
+
+  const estilo = await EditorialEstiloUsuario.findByUser(userId);
+  const atuais = memoriasComoLista(estilo?.preferencias_chat);
+  const body = {
+    model: DEEPSEEK_MODEL,
+    temperature: 0.1,
+    response_format: { type: 'json_object' },
+    messages: [
+      {
+        role: 'system',
+        content: `Você mantém a memória editorial de um usuário que produz matérias jornalísticas para Facebook e Instagram.
+Retorne APENAS JSON: {"persistir":true|false,"memorias":["regra 1","regra 2"]}.
+
+Objetivo: descobrir se a mensagem contém uma preferência duradoura sobre como a IA deve trabalhar e, se contiver, atualizar a memória existente.
+
+Pode memorizar:
+- tom, tamanho, estrutura, títulos e forma de citar fontes;
+- regras de fidelidade a links, legendas, áudio, transcrição e imagens;
+- erros que o usuário pede para nunca repetir;
+- preferências de fluxo que devam valer em futuras matérias.
+
+Não memorize:
+- fatos, nomes, números ou opiniões relativos somente à pauta atual;
+- pedidos isolados como "troque este título" ou "acrescente este parágrafo";
+- conteúdo inventado pela resposta anterior;
+- senhas, chaves, dados pessoais ou URLs.
+
+Escreva cada memória como instrução curta, objetiva e reutilizável. Remova duplicatas. Se a nova preferência contrariar uma antiga, mantenha somente a mais recente. Máximo de ${MAX_MEMORIAS_CHAT} memórias.`,
+      },
+      {
+        role: 'user',
+        content: [
+          `MEMÓRIA ATUAL:\n${atuais.length ? atuais.map((m) => `- ${m}`).join('\n') : '(vazia)'}`,
+          respostaAnterior
+            ? `RESPOSTA ANTERIOR DA IA (somente para entender a correção; não memorize fatos):\n${sliceSafe(respostaAnterior, 2500)}`
+            : null,
+          `NOVA MENSAGEM DO USUÁRIO:\n${texto.slice(0, 2500)}`,
+          'Atualize a memória apenas se houver preferência duradoura.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+  };
+  if (String(DEEPSEEK_MODEL).includes('v4')) body.thinking = { type: 'disabled' };
+
+  const { data } = await axios.post(DEEPSEEK_URL, body, {
+    headers: {
+      Authorization: `Bearer ${env.deepseekApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    timeout: 90_000,
+  });
+
+  let parsed = {};
+  try {
+    parsed = JSON.parse(data?.choices?.[0]?.message?.content || '{}');
+  } catch {
+    return { registered: false, reason: 'resposta_invalida' };
+  }
+  if (parsed.persistir !== true) return { registered: false };
+
+  const memorias = (Array.isArray(parsed.memorias) ? parsed.memorias : [])
+    .map((regra) => String(regra || '').replace(/^\s*[-•*]\s*/, '').replace(/\s+/g, ' ').trim())
+    .filter((regra) => regra.length >= 12)
+    .slice(0, MAX_MEMORIAS_CHAT);
+  if (!memorias.length) return { registered: false };
+
+  const preferenciasChat = memorias.map((regra) => `- ${regra}`).join('\n');
+  const atualizado = await EditorialEstiloUsuario.upsert(userId, {
+    preferencias_chat: preferenciasChat,
+    total_feedback_chat: Number(estilo?.total_feedback_chat || 0) + 1,
+    ultima_memoria_chat_em: new Date(),
+  });
+  return { registered: true, memorias, estilo: atualizado };
+}
+
 /**
  * Contexto para injetar no prompt de geração.
  */
@@ -226,11 +325,13 @@ async function obterContextoAprendizado(userId) {
     EditorialAprendizados.findRecentByUser(userId, 3),
   ]);
 
-  if (!estilo?.regras_estilo && !exemplos.length) return null;
+  if (!estilo?.regras_estilo && !estilo?.preferencias_chat && !exemplos.length) return null;
 
   return {
     regrasEstilo: estilo?.regras_estilo || null,
+    preferenciasChat: estilo?.preferencias_chat || null,
     totalEdicoes: Number(estilo?.total_edicoes || 0),
+    totalFeedbackChat: Number(estilo?.total_feedback_chat || 0),
     exemplos: (exemplos || []).map((ex) => ({
       tituloAntes: ex.titulo_antes,
       tituloDepois: ex.titulo_depois,
@@ -248,6 +349,15 @@ function formatarContextoAprendizadoParaPrompt(ctx) {
   ];
   if (ctx.regrasEstilo) {
     parts.push(String(ctx.regrasEstilo).slice(0, 2500));
+  }
+  if (ctx.preferenciasChat) {
+    parts.push(
+      [
+        'MEMÓRIA EXPLÍCITA DAS CONVERSAS (seguir em todas as novas matérias):',
+        String(ctx.preferenciasChat).slice(0, 3500),
+        'Estas preferências nunca autorizam inventar fatos nem ignorar a fonte atual.',
+      ].join('\n')
+    );
   }
   if (Array.isArray(ctx.exemplos) && ctx.exemplos.length) {
     parts.push('EXEMPLOS DE CORREÇÃO (IA → versão editada pelo humano):');
@@ -270,6 +380,7 @@ function formatarContextoAprendizadoParaPrompt(ctx) {
 
 module.exports = {
   registrarAprendizado,
+  registrarFeedbackDoChat,
   atualizarRegrasEstilo,
   obterContextoAprendizado,
   formatarContextoAprendizadoParaPrompt,

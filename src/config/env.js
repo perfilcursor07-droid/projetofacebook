@@ -16,6 +16,9 @@ const env = {
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
   /** deepseek-v4-flash | deepseek-v4-pro | deepseek-chat (legado) */
   deepseekModel: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+  /** Modelo de maior qualidade usado apenas na redação final das matérias. */
+  deepseekWriterModel:
+    process.env.DEEPSEEK_WRITER_MODEL || 'deepseek-v4-pro',
   pexelsApiKey: process.env.PEXELS_API_KEY || '',
   braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   serperApiKey: process.env.SERPER_API_KEY || '',
