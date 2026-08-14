@@ -79,6 +79,31 @@ router.post('/matters/:id/arte', (req, res, next) => {
         force: true,
       });
 
+      const {
+        atualizarCreditoImagemNaMateria,
+        atualizarFonteCreditoDaImagem,
+        CREDITO_IMAGEM_FALLBACK,
+      } = require('../services/editorialGuidelinesFb');
+      const fonte = {
+        fonteNome: artwork.matter?.fonte_titulo || matter.fonte_titulo,
+        fonteUrl: artwork.matter?.fonte_url || matter.fonte_url,
+      };
+      const materiaAtual = artwork.matter?.materia || matter.materia;
+      const fonteCreditoAtual = artwork.matter?.fonte_credito ?? matter.fonte_credito;
+      await AiMatters.update(matterId, {
+        materia: atualizarCreditoImagemNaMateria(
+          materiaAtual,
+          CREDITO_IMAGEM_FALLBACK,
+          fonte
+        ),
+        fonte_credito: atualizarFonteCreditoDaImagem(
+          fonteCreditoAtual,
+          CREDITO_IMAGEM_FALLBACK,
+          fonte
+        ),
+      });
+      artwork.matter = await AiMatters.findById(matterId);
+
       return res.json({
         ok: true,
         matter: artwork.matter,

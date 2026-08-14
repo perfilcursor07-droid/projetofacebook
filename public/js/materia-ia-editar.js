@@ -1018,6 +1018,12 @@
         setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
+      if (materiaEl && data.matter?.materia) {
+        materiaEl.value = data.matter.materia;
+      }
+      if (fonteCreditoEl && data.matter && 'fonte_credito' in data.matter) {
+        fonteCreditoEl.value = data.matter.fonte_credito || '';
+      }
       clearImageSelection();
       setStatus(
         data.hasLogo
@@ -1313,6 +1319,9 @@
       const materiaEl = document.getElementById('matter-materia');
       if (materiaEl && j.matter?.materia) {
         materiaEl.value = j.matter.materia;
+      }
+      if (fonteCreditoEl && j.matter && 'fonte_credito' in j.matter) {
+        fonteCreditoEl.value = j.matter.fonte_credito || '';
       }
       // Marca a miniatura escolhida como "Atual" sem buscar de novo na API
       const list = window.__IMG_SUGESTOES__ || [];

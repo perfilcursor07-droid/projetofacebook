@@ -955,37 +955,148 @@ function limparCreditoAutor(value) {
   return v.slice(0, 80);
 }
 
-/** Atualiza só a linha de crédito da imagem (Apocalipse ou JM). */
-function atualizarCreditoImagemNaMateria(materia, imagemAutor) {
+function normalizarNomeFonte(value) {
+  return String(value || '')
+    .toLocaleLowerCase('pt-BR')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(?:com|br|org|net|online)\b/g, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function nomeFontePrincipal({ fonteNome, fonteUrl } = {}) {
+  const pelaUrl = nomeSiteDeUrl(fonteUrl);
+  if (pelaUrl) return pelaUrl;
+  const nome = String(fonteNome || '').replace(/\s+/g, ' ').trim();
+  return nome && nome.length <= 80 ? nome : null;
+}
+
+/** Garante a origem jornalística no conteúdo sem tocar no crédito da imagem. */
+function garantirFonteNoConteudo(materia, { fonteNome, fonteUrl } = {}) {
+  const fonte = nomeFontePrincipal({ fonteNome, fonteUrl });
+  if (!fonte) return String(materia || '').trim();
+
+  const { body, tags } = extrairHashtagsDoTexto(materia);
+  let cleanBody = String(body || '').trim();
+  const fonteNorm = normalizarNomeFonte(fonte);
+
+  const linhaFonte = cleanBody.match(/^Fonte:\s*(.+)$/im);
+  if (linhaFonte) {
+    const atualNorm = normalizarNomeFonte(linhaFonte[1]);
+    if (fonteNorm && !atualNorm.includes(fonteNorm) && !fonteNorm.includes(atualNorm)) {
+      cleanBody = cleanBody.replace(/^Fonte:\s*(.+)$/im, `Fonte: ${fonte}, $1`);
+    }
+    return anexarHashtagsAoFinal(cleanBody, tags);
+  }
+
+  const linhaSite = cleanBody.match(/^(Por\s+[^\n]+?\s*[—\-–]\s*Site:\s*)([^\n]+)$/im);
+  if (linhaSite) {
+    const atualNorm = normalizarNomeFonte(linhaSite[2]);
+    if (fonteNorm && !atualNorm.includes(fonteNorm) && !fonteNorm.includes(atualNorm)) {
+      cleanBody = cleanBody.replace(
+        /^(Por\s+[^\n]+?\s*[—\-–]\s*Site:\s*)([^\n]+)$/im,
+        `$1${fonte}`
+      );
+    }
+    return anexarHashtagsAoFinal(cleanBody, tags);
+  }
+
+  const blocoFontes = cleanBody.match(/Fontes:\s*\n(?:[•\-*].+\n?)*/i);
+  if (blocoFontes) {
+    const atualNorm = normalizarNomeFonte(blocoFontes[0]);
+    if (fonteNorm && !atualNorm.includes(fonteNorm) && !fonteNorm.includes(atualNorm)) {
+      cleanBody = cleanBody.replace(
+        /Fontes:\s*\n/i,
+        `Fontes:\n• Conteúdo: ${fonte}\n`
+      );
+    }
+    return anexarHashtagsAoFinal(cleanBody, tags);
+  }
+
+  const novaLinha = `Fonte: ${fonte}`;
+  if (/^(?:\(Foto|Foto):\s*/im.test(cleanBody)) {
+    cleanBody = cleanBody.replace(/^(?=(?:\(Foto|Foto):\s*)/im, `${novaLinha}\n`);
+  } else {
+    cleanBody = `${cleanBody}\n\n${novaLinha}`.trim();
+  }
+  return anexarHashtagsAoFinal(cleanBody, tags);
+}
+
+/** Mantém o link da fonte no campo próprio e atualiza somente o crédito da foto. */
+function atualizarFonteCreditoDaImagem(
+  fonteCredito,
+  imagemAutor,
+  { fonteNome, fonteUrl } = {}
+) {
+  const deveAtualizarFoto = imagemAutor != null && String(imagemAutor).trim() !== '';
+  const credito = deveAtualizarFoto ? limparCreditoAutor(imagemAutor) : null;
+  const foto = credito === CREDITO_IMAGEM_FALLBACK ? 'Reprodução' : credito;
+  const fonte = nomeFontePrincipal({ fonteNome, fonteUrl });
+  const url = /^https?:\/\//i.test(String(fonteUrl || '').trim())
+    ? String(fonteUrl).trim()
+    : null;
+  let campo = String(fonteCredito || '').trim();
+
+  if (url && !campo.toLowerCase().includes(url.toLowerCase())) {
+    const linha = `• ${fonte || 'Fonte'} — ${url}`;
+    const fonteSimples = campo.match(/^Fonte:[ \t]*(.+)$/im);
+    if (/^Fonte:[ \t]*$/im.test(campo)) {
+      campo = campo.replace(/^Fonte:[ \t]*$/im, `Fonte:\n${linha}`);
+    } else if (fonteSimples) {
+      const nomeAtual = fonteSimples[1].trim();
+      const atualNorm = normalizarNomeFonte(nomeAtual);
+      const fonteNorm = normalizarNomeFonte(fonte);
+      const manterAtual =
+        atualNorm && fonteNorm && !atualNorm.includes(fonteNorm) && !fonteNorm.includes(atualNorm);
+      campo = campo.replace(
+        /^Fonte:[ \t]*.+$/im,
+        `Fonte:\n${linha}${manterAtual ? `\n• ${nomeAtual}` : ''}`
+      );
+    } else {
+      campo = `Fonte:\n${linha}${campo ? `\n\n${campo}` : ''}`;
+    }
+  }
+
+  if (deveAtualizarFoto) {
+    if (/\(Foto:\s*[^)]+\)/i.test(campo)) {
+      campo = campo.replace(/\(Foto:\s*[^)]+\)/i, `(Foto: ${foto})`);
+    } else if (/^Foto:\s*.+$/im.test(campo)) {
+      campo = campo.replace(/^Foto:\s*.+$/im, `(Foto: ${foto})`);
+    } else {
+      campo = `${campo}${campo ? '\n\n' : ''}(Foto: ${foto})`;
+    }
+  }
+
+  return campo.trim().slice(0, 2000) || null;
+}
+
+/** Atualiza só a linha de crédito da imagem e preserva a fonte da matéria. */
+function atualizarCreditoImagemNaMateria(materia, imagemAutor, fonte = {}) {
   const credito = limparCreditoAutor(imagemAutor);
   const { body, tags } = extrairHashtagsDoTexto(materia);
   let cleanBody = String(body || '').trim();
+  const foto = credito === CREDITO_IMAGEM_FALLBACK ? 'Reprodução' : credito;
 
   // JM: (Foto: …)
   if (/\(Foto:\s*[^)]+\)/i.test(cleanBody)) {
-    cleanBody = cleanBody.replace(/\(Foto:\s*[^)]+\)/i, `(Foto: ${credito === CREDITO_IMAGEM_FALLBACK ? 'Reprodução' : credito})`);
-    return anexarHashtagsAoFinal(cleanBody, tags);
-  }
-
-  // Manual / rodapé novo: Foto: …
-  if (/^Foto:\s*.+/m.test(cleanBody)) {
+    cleanBody = cleanBody.replace(/\(Foto:\s*[^)]+\)/i, `(Foto: ${foto})`);
+  } else if (/^Foto:\s*.+/m.test(cleanBody)) {
+    // Manual / rodapé novo: Foto: …
     cleanBody = cleanBody.replace(
       /^Foto:\s*.+$/m,
-      `Foto: ${credito === CREDITO_IMAGEM_FALLBACK ? 'Reprodução' : credito}`
+      `Foto: ${foto}`
     );
-    return anexarHashtagsAoFinal(cleanBody, tags);
-  }
-
-  if (/Fontes:\s*\n(?:[•\-*].+\n?)+$/i.test(cleanBody)) {
+  } else if (/Fontes:\s*\n(?:[•\-*].+\n?)+$/i.test(cleanBody)) {
     if (/[•\*]\s*Imagem\s*:/i.test(cleanBody)) {
       cleanBody = cleanBody.replace(/([•\*]\s*Imagem\s*:\s*)([^\n]+)/i, `$1${credito}`);
     } else {
       cleanBody = cleanBody.replace(/(Fontes:\s*\n(?:[•\*].+\n?)*)/i, (m) => `${m.trimEnd()}\n• Imagem: ${credito}\n`);
     }
-    return anexarHashtagsAoFinal(cleanBody, tags);
+  } else {
+    cleanBody = `${cleanBody}\n\nFoto: ${foto}`.trim();
   }
 
-  return anexarCreditosFontes(cleanBody, { imagemAutor: credito });
+  return garantirFonteNoConteudo(anexarHashtagsAoFinal(cleanBody, tags), fonte);
 }
 
 function blocoRegrasFacebook(faixa, volumeFonte = 'media') {
@@ -1057,6 +1168,8 @@ module.exports = {
   anexarCreditosFontes,
   montarRodapeMateriaComFontes,
   converterCreditosParaJm,
+  garantirFonteNoConteudo,
+  atualizarFonteCreditoDaImagem,
   atualizarCreditoImagemNaMateria,
   extrairAutorImagemHeuristico,
   limparCreditoAutor,

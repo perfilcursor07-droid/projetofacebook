@@ -495,19 +495,14 @@ async function atualizarMateria(req, res, next) {
 
     const body = req.body || {};
     const patch = {};
-    const { materiaJaTemCredito, removerFechamentoOracao } = require('../services/editorialGuidelinesFb');
+    const { removerFechamentoOracao } = require('../services/editorialGuidelinesFb');
     if (body.titulo != null) patch.titulo = String(body.titulo).trim().slice(0, 300);
     if (body.materia != null) {
       patch.materia = removerFechamentoOracao(String(body.materia));
     }
     if (body.fonteCredito != null || body.fonte_credito != null) {
       const raw = body.fonteCredito != null ? body.fonteCredito : body.fonte_credito;
-      patch.fonte_credito = String(raw || '').trim().slice(0, 400) || null;
-    }
-    // Crédito só no Conteúdo — não duplicar em Fonte / crédito
-    const materiaFinal = patch.materia != null ? patch.materia : matter.materia;
-    if (materiaJaTemCredito(materiaFinal)) {
-      patch.fonte_credito = null;
+      patch.fonte_credito = String(raw || '').trim().slice(0, 2000) || null;
     }
     if (body.hashtags != null) patch.hashtags = JSON.stringify(parseHashtags(body.hashtags));
     if (body.tipoPublicacao != null || body.tipo_publicacao != null) {
@@ -607,7 +602,8 @@ async function showMatter(req, res, next) {
 
     const {
       anexarHashtagsAoFinal,
-      materiaJaTemCredito,
+      garantirFonteNoConteudo,
+      atualizarFonteCreditoDaImagem,
       removerFechamentoOracao,
       fundirParagrafosIncompletos,
       extrairHashtagsDoTexto,
@@ -625,15 +621,25 @@ async function showMatter(req, res, next) {
       const corpo = fundirParagrafosIncompletos(body);
       materiaLimpa = anexarHashtagsAoFinal(corpo, tags.length ? tags : hashtags);
     }
+    materiaLimpa = garantirFonteNoConteudo(materiaLimpa, {
+      fonteUrl: matter.fonte_url,
+    });
     if (materiaLimpa !== String(matter.materia || '').trim()) {
       matter.materia = materiaLimpa;
       if (['rascunho', 'pronto', 'erro', 'agendado'].includes(matter.status)) {
         patchShow.materia = materiaLimpa;
       }
     }
-    if (materiaJaTemCredito(matter.materia) && matter.fonte_credito) {
-      matter.fonte_credito = null;
-      patchShow.fonte_credito = null;
+    const fonteCreditoPreservada = atualizarFonteCreditoDaImagem(
+      matter.fonte_credito,
+      null,
+      { fonteUrl: matter.fonte_url }
+    );
+    if (fonteCreditoPreservada !== matter.fonte_credito) {
+      matter.fonte_credito = fonteCreditoPreservada;
+      if (['rascunho', 'pronto', 'erro', 'agendado'].includes(matter.status)) {
+        patchShow.fonte_credito = fonteCreditoPreservada;
+      }
     }
     if (Object.keys(patchShow).length) {
       try {
@@ -1354,6 +1360,7 @@ async function aplicarImagemUrl(req, res, next) {
     const deepseekService = require('../services/deepseekService');
     const {
       atualizarCreditoImagemNaMateria,
+      atualizarFonteCreditoDaImagem,
       CREDITO_IMAGEM_FALLBACK,
     } = require('../services/editorialGuidelinesFb');
     let imagemAutor = CREDITO_IMAGEM_FALLBACK;
@@ -1369,10 +1376,26 @@ async function aplicarImagemUrl(req, res, next) {
       imagemAutor = CREDITO_IMAGEM_FALLBACK;
     }
 
+    const fonte = {
+      fonteNome: artwork.matter?.fonte_titulo || matter.fonte_titulo,
+      fonteUrl: artwork.matter?.fonte_url || matter.fonte_url,
+    };
     const materiaAtual = artwork.matter?.materia || matter.materia;
-    const materiaComCredito = atualizarCreditoImagemNaMateria(materiaAtual, imagemAutor);
-    if (materiaComCredito && materiaComCredito !== materiaAtual) {
-      await AiMatters.update(matterId, { materia: materiaComCredito });
+    const materiaComCredito = atualizarCreditoImagemNaMateria(materiaAtual, imagemAutor, fonte);
+    const fonteCreditoAtual = artwork.matter?.fonte_credito ?? matter.fonte_credito;
+    const fonteCreditoComImagem = atualizarFonteCreditoDaImagem(
+      fonteCreditoAtual,
+      imagemAutor,
+      fonte
+    );
+    if (
+      (materiaComCredito && materiaComCredito !== materiaAtual) ||
+      fonteCreditoComImagem !== fonteCreditoAtual
+    ) {
+      await AiMatters.update(matterId, {
+        materia: materiaComCredito || materiaAtual,
+        fonte_credito: fonteCreditoComImagem,
+      });
       artwork.matter = await AiMatters.findById(matterId);
     }
 

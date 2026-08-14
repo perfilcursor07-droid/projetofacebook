@@ -133,13 +133,18 @@
     .mia-x-card-tit { display: block; font-size: .8125rem; font-weight: 500; line-height: 1.35; color: #e2e8f0; }
     .mia-x-card-meta { display: block; margin-top: .2rem; font-size: .65rem; color: #64748b; }
     .mia-x-card-res { display: block; margin-top: .25rem; font-size: .7rem; line-height: 1.4; color: #94a3b8; }
-    .mia-x-card-actions { flex-shrink: 0; display: flex; align-items: flex-start; }
+    .mia-x-card-actions { flex-shrink: 0; display: flex; align-items: flex-start; gap: .35rem; }
     .mia-x-card-gerar {
       border: 1px solid rgba(16,185,129,.45); border-radius: .5rem;
       background: rgba(16,185,129,.12); color: #a7f3d0;
       padding: .25rem .5rem; font-size: .68rem; font-weight: 600; cursor: pointer;
     }
     .mia-x-card-gerar:hover { border-color: rgba(16,185,129,.8); color: #fff; }
+    .mia-x-card-fonte {
+      border: 1px solid #334155; border-radius: .5rem; background: transparent; color: #cbd5e1;
+      padding: .25rem .5rem; font-size: .68rem; font-weight: 600; text-decoration: none;
+    }
+    .mia-x-card-fonte:hover { border-color: #64748b; color: #fff; }
     @media (max-width: 560px) {
       .mia-x-card { flex-wrap: wrap; }
       .mia-x-card-txt { flex-basis: calc(100% - 4rem); }
@@ -178,6 +183,16 @@
 
   function setStatus(texto) {
     if (el.status) el.status.textContent = texto || '';
+  }
+
+  function formatarDataPauta(topico) {
+    const ts = Number(topico?.dataTimestamp) || Date.parse(String(topico?.data || ''));
+    if (!Number.isFinite(ts) || ts <= 0) return '';
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(new Date(ts));
   }
 
   async function apiJson(url, opts = {}) {
@@ -332,6 +347,8 @@
         url: topico.url || '',
         veiculo: topico.veiculo || 'Web',
         resumo: topico.resumo || '',
+        data: topico.data || '',
+        dataTimestamp: Number(topico.dataTimestamp) || null,
       }));
     if (!pautas.length) throw new Error('Selecione ao menos uma pauta.');
     return apiJson('/api/materias-ia/chat/pautas/rascunhos', {
@@ -662,6 +679,7 @@
         meta.textContent = [
           t.tema ? t.tema : '',
           t.veiculo || 'Web',
+          formatarDataPauta(t),
           t.contagemFontes > 1 ? `${t.contagemFontes} fontes` : '',
         ]
           .filter(Boolean)
@@ -679,6 +697,16 @@
 
         const acoes = document.createElement('span');
         acoes.className = 'mia-x-card-actions';
+        if (t.url) {
+          const fonte = document.createElement('a');
+          fonte.href = t.url;
+          fonte.target = '_blank';
+          fonte.rel = 'noopener';
+          fonte.className = 'mia-x-card-fonte';
+          fonte.textContent = 'Fonte ↗';
+          fonte.title = `Abrir matéria original em ${t.veiculo || 'nova aba'}`;
+          acoes.appendChild(fonte);
+        }
         const gerarUm = document.createElement('button');
         gerarUm.type = 'button';
         gerarUm.className = 'mia-x-card-gerar';

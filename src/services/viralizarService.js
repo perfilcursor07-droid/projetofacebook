@@ -4,7 +4,7 @@
  */
 const materiaIaService = require('./materiaIaService');
 const { buscarEmAltaAgora } = require('./trendingTopics');
-const { pesquisarNichos } = require('./newsResearch');
+const { pesquisarNichos, extrairDataDeTexto } = require('./newsResearch');
 
 /** Perfil editorial derivado do relatório FB (jun–jul/2026). */
 const PERFIL_VIRAL = {
@@ -554,18 +554,39 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 16 } = {})
     facebookPageId,
     encontradas
   );
-  const novas = marcadas.filter((topico) => !topico.jaPublicado);
+  const limiteRecente = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const timestampDoTopico = (topico) => {
+    const direto = Number(topico?.dataTimestamp) || 0;
+    if (direto) return direto;
+    const parsed = Date.parse(String(topico?.data || topico?.dataReferencia || ''));
+    if (!Number.isNaN(parsed)) return parsed;
+    return extrairDataDeTexto(
+      `${topico?.data || ''} ${topico?.resumo || ''} ${topico?.titulo || ''}`
+    );
+  };
+  const novas = marcadas.filter((topico) => {
+    if (topico.jaPublicado) return false;
+    const ts = timestampDoTopico(topico);
+    return ts >= limiteRecente && ts <= Date.now() + 24 * 60 * 60 * 1000;
+  });
   const usadas = marcadas.filter((topico) => topico.jaPublicado);
   const topicos = novas
     .map((topico) => {
       const meta = classificarTopico(topico);
-      return { ...topico, ...meta };
+      return {
+        ...topico,
+        ...meta,
+        dataTimestamp: timestampDoTopico(topico),
+      };
     })
+    .filter((topico) => topico.nichoGospel && topico.temaPrincipal !== 'fora_nicho')
     .sort((a, b) => b.scoreViral - a.scoreViral || (b.dataTimestamp || 0) - (a.dataTimestamp || 0))
     .slice(0, lim);
 
   if (!topicos.length) {
-    const err = new Error('As pautas relacionadas encontradas já foram usadas. Atualize para tentar novas notícias.');
+    const err = new Error(
+      'Não encontrei pautas do seu nicho com data confirmada nos últimos 7 dias. Atualize mais tarde para tentar novas notícias.'
+    );
     err.status = 404;
     err.avisos = avisos;
     throw err;
@@ -587,6 +608,7 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 16 } = {})
     })),
     consultas,
     totalAnalisado: encontradas.length,
+    periodoDias: 7,
     totalOcultado: usadas.length,
     avisos,
     geradoEm: new Date().toISOString(),

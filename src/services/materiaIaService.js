@@ -2027,6 +2027,7 @@ async function gerarMateriaManual({
   pesquisarWeb = false,
   palavrasChave = null,
   periodo = '30d',
+  fonteBase = null,
 }) {
   assertDeepseek();
   const fatos = String(informacoes || '').trim();
@@ -2062,6 +2063,21 @@ async function gerarMateriaManual({
   }
   let fontesPesquisa = [];
   let consultasUsadas = [];
+  const fonteSelecionada =
+    fonteBase && typeof fonteBase === 'object' && (fonteBase.url || fonteBase.titulo || fonteBase.resumo)
+      ? {
+          veiculo: String(fonteBase.veiculo || 'Web').trim().slice(0, 120),
+          titulo: String(fonteBase.titulo || '').trim().slice(0, 500),
+          url: /^https?:\/\//i.test(String(fonteBase.url || '').trim())
+            ? String(fonteBase.url).trim().slice(0, 1000)
+            : null,
+          resumo: String(fonteBase.resumo || '').trim().slice(0, 1500),
+          trecho: String(fonteBase.resumo || '').trim().slice(0, 2500),
+          data: String(fonteBase.data || '').trim().slice(0, 80) || null,
+          dataTimestamp: Number(fonteBase.dataTimestamp) || null,
+          fonteSelecionada: true,
+        }
+      : null;
 
   // O pedido pode desligar a busca no próprio texto ("não pesquise na internet")
   const pediuSemPesquisa =
@@ -2100,6 +2116,17 @@ async function gerarMateriaManual({
       logPrefix: '[materia-manual]',
     });
 
+    if (fonteSelecionada) {
+      const urlBase = String(fonteSelecionada.url || '').replace(/\/$/, '').toLowerCase();
+      fontesPesquisa = [
+        fonteSelecionada,
+        ...fontesPesquisa.filter((fonte) => {
+          const url = String(fonte?.url || '').replace(/\/$/, '').toLowerCase();
+          return !urlBase || !url || url !== urlBase;
+        }),
+      ];
+    }
+
     if (!fontesPesquisa.length) {
       const err = new Error(
         'A pesquisa na web não achou reportagens sobre isso. Ajuste as palavras-chave, aumente o período ou desmarque "Pesquisar na internet" para gerar só com as suas informações.'
@@ -2107,6 +2134,8 @@ async function gerarMateriaManual({
       err.status = 422;
       throw err;
     }
+  } else if (fonteSelecionada) {
+    fontesPesquisa = [fonteSelecionada];
   }
 
   const gerado = usarPesquisa
@@ -2161,9 +2190,13 @@ async function gerarMateriaManual({
     titulo_ia: gerado.titulo || null,
     materia_ia: materiaComFontes,
     hashtags: JSON.stringify(gerado.hashtags || []),
-    fonte_titulo: usarPesquisa ? 'Matéria manual + pesquisa na web' : 'Matéria manual',
+    fonte_titulo:
+      fonteSelecionada?.titulo ||
+      fontePrincipal?.titulo ||
+      fonteSelecionada?.veiculo ||
+      (usarPesquisa ? 'Matéria manual + pesquisa na web' : 'Matéria manual'),
     fonte_url: fontePrincipal?.url || null,
-    fonte_resumo: fatos.slice(0, 1500),
+    fonte_resumo: (fonteSelecionada?.resumo || fatos).slice(0, 1500),
     contexto_apuracao: fontesPesquisa.length
       ? montarBlocoFatos(fontesPesquisa).slice(0, 8000)
       : null,

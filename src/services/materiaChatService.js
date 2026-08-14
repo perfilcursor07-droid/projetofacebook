@@ -2286,8 +2286,10 @@ function limparPautaParaRascunho(pauta) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 1200);
+  const data = String(pauta.data || pauta.dataReferencia || '').trim().slice(0, 80);
+  const dataTimestamp = Number(pauta.dataTimestamp) || null;
   if (!titulo && !url && !resumo) return null;
-  return { titulo, url, veiculo, resumo };
+  return { titulo, url, veiculo, resumo, data, dataTimestamp };
 }
 
 function montarInformacoesDaPauta(pauta) {
@@ -2299,6 +2301,7 @@ function montarInformacoesDaPauta(pauta) {
     pauta.titulo ? `Titulo da pauta: ${pauta.titulo}` : null,
     pauta.veiculo ? `Veiculo/Fonte: ${pauta.veiculo}` : null,
     pauta.url ? `Link principal: ${pauta.url}` : null,
+    pauta.data ? `Data da publicação original: ${pauta.data}` : null,
     pauta.resumo ? `Resumo encontrado: ${pauta.resumo}` : null,
   ]
     .filter(Boolean)
@@ -2341,6 +2344,14 @@ async function salvarPautasComoRascunhos({
         periodo,
         imagemUrl: null,
         creditoImagem: pauta.veiculo || 'Reproducao',
+        fonteBase: {
+          titulo: pauta.titulo,
+          veiculo: pauta.veiculo,
+          url: pauta.url,
+          resumo: pauta.resumo,
+          data: pauta.data,
+          dataTimestamp: pauta.dataTimestamp,
+        },
       };
       let result;
       try {
