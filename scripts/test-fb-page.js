@@ -21,6 +21,7 @@ const {
   extrairUrlsDePosts,
   extrairDetalhesDoPost,
   listarPostsPerfil,
+  variantesDaPagina,
 } = require('../src/services/facebookPageScrape');
 
 const PAGE = process.argv[2];
@@ -53,8 +54,24 @@ const DUMP = process.argv.includes('--dump');
   // Etapa 1: permalinks na página (o texto NÃO vem aqui — carrega por GraphQL).
   const { urls, sinais } = extrairUrlsDePosts(html);
   console.log('Links por padrão:', sinais.porPadrao);
-  console.log(`Permalinks únicos: ${urls.length}`);
+  console.log(`Permalinks únicos (página principal): ${urls.length}`);
   for (const u of urls.slice(0, 8)) console.log('  -', u.slice(0, 100));
+
+  // Quanto cada variante acrescenta — mostra se vale manter as três.
+  console.log('\nRendimento por variante:');
+  const acumulado = new Set(urls.map((u) => u.toLowerCase()));
+  for (const variante of variantesDaPagina(PAGE).slice(1)) {
+    try {
+      const r = await baixarHtmlPagina(variante);
+      const achados = extrairUrlsDePosts(r.html).urls;
+      const novos = achados.filter((u) => !acumulado.has(u.toLowerCase()));
+      novos.forEach((u) => acumulado.add(u.toLowerCase()));
+      console.log(`  ${variante.replace('https://www.facebook.com', '')}: ${achados.length} links (${novos.length} inéditos)`);
+    } catch (err) {
+      console.log(`  ${variante.replace('https://www.facebook.com', '')}: ERRO ${err.message}`);
+    }
+  }
+  console.log(`  => total único somando variantes: ${acumulado.size}`);
 
   if (!urls.length) {
     console.log('FAIL: nenhum permalink encontrado — rode com --dump e me mande o HTML.');

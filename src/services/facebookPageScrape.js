@@ -14,8 +14,8 @@ const {
  */
 
 /** Quantos posts abrir por scan (cada um custa ~3 MB de HTML). */
-const MAX_DETALHES = 12;
-const CONCORRENCIA = 3;
+const MAX_DETALHES = Math.min(40, Math.max(1, Number(process.env.FB_PAGE_MAX_POSTS) || 15));
+const CONCORRENCIA = Math.min(6, Math.max(1, Number(process.env.FB_PAGE_CONCORRENCIA) || 3));
 
 function isConfigured() {
   return Boolean(buildFacebookCookieHeader());
@@ -174,6 +174,31 @@ function tituloDoTexto(texto, fallback) {
   return String(primeiraLinha || fallback || 'Post do Facebook').slice(0, 120);
 }
 
+/**
+ * Variantes da mesma página que costumam renderizar conjuntos diferentes de
+ * permalinks. Unir as três aumenta bastante a colheita por scan.
+ */
+function variantesDaPagina(pageUrl) {
+  const out = [String(pageUrl).trim()];
+  try {
+    const u = new URL(pageUrl);
+    if (/profile\.php/i.test(u.pathname)) {
+      const id = u.searchParams.get('id');
+      if (id) {
+        out.push(`https://www.facebook.com/profile.php?id=${id}&sk=timeline`);
+        out.push(`https://www.facebook.com/profile.php?id=${id}&sk=photos`);
+      }
+    } else {
+      const base = `https://www.facebook.com${u.pathname.replace(/\/+$/, '')}`;
+      out.push(`${base}/posts`);
+      out.push(`${base}/?sk=timeline`);
+    }
+  } catch {
+    /* mantém só a original */
+  }
+  return [...new Set(out)];
+}
+
 /** GET autenticado; erros de sessão viram exceção com status. */
 async function baixarHtmlPagina(pageUrl) {
   const cookie = buildFacebookCookieHeader();
@@ -227,8 +252,36 @@ async function mapearComLimite(itens, limite, tarefa) {
  */
 async function listarPostsPerfil(pageUrl, limite = 20) {
   const max = Math.min(40, Math.max(1, Number(limite) || 20));
-  const { html } = await baixarHtmlPagina(pageUrl);
-  const { urls, sinais } = extrairUrlsDePosts(html);
+
+  // Etapa 1: colher permalinks de todas as variantes da página.
+  const variantes = variantesDaPagina(pageUrl);
+  const urls = [];
+  const vistos = new Set();
+  let htmlTotal = 0;
+  const porVariante = {};
+
+  await mapearComLimite(variantes, 2, async (variante) => {
+    try {
+      const { html } = await baixarHtmlPagina(variante);
+      htmlTotal += html.length;
+      const encontrados = extrairUrlsDePosts(html).urls;
+      porVariante[variante.replace('https://www.facebook.com', '')] = encontrados.length;
+      for (const url of encontrados) {
+        const chave = url.toLowerCase();
+        if (vistos.has(chave)) continue;
+        vistos.add(chave);
+        urls.push(url);
+      }
+    } catch (err) {
+      // Variante indisponível não invalida o scan; a principal já basta.
+      console.warn(`[fb-page] variante ${variante.slice(-40)}: ${err.message}`);
+    }
+  });
+
+  if (!urls.length) {
+    console.log(`[fb-page] ${pageUrl}: nenhum permalink — variantes=${JSON.stringify(porVariante)}`);
+    return [];
+  }
 
   const alvos = urls.slice(0, Math.min(max, MAX_DETALHES));
   const detalhes = await mapearComLimite(alvos, CONCORRENCIA, async (url) => {
@@ -256,7 +309,7 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
     }));
 
   console.log(
-    `[fb-page] ${pageUrl}: ${itens.length} post(s) de ${urls.length} link(s) — abertos=${alvos.length} htmlLen=${sinais.tamanhoHtml}`
+    `[fb-page] ${pageUrl}: ${itens.length} post(s) de ${urls.length} link(s) — abertos=${alvos.length} variantes=${JSON.stringify(porVariante)} htmlLen=${htmlTotal}`
   );
   return itens;
 }
@@ -268,4 +321,5 @@ module.exports = {
   extrairUrlsDePosts,
   extrairDetalhesDoPost,
   ehUrlDePostValida,
+  variantesDaPagina,
 };
