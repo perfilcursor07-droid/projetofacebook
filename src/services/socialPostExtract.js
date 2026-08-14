@@ -50,6 +50,54 @@ function normalizarUrlSocial(url) {
   return link;
 }
 
+/**
+ * Links /share/ frequentemente terminam em /login/?next=<permalink>. Mesmo com
+ * HTTP 400, o Axios mantém a URL final; aproveitamos o permalink sem usar a
+ * página de login como fonte de conteúdo.
+ */
+async function resolverShareFacebook(url) {
+  const original = normalizarUrlSocial(url);
+  if (!/facebook\.com\/(?:share|share\.php)/i.test(original)) return original;
+
+  for (const ua of [BROWSER_UA, CRAWLER_UA]) {
+    try {
+      const response = await axios.get(original, {
+        timeout: 15000,
+        maxRedirects: 8,
+        validateStatus: () => true,
+        headers: {
+          'User-Agent': ua,
+          Accept: 'text/html,application/xhtml+xml',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        },
+      });
+      const finalUrl =
+        response.request?.res?.responseURL ||
+        response.request?.res?.responseUrl ||
+        response.headers?.location ||
+        original;
+      const resolvido = normalizarUrlSocial(finalUrl);
+      if (resolvido && resolvido !== original && isSocialPostUrl(resolvido)) {
+        console.info(`[socialPost] facebook share resolvido: ${resolvido}`);
+        return resolvido;
+      }
+    } catch (err) {
+      const finalUrl =
+        err.response?.request?.res?.responseURL ||
+        err.response?.request?.res?.responseUrl ||
+        err.response?.headers?.location ||
+        '';
+      const resolvido = normalizarUrlSocial(finalUrl);
+      if (resolvido && resolvido !== original && isSocialPostUrl(resolvido)) {
+        console.info(`[socialPost] facebook share resolvido apos erro: ${resolvido}`);
+        return resolvido;
+      }
+      console.warn('[socialPost] facebook share:', err.message);
+    }
+  }
+  return original;
+}
+
 function extrairShortcodeIg(url) {
   const m = String(url || '').match(
     /instagram\.com\/(?:[a-z0-9._]+\/)?(?:p|reel|reels|tv)\/([^/?#]+)/i
@@ -1080,12 +1128,16 @@ function mesclarExtracao(melhor, extra) {
  * @param {{ textoManual?: string, imagemManual?: string }} [opts]
  */
 async function extrairPostSocial(url, opts = {}) {
-  const link = normalizarUrlSocial(url);
+  let link = normalizarUrlSocial(url);
   const plataforma = detectarPlataformaSocial(link);
   if (!plataforma) {
     const err = new Error('Link não é de Facebook ou Instagram');
     err.status = 400;
     throw err;
+  }
+
+  if (plataforma === 'facebook') {
+    link = await resolverShareFacebook(link);
   }
 
   const textoManual = String(opts.textoManual || '').trim();
@@ -1238,6 +1290,20 @@ async function extrairPostSocial(url, opts = {}) {
     incorporar(await extrairViaMbasic(link));
   }
 
+  // A Biblioteca já usa Apify para posts públicos do Facebook. O chat de
+  // matéria manual reaproveita o mesmo provedor quando ScrapeCreators/HTML
+  // falham, inclusive para links /share/p/ resolvidos para permalink.php.
+  if (plataforma === 'facebook' && precisaTexto()) {
+    const apifyFacebook = require('./apifyFacebookService');
+    if (apifyFacebook.isConfigured()) {
+      try {
+        incorporar(await apifyFacebook.extrairPostPublicoPorUrl(link));
+      } catch (err) {
+        console.warn('[socialPost] apify-fb-post:', err.message);
+      }
+    }
+  }
+
   // yt-dlp — Instagram /p/ (foto) costuma HTTP 400; só tenta reel/tv.
   const igEhVideo = /instagram\.com\/(reel|reels|tv)\//i.test(link);
   if ((precisaTexto() || !melhor.imagem) && (plataforma !== 'instagram' || igEhVideo)) {
@@ -1351,6 +1417,7 @@ module.exports = {
   isSocialPostUrl,
   isSocialVideoUrl,
   normalizarUrlSocial,
+  resolverShareFacebook,
   extrairPostSocial,
   socialParaTopico,
 };

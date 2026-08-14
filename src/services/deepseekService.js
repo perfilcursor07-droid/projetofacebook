@@ -2620,6 +2620,7 @@ async function conversarMateria({
   permitirSemConfirmacao = false,
   veiculosColados = [],
   fonteSocial = false,
+  fonteSocialChars = 0,
   fonteEstrangeira = false,
   contextoAprendizado = null,
 }) {
@@ -2644,15 +2645,20 @@ async function conversarMateria({
     }
   }
 
+  const volumeFonteSocial = Math.max(0, Number(fonteSocialChars) || 0);
+  const fonteSocialCurta = fonteSocial && volumeFonteSocial < 900;
   const blocoMateriaDePost = fonteSocial
     ? `MATÉRIA BASEADA EM POST OU VÍDEO DE REDE SOCIAL:
-- NÃO transforme a publicação em resumo de dois ou três parágrafos. Reconstrua a história com lead, cronologia, fala central, circunstâncias, contexto documentado e fechamento.
+- Com material factual suficiente, reconstrua a história com lead, cronologia, fala central, circunstâncias, contexto documentado e fechamento. Com fonte curta, faça uma matéria proporcional sem criar contexto.
 - Formato obrigatório: 1ª linha com o título; 2ª linha com uma LINHA FINA de 120 a 220 caracteres, sem escrever "Subtítulo:"; depois uma linha em branco e o corpo.
 - A linha fina deve acrescentar informação: quem, onde, quando e por que o assunto voltou a repercutir. Não repita apenas o título.
 - Quando houver uma frase forte e literal na fonte, considere colocá-la no título e reproduza a fala completa em um parágrafo próprio no corpo.
 - Se um vídeo, fala ou fato ANTIGO voltou a circular, escreva isso no título ou no lead e informe imediatamente a DATA ORIGINAL. Nunca apresente recirculação como declaração recente.
 - Explique a sequência documentada: o que voltou a circular → quando e onde aconteceu originalmente → o que foi dito/feito → em qual circunstância → antecedentes presentes na fonte → por que a data é relevante agora.
-- Com legenda factual suficiente, entregue de 5 a 8 parágrafos substanciais e cerca de 1500 a 2400 caracteres no corpo. Não repita a mesma informação para atingir tamanho.
+- O texto factual extraído desta publicação tem aproximadamente ${volumeFonteSocial} caracteres.
+${fonteSocialCurta
+  ? '- A fonte é curta: entregue uma matéria concisa de 3 a 5 parágrafos e cerca de 650 a 1200 caracteres no corpo. Use cada fato uma vez e NÃO tente atingir tamanho com inferências, adjetivos ou contexto não documentado.'
+  : '- A fonte tem material suficiente: entregue de 5 a 8 parágrafos substanciais e cerca de 1500 a 2400 caracteres no corpo. Não repita a mesma informação para atingir tamanho.'}
 - Em uma matéria desse tamanho, não use intertítulos. A linha fina já organiza a leitura.
 - Entregue somente a matéria pronta. NÃO gere títulos alternativos, chamada para redes sociais, sugestão de arte, notas ao editor nem explicação do processo.`
     : '';
@@ -2773,7 +2779,9 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
   let raw = await chatCompletionStream(messages, {
     temperature: sortearTemperatura(tomKey === 'polemico'),
     onDelta,
-    thinking: Boolean(blocoFatos),
+    // Em links sociais, o prompt já traz a fonte completa. Thinking prolongava
+    // o silêncio antes do primeiro token sem melhorar uma reescrita curta.
+    thinking: Boolean(blocoFatos) && !fonteSocial,
     model: DEEPSEEK_WRITER_MODEL,
   });
 
@@ -2788,7 +2796,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
     return linhas.join('\n').trim();
   };
   const corpoInicial = corpoSemTituloEHashtags(raw);
-  const materialSocialSuficiente = fonteSocial && blocoFatos.length >= 700;
+  const materialSocialSuficiente = fonteSocial && volumeFonteSocial >= 900;
   const materialGeralSuficiente = !fonteSocial && blocoFatos.length >= 1800;
   const corpoMinimoEsperado = fonteSocial ? 1250 : 2300;
   if (
@@ -2830,7 +2838,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
         {
           temperature: 0.55,
           json: false,
-          thinking: true,
+          thinking: !fonteSocial,
           model: DEEPSEEK_WRITER_MODEL,
         }
       );

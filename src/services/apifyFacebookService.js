@@ -159,6 +159,120 @@ function normalizarPost(raw) {
   };
 }
 
+function identificadorPostFacebook(value) {
+  const texto = String(value || '');
+  if (!texto) return '';
+  const idPuro = texto.trim();
+  if (/^(?:pfbid[a-z0-9]+|\d{6,})$/i.test(idPuro)) return idPuro.toLowerCase();
+  try {
+    const u = new URL(texto);
+    const queryId = u.searchParams.get('story_fbid') || u.searchParams.get('fbid');
+    if (queryId) return String(queryId).trim().toLowerCase();
+  } catch {
+    /* pode ser apenas o identificador */
+  }
+  const pathId = texto.match(/\/(?:posts|videos|reel|photos?)\/([^/?#]+)/i)?.[1];
+  if (pathId) return String(pathId).trim().toLowerCase();
+  const pfbid = texto.match(/\b(pfbid[a-z0-9]+)\b/i)?.[1];
+  return String(pfbid || '').trim().toLowerCase();
+}
+
+function normalizarPostIndividual(raw, linkOriginal) {
+  const base = normalizarPost(raw);
+  if (!base) return null;
+
+  const author = raw?.author && typeof raw.author === 'object' ? raw.author : {};
+  const image = raw?.image && typeof raw.image === 'object' ? raw.image : {};
+  const video = raw?.video && typeof raw.video === 'object' ? raw.video : {};
+  const veiculo =
+    nomeDeCampo(raw?.source_name) ||
+    nomeDeCampo(author) ||
+    nomeDeCampo(raw?.pageName) ||
+    base.autor ||
+    null;
+  const imagem =
+    textoLimpo(image.uri || image.url || image.src) ||
+    textoLimpo(raw?.image_url || raw?.full_picture || raw?.thumbnail_url || raw?.picture) ||
+    textoLimpo(video.thumbnail || video.thumbnail_url) ||
+    null;
+  const videoUrl =
+    textoLimpo(video.hd_url || video.sd_url || video.url) ||
+    textoLimpo(raw?.video_url || raw?.media_url) ||
+    null;
+  const postId = textoLimpo(raw?.post_id || raw?.postId || raw?.id) || null;
+
+  return {
+    url: base.url || String(linkOriginal || ''),
+    titulo: String(base.texto || veiculo || 'Post do Facebook').slice(0, 140),
+    texto: base.texto || null,
+    imagem,
+    veiculo,
+    metodo: 'apify-facebook-post',
+    plataforma: 'facebook',
+    isVideo: Boolean(videoUrl || /video/i.test(String(raw?.type || ''))),
+    videoUrl,
+    publicadoEm: base.publicadoEm,
+    autorUrl:
+      textoLimpo(author.url || author.profileUrl || author.profile_url) || base.authorUrl || null,
+    postId,
+    likes: base.likes,
+    comments: base.comments,
+    shares: base.shares,
+  };
+}
+
+/** Extrai uma publicação pública pelo permalink/share URL informado pelo editor. */
+async function extrairPostPublicoPorUrl(postUrl) {
+  if (!isConfigured()) return null;
+
+  const link = String(postUrl || '').trim();
+  if (!/^https?:\/\/[^/]*facebook\.com/i.test(link)) return null;
+
+  const actorId = env.apifyFbPageActor || 'scrapeforge/facebook-posts-scraper';
+  const actor = String(actorId);
+  const input = actor.includes('scrapeforge')
+    ? { urls: [link], max_posts: 3 }
+    : actor.includes('apify/facebook-posts') || actor.endsWith('facebook-posts-scraper')
+      ? { startUrls: [{ url: link }], resultsLimit: 3 }
+      : { urls: [link], startUrls: [{ url: link }], max_posts: 3, resultsLimit: 3 };
+
+  const client = new ApifyClient({ token: env.apifyToken });
+  try {
+    const run = await client.actor(actorId).call(input, { waitSecs: 150, memory: 1024 });
+    const statusMsg = String(run?.statusMessage || run?.status || '');
+    if (/free tier|1 run per 24h|limit|quota/i.test(statusMsg)) {
+      const err = new Error(`Apify: ${statusMsg}`);
+      err.status = 402;
+      throw err;
+    }
+
+    const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit: 12 });
+    const normalizados = (items || [])
+      .map((item) => normalizarPostIndividual(item, link))
+      .filter((item) => item?.texto && item.texto.length >= 40);
+    if (!normalizados.length) return null;
+
+    const esperado = identificadorPostFacebook(link);
+    if (!esperado) return normalizados[0];
+
+    return (
+      normalizados.find((item) => {
+        const ids = [item.postId, item.url].map(identificadorPostFacebook).filter(Boolean);
+        return ids.includes(esperado);
+      }) || null
+    );
+  } catch (err) {
+    if (String(err.message || '').startsWith('Apify:')) throw err;
+    const message =
+      err?.message || err?.response?.body?.error?.message || 'Falha ao consultar Apify';
+    const out = new Error(`Apify: ${message}`);
+    out.status = /credit|quota|limit|payment|402|free tier/i.test(message)
+      ? 402
+      : err.status || 502;
+    throw out;
+  }
+}
+
 /**
  * Monta query com viés Brasil + gospel; preserva #hashtags do usuário.
  */
@@ -874,6 +988,7 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
 
 module.exports = {
   isConfigured,
+  extrairPostPublicoPorUrl,
   buscarPostsPorTermo,
   buscarPostsDaPagina,
   buscarPostsPaginaViaWeb,
@@ -888,4 +1003,5 @@ module.exports = {
   montarQueryBrasilGospel,
   extrairHashtags,
   handleDaPaginaUrl,
+  identificadorPostFacebook,
 };

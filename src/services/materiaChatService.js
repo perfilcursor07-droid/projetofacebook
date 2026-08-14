@@ -1836,6 +1836,13 @@ async function responder({
   // Fontes que o editor colou: o nome do veículo tem de sair citado na matéria.
   const fontesColadas = fontes.filter((f) => f?.fonteColada || f?.ehRedeSocial);
   const temFonteSocial = fontesColadas.some((f) => f?.ehRedeSocial);
+  const caracteresFonteSocial = fontesColadas
+    .filter((f) => f?.ehRedeSocial)
+    .reduce(
+      (total, fonte) =>
+        total + String(fonte?.trecho || fonte?.resumo || '').trim().length,
+      0
+    );
   const veiculosColados = fontesColadas
     .map((f) => ({ veiculo: f.veiculo, url: f.url || null }))
     .filter((f) => f.veiculo);
@@ -1883,6 +1890,9 @@ async function responder({
             ? [{ veiculo: fonteAtual.veiculo, url: fonteAtual.url || null }]
             : [],
           fonteSocial: Boolean(fonteAtual.ehRedeSocial),
+          fonteSocialChars: fonteAtual.ehRedeSocial
+            ? String(fonteAtual.trecho || fonteAtual.resumo || '').trim().length
+            : 0,
           fonteEstrangeira: fonteEmOutroIdioma([fonteAtual]),
           contextoAprendizado,
           onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
@@ -1899,6 +1909,7 @@ async function responder({
         permitirSemConfirmacao: usuarioInsiste,
         veiculosColados,
         fonteSocial: temFonteSocial,
+        fonteSocialChars: caracteresFonteSocial,
         fonteEstrangeira,
         contextoAprendizado,
         onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
@@ -1964,7 +1975,8 @@ async function responder({
   // Web desligada (ou link sem pedido de contexto): só reescreve/traduz o link.
   // Mesmo assim, revisa a resposta contra a legenda para impedir mistura de pauta.
   const soReescritaDoLink = Boolean(temFonteDoLink && !usarPesquisa);
-  const pularRevisao = !temFonteDoLink && soReescreverOLink && !suspeitasIniciais.length;
+  const pularRevisao =
+    soReescritaDoLink && soReescreverOLink && !suspeitasIniciais.length;
   if (soReescritaDoLink && ehMateriaGerada) {
     registrarPasso({
       kind: 'fontes',
