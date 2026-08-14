@@ -7,7 +7,7 @@
  *   node scripts/test-fb-page.js "https://www.facebook.com/DavidJHarrisJr"
  *   node scripts/test-fb-page.js "https://www.facebook.com/DavidJHarrisJr" --dump
  *
- * --dump grava o HTML autenticado em /tmp para inspecionar padrões novos.
+ * --dump grava o HTML da página em /tmp para inspecionar padrões novos.
  */
 require('dotenv').config();
 
@@ -18,7 +18,9 @@ const { diagnoseFacebookCookies } = require('../src/services/facebookCookies');
 const {
   isConfigured,
   baixarHtmlPagina,
-  extrairPostsDoHtml,
+  extrairUrlsDePosts,
+  extrairDetalhesDoPost,
+  listarPostsPerfil,
 } = require('../src/services/facebookPageScrape');
 
 const PAGE = process.argv[2];
@@ -48,29 +50,36 @@ const DUMP = process.argv.includes('--dump');
     console.log('HTML salvo em:', out);
   }
 
-  // Contagens brutas ajudam a saber QUAL padrão falhou quando dá 0 posts.
-  const padroes = {
-    wwwURL: /"wwwURL"\s*:\s*"/g,
-    url_json: /"url"\s*:\s*"https:[^"]*facebook\.com/g,
-    permalink_url: /"permalink_url"\s*:\s*"/g,
-    message_text: /"message"\s*:\s*\{\s*"text"\s*:/g,
-    story_fbid: /story_fbid/g,
-    posts_path: /\\?\/posts\\?\//g,
-    pfbid: /pfbid[A-Za-z0-9]{20,}/g,
-    creation_time: /"creation_time"\s*:\s*\d{9,13}/g,
-    scontent: /"uri"\s*:\s*"https:[^"]*scontent/g,
-  };
-  console.log('Ocorrências por padrão:');
-  for (const [nome, re] of Object.entries(padroes)) {
-    console.log(`  ${nome}: ${(html.match(re) || []).length}`);
+  // Etapa 1: permalinks na página (o texto NÃO vem aqui — carrega por GraphQL).
+  const { urls, sinais } = extrairUrlsDePosts(html);
+  console.log('Links por padrão:', sinais.porPadrao);
+  console.log(`Permalinks únicos: ${urls.length}`);
+  for (const u of urls.slice(0, 8)) console.log('  -', u.slice(0, 100));
+
+  if (!urls.length) {
+    console.log('FAIL: nenhum permalink encontrado — rode com --dump e me mande o HTML.');
+    process.exit(1);
   }
 
-  const { itens, sinais } = extrairPostsDoHtml(html, 20);
-  console.log('Sinais:', sinais);
-  console.log(`Posts extraídos: ${itens.length}`);
+  // Etapa 2: abrir 1 post para conferir que o texto vem renderizado.
+  console.log('\nAmostra do primeiro post:');
+  const amostra = await baixarHtmlPagina(urls[0]);
+  const detalhe = extrairDetalhesDoPost(amostra.html);
+  console.log({
+    url: urls[0].slice(0, 90),
+    len: amostra.html.length,
+    textoLen: detalhe.texto?.length || 0,
+    textoPreview: String(detalhe.texto || '').slice(0, 80),
+    temImagem: Boolean(detalhe.imagem),
+    publicadoEm: detalhe.publicadoEm ? detalhe.publicadoEm.toISOString().slice(0, 16) : null,
+  });
+
+  // Fluxo completo, igual ao que a Biblioteca executa.
+  console.log('\nlistarPostsPerfil (fluxo real):');
+  const itens = await listarPostsPerfil(PAGE, 25);
+  console.log(`Itens aproveitáveis: ${itens.length}`);
   for (const item of itens.slice(0, 5)) {
     console.log('  -', {
-      url: String(item.url).slice(0, 90),
       titulo: String(item.titulo).slice(0, 60),
       temResumo: Boolean(item.resumo),
       temThumb: Boolean(item.thumbnail),

@@ -6,9 +6,16 @@ const {
 
 /**
  * Lista posts de uma página do Facebook usando a sessão de YTDLP_FB_COOKIES_FILE.
- * Alternativa gratuita ao ScrapeCreators/Serper: o HTML autenticado já traz os
- * permalinks e as mensagens no JSON embutido do feed.
+ *
+ * O HTML da página traz os PERMALINKS dos posts, mas não os textos: o feed é
+ * carregado por GraphQL depois (uma página de 2,6 MB costuma ter ~13 permalinks
+ * e apenas 1 "message"). Por isso o fluxo é em duas etapas — coletar os links na
+ * página e abrir cada post individualmente, onde o texto vem renderizado.
  */
+
+/** Quantos posts abrir por scan (cada um custa ~3 MB de HTML). */
+const MAX_DETALHES = 12;
+const CONCORRENCIA = 3;
 
 function isConfigured() {
   return Boolean(buildFacebookCookieHeader());
@@ -43,46 +50,109 @@ function coletarComIndice(html, regex, transform = (v) => v) {
   return out;
 }
 
-/** Valor mais próximo do índice de referência, dentro de uma janela de caracteres. */
-function maisProximo(lista, indice, janela = 6000) {
-  let melhor = null;
-  let menorDistancia = Infinity;
-  for (const item of lista) {
-    const distancia = Math.abs(item.indice - indice);
-    if (distancia < menorDistancia && distancia <= janela) {
-      menorDistancia = distancia;
-      melhor = item.valor;
-    }
-  }
-  return melhor;
-}
+/**
+ * Formas de permalink de post. Aceita absoluto ou relativo — o HTML mistura os
+ * dois. Exige um identificador real (pfbid/numérico) para não capturar páginas
+ * de listagem como /<pagina>/photos.
+ */
+const PADROES_POST = [
+  /(?:https:\/\/www\.facebook\.com)?\/[A-Za-z0-9.-]{2,}\/posts\/(?:pfbid[A-Za-z0-9]+|\d{6,})/g,
+  /(?:https:\/\/www\.facebook\.com)?\/permalink\.php\?story_fbid=(?:pfbid[A-Za-z0-9]+|\d{6,})&(?:amp;)?id=\d+/g,
+  /(?:https:\/\/www\.facebook\.com)?\/story\.php\?story_fbid=(?:pfbid[A-Za-z0-9]+|\d{6,})&(?:amp;)?id=\d+/g,
+  /(?:https:\/\/www\.facebook\.com)?\/reel\/\d{6,}/g,
+  /(?:https:\/\/www\.facebook\.com)?\/[A-Za-z0-9.-]{2,}\/videos\/(?:[A-Za-z0-9%-]+\/)?\d{6,}/g,
+  /(?:https:\/\/www\.facebook\.com)?\/photo\/?\?fbid=\d{6,}/g,
+];
 
-function ehUrlDePost(url) {
-  const u = String(url || '');
-  if (!/facebook\.com/i.test(u)) return false;
-  return (
-    /\/posts\//i.test(u) ||
-    /permalink\.php/i.test(u) ||
-    /story_fbid=/i.test(u) ||
-    /\/videos\//i.test(u) ||
-    /\/reel\//i.test(u) ||
-    /\/photo/i.test(u)
-  );
-}
+/** Segmentos que nunca são nome de página. */
+const SEGMENTOS_INVALIDOS = /^(ajax|api|graphql|privacy|policies|help|settings|login|watch|marketplace|groups|events|pages|photo|reel|story\.php|permalink\.php)$/i;
 
-/** Remove rastreadores (__cft__, __tn__, rdid) que quebram a deduplicação. */
-function limparUrlPost(url) {
+function normalizarUrlPost(bruto) {
+  let url = desescapar(bruto).trim();
+  if (url.startsWith('/')) url = `https://www.facebook.com${url}`;
   try {
-    const u = new URL(desescapar(url));
+    const u = new URL(url);
     u.hostname = 'www.facebook.com';
+    u.protocol = 'https:';
     u.hash = '';
     for (const key of [...u.searchParams.keys()]) {
-      if (!/^(story_fbid|id|v|fbid)$/i.test(key)) u.searchParams.delete(key);
+      if (!/^(story_fbid|id|fbid|v)$/i.test(key)) u.searchParams.delete(key);
     }
+    const primeiro = u.pathname.split('/').filter(Boolean)[0] || '';
+    if (/\/posts\//i.test(u.pathname) && SEGMENTOS_INVALIDOS.test(primeiro)) return null;
     return u.toString();
   } catch {
-    return desescapar(url);
+    return null;
   }
+}
+
+/**
+ * Extrai os permalinks de posts do HTML da página.
+ * @returns {{ urls: string[], sinais: object }}
+ */
+function extrairUrlsDePosts(html) {
+  // O HTML mistura barras escapadas (\/) com normais; normalizar uma vez deixa
+  // os padrões simples e evita duplicar cada regex.
+  const normalizado = String(html || '').replace(/\\\//g, '/');
+  const urls = [];
+  const vistos = new Set();
+  const porPadrao = {};
+
+  for (const re of PADROES_POST) {
+    let achados = 0;
+    for (const m of normalizado.matchAll(re)) {
+      achados++;
+      const url = normalizarUrlPost(m[0]);
+      if (!url) continue;
+      const chave = url.toLowerCase();
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+      urls.push(url);
+    }
+    porPadrao[re.source.slice(0, 42)] = achados;
+  }
+
+  return {
+    urls,
+    sinais: { tamanhoHtml: normalizado.length, unicos: urls.length, porPadrao },
+  };
+}
+
+/** Texto, imagem e data de um post já renderizado. */
+function extrairDetalhesDoPost(html) {
+  const mensagens = coletarComIndice(
+    html,
+    /"message"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g,
+    (v) => {
+      const t = unescapeJsonString(v).trim();
+      return t.length >= 20 ? t : null;
+    }
+  ).map((m) => m.valor);
+  mensagens.sort((a, b) => b.length - a.length);
+
+  const imagem = (() => {
+    for (const re of [
+      /"photo_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
+      /"full_width_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
+      /"uri"\s*:\s*"(https:[^"]*scontent[^"]+)"/i,
+    ]) {
+      const m = html.match(re);
+      if (!m?.[1]) continue;
+      const candidato = desescapar(m[1]);
+      if (/rsrc\.php|static\.xx\.fbcdn/i.test(candidato)) continue;
+      return candidato;
+    }
+    return null;
+  })();
+
+  const ts = Number(html.match(/"creation_time"\s*:\s*(\d{9,13})/)?.[1]) || 0;
+  const publicadoEm = ts ? new Date(ts > 10_000_000_000 ? ts : ts * 1000) : null;
+
+  return {
+    texto: mensagens[0] || null,
+    imagem,
+    publicadoEm: publicadoEm && !Number.isNaN(publicadoEm.getTime()) ? publicadoEm : null,
+  };
 }
 
 function tituloDoTexto(texto, fallback) {
@@ -93,17 +163,7 @@ function tituloDoTexto(texto, fallback) {
   return String(primeiraLinha || fallback || 'Post do Facebook').slice(0, 120);
 }
 
-function normalizarData(timestamp) {
-  const value = Number(timestamp);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  const date = new Date(value > 10_000_000_000 ? value : value * 1000);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-/**
- * Baixa o HTML autenticado da página.
- * @returns {Promise<{ html: string, finalUrl: string, status: number }>}
- */
+/** GET autenticado; erros de sessão viram exceção com status. */
 async function baixarHtmlPagina(pageUrl) {
   const cookie = buildFacebookCookieHeader();
   if (!cookie) {
@@ -137,78 +197,18 @@ async function baixarHtmlPagina(pageUrl) {
   return { html: String(res.data || ''), finalUrl, status: res.status };
 }
 
-/**
- * Extrai posts do HTML autenticado. Exportado para o script de diagnóstico.
- * @returns {{ itens: Array, sinais: object }}
- */
-function extrairPostsDoHtml(html, limite = 20) {
-  const urls = coletarComIndice(
-    html,
-    /"(?:wwwURL|url|permalink_url)"\s*:\s*"(https:[^"]*facebook\.com[^"]*)"/g,
-    (v) => {
-      const limpo = desescapar(v);
-      return ehUrlDePost(limpo) ? limpo : null;
+/** Executa tarefas com concorrência limitada, preservando a ordem da entrada. */
+async function mapearComLimite(itens, limite, tarefa) {
+  const resultados = new Array(itens.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limite, itens.length) }, async () => {
+    while (cursor < itens.length) {
+      const indice = cursor++;
+      resultados[indice] = await tarefa(itens[indice], indice);
     }
-  );
-
-  const mensagens = coletarComIndice(
-    html,
-    /"message"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g,
-    (v) => {
-      const t = unescapeJsonString(v).trim();
-      return t.length >= 20 ? t : null;
-    }
-  );
-
-  const datas = coletarComIndice(
-    html,
-    /"creation_time"\s*:\s*(\d{9,13})/g,
-    (v) => Number(v) || null
-  );
-
-  const imagens = coletarComIndice(
-    html,
-    /"uri"\s*:\s*"(https:[^"]*scontent[^"]+)"/g,
-    (v) => {
-      const limpo = desescapar(v);
-      return /rsrc\.php|static\.xx\.fbcdn/i.test(limpo) ? null : limpo;
-    }
-  );
-
-  const sinais = {
-    urlsEncontradas: urls.length,
-    mensagens: mensagens.length,
-    datas: datas.length,
-    imagens: imagens.length,
-    tamanhoHtml: html.length,
-  };
-
-  const itens = [];
-  const vistos = new Set();
-  for (const { valor, indice } of urls) {
-    const url = limparUrlPost(valor);
-    const chave = url.split(/[?#]/)[0].toLowerCase() + (url.match(/story_fbid=[^&]+/i)?.[0] || '');
-    if (vistos.has(chave)) continue;
-    vistos.add(chave);
-
-    const texto = maisProximo(mensagens, indice);
-    const timestamp = maisProximo(datas, indice, 4000);
-    const thumbnail = maisProximo(imagens, indice, 4000);
-    const isVideo = /\/(reel|videos)\//i.test(url);
-
-    itens.push({
-      externalId: url,
-      mediaType: isVideo ? 'video' : 'image',
-      titulo: tituloDoTexto(texto, 'Post do Facebook'),
-      url,
-      resumo: texto ? texto.slice(0, 400) : null,
-      thumbnail: thumbnail || null,
-      publicadoEm: normalizarData(timestamp),
-    });
-    if (itens.length >= limite) break;
-  }
-
-  return { itens, sinais };
+  });
+  await Promise.all(workers);
+  return resultados;
 }
 
 /**
@@ -217,9 +217,35 @@ function extrairPostsDoHtml(html, limite = 20) {
 async function listarPostsPerfil(pageUrl, limite = 20) {
   const max = Math.min(40, Math.max(1, Number(limite) || 20));
   const { html } = await baixarHtmlPagina(pageUrl);
-  const { itens, sinais } = extrairPostsDoHtml(html, max);
+  const { urls, sinais } = extrairUrlsDePosts(html);
+
+  const alvos = urls.slice(0, Math.min(max, MAX_DETALHES));
+  const detalhes = await mapearComLimite(alvos, CONCORRENCIA, async (url) => {
+    try {
+      const res = await baixarHtmlPagina(url);
+      return { url, ...extrairDetalhesDoPost(res.html) };
+    } catch (err) {
+      console.warn(`[fb-page] detalhe ${url.slice(0, 70)}: ${err.message}`);
+      return { url, texto: null, imagem: null, publicadoEm: null };
+    }
+  });
+
+  // Item sem texto vira card "conteúdo não disponível" na Biblioteca; descartar
+  // é melhor do que poluir a fonte com posts vazios.
+  const itens = detalhes
+    .filter((d) => d.texto || d.imagem)
+    .map((d) => ({
+      externalId: d.url,
+      mediaType: /\/(reel|videos)\//i.test(d.url) ? 'video' : 'image',
+      titulo: tituloDoTexto(d.texto, 'Post do Facebook'),
+      url: d.url,
+      resumo: d.texto ? d.texto.slice(0, 400) : null,
+      thumbnail: d.imagem || null,
+      publicadoEm: d.publicadoEm,
+    }));
+
   console.log(
-    `[fb-page] ${pageUrl}: ${itens.length} post(s) — urls=${sinais.urlsEncontradas} msgs=${sinais.mensagens} len=${sinais.tamanhoHtml}`
+    `[fb-page] ${pageUrl}: ${itens.length} post(s) de ${urls.length} link(s) — abertos=${alvos.length} htmlLen=${sinais.tamanhoHtml}`
   );
   return itens;
 }
@@ -228,5 +254,6 @@ module.exports = {
   isConfigured,
   listarPostsPerfil,
   baixarHtmlPagina,
-  extrairPostsDoHtml,
+  extrairUrlsDePosts,
+  extrairDetalhesDoPost,
 };
