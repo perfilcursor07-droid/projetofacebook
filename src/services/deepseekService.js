@@ -2544,7 +2544,8 @@ NÃO CORTE (isto é trabalho correto do redator, não erro):
 
 Regras da devolução:
 - NÃO acrescente informação nova, nem "para completar".
-- Mantenha o formato: 1ª linha título, corpo em parágrafos curtos, última linha as hashtags.
+- Mantenha o formato: 1ª linha título, 2ª linha a linha fina sem rótulo, corpo em parágrafos curtos, última linha as hashtags.
+- Preserve a linha fina quando ela estiver sustentada pelas fontes; não a confunda com introdução descartável.
 - PRESERVE A EXTENSÃO: só remova o que for infundado. É erro encurtar a matéria por estilo, por preferir frase literal da fonte ou por "ajustar" paráfrase correta.
 - Quando a fonte for post de rede social, a legenda inteira é fonte válida — tudo que ela afirma pode ser usado.
 - Se sobrar pouco conteúdo, entregue a matéria mais curta — texto curto e checado é melhor que texto grande e furado.
@@ -2618,6 +2619,7 @@ async function conversarMateria({
   onDelta = null,
   permitirSemConfirmacao = false,
   veiculosColados = [],
+  fonteSocial = false,
   fonteEstrangeira = false,
   contextoAprendizado = null,
 }) {
@@ -2642,22 +2644,39 @@ async function conversarMateria({
     }
   }
 
+  const blocoMateriaDePost = fonteSocial
+    ? `MATÉRIA BASEADA EM POST OU VÍDEO DE REDE SOCIAL:
+- NÃO transforme a publicação em resumo de dois ou três parágrafos. Reconstrua a história com lead, cronologia, fala central, circunstâncias, contexto documentado e fechamento.
+- Formato obrigatório: 1ª linha com o título; 2ª linha com uma LINHA FINA de 120 a 220 caracteres, sem escrever "Subtítulo:"; depois uma linha em branco e o corpo.
+- A linha fina deve acrescentar informação: quem, onde, quando e por que o assunto voltou a repercutir. Não repita apenas o título.
+- Quando houver uma frase forte e literal na fonte, considere colocá-la no título e reproduza a fala completa em um parágrafo próprio no corpo.
+- Se um vídeo, fala ou fato ANTIGO voltou a circular, escreva isso no título ou no lead e informe imediatamente a DATA ORIGINAL. Nunca apresente recirculação como declaração recente.
+- Explique a sequência documentada: o que voltou a circular → quando e onde aconteceu originalmente → o que foi dito/feito → em qual circunstância → antecedentes presentes na fonte → por que a data é relevante agora.
+- Com legenda factual suficiente, entregue de 5 a 8 parágrafos substanciais e cerca de 1500 a 2400 caracteres no corpo. Não repita a mesma informação para atingir tamanho.
+- Em uma matéria desse tamanho, não use intertítulos. A linha fina já organiza a leitura.
+- Entregue somente a matéria pronta. NÃO gere títulos alternativos, chamada para redes sociais, sugestão de arte, notas ao editor nem explicação do processo.`
+    : '';
+
   const system = `Você é repórter e redator de uma Página de notícias no Facebook/Instagram, conversando com o editor num chat.
 
 ${blocoEstiloNewsGospel()}
 
 ${blocoMemoriaEditorial || ''}
 
+${blocoMateriaDePost}
+
 COMO RESPONDER:
 - A conversa tem continuidade. Expressões como "mais polêmica", "mais completa", "troque o título", "aprofunde" e "faça outra versão" referem-se à ÚLTIMA MATÉRIA. Mantenha assunto, pessoas, instituições e fatos; altere somente o que o editor pediu.
 - Nunca transforme uma instrução de estilo em pauta nova. Exemplo: "quero mais polêmica" significa dar tom mais incisivo à mesma matéria, não pesquisar polêmicas aleatórias.
 - Se o editor pedir uma MATÉRIA (ou pedir para ajustar/refazer a matéria anterior): entregue a matéria pronta em texto puro.
   · 1ª linha = TÍTULO (máx. 110 caracteres), sem "Título:" e sem aspas em volta.
-  · Depois o corpo em parágrafos curtos separados por linha em branco.
+  · 2ª linha = LINHA FINA informativa, sem "Subtítulo:". Depois deixe uma linha em branco.
+  · Em seguida, o corpo em parágrafos curtos separados por linha em branco.
   · Pode usar subtítulos curtos para organizar blocos (ex.: "O que diz o decreto", "A reação do governo").
   · Feche com uma linha de hashtags (3 a 6), começando com #.
   · NÃO escreva bloco "Fontes:", "Fonte:", "Foto:" nem URLs no fim — o sistema monta isso ao salvar.
   · É UMA matéria só: comece direto pelo título. NUNCA escreva "### MATERIA 1", "MATÉRIA 1" nem numeração antes do título.
+  · NUNCA acrescente títulos alternativos, chamada para redes sociais, sugestão de imagem ou comentário depois das hashtags.
 - Se o editor pedir VÁRIAS MATÉRIAS (ex.: "escreva 5 matérias sobre X"): entregue EXATAMENTE a quantidade solicitada, nunca mais. Pare imediatamente depois da última matéria pedida. Separe cada uma com uma linha começando por "### MATERIA n" (ex.: "### MATERIA 1", "### MATERIA 2"). Depois dessa linha vem o título na linha seguinte, o corpo e as hashtags daquela matéria. Cada matéria precisa ser sobre um fato/ângulo DIFERENTE e ter suas próprias hashtags. Não escreva introdução antes da primeira nem conclusão depois da última.
 - Se o editor fizer uma PERGUNTA (ex.: "onde ele falou isso?", "qual a fonte?"): responda direto e curto, citando os veículos das fontes. Não escreva matéria nesse caso.
 - Se o editor pedir um ajuste ("deixe mais curto", "acrescente X", "troque o título"): reescreva a MATÉRIA INTEIRA já ajustada, não só o trecho.
@@ -2769,7 +2788,32 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
     return linhas.join('\n').trim();
   };
   const corpoInicial = corpoSemTituloEHashtags(raw);
-  if (blocoFatos.length >= 1800 && corpoInicial.length < 2300) {
+  const materialSocialSuficiente = fonteSocial && blocoFatos.length >= 700;
+  const materialGeralSuficiente = !fonteSocial && blocoFatos.length >= 1800;
+  const corpoMinimoEsperado = fonteSocial ? 1250 : 2300;
+  if (
+    (materialSocialSuficiente || materialGeralSuficiente) &&
+    corpoInicial.length < corpoMinimoEsperado
+  ) {
+    const instrucoesAprofundamento = fonteSocial
+      ? [
+          'A versão ficou parecendo um resumo, apesar de a publicação trazer material factual suficiente.',
+          'Reescreva a matéria COMPLETA com linha fina, 1500 a 2400 caracteres no corpo e 5 a 8 parágrafos substanciais.',
+          'Use a fala literal mais forte no título quando ela estiver na fonte e reproduza a declaração completa em um parágrafo próprio.',
+          'Reconstrua a cronologia: recirculação atual, data e local originais, circunstância da fala, antecedentes documentados e relevância da data.',
+          'Deixe inequívoco quando o vídeo ou a declaração são antigos. Não apresente o conteúdo que voltou a circular como fato novo.',
+          'Não use intertítulos, títulos alternativos, chamada para redes sociais, notas ao editor nem sugestões após as hashtags.',
+          'Preserve o anti-plágio e use somente fatos presentes na publicação. Não invente reação, motivo, bastidor ou consequência.',
+          'Formato final: primeira linha com o título; segunda linha com a linha fina sem rótulo; linha em branco; corpo; última linha com 3 a 6 hashtags.',
+        ]
+      : [
+          'A versão ficou curta apesar de haver apuração suficiente.',
+          'Reescreva a matéria COMPLETA, com 2600 a 3800 caracteres no corpo e 7 a 12 parágrafos substanciais.',
+          'Aprofunde somente com fatos já presentes nas fontes: contexto institucional, cronologia, posições documentadas, repercussão, impacto e próximos pontos a acompanhar.',
+          'Cruze as fontes e cite no corpo pelo menos dois veículos quando houver dois disponíveis.',
+          'Preserve o anti-plágio: nova estrutura e palavras próprias. Não invente bastidor, fala, número, consequência nem “furo”.',
+          'Formato final: primeira linha com o título; segunda linha com a linha fina sem rótulo; depois o corpo; última linha com 3 a 6 hashtags. Sem introdução e sem bloco de fontes.',
+        ];
     try {
       const aprofundado = await chatCompletion(
         [
@@ -2778,12 +2822,8 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
           {
             role: 'user',
             content: [
-              `A versão ficou curta (${corpoInicial.length} caracteres de corpo) apesar de haver apuração suficiente.`,
-              'Reescreva a matéria COMPLETA, com 2600 a 3800 caracteres no corpo e 7 a 12 parágrafos substanciais.',
-              'Aprofunde somente com fatos já presentes nas fontes: contexto institucional, cronologia, posições documentadas, repercussão, impacto e próximos pontos a acompanhar.',
-              'Cruze as fontes e cite no corpo pelo menos dois veículos quando houver dois disponíveis.',
-              'Preserve o anti-plágio: nova estrutura e palavras próprias. Não invente bastidor, fala, número, consequência nem “furo”.',
-              'Formato final: primeira linha com o título; depois o corpo; última linha com 3 a 6 hashtags. Sem introdução e sem bloco de fontes.',
+              'O corpo inicial tem ' + corpoInicial.length + ' caracteres.',
+              ...instrucoesAprofundamento,
             ].join('\n'),
           },
         ],
@@ -2795,7 +2835,11 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
         }
       );
       const corpoAprofundado = corpoSemTituloEHashtags(aprofundado);
-      if (corpoAprofundado.length > corpoInicial.length && corpoAprofundado.length >= 2000) {
+      const minimoAprofundado = fonteSocial ? 1250 : 2000;
+      if (
+        corpoAprofundado.length > corpoInicial.length &&
+        corpoAprofundado.length >= minimoAprofundado
+      ) {
         raw = aprofundado;
       }
     } catch (err) {

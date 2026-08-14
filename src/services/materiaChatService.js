@@ -1835,6 +1835,7 @@ async function responder({
 
   // Fontes que o editor colou: o nome do veículo tem de sair citado na matéria.
   const fontesColadas = fontes.filter((f) => f?.fonteColada || f?.ehRedeSocial);
+  const temFonteSocial = fontesColadas.some((f) => f?.ehRedeSocial);
   const veiculosColados = fontesColadas
     .map((f) => ({ veiculo: f.veiculo, url: f.url || null }))
     .filter((f) => f.veiculo);
@@ -1881,6 +1882,7 @@ async function responder({
           veiculosColados: fonteAtual.veiculo
             ? [{ veiculo: fonteAtual.veiculo, url: fonteAtual.url || null }]
             : [],
+          fonteSocial: Boolean(fonteAtual.ehRedeSocial),
           fonteEstrangeira: fonteEmOutroIdioma([fonteAtual]),
           contextoAprendizado,
           onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
@@ -1896,6 +1898,7 @@ async function responder({
         tom,
         permitirSemConfirmacao: usuarioInsiste,
         veiculosColados,
+        fonteSocial: temFonteSocial,
         fonteEstrangeira,
         contextoAprendizado,
         onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
