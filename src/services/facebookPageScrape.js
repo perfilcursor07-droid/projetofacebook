@@ -87,6 +87,17 @@ function normalizarUrlPost(bruto) {
 }
 
 /**
+ * A URL é um permalink de post real (e não perfil, listagem ou tela de login)?
+ * Usa cópias sem /g para não mexer no lastIndex dos padrões compartilhados.
+ */
+function ehUrlDePostValida(url) {
+  const alvo = desescapar(url).trim();
+  if (!alvo) return false;
+  const casa = PADROES_POST.some((re) => new RegExp(re.source, 'i').test(alvo));
+  return casa && Boolean(normalizarUrlPost(alvo));
+}
+
+/**
  * Extrai os permalinks de posts do HTML da página.
  * @returns {{ urls: string[], sinais: object }}
  */
@@ -256,4 +267,5 @@ module.exports = {
   baixarHtmlPagina,
   extrairUrlsDePosts,
   extrairDetalhesDoPost,
+  ehUrlDePostValida,
 };
