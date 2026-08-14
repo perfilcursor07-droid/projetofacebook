@@ -412,6 +412,187 @@ function chunk(arr, size) {
   return out;
 }
 
+const STOPWORDS_SEMENTES_PUBLICO = new Set([
+  'a', 'as', 'ao', 'aos', 'de', 'da', 'das', 'do', 'dos', 'e', 'em', 'na', 'nas', 'no', 'nos',
+  'o', 'os', 'para', 'por', 'que', 'se', 'sem', 'sobre', 'um', 'uma', 'com', 'como', 'mais',
+  'apos', 'durante', 'brasil', 'entenda', 'veja', 'saiba', 'revela', 'afirma', 'diz', 'gera',
+]);
+
+function scoreEngajamentoMateria(matter) {
+  return (
+    (Number(matter?.pub_fb_likes) || 0) +
+    (Number(matter?.pub_fb_comments) || 0) * 3 +
+    (Number(matter?.pub_fb_shares) || 0) * 5 +
+    Math.min(Number(matter?.pub_fb_views) || 0, 5000) / 50
+  );
+}
+
+function sementesFallbackDoPublico(materias, limit = 6) {
+  const frequencia = new Map();
+  for (const materia of materias || []) {
+    const palavras = stripAccents(materia?.titulo)
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((p) => p.length >= 4 && !STOPWORDS_SEMENTES_PUBLICO.has(p));
+    for (const palavra of new Set(palavras)) {
+      frequencia.set(palavra, (frequencia.get(palavra) || 0) + 1);
+    }
+  }
+
+  return [...frequencia.entries()]
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+    .slice(0, limit)
+    .map(([palavra]) => `${palavra} igreja evangélica`);
+}
+
+async function consultasDoPublico(materias) {
+  const titulos = (materias || [])
+    .slice(0, 10)
+    .map((m, i) => `${i + 1}. ${String(m.titulo || '').trim()}`)
+    .filter((linha) => linha.length > 3);
+
+  if (!titulos.length) return [];
+
+  try {
+    const deepseekService = require('./deepseekService');
+    const result = await deepseekService.sugerirConsultasPesquisa({
+      pedido: [
+        'Estas são as matérias que mais engajaram na minha página:',
+        ...titulos,
+        '',
+        'Identifique os assuntos, pessoas e ângulos que esse público prefere.',
+        'Crie consultas para encontrar PAUTAS NOVAS e acontecimentos recentes relacionados.',
+        'Não procure apenas cópias ou republicações dos mesmos fatos antigos.',
+      ].join('\n'),
+      angulo: 'Novidades recentes com o mesmo perfil de interesse e potencial de engajamento',
+    });
+    if (result?.consultas?.length) return result.consultas.slice(0, 6);
+  } catch (err) {
+    console.warn('[pautas-publico] consultas IA:', err.message);
+  }
+
+  return sementesFallbackDoPublico(materias, 6);
+}
+
+/**
+ * Encontra pautas novas a partir do que teve bom engajamento na pagina do usuario.
+ * As materias antigas funcionam somente como sinais editoriais; elas nunca viram
+ * pautas de repeticao diretamente.
+ */
+async function curarPautasDoPublico({ userId, facebookPageId, limit = 16 } = {}) {
+  const AiMatters = require('../models/AiMatters');
+  const lim = Math.min(20, Math.max(5, Number(limit) || 16));
+  const avisos = [];
+
+  try {
+    await materiaIaService.sincronizarEngajamentoRecentes(userId, {
+      limit: 24,
+      concurrency: 3,
+    });
+  } catch (err) {
+    avisos.push(`Engajamento: ${err.message}`);
+  }
+
+  let candidatas = await AiMatters.findViralizadasDaConta(userId, { limit: 60 });
+  if (facebookPageId) {
+    const alvo = Number(facebookPageId);
+    const daPagina = candidatas.filter((m) => Number(m.facebook_page_id) === alvo);
+    candidatas = daPagina;
+  }
+
+  const basesVirais = candidatas
+    .map((matter) => ({
+      ...matter,
+      classificacao: materiaIaService.classificarViral({
+        fb_likes: matter.pub_fb_likes,
+        fb_comments: matter.pub_fb_comments,
+        fb_shares: matter.pub_fb_shares,
+        fb_views: matter.pub_fb_views,
+      }),
+      scoreEngajamento: Math.round(scoreEngajamentoMateria(matter)),
+    }))
+    .filter((m) => ['alto', 'medio'].includes(m.classificacao?.nivel))
+    .sort((a, b) => b.scoreEngajamento - a.scoreEngajamento)
+    .slice(0, 10);
+
+  if (!basesVirais.length) {
+    const err = new Error(
+      'Ainda não encontrei matérias com engajamento suficiente nesta página. Abra a aba Viralizou para atualizar os números e tente novamente.'
+    );
+    err.status = 422;
+    err.avisos = avisos;
+    throw err;
+  }
+
+  const consultas = await consultasDoPublico(basesVirais);
+  if (!consultas.length) {
+    const err = new Error('Não consegui identificar os assuntos preferidos do público agora.');
+    err.status = 422;
+    throw err;
+  }
+
+  let encontradas = [];
+  try {
+    encontradas = await pesquisarNichos(consultas.join(', '), 7, {
+      incluirRedesSociais: false,
+      filtrarPeriodo: true,
+      periodo: '7d',
+    });
+  } catch (err) {
+    avisos.push(`Pesquisa: ${err.message}`);
+  }
+
+  encontradas = dedupeTitulos(encontradas || []);
+  if (!encontradas.length) {
+    const err = new Error('Não encontrei notícias recentes ligadas ao que viralizou. Tente atualizar novamente mais tarde.');
+    err.status = 404;
+    err.avisos = avisos;
+    throw err;
+  }
+  const marcadas = await materiaIaService.marcarJaPublicados(
+    userId,
+    facebookPageId,
+    encontradas
+  );
+  const novas = marcadas.filter((topico) => !topico.jaPublicado);
+  const usadas = marcadas.filter((topico) => topico.jaPublicado);
+  const topicos = novas
+    .map((topico) => {
+      const meta = classificarTopico(topico);
+      return { ...topico, ...meta };
+    })
+    .sort((a, b) => b.scoreViral - a.scoreViral || (b.dataTimestamp || 0) - (a.dataTimestamp || 0))
+    .slice(0, lim);
+
+  if (!topicos.length) {
+    const err = new Error('As pautas relacionadas encontradas já foram usadas. Atualize para tentar novas notícias.');
+    err.status = 404;
+    err.avisos = avisos;
+    throw err;
+  }
+
+  if (usadas.length) avisos.push(`${usadas.length} pauta(s) já usada(s) foram ocultadas.`);
+
+  return {
+    topicos,
+    basesVirais: basesVirais.map((m) => ({
+      matterId: m.id,
+      titulo: m.titulo,
+      likes: Number(m.pub_fb_likes) || 0,
+      comments: Number(m.pub_fb_comments) || 0,
+      shares: Number(m.pub_fb_shares) || 0,
+      views: Number(m.pub_fb_views) || 0,
+      score: m.scoreEngajamento,
+      nivel: m.classificacao?.label || 'Bom engajamento',
+    })),
+    consultas,
+    totalAnalisado: encontradas.length,
+    totalOcultado: usadas.length,
+    avisos,
+    geradoEm: new Date().toISOString(),
+  };
+}
+
 /**
  * Busca pautas automaticamente e ranqueia pelo perfil viral (só nicho gospel).
  * Conteúdo recente + busca profunda em vários termos/sites + ScrapeCreators (IG/FB).
@@ -863,6 +1044,7 @@ module.exports = {
   TAXONOMIA,
   classificarTopico,
   curarPautasVirais,
+  curarPautasDoPublico,
   gerarDePautas,
   sincronizarPautasUsadas,
   analisarDesempenhoPagina,

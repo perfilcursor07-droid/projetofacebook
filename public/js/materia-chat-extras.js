@@ -34,6 +34,8 @@
   let anexoImagem = null;
   let altaAtiva = false;
   let carregandoAlta = false;
+  let publicoAtivo = false;
+  let carregandoPublico = false;
 
   /* ------------------------------ estilos ------------------------------ */
 
@@ -65,6 +67,13 @@
       background: rgba(16,185,129,.12); color: #6ee7b7;
       font-size: .65rem; font-weight: 500;
     }
+    .mia-x-bases {
+      margin: .55rem 0 .7rem; padding: .55rem .65rem;
+      border-left: 2px solid rgba(244,63,94,.65); background: rgba(136,19,55,.08);
+    }
+    .mia-x-bases-title { margin: 0 0 .35rem; color: #fda4af; font-size: .68rem; font-weight: 600; }
+    .mia-x-base { display: block; margin-top: .25rem; color: #cbd5e1; font-size: .68rem; line-height: 1.35; }
+    .mia-x-base-meta { color: #64748b; }
     .mia-x-busca { display: flex; gap: .4rem; margin: .6rem 0; }
     .mia-x-busca input {
       flex: 1; min-width: 0; border: 1px solid #334155; border-radius: .5rem;
@@ -95,6 +104,11 @@
     }
     .mia-x-lote-gerar:hover { background: #34d399; }
     .mia-x-lote-gerar:disabled { opacity: .55; cursor: default; }
+    .mia-x-lote-save {
+      border: none; background: #10b981; color: #022c22;
+    }
+    .mia-x-lote-save:hover { background: #34d399; }
+    .mia-x-lote-save:disabled { opacity: .55; cursor: default; }
 
     .mia-x-alta-list { display: flex; flex-direction: column; gap: .5rem; }
     .mia-x-card {
@@ -209,11 +223,36 @@
   btnAlta.textContent = 'Em alta';
   el.seg.appendChild(btnAlta);
 
+  const btnPublico = document.createElement('button');
+  btnPublico.type = 'button';
+  btnPublico.className = 'mia-chat-seg-btn mia-x-publico-btn';
+  btnPublico.setAttribute('aria-pressed', 'false');
+  btnPublico.title = 'Sugere pautas novas com base no que viralizou na sua página';
+  btnPublico.textContent = 'Para meu público';
+  el.seg.appendChild(btnPublico);
+
+  function marcarPublico(ativa) {
+    publicoAtivo = ativa;
+    btnPublico.setAttribute('aria-pressed', ativa ? 'true' : 'false');
+    btnPublico.classList.toggle('is-active', ativa);
+    if (!ativa) return;
+    altaAtiva = false;
+    btnAlta.setAttribute('aria-pressed', 'false');
+    btnAlta.classList.remove('is-active');
+    document.querySelectorAll('.chat-modo-btn').forEach((b) => {
+      b.classList.remove('is-active');
+      b.setAttribute('aria-pressed', 'false');
+    });
+  }
+
   function marcarAlta(ativa) {
     altaAtiva = ativa;
     btnAlta.setAttribute('aria-pressed', ativa ? 'true' : 'false');
     btnAlta.classList.toggle('is-active', ativa);
     if (!ativa) return;
+    publicoAtivo = false;
+    btnPublico.setAttribute('aria-pressed', 'false');
+    btnPublico.classList.remove('is-active');
     // Os dois modos nativos saem do estado ativo enquanto o radar manda.
     document.querySelectorAll('.chat-modo-btn').forEach((b) => {
       b.classList.remove('is-active');
@@ -223,7 +262,10 @@
 
   // Voltar para Escrever/Pautas desliga o radar.
   document.querySelectorAll('.chat-modo-btn').forEach((b) => {
-    b.addEventListener('click', () => marcarAlta(false));
+    b.addEventListener('click', () => {
+      marcarAlta(false);
+      marcarPublico(false);
+    });
   });
 
   function limparBlocosAlta() {
@@ -281,11 +323,32 @@
     pedirMateriaDosTopicos([topico]);
   }
 
+  async function salvarTopicosComoRascunhos(topicos) {
+    const pautas = (Array.isArray(topicos) ? topicos : [])
+      .filter(Boolean)
+      .slice(0, MAX_TOPICOS_LOTE)
+      .map((topico) => ({
+        titulo: topico.titulo || '',
+        url: topico.url || '',
+        veiculo: topico.veiculo || 'Web',
+        resumo: topico.resumo || '',
+      }));
+    if (!pautas.length) throw new Error('Selecione ao menos uma pauta.');
+    return apiJson('/api/materias-ia/chat/pautas/rascunhos', {
+      method: 'POST',
+      body: JSON.stringify({
+        pautas,
+        pesquisarWeb: true,
+        periodo: el.periodo?.value || '30d',
+      }),
+    });
+  }
+
   /**
    * Aviso de carregando com esqueletos. Entra na hora do clique para o usuário
    * não olhar uma área vazia achando que nada aconteceu.
    */
-  function renderCarregando(termo) {
+  function renderCarregando(termo, paraPublico = false) {
     limparBlocosAlta();
     el.vazio?.classList.add('hidden');
 
@@ -301,9 +364,11 @@
     spin.className = 'mia-x-spin';
     linha.appendChild(spin);
     const txt = document.createElement('span');
-    txt.textContent = termo
-      ? `Carregando matérias em alta sobre “${termo}”… aguarde.`
-      : 'Carregando as matérias em alta agora… aguarde alguns segundos.';
+    txt.textContent = paraPublico
+      ? 'Analisando o que viralizou e procurando pautas novas para o seu público...'
+      : termo
+        ? `Carregando matérias em alta sobre “${termo}”… aguarde.`
+        : 'Carregando as matérias em alta agora… aguarde alguns segundos.';
     linha.appendChild(txt);
     corpo.appendChild(linha);
     wrap.appendChild(corpo);
@@ -323,7 +388,7 @@
     mostrarBloco(wrap);
   }
 
-  function renderErro(mensagem, termo) {
+  function renderErro(mensagem, termo, paraPublico = false) {
     limparBlocosAlta();
     const wrap = novoBlocoAlta();
 
@@ -340,7 +405,10 @@
     const tentar = document.createElement('button');
     tentar.type = 'button';
     tentar.textContent = 'Tentar de novo';
-    tentar.addEventListener('click', () => carregarAlta(termo || ''));
+    tentar.addEventListener('click', () => {
+      if (paraPublico) carregarParaPublico();
+      else carregarAlta(termo || '');
+    });
     acoes.appendChild(tentar);
     box.appendChild(acoes);
 
@@ -352,6 +420,8 @@
     const topicos = data.topicos || [];
     const temas = data.temas || [];
     const horas = data.horas || 24;
+    const paraPublico = data.origem === 'viralizadas';
+    const basesVirais = Array.isArray(data.basesVirais) ? data.basesVirais : [];
 
     limparBlocosAlta();
     el.vazio?.classList.add('hidden');
@@ -361,9 +431,11 @@
     const corpo = document.createElement('div');
     corpo.className = 'mia-msg-ai-body';
     const p = document.createElement('p');
-    p.textContent = topicos.length
-      ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais e eu escrevo tudo de uma vez.`
-      : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
+    p.textContent = paraPublico
+      ? `${topicos.length} pauta(s) nova(s) encontradas a partir do que mais engajou na sua página. Selecione uma ou mais para salvar como rascunho.`
+      : topicos.length
+        ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais e eu escrevo tudo de uma vez.`
+        : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
     corpo.appendChild(p);
     wrap.appendChild(corpo);
 
@@ -374,17 +446,44 @@
     head.className = 'mia-x-alta-head';
     const titulo = document.createElement('p');
     titulo.className = 'mia-x-alta-title';
-    titulo.textContent = data.padrao ? 'Em alta agora' : 'Em alta — sua busca';
+    titulo.textContent = paraPublico
+      ? 'Sugestões para o seu público'
+      : data.padrao
+        ? 'Em alta agora'
+        : 'Em alta — sua busca';
     head.appendChild(titulo);
     const recarregar = document.createElement('button');
     recarregar.type = 'button';
     recarregar.className = 'mia-chat-ghost-btn';
     recarregar.textContent = 'Atualizar';
-    recarregar.addEventListener('click', () => carregarAlta(data.padrao ? '' : temas.join(', ')));
+    recarregar.addEventListener('click', () => {
+      if (paraPublico) carregarParaPublico();
+      else carregarAlta(data.padrao ? '' : temas.join(', '));
+    });
     head.appendChild(recarregar);
     box.appendChild(head);
 
-    if (temas.length) {
+    if (paraPublico && basesVirais.length) {
+      const bases = document.createElement('div');
+      bases.className = 'mia-x-bases';
+      const basesTitulo = document.createElement('p');
+      basesTitulo.className = 'mia-x-bases-title';
+      basesTitulo.textContent = `Baseado em ${basesVirais.length} matéria(s) que engajaram`;
+      bases.appendChild(basesTitulo);
+      basesVirais.slice(0, 4).forEach((base) => {
+        const item = document.createElement('span');
+        item.className = 'mia-x-base';
+        item.textContent = base.titulo || 'Matéria publicada';
+        const metaBase = document.createElement('span');
+        metaBase.className = 'mia-x-base-meta';
+        metaBase.textContent = ` · ${base.likes || 0} curtidas · ${base.comments || 0} comentários`;
+        item.appendChild(metaBase);
+        bases.appendChild(item);
+      });
+      box.appendChild(bases);
+    }
+
+    if (!paraPublico && temas.length) {
       const chips = document.createElement('div');
       chips.className = 'mia-x-temas';
       temas.forEach((t) => {
@@ -416,7 +515,7 @@
     });
     busca.appendChild(campo);
     busca.appendChild(botao);
-    box.appendChild(busca);
+    if (!paraPublico) box.appendChild(busca);
 
     if (topicos.length) {
       const selecionados = new Map();
@@ -428,19 +527,43 @@
       selecionar.type = 'button';
       selecionar.className = 'mia-x-lote-select';
       selecionar.textContent = `Selecionar até ${Math.min(MAX_TOPICOS_LOTE, topicos.length)}`;
+      const salvar = document.createElement('button');
+      salvar.type = 'button';
+      salvar.className = 'mia-x-lote-save';
+      salvar.textContent = 'Salvar rascunhos';
+      salvar.disabled = true;
       const gerar = document.createElement('button');
       gerar.type = 'button';
       gerar.className = 'mia-x-lote-gerar';
-      gerar.textContent = 'Gerar selecionados';
+      gerar.textContent = paraPublico ? 'Gerar no chat' : 'Gerar selecionados';
       gerar.disabled = true;
       lote.appendChild(selecionar);
+      if (paraPublico) lote.appendChild(salvar);
       lote.appendChild(gerar);
       box.appendChild(lote);
 
+      const resultadoLote = document.createElement('p');
+      resultadoLote.className = 'mia-x-base hidden';
+      box.appendChild(resultadoLote);
+
+      let salvando = false;
+
       function atualizarLote() {
         const total = selecionados.size;
-        gerar.disabled = total === 0;
-        gerar.textContent = total ? `Gerar ${total} selecionado(s)` : 'Gerar selecionados';
+        salvar.disabled = total === 0 || salvando;
+        salvar.textContent = salvando
+          ? 'Criando rascunhos...'
+          : total
+            ? `Salvar ${total} rascunho(s)`
+            : 'Salvar rascunhos';
+        gerar.disabled = total === 0 || salvando;
+        gerar.textContent = total
+          ? paraPublico
+            ? `Gerar ${total} no chat`
+            : `Gerar ${total} selecionado(s)`
+          : paraPublico
+            ? 'Gerar no chat'
+            : 'Gerar selecionados';
         selecionar.textContent = total
           ? 'Limpar seleção'
           : `Selecionar até ${Math.min(MAX_TOPICOS_LOTE, topicos.length)}`;
@@ -476,6 +599,33 @@
           return;
         }
         pedirMateriaDosTopicos(alvos);
+      });
+
+      salvar.addEventListener('click', async () => {
+        const alvos = [...selecionados.values()];
+        if (!alvos.length || salvando) return;
+        salvando = true;
+        atualizarLote();
+        setStatus(`Criando ${alvos.length} rascunho(s) para o seu público...`);
+        try {
+          const result = await salvarTopicosComoRascunhos(alvos);
+          resultadoLote.classList.remove('hidden');
+          resultadoLote.textContent = result.mensagem || `${result.salvas?.length || 0} rascunho(s) criado(s).`;
+          const abrir = document.createElement('a');
+          abrir.href = '/minhas-materias?status=rascunho';
+          abrir.className = 'mia-chat-ghost-btn';
+          abrir.textContent = 'Abrir rascunhos';
+          resultadoLote.appendChild(document.createTextNode(' '));
+          resultadoLote.appendChild(abrir);
+          setStatus(result.mensagem || 'Rascunhos criados.');
+        } catch (err) {
+          resultadoLote.classList.remove('hidden');
+          resultadoLote.textContent = err.message || 'Não foi possível criar os rascunhos.';
+          setStatus(resultadoLote.textContent);
+        } finally {
+          salvando = false;
+          atualizarLote();
+        }
       });
 
       const lista = document.createElement('div');
@@ -532,10 +682,24 @@
         const gerarUm = document.createElement('button');
         gerarUm.type = 'button';
         gerarUm.className = 'mia-x-card-gerar';
-        gerarUm.textContent = 'Gerar';
-        gerarUm.addEventListener('click', (ev) => {
+        gerarUm.textContent = paraPublico ? 'Salvar' : 'Gerar';
+        gerarUm.addEventListener('click', async (ev) => {
           ev.stopPropagation();
-          pedirMateriaDoTopico(t);
+          if (!paraPublico) {
+            pedirMateriaDoTopico(t);
+            return;
+          }
+          gerarUm.disabled = true;
+          gerarUm.textContent = 'Salvando...';
+          try {
+            const result = await salvarTopicosComoRascunhos([t]);
+            gerarUm.textContent = 'Rascunho salvo';
+            setStatus(result.mensagem || 'Rascunho criado.');
+          } catch (err) {
+            gerarUm.disabled = false;
+            gerarUm.textContent = 'Tentar salvar';
+            setStatus(err.message || 'Não foi possível criar o rascunho.');
+          }
         });
         acoes.appendChild(gerarUm);
         card.appendChild(acoes);
@@ -603,6 +767,35 @@
   btnAlta.addEventListener('click', () => {
     marcarAlta(true);
     carregarAlta('');
+  });
+
+  async function carregarParaPublico() {
+    if (carregandoPublico) return;
+    carregandoPublico = true;
+    btnPublico.disabled = true;
+    setStatus('Analisando as matérias que viralizaram na sua página...');
+    renderCarregando('', true);
+
+    try {
+      const data = await apiJson(`${API}/para-meu-publico`, {
+        method: 'POST',
+        body: JSON.stringify({ limit: 16 }),
+      });
+      renderAlta(data);
+      setStatus(`${(data.topicos || []).length} pauta(s) sugerida(s) para o seu público`);
+    } catch (err) {
+      const mensagem = err.message || 'Falha ao sugerir pautas para o seu público';
+      setStatus(mensagem);
+      renderErro(mensagem, '', true);
+    } finally {
+      carregandoPublico = false;
+      btnPublico.disabled = false;
+    }
+  }
+
+  btnPublico.addEventListener('click', () => {
+    marcarPublico(true);
+    carregarParaPublico();
   });
 
   /* ---------------------------- anexo em PDF ---------------------------- */

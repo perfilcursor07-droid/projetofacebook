@@ -227,6 +227,52 @@ router.post('/em-alta', async (req, res, next) => {
 });
 
 /**
+ * Sugere noticias novas usando como sinais os assuntos das materias que tiveram
+ * melhor engajamento na pagina padrao do usuario.
+ */
+router.post('/para-meu-publico', async (req, res, next) => {
+  try {
+    const { defaultPageIdForUser } = require('../services/facebookPageResolver');
+    const viralizarService = require('../services/viralizarService');
+    const facebookPageId = await defaultPageIdForUser(req.session.userId);
+    if (!facebookPageId) {
+      return res.status(400).json({
+        error: 'Defina a página padrão em Páginas antes de buscar pautas para o seu público.',
+      });
+    }
+
+    const resultado = await viralizarService.curarPautasDoPublico({
+      userId: req.session.userId,
+      facebookPageId,
+      limit: req.body?.limit || 16,
+    });
+
+    const topicos = (resultado.topicos || []).map((topico) => ({
+      titulo: limpar(topico.titulo, 300),
+      url: String(topico.link || topico.url || '').trim().slice(0, 500) || null,
+      veiculo: limpar(topico.veiculo || topico.fonte || 'Web', 80),
+      resumo: limpar(topico.resumo || topico.trecho, 420),
+      tema: limpar(topico.temaLabel || topico.nicho || '', 80) || null,
+      potencial: topico.potencial || null,
+      scoreViral: Number(topico.scoreViral) || 0,
+    }));
+
+    return res.json({
+      ok: true,
+      origem: 'viralizadas',
+      facebookPageId,
+      ...resultado,
+      topicos,
+    });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message, avisos: err.avisos || [] });
+    }
+    return next(err);
+  }
+});
+
+/**
  * Anexo PDF. O arquivo não é guardado: o texto volta para o navegador,
  * que o envia junto da mensagem do chat.
  */
