@@ -416,6 +416,8 @@ const STOPWORDS_SEMENTES_PUBLICO = new Set([
   'a', 'as', 'ao', 'aos', 'de', 'da', 'das', 'do', 'dos', 'e', 'em', 'na', 'nas', 'no', 'nos',
   'o', 'os', 'para', 'por', 'que', 'se', 'sem', 'sobre', 'um', 'uma', 'com', 'como', 'mais',
   'apos', 'durante', 'brasil', 'entenda', 'veja', 'saiba', 'revela', 'afirma', 'diz', 'gera',
+  'gospel', 'evangelico', 'evangelica', 'evangelicos', 'evangelicas', 'igreja', 'igrejas',
+  'cristao', 'crista', 'cristaos', 'materia', 'noticia', 'publicacao', 'quarta', 'sexta',
 ]);
 
 function scoreEngajamentoMateria(matter) {
@@ -428,21 +430,129 @@ function scoreEngajamentoMateria(matter) {
 }
 
 function sementesFallbackDoPublico(materias, limit = 6) {
-  const frequencia = new Map();
-  for (const materia of materias || []) {
+  const vistas = new Set();
+  const consultas = [];
+  for (const materia of (materias || []).slice(0, 20)) {
     const palavras = stripAccents(materia?.titulo)
       .replace(/[^a-z0-9\s]/g, ' ')
       .split(/\s+/)
-      .filter((p) => p.length >= 4 && !STOPWORDS_SEMENTES_PUBLICO.has(p));
-    for (const palavra of new Set(palavras)) {
-      frequencia.set(palavra, (frequencia.get(palavra) || 0) + 1);
+      .filter((p) => p.length >= 4 && !STOPWORDS_SEMENTES_PUBLICO.has(p))
+      .slice(0, 5);
+    if (palavras.length < 2) continue;
+    const consulta = `${palavras.join(' ')} notícia recente`;
+    const key = stripAccents(consulta);
+    if (vistas.has(key)) continue;
+    vistas.add(key);
+    consultas.push(consulta);
+    if (consultas.length >= limit) break;
+  }
+  return consultas;
+}
+
+function identidadePublicacao(matter) {
+  return (
+    String(matter?.publication_id || '').trim() ||
+    String(matter?.pub_fb_native_post_id || '').trim() ||
+    String(matter?.pub_fb_post_url || '').split(/[?#]/)[0].replace(/\/$/, '').toLowerCase() ||
+    String(matter?.pub_fb_post_id || '').trim() ||
+    `matter:${matter?.id}`
+  );
+}
+
+/** Remove matérias repetidas e métricas obviamente copiadas entre posts distintos. */
+function filtrarBasesComMetricasConfiaveis(materias) {
+  const porPublicacao = new Map();
+  for (const matter of materias || []) {
+    const key = identidadePublicacao(matter);
+    const atual = porPublicacao.get(key);
+    if (!atual || scoreEngajamentoMateria(matter) > scoreEngajamentoMateria(atual)) {
+      porPublicacao.set(key, matter);
     }
   }
 
-  return [...frequencia.entries()]
-    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
-    .slice(0, limit)
-    .map(([palavra]) => `${palavra} igreja evangélica`);
+  const unicas = [...porPublicacao.values()];
+  const porAssinatura = new Map();
+  for (const matter of unicas) {
+    const likes = Number(matter?.pub_fb_likes) || 0;
+    const comments = Number(matter?.pub_fb_comments) || 0;
+    const shares = Number(matter?.pub_fb_shares) || 0;
+    const views = Number(matter?.pub_fb_views) || 0;
+    if (!(likes || comments || shares || views)) continue;
+    const signature = `${likes}|${comments}|${shares}|${views}`;
+    if (!porAssinatura.has(signature)) porAssinatura.set(signature, []);
+    porAssinatura.get(signature).push(matter);
+  }
+
+  const suspeitas = new Set();
+  for (const grupo of porAssinatura.values()) {
+    if (grupo.length < 2) continue;
+    const sample = grupo[0];
+    const alto =
+      Number(sample?.pub_fb_likes) >= 100 ||
+      Number(sample?.pub_fb_comments) >= 50 ||
+      Number(sample?.pub_fb_shares) >= 25 ||
+      Number(sample?.pub_fb_views) >= 1000;
+    if (!alto) continue;
+    for (const matter of grupo) suspeitas.add(Number(matter.id));
+  }
+
+  return {
+    materias: unicas.filter((matter) => !suspeitas.has(Number(matter.id))),
+    duplicadas: Math.max(0, (materias || []).length - unicas.length),
+    suspeitas: suspeitas.size,
+  };
+}
+
+const EIXOS_INTERESSE_PUBLICO = {
+  escatologia: ['anticristo', 'arrebatamento', 'apocalipse', 'profecia', 'messias', 'fim dos tempos'],
+  musica_gospel: ['cantor', 'cantora', 'louvor', 'musica', 'spotify', 'album', 'single', 'show', 'adoração'],
+  influenciadores: ['influenciador', 'influenciadora', 'instagram', 'tiktok', 'redes sociais', 'milhoes de views', 'viralizou'],
+  politica_religiao: ['politica', 'eleicao', 'presidente', 'deputado', 'senador', 'governo', 'comunismo', 'direita', 'esquerda'],
+  polemica: ['polemica', 'critica', 'revolta', 'desabafo', 'detona', 'acusa', 'denuncia', 'escandalo', 'repercussao'],
+  lideranca: ['pastor', 'pastora', 'bispo', 'apostolo', 'lider evangelico'],
+  testemunho: ['testemunho', 'livramento', 'milagre', 'cura', 'conversao', 'aceitou jesus'],
+  perseguicao: ['perseguicao', 'perseguido', 'prisao', 'preso', 'condenado', 'cristaos perseguidos'],
+  familia_costumes: ['familia', 'casamento', 'aborto', 'lgbt', 'sexualidade', 'filhos'],
+  biblia_doutrina: ['biblia', 'biblico', 'doutrina', 'versiculo', 'teologia', 'pecado'],
+  evento: ['congresso', 'conferencia', 'evento', 'festival', 'premiacao', 'missões'],
+};
+
+function eixosDoTexto(texto) {
+  const normalizado = stripAccents(texto);
+  return Object.entries(EIXOS_INTERESSE_PUBLICO)
+    .filter(([, termos]) => termos.some((termo) => normalizado.includes(stripAccents(termo))))
+    .map(([id]) => id);
+}
+
+function tokensDeAfinidade(texto) {
+  return new Set(
+    stripAccents(texto)
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length >= 5 && !STOPWORDS_SEMENTES_PUBLICO.has(token))
+  );
+}
+
+function avaliarAfinidadeDeterministica(topico, bases) {
+  const texto = textoTopico(topico);
+  const eixos = new Set(eixosDoTexto(texto));
+  const tokens = tokensDeAfinidade(texto);
+  let melhor = 0;
+
+  for (const base of bases || []) {
+    const baseTexto = base?.titulo || '';
+    const baseEixos = new Set(eixosDoTexto(baseTexto));
+    const eixosComuns = [...eixos].filter((eixo) => baseEixos.has(eixo)).length;
+    const baseTokens = tokensDeAfinidade(base?.titulo || '');
+    const tokensComuns = [...tokens].filter((token) => baseTokens.has(token)).length;
+    let score = Math.min(70, eixosComuns * 42) + Math.min(50, tokensComuns * 14);
+    if (eixosComuns === 1 && eixos.has('lideranca')) score = Math.min(score, 35);
+    melhor = Math.max(melhor, score);
+  }
+
+  const meta = classificarTopico(topico);
+  const potencial = Math.max(0, Math.min(100, meta.scoreViral - (meta.potencial === 'baixo' ? 25 : 0)));
+  return { afinidade: Math.min(100, melhor), potencial };
 }
 
 async function consultasDoPublico(materias) {
@@ -465,6 +575,8 @@ async function consultasDoPublico(materias) {
         '',
         'Identifique os assuntos, pessoas e ângulos que esse público prefere.',
         'Crie consultas para encontrar PAUTAS NOVAS e acontecimentos recentes relacionados.',
+        'Cada consulta deve manter uma pessoa, assunto específico ou padrão editorial presente nos títulos.',
+        'Não use consultas amplas como apenas igreja, gospel, cristãos, religião ou evangélicos.',
         'Não procure apenas cópias ou republicações dos mesmos fatos antigos.',
       ].join('\n'),
       angulo: 'Novidades recentes com o mesmo perfil de interesse e potencial de engajamento',
@@ -500,6 +612,7 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 30 } = {})
     await materiaIaService.sincronizarEngajamentoRecentes(userId, {
       limit: 40,
       concurrency: 3,
+      force: true,
     });
   } catch (err) {
     avisos.push(`Engajamento: ${err.message}`);
@@ -512,7 +625,17 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 30 } = {})
     candidatas = daPagina;
   }
 
-  const basesVirais = candidatas
+  const baseSanitizada = filtrarBasesComMetricasConfiaveis(candidatas);
+  if (baseSanitizada.duplicadas) {
+    avisos.push(`${baseSanitizada.duplicadas} matéria(s) repetida(s) na mesma publicação foram ignoradas.`);
+  }
+  if (baseSanitizada.suspeitas) {
+    avisos.push(
+      `${baseSanitizada.suspeitas} matéria(s) com métricas idênticas suspeitas foram retiradas da análise.`
+    );
+  }
+
+  const basesVirais = baseSanitizada.materias
     .map((matter) => ({
       ...matter,
       classificacao: materiaIaService.classificarViral({
@@ -591,7 +714,7 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 30 } = {})
     return ts >= limiteRecente && ts <= Date.now() + 24 * 60 * 60 * 1000;
   });
   const usadas = marcadas.filter((topico) => topico.jaPublicado);
-  const topicos = novas
+  const candidatasRecentes = novas
     .map((topico) => {
       const meta = classificarTopico(topico);
       return {
@@ -600,8 +723,53 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 30 } = {})
         dataTimestamp: timestampDoTopico(topico),
       };
     })
-    .filter((topico) => topico.nichoGospel && topico.temaPrincipal !== 'fora_nicho')
-    .sort((a, b) => b.scoreViral - a.scoreViral || (b.dataTimestamp || 0) - (a.dataTimestamp || 0))
+    .filter((topico) => topico.nichoGospel && topico.temaPrincipal !== 'fora_nicho');
+
+  const deterministicas = candidatasRecentes.map((topico) =>
+    avaliarAfinidadeDeterministica(topico, basesVirais)
+  );
+  let avaliacoesIa = [];
+  try {
+    const deepseekService = require('./deepseekService');
+    avaliacoesIa = await deepseekService.ranquearPautasParaPublico({
+      bases: basesVirais.map((base) => ({
+        titulo: base.titulo,
+        likes: base.pub_fb_likes,
+        comments: base.pub_fb_comments,
+        shares: base.pub_fb_shares,
+      })),
+      pautas: candidatasRecentes,
+    });
+  } catch (err) {
+    avisos.push(`Afinidade editorial: ${err.message}`);
+  }
+  const avaliacaoPorId = new Map(avaliacoesIa.map((item) => [item.id, item]));
+
+  const topicos = candidatasRecentes
+    .map((topico, index) => {
+      const ia = avaliacaoPorId.get(`p${index + 1}`);
+      const det = deterministicas[index];
+      const afinidade = ia
+        ? Math.round(ia.afinidade * 0.75 + det.afinidade * 0.25)
+        : Math.round(det.afinidade);
+      const potencial = ia
+        ? Math.round(ia.potencial * 0.7 + det.potencial * 0.3)
+        : Math.round(det.potencial);
+      return {
+        ...topico,
+        afinidadePublico: afinidade,
+        potencialPublico: potencial,
+        motivoAfinidade: ia?.motivo || 'Afinidade calculada pelos temas que mais engajaram',
+        scorePublico: Math.round(afinidade * 0.6 + potencial * 0.4),
+      };
+    })
+    .filter((topico) => topico.afinidadePublico >= 55 && topico.potencialPublico >= 50)
+    .sort(
+      (a, b) =>
+        b.scorePublico - a.scorePublico ||
+        b.scoreViral - a.scoreViral ||
+        (b.dataTimestamp || 0) - (a.dataTimestamp || 0)
+    )
     .slice(0, lim);
 
   if (!topicos.length) {

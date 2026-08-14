@@ -692,12 +692,15 @@
         meta.className = 'mia-x-card-meta';
         meta.textContent = [
           t.tema ? t.tema : '',
+          paraPublico && t.afinidadePublico ? `${t.afinidadePublico}% de afinidade` : '',
+          paraPublico && t.potencialPublico ? `${t.potencialPublico}% potencial` : '',
           t.veiculo || 'Web',
           formatarDataPauta(t),
           t.contagemFontes > 1 ? `${t.contagemFontes} fontes` : '',
         ]
           .filter(Boolean)
           .join(' · ');
+        if (paraPublico && t.motivoAfinidade) meta.title = t.motivoAfinidade;
         txt.appendChild(meta);
 
         if (t.resumo) {

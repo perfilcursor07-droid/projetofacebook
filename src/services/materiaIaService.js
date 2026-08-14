@@ -2521,28 +2521,29 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
     };
 
     // Preferir ID Ayrshare (UUID) — analytics mais estável
-    if (ayrshareService.looksLikeAyrshareId(fbPostId)) {
+    const hasProviderPostId = ayrshareService.looksLikeAyrshareId(fbPostId);
+    if (hasProviderPostId) {
       pushCand(fbPostId, false);
       if (profileKey) pushCand(fbPostId, false, null);
     }
-    if (ayrshareService.looksLikeAyrshareId(pub.fb_native_post_id)) {
+    if (!hasProviderPostId && ayrshareService.looksLikeAyrshareId(pub.fb_native_post_id)) {
       pushCand(pub.fb_native_post_id, false);
       if (profileKey) pushCand(pub.fb_native_post_id, false, null);
     }
     // ID nativo Facebook (pageId_postId)
     const nativeForAy = nativeId || pub.fb_native_post_id || null;
-    if (nativeForAy && /^\d+_\d+$/.test(String(nativeForAy))) {
+    if (!hasProviderPostId && nativeForAy && /^\d+_\d+$/.test(String(nativeForAy))) {
       pushCand(nativeForAy, true);
-    } else if (nativeForAy && /^\d+$/.test(String(nativeForAy)) && page?.page_id) {
+    } else if (!hasProviderPostId && nativeForAy && /^\d+$/.test(String(nativeForAy)) && page?.page_id) {
       pushCand(`${page.page_id}_${nativeForAy}`, true);
     }
-    if (/^\d+_\d+$/.test(fbPostId)) {
+    if (!hasProviderPostId && /^\d+_\d+$/.test(fbPostId)) {
       pushCand(fbPostId, true);
     }
     const parsedUrl = facebookService.parseFacebookPostId(pub.fb_post_url);
-    if (parsedUrl && /^\d+_\d+$/.test(parsedUrl)) {
+    if (!hasProviderPostId && parsedUrl && /^\d+_\d+$/.test(parsedUrl)) {
       pushCand(parsedUrl, true);
-    } else if (parsedUrl && page?.page_id && /^\d+$/.test(parsedUrl)) {
+    } else if (!hasProviderPostId && parsedUrl && page?.page_id && /^\d+$/.test(parsedUrl)) {
       pushCand(`${page.page_id}_${parsedUrl}`, true);
     }
 
@@ -2566,7 +2567,10 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
     };
 
     async function aplicarHistoricoDaPagina() {
-      const historyKeys = [...new Set([profileKey, null])];
+      // O histórico sem Profile Key pode pertencer a outra Página da conta.
+      // Quando a Página tem chave própria, consultar apenas esse histórico evita
+      // atribuir o engajamento de um post a matérias diferentes.
+      const historyKeys = profileKey ? [profileKey] : [null];
       let historyError = null;
       for (const historyProfileKey of historyKeys) {
         try {
@@ -2576,7 +2580,8 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
             force,
           });
           const found = ayrshareService.findFacebookPostInHistory(history, {
-            postId: nativeId || pub.fb_native_post_id || fbPostId,
+            postId: fbPostId,
+            nativePostId: nativeId || pub.fb_native_post_id,
             postUrl: pub.fb_post_url,
             text: pub.texto || matter.materia || matter.titulo,
             publishedAt: pub.published_at || matter.published_at,
@@ -2954,7 +2959,10 @@ function isDestaqueEngajamento(pubOrViral) {
  * Sincroniza curtidas/comentários/views das publicações recentes (cache 30 min).
  * Necessário para a aba Viralizou enxergar posts que ainda não tinham dado no banco.
  */
-async function sincronizarEngajamentoRecentes(userId, { limit = 30, concurrency = 3 } = {}) {
+async function sincronizarEngajamentoRecentes(
+  userId,
+  { limit = 30, concurrency = 3, force = false } = {}
+) {
   let matters = [];
   try {
     matters = await AiMatters.findRecentPublishedDaContaForSync(userId, limit);
@@ -2975,7 +2983,7 @@ async function sincronizarEngajamentoRecentes(userId, { limit = 30, concurrency 
       const m = matters[idx];
       try {
         const ownerId = Number(m.user_id) || Number(userId);
-        const r = await atualizarViewsDaMateria(ownerId, m.id, { force: false });
+        const r = await atualizarViewsDaMateria(ownerId, m.id, { force: Boolean(force) });
         const destaque = isDestaqueEngajamento(r.viral || r);
         items[idx] = {
           matterId: m.id,

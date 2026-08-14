@@ -255,6 +255,9 @@ router.post('/para-meu-publico', async (req, res, next) => {
       tema: limpar(topico.temaLabel || topico.nicho || '', 80) || null,
       potencial: topico.potencial || null,
       scoreViral: Number(topico.scoreViral) || 0,
+      afinidadePublico: Number(topico.afinidadePublico) || 0,
+      potencialPublico: Number(topico.potencialPublico) || 0,
+      motivoAfinidade: limpar(topico.motivoAfinidade || '', 180) || null,
       data: limpar(topico.data || topico.dataReferencia || '', 80) || null,
       dataTimestamp: Number(topico.dataTimestamp) || null,
     }));

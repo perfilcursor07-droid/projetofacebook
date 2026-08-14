@@ -496,8 +496,11 @@ async function fetchFacebookHistory({ profileKey = null, limit = 100, force = fa
   const safeLimit = Math.min(100, Math.max(10, Number(limit) || 100));
   const cacheKey = `${key || 'primary'}:${safeLimit}`;
   const cached = facebookHistoryCache.get(cacheKey);
-  if (!force && cached?.promise) return cached.promise;
-  if (!force && cached && Date.now() - cached.at < 60_000) return cached.posts;
+  // Mesmo numa atualização forçada, compartilha a chamada em andamento e o
+  // resultado recém-obtido. Um lote de 40 matérias não deve consultar o mesmo
+  // histórico 40 vezes em paralelo.
+  if (cached?.promise) return cached.promise;
+  if (cached && Date.now() - cached.at < 60_000) return cached.posts;
 
   const promise = (async () => {
     const response = await axios.get(`${API}/history/facebook`, {
@@ -537,6 +540,8 @@ function facebookIdParts(value) {
   if (!raw) return [];
   const clean = raw.split(/[?#]/)[0].replace(/\/+$/, '');
   const parts = new Set([clean]);
+  const providerId = clean.replace(/^ayrshare:/i, '');
+  if (providerId !== clean) parts.add(providerId);
   const match = clean.match(/(?:posts|videos|photos|reel)\/(\d+)/i);
   if (match?.[1]) parts.add(match[1]);
   const pair = clean.match(/(\d+)_(\d+)/);
@@ -559,53 +564,91 @@ function normalizePostText(value) {
     .trim();
 }
 
-function findFacebookPostInHistory(posts, { postId, postUrl, text, publishedAt } = {}) {
-  const wantedIds = new Set([
-    ...facebookIdParts(postId),
-    ...facebookIdParts(postUrl),
-  ]);
+const HISTORY_TEXT_STOPWORDS = new Set([
+  'a', 'as', 'ao', 'aos', 'com', 'como', 'da', 'das', 'de', 'do', 'dos', 'e', 'em',
+  'facebook', 'fonte', 'foto', 'mais', 'na', 'nas', 'no', 'nos', 'o', 'os', 'para',
+  'por', 'que', 'se', 'sem', 'sobre', 'um', 'uma', 'via', 'video', 'viral',
+]);
+
+function significantPostWords(value) {
+  return normalizePostText(value)
+    .split(' ')
+    .filter((word) => word.length >= 4 && !HISTORY_TEXT_STOPWORDS.has(word));
+}
+
+function textMatchScore(wanted, candidate) {
+  const wantedText = normalizePostText(wanted);
+  const candidateText = normalizePostText(candidate);
+  if (wantedText.length < 35 || candidateText.length < 35) return null;
+
+  const wantedWords = new Set(significantPostWords(wantedText));
+  const candidateWords = new Set(significantPostWords(candidateText));
+  if (wantedWords.size < 5 || candidateWords.size < 5) return null;
+
+  const common = [...wantedWords].filter((word) => candidateWords.has(word)).length;
+  const overlap = common / Math.min(wantedWords.size, candidateWords.size);
+  const prefix = wantedText.slice(0, 100);
+  const candidatePrefix = candidateText.slice(0, 100);
+  const strongPrefix =
+    candidateText.includes(prefix) ||
+    wantedText.includes(candidatePrefix);
+
+  if (!strongPrefix && (common < 6 || overlap < 0.55)) return null;
+  return { common, overlap, strongPrefix };
+}
+
+function findFacebookPostInHistory(
+  posts,
+  { postId, nativePostId, postUrl, text, publishedAt } = {}
+) {
   const list = Array.isArray(posts) ? posts : [];
 
-  const exact = list.find((post) => {
-    const ids = [...facebookIdParts(post?.postId), ...facebookIdParts(post?.postUrl)];
-    return ids.some((id) => wantedIds.has(id));
-  });
-  if (exact) return exact;
+  // O ID devolvido pelo provedor no momento da publicação é a referência mais
+  // confiável. Ele precisa vencer um ID nativo que possa ter sido recuperado
+  // anteriormente por uma associação textual incorreta.
+  const providerIds = new Set(facebookIdParts(postId));
+  const exactProvider = providerIds.size
+    ? list.find((post) => {
+        const ids = facebookIdParts(post?.postId);
+        return ids.some((id) => providerIds.has(id));
+      })
+    : null;
+  if (exactProvider) return exactProvider;
 
-  const wantedText = normalizePostText(text);
-  if (wantedText.length < 35) return null;
-  const prefix = wantedText.slice(0, 120);
+  const secondaryIds = new Set([
+    ...facebookIdParts(nativePostId),
+    ...facebookIdParts(postUrl),
+  ]);
+  const exactSecondary = list.find((post) => {
+    const ids = [...facebookIdParts(post?.postId), ...facebookIdParts(post?.postUrl)];
+    return ids.some((id) => secondaryIds.has(id));
+  });
+  if (exactSecondary && textMatchScore(text, exactSecondary?.post)) return exactSecondary;
+
   const publishedMs = publishedAt ? new Date(publishedAt).getTime() : NaN;
 
   let best = null;
   let bestScore = 0;
   for (const post of list) {
-    const candidateText = normalizePostText(post?.post);
-    if (candidateText.length < 35) continue;
-    let score = 0;
-    if (candidateText.includes(prefix) || wantedText.includes(candidateText.slice(0, 120))) {
-      score += 100;
-    } else {
-      const words = new Set(wantedText.split(' ').filter((word) => word.length >= 5));
-      const common = candidateText
-        .split(' ')
-        .filter((word) => word.length >= 5 && words.has(word)).length;
-      if (common < 4) continue;
-      score += common;
-    }
+    const match = textMatchScore(text, post?.post);
+    if (!match) continue;
+    let score = match.strongPrefix ? 100 : Math.round(match.overlap * 70) + match.common;
 
     const candidateMs = post?.created ? new Date(post.created).getTime() : NaN;
     if (Number.isFinite(publishedMs) && Number.isFinite(candidateMs)) {
       const hours = Math.abs(publishedMs - candidateMs) / 3_600_000;
-      if (hours <= 2) score += 25;
-      else if (hours > 24) score -= 25;
+      if (hours <= 0.5) score += 25;
+      else if (hours <= 2) score += 10;
+      else if (hours > 6) continue;
+    } else if (!match.strongPrefix) {
+      continue;
     }
     if (score > bestScore) {
       best = post;
       bestScore = score;
     }
   }
-  return bestScore >= 20 ? best : null;
+  return bestScore >= 55 ? best : null;
 }
 
 /**

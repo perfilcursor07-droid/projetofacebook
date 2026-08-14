@@ -2172,6 +2172,78 @@ Regras:
 }
 
 /**
+ * Compara pautas recentes com o histórico que realmente engajou na Página.
+ * O modelo apenas ranqueia itens já encontrados; não cria notícias nem fontes.
+ */
+async function ranquearPautasParaPublico({ bases = [], pautas = [] } = {}) {
+  assertDeepseek();
+  const baseLista = (Array.isArray(bases) ? bases : [])
+    .slice(0, 20)
+    .map((item, index) => ({
+      id: `b${index + 1}`,
+      titulo: String(item?.titulo || '').replace(/\s+/g, ' ').trim().slice(0, 260),
+      likes: Number(item?.likes ?? item?.pub_fb_likes) || 0,
+      comentarios: Number(item?.comments ?? item?.pub_fb_comments) || 0,
+      compartilhamentos: Number(item?.shares ?? item?.pub_fb_shares) || 0,
+    }))
+    .filter((item) => item.titulo);
+  const pautaLista = (Array.isArray(pautas) ? pautas : [])
+    .slice(0, 60)
+    .map((item, index) => ({
+      id: `p${index + 1}`,
+      titulo: String(item?.titulo || '').replace(/\s+/g, ' ').trim().slice(0, 260),
+      resumo: String(item?.resumo || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+      fonte: String(item?.veiculo || item?.fonte || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+    }))
+    .filter((item) => item.titulo);
+
+  if (!baseLista.length || !pautaLista.length) return [];
+
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você é editor de audiência de um portal gospel brasileiro. Compare notícias recentes com as matérias que comprovadamente engajaram na Página.
+Retorne APENAS JSON: {"avaliacoes":[{"id":"p1","afinidade":0,"potencial":0,"motivo":"..."}]}.
+
+Regras:
+- Avalie TODAS as pautas recebidas e mantenha exatamente o id informado.
+- afinidade (0-100): proximidade real com assunto, pessoa, conflito, formato ou interesse demonstrado pelas matérias-base.
+- Ser apenas cristão, católico, evangélico, igreja ou gospel NÃO prova afinidade.
+- potencial (0-100): chance editorial de gerar clique, comentário e compartilhamento neste público.
+- Dê nota baixa a agenda institucional, nota devocional genérica, lançamento rotineiro, evento estrangeiro sem impacto no Brasil e texto sem fato novo.
+- Dê nota alta somente quando houver fato recente e um gatilho claro: figura conhecida, polêmica, conflito, declaração forte, surpresa, testemunho extraordinário, política e religião, escatologia ou repercussão pública.
+- Uma pauta pode ter potencial alto e afinidade baixa; nesse caso ela deve continuar com afinidade baixa.
+- Não invente fatos e não altere os títulos.
+- motivo: no máximo 12 palavras, explicando a ligação ou a falta dela.`,
+      },
+      {
+        role: 'user',
+        content: `MATÉRIAS-BASE COM ENGAJAMENTO REAL:\n${JSON.stringify(baseLista)}\n\nPAUTAS RECENTES ENCONTRADAS:\n${JSON.stringify(pautaLista)}\n\nAvalie cada pauta.`,
+      },
+    ],
+    { temperature: 0.1, json: true, thinking: true }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+
+  const idsValidos = new Set(pautaLista.map((item) => item.id));
+  return (Array.isArray(parsed.avaliacoes) ? parsed.avaliacoes : [])
+    .map((item) => ({
+      id: String(item?.id || '').trim(),
+      afinidade: Math.max(0, Math.min(100, Number(item?.afinidade) || 0)),
+      potencial: Math.max(0, Math.min(100, Number(item?.potencial) || 0)),
+      motivo: String(item?.motivo || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+    }))
+    .filter((item) => idsValidos.has(item.id));
+}
+
+/**
  * Transforma fontes dispersas em um dossiê editorial antes da redação.
  * É o passo que evita responder a um tema amplo usando apenas o primeiro evento
  * encontrado na busca.
@@ -3070,6 +3142,7 @@ module.exports = {
   revisarMateriaManual,
   enriquecerMateriaComFatos,
   sugerirConsultasPesquisa,
+  ranquearPautasParaPublico,
   montarDossieApuracao,
   gerarMateriaComPesquisa,
   conversarMateria,
