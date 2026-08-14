@@ -1,6 +1,8 @@
 (function initMinhasMaterias() {
   const list = document.getElementById('mia-matters-list');
   if (!list) return;
+  const params = new URLSearchParams(window.location.search || '');
+  const st = params.get('status') || 'all';
 
   function formatNum(n) {
     // Number(null) === 0 — não tratar null/undefined/'' como zero
@@ -143,14 +145,21 @@
     }
   }
 
-  /** Ao abrir a página: atualiza engajamento das publicadas visíveis (1 por vez, sem martelar a API). */
+  /** Ao abrir a página: atualiza os itens visíveis com até três chamadas simultâneas. */
   async function autoAtualizarEngajamento() {
     const buttons = Array.from(list.querySelectorAll('.mia-matter-views'));
     if (!buttons.length) return;
 
-    for (const btn of buttons) {
-      await fetchEngajamento(btn, { force: false, silent: true });
+    let cursor = 0;
+    async function worker() {
+      while (cursor < buttons.length) {
+        const btn = buttons[cursor++];
+        await fetchEngajamento(btn, { force: false, silent: true });
+      }
     }
+    await Promise.all(
+      Array.from({ length: Math.min(3, buttons.length) }, () => worker())
+    );
   }
 
   list.addEventListener('click', async (e) => {
@@ -270,26 +279,29 @@
     }
   });
 
-  // Dispara após o paint — não bloqueia a lista
-  if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(() => {
-      setTimeout(autoAtualizarEngajamento, 50);
-    });
-  } else {
-    setTimeout(autoAtualizarEngajamento, 100);
+  // Dispara após o paint — não bloqueia a lista. Ao terminar a página visível,
+  // o lote continua por publicações ainda não verificadas para alimentar Viralizou.
+  function sincronizarProximoLote() {
+    if (st === 'viralizou') return;
+    fetch('/api/materias-ia/matters/sincronizar-engajamento', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 20 }),
+    }).catch(() => {});
   }
 
-  // Sync em background só fora da aba Publicadas (evita 502 por carga dupla + Ayrshare)
-  const params = new URLSearchParams(window.location.search || '');
-  const st = params.get('status') || 'all';
-  if (st !== 'viralizou' && st !== 'publicado') {
-    setTimeout(() => {
-      fetch('/api/materias-ia/matters/sincronizar-engajamento', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 12 }),
-      }).catch(() => {});
-    }, 4000);
+  function iniciarAtualizacao() {
+    autoAtualizarEngajamento().finally(() => {
+      setTimeout(sincronizarProximoLote, 500);
+    });
+  }
+
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      setTimeout(iniciarAtualizacao, 50);
+    });
+  } else {
+    setTimeout(iniciarAtualizacao, 100);
   }
 
   /** Seleção em lote — só na aba Rascunhos */

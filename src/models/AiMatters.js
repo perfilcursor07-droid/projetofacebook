@@ -434,35 +434,55 @@ const AiMatters = {
     return db(this.table).where({ user_id: userId, status: st }).del();
   },
 
-  /** Publicadas recentes (com publication_id) para sincronizar engajamento. */
+  /** Publicadas pendentes de sincronização; depois revisita as métricas mais antigas. */
   findRecentPublishedForSync(userId, limit = 30) {
-    return db(this.table)
-      .where('user_id', userId)
-      .whereNotNull('publication_id')
+    return db(`${this.table} as m`)
+      .leftJoin('publications as p', 'p.id', 'm.publication_id')
+      .where('m.user_id', userId)
+      .whereNotNull('m.publication_id')
       .where(function statusPub() {
-        this.where('status', 'publicado').orWhereNotNull('published_at');
+        this.where('m.status', 'publicado').orWhereNotNull('m.published_at');
       })
-      .orderByRaw('COALESCE(published_at, updated_at, created_at) DESC')
+      .orderByRaw(
+        'CASE WHEN p.fb_views_at IS NULL THEN 0 ELSE 1 END ASC, p.fb_views_at ASC, COALESCE(m.published_at, p.published_at, m.updated_at, m.created_at) DESC'
+      )
       .limit(Math.max(1, Math.min(60, Number(limit) || 30)))
-      .select('id', 'publication_id', 'titulo', 'status');
+      .select(
+        'm.id',
+        'm.publication_id',
+        'm.titulo',
+        'm.status',
+        'm.user_id',
+        'm.facebook_page_id'
+      );
   },
 
   /** Publicadas recentes de todas as Páginas FB equivalentes (mesmo page_id social). */
   async findRecentPublishedDaContaForSync(userId, limit = 40) {
     const pageIds = await pageRowIdsComMesmoSocial(userId);
     const lim = Math.max(1, Math.min(80, Number(limit) || 40));
-    return db(this.table)
+    return db(`${this.table} as m`)
+      .leftJoin('publications as p', 'p.id', 'm.publication_id')
       .where(function ownership() {
-        this.where('user_id', userId);
-        if (pageIds.length) this.orWhereIn('facebook_page_id', pageIds);
+        this.where('m.user_id', userId);
+        if (pageIds.length) this.orWhereIn('m.facebook_page_id', pageIds);
       })
-      .whereNotNull('publication_id')
+      .whereNotNull('m.publication_id')
       .where(function statusPub() {
-        this.where('status', 'publicado').orWhereNotNull('published_at');
+        this.where('m.status', 'publicado').orWhereNotNull('m.published_at');
       })
-      .orderByRaw('COALESCE(published_at, updated_at, created_at) DESC')
+      .orderByRaw(
+        'CASE WHEN p.fb_views_at IS NULL THEN 0 ELSE 1 END ASC, p.fb_views_at ASC, COALESCE(m.published_at, p.published_at, m.updated_at, m.created_at) DESC'
+      )
       .limit(lim)
-      .select('id', 'publication_id', 'titulo', 'status', 'user_id', 'facebook_page_id');
+      .select(
+        'm.id',
+        'm.publication_id',
+        'm.titulo',
+        'm.status',
+        'm.user_id',
+        'm.facebook_page_id'
+      );
   },
 
   /** True se a matéria é do user ou de Página FB equivalente à conta dele. */

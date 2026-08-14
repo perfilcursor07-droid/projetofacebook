@@ -423,6 +423,191 @@ function stripAyrsharePrefix(raw) {
     .replace(/^ayrshare:/i, '');
 }
 
+function metricNumber(...values) {
+  for (const value of values) {
+    if (value == null || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number) && number >= 0) return number;
+  }
+  return null;
+}
+
+function normalizeFacebookAnalytics(raw) {
+  const item = Array.isArray(raw) ? raw[0] : raw;
+  if (!item || typeof item !== 'object') return null;
+
+  const analytics =
+    item.analytics && typeof item.analytics === 'object' ? item.analytics : item;
+  const reactions =
+    analytics.reactions && typeof analytics.reactions === 'object'
+      ? analytics.reactions
+      : null;
+  const reactionSum = reactions
+    ? ['like', 'love', 'care', 'haha', 'wow', 'sad', 'anger', 'sorry'].reduce(
+        (sum, key) => sum + (Number(reactions[key]) || 0),
+        0
+      )
+    : null;
+
+  return {
+    likes: metricNumber(
+      analytics.likeCount,
+      analytics.likes,
+      analytics.reactionCount,
+      reactions?.total,
+      reactionSum
+    ),
+    comments: metricNumber(
+      analytics.commentsCount,
+      analytics.commentCount,
+      analytics.comments
+    ),
+    shares: metricNumber(
+      analytics.shareCount,
+      analytics.sharesCount,
+      analytics.shares,
+      analytics.postVideoSocialActions?.share
+    ),
+    views: metricNumber(
+      analytics.mediaView,
+      analytics.videoViews,
+      analytics.blueReelsPlayCount,
+      analytics.impressions,
+      analytics.views,
+      analytics.postImpressions
+    ),
+    postId: item.id != null ? String(item.id) : null,
+    postUrl: item.postUrl || item.permalink || null,
+    post: item.post || item.message || item.description || null,
+    created: item.created || item.publishedAt || item.date || null,
+    raw: item,
+  };
+}
+
+const facebookHistoryCache = new Map();
+
+/**
+ * Historico da pagina com metricas. Alem de ser mais barato que consultar cada
+ * post, recupera o ID nativo de publicacoes antigas salvas apenas com o ID Ayrshare.
+ */
+async function fetchFacebookHistory({ profileKey = null, limit = 100, force = false } = {}) {
+  assertConfigured();
+  const key = String(profileKey || '').trim();
+  const safeLimit = Math.min(100, Math.max(10, Number(limit) || 100));
+  const cacheKey = `${key || 'primary'}:${safeLimit}`;
+  const cached = facebookHistoryCache.get(cacheKey);
+  if (!force && cached?.promise) return cached.promise;
+  if (!force && cached && Date.now() - cached.at < 60_000) return cached.posts;
+
+  const promise = (async () => {
+    const response = await axios.get(`${API}/history/facebook`, {
+      headers: authHeaders({}, key || null),
+      params: {
+        limit: safeLimit,
+        pagePublished: true,
+        dataType: 'posts',
+      },
+      timeout: 30_000,
+      validateStatus: () => true,
+    });
+    const data = response.data;
+    if (response.status >= 400 || data?.status === 'error') {
+      const wrap = { response: { data, config: { url: `${API}/history/facebook` } } };
+      throw new Error(apiErrorMessage(wrap) || `Historico Ayrshare HTTP ${response.status}`);
+    }
+
+    const posts = (Array.isArray(data?.posts) ? data.posts : [])
+      .map(normalizeFacebookAnalytics)
+      .filter(Boolean);
+    facebookHistoryCache.set(cacheKey, { at: Date.now(), posts });
+    return posts;
+  })();
+
+  facebookHistoryCache.set(cacheKey, { at: Date.now(), posts: [], promise });
+  try {
+    return await promise;
+  } catch (err) {
+    facebookHistoryCache.delete(cacheKey);
+    throw err;
+  }
+}
+
+function facebookIdParts(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const clean = raw.split(/[?#]/)[0].replace(/\/+$/, '');
+  const parts = new Set([clean]);
+  const match = clean.match(/(?:posts|videos|photos|reel)\/(\d+)/i);
+  if (match?.[1]) parts.add(match[1]);
+  const pair = clean.match(/(\d+)_(\d+)/);
+  if (pair) {
+    parts.add(`${pair[1]}_${pair[2]}`);
+    parts.add(pair[2]);
+  }
+  const tail = clean.match(/(?:^|\/)(\d+)$/)?.[1];
+  if (tail) parts.add(tail);
+  return [...parts].map((item) => item.toLowerCase());
+}
+
+function normalizePostText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findFacebookPostInHistory(posts, { postId, postUrl, text, publishedAt } = {}) {
+  const wantedIds = new Set([
+    ...facebookIdParts(postId),
+    ...facebookIdParts(postUrl),
+  ]);
+  const list = Array.isArray(posts) ? posts : [];
+
+  const exact = list.find((post) => {
+    const ids = [...facebookIdParts(post?.postId), ...facebookIdParts(post?.postUrl)];
+    return ids.some((id) => wantedIds.has(id));
+  });
+  if (exact) return exact;
+
+  const wantedText = normalizePostText(text);
+  if (wantedText.length < 35) return null;
+  const prefix = wantedText.slice(0, 120);
+  const publishedMs = publishedAt ? new Date(publishedAt).getTime() : NaN;
+
+  let best = null;
+  let bestScore = 0;
+  for (const post of list) {
+    const candidateText = normalizePostText(post?.post);
+    if (candidateText.length < 35) continue;
+    let score = 0;
+    if (candidateText.includes(prefix) || wantedText.includes(candidateText.slice(0, 120))) {
+      score += 100;
+    } else {
+      const words = new Set(wantedText.split(' ').filter((word) => word.length >= 5));
+      const common = candidateText
+        .split(' ')
+        .filter((word) => word.length >= 5 && words.has(word)).length;
+      if (common < 4) continue;
+      score += common;
+    }
+
+    const candidateMs = post?.created ? new Date(post.created).getTime() : NaN;
+    if (Number.isFinite(publishedMs) && Number.isFinite(candidateMs)) {
+      const hours = Math.abs(publishedMs - candidateMs) / 3_600_000;
+      if (hours <= 2) score += 25;
+      else if (hours > 24) score -= 25;
+    }
+    if (score > bestScore) {
+      best = post;
+      bestScore = score;
+    }
+  }
+  return bestScore >= 20 ? best : null;
+}
+
 /**
  * Analytics do post via Ayrshare (curtidas / comentários / views).
  * Aceita Ayrshare Post ID ou Social Post ID do Facebook (searchPlatformId).
@@ -521,41 +706,15 @@ async function fetchFacebookPostAnalytics({ postId, profileKey = null, searchPla
     };
   }
 
-  const analytics = fb.analytics && typeof fb.analytics === 'object' ? fb.analytics : fb;
-  const reactions = analytics.reactions && typeof analytics.reactions === 'object' ? analytics.reactions : null;
-  const reactionsTotal = Number(
-    reactions?.total ??
-      (reactions
-        ? ['like', 'love', 'care', 'haha', 'wow', 'sad', 'anger', 'sorry'].reduce(
-            (sum, k) => sum + (Number(reactions[k]) || 0),
-            0
-          )
-        : NaN)
-  );
-
-  const likes = Number(
-    analytics.likeCount ?? analytics.likes ?? analytics.reactionCount ?? reactionsTotal
-  );
-  const comments = Number(
-    analytics.commentsCount ?? analytics.commentCount ?? analytics.comments
-  );
-  const shares = Number(analytics.shareCount ?? analytics.shares ?? analytics.sharesCount);
-  const views = Number(
-    analytics.mediaView ??
-      analytics.videoViews ??
-      analytics.blueReelsPlayCount ??
-      analytics.impressions ??
-      analytics.views ??
-      analytics.postImpressions
-  );
+  const normalized = normalizeFacebookAnalytics(fb);
 
   return {
-    likes: Number.isFinite(likes) ? likes : null,
-    comments: Number.isFinite(comments) ? comments : null,
-    shares: Number.isFinite(shares) ? shares : null,
-    views: Number.isFinite(views) ? views : null,
-    postId: fb?.id ? String(fb.id) : null,
-    postUrl: fb?.postUrl || null,
+    likes: normalized?.likes ?? null,
+    comments: normalized?.comments ?? null,
+    shares: normalized?.shares ?? null,
+    views: normalized?.views ?? null,
+    postId: normalized?.postId || null,
+    postUrl: normalized?.postUrl || null,
     raw: data,
   };
 }
@@ -572,4 +731,7 @@ module.exports = {
   looksLikeAyrshareId,
   fetchProfileByKey,
   fetchFacebookPostAnalytics,
+  fetchFacebookHistory,
+  findFacebookPostInHistory,
+  normalizeFacebookAnalytics,
 };

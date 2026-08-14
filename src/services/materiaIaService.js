@@ -2425,19 +2425,31 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
     (fonte !== 'graph' && allZerado);
   if (precisaEngAyr && ayrshareService.isConfigured()) {
     const candidates = [];
-    const pushCand = (id, searchPlatformId) => {
+    const pushCand = (id, searchPlatformId, candidateProfileKey = profileKey) => {
       const s = String(id || '').trim();
       if (!s) return;
-      if (candidates.some((c) => c.id === s && c.searchPlatformId === searchPlatformId)) return;
-      candidates.push({ id: s, searchPlatformId: Boolean(searchPlatformId) });
+      const key = String(candidateProfileKey || '').trim() || null;
+      if (
+        candidates.some(
+          (c) =>
+            c.id === s &&
+            c.searchPlatformId === Boolean(searchPlatformId) &&
+            c.profileKey === key
+        )
+      ) {
+        return;
+      }
+      candidates.push({ id: s, searchPlatformId: Boolean(searchPlatformId), profileKey: key });
     };
 
     // Preferir ID Ayrshare (UUID) — analytics mais estável
     if (ayrshareService.looksLikeAyrshareId(fbPostId)) {
       pushCand(fbPostId, false);
+      if (profileKey) pushCand(fbPostId, false, null);
     }
     if (ayrshareService.looksLikeAyrshareId(pub.fb_native_post_id)) {
       pushCand(pub.fb_native_post_id, false);
+      if (profileKey) pushCand(pub.fb_native_post_id, false, null);
     }
     // ID nativo Facebook (pageId_postId)
     const nativeForAy = nativeId || pub.fb_native_post_id || null;
@@ -2462,8 +2474,8 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
       );
     }
 
-    // No máximo 2 tentativas (UUID Ayrshare + 1 ID Facebook) — evita timeout/502 no proxy
-    const toTry = candidates.slice(0, 2);
+    // Perfil atual, Primary Profile legado e ID nativo. Limita para evitar timeout.
+    const toTry = candidates.slice(0, 3);
 
     const applyAy = (ay) => {
       // Sobrescreve nulls e zeros (Graph sem permissão costuma devolver 0)
@@ -2475,30 +2487,79 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
       if (ay.views != null && (views == null || force || Number(views) === 0)) views = ay.views;
     };
 
-    for (const cand of toTry) {
-      try {
-        const ay = await ayrshareService.fetchFacebookPostAnalytics({
-          postId: cand.id,
-          profileKey,
-          searchPlatformId: cand.searchPlatformId,
-        });
-        if (ay.error) {
-          avisos.push(`Ayrshare analytics: ${ay.error}`);
+    async function aplicarHistoricoDaPagina() {
+      const historyKeys = [...new Set([profileKey, null])];
+      let historyError = null;
+      for (const historyProfileKey of historyKeys) {
+        try {
+          const history = await ayrshareService.fetchFacebookHistory({
+            profileKey: historyProfileKey,
+            limit: 100,
+            force,
+          });
+          const found = ayrshareService.findFacebookPostInHistory(history, {
+            postId: nativeId || pub.fb_native_post_id || fbPostId,
+            postUrl: pub.fb_post_url,
+            text: pub.texto || matter.materia || matter.titulo,
+            publishedAt: pub.published_at || matter.published_at,
+          });
+          if (!found) continue;
+
+          applyAy(found);
+          const foundNative =
+            found.postId || facebookService.parseFacebookPostId(found.postUrl) || null;
+          if (foundNative && !ayrshareService.looksLikeAyrshareId(foundNative)) {
+            nativeId = foundNative;
+          }
+          const historyPatch = {};
+          if (nativeId) historyPatch.fb_native_post_id = nativeId;
+          if (found.postUrl) {
+            historyPatch.fb_post_url = found.postUrl;
+            pub.fb_post_url = found.postUrl;
+          }
+          if (Object.keys(historyPatch).length) {
+            await Publications.update(pub.id, historyPatch);
+          }
+          fonte = fonte ? `${fonte}+ayrshare-history` : 'ayrshare-history';
+          return true;
+        } catch (err) {
+          historyError = err;
         }
-        applyAy(ay);
-        if (ay.postId && !ayrshareService.looksLikeAyrshareId(ay.postId)) {
-          nativeId = ay.postId;
+      }
+      if (historyError) avisos.push(`Histórico Ayrshare: ${historyError.message}`);
+      return false;
+    }
+
+    // Uma chamada por página retorna até 100 posts e fica em cache. Para listas,
+    // isso evita consultar o endpoint individual dezenas de vezes.
+    const encontrouNoHistorico = await aplicarHistoricoDaPagina();
+
+    if (!encontrouNoHistorico) {
+      for (const cand of toTry) {
+        try {
+          const ay = await ayrshareService.fetchFacebookPostAnalytics({
+            postId: cand.id,
+            profileKey: cand.profileKey,
+            searchPlatformId: cand.searchPlatformId,
+          });
+          if (ay.error) {
+            avisos.push(`Ayrshare analytics: ${ay.error}`);
+          }
+          applyAy(ay);
+          if (ay.postId && !ayrshareService.looksLikeAyrshareId(ay.postId)) {
+            nativeId = ay.postId;
+          }
+          if (ay.postUrl && !pub.fb_post_url) {
+            await Publications.update(pub.id, { fb_post_url: ay.postUrl });
+            pub.fb_post_url = ay.postUrl;
+          }
+          if (ay.likes != null || ay.comments != null || ay.views != null) {
+            fonte = fonte && fonte !== 'graph' ? `${fonte}+ayrshare` : 'ayrshare';
+            break;
+          }
+        } catch (err) {
+          avisos.push(`Ayrshare analytics: ${err.message}`);
         }
-        if (ay.postUrl && !pub.fb_post_url) {
-          await Publications.update(pub.id, { fb_post_url: ay.postUrl });
-          pub.fb_post_url = ay.postUrl;
-        }
-        if (ay.likes != null || ay.comments != null || ay.views != null) {
-          fonte = fonte && fonte !== 'graph' ? `${fonte}+ayrshare` : 'ayrshare';
-          break;
-        }
-      } catch (err) {
-        avisos.push(`Ayrshare analytics: ${err.message}`);
       }
     }
 
@@ -2512,6 +2573,7 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
         'Página sem Profile Key Ayrshare — cole em /paginas o Profile Key desta Página para ler curtidas.'
       );
     }
+
   }
 
   // 3) ScrapeCreators fallback (curtidas/comentários no permalink)
@@ -2557,9 +2619,8 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
     patch.fb_native_post_id = nativeId;
   }
 
-  if (Object.keys(patch).length > 1) {
-    await Publications.update(pub.id, patch);
-  }
+  // Registra também tentativas sem dado para o lote avançar aos posts antigos.
+  await Publications.update(pub.id, patch);
 
   const updated = await Publications.findById(pub.id);
   const payload = {
@@ -2579,6 +2640,13 @@ async function atualizarViewsDaMateria(userId, matterId, { force = false } = {})
       avisos[0] ||
       'Não foi possível ler o engajamento. Confira o Profile Key Ayrshare em /paginas ou o link do post.';
     payload.needsOauth = !hasGraphToken;
+    console.warn(
+      `[engajamento] matéria #${matter.id} publicação #${pub.id}: sem métricas (${avisos.join(' | ') || 'nenhum provedor retornou dados'})`
+    );
+  } else {
+    console.info(
+      `[engajamento] matéria #${matter.id}: ${payload.likes ?? '-'} curtidas, ${payload.comments ?? '-'} comentários, ${payload.views ?? '-'} views via ${fonte || 'cache'}`
+    );
   }
 
   return payload;
