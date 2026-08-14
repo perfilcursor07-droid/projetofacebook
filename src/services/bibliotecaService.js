@@ -476,6 +476,22 @@ async function coletarItensFonte(fonte) {
     const erros = [];
     const scrapeCreatorsFb = require('./scrapeCreatorsFacebook');
 
+    // Sessão própria (YTDLP_FB_COOKIES_FILE) primeiro: é gratuita e lê a página
+    // logada, então não depende de créditos de ScrapeCreators/Serper.
+    const fbPageScrape = require('./facebookPageScrape');
+    if (fbPageScrape.isConfigured()) {
+      try {
+        const itens = await fbPageScrape.listarPostsPerfil(url, SCAN_LIMIT_FACEBOOK);
+        if (itens.length) {
+          return dedupeItens(itens, SCAN_LIMIT_FACEBOOK);
+        }
+        erros.push('sessão do Facebook não encontrou posts na página');
+      } catch (err) {
+        console.warn('[biblioteca] fb-page:', err.message);
+        erros.push(`sessão FB: ${err.message}`);
+      }
+    }
+
     if (scrapeCreatorsFb.isConfigured()) {
       try {
         const itens = await scrapeCreatorsFb.listarPostsPerfil(url, SCAN_LIMIT_FACEBOOK);
@@ -518,7 +534,9 @@ async function coletarItensFonte(fonte) {
         [
           'Não foi possível listar posts do Facebook.',
           erros[0] || 'Serper/Brave sem créditos ou página inacessível.',
-          'Recarregue créditos em Serper (SERPER_API_KEY) ou ScrapeCreators (SCRAPECREATORS_API_KEY).',
+          require('./facebookPageScrape').isConfigured()
+            ? 'Valide a sessão com: node scripts/test-fb-page.js "<url da página>".'
+            : 'Configure YTDLP_FB_COOKIES_FILE (leitura gratuita pela sessão) ou recarregue créditos em Serper/ScrapeCreators.',
         ].join(' ')
       );
       err.status = 422;
