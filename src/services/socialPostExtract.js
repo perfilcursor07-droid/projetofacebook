@@ -504,13 +504,21 @@ function parseOgFromHtml(html, finalUrl) {
 
 async function extrairViaOg(url) {
   const cookie = await cookieHeaderParaUrl(url);
-  const extra = cookie ? { Cookie: cookie } : {};
+  const ehFacebook = /facebook\.com/i.test(url);
+  // Autenticado, o Facebook exige headers completos de navegador (Accept curto → 400).
+  const headersPara = (ua) => {
+    if (ehFacebook && cookie) {
+      const { facebookHtmlHeaders } = require('./facebookCookies');
+      return facebookHtmlHeaders(cookie, ua);
+    }
+    return cookie ? { Cookie: cookie } : {};
+  };
 
   // Crawler UA primeiro (melhor OG); se falhar imagem/texto, tenta browser UA
   let best = { url, titulo: null, texto: null, imagem: null, veiculo: null, metodo: 'og' };
   for (const ua of [CRAWLER_UA, BROWSER_UA]) {
     try {
-      const { html, finalUrl } = await fetchHtml(url, ua, extra);
+      const { html, finalUrl } = await fetchHtml(url, ua, headersPara(ua));
       const parsed = parseOgFromHtml(html, finalUrl);
       if ((!best.texto || best.texto.length < 40) && parsed.texto) best.texto = parsed.texto;
       if (!best.imagem && parsed.imagem) best.imagem = parsed.imagem;
@@ -1099,13 +1107,26 @@ async function extrairViaMbasic(url) {
  * para posts que exigem login — o texto vem no JSON embutido, não no Open Graph.
  */
 async function extrairViaFacebookHtml(url) {
-  const cookie = buildFacebookCookieHeader();
+  const { buildFacebookCookieHeader: build, facebookHtmlHeaders } = require('./facebookCookies');
+  const cookie = build();
   if (!cookie) return null;
 
   try {
-    const { html, finalUrl } = await fetchHtml(normalizarUrlSocial(url), BROWSER_UA, {
-      Cookie: cookie,
+    // O Facebook responde 400 a requests com Accept mínimo; só os headers
+    // completos de navegador (Sec-Fetch-*, Upgrade-Insecure-Requests) passam.
+    const res = await axios.get(normalizarUrlSocial(url), {
+      timeout: 30000,
+      maxRedirects: 5,
+      headers: facebookHtmlHeaders(cookie, BROWSER_UA),
+      validateStatus: () => true,
     });
+    const html = String(res.data || '');
+    const finalUrl =
+      res.request?.res?.responseURL || res.request?.res?.responseUrl || url;
+    if (res.status >= 400) {
+      console.warn(`[socialPost] fb-html: HTTP ${res.status}`);
+      return null;
+    }
     if (/\/login|\/checkpoint/i.test(finalUrl)) {
       console.warn('[socialPost] fb-html: sessão redirecionada para login/checkpoint');
       return null;
@@ -1127,14 +1148,33 @@ async function extrairViaFacebookHtml(url) {
     textos.sort((a, b) => b.length - a.length);
     const texto = textos[0] || null;
 
+    // A página autenticada não traz og:image; a foto vem no JSON do story.
     const parsed = parseOgFromHtml(html, finalUrl || url);
     let imagem = parsed.imagem;
     if (!imagem) {
-      const img =
-        html.match(/"photo_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i) ||
-        html.match(/"full_width_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i);
-      if (img?.[1]) imagem = img[1].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+      const imgRes = [
+        /"photo_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
+        /"full_width_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
+        /"image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]*scontent[^"]+)"/i,
+        /"thumbnailImage"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
+        /"(https:\\?\/\\?\/scontent[^"]+?\.(?:jpg|png|webp)[^"]*)"/i,
+      ];
+      for (const re of imgRes) {
+        const m = html.match(re);
+        if (!m?.[1]) continue;
+        const candidato = m[1]
+          .replace(/\\\//g, '/')
+          .replace(/\\u0026/g, '&')
+          .replace(/&amp;/g, '&');
+        if (/rsrc\.php|static\.xx\.fbcdn/i.test(candidato)) continue;
+        imagem = candidato;
+        break;
+      }
     }
+
+    console.warn(
+      `[socialPost] fb-html: candidatos=${textos.length} texto=${texto?.length || 0} imagem=${Boolean(imagem)} len=${html.length}`
+    );
 
     const autor =
       html.match(/"actors"\s*:\s*\[\s*\{[^}]*?"name"\s*:\s*"((?:\\.|[^"\\])*)"/i)?.[1] || null;
