@@ -703,6 +703,74 @@ body.mia-chat-drawer-open {
   max-width: 44rem;
 }
 
+/*
+ * Barra de atalhos fixa no topo. Fica FORA de .mia-chat-messages (a única área
+ * com overflow), então permanece visível enquanto a conversa rola — sem sticky.
+ */
+.mia-chat-shortcuts-bar {
+  flex: none;
+  border-bottom: 1px solid var(--mia-chat-border);
+  background: var(--mia-chat-bg);
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+@media (min-width: 640px) {
+  .mia-chat-shortcuts-bar {
+    padding: 0.6rem 1.5rem;
+  }
+}
+
+/* Chips compactos em linha — sobrepõe o grid de 2 colunas do estado vazio. */
+.mia-chat-shortcuts-bar .mia-chat-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  width: 100%;
+  max-width: var(--mia-chat-stream);
+  margin: 0 auto;
+}
+
+.mia-chat-shortcuts-bar .mia-chat-prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  grid-template-columns: none;
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  /* A regra base usa width:100% + min-height (cards do estado vazio). */
+  width: auto;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mia-chat-shortcuts-bar .mia-chat-prompt > span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.mia-chat-shortcuts-bar .mia-chat-prompt-icon {
+  display: none;
+}
+
+.mia-chat-shortcuts-bar .mia-chat-prompt-label {
+  flex: none;
+  font-size: 0.625rem;
+}
+
+/* Texto longo vira reticências, como no layout original. */
+.mia-chat-shortcuts-bar .mia-chat-prompt-text {
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 15rem;
+}
+
 .mia-chat-prompts {
   display: grid;
   grid-template-columns: 1fr;
