@@ -180,6 +180,21 @@ function mapItem(row) {
   };
 }
 
+/** A matéria tem arte/foto utilizável para publicar? */
+function materiaTemFoto(matter) {
+  if (!matter) return false;
+  return Boolean(
+    String(matter.imagem_path || '').trim() ||
+      String(matter.imagem_url || '').trim() ||
+      String(matter.imagem_fonte_url || '').trim()
+  );
+}
+
+/** Post ou matéria tem foto — pré-requisito para ocupar um horário na agenda. */
+function candidatoTemFoto(post, matter) {
+  return Boolean(String(post?.thumbnail || '').trim()) || materiaTemFoto(matter);
+}
+
 // Evita repetir buscas externas a cada atualização da página quando um provedor
 // estiver temporariamente sem crédito ou a foto remota estiver indisponível.
 const reparoImagemTentadoEm = new Map();
@@ -1162,6 +1177,7 @@ async function montarAgendaAmanha({
   const erros = [];
   let slotIdx = 0;
   let aiGens = 0;
+  let semFoto = 0;
 
   for (const post of candidatos) {
     if (slotIdx >= slots.length) break;
@@ -1175,11 +1191,21 @@ async function montarAgendaAmanha({
     }
 
     try {
+      let matter = null;
       let matterId = post.matter_id ? Number(post.matter_id) : null;
       if (matterId) {
-        const matter = await AiMatters.findById(matterId);
-        if (!matter || Number(matter.user_id) !== Number(userId)) matterId = null;
-        else if (['publicado', 'agendado'].includes(String(matter.status))) continue;
+        matter = await AiMatters.findById(matterId);
+        if (!matter || Number(matter.user_id) !== Number(userId)) {
+          matterId = null;
+          matter = null;
+        } else if (['publicado', 'agendado'].includes(String(matter.status))) continue;
+      }
+
+      // Sem foto não há arte publicável. Descarta antes de gerar texto com IA,
+      // para não gastar geração num item que seria recusado adiante.
+      if (!gerarMaterias && !candidatoTemFoto(post, matter)) {
+        semFoto += 1;
+        continue;
       }
 
       if (!matterId && gerarMaterias) {
@@ -1199,7 +1225,14 @@ async function montarAgendaAmanha({
         });
         matterId = gerado.matter?.id || null;
         if (!matterId) throw new Error('Falha ao gerar matéria');
+        matter = await AiMatters.findById(matterId);
         aiGens += 1;
+      }
+
+      // Revalida após a geração: a matéria recém-criada pode ter trazido imagem.
+      if (!candidatoTemFoto(post, matter)) {
+        semFoto += 1;
+        continue;
       }
 
       const proposedAt = slots[slotIdx];
@@ -1244,6 +1277,13 @@ async function montarAgendaAmanha({
         mensagem: `Removidos ${removidosSemKw} item(ns) fora das palavras-chave. Nenhum post novo encaixado nesta rodada — tente de novo.`,
       };
     }
+    if (semFoto > 0) {
+      const err = new Error(
+        `Nenhum item foi pré-agendado: ${semFoto} post(s) foram descartados por não terem foto. Escaneie fontes com imagem ou gere a arte da matéria antes de agendar.`
+      );
+      err.status = 422;
+      throw err;
+    }
     const detalhe = erros[0]?.erro || 'não foi possível gerar ou encaixar matérias';
     const err = new Error(
       `Nenhum item foi pré-agendado (${detalhe}). Verifique posts disponíveis e tente de novo.`
@@ -1261,6 +1301,7 @@ async function montarAgendaAmanha({
     slotsUsados: criados.length,
     pendentesSemMateria: criados.filter((item) => !item.matterId).length,
     removidosSemKw,
+    descartadosSemFoto: semFoto,
     continuidade: ultimoOcupado ? toDatetimeLocal(ultimoOcupado) : null,
     de: toDatetimeLocal(primeiro),
     ate: toDatetimeLocal(ultimo),
@@ -1820,6 +1861,8 @@ async function tickAgendaPre() {
 }
 
 module.exports = {
+  materiaTemFoto,
+  candidatoTemFoto,
   listarAgenda,
   listarViralizadas,
   agendarViralizada,
