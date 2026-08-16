@@ -122,7 +122,11 @@ ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
 5) TOM: jornalístico + evangélico caloroso. Sem clickbait.
 6) FORMATO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML/markdown. Sem emoji obrigatório no final.
 7) PROIBIDO: colar a fonte inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
-8) NÃO coloque bloco de "Fontes:" / "Fonte:" / créditos no JSON — o sistema anexa créditos automaticamente (uma vez só).`;
+8) NÃO coloque bloco de "Fontes:" / "Fonte:" / créditos no JSON — o sistema anexa créditos automaticamente (uma vez só).
+9) VOZ PRÓPRIA — NÃO COMENTE A FONTE: escreva a NOTÍCIA como reportagem nossa, nunca como resenha do que outro site publicou.
+   PROIBIDO narrar o veículo: "o site X publicou", "em matéria publicada pelo portal X", "a reportagem do X afirma que", "a publicação destaca", "o artigo explica", "segundo o texto do site".
+   O lead começa pelo FATO (quem + o que aconteceu), nunca pelo veículo.
+   Se precisar atribuir, use a forma padrão e só DEPOIS do lead: "Segundo o <veículo>, …" ou "Ainda de acordo com o <veículo>, …" — no máximo 2 atribuições no texto inteiro.`;
 }
 
 function sortearTemperatura(investigativa = false) {

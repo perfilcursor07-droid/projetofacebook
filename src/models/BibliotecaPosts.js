@@ -110,6 +110,8 @@ const BibliotecaPosts = {
       .where('p.user_id', userId)
       .whereIn('p.status', ['novo', 'visto'])
       .whereNull('p.matter_id')
+      // Recusado na agenda pelo editor não volta como candidato.
+      .whereNull('p.agenda_recusado_em')
       .where(function preferFresh() {
         this.where('p.status', 'novo').orWhereNull('p.viral_score');
       })
@@ -127,6 +129,7 @@ const BibliotecaPosts = {
         .where('p.user_id', userId)
         .whereIn('p.status', ['novo', 'visto'])
         .whereNull('p.matter_id')
+        .whereNull('p.agenda_recusado_em')
         .whereRaw('COALESCE(p.publicado_em, p.created_at) >= ?', [corteRecente])
         .orderByRaw('COALESCE(p.publicado_em, p.created_at) DESC')
         .limit(Math.max(alvo * 3, 60))

@@ -612,7 +612,16 @@ async function gerarMateriaNoticiaFacebook({
         ].join('\n')
       : null,
     traduzirFonte
-      ? 'FONTE EM IDIOMA ESTRANGEIRO: a matéria FINAL deve estar 100% em português brasileiro. Traduza fatos e citações com fidelidade; se usar aspas literais em inglês, acrescente a tradução em seguida entre parênteses.'
+      ? [
+          'FONTE EM IDIOMA ESTRANGEIRO:',
+          '- A matéria FINAL deve estar 100% em português brasileiro (título, corpo e aspas).',
+          '- TRADUZA E REESCREVA como matéria nossa. NÃO descreva, resuma nem comente o artigo estrangeiro.',
+          '- PROIBIDO: "o site americano publicou", "de acordo com a reportagem do portal X, o texto diz", "o artigo relata que", "a publicação em inglês afirma".',
+          '- Comece pelo FATO (quem + o que aconteceu), como se a apuração fosse nossa.',
+          '- Atribuição só na forma padrão, depois do lead: "Segundo o <veículo>, …" / "Ainda de acordo com o <veículo>, …" (máx. 2 vezes).',
+          '- Aspas: traduza a fala para o português. Se mantiver a frase original em inglês, ponha a tradução logo em seguida entre parênteses.',
+          '- Nomes próprios, cargos e instituições ficam como no original (não traduza nomes de pessoas).',
+        ].join('\n')
       : null,
     variacaoViral
       ? `Tema (NÃO use como título final — invente manchete curiosa): ${tituloReferencia || ''}`

@@ -195,6 +195,19 @@ function candidatoTemFoto(post, matter) {
   return Boolean(String(post?.thumbnail || '').trim()) || materiaTemFoto(matter);
 }
 
+/**
+ * Mesma origem de imagem que mapItem usa para montar o thumb do card.
+ * Se nenhuma existe, o item aparece sem foto na tela de agendar.
+ */
+function linhaAgendaTemFoto(row) {
+  return Boolean(
+    String(row?.matter_imagem_path || '').trim() ||
+      String(row?.matter_imagem_url || '').trim() ||
+      String(row?.matter_imagem_fonte_url || '').trim() ||
+      String(row?.post_thumbnail || '').trim()
+  );
+}
+
 // Evita repetir buscas externas a cada atualização da página quando um provedor
 // estiver temporariamente sem crédito ou a foto remota estiver indisponível.
 const reparoImagemTentadoEm = new Map();
@@ -740,6 +753,33 @@ async function listarAgenda(userId, { status = 'all', aba = null, reparar = true
     }
   }
 
+  // Esgotadas as tentativas de reparo, pendente sem foto não vira post publicável:
+  // sai da agenda e libera o horário. Só 'pendente' — confirmado/publicado nunca
+  // é removido. Não marca recusa: se a imagem voltar, o post pode ser reagendado.
+  if (reparar) {
+    const semFoto = (itens || []).filter(
+      (row) =>
+        String(row.status || '') === 'pendente' &&
+        // Viralizada é escolha explícita do editor — mesmo critério da limpeza por palavra-chave.
+        !row.source_matter_id &&
+        !linhaAgendaTemFoto(row)
+    );
+    let removidos = 0;
+    for (const row of semFoto) {
+      try {
+        await BibliotecaAgenda.deleteById(row.id, userId);
+        removidos += 1;
+      } catch (err) {
+        console.warn('[agenda] remover item sem foto:', err.message);
+      }
+    }
+    if (removidos) {
+      console.log(`[agenda] ${removidos} pendente(s) dispensado(s) por não terem foto`);
+      await compactarHorariosAbertos(userId).catch(() => {});
+      itens = await fetchItens();
+    }
+  }
+
   return (itens || []).map(mapItem);
 }
 
@@ -1106,6 +1146,7 @@ async function montarAgendaAmanha({
   candidatos = await bibliotecaService.filtrarPostsNaoPublicados(userId, candidatos || []);
   candidatos = candidatos.filter((p) => {
     if (jaNaAgenda.has(Number(p.id))) return false;
+    if (p.agenda_recusado_em) return false;
     if (somenteSites && String(p.fonte_plataforma || '').toLowerCase() !== 'site') return false;
     return true;
   });
@@ -1115,6 +1156,7 @@ async function montarAgendaAmanha({
       .leftJoin('biblioteca_fontes as f', 'f.id', 'p.fonte_id')
       .leftJoin('ai_matters as m', 'm.id', 'p.matter_id')
       .where('p.user_id', userId)
+      .whereNull('p.agenda_recusado_em')
       .modify((qb) => {
         if (somenteSites) qb.andWhere('f.plataforma', 'site');
         if (keywordsFiltro) {
@@ -1646,10 +1688,23 @@ async function readequarHorariosPendentes(userId, { fromDate = null } = {}) {
   return { ajustados };
 }
 
-async function excluirItem(userId, id, { apagarMateria = false } = {}) {
+async function excluirItem(userId, id, { apagarMateria = false, marcarRecusa = true } = {}) {
   const item = await getItemOwned(userId, id);
   const slotLiberado = item.proposed_at;
   await BibliotecaAgenda.deleteById(item.id, userId);
+
+  // Tirar da agenda é uma decisão editorial: sem registrar a recusa, a próxima
+  // rodada de "montar agenda" traria o mesmo post de volta.
+  if (marcarRecusa && item.post_id) {
+    try {
+      await db('biblioteca_posts')
+        .where({ id: item.post_id, user_id: userId })
+        .update({ agenda_recusado_em: new Date() });
+    } catch (err) {
+      console.warn('[agenda] marcar recusa do post:', err.message);
+    }
+  }
+
   if (apagarMateria && item.matter_id) {
     try {
       await AiMatters.deleteByUser(item.matter_id, userId);
@@ -1863,6 +1918,7 @@ async function tickAgendaPre() {
 module.exports = {
   materiaTemFoto,
   candidatoTemFoto,
+  linhaAgendaTemFoto,
   listarAgenda,
   listarViralizadas,
   agendarViralizada,
