@@ -1106,6 +1106,67 @@ async function extrairViaMbasic(url) {
  * HTML autenticado do Facebook (YTDLP_FB_COOKIES_FILE). É o caminho gratuito
  * para posts que exigem login — o texto vem no JSON embutido, não no Open Graph.
  */
+/**
+ * Escolhe, no HTML autenticado, a mensagem que pertence AO post pedido.
+ *
+ * A página do Facebook embute posts sugeridos e relacionados com a mesma
+ * estrutura JSON. Pegar "a maior mensagem" já gerou matéria com o conteúdo de
+ * outro post, então a seleção é ancorada no identificador da URL
+ * (story_fbid / pfbid / fbid). Sem âncora e com mais de um candidato, devolve
+ * texto nulo — melhor pedir a legenda do que publicar o post errado.
+ *
+ * @returns {{ texto: string|null, candidatos: number, ancoras: number, criterio: string, idPost: string|null }}
+ */
+function escolherMensagemDoPost(html, urlAlvo) {
+  const candidatos = [];
+  const padroes = [
+    /"message"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g,
+    /"message_preferred_body"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g,
+  ];
+  for (const re of padroes) {
+    for (const m of String(html || '').matchAll(re)) {
+      const conteudo = unescapeJsonString(m[1]).trim();
+      if (conteudo.length >= 40) candidatos.push({ texto: conteudo, indice: m.index ?? 0 });
+    }
+  }
+
+  const alvo = String(urlAlvo || '');
+  const idPost =
+    alvo.match(/story_fbid=(pfbid[A-Za-z0-9]+|\d{6,})/i)?.[1] ||
+    alvo.match(/\/posts\/(pfbid[A-Za-z0-9]+|\d{6,})/i)?.[1] ||
+    alvo.match(/[?&]fbid=(\d{6,})/i)?.[1] ||
+    alvo.match(/(pfbid[A-Za-z0-9]+)/i)?.[1] ||
+    null;
+
+  const ancoras = [];
+  if (idPost) {
+    let i = String(html || '').indexOf(idPost);
+    while (i !== -1 && ancoras.length < 200) {
+      ancoras.push(i);
+      i = String(html).indexOf(idPost, i + 1);
+    }
+  }
+
+  const base = { candidatos: candidatos.length, ancoras: ancoras.length, idPost };
+
+  if (!candidatos.length) return { ...base, texto: null, criterio: 'sem-candidatos' };
+  if (candidatos.length === 1) return { ...base, texto: candidatos[0].texto, criterio: 'única' };
+  if (!ancoras.length) return { ...base, texto: null, criterio: 'ambíguo' };
+
+  let melhor = null;
+  let menorDistancia = Infinity;
+  for (const c of candidatos) {
+    for (const a of ancoras) {
+      const d = Math.abs(c.indice - a);
+      if (d < menorDistancia) {
+        menorDistancia = d;
+        melhor = c;
+      }
+    }
+  }
+  return { ...base, texto: melhor?.texto || null, criterio: `ancorado(${menorDistancia})` };
+}
+
 async function extrairViaFacebookHtml(url) {
   const { buildFacebookCookieHeader: build, facebookHtmlHeaders } = require('./facebookCookies');
   const cookie = build();
@@ -1132,21 +1193,19 @@ async function extrairViaFacebookHtml(url) {
       return null;
     }
 
-    // O post pedido é normalmente a maior mensagem da página; comentários e
-    // publicações sugeridas usam a mesma estrutura, então pegamos a mais longa.
-    const textos = [];
-    const padroes = [
-      /"message"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g,
-      /"message_preferred_body"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g,
-    ];
-    for (const re of padroes) {
-      for (const m of html.matchAll(re)) {
-        const candidato = unescapeJsonString(m[1]).trim();
-        if (candidato.length >= 40) textos.push(candidato);
-      }
+    const escolha = escolherMensagemDoPost(html, finalUrl || url);
+    const texto = escolha.texto;
+
+    console.warn(
+      `[socialPost] fb-html: candidatos=${escolha.candidatos} ancoras=${escolha.ancoras} escolha=${escolha.criterio} id=${escolha.idPost ? escolha.idPost.slice(0, 14) : 'n/d'}`
+    );
+
+    // Vários posts na página e nenhum identificador para desempatar: publicar o
+    // texto errado é pior do que pedir a legenda ao editor.
+    if (!texto && escolha.candidatos > 1) {
+      console.warn('[socialPost] fb-html: ambíguo (várias mensagens sem âncora) — descartando');
+      return null;
     }
-    textos.sort((a, b) => b.length - a.length);
-    const texto = textos[0] || null;
 
     // A página autenticada não traz og:image; a foto vem no JSON do story.
     const parsed = parseOgFromHtml(html, finalUrl || url);
@@ -1173,7 +1232,7 @@ async function extrairViaFacebookHtml(url) {
     }
 
     console.warn(
-      `[socialPost] fb-html: candidatos=${textos.length} texto=${texto?.length || 0} imagem=${Boolean(imagem)} len=${html.length}`
+      `[socialPost] fb-html: texto=${texto?.length || 0} imagem=${Boolean(imagem)} len=${html.length}`
     );
 
     const autor =
@@ -1545,4 +1604,5 @@ module.exports = {
   resolverShareFacebook,
   extrairPostSocial,
   socialParaTopico,
+  escolherMensagemDoPost,
 };
