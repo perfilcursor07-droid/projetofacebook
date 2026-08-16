@@ -24,6 +24,27 @@ const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || env.deepseekModel || 'deeps
 const DEEPSEEK_WRITER_MODEL =
   process.env.DEEPSEEK_WRITER_MODEL || env.deepseekWriterModel || DEEPSEEK_MODEL;
 
+/**
+ * Raciocínio estendido custa latência: cada chamada com thinking passa de dezenas
+ * de segundos, e uma matéria encadeia várias. Ajustável sem editar código:
+ *   DEEPSEEK_THINKING=off|on|auto  (padrão off — 'auto' respeita cada chamada)
+ *   DEEPSEEK_REASONING_EFFORT=low|medium|high (padrão medium, só quando ligado)
+ */
+const THINKING_MODO = String(process.env.DEEPSEEK_THINKING || 'off').toLowerCase();
+const REASONING_EFFORT = String(process.env.DEEPSEEK_REASONING_EFFORT || 'medium').toLowerCase();
+
+function resolverThinking(pedidoDaChamada) {
+  if (THINKING_MODO === 'off') return false;
+  if (THINKING_MODO === 'on') return true;
+  return Boolean(pedidoDaChamada);
+}
+
+/** Loga a duração de cada chamada — sem isso não dá para saber onde o tempo vai. */
+function logarDuracao(rotulo, inicio, extra = '') {
+  const s = ((Date.now() - inicio) / 1000).toFixed(1);
+  console.log(`[deepseek] ${rotulo} ${s}s${extra ? ` ${extra}` : ''}`);
+}
+
 function assertDeepseek() {
   if (!env.deepseekApiKey) {
     const err = new Error('DEEPSEEK_API_KEY não configurada no .env');
@@ -65,6 +86,7 @@ async function chatCompletion(
 ) {
   assertDeepseek();
   const selectedModel = String(model || DEEPSEEK_MODEL);
+  const pensar = resolverThinking(thinking);
   const body = {
     model: selectedModel,
     temperature,
@@ -73,9 +95,10 @@ async function chatCompletion(
   };
   // V4: thinking opcional (matérias) — desligado por padrão para custo/latência
   if (selectedModel.includes('v4')) {
-    body.thinking = { type: thinking ? 'enabled' : 'disabled' };
-    if (thinking) body.reasoning_effort = 'high';
+    body.thinking = { type: pensar ? 'enabled' : 'disabled' };
+    if (pensar) body.reasoning_effort = REASONING_EFFORT;
   }
+  const inicio = Date.now();
   const { data } = await axios.post(DEEPSEEK_URL, body, {
     headers: {
       Authorization: `Bearer ${env.deepseekApiKey}`,
@@ -83,6 +106,11 @@ async function chatCompletion(
     },
     timeout: 120_000,
   });
+  logarDuracao(
+    selectedModel,
+    inicio,
+    `thinking=${pensar ? REASONING_EFFORT : 'off'} tokens=${data?.usage?.total_tokens || '?'}`
+  );
 
   const raw = data?.choices?.[0]?.message?.content || '';
   if (!raw) {
@@ -110,6 +138,7 @@ async function chatCompletionStream(
 ) {
   assertDeepseek();
   const selectedModel = String(model || DEEPSEEK_MODEL);
+  const pensar = resolverThinking(thinking);
   const body = {
     model: selectedModel,
     temperature,
@@ -117,8 +146,8 @@ async function chatCompletionStream(
     stream: true,
   };
   if (selectedModel.includes('v4')) {
-    body.thinking = { type: thinking ? 'enabled' : 'disabled' };
-    if (thinking) body.reasoning_effort = 'high';
+    body.thinking = { type: pensar ? 'enabled' : 'disabled' };
+    if (pensar) body.reasoning_effort = REASONING_EFFORT;
   }
 
   let full = '';
@@ -615,6 +644,9 @@ async function gerarMateriaNoticiaFacebook({
     .filter(Boolean)
     .join('\n\n');
 
+  const inicioMateria = Date.now();
+  const passos = ['gerar'];
+
   let artigo = parseArtigoJson(
     await chatCompletion(
       [
@@ -655,6 +687,7 @@ async function gerarMateriaNoticiaFacebook({
   let qualidade = avaliarComprimentoFb(artigo.materia, faixa);
 
   if (qualidade.curto && !factualEstrito) {
+    passos.push('expandir');
     try {
       const expandido = await chatCompletion(
         [
@@ -685,6 +718,7 @@ Retorne JSON completo atualizado.`,
   }
 
   if (qualidade.longo) {
+    passos.push('condensar');
     try {
       const enxuto = await chatCompletion(
         [
@@ -726,6 +760,7 @@ Retorne JSON completo enxuto.`,
       );
     }
 
+    passos.push('humanizar');
     try {
       const humanizado = await chatCompletion(
         [
@@ -760,6 +795,8 @@ Retorne JSON completo atualizado.`,
       console.warn('Humanizar matéria:', e.message);
     }
   }
+
+  logarDuracao('materia TOTAL', inicioMateria, `passes=[${passos.join('>')}]`);
 
   return {
     ...artigo,
