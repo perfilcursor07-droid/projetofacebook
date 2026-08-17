@@ -528,6 +528,58 @@
     info.textContent = 'Gostou? Salve como rascunho — ou peça um ajuste no campo abaixo do chat.';
     box.appendChild(info);
 
+    // 3 títulos alternativos ao principal: o escolhido vai junto no rascunho.
+    let tituloEscolhido = null;
+    const alternativos = Array.isArray(mensagem.titulosAlternativos)
+      ? mensagem.titulosAlternativos.filter(Boolean).slice(0, 3)
+      : [];
+    if (alternativos.length) {
+      const tituloPrincipal = mensagem.titulo || (mensagem.content || '').split('\n')[0].trim();
+      const wrap = document.createElement('div');
+      wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
+
+      const label = document.createElement('p');
+      label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
+      label.textContent = 'Títulos alternativos';
+      wrap.appendChild(label);
+
+      const lista = document.createElement('div');
+      lista.className = 'mt-1.5 grid gap-1.5';
+
+      const opcoes = [];
+      const marcar = (btn) => {
+        tituloEscolhido = btn.dataset.titulo === tituloPrincipal ? null : btn.dataset.titulo;
+        opcoes.forEach((b) => {
+          const ativo = b === btn;
+          b.className =
+            'w-full rounded-md border px-2.5 py-1.5 text-left text-xs leading-snug transition ' +
+            (ativo
+              ? 'border-emerald-500 bg-emerald-500/10 text-emerald-200'
+              : 'border-slate-700 text-slate-300 hover:border-emerald-500/60 hover:text-white');
+        });
+      };
+
+      for (const opcao of [tituloPrincipal, ...alternativos]) {
+        if (!opcao) continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.titulo = opcao;
+        btn.textContent = opcao === tituloPrincipal ? `${opcao}  (principal)` : opcao;
+        btn.addEventListener('click', () => marcar(btn));
+        opcoes.push(btn);
+        lista.appendChild(btn);
+      }
+      wrap.appendChild(lista);
+
+      const dica = document.createElement('p');
+      dica.className = 'mt-1.5 text-[11px] text-slate-500';
+      dica.textContent = 'Clique em um título para usá-lo no rascunho. Sem clicar, vale o principal.';
+      wrap.appendChild(dica);
+
+      box.appendChild(wrap);
+      if (opcoes.length) marcar(opcoes[0]);
+    }
+
     const grid = document.createElement('div');
     grid.className = 'mt-2 grid gap-2 md:grid-cols-2';
     const imagem = document.createElement('input');
@@ -571,6 +623,7 @@
           body: JSON.stringify({
             imagemUrl: imagem.value.trim() || null,
             creditoImagem: credito.value.trim() || null,
+            titulo: tituloEscolhido,
           }),
         });
         aviso.replaceChildren();

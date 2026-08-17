@@ -744,10 +744,14 @@ async function showMatter(req, res, next) {
     }
 
     const arteModeloAtivo = String(matter.arte_modelo || marcaModeloArte || '').trim();
+    const titulosAlternativos = require('../services/materiaIaService').parseTitulosAlternativos(
+      matter.titulos_alternativos
+    );
 
     return res.render('materia-ia-editar', {
       title: matter.titulo || 'Matéria IA',
       matter,
+      titulosAlternativos,
       hashtags: Array.isArray(hashtags) ? hashtags : [],
       ultimoAgendamento,
       proximoSlotLocal,
@@ -1093,6 +1097,48 @@ async function monitorRetomar(req, res, next) {
     res.json({ ok: true });
   } catch (err) {
     next(err);
+  }
+}
+
+/**
+ * Lista (ou gera de novo) os 3 títulos alternativos ao principal.
+ * Não troca o título: o editor escolhe qual aplicar.
+ */
+async function titulosAlternativos(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+
+    const materiaIaService = require('../services/materiaIaService');
+    const guardados = materiaIaService.parseTitulosAlternativos(matter.titulos_alternativos);
+    const gerarNovos = req.method === 'POST' || req.query.novos === '1';
+    if (!gerarNovos && guardados.length) {
+      return res.json({ ok: true, titulos: guardados });
+    }
+
+    const tituloAtual = String(req.body?.tituloAtual || matter.titulo || '').trim();
+    const materia = String(req.body?.materia || matter.materia || '').trim();
+    const titulos = await materiaIaService.gerarESalvarTitulosAlternativos({
+      matterId,
+      userId: req.session.userId,
+      titulo: tituloAtual,
+      materia,
+      fonteTitulo: matter.fonte_titulo || null,
+      // Não repete o que o editor já viu nesta matéria.
+      evitar: guardados,
+    });
+    if (!titulos.length) {
+      return res
+        .status(502)
+        .json({ error: 'A IA não devolveu títulos alternativos agora. Tente de novo.' });
+    }
+    return res.json({ ok: true, titulos });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
   }
 }
 
@@ -1682,6 +1728,7 @@ module.exports = {
   removerMateriasLote,
   atualizarMateria,
   sugerirTitulo,
+  titulosAlternativos,
   revisarTextoManual,
   reescreverComInfo,
   enriquecerFontes,

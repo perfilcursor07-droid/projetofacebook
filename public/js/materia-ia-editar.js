@@ -441,6 +441,72 @@
     }
   });
 
+  // 3 títulos alternativos ao principal: gerados com a matéria e trocáveis aqui.
+  const altLista = document.getElementById('matter-titulos-alt');
+  const altBtn = document.getElementById('btn-titulos-alt');
+  const altDica = document.getElementById('matter-titulos-alt-dica');
+
+  function aplicarTituloAlternativo(novo) {
+    if (!novo || !tituloEl) return;
+    const anterior = String(tituloEl.value || '').trim();
+    tituloEl.value = novo;
+    setStatus('Aplicando título escolhido…');
+    salvar()
+      .then(() => setStatus('Título alternativo aplicado ✓'))
+      .catch((err) => {
+        tituloEl.value = anterior;
+        setStatus(err.message, true);
+      });
+  }
+
+  function renderTitulosAlternativos(titulos) {
+    if (!altLista) return;
+    altLista.replaceChildren();
+    for (const t of titulos || []) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.tituloAlt = t;
+      btn.className =
+        'w-full rounded-md border border-slate-700 px-2.5 py-1.5 text-left text-xs leading-snug text-slate-300 transition hover:border-emerald-500/60 hover:text-white';
+      btn.textContent = t;
+      altLista.appendChild(btn);
+    }
+    altDica?.classList.toggle('hidden', !(titulos || []).length);
+    if (altBtn) altBtn.textContent = (titulos || []).length ? 'Gerar outros 3' : 'Gerar 3 opções';
+  }
+
+  altLista?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-titulo-alt]');
+    if (!btn || !cfg.canEdit) return;
+    aplicarTituloAlternativo(btn.dataset.tituloAlt);
+  });
+
+  altBtn?.addEventListener('click', async () => {
+    altBtn.disabled = true;
+    const rotulo = altBtn.textContent;
+    altBtn.textContent = 'Gerando…';
+    setStatus('Gerando 3 títulos alternativos…');
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/titulos-alternativos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tituloAtual: String(tituloEl?.value || '').trim(),
+          materia: String(materiaEl?.value || '').trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao gerar títulos alternativos');
+      renderTitulosAlternativos(data.titulos || []);
+      setStatus('3 títulos alternativos prontos — clique em um para aplicar.');
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      altBtn.disabled = false;
+      altBtn.textContent = rotulo || 'Gerar outros 3';
+    }
+  });
+
   const tituloSugestoes = [];
   const tomEl = document.getElementById('matter-titulo-tom');
   const manualWrap = document.getElementById('matter-titulo-manual-wrap');

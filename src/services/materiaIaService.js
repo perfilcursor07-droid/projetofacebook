@@ -24,6 +24,61 @@ async function resolvePage(userId, facebookPageId) {
   return defaultPageForUser(userId);
 }
 
+/** Lista de títulos alternativos guardada em ai_matters.titulos_alternativos. */
+function parseTitulosAlternativos(raw) {
+  try {
+    if (Array.isArray(raw)) return raw.map((t) => String(t || '').trim()).filter(Boolean);
+    if (typeof raw === 'string' && raw.trim()) {
+      const lista = JSON.parse(raw);
+      if (Array.isArray(lista)) return lista.map((t) => String(t || '').trim()).filter(Boolean);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+/**
+ * Gera 3 títulos alternativos ao principal e guarda na matéria.
+ * É um extra do editor: qualquer falha aqui não pode quebrar a geração, por
+ * isso o erro é só registrado no log.
+ * @returns {Promise<string[]>}
+ */
+async function gerarESalvarTitulosAlternativos({
+  matterId,
+  titulo,
+  materia,
+  fonteTitulo = null,
+  marcaModeloArte = null,
+  userId = null,
+  evitar = [],
+}) {
+  try {
+    const { gerarTitulosAlternativos } = require('./deepseekService');
+    let modeloArte = marcaModeloArte;
+    if (modeloArte == null && userId) {
+      const Users = require('../models/Users');
+      const user = await Users.findById(userId);
+      modeloArte = user?.marca_modelo_arte || null;
+    }
+    const titulos = await gerarTitulosAlternativos({
+      titulo,
+      materia,
+      fonteTitulo,
+      marcaModeloArte: modeloArte,
+      evitar,
+    });
+    if (!titulos.length) return [];
+    if (matterId) {
+      await AiMatters.update(matterId, { titulos_alternativos: JSON.stringify(titulos) });
+    }
+    return titulos;
+  } catch (err) {
+    console.warn('[titulos-alternativos] salvar:', err.message);
+    return [];
+  }
+}
+
 function parseHashtagsField(raw) {
   try {
     if (Array.isArray(raw)) return raw;
@@ -468,6 +523,17 @@ async function salvarMateria({ userId, facebookPageId, gerado, topico, tipoPubli
     imagem_url: gerado.imagemUrl || topico?.imagemFonte || null,
     error_message: gerado.avisoFoto || null,
   });
+
+  // Alternativas rodam fora do caminho crítico: montar a agenda não pode ficar
+  // mais lento (nem falhar) por causa de um extra do editor.
+  gerarESalvarTitulosAlternativos({
+    matterId: id,
+    userId,
+    titulo: gerado.titulo || topico?.titulo || null,
+    materia: gerado.materia,
+    fonteTitulo: topico?.titulo || null,
+  }).catch(() => {});
+
   return AiMatters.findById(id);
 }
 
@@ -519,6 +585,15 @@ async function criarMateriaManual({
     imagem_url: null,
     error_message: null,
   });
+
+  // Mesmo na matéria escrita à mão, o editor recebe 3 opções de manchete.
+  gerarESalvarTitulosAlternativos({
+    matterId: id,
+    userId,
+    titulo: tituloLimpo,
+    materia: materiaLimpa,
+    fonteTitulo: 'Matéria manual',
+  }).catch(() => {});
 
   return AiMatters.findById(id);
 }
@@ -3651,6 +3726,8 @@ module.exports = {
   marcarJaPublicados,
   gerarPreviewDeTopico,
   gerarCompleto,
+  gerarESalvarTitulosAlternativos,
+  parseTitulosAlternativos,
   gerarDeLink,
   gerarVariacaoDeMateria,
   gerarMateriaManual,

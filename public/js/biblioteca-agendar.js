@@ -911,6 +911,53 @@
     }
   });
 
+  // Orientações fixas do editor: gravadas uma vez, valem para todas as
+  // próximas matérias (agendamento e chat).
+  const orientTexto = document.getElementById('agenda-orientacoes-texto');
+  const orientSalvar = document.getElementById('agenda-orientacoes-salvar');
+  const orientMsg = document.getElementById('agenda-orientacoes-msg');
+  const orientBadge = document.getElementById('agenda-orientacoes-badge');
+
+  orientSalvar?.addEventListener('click', async () => {
+    const texto = String(orientTexto?.value || '');
+    orientSalvar.disabled = true;
+    const rotulo = orientSalvar.textContent;
+    orientSalvar.textContent = 'Salvando…';
+    if (orientMsg) {
+      orientMsg.textContent = '';
+      orientMsg.className = 'text-xs text-slate-400';
+    }
+    try {
+      const data = await api('/api/biblioteca/orientacoes', {
+        method: 'PUT',
+        body: JSON.stringify({ orientacoes: texto }),
+      });
+      const linhas = String(data.orientacoes || '')
+        .split('\n')
+        .map((l) => l.replace(/^\s*[-•*]\s*/, '').trim())
+        .filter(Boolean);
+      if (orientTexto) orientTexto.value = linhas.join('\n');
+      if (orientBadge) {
+        orientBadge.textContent = linhas.length + (linhas.length === 1 ? ' salva' : ' salvas');
+        orientBadge.classList.toggle('hidden', linhas.length === 0);
+      }
+      if (orientMsg) {
+        orientMsg.textContent = linhas.length
+          ? 'Guardado ✓ o sistema vai seguir isso nas próximas matérias.'
+          : 'Orientações apagadas.';
+        orientMsg.className = 'text-xs text-emerald-300';
+      }
+    } catch (err) {
+      if (orientMsg) {
+        orientMsg.textContent = err.message || 'Não foi possível salvar as orientações.';
+        orientMsg.className = 'text-xs text-rose-300';
+      }
+    } finally {
+      orientSalvar.disabled = false;
+      orientSalvar.textContent = rotulo || 'Salvar orientações';
+    }
+  });
+
   syncLoteButtons();
   if (countEl && listEl) {
     const n = listEl.querySelectorAll('.agenda-row').length;

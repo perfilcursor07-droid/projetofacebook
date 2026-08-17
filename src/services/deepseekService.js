@@ -1881,6 +1881,97 @@ ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastan
 }
 
 /**
+ * Três títulos alternativos ao principal, oferecidos toda vez que uma matéria
+ * é gerada. Não substitui o título: é opção para o editor escolher.
+ * @returns {Promise<string[]>} até 3 manchetes, sem repetir o título atual
+ */
+async function gerarTitulosAlternativos({
+  titulo,
+  materia,
+  fonteTitulo = null,
+  marcaModeloArte = null,
+  quantidade = 3,
+  evitar = [],
+}) {
+  assertDeepseek();
+  const tituloAtual = String(titulo || '').trim();
+  const corpo = String(materia || '').trim();
+  if (corpo.length < 80 && !tituloAtual) return [];
+
+  const total = Math.min(Math.max(Number(quantidade) || 3, 1), 5);
+  const blocoMarca = blocoTituloMarcaArte(marcaModeloArte);
+  const maxTitulo = blocoMarca ? 130 : 120;
+  const evitarList = [tituloAtual, ...(Array.isArray(evitar) ? evitar : [])]
+    .map((t) => String(t || '').trim())
+    .filter(Boolean)
+    .slice(0, 10);
+
+  const messages = [
+    {
+      role: 'system',
+      content: `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
+Regras:
+- Responda APENAS JSON válido: {"titulos":["manchete 1","manchete 2","manchete 3"]}
+- Exatamente ${total} manchetes em português do Brasil, 70–110 caracteres cada (máx ${maxTitulo}${blocoMarca ? ', contando marcadores [[ ]] e (( ))' : ''}).
+- Cada uma com ÂNGULO DIFERENTE do título atual e das outras: uma mais direta/factual, uma de curiosidade (o porquê, o detalhe) e uma mais incisiva/polêmica.
+- Fidelidade total ao texto: NÃO invente fato, número, data, nome ou fala que não esteja na matéria.
+- Sem clickbait mentiroso, sem Caps Lock excessivo, sem pontos de exclamação em série.
+- Não repita o título atual nem reescreva só trocando uma palavra.${blocoMarca ? `\n\n${blocoMarca}` : ''}`,
+    },
+    {
+      role: 'user',
+      content: [
+        tituloAtual ? `Título principal já escolhido (NÃO repetir):\n${tituloAtual}` : null,
+        evitarList.length > 1 ? `Também NÃO use estes:\n- ${evitarList.slice(1).join('\n- ')}` : null,
+        fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
+        corpo ? `Texto da matéria:\n${corpo.slice(0, 2500)}` : null,
+        `Gere ${total} manchetes alternativas ao título principal.`,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    },
+  ];
+
+  let raw = '';
+  try {
+    raw = await chatCompletion(messages, { temperature: 0.95, json: true });
+  } catch (err) {
+    // Alternativas são um extra: nunca podem derrubar a geração da matéria.
+    console.warn('[titulos-alternativos]', err.message);
+    return [];
+  }
+
+  let lista = [];
+  try {
+    let texto = String(raw || '').trim();
+    const fence = texto.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) texto = fence[1].trim();
+    const parsed = JSON.parse(texto);
+    lista = Array.isArray(parsed) ? parsed : parsed?.titulos || parsed?.titles || [];
+  } catch {
+    lista = [];
+  }
+
+  const usados = evitarList.map((t) => normalizeTituloCmp(t));
+  const saida = [];
+  for (const item of Array.isArray(lista) ? lista : []) {
+    const limpo = finalizarTituloComMarca(
+      String(typeof item === 'string' ? item : item?.titulo || '')
+        .replace(/^\s*\d+[).:-]\s*/, '')
+        .replace(/^["“”']+|["“”']+$/g, ''),
+      marcaModeloArte
+    );
+    if (limpo.length < 25) continue;
+    const norm = normalizeTituloCmp(limpo);
+    if (!norm || usados.includes(norm)) continue;
+    usados.push(norm);
+    saida.push(limpo);
+    if (saida.length >= total) break;
+  }
+  return saida;
+}
+
+/**
  * Reescreve a matéria incorporando informações avulsas fornecidas pelo usuário.
  */
 async function reescreverMateriaComInfo({
@@ -2790,7 +2881,11 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
   const blocoFonteColada = nomesColados.length
     ? [
         `FONTE QUE O EDITOR COLOU: ${nomesColados.join(', ')}.`,
-        `OBRIGATÓRIO: cite ${nomesColados.length > 1 ? 'pelo menos um desses nomes' : `"${nomesColados[0]}"`} no corpo da matéria, com esse nome exato, do jeito jornalístico — "segundo a ${nomesColados[0]}", "de acordo com a ${nomesColados[0]}", "em reportagem da ${nomesColados[0]}". De preferência no 1º ou 2º parágrafo.`,
+        `OBRIGATÓRIO: cite ${nomesColados.length > 1 ? 'pelo menos um desses nomes' : `"${nomesColados[0]}"`} no corpo da matéria, com esse nome exato, do jeito jornalístico — "Segundo o ${nomesColados[0]}, …" / "Ainda de acordo com o ${nomesColados[0]}, …" / "em reportagem do ${nomesColados[0]}".`,
+        // A matéria é nossa: o crédito é atribuição de apuração, não resenha do
+        // texto do outro site. Fora do lead, o leitor lê a notícia, não a fonte.
+        'O crédito NUNCA vai no título nem na primeira frase do lead: entra depois do lead (a partir do 2º parágrafo) ou no fecho da matéria.',
+        'No máximo 2 menções ao veículo em toda a matéria, sempre nessa forma padrão.',
         'Não troque o nome do veículo, não abrevie e não atribua a informação a outro veículo.',
       ].join('\n')
     : null;
@@ -2801,6 +2896,13 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
         'PROIBIDO deixar qualquer frase, aspas ou trecho em inglês/espanhol no texto — nem entre aspas, nem em parênteses, nem como "no original".',
         'Traduza cada fala entre aspas para o português mantendo o sentido literal, sem inventar palavra que a pessoa não disse.',
         'Nomes de pessoas, cidades, igrejas e instituições ficam como no original.',
+        // Erro recorrente com link em inglês: em vez de reescrever o fato, a IA
+        // narra o artigo estrangeiro ("o site americano publicou que…").
+        'TRADUZA E REESCREVA A NOTÍCIA COMO NOSSA — não comente, não resuma e não descreva a reportagem estrangeira.',
+        'PROIBIDO escrever sobre o artigo: "o site americano publicou", "o texto em inglês afirma", "a reportagem estrangeira relata", "de acordo com a publicação do portal, o artigo diz", "segundo o site, a matéria conta", "conforme noticiado pelo veículo internacional em seu site".',
+        'Escreva os fatos direto, como se a apuração fosse da nossa redação: sujeito da frase é a pessoa/instituição do fato, nunca o site que publicou.',
+        `Crédito da fonte estrangeira: só na forma padrão e no máximo 2 vezes — "Segundo o ${nomesColados[0] || '<veículo>'}, …" ou "Ainda de acordo com o ${nomesColados[0] || '<veículo>'}, o pastor teria…" —, sempre depois do lead ou no fecho, nunca no título e nunca na 1ª frase.`,
+        'Fato que a fonte estrangeira apresenta como não confirmado continua no condicional ("teria", "segundo relatos"), com o crédito ao veículo.',
       ].join('\n')
     : null;
 
@@ -3271,6 +3373,7 @@ module.exports = {
   resumirAlertaBiblioteca,
   ranquearPostsViralFacebook,
   sugerirTituloMateria,
+  gerarTitulosAlternativos,
   sugerirTextoSplitVideo,
   reescreverMateriaComInfo,
   revisarMateriaManual,

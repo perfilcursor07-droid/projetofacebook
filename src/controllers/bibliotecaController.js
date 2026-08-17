@@ -439,6 +439,17 @@ async function putAutopilot(req, res, next) {
   }
 }
 
+/** Orientações fixas do editor (tela de agendar) — nunca derruba a página. */
+async function orientacoesDoUsuario(userId) {
+  try {
+    const learning = require('../services/editorialLearningService');
+    return await learning.obterOrientacoes(userId);
+  } catch (err) {
+    console.warn('[biblioteca] orientações do editor:', err.message);
+    return { orientacoes: '', atualizadoEm: null };
+  }
+}
+
 async function agendarPage(req, res, next) {
   try {
     const agendaService = require('../services/bibliotecaAgendaService');
@@ -464,11 +475,12 @@ async function agendarPage(req, res, next) {
         limit: 40,
         sync: true,
       });
-      const [contagens, pages, defaultPageId, user] = await Promise.all([
+      const [contagens, pages, defaultPageId, user, orientacoes] = await Promise.all([
         agendaService.contagensAgenda(req.session.userId),
         pagesP,
         defaultPageP,
         UsersFind,
+        orientacoesDoUsuario(req.session.userId),
       ]);
       // Badge usa o tamanho real da lista se a contagem ainda estiver desatualizada
       if (contagens && Number(contagens.viralizadas) < viralizadas.length) {
@@ -486,15 +498,18 @@ async function agendarPage(req, res, next) {
         defaultPageId,
         keywordsList,
         keywordsSalvas: keywordsRaw,
+        orientacoesEditor: orientacoes.orientacoes,
+        orientacoesAtualizadasEm: orientacoes.atualizadoEm,
       });
     }
 
-    const [itensAgenda, contagens, pages, defaultPageId, user] = await Promise.all([
+    const [itensAgenda, contagens, pages, defaultPageId, user, orientacoes] = await Promise.all([
       agendaService.listarAgenda(req.session.userId, { aba }),
       contagensP,
       pagesP,
       defaultPageP,
       UsersFind,
+      orientacoesDoUsuario(req.session.userId),
     ]);
     itens = itensAgenda;
     const keywordsRaw = String(user?.biblioteca_alertas_keywords || '').trim();
@@ -509,7 +524,38 @@ async function agendarPage(req, res, next) {
       defaultPageId,
       keywordsList,
       keywordsSalvas: keywordsRaw,
+      orientacoesEditor: orientacoes.orientacoes,
+      orientacoesAtualizadasEm: orientacoes.atualizadoEm,
     });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** GET das orientações fixas usadas em todas as próximas matérias. */
+async function listarOrientacoes(req, res, next) {
+  try {
+    const learning = require('../services/editorialLearningService');
+    const dados = await learning.obterOrientacoes(req.session.userId);
+    return res.json({ ok: true, ...dados });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** PUT/POST: grava (ou acrescenta) orientações do editor. */
+async function salvarOrientacoes(req, res, next) {
+  try {
+    const learning = require('../services/editorialLearningService');
+    const texto = String(req.body?.orientacoes ?? req.body?.texto ?? '');
+    if (texto.length > 8000) {
+      return res.status(400).json({ error: 'Orientações muito longas. Resuma em regras curtas.' });
+    }
+    const acrescentar = req.body?.acrescentar === true || req.body?.modo === 'acrescentar';
+    const salvo = acrescentar
+      ? await learning.acrescentarOrientacao(req.session.userId, texto)
+      : await learning.salvarOrientacoes(req.session.userId, texto);
+    return res.json({ ok: true, ...salvo });
   } catch (err) {
     return next(err);
   }
@@ -779,6 +825,8 @@ module.exports = {
   ocultarMelhor,
   getAutopilot,
   putAutopilot,
+  listarOrientacoes,
+  salvarOrientacoes,
   listarAgenda,
   montarAgenda,
   compactarAgenda,

@@ -193,6 +193,47 @@
       <p id="agenda-msg" class="mt-3 hidden text-sm"></p>
     <% } %>
 
+    <%
+      const orientacoesTexto =
+        typeof orientacoesEditor !== 'undefined' && orientacoesEditor ? String(orientacoesEditor) : '';
+      const orientacoesLinhas = orientacoesTexto
+        .split('\n')
+        .map(function (l) { return l.replace(/^\s*[-•*]\s*/, '').trim(); })
+        .filter(Boolean);
+    %>
+    <details class="mt-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/5" id="agenda-orientacoes" <%= orientacoesLinhas.length ? '' : 'open' %>>
+      <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
+        <span class="text-sm font-semibold text-emerald-100">
+          Orientações para as próximas matérias
+          <span id="agenda-orientacoes-badge" class="ml-1.5 rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300 <%= orientacoesLinhas.length ? '' : 'hidden' %>">
+            <%= orientacoesLinhas.length %> salva<%= orientacoesLinhas.length === 1 ? '' : 's' %>
+          </span>
+        </span>
+        <span class="text-[11px] text-emerald-300/80">abrir ▾</span>
+      </summary>
+      <div class="space-y-3 border-t border-emerald-500/20 px-4 py-3">
+        <p class="text-xs leading-relaxed text-slate-400">
+          Escreva aqui o que o sistema deve <strong class="font-medium text-slate-300">gravar e seguir em todas as
+          próximas matérias</strong> (uma orientação por linha). Vale para o que é gerado aqui no agendamento e
+          também no chat de matérias. Ex.: <em>“Crédito da fonte só no fim do texto”</em>,
+          <em>“Nunca começar o título com pergunta”</em>.
+        </p>
+        <textarea id="agenda-orientacoes-texto" rows="5"
+          placeholder="Uma orientação por linha…"
+          class="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"><%= orientacoesLinhas.join('\n') %></textarea>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" id="agenda-orientacoes-salvar"
+            class="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400">
+            Salvar orientações
+          </button>
+          <span id="agenda-orientacoes-msg" class="text-xs text-slate-400"></span>
+          <% if (typeof orientacoesAtualizadasEm !== 'undefined' && orientacoesAtualizadasEm) { %>
+            <span class="text-[11px] text-slate-500">Atualizado em <%= fmtQuando(orientacoesAtualizadasEm) %></span>
+          <% } %>
+        </div>
+      </div>
+    </details>
+
     <section class="mt-5">
       <div class="sticky top-14 z-20 -mx-4 border-y border-slate-800 bg-slate-950/95 px-4 py-2.5 backdrop-blur md:top-0 sm:-mx-6 sm:px-6">
         <div class="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
@@ -503,5 +544,5 @@
       opacity: 1;
     }
   </style>
-  <script src="/js/biblioteca-agendar.js?v=20260814preagenda1"></script>
+  <script src="/js/biblioteca-agendar.js?v=20260817orientacoes"></script>
 <%- include('partials/app-end') %>

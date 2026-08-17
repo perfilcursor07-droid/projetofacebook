@@ -822,29 +822,44 @@ function citacoesNaoTraduzidas(resposta) {
   return achados.slice(0, 3);
 }
 
-/** Fonte em inglês/espanhol: a matéria sai em português e as falas são traduzidas. */
+/**
+ * Fonte em inglês/espanhol: a matéria sai em português e as falas são traduzidas.
+ * Vale para qualquer fonte que o editor colou (link de site ou de rede social):
+ * antes só o link de site entrava, e a matéria vinda de post estrangeiro saía
+ * com trechos no idioma original ou virava comentário sobre a publicação.
+ */
 function fonteEmOutroIdioma(fontes = []) {
   const texto = (Array.isArray(fontes) ? fontes : [])
-    .filter((f) => f?.fonteColada)
+    .filter((f) => f?.fonteColada || f?.ehRedeSocial)
     .map((f) => `${f?.titulo || ''} ${f?.trecho || f?.resumo || ''}`)
     .join(' ')
     .toLowerCase();
-  if (texto.length < 200) return false;
+  if (texto.length < 120) return false;
 
   const marcasEn = (
     texto.match(
-      /\b(the|and|said|was|were|have|has|been|with|from|that|this|police|church|according)\b/g
+      /\b(the|and|said|was|were|have|has|been|with|from|that|this|police|church|according|about|after|before|would|will|they|their|who|which|pastor's|report|told)\b/g
     ) || []
   ).length;
-  const marcasPt = (
-    texto.match(/\b(que|não|para|com|uma|dos|das|foi|era|segundo|polícia|igreja|disse)\b/g) || []
+  const marcasEs = (
+    texto.match(/\b(el|la|los|las|del|una|por|para|pero|como|según|iglesia|dijo|también)\b/g) || []
   ).length;
-  return marcasEn >= 12 && marcasEn > marcasPt * 2;
+  const marcasPt = (
+    texto.match(
+      /\b(que|não|para|com|uma|dos|das|foi|era|segundo|polícia|igreja|disse|ele|ela|mas|também|sobre)\b/g
+    ) || []
+  ).length;
+  const estrangeiras = Math.max(marcasEn, marcasEs);
+  // Texto curto de link estrangeiro raramente chega a 12 marcas; a proporção é
+  // o sinal confiável — português de verdade traz muito mais marcas em pt.
+  return estrangeiras >= 6 && estrangeiras > marcasPt * 1.5;
 }
 
 /**
  * O crédito da fonte é obrigatório na matéria: se a IA não citou o veículo do
- * link colado, a atribuição entra no primeiro parágrafo do corpo.
+ * link colado, a atribuição entra no fecho do corpo, na forma padrão
+ * ("As informações foram publicadas originalmente por X"). No lead soa como comentário sobre
+ * a reportagem do outro site — a matéria é nossa, o crédito é do fim.
  */
 function garantirCitacaoDoVeiculo(resposta, fontesColadas = []) {
   const texto = String(resposta || '');
@@ -870,10 +885,15 @@ function garantirCitacaoDoVeiculo(resposta, fontesColadas = []) {
 
   const nome = nomeCurtoFonte(lista[0].veiculo, lista[0].url);
   const linhas = texto.split('\n');
-  // 1ª linha é o título; a atribuição entra no fim do primeiro parágrafo do corpo.
+  // 1ª linha é o título; a atribuição entra no último parágrafo do corpo,
+  // antes da linha de hashtags. Sem parágrafo de fecho, cai no primeiro do corpo.
+  const corpoParagrafo = (linha) => {
+    const t = String(linha || '').trim();
+    return t.length >= 80 && !/^#/.test(t);
+  };
   let idx = -1;
-  for (let i = 1; i < linhas.length; i += 1) {
-    if (linhas[i].trim().length >= 80 && !/^#/.test(linhas[i].trim())) {
+  for (let i = linhas.length - 1; i >= 1; i -= 1) {
+    if (corpoParagrafo(linhas[i])) {
       idx = i;
       break;
     }
@@ -881,9 +901,10 @@ function garantirCitacaoDoVeiculo(resposta, fontesColadas = []) {
   if (idx < 0) return { texto, inserido: null };
 
   const paragrafo = linhas[idx].trimEnd().replace(/\s*$/, '');
+  // Sem artigo antes do nome: "do/da" erraria o gênero de veículos estrangeiros.
   const comCredito = /[.!?…]$/.test(paragrafo)
-    ? `${paragrafo} A informação foi divulgada pela ${nome}.`
-    : `${paragrafo}. A informação foi divulgada pela ${nome}.`;
+    ? `${paragrafo} As informações foram publicadas originalmente por ${nome}.`
+    : `${paragrafo}. As informações foram publicadas originalmente por ${nome}.`;
   linhas[idx] = comCredito;
 
   return { texto: linhas.join('\n'), inserido: nome };
@@ -954,6 +975,11 @@ function serializarMensagem(row) {
     fontes: pautas.length ? [] : fontesVisiveis,
     pesquisouWeb: Boolean(row.pesquisou_web),
     matterId: row.matter_id || null,
+    // 3 opções de manchete: o editor escolhe antes de salvar o rascunho.
+    titulosAlternativos: (parseJson(row.titulos_alternativos, []) || [])
+      .map((t) => String(t || '').trim())
+      .filter(Boolean)
+      .slice(0, 3),
     // Quando a resposta traz várias matérias, cada uma vira um rascunho próprio.
     materias: multiplas.map((m) => ({
       indice: m.indice,
@@ -1124,6 +1150,30 @@ async function responder({
   const finalizar = async (resposta, { fontesUsadas = [], usouWeb = false, pautas = null } = {}) => {
     const info = interpretarResposta(resposta);
 
+    // Toda matéria que chega no chat vem com 3 opções de manchete para o editor
+    // escolher antes de salvar o rascunho.
+    let titulosAlternativos = [];
+    if (info.ehMateria && info.titulo) {
+      registrarPasso({ kind: 'pensando', texto: 'Montando 3 títulos alternativos…' });
+      try {
+        const Users = require('../models/Users');
+        const user = await Users.findById(userId);
+        titulosAlternativos = await deepseekService.gerarTitulosAlternativos({
+          titulo: info.titulo,
+          materia: info.corpo,
+          marcaModeloArte: user?.marca_modelo_arte || null,
+        });
+      } catch (err) {
+        console.warn('[materia-chat] títulos alternativos:', err.message);
+      }
+      if (titulosAlternativos.length) {
+        registrarPasso({
+          kind: 'fontes',
+          texto: `${titulosAlternativos.length} títulos alternativos prontos`,
+        });
+      }
+    }
+
     // Passos e fontes vêm de páginas externas: limita volume e limpa o texto
     // antes de gravar, para um resumo malformado não derrubar a conversa.
     const passosSalvos = passos.slice(-40).map((p) => ({
@@ -1167,10 +1217,27 @@ async function responder({
       fontes: JSON.stringify(fontesSalvas),
       pesquisou_web: usouWeb ? 1 : 0,
     };
+    if (titulosAlternativos.length) {
+      registro.titulos_alternativos = JSON.stringify(
+        titulosAlternativos.map((t) => limparParaBanco(t, 180)).filter(Boolean)
+      );
+    }
 
     let assistantId;
     try {
-      assistantId = await AiChatMessages.create(registro);
+      try {
+        assistantId = await AiChatMessages.create(registro);
+      } catch (errColuna) {
+        // Coluna titulos_alternativos pode não existir (migração pendente):
+        // sem ela a mensagem ainda é salva com passos e fontes.
+        if (!registro.titulos_alternativos) throw errColuna;
+        console.warn(
+          '[materia-chat] títulos alternativos não gravados:',
+          errColuna.code || errColuna.message
+        );
+        delete registro.titulos_alternativos;
+        assistantId = await AiChatMessages.create(registro);
+      }
     } catch (err) {
       // Não perde a resposta por causa dos metadados da apuração.
       console.error(
@@ -2096,6 +2163,7 @@ async function salvarMateriaDoChat({
   imagemUrl = null,
   creditoImagem = null,
   indice = null,
+  titulo: tituloEscolhido = null,
 }) {
   const { montarRodapeMateriaComFontes } = require('./editorialGuidelinesFb');
   const materiaIaService = require('./materiaIaService');
@@ -2170,7 +2238,19 @@ async function salvarMateriaDoChat({
   });
   const materia = rodape.materia;
 
-  const titulo = info.titulo || row.titulo || 'Matéria do chat';
+  // Alternativas geradas junto com a matéria: o editor pode ter escolhido uma
+  // delas em vez do título principal.
+  const alternativas = (parseJson(row.titulos_alternativos, []) || [])
+    .map((t) => String(t || '').trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const tituloDaEscolha = String(tituloEscolhido || '').replace(/\s+/g, ' ').trim();
+  const tituloOriginal = info.titulo || row.titulo || 'Matéria do chat';
+  const titulo = escolhida
+    ? tituloOriginal
+    : tituloDaEscolha && alternativas.includes(tituloDaEscolha)
+      ? tituloDaEscolha
+      : tituloOriginal;
   const fontePrincipal = fontesDaMateria[0] || null;
   const imagemFonte =
     imagemUrl && /^https?:\/\//i.test(imagemUrl)
@@ -2221,6 +2301,23 @@ async function salvarMateriaDoChat({
     imagem_url: imagemFonte,
     error_message: null,
   });
+
+  // As opções seguem com a matéria: o editor continua podendo trocar o título
+  // na tela de edição. Fica fora do insert para uma migração pendente não
+  // impedir o rascunho de ser salvo.
+  const alternativasDaMateria = [
+    ...alternativas.filter((t) => t !== titulo),
+    ...(titulo !== tituloOriginal ? [tituloOriginal] : []),
+  ].slice(0, 3);
+  if (alternativasDaMateria.length) {
+    try {
+      await AiMatters.update(matterId, {
+        titulos_alternativos: JSON.stringify(alternativasDaMateria),
+      });
+    } catch (err) {
+      console.warn('[materia-chat] títulos alternativos na matéria:', err.code || err.message);
+    }
+  }
 
   if (escolhida) {
     const mapa = { ...salvosPrev, [String(escolhida.indice)]: matterId };

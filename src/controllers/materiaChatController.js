@@ -152,6 +152,8 @@ async function salvarMateria(req, res, next) {
       imagemUrl: req.body?.imagemUrl || req.body?.imagem_url || null,
       creditoImagem: req.body?.creditoImagem || req.body?.credito_imagem || null,
       indice: req.body?.indice ?? req.body?.index ?? null,
+      // Título alternativo escolhido pelo editor no chat (opcional).
+      titulo: req.body?.titulo || req.body?.tituloEscolhido || null,
     });
     return res.status(201).json({ ok: true, ...resultado });
   } catch (err) {

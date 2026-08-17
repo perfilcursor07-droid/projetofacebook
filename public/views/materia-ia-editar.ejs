@@ -162,6 +162,33 @@
                       Sugerir título
                     </button>
                   </div>
+                  <%
+                    const titulosAlt =
+                      typeof titulosAlternativos !== 'undefined' && Array.isArray(titulosAlternativos)
+                        ? titulosAlternativos.slice(0, 3)
+                        : [];
+                  %>
+                  <div id="matter-titulos-alt-wrap" class="rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        3 títulos alternativos
+                      </span>
+                      <button type="button" id="btn-titulos-alt"
+                        class="rounded border border-slate-600 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-sky-300">
+                        <%= titulosAlt.length ? 'Gerar outros 3' : 'Gerar 3 opções' %>
+                      </button>
+                    </div>
+                    <div id="matter-titulos-alt" class="mt-1.5 grid gap-1.5">
+                      <% titulosAlt.forEach(function (t) { %>
+                        <button type="button" data-titulo-alt="<%= t %>"
+                          class="w-full rounded-md border border-slate-700 px-2.5 py-1.5 text-left text-xs leading-snug text-slate-300 transition hover:border-emerald-500/60 hover:text-white"><%= t %></button>
+                      <% }) %>
+                    </div>
+                    <p class="mt-1.5 text-[11px] text-slate-500 <%= titulosAlt.length ? '' : 'hidden' %>" id="matter-titulos-alt-dica">
+                      Clique em um título para aplicá-lo na matéria e na arte.
+                    </p>
+                  </div>
+
                   <div id="matter-titulo-manual-wrap" class="hidden">
                     <label for="matter-titulo-manual" class="mb-1 block text-[11px] text-slate-500">
                       Seu rascunho — a IA reescreve mantendo o que você quer
@@ -735,5 +762,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260814fontefoto"></script>
+  <script src="/js/materia-ia-editar.js?v=20260817titulosalt"></script>
 <%- include('partials/app-end') %>

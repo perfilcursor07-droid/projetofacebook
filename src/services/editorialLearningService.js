@@ -315,6 +315,60 @@ Escreva cada memória como instrução curta, objetiva e reutilizável. Remova d
   return { registered: true, memorias, estilo: atualizado };
 }
 
+/** Limite do texto que o editor escreve à mão na tela de agendar. */
+const MAX_ORIENTACOES = 4000;
+
+/**
+ * Orientações que o editor escreve na tela de agendar. Valem para todas as
+ * próximas matérias — é instrução manual, não memória inferida do chat.
+ */
+async function obterOrientacoes(userId) {
+  if (!userId) return { orientacoes: '', atualizadoEm: null };
+  const estilo = await EditorialEstiloUsuario.findByUser(userId);
+  return {
+    orientacoes: String(estilo?.orientacoes_editor || ''),
+    atualizadoEm: estilo?.orientacoes_atualizadas_em || null,
+  };
+}
+
+/**
+ * Grava as orientações do editor. Cada linha é uma regra; linhas repetidas ou
+ * vazias saem para o texto não inchar o prompt a cada salvamento.
+ */
+async function salvarOrientacoes(userId, texto) {
+  if (!userId) throw new Error('Usuário não identificado');
+
+  const linhas = [];
+  for (const linha of String(texto || '').split(/\r?\n/)) {
+    const limpa = linha.replace(/^\s*[-•*]\s*/, '').replace(/\s+/g, ' ').trim();
+    if (!limpa) continue;
+    if (linhas.some((l) => l.toLowerCase() === limpa.toLowerCase())) continue;
+    linhas.push(limpa);
+  }
+
+  let orientacoes = linhas.map((l) => `- ${l}`).join('\n');
+  if (orientacoes.length > MAX_ORIENTACOES) {
+    orientacoes = orientacoes.slice(0, MAX_ORIENTACOES).replace(/\n[^\n]*$/, '');
+  }
+
+  await EditorialEstiloUsuario.upsert(userId, {
+    orientacoes_editor: orientacoes || null,
+    orientacoes_atualizadas_em: new Date(),
+  });
+
+  return { orientacoes, total: linhas.length };
+}
+
+/**
+ * Acrescenta uma orientação sem apagar as que já existem.
+ */
+async function acrescentarOrientacao(userId, texto) {
+  const atual = await obterOrientacoes(userId);
+  const nova = String(texto || '').trim();
+  if (!nova) return { orientacoes: atual.orientacoes, total: 0 };
+  return salvarOrientacoes(userId, `${atual.orientacoes}\n${nova}`);
+}
+
 /**
  * Contexto para injetar no prompt de geração.
  */
@@ -325,11 +379,19 @@ async function obterContextoAprendizado(userId) {
     EditorialAprendizados.findRecentByUser(userId, 3),
   ]);
 
-  if (!estilo?.regras_estilo && !estilo?.preferencias_chat && !exemplos.length) return null;
+  if (
+    !estilo?.regras_estilo &&
+    !estilo?.preferencias_chat &&
+    !estilo?.orientacoes_editor &&
+    !exemplos.length
+  ) {
+    return null;
+  }
 
   return {
     regrasEstilo: estilo?.regras_estilo || null,
     preferenciasChat: estilo?.preferencias_chat || null,
+    orientacoesEditor: estilo?.orientacoes_editor || null,
     totalEdicoes: Number(estilo?.total_edicoes || 0),
     totalFeedbackChat: Number(estilo?.total_feedback_chat || 0),
     exemplos: (exemplos || []).map((ex) => ({
@@ -347,6 +409,16 @@ function formatarContextoAprendizadoParaPrompt(ctx) {
   const parts = [
     'PADRÕES APRENDIDOS COM O EDITOR DESTE USUÁRIO (obrigatório seguir o estilo; NÃO copie o conteúdo dos exemplos):',
   ];
+  // Instrução escrita à mão pelo editor: tem precedência sobre o que a IA inferiu.
+  if (ctx.orientacoesEditor) {
+    parts.push(
+      [
+        'ORIENTAÇÕES FIXAS DO EDITOR (prioridade máxima — valem para TODAS as matérias):',
+        String(ctx.orientacoesEditor).slice(0, 4000),
+        'Se uma orientação conflitar com outro padrão aprendido, siga a orientação do editor. Nenhuma orientação autoriza inventar fato ou ignorar a fonte.',
+      ].join('\n')
+    );
+  }
   if (ctx.regrasEstilo) {
     parts.push(String(ctx.regrasEstilo).slice(0, 2500));
   }
@@ -382,6 +454,9 @@ module.exports = {
   registrarAprendizado,
   registrarFeedbackDoChat,
   atualizarRegrasEstilo,
+  obterOrientacoes,
+  salvarOrientacoes,
+  acrescentarOrientacao,
   obterContextoAprendizado,
   formatarContextoAprendizadoParaPrompt,
   diffSignificativo,
