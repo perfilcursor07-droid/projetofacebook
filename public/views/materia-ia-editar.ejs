@@ -142,6 +142,13 @@
                   <code class="text-red-400/90">((frase))</code> na faixa vermelha da imagem destacada.
                 </p>
               <% } %>
+              <% if (typeof marcaModeloArte !== 'undefined' && (marcaModeloArte === 'jm' || (typeof artModelChoices !== 'undefined' && artModelChoices.some((m) => m.id === 'jm')))) { %>
+                <p class="mt-1.5 pb-1 text-[11px] leading-relaxed text-slate-500">
+                  Modelo <span class="text-slate-400">JM</span>:
+                  use <code class="text-sky-400/90">[[palavra]]</code> para destacar um trecho em azul no cartão branco.
+                  Sem marcação, o destaque é escolhido automaticamente.
+                </p>
+              <% } %>
               <% if (canEdit) { %>
                 <div class="mt-2 space-y-2 pb-3">
                   <div class="flex flex-wrap items-center gap-2">

@@ -56,6 +56,12 @@ const ART_MODELS = Object.freeze([
     name: 'Urgente alerta',
     description: 'Faixa vermelha de plantão no topo, manchete em caixa alta com palavras destacadas e logo no rodapé.',
   }),
+  Object.freeze({
+    id: 'jm',
+    name: 'JM',
+    description:
+      'Foto no topo, logo na faixa amarela e manchete escura em cartão branco, com palavras destacadas em azul e o site no rodapé.',
+  }),
 ]);
 
 const ART_MODEL_IDS = new Set(ART_MODELS.map((model) => model.id));

@@ -56,7 +56,18 @@ function assertDeepseek() {
 /** Instruções de marcação do título quando Minha marca = Urgente alerta. */
 function blocoTituloMarcaArte(marcaModeloArte) {
   const { normalizeArtModel } = require('./editorialCardModels');
-  if (normalizeArtModel(marcaModeloArte) !== 'urgente_alerta') return null;
+  const modelo = normalizeArtModel(marcaModeloArte);
+  if (modelo === 'jm') {
+    return [
+      'MODELO DE ARTE “JM” (obrigatório no campo titulo):',
+      '- Marque em [[assim]] o trecho mais forte da manchete (nome da pessoa, instituição ou a informação central).',
+      '- Use 1 marcação só, de 2 a 5 palavras. Ela sai em azul no cartão branco da arte.',
+      '- Os marcadores [[ ]] fazem parte do título — NÃO use aspas nem (( )) neste modelo.',
+      '- Exemplo: Eduardo Gomes reúne [[movimento pró-Flávio Bolsonaro]] e prevê vitória da direita',
+      '- Título ≤ 120 caracteres sem contar os marcadores.',
+    ].join('\n');
+  }
+  if (modelo !== 'urgente_alerta') return null;
   return [
     'MODELO DE ARTE “URGENTE ALERTA” (obrigatório no campo titulo):',
     '- Inclua 1–3 trechos em [[assim]] (ficam na cor principal da marca na imagem destacada).',
@@ -72,7 +83,12 @@ function finalizarTituloComMarca(titulo, marcaModeloArte) {
   const { normalizeArtModel } = require('./editorialCardModels');
   let t = String(titulo || '').replace(/\s+/g, ' ').trim();
   if (!t) return t;
-  if (normalizeArtModel(marcaModeloArte) !== 'urgente_alerta') {
+  const modelo = normalizeArtModel(marcaModeloArte);
+  if (modelo === 'jm') {
+    const { ensureTituloJm } = require('./editorialCardService');
+    return ensureTituloJm(t).slice(0, 140);
+  }
+  if (modelo !== 'urgente_alerta') {
     return t.slice(0, 120);
   }
   const { ensureTituloUrgenteAlerta } = require('./editorialCardService');
