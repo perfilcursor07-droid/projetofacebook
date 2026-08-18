@@ -411,9 +411,11 @@
   }
 
   // Instagram: a caixa só existe quando a Página está ativada em /paginas.
+  // Sem a caixa na tela devolve null para o servidor manter a preferência já
+  // salva na matéria — mandar "false" desligaria o Instagram sem o editor pedir.
   const instagramEl = document.getElementById('matter-publicar-instagram');
   function instagramMarcado() {
-    if (!cfg.instagramAtivo || !instagramEl) return false;
+    if (!cfg.instagramAtivo || !instagramEl) return null;
     return Boolean(instagramEl.checked);
   }
 

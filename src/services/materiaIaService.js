@@ -683,7 +683,16 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     overrides.publicar_instagram != null
       ? Boolean(overrides.publicar_instagram)
       : Boolean(matter.publicar_instagram);
-  const querInstagram = pedidoInstagram && Boolean(page.instagram_ativo);
+  // O filtro por instagram_ativo fica no publishDispatch: lá o editor recebe
+  // o aviso do porquê o post saiu só no Facebook, em vez de silêncio.
+  console.log('[publicar] instagram', {
+    matterId: matter.id,
+    pageId: page.id,
+    page: page.page_name,
+    pedido: pedidoInstagram,
+    origem: overrides.publicar_instagram != null ? 'requisicao' : 'materia',
+    paginaAtiva: Boolean(page.instagram_ativo),
+  });
 
   const [pubId] = await Publications.create({
     video_clip_id: matter.video_clip_id || null,
@@ -786,7 +795,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       texto: mensagem,
       // A legenda completa já contém o título. No PostSyncer, settings.title a substituiria.
       titulo: null,
-      publicarInstagram: querInstagram,
+      publicarInstagram: pedidoInstagram,
     });
 
     const postId = result.post_id || result.id;
