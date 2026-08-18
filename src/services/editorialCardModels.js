@@ -60,7 +60,7 @@ const ART_MODELS = Object.freeze([
     id: 'jm',
     name: 'JM',
     description:
-      'Foto no topo, logo na faixa amarela e manchete escura em cartão branco, com palavras destacadas em azul e o site no rodapé.',
+      'Foto inteira, faixa da logo sobre a foto e manchete branca com palavras destacadas na cor da marca, com o site no rodapé.',
   }),
 ]);
 

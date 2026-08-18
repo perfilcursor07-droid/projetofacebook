@@ -698,6 +698,30 @@ function ensureTituloUrgenteAlerta(titulo) {
  * marcou, respeita; senão escolhe o nome próprio da manchete e, na falta dele,
  * um trecho do meio — nunca a manchete inteira.
  */
+/** Palavras que não podem abrir nem fechar o trecho destacado. */
+const JM_PALAVRAS_FRACAS = new Set([
+  'a', 'o', 'as', 'os', 'e', 'ou', 'de', 'da', 'do', 'das', 'dos', 'em', 'no', 'na', 'nos', 'nas',
+  'por', 'para', 'com', 'sem', 'que', 'ao', 'aos', 'à', 'às', 'um', 'uma', 'uns', 'umas', 'se',
+  'seu', 'sua', 'seus', 'suas', 'mais', 'mas', 'como', 'após', 'sobre', 'entre', 'até', 'é',
+]);
+
+/** Tira palavras fracas das pontas do destaque (ex.: “e esposa são …por”). */
+function jmAparaDestaque(words, inicio, fim) {
+  let i = inicio;
+  let f = fim;
+  const limpa = (w) => String(w || '').toLowerCase().replace(/[^a-zà-ÿ]/gi, '');
+  while (i < f && JM_PALAVRAS_FRACAS.has(limpa(words[i]))) i += 1;
+  while (f > i && JM_PALAVRAS_FRACAS.has(limpa(words[f - 1]))) f -= 1;
+  return { inicio: i, fim: f };
+}
+
+/**
+ * Garante um trecho [[destacado]] no título do modelo JM.
+ *
+ * O destaque é a marca da arte. Se o editor (ou a IA) já marcou, respeita;
+ * senão escolhe o nome próprio da manchete e, na falta dele, um trecho do meio
+ * — sempre sem começar nem terminar em preposição/conjunção.
+ */
 function ensureTituloJm(titulo) {
   const raw = String(titulo || '').replace(/\s+/g, ' ').trim();
   if (!raw) return raw;
@@ -708,25 +732,28 @@ function ensureTituloJm(titulo) {
   const words = texto.split(' ').filter(Boolean);
   if (words.length < 4) return texto;
 
+  const montar = (inicio, fim) => {
+    const corte = jmAparaDestaque(words, inicio, fim);
+    if (corte.fim - corte.inicio < 1) return texto;
+    const antes = words.slice(0, corte.inicio).join(' ');
+    const alvo = words.slice(corte.inicio, corte.fim).join(' ');
+    const depois = words.slice(corte.fim).join(' ');
+    return [antes, `[[${alvo}]]`, depois].filter(Boolean).join(' ');
+  };
+
   // 1) Nome próprio (pessoa/instituição) é o melhor destaque.
   const spans = findNameSpans(words);
-  const span = spans.find((s) => s.end - s.start + 1 <= 5);
+  const span = spans.find((sp) => sp.end - sp.start + 1 <= 5);
   if (span && !(span.start === 0 && span.end === words.length - 1)) {
-    const antes = words.slice(0, span.start).join(' ');
-    const alvo = words.slice(span.start, span.end + 1).join(' ');
-    const depois = words.slice(span.end + 1).join(' ');
-    return [antes, `[[${alvo}]]`, depois].filter(Boolean).join(' ');
+    return montar(span.start, span.end + 1);
   }
 
-  // 2) Sem nome próprio: destaca um trecho do meio da manchete.
-  const inicio = Math.max(1, Math.round(words.length * 0.28));
-  const fim = Math.min(words.length - 1, inicio + Math.max(2, Math.round(words.length * 0.32)));
-  const antes = words.slice(0, inicio).join(' ');
-  const alvo = words.slice(inicio, fim).join(' ');
-  const depois = words.slice(fim).join(' ');
-  if (!alvo) return texto;
-  return [antes, `[[${alvo}]]`, depois].filter(Boolean).join(' ');
+  // 2) Sem nome próprio: trecho do meio, com no máximo 4 palavras.
+  const inicio = Math.max(1, Math.round(words.length * 0.3));
+  const fim = Math.min(words.length - 1, inicio + 4);
+  return montar(inicio, fim);
 }
+
 
 
 /**
@@ -837,40 +864,18 @@ function expandirMarcacaoPorPalavra(titulo) {
  */
 function jmGeometry() {
   return Object.freeze({
-    frame: 18,        // moldura branca externa
-    photoBottom: 828, // onde a foto termina e o cartão branco começa
-    barTop: 786,      // faixa colorida da logo (centrada no encontro)
-    barHeight: 84,
-    barInset: 96,     // margem lateral da faixa
-    plateWidth: 352,  // bloco escuro central, atrás da logo
-    titleTop: 902,
-    titleBottom: 1214,
-    footerY: 1276,
+    barTop: 838,      // faixa da logo, logo acima da manchete
+    barHeight: 34,
+    barInset: 62,     // margem lateral da faixa
+    titleTop: 904,    // topo da área da manchete (respiro abaixo da faixa)
+    titleBottom: 1228,
+    footerY: 1288,
   });
 }
 
-const JM_NAVY = '#101f45';
-const JM_BLUE = '#1d5fa8';
 
-/** Luminância relativa simplificada, para checar contraste sobre o branco. */
-function jmLuminance(hex) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
-  if (!m) return 1;
-  const n = parseInt(m[1], 16);
-  const r = ((n >> 16) & 255) / 255;
-  const g = ((n >> 8) & 255) / 255;
-  const b = (n & 255) / 255;
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
 
-/**
- * Cor das palavras [[destacadas]] no cartão branco.
- * A cor secundária da marca só entra se tiver contraste; amarelo/bege sobre
- * branco ficaria ilegível, então cai no azul da arte de referência.
- */
-function jmMarkColor(secondary) {
-  return jmLuminance(secondary) <= 0.55 ? secondary : JM_BLUE;
-}
+
 
 function buildOverlay({
   title,
@@ -1144,27 +1149,23 @@ function buildOverlay({
       ${hasLogo ? '' : `<text x="${x(540)}" y="${H - hh(52)}" text-anchor="middle" class="footer">${safeFooter}</text>`}`;
   } else if (isJm) {
     const g = jmGeometry();
-    const cardTop = y(g.photoBottom);
     const barTop = y(g.barTop);
-    const barH = hh(g.barHeight);
+    const barH = Math.max(3, hh(g.barHeight));
     const barX = x(g.barInset);
     const barW = W - ww(g.barInset * 2);
-    const plateW = ww(g.plateWidth);
-    const plateX = Math.round((W - plateW) / 2);
-    const markFill = jmMarkColor(secondary);
     const zoneTop = y(g.titleTop);
     const zoneBottom = y(g.titleBottom);
-    const textMaxWJm = W - ww(120);
+    const textMaxWJm = W - ww(64);
     const minFont = Math.round(30 * Math.min(sx, sy));
 
-    // Manchete em caixa alta: começa grande e diminui só até caber entre a
+    // Manchete em caixa alta: começa grande e só diminui até caber entre a
     // faixa da logo e o rodapé — é o que dá o texto cheio da arte de referência.
     const tituloJm = expandirMarcacaoPorPalavra(
       ensureTituloJm(String(title || '')).toLocaleUpperCase('pt-BR')
     );
-    let headFont = Math.round(fontSize * 1.95);
+    let headFont = Math.round(fontSize * 2.05);
     let headLines = [];
-    let headLh = Math.round(headFont * 1.16);
+    let headLh = Math.round(headFont * 1.14);
     for (let attempt = 0; attempt < 14; attempt += 1) {
       headLines = wrapTextToWidth(tituloJm, {
         maxWidth: textMaxWJm,
@@ -1173,7 +1174,7 @@ function buildOverlay({
         glueNames: false,
         keepAlertMarks: true,
       });
-      headLh = Math.round(headFont * 1.16);
+      headLh = Math.round(headFont * 1.14);
       const widest = headLines.reduce(
         (m, line) => Math.max(m, estimateTextWidth(stripAlertMarks(line), headFont)),
         0
@@ -1183,29 +1184,23 @@ function buildOverlay({
       headFont = Math.max(minFont, Math.round(headFont * 0.94));
     }
 
-    // Bloco de texto centralizado na área branca.
+    // Bloco de texto centralizado entre a faixa e o rodapé.
     const totalTextH = headLines.length * headLh;
-    const blockTop = Math.max(
-      zoneTop,
-      zoneTop + Math.round(Math.max(0, zoneBottom - zoneTop - totalTextH) / 2)
-    );
+    const blockTop = zoneTop + Math.round(Math.max(0, zoneBottom - zoneTop - totalTextH) / 2);
 
     headFontCss = headFont;
     layout = `
-      <rect x="0" y="${cardTop}" width="${W}" height="${H - cardTop}" fill="#ffffff"/>
-      <rect x="${barX}" y="${barTop}" width="${barW}" height="${barH}" rx="${Math.max(2, Math.round(6 * sx))}" fill="${primary}"/>
-      <rect x="${plateX}" y="${barTop - hh(6)}" width="${plateW}" height="${barH + hh(12)}" rx="${Math.max(2, Math.round(5 * sx))}" fill="${JM_NAVY}"/>
-      ${hasLogo ? '' : `<text x="${x(540)}" y="${barTop + Math.round(barH * 0.68)}" text-anchor="middle" class="brand-jm">${escapeXml(String(brandName || 'NOTÍCIA').toLocaleUpperCase('pt-BR'))}</text>`}
+      <rect x="${barX}" y="${barTop}" width="${barW}" height="${barH}" fill="url(#accent)"/>
+      ${hasLogo ? '' : `<text x="${x(540)}" y="${barTop + Math.round(barH * 0.8)}" text-anchor="middle" class="brand-jm">${escapeXml(String(brandName || 'NOTÍCIA').toLocaleUpperCase('pt-BR'))}</text>`}
       ${renderMarkedTitleLines(headLines, {
         x: x(540),
         y: blockTop + Math.round(headFont * 0.84),
         lineHeight: headLh,
         anchor: 'middle',
         className: 'title-jm',
-        markFill,
+        markFill: primary,
       })}
-      <text x="${x(540)}" y="${y(g.footerY)}" text-anchor="middle" class="footer-jm">${safeFooter.toLocaleUpperCase('pt-BR')}</text>
-      <rect x="${Math.round(ww(g.frame) / 2)}" y="${Math.round(hh(g.frame) / 2)}" width="${W - ww(g.frame)}" height="${H - hh(g.frame)}" fill="none" stroke="#ffffff" stroke-width="${ww(g.frame)}"/>`;
+      <text x="${x(540)}" y="${y(g.footerY)}" text-anchor="middle" class="footer-jm">${safeFooter.toLocaleUpperCase('pt-BR')}</text>`;
   } else if (modelId === 'estilo_fatos') {
     const titleTop = y(fatosTitleTopBase(lines.length));
     layout = `
@@ -1299,12 +1294,8 @@ function buildOverlay({
     }
   }
 
-  // JM não escurece a foto: o texto vive no cartão branco, não sobre a imagem.
-  const shadeStops = isJm
-    ? `
-          <stop offset="0%" stop-color="#000" stop-opacity="0"/>
-          <stop offset="100%" stop-color="#000" stop-opacity="0"/>`
-    : modelId === 'estilo_fatos' || isUrgente
+  // JM escurece a foto de baixo para cima: a manchete branca vive sobre a imagem.
+  const shadeStops = modelId === 'estilo_fatos' || isUrgente || isJm
     ? `
           <stop offset="0%" stop-color="#000" stop-opacity="0"/>
           <stop offset="38%" stop-color="#000" stop-opacity="0"/>
@@ -1349,9 +1340,9 @@ function buildOverlay({
           .title-citacao { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${headFontCss}px; fill: #ffffff; filter: url(#shadow); }
           .title-urgente { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${headFontCss}px; fill: #ffffff; filter: url(#shadow); }
           .title-mark { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${punchFontCssFinal}px; fill: #111111; filter: none; }
-          .title-jm { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${headFontCss}px; fill: ${JM_NAVY}; filter: none; }
-          .brand-jm { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(38 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #ffffff; }
-          .footer-jm { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(2, Math.round(3 * sx))}px; fill: ${JM_NAVY}; filter: none; }
+          .title-jm { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${headFontCss}px; fill: #ffffff; filter: url(#shadow); }
+          .brand-jm { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(26 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #111827; }
+          .footer-jm { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(2, Math.round(3 * sx))}px; fill: ${primary}; filter: url(#shadow); }
           .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(1 * sx))}px; fill: ${primary}; filter: url(#shadow); }
         </style>
       </defs>
@@ -1434,8 +1425,8 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
   const isCitacao = modelId === 'citacao_marcador';
   const isUrgente = modelId === 'urgente_alerta';
   const isJm = modelId === 'jm';
-  const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : isUrgente ? 330 : isJm ? 300 : 560) / 1080));
-  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : isUrgente ? 130 : isJm ? 62 : 125) / 1080));
+  const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : isUrgente ? 330 : isJm ? 250 : 560) / 1080));
+  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : isUrgente ? 130 : isJm ? 54 : 125) / 1080));
   const input = await sharp(absolute)
     .resize(maxW, maxH, { fit: 'inside', withoutEnlargement: true })
     .png()
@@ -1456,12 +1447,12 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
     // Logo centralizada no rodapé, abaixo da manchete.
     top = Math.max(0, ch - input.info.height - Math.round((ch / 1350) * 46));
   } else if (isJm) {
-    // Logo centralizada no bloco escuro da faixa, no encontro foto/cartão.
+    // Logo centralizada sobre a faixa fina, acima da manchete.
     const g = jmGeometry();
     const syJm = ch / 1350;
     const barTop = Math.round(g.barTop * syJm);
     const barH = Math.round(g.barHeight * syJm);
-    top = barTop + Math.max(0, Math.round((barH - input.info.height) / 2));
+    top = barTop + Math.round(barH / 2) - Math.round(input.info.height / 2);
   }
 
   return {

@@ -61,7 +61,7 @@ function blocoTituloMarcaArte(marcaModeloArte) {
     return [
       'MODELO DE ARTE “JM” (obrigatório no campo titulo):',
       '- Marque em [[assim]] o trecho mais forte da manchete (nome da pessoa, instituição ou a informação central).',
-      '- Use 1 marcação só, de 2 a 5 palavras. Ela sai em azul no cartão branco da arte.',
+      '- Use 1 marcação só, de 2 a 5 palavras. Ela sai na cor principal da marca, sobre a foto.',
       '- Os marcadores [[ ]] fazem parte do título — NÃO use aspas nem (( )) neste modelo.',
       '- Exemplo: Eduardo Gomes reúne [[movimento pró-Flávio Bolsonaro]] e prevê vitória da direita',
       '- Título ≤ 120 caracteres sem contar os marcadores.',
