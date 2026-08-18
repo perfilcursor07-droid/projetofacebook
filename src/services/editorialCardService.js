@@ -891,6 +891,9 @@ function buildOverlay({
   fontId,
   titleColorId,
   titleSizeId,
+  // Personalização do modelo (Minha marca → clicar no modelo).
+  degrade = true,
+  sombraFator = 1,
 }) {
   const { normalizeArtModel } = require('./editorialCardModels');
   const {
@@ -1315,17 +1318,27 @@ function buildOverlay({
           <stop offset="68%" stop-color="#000" stop-opacity=".68"/>
           <stop offset="100%" stop-color="#000" stop-opacity=".96"/>`;
 
+  // Intensidade do escurecimento: multiplica as opacidades do gradiente.
+  const fatorSombra = Math.min(1.6, Math.max(0.4, Number(sombraFator) || 1));
+  const opacidadeSombra = (valor) => Math.min(1, Number((valor * fatorSombra).toFixed(3)));
+  const shadeStopsFinal =
+    fatorSombra === 1
+      ? shadeStops
+      : shadeStops.replace(/stop-opacity="([\d.]+)"/g, (todo, valor) =>
+          `stop-opacity="${opacidadeSombra(Number(valor))}"`
+        );
+
   const punchFontCssFinal = punchFontCss;
 
   return Buffer.from(`
     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
-          ${shadeStops}
+          ${shadeStopsFinal}
         </linearGradient>
         <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stop-color="${primary}"/>
-          <stop offset="100%" stop-color="${secondary}"/>
+          <stop offset="100%" stop-color="${degrade ? secondary : primary}"/>
         </linearGradient>
         <filter id="shadow"><feDropShadow dx="0" dy="${Math.max(2, Math.round(3 * sy))}" stdDeviation="${Math.max(3, Math.round(4 * sy))}" flood-opacity=".75"/></filter>
         <style>
@@ -1655,7 +1668,11 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
   if (!user?.id) throw new Error('Usuário inválido para compor a arte');
 
   const { resolveArtModelForMatter } = require('./editorialCardModels');
+  const { applyModelConfig } = require('./brandModelConfig');
   const modelId = resolveArtModelForMatter(user, model);
+  // Ajustes que o editor fez neste modelo em Minha marca.
+  const cfgModelo = applyModelConfig(user, modelId);
+  user = cfgModelo.user;
   let source = await fetchImage(sourceUrl);
   try {
     source = await decodeImageBuffer(source);
@@ -1684,6 +1701,8 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
     fontId: user.marca_fonte,
     titleColorId: user.marca_titulo_cor,
     titleSizeId: user.marca_titulo_tamanho,
+    degrade: cfgModelo.degrade,
+    sombraFator: cfgModelo.sombraFator,
   });
 
   const relativeDir = `artes/user_${user.id}`;
@@ -1697,7 +1716,8 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
 
   const feedBase = await buildFeedBaseImage(source, {
     mode: 'cover',
-    zoom: zoom != null ? zoom : 100,
+    // Sem enquadramento manual na matéria, vale o tamanho de foto do modelo.
+    zoom: zoom != null ? zoom : cfgModelo.zoom != null ? cfgModelo.zoom : 100,
     offsetX: offsetX != null ? offsetX : 50,
     offsetY: offsetY != null ? offsetY : 50,
   });
@@ -1754,9 +1774,14 @@ async function buildBrandModelPreviewPng({
   title,
   width = 432,
   height = 540,
+  overrides = {},
 } = {}) {
   const { normalizeArtModel } = require('./editorialCardModels');
+  const { applyModelConfig } = require('./brandModelConfig');
   const modelId = normalizeArtModel(model);
+  // overrides: prévia ao vivo do painel de personalização, antes de salvar.
+  const cfgModelo = applyModelConfig(user, modelId, overrides);
+  user = cfgModelo.user;
   const w = Math.max(160, Math.round(Number(width) || 432));
   const h = Math.max(200, Math.round(Number(height) || 540));
   const primary = normalizeColor(user?.marca_cor_primaria, '#ffbd59');
@@ -1786,6 +1811,8 @@ async function buildBrandModelPreviewPng({
     fontId: user?.marca_fonte,
     titleColorId: user?.marca_titulo_cor,
     titleSizeId: user?.marca_titulo_tamanho,
+    degrade: cfgModelo.degrade,
+    sombraFator: cfgModelo.sombraFator,
   });
 
   const composites = [{ input: overlay, left: 0, top: 0 }];
@@ -1799,7 +1826,10 @@ async function buildBrandOverlayPng({ title, user } = {}) {
   if (!user?.id) throw new Error('Usuário inválido para compor a arte');
 
   const { normalizeArtModel } = require('./editorialCardModels');
+  const { applyModelConfig } = require('./brandModelConfig');
   const modelId = normalizeArtModel(user.marca_modelo_arte);
+  const cfgModelo = applyModelConfig(user, modelId);
+  user = cfgModelo.user;
   const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
   const secondary = normalizeColor(user.marca_cor_secundaria, '#fb923c');
   const brandName = String(user.marca_nome || '').trim();
@@ -1822,6 +1852,8 @@ async function buildBrandOverlayPng({ title, user } = {}) {
     fontId: user.marca_fonte,
     titleColorId: user.marca_titulo_cor,
     titleSizeId: user.marca_titulo_tamanho,
+    degrade: cfgModelo.degrade,
+    sombraFator: cfgModelo.sombraFator,
   });
 
   const composites = [{ input: overlay, left: 0, top: 0 }];

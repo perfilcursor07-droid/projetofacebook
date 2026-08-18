@@ -11,6 +11,14 @@ const {
   isArtModel,
 } = require('../services/editorialCardModels');
 const {
+  SOMBRAS,
+  ZOOM_MIN,
+  ZOOM_MAX,
+  ZOOM_PADRAO,
+  parseModelConfigs,
+  withModelConfig,
+} = require('../services/brandModelConfig');
+const {
   VIDEO_BRAND_MODELS,
   DEFAULT_VIDEO_BRAND_MODEL,
   isVideoBrandModel,
@@ -77,16 +85,61 @@ async function artModelPreview(req, res, next) {
     const profile = await Users.findById(req.session.userId);
     if (!profile) return res.status(404).end();
 
+    // O painel de personalização manda as opções na query para ver o resultado
+    // antes de salvar. Sem query, sai a miniatura com o que já está gravado.
+    const overrides = {
+      tituloTamanho: req.query.tamanho,
+      tituloCor: req.query.tituloCor,
+      fonte: req.query.fonte,
+      corPrimaria: req.query.cor1,
+      corSecundaria: req.query.cor2,
+      degrade: req.query.degrade,
+      sombra: req.query.sombra,
+      zoom: req.query.zoom,
+    };
+    const aoVivo = Object.values(overrides).some((v) => v != null && v !== '');
+
     const png = await buildBrandModelPreviewPng({
       user: profile,
       model: modelId,
       width: 432,
       height: 540,
+      overrides,
     });
 
     res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'private, max-age=86400');
+    res.set('Cache-Control', aoVivo ? 'no-store' : 'private, max-age=86400');
     return res.end(png);
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** Salva a personalização de UM modelo (painel de Minha marca). */
+async function saveModelConfig(req, res, next) {
+  try {
+    const modelId = String(req.body?.modelo || req.body?.model || '');
+    if (!isArtModel(modelId)) {
+      return res.status(400).json({ error: 'Modelo de arte inválido' });
+    }
+
+    const current = await Users.findById(req.session.userId);
+    if (!current) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    // "Restaurar padrão": manda vazio e o modelo volta a seguir a marca.
+    const limpar = req.body?.limpar === true || req.body?.limpar === '1';
+    const entrada = limpar ? {} : req.body?.config || req.body || {};
+    const json = withModelConfig(current, modelId, entrada);
+    await Users.update(current.id, { marca_modelo_config: json });
+
+    const atualizado = await Users.findById(current.id);
+    const configs = parseModelConfigs(atualizado.marca_modelo_config);
+    return res.json({
+      ok: true,
+      modelo: modelId,
+      config: configs[modelId] || {},
+      previewVersion: brandPreviewVersion(atualizado),
+    });
   } catch (err) {
     return next(err);
   }
@@ -102,6 +155,11 @@ async function show(req, res, next) {
       previewVersion: brandPreviewVersion(profile),
       artModels: ART_MODELS,
       defaultArtModel: DEFAULT_ART_MODEL,
+      modelConfigs: parseModelConfigs(profile.marca_modelo_config),
+      sombraOptions: SOMBRAS,
+      zoomMin: ZOOM_MIN,
+      zoomMax: ZOOM_MAX,
+      zoomDefault: ZOOM_PADRAO,
       videoBrandModels: VIDEO_BRAND_MODELS,
       defaultVideoBrandModel: DEFAULT_VIDEO_BRAND_MODEL,
       brandFonts: BRAND_FONTS,
@@ -227,4 +285,4 @@ async function update(req, res, next) {
   }
 }
 
-module.exports = { show, update, artModelPreview };
+module.exports = { show, update, artModelPreview, saveModelConfig };

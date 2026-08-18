@@ -13,6 +13,7 @@ router.use('/api/materias-ia', require('./editorialMatters'));
 
 router.get('/minha-marca', requireAuth, profileController.show);
 router.get('/minha-marca/preview/:model.png', requireAuth, profileController.artModelPreview);
+router.post('/minha-marca/modelo-config', requireAuth, profileController.saveModelConfig);
 router.post('/minha-marca', requireAuth, (req, res, next) => {
   uploadLogo(req, res, (err) => {
     if (err) return res.redirect(`/minha-marca?error=${encodeURIComponent(err.message)}`);

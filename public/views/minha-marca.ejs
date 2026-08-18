@@ -201,6 +201,120 @@
             </span>
           </div>
 
+          <p class="mt-3 text-[11px] text-slate-500">
+            Clique em um modelo para escolhê-lo e abrir a
+            <strong class="font-medium text-slate-400">personalização</strong> — tamanho da fonte, cores, degradê,
+            escurecimento e tamanho da foto valem só para aquele modelo.
+          </p>
+
+          <!-- Painel de personalização por modelo -->
+          <div id="modelo-config-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm">
+            <div class="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+              <div class="sticky top-0 flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900/95 px-4 py-3 backdrop-blur">
+                <div class="min-w-0">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/90">Personalizar modelo</p>
+                  <h4 id="modelo-config-nome" class="truncate text-sm font-semibold text-white">—</h4>
+                </div>
+                <button type="button" id="modelo-config-fechar"
+                  class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 hover:text-white">
+                  Fechar
+                </button>
+              </div>
+
+              <div class="grid gap-4 p-4 md:grid-cols-[300px_minmax(0,1fr)]">
+                <div>
+                  <div class="relative overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
+                    <img id="modelo-config-preview" alt="Prévia do modelo" class="block aspect-[4/5] w-full object-cover" />
+                    <span id="modelo-config-carregando" class="absolute inset-0 hidden items-center justify-center bg-slate-950/60 text-xs text-slate-300">
+                      gerando prévia…
+                    </span>
+                  </div>
+                  <p class="mt-1.5 text-[11px] text-slate-500">A prévia usa o gerador real da arte.</p>
+                </div>
+
+                <div class="space-y-4">
+                  <label class="block">
+                    <span class="flex items-center justify-between text-xs text-slate-400">
+                      <span>Tamanho da fonte do título</span>
+                      <span class="font-semibold text-white"><span id="cfg-tamanho-valor">43</span>px</span>
+                    </span>
+                    <input id="cfg-tamanho" type="range" min="<%= typeof titleSizeMin !== 'undefined' ? titleSizeMin : 30 %>" max="<%= typeof titleSizeMax !== 'undefined' ? titleSizeMax : 50 %>" step="1" class="mt-1.5 w-full accent-emerald-500" />
+                  </label>
+
+                  <label class="block">
+                    <span class="flex items-center justify-between text-xs text-slate-400">
+                      <span>Tamanho da foto (zoom)</span>
+                      <span class="font-semibold text-white"><span id="cfg-zoom-valor">100</span>%</span>
+                    </span>
+                    <input id="cfg-zoom" type="range" min="<%= typeof zoomMin !== 'undefined' ? zoomMin : 80 %>" max="<%= typeof zoomMax !== 'undefined' ? zoomMax : 140 %>" step="1" class="mt-1.5 w-full accent-emerald-500" />
+                    <span class="mt-1 block text-[11px] text-slate-500">Acima de 100% aproxima a foto; abaixo, mostra mais.</span>
+                  </label>
+
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                      <span class="text-xs text-slate-400">Cor principal</span>
+                      <div class="mt-1.5 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 p-2">
+                        <input id="cfg-cor1" type="color" class="h-8 w-full cursor-pointer border-0 bg-transparent" />
+                      </div>
+                    </label>
+                    <label class="block">
+                      <span class="text-xs text-slate-400">Cor secundária</span>
+                      <div class="mt-1.5 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 p-2">
+                        <input id="cfg-cor2" type="color" class="h-8 w-full cursor-pointer border-0 bg-transparent" />
+                      </div>
+                    </label>
+                  </div>
+
+                  <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2">
+                    <input id="cfg-degrade" type="checkbox" class="mt-0.5 rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500/30" />
+                    <span class="text-xs leading-snug text-slate-300">
+                      Degradê nas faixas
+                      <span class="block text-[11px] text-slate-500">Ligado: principal → secundária. Desligado: só a cor principal.</span>
+                    </span>
+                  </label>
+
+                  <div>
+                    <span class="text-xs text-slate-400">Escurecimento sobre a foto</span>
+                    <div class="mt-1.5 inline-flex rounded-lg border border-slate-700 bg-slate-950 p-0.5">
+                      <% (typeof sombraOptions !== 'undefined' ? sombraOptions : []).forEach(function (s) { %>
+                        <button type="button" data-cfg-sombra="<%= s.id %>" class="cfg-sombra-btn rounded-md px-3 py-1.5 text-xs text-slate-300 hover:text-white"><%= s.name %></button>
+                      <% }) %>
+                    </div>
+                  </div>
+
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="block">
+                      <span class="text-xs text-slate-400">Cor do título</span>
+                      <select id="cfg-titulo-cor" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                        <% (typeof titleColors !== 'undefined' ? titleColors : []).forEach(function (c) { %>
+                          <option value="<%= c.id %>"><%= c.name %></option>
+                        <% }) %>
+                      </select>
+                    </label>
+                    <label class="block">
+                      <span class="text-xs text-slate-400">Fonte do título</span>
+                      <select id="cfg-fonte" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none">
+                        <% (typeof brandFonts !== 'undefined' ? brandFonts : []).forEach(function (f) { %>
+                          <option value="<%= f.id %>"><%= f.name %></option>
+                        <% }) %>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
+                    <button type="button" id="cfg-salvar" class="rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400">
+                      Salvar personalização
+                    </button>
+                    <button type="button" id="cfg-restaurar" class="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:border-rose-500/60 hover:text-rose-200">
+                      Restaurar padrão da marca
+                    </button>
+                    <span id="cfg-status" class="text-xs text-slate-400"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs leading-relaxed text-slate-400">
             <strong class="block font-semibold text-slate-300">Modelo “JM”</strong>
             Foto ocupando a arte inteira, faixa com a sua logo sobre a foto e manchete branca em caixa alta.
@@ -501,5 +615,236 @@
     });
 
     window.addEventListener('beforeunload', releaseLogoPreview);
+  
+    // ---- Personalização por modelo (clicar no modelo abre o painel) --------
+    const modelConfigs = <%- JSON.stringify(typeof modelConfigs !== 'undefined' ? modelConfigs : {}) %>;
+    const artModelsMeta = <%- JSON.stringify(artModels) %>;
+    const marcaPadrao = {
+      tamanho: <%= Number(profile.marca_titulo_tamanho) || (Number(defaultTitleSize) || 43) %>,
+      cor1: <%- JSON.stringify(profile.marca_cor_primaria || '#ffbd59') %>,
+      cor2: <%- JSON.stringify(profile.marca_cor_secundaria || '#fb923c') %>,
+      tituloCor: <%- JSON.stringify(profile.marca_titulo_cor || defaultTitleColor) %>,
+      fonte: <%- JSON.stringify(profile.marca_fonte || defaultBrandFont) %>,
+      zoom: <%= Number(typeof zoomDefault !== 'undefined' ? zoomDefault : 100) %>,
+    };
+
+    const cfgModal = document.getElementById('modelo-config-modal');
+    const cfgNome = document.getElementById('modelo-config-nome');
+    const cfgPreview = document.getElementById('modelo-config-preview');
+    const cfgCarregando = document.getElementById('modelo-config-carregando');
+    const cfgTamanho = document.getElementById('cfg-tamanho');
+    const cfgTamanhoValor = document.getElementById('cfg-tamanho-valor');
+    const cfgZoom = document.getElementById('cfg-zoom');
+    const cfgZoomValor = document.getElementById('cfg-zoom-valor');
+    const cfgCor1 = document.getElementById('cfg-cor1');
+    const cfgCor2 = document.getElementById('cfg-cor2');
+    const cfgDegrade = document.getElementById('cfg-degrade');
+    const cfgTituloCor = document.getElementById('cfg-titulo-cor');
+    const cfgFonte = document.getElementById('cfg-fonte');
+    const cfgSalvar = document.getElementById('cfg-salvar');
+    const cfgRestaurar = document.getElementById('cfg-restaurar');
+    const cfgStatus = document.getElementById('cfg-status');
+    let cfgModeloAtual = null;
+    let cfgSombra = 'media';
+    let cfgTimer = null;
+
+    function cfgSetStatus(texto, erro) {
+      if (!cfgStatus) return;
+      cfgStatus.textContent = texto || '';
+      cfgStatus.className = 'text-xs ' + (erro ? 'text-rose-300' : 'text-emerald-300');
+    }
+
+    function cfgSyncSombra() {
+      document.querySelectorAll('.cfg-sombra-btn').forEach(function (btn) {
+        const ativo = btn.dataset.cfgSombra === cfgSombra;
+        btn.className =
+          'cfg-sombra-btn rounded-md px-3 py-1.5 text-xs ' +
+          (ativo ? 'bg-emerald-500 font-semibold text-slate-950' : 'text-slate-300 hover:text-white');
+      });
+    }
+
+    function cfgValores() {
+      return {
+        tamanho: Number(cfgTamanho && cfgTamanho.value) || marcaPadrao.tamanho,
+        zoom: Number(cfgZoom && cfgZoom.value) || marcaPadrao.zoom,
+        cor1: (cfgCor1 && cfgCor1.value) || marcaPadrao.cor1,
+        cor2: (cfgCor2 && cfgCor2.value) || marcaPadrao.cor2,
+        degrade: cfgDegrade ? cfgDegrade.checked : true,
+        sombra: cfgSombra,
+        tituloCor: (cfgTituloCor && cfgTituloCor.value) || marcaPadrao.tituloCor,
+        fonte: (cfgFonte && cfgFonte.value) || marcaPadrao.fonte,
+      };
+    }
+
+    function cfgAtualizarPreview() {
+      if (!cfgModeloAtual || !cfgPreview) return;
+      const v = cfgValores();
+      const q = new URLSearchParams({
+        tamanho: String(v.tamanho),
+        zoom: String(v.zoom),
+        cor1: v.cor1,
+        cor2: v.cor2,
+        degrade: v.degrade ? '1' : '0',
+        sombra: v.sombra,
+        tituloCor: v.tituloCor,
+        fonte: v.fonte,
+        t: String(Date.now()),
+      });
+      if (cfgCarregando) {
+        cfgCarregando.classList.remove('hidden');
+        cfgCarregando.classList.add('flex');
+      }
+      cfgPreview.onload = function () {
+        if (!cfgCarregando) return;
+        cfgCarregando.classList.add('hidden');
+        cfgCarregando.classList.remove('flex');
+      };
+      cfgPreview.onerror = cfgPreview.onload;
+      cfgPreview.src = '/minha-marca/preview/' + cfgModeloAtual + '.png?' + q.toString();
+    }
+
+    function cfgAgendarPreview() {
+      if (cfgTimer) clearTimeout(cfgTimer);
+      cfgTimer = setTimeout(cfgAtualizarPreview, 280);
+    }
+
+    function cfgAbrir(modeloId) {
+      const meta = artModelsMeta.find(function (m) { return m.id === modeloId; });
+      if (!meta || !cfgModal) return;
+      cfgModeloAtual = modeloId;
+      const salvo = modelConfigs[modeloId] || {};
+      if (cfgNome) cfgNome.textContent = meta.name;
+      if (cfgTamanho) cfgTamanho.value = salvo.tituloTamanho != null ? salvo.tituloTamanho : marcaPadrao.tamanho;
+      if (cfgZoom) cfgZoom.value = salvo.zoom != null ? salvo.zoom : marcaPadrao.zoom;
+      if (cfgCor1) cfgCor1.value = salvo.corPrimaria || marcaPadrao.cor1;
+      if (cfgCor2) cfgCor2.value = salvo.corSecundaria || marcaPadrao.cor2;
+      if (cfgDegrade) cfgDegrade.checked = salvo.degrade !== false;
+      if (cfgTituloCor) cfgTituloCor.value = salvo.tituloCor || marcaPadrao.tituloCor;
+      if (cfgFonte) cfgFonte.value = salvo.fonte || marcaPadrao.fonte;
+      cfgSombra = salvo.sombra || 'media';
+      if (cfgTamanhoValor && cfgTamanho) cfgTamanhoValor.textContent = String(cfgTamanho.value);
+      if (cfgZoomValor && cfgZoom) cfgZoomValor.textContent = String(cfgZoom.value);
+      cfgSyncSombra();
+      cfgSetStatus('');
+      cfgModal.classList.remove('hidden');
+      cfgModal.classList.add('flex');
+      document.body.style.overflow = 'hidden';
+      cfgAtualizarPreview();
+    }
+
+    function cfgFechar() {
+      if (!cfgModal) return;
+      cfgModal.classList.add('hidden');
+      cfgModal.classList.remove('flex');
+      document.body.style.overflow = '';
+      cfgModeloAtual = null;
+    }
+
+    const cfgBtnFechar = document.getElementById('modelo-config-fechar');
+    if (cfgBtnFechar) cfgBtnFechar.addEventListener('click', cfgFechar);
+    if (cfgModal) {
+      cfgModal.addEventListener('click', function (e) {
+        if (e.target === cfgModal) cfgFechar();
+      });
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && cfgModal && !cfgModal.classList.contains('hidden')) cfgFechar();
+    });
+
+    if (cfgTamanho) {
+      cfgTamanho.addEventListener('input', function () {
+        if (cfgTamanhoValor) cfgTamanhoValor.textContent = cfgTamanho.value;
+        cfgAgendarPreview();
+      });
+    }
+    if (cfgZoom) {
+      cfgZoom.addEventListener('input', function () {
+        if (cfgZoomValor) cfgZoomValor.textContent = cfgZoom.value;
+        cfgAgendarPreview();
+      });
+    }
+    [cfgCor1, cfgCor2, cfgTituloCor, cfgFonte, cfgDegrade].forEach(function (el) {
+      if (el) el.addEventListener('change', cfgAgendarPreview);
+    });
+    document.querySelectorAll('.cfg-sombra-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        cfgSombra = btn.dataset.cfgSombra || 'media';
+        cfgSyncSombra();
+        cfgAtualizarPreview();
+      });
+    });
+
+    function cfgEnviar(corpo, mensagem) {
+      cfgSetStatus('Salvando...');
+      const modelo = cfgModeloAtual;
+      return fetch('/minha-marca/modelo-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo),
+      })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            if (!res.ok) throw new Error(data.error || 'Falha ao salvar');
+            return data;
+          });
+        })
+        .then(function (data) {
+          modelConfigs[modelo] = data.config || {};
+          cfgSetStatus(mensagem);
+          document
+            .querySelectorAll('img[src*="/minha-marca/preview/' + modelo + '.png"]')
+            .forEach(function (img) {
+              img.src = '/minha-marca/preview/' + modelo + '.png?v=' + Date.now();
+            });
+        })
+        .catch(function (err) {
+          cfgSetStatus(err.message, true);
+        });
+    }
+
+    if (cfgSalvar) {
+      cfgSalvar.addEventListener('click', function () {
+        if (!cfgModeloAtual) return;
+        const v = cfgValores();
+        cfgEnviar(
+          {
+            modelo: cfgModeloAtual,
+            config: {
+              tituloTamanho: v.tamanho,
+              zoom: v.zoom,
+              corPrimaria: v.cor1,
+              corSecundaria: v.cor2,
+              degrade: v.degrade,
+              sombra: v.sombra,
+              tituloCor: v.tituloCor,
+              fonte: v.fonte,
+            },
+          },
+          'Personalizacao salva'
+        );
+      });
+    }
+
+    if (cfgRestaurar) {
+      cfgRestaurar.addEventListener('click', function () {
+        if (!cfgModeloAtual) return;
+        const modelo = cfgModeloAtual;
+        cfgEnviar({ modelo: modelo, limpar: true }, 'Voltou ao padrao da marca').then(function () {
+          cfgAbrir(modelo);
+        });
+      });
+    }
+
+    // Clicar no card do modelo escolhe E abre a personalizacao.
+    document.querySelectorAll('.js-modelo-arte, .js-modelo-arte-sec').forEach(function (input) {
+      const label = input.closest('label');
+      if (!label) return;
+      label.addEventListener('click', function () {
+        const id = input.value;
+        if (!id) return;
+        setTimeout(function () { cfgAbrir(id); }, 60);
+      });
+    });
+
   </script>
 <%- include('partials/app-end') %>
