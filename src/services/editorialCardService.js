@@ -869,7 +869,7 @@ function jmGeometry() {
     barInset: 62,     // margem lateral da faixa
     titleTop: 904,    // topo da área da manchete (respiro abaixo da faixa)
     titleBottom: 1228,
-    footerY: 1288,
+    footerY: 1312,
   });
 }
 
@@ -1425,8 +1425,8 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
   const isCitacao = modelId === 'citacao_marcador';
   const isUrgente = modelId === 'urgente_alerta';
   const isJm = modelId === 'jm';
-  const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : isUrgente ? 330 : isJm ? 250 : 560) / 1080));
-  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : isUrgente ? 130 : isJm ? 54 : 125) / 1080));
+  const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : isUrgente ? 330 : isJm ? 186 : 560) / 1080));
+  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : isUrgente ? 130 : isJm ? 40 : 125) / 1080));
   const input = await sharp(absolute)
     .resize(maxW, maxH, { fit: 'inside', withoutEnlargement: true })
     .png()
