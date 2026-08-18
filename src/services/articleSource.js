@@ -96,6 +96,9 @@ function limparMarkdownReader(texto) {
 }
 
 async function extrairMetadadosViaJina(urlReal) {
+  // Sem chave (ou com 403 em série) o r.jina.ai só gasta 20s por link.
+  const providerHealth = require('./providerHealth');
+  if (providerHealth.estaFora('jina')) return null;
   try {
     // O r.jina.ai passou a exigir chave: sem ela a resposta é 403 e o fallback
     // não serve para nada. Com JINA_API_KEY no .env o leitor volta a funcionar.
@@ -141,6 +144,7 @@ async function extrairMetadadosViaJina(urlReal) {
     };
   } catch (err) {
     console.warn('extrairMetadadosArtigo Jina:', err.message);
+    require('./providerHealth').registrarFalha('jina', err.message);
     return null;
   }
 }
@@ -485,6 +489,17 @@ async function extrairMetadadosArtigo(url) {
   const urlReal = (await resolverUrlNoticia(url)) || url;
   if (!urlReal) return null;
 
+  // Sites que respondem 403/404 em série (paywall, WAF) só gastam timeout:
+  // ficam de fora por alguns minutos em vez de serem tentados a cada pauta.
+  const providerHealth = require('./providerHealth');
+  let host = '';
+  try {
+    host = new URL(urlReal).hostname.replace(/^www\./i, '');
+  } catch {
+    host = '';
+  }
+  if (host && providerHealth.estaFora(`site:${host}`)) return null;
+
   try {
     const res = await axios.get(urlReal, {
       headers: {
@@ -518,6 +533,7 @@ async function extrairMetadadosArtigo(url) {
       }
     })();
 
+    if (host) providerHealth.registrarSucesso(`site:${host}`);
     const meta = {
       url: finalUrl,
       titulo: titulo || null,
@@ -546,6 +562,7 @@ async function extrairMetadadosArtigo(url) {
     return meta;
   } catch (err) {
     console.warn('extrairMetadadosArtigo:', err.message);
+    if (host) providerHealth.registrarFalha(`site:${host}`, err.message, { pausaMs: 5 * 60 * 1000 });
     const viaJina = await extrairMetadadosViaJina(urlReal);
     if (viaJina) return viaJina;
     return {
@@ -665,7 +682,10 @@ async function buscarFontesPorTitulo(titulo) {
   if (!buscarFontesPorTitulo._serperCooldownUntil) {
     buscarFontesPorTitulo._serperCooldownUntil = 0;
   }
-  const serperOk = Date.now() >= buscarFontesPorTitulo._serperCooldownUntil;
+  const providerHealth = require('./providerHealth');
+  const serperOk =
+    Date.now() >= buscarFontesPorTitulo._serperCooldownUntil &&
+    !providerHealth.estaFora('serper');
 
   if (!ranked.length && env.serperApiKey && serperOk) {
     try {
@@ -691,6 +711,7 @@ async function buscarFontesPorTitulo(titulo) {
       } else if (status === 400 || status === 429 || status === 402) {
         buscarFontesPorTitulo._serperCooldownUntil = Date.now() + 10 * 60_000;
       }
+      providerHealth.registrarFalha('serper', message);
       console.warn(
         'buscarFontesPorTitulo Serper:',
         message

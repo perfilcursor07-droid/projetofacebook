@@ -3313,7 +3313,8 @@ async function coletarFatosNaWeb({
 
   // 1) Mesmas fontes de /conteudo (Google News + Brave), sem apurar tudo (mais rápido).
   // Leitura em lotes paralelos: mais fontes sem multiplicar o tempo de espera.
-  const LOTE_LEITURA = 4;
+  // Leitura em paralelo: 8 links por vez em vez de 4 (o gargalo é rede, não CPU).
+  const LOTE_LEITURA = 8;
   const consultasNoticiasProcessadas = new Set();
   async function coletarNoticias(teto) {
     for (const q of queries.slice(0, 4)) {

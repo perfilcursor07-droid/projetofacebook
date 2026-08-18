@@ -74,6 +74,17 @@ async function listarPostsPerfil(username, limit = 10) {
     throw new Error('SCRAPECREATORS_API_KEY não configurada');
   }
 
+  // Conta sem crédito responde erro para todo perfil: insistir a cada scan só
+  // atrasa a fila da biblioteca.
+  const providerHealth = require('./providerHealth');
+  if (providerHealth.estaFora('scrapecreators')) {
+    const parado = new Error(
+      `ScrapeCreators indisponível agora (${providerHealth.status('scrapecreators').motivo}).`
+    );
+    parado.status = 503;
+    throw parado;
+  }
+
   const handle = String(username || '').replace(/^@/, '').trim();
   if (!handle) throw new Error('Perfil do Instagram inválido');
 
@@ -95,6 +106,7 @@ async function listarPostsPerfil(username, limit = 10) {
       `HTTP ${response.status}`;
     const err = new Error(`ScrapeCreators não listou @${handle}: ${message}`);
     err.status = response.status === 429 ? 429 : 502;
+    providerHealth.registrarFalha('scrapecreators', message);
     throw err;
   }
 

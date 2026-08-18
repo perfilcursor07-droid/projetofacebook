@@ -421,7 +421,8 @@ const REDES_SOCIAIS_AMPLAS = Object.freeze([
 ]);
 
 async function buscarSerperRedes(termo, { redes = REDES_SOCIAIS_PADRAO, porRede = 5 } = {}) {
-  if (!env.serperApiKey) return [];
+  const providerHealth = require('./providerHealth');
+  if (!env.serperApiKey || providerHealth.estaFora('serper')) return [];
   const num = Math.max(1, Math.min(10, Number(porRede) || 5));
 
   // Plano free rejeita queries com vários OR site: — uma chamada por rede.
@@ -460,7 +461,9 @@ async function buscarSerperRedes(termo, { redes = REDES_SOCIAIS_PADRAO, porRede 
           redeSocial: true,
         }));
       } catch (err) {
-        console.warn('Serper redes:', err.response?.data?.message || err.message);
+        const motivo = err.response?.data?.message || err.message;
+        providerHealth.registrarFalha('serper', motivo);
+        console.warn('Serper redes:', motivo);
         return [];
       }
     })

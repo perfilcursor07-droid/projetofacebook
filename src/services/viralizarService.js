@@ -603,20 +603,34 @@ async function consultasDoPublico(materias) {
  * As materias antigas funcionam somente como sinais editoriais; elas nunca viram
  * pautas de repeticao diretamente.
  */
+/**
+ * Resultado recente por usuário. A curadoria custa dezenas de chamadas
+ * externas; sem cache, cada clique em "para meu público" refazia tudo.
+ */
+const cacheParaMeuPublico = new Map();
+const CACHE_PUBLICO_MS = 5 * 60 * 1000;
+
+/** Sincroniza engajamento sem travar a resposta (segue em segundo plano). */
+function sincronizarEngajamentoEmSegundoPlano(userId) {
+  materiaIaService
+    .sincronizarEngajamentoRecentes(userId, { limit: 25, concurrency: 4, force: false })
+    .catch((err) => console.warn('[para-meu-publico] engajamento em segundo plano:', err.message));
+}
+
 async function curarPautasDoPublico({ userId, facebookPageId, limit = 30 } = {}) {
   const AiMatters = require('../models/AiMatters');
   const lim = Math.min(30, Math.max(20, Number(limit) || 30));
   const avisos = [];
 
-  try {
-    await materiaIaService.sincronizarEngajamentoRecentes(userId, {
-      limit: 40,
-      concurrency: 3,
-      force: true,
-    });
-  } catch (err) {
-    avisos.push(`Engajamento: ${err.message}`);
+  const chaveCache = `${userId}:${facebookPageId || 0}:${lim}`;
+  const emCache = cacheParaMeuPublico.get(chaveCache);
+  if (emCache && Date.now() - emCache.em < CACHE_PUBLICO_MS) {
+    return { ...emCache.dados, doCache: true };
   }
+
+  // Métricas frescas são desejáveis, mas não valem 40 leituras externas na
+  // frente do usuário: usa o que está em cache e atualiza por trás.
+  sincronizarEngajamentoEmSegundoPlano(userId);
 
   let candidatas = await AiMatters.findViralizadasDaConta(userId, { limit: 60 });
   if (facebookPageId) {
@@ -666,19 +680,24 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 30 } = {})
     throw err;
   }
 
-  let encontradas = [];
-  for (const lote of chunk(consultas, 5)) {
-    try {
-      const resultado = await pesquisarNichos(lote.join(', '), 12, {
-        incluirRedesSociais: false,
-        filtrarPeriodo: true,
-        periodo: '7d',
-      });
-      encontradas = encontradas.concat(resultado || []);
-    } catch (err) {
-      avisos.push(`Pesquisa: ${err.message}`);
-    }
-  }
+  // Os lotes eram pesquisados um atrás do outro; em paralelo o tempo total
+  // passa a ser o do lote mais lento, não a soma de todos.
+  const lotes = chunk(consultas, 5);
+  const resultados = await Promise.all(
+    lotes.map(async (lote) => {
+      try {
+        return await pesquisarNichos(lote.join(', '), 12, {
+          incluirRedesSociais: false,
+          filtrarPeriodo: true,
+          periodo: '7d',
+        });
+      } catch (err) {
+        avisos.push(`Pesquisa: ${err.message}`);
+        return [];
+      }
+    })
+  );
+  let encontradas = resultados.flat();
 
   encontradas = dedupeTitulos(encontradas || []);
   if (!encontradas.length) {
@@ -788,7 +807,13 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 30 } = {})
     );
   }
 
-  return {
+  // Provedor pausado explica resultado curto melhor que "não achei nada".
+  const fora = require('./providerHealth').pausados();
+  for (const p of fora) {
+    avisos.push(`${p.provedor}: fora do ar agora (${p.motivo}) — busquei sem ele.`);
+  }
+
+  const resposta = {
     topicos,
     basesVirais: basesVirais.map((m) => ({
       matterId: m.id,
@@ -807,6 +832,9 @@ async function curarPautasDoPublico({ userId, facebookPageId, limit = 30 } = {})
     avisos,
     geradoEm: new Date().toISOString(),
   };
+
+  cacheParaMeuPublico.set(chaveCache, { em: Date.now(), dados: resposta });
+  return resposta;
 }
 
 /**

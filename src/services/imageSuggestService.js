@@ -39,7 +39,8 @@ function serperSemCredito(err) {
  * Docs: https://serpapi.com/search?engine=google_images
  */
 async function buscarSerpApiImagens(consulta, { num = 12 } = {}) {
-  if (!env.serpApiKey) return [];
+  const providerHealth = require('./providerHealth');
+  if (!env.serpApiKey || providerHealth.estaFora('serpapi')) return [];
   try {
     const { data } = await axios.get('https://serpapi.com/search.json', {
       params: {
@@ -76,12 +77,16 @@ async function buscarSerpApiImagens(consulta, { num = 12 } = {}) {
       err.response?.data?.error || err.message
     );
     falhasProvedor.registrar('SerpApi', err.response?.data?.error || err.message);
+    require('./providerHealth').registrarFalha('serpapi', err.response?.data?.error || err.message);
     return [];
   }
 }
 
 async function buscarSerperImagens(consulta, { num = 10 } = {}) {
-  if (!env.serperApiKey) return { imagens: [], esgotado: false };
+  const providerHealth = require('./providerHealth');
+  if (!env.serperApiKey || providerHealth.estaFora('serper')) {
+    return { imagens: [], esgotado: true };
+  }
   try {
     const { data } = await axios.post(
       'https://google.serper.dev/images',
@@ -110,6 +115,7 @@ async function buscarSerperImagens(consulta, { num = 10 } = {}) {
     if (serperSemCredito(err)) {
       console.warn('[sugerirImagens] serper: sem créditos');
       falhasProvedor.registrar('Serper', 'sem créditos na conta');
+      require('./providerHealth').registrarFalha('serper', 'sem créditos na conta');
       return { imagens: [], esgotado: true };
     }
     console.warn('[sugerirImagens] serper:', err.response?.data?.message || err.message);
@@ -119,7 +125,8 @@ async function buscarSerperImagens(consulta, { num = 10 } = {}) {
 }
 
 async function buscarBraveImagens(consulta, { count = 10 } = {}) {
-  if (!env.braveSearchApiKey) return [];
+  const providerHealth = require('./providerHealth');
+  if (!env.braveSearchApiKey || providerHealth.estaFora('brave')) return [];
   try {
     const { data } = await axios.get('https://api.search.brave.com/res/v1/images/search', {
       params: { q: consulta, count: Math.min(count, 20) },
@@ -155,6 +162,7 @@ async function buscarBraveImagens(consulta, { count = 10 } = {}) {
   } catch (err) {
     console.warn('[sugerirImagens] brave:', err.response?.data?.error?.detail || err.message);
     falhasProvedor.registrar('Brave', err.response?.data?.error?.detail || err.message);
+    require('./providerHealth').registrarFalha('brave', err.response?.data?.error?.detail || err.message);
     return [];
   }
 }
