@@ -14,7 +14,15 @@ function buildMessage(title, body, hashtags, fonteCredito) {
   });
 }
 
-async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, body }) {
+async function publishEditorialPhoto({
+  userId,
+  matterId,
+  facebookPageId,
+  title,
+  body,
+  // null = sem escolha na requisicao; usa o que estiver salvo na materia.
+  publicarInstagram = null,
+}) {
   const matter = await AiMatters.findById(matterId);
   if (!matter || Number(matter.user_id) !== Number(userId)) {
     const err = new Error('Matéria não encontrada');
@@ -53,6 +61,19 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
     throw err;
   }
 
+  const pedidoInstagram =
+    publicarInstagram != null ? Boolean(publicarInstagram) : Boolean(matter.publicar_instagram);
+  // Quem filtra pelo instagram_ativo da Pagina e o publishDispatch, que tambem
+  // devolve o motivo quando o post sai so no Facebook.
+  console.log('[publicar] instagram', {
+    matterId: matter.id,
+    pageId: page.id,
+    page: page.page_name,
+    pedido: pedidoInstagram,
+    origem: publicarInstagram != null ? 'requisicao' : 'materia',
+    paginaAtiva: Boolean(page.instagram_ativo),
+  });
+
   const [publicationId] = await Publications.create({
     video_clip_id: null,
     imagem_id: null,
@@ -70,6 +91,7 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
     error_message: null,
     titulo: finalTitle,
     materia: finalBody,
+    publicar_instagram: pedidoInstagram,
   });
 
   try {
@@ -80,22 +102,41 @@ async function publishEditorialPhoto({ userId, matterId, facebookPageId, title, 
       tipo: 'foto',
       filePath,
       texto: message,
+      publicarInstagram: pedidoInstagram,
     });
     const postId = result.post_id || result.id;
     const fbPostUrl = result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId);
-    await Publications.update(publicationId, {
+    const pubPatch = {
       status: 'publicado',
       fb_post_id: postId,
       fb_post_url: fbPostUrl,
       published_at: new Date(),
       erro_mensagem: null,
-    });
+    };
+    if (result.fb_native_post_id) pubPatch.fb_native_post_id = String(result.fb_native_post_id);
+    if (result.instagram_post_id) pubPatch.ig_post_id = String(result.instagram_post_id);
+    if (result.instagram_post_url) pubPatch.ig_post_url = String(result.instagram_post_url);
+    // Instagram recusado nao derruba o post do Facebook: fica como aviso.
+    if (result.instagram_erro) {
+      pubPatch.erro_mensagem = String(result.instagram_erro).slice(0, 500);
+    }
+    await Publications.update(publicationId, pubPatch);
     await AiMatters.update(matter.id, {
       status: 'publicado',
       published_at: new Date(),
       error_message: null,
     });
-    return { matterId: matter.id, publicationId, queued: false, postId, fbPostUrl };
+    return {
+      matterId: matter.id,
+      publicationId,
+      queued: false,
+      postId,
+      fbPostUrl,
+      instagramPedido: pedidoInstagram,
+      instagramPublicado: Boolean(result.instagram_publicado),
+      instagramPostUrl: result.instagram_post_url || null,
+      instagramErro: result.instagram_erro || null,
+    };
   } catch (err) {
     const publishDispatch = require('./publishDispatch');
     const messageError = publishDispatch.publishErrorMessage(err);

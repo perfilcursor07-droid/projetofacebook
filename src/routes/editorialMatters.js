@@ -360,6 +360,9 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
     }
     const type = publicationType(req.body);
     const facebookPageId = pageId(req.body);
+    // null = editor nao mandou opiniao; vale a preferencia salva na materia.
+    const pedidoInstagram =
+      req.body.publicarInstagram ?? req.body.publicar_instagram ?? req.body.instagram ?? null;
 
     if (type === 'foto') {
       const title = String(req.body.titulo || matter.titulo || '').trim();
@@ -385,6 +388,7 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
         facebookPageId,
         title,
         body: req.body.materia || matter.materia,
+        publicarInstagram: pedidoInstagram,
       });
       return res.json({ ok: true, ...published, link: published.fbPostUrl, imagemUrl });
     }
@@ -396,6 +400,7 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
       materia: req.body.materia,
       sync: Boolean(req.body.sync),
       forcar: Boolean(req.body.forcar || req.body.republicar),
+      publicar_instagram: pedidoInstagram,
     });
     return res.status(published.queued ? 202 : 200).json({
       ok: true,
