@@ -3,6 +3,27 @@ const { env } = require('../config/env');
 const deepseekService = require('./deepseekService');
 const pexelsService = require('./pexelsService');
 
+/**
+ * Falhas dos provedores na requisição atual. Sem isso, quando todos falham a
+ * tela só dizia "nenhuma imagem encontrada" e não dava para saber que o
+ * problema era chave sem crédito ou token desativado.
+ */
+const falhasProvedor = {
+  atual: [],
+  iniciar() {
+    this.atual = [];
+  },
+  registrar(provedor, motivo) {
+    const texto = String(motivo || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+    if (!texto) return;
+    if (this.atual.some((f) => f.provedor === provedor)) return;
+    this.atual.push({ provedor, motivo: texto });
+  },
+  resumo() {
+    return this.atual.map((f) => f.provedor + ': ' + f.motivo);
+  },
+};
+
 function imagemPareceRuim(item) {
   const hay = `${item.url || ''} ${item.titulo || ''} ${item.fonte || ''}`.toLowerCase();
   return /logo|sprite|icon|avatar|emoji|favicon|1x1|pixel|banner-ad|tracking/i.test(hay);
@@ -54,6 +75,7 @@ async function buscarSerpApiImagens(consulta, { num = 12 } = {}) {
       '[sugerirImagens] serpapi:',
       err.response?.data?.error || err.message
     );
+    falhasProvedor.registrar('SerpApi', err.response?.data?.error || err.message);
     return [];
   }
 }
@@ -87,9 +109,11 @@ async function buscarSerperImagens(consulta, { num = 10 } = {}) {
   } catch (err) {
     if (serperSemCredito(err)) {
       console.warn('[sugerirImagens] serper: sem créditos');
+      falhasProvedor.registrar('Serper', 'sem créditos na conta');
       return { imagens: [], esgotado: true };
     }
     console.warn('[sugerirImagens] serper:', err.response?.data?.message || err.message);
+    falhasProvedor.registrar('Serper', err.response?.data?.message || err.message);
     return { imagens: [], esgotado: false };
   }
 }
@@ -130,6 +154,7 @@ async function buscarBraveImagens(consulta, { count = 10 } = {}) {
       .filter((i) => i.url && /^https?:\/\//i.test(i.url) && !imagemPareceRuim(i));
   } catch (err) {
     console.warn('[sugerirImagens] brave:', err.response?.data?.error?.detail || err.message);
+    falhasProvedor.registrar('Brave', err.response?.data?.error?.detail || err.message);
     return [];
   }
 }
@@ -156,30 +181,119 @@ async function buscarPexelsImagens(consulta, { perPage = 6 } = {}) {
     }));
   } catch (err) {
     console.warn('[sugerirImagens] pexels:', err.message);
+    falhasProvedor.registrar('Pexels', err.message);
     return [];
   }
 }
 
-async function buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef }) {
-  // 1) SerpApi (Google Images) — principal
-  const serpapi = await buscarSerpApiImagens(consulta, { num: 12 });
-  if (serpapi.length) return serpapi;
+/**
+ * Termos comuns em pt-BR → inglês, para o Pexels (banco de fotos em inglês).
+ * Sem isso, uma busca simples como "padre" só devolvia imagem quando o Google
+ * respondia: no Pexels, "padre" praticamente não retorna nada.
+ */
+const TERMOS_PT_EN = Object.freeze({
+  padre: 'catholic priest',
+  padres: 'catholic priests',
+  pastor: 'pastor preaching',
+  pastores: 'pastors preaching',
+  igreja: 'church',
+  igrejas: 'churches',
+  missa: 'catholic mass',
+  culto: 'worship service',
+  bispo: 'bishop',
+  papa: 'pope',
+  freira: 'nun',
+  freiras: 'nuns',
+  bíblia: 'bible',
+  biblia: 'bible',
+  oração: 'praying',
+  oracao: 'praying',
+  fiéis: 'church congregation',
+  fieis: 'church congregation',
+  templo: 'temple',
+  cruz: 'cross',
+  batismo: 'baptism',
+  evangélico: 'evangelical church',
+  evangelico: 'evangelical church',
+  católico: 'catholic',
+  catolico: 'catholic',
+  polícia: 'police',
+  policia: 'police',
+  prisão: 'prison',
+  prisao: 'prison',
+  delegacia: 'police station',
+  tribunal: 'courthouse',
+  juiz: 'judge',
+  hospital: 'hospital',
+  escola: 'school',
+  família: 'family',
+  familia: 'family',
+  criança: 'child',
+  crianca: 'child',
+  dinheiro: 'money',
+  bandeira: 'flag',
+  política: 'politics',
+  politica: 'politics',
+});
 
-  // 2) Serper.dev (se ainda tiver crédito)
-  if (env.serperApiKey && !serperEsgotadoRef.value) {
+/** Versão em inglês da consulta, quando dá para traduzir termo a termo. */
+function consultaParaPexels(consulta) {
+  const palavras = String(consulta || '')
+    .toLowerCase()
+    .split(/[ ,]+/)
+    .filter(Boolean);
+  if (!palavras.length) return null;
+
+  let traduziu = false;
+  const saida = palavras.map((palavra) => {
+    const traducao = TERMOS_PT_EN[palavra];
+    if (traducao) {
+      traduziu = true;
+      return traducao;
+    }
+    return palavra;
+  });
+  return traduziu ? saida.join(' ') : null;
+}
+
+/**
+ * Junta o resultado de TODOS os provedores disponíveis.
+ *
+ * Antes valia o primeiro que respondesse: com o SerpApi fora do ar (ou sem
+ * cota), a busca inteira voltava vazia mesmo com Brave/Pexels funcionando —
+ * era o caso de "padre" não trazer nada de vez em quando.
+ */
+async function buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef, minimo = 6 }) {
+  const encontradas = [];
+  const juntar = (lista) => {
+    for (const img of lista || []) encontradas.push(img);
+  };
+
+  juntar(await buscarSerpApiImagens(consulta, { num: 12 }));
+
+  if (encontradas.length < minimo && env.serperApiKey && !serperEsgotadoRef.value) {
     const { imagens, esgotado } = await buscarSerperImagens(consulta, { num: 10 });
     if (esgotado) serperEsgotadoRef.value = true;
-    if (imagens.length) return imagens;
+    juntar(imagens);
   }
 
-  // 3) Brave
-  const brave = await buscarBraveImagens(consulta, { count: 12 });
-  if (brave.length) return brave;
+  if (encontradas.length < minimo) {
+    juntar(await buscarBraveImagens(consulta, { count: 12 }));
+  }
 
-  // 4) Pexels só sem pessoa nomeada
-  if (!temPessoa) return buscarPexelsImagens(consulta, { perPage: 8 });
-  return [];
+  // Pexels é banco de stock: não serve para pessoa nomeada, mas resolve
+  // assunto genérico. A consulta vai traduzida quando dá.
+  if (encontradas.length < minimo && !temPessoa) {
+    juntar(await buscarPexelsImagens(consulta, { perPage: 8 }));
+    const emIngles = consultaParaPexels(consulta);
+    if (emIngles && encontradas.length < minimo) {
+      juntar(await buscarPexelsImagens(emIngles, { perPage: 8 }));
+    }
+  }
+
+  return encontradas;
 }
+
 
 /**
  * IA analisa a matéria → busca fotos reais (SerpApi → Serper → Brave → Pexels).
@@ -192,6 +306,7 @@ async function sugerirImagensParaMateria({
   limite = 12,
 }) {
   deepseekService.assertDeepseek();
+  falhasProvedor.iniciar();
 
   const plano = await deepseekService.sugerirConsultasImagem({
     titulo,
@@ -290,54 +405,61 @@ async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
     throw err;
   }
 
+  falhasProvedor.iniciar();
   const serperEsgotadoRef = { value: false };
   const batch = await buscarImagensConsulta(consulta, {
     temPessoa: false,
     serperEsgotadoRef,
+    minimo: limite,
   });
 
   const vistos = new Set();
   const imagens = [];
-  let fonteUsada = null;
+  const origens = new Set();
 
-  for (const img of batch) {
-    const key = String(img.url || '')
-      .split('?')[0]
-      .toLowerCase();
-    if (!key || vistos.has(key)) continue;
-    if (img.largura && img.altura && (img.largura < 350 || img.altura < 350)) continue;
-    vistos.add(key);
-    imagens.push({ ...img, consulta });
-    if (!fonteUsada && img.origem) fonteUsada = img.origem;
-    if (imagens.length >= limite) break;
-  }
-
-  if (!imagens.length) {
-    const fallback = await buscarPexelsImagens(consulta, { perPage: limite });
-    for (const img of fallback) {
+  // 1ª passada exige foto grande; a 2ª aceita qualquer tamanho, senão uma
+  // busca simples voltava vazia só porque os provedores devolveram thumbs.
+  const coletar = ({ exigirTamanho }) => {
+    for (const img of batch) {
+      if (imagens.length >= limite) return;
       const key = String(img.url || '')
         .split('?')[0]
         .toLowerCase();
       if (!key || vistos.has(key)) continue;
+      if (exigirTamanho && img.largura && img.altura && (img.largura < 350 || img.altura < 350)) {
+        continue;
+      }
       vistos.add(key);
       imagens.push({ ...img, consulta });
-      fonteUsada = fonteUsada || 'pexels';
-      if (imagens.length >= limite) break;
+      if (img.origem) origens.add(img.origem);
     }
-  }
+  };
+  coletar({ exigirTamanho: true });
+  if (!imagens.length) coletar({ exigirTamanho: false });
 
   if (!imagens.length) {
-    const err = new Error(`Nenhuma imagem encontrada para “${consulta}”.`);
+    // Todos os provedores falharam: dizer QUAL falhou evita caçar bug no escuro.
+    const motivos = falhasProvedor.resumo();
+    const err = new Error(
+      motivos.length
+        ? `Nenhuma imagem encontrada para “${consulta}”. Provedores fora do ar — ${motivos.join(' · ')}.`
+        : `Nenhuma imagem encontrada para “${consulta}”. Tente outra palavra (ex.: mais específica ou em inglês).`
+    );
     err.status = 422;
     throw err;
   }
 
+  const rotulos = {
+    serpapi: 'SerpApi (Google Images)',
+    google: 'Serper',
+    brave: 'Brave Images',
+    pexels: 'Pexels',
+  };
   const avisoParts = [];
-  if (fonteUsada === 'serpapi') avisoParts.push('Fotos via SerpApi (Google Images)');
-  else if (fonteUsada === 'brave') avisoParts.push('Fotos via Brave Images');
-  else if (fonteUsada === 'google') avisoParts.push('Fotos via Serper');
-  else if (fonteUsada === 'pexels') avisoParts.push('Fotos via Pexels');
-  if (serperEsgotadoRef.value) avisoParts.push('Serper.dev sem créditos');
+  const usadas = [...origens].map((o) => rotulos[o] || o).filter(Boolean);
+  if (usadas.length) avisoParts.push(`Fotos via ${usadas.join(' + ')}`);
+  const motivos = falhasProvedor.resumo();
+  if (motivos.length) avisoParts.push(`Sem resposta de ${motivos.join(' · ')}`);
   avisoParts.push(`Busca: ${consulta}`);
 
   return {
@@ -345,10 +467,11 @@ async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
     motivo: `Busca manual: ${consulta}`,
     consultas: [consulta],
     imagens: imagens.slice(0, limite),
-    fontePreferida: fonteUsada || 'brave',
+    fontePreferida: [...origens][0] || 'brave',
     aviso: avisoParts.join(' · '),
   };
 }
+
 
 module.exports = {
   sugerirImagensParaMateria,

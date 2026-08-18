@@ -2892,7 +2892,8 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
 
   const blocoTraducao = fonteEstrangeira
     ? [
-        'A FONTE ESTÁ EM OUTRO IDIOMA: escreva a matéria TODA em português do Brasil.',
+        'O MATERIAL DE BASE ESTÁ EM OUTRO IDIOMA (link colado, post ou texto que o editor colou direto no chat): escreva a matéria TODA em português do Brasil.',
+        'Não importa em que idioma o editor escreveu o pedido ou colou o texto — a resposta e a matéria saem sempre em português do Brasil.',
         'PROIBIDO deixar qualquer frase, aspas ou trecho em inglês/espanhol no texto — nem entre aspas, nem em parênteses, nem como "no original".',
         'Traduza cada fala entre aspas para o português mantendo o sentido literal, sem inventar palavra que a pessoa não disse.',
         'Nomes de pessoas, cidades, igrejas e instituições ficam como no original.',

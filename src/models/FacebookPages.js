@@ -55,6 +55,15 @@ const FacebookPages = {
       });
   },
 
+  /** Liga/desliga a publicação no Instagram do mesmo profile Ayrshare. */
+  setInstagram(id, { ativo, username = undefined }) {
+    const patch = { instagram_ativo: Boolean(ativo), updated_at: db.fn.now() };
+    if (username !== undefined) {
+      patch.instagram_username = username ? String(username).slice(0, 190) : null;
+    }
+    return db(this.table).where({ id }).update(patch);
+  },
+
   setAyrshareProfileKey(id, profileKey) {
     const key = profileKey == null || profileKey === '' ? null : String(profileKey).trim();
     return db(this.table)

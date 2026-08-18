@@ -265,10 +265,12 @@ function looksLikeRefId(value) {
  * Detalhes do profile referente à Profile Key informada (GET /user).
  * Serve para validar a chave e saber se a Página do Facebook está conectada.
  */
-async function fetchProfileByKey(profileKey) {
+async function fetchProfileByKey(profileKey, { permitirPrimary = false } = {}) {
   assertConfigured();
   const key = String(profileKey || '').trim();
-  if (!key) {
+  // Sem chave a Ayrshare responde pelo Primary Profile. Isso só é aceitável
+  // quando quem chama sabe disso (conta com uma Página só).
+  if (!key && !permitirPrimary) {
     const err = new Error('Profile Key vazia');
     err.status = 400;
     throw err;
@@ -284,6 +286,9 @@ async function fetchProfileByKey(profileKey) {
   const facebook = displayNames.find(
     (d) => String(d?.platform || '').toLowerCase() === 'facebook'
   );
+  const instagram = displayNames.find(
+    (d) => String(d?.platform || '').toLowerCase() === 'instagram'
+  );
 
   return {
     refId: data?.refId || null,
@@ -293,6 +298,9 @@ async function fetchProfileByKey(profileKey) {
     facebookConnected: active.some((p) => String(p).toLowerCase() === 'facebook'),
     facebookPageName: facebook?.displayName || facebook?.pageName || facebook?.username || null,
     facebookPageId: facebook?.id || facebook?.pageId || null,
+    instagramConnected: active.some((p) => String(p).toLowerCase() === 'instagram'),
+    instagramUsername:
+      instagram?.username || instagram?.displayName || instagram?.pageName || null,
     raw: data,
   };
 }
@@ -308,6 +316,8 @@ async function publishToFacebook({
   isReel = false,
   title = null,
   profileKey = null,
+  // Mesma chamada publica no Instagram do mesmo User Profile da Ayrshare.
+  publicarInstagram = false,
 }) {
   assertConfigured();
 
@@ -326,13 +336,22 @@ async function publishToFacebook({
     throw err;
   }
 
+  const plataformas = ['facebook'];
+  // Instagram exige mídia: post só de texto é recusado pela API.
+  const vaiNoInstagram = Boolean(publicarInstagram) && Boolean(mediaUrl);
+  if (vaiNoInstagram) plataformas.push('instagram');
+
   const body = {
     post: content,
-    platforms: ['facebook'],
+    platforms: plataformas,
   };
 
   if (mediaUrl) {
     body.mediaUrls = [mediaUrl];
+  }
+
+  if (vaiNoInstagram && isReel) {
+    body.instagramOptions = { reels: true };
   }
 
   if (isReel) {
@@ -345,6 +364,7 @@ async function publishToFacebook({
   const pk = profileKey != null ? String(profileKey).trim() : '';
 
   console.log('[ayrshare] post', {
+    plataformas,
     hasMedia: Boolean(mediaUrl),
     isReel,
     hasProfileKey: Boolean(pk),
@@ -379,6 +399,21 @@ async function publishToFacebook({
       throw err;
     }
 
+    const ig =
+      (Array.isArray(data?.postIds) &&
+        data.postIds.find((p) => String(p.platform).toLowerCase() === 'instagram')) ||
+      (Array.isArray(data?.posts) &&
+        data.posts.find((p) => String(p.platform).toLowerCase() === 'instagram')) ||
+      null;
+
+    // Falha só no Instagram não invalida o post do Facebook: o editor é avisado.
+    const igStatus = String(ig?.status || '').toLowerCase();
+    const igErro =
+      ig && (igStatus === 'error' || igStatus === 'failed')
+        ? String(ig.message || ig.error || 'Instagram recusou a publicação')
+        : null;
+    if (igErro) console.warn('[ayrshare] instagram falhou:', igErro);
+
     const ayrshareId = data?.id ? String(data.id) : null;
     const socialId = fb?.id ? String(fb.id) : null;
     const postUrl = fb?.postUrl || null;
@@ -394,6 +429,17 @@ async function publishToFacebook({
       fb_native_post_id: socialId || null,
       postUrl,
       provider: 'ayrshare',
+      instagram_pedido: Boolean(publicarInstagram),
+      instagram_publicado: Boolean(ig && !igErro),
+      instagram_post_id: ig && !igErro && ig.id ? String(ig.id) : null,
+      instagram_post_url: (ig && !igErro && ig.postUrl) || null,
+      instagram_erro:
+        igErro ||
+        (publicarInstagram && !vaiNoInstagram
+          ? 'Instagram exige imagem ou vídeo — a publicação saiu só no Facebook.'
+          : publicarInstagram && !ig
+            ? 'A Ayrshare não confirmou o post no Instagram. Verifique a conta em Social Accounts.'
+            : null),
       raw: data,
     };
   } catch (err) {

@@ -113,7 +113,18 @@ function resolveLocalImageFile({ imagemPath, imageUrl }) {
 /**
  * Publica foto/vídeo/reel/texto na página (Ayrshare, PostSyncer, PostPulse ou Graph API).
  */
-async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, titulo, link, imagemPath }) {
+async function publishContent({
+  userId,
+  page,
+  tipo,
+  filePath,
+  imageUrl,
+  texto,
+  titulo,
+  link,
+  imagemPath,
+  publicarInstagram = false,
+}) {
   const provider = await resolveProvider(userId, page);
 
   let localFile = filePath || null;
@@ -200,6 +211,22 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
       hasProfileKey: Boolean(profileKey),
     });
 
+    // Instagram só sai com mídia e só quando a Página está marcada em /paginas.
+    const querInstagram = Boolean(publicarInstagram) && Boolean(freshPage.instagram_ativo);
+    if (publicarInstagram && !freshPage.instagram_ativo) {
+      console.warn(
+        '[publish] instagram pedido mas a Página não está marcada em /paginas:',
+        freshPage.page_name
+      );
+    }
+    if (querInstagram && tipo === 'texto') {
+      const err = new Error(
+        'O Instagram não aceita post só de texto. Escolha uma imagem para a matéria ou desmarque o Instagram.'
+      );
+      err.status = 422;
+      throw err;
+    }
+
     const result = await ayrshareService.publishToFacebook({
       post: content,
       filePath: localFile || null,
@@ -207,6 +234,7 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
       isReel: tipo === 'reel',
       title: titulo || null,
       profileKey: profileKey || null,
+      publicarInstagram: querInstagram,
     });
 
     const postId = result.post_id || result.id;
@@ -220,7 +248,27 @@ async function publishContent({ userId, page, tipo, filePath, imageUrl, texto, t
         result.postUrl ||
         buildFbPostUrl(page, nativeId || postId),
       provider: 'ayrshare',
+      instagram_pedido: Boolean(publicarInstagram),
+      instagram_publicado: Boolean(result.instagram_publicado),
+      instagram_post_id: result.instagram_post_id || null,
+      instagram_post_url: result.instagram_post_url || null,
+      instagram_erro:
+        result.instagram_erro ||
+        (publicarInstagram && !freshPage.instagram_ativo
+          ? 'Esta Página não tem Instagram ativado em /paginas — publicou só no Facebook.'
+          : null),
     };
+  }
+
+  // Só o Ayrshare integra o Instagram hoje; nos outros provedores o pedido
+  // seria silenciosamente ignorado.
+  if (publicarInstagram) {
+    const err = new Error(
+      `Instagram só está disponível pela Ayrshare (provedor atual: ${provider}). ` +
+        'Ajuste PUBLISH_PROVIDER ou desmarque a opção de Instagram.'
+    );
+    err.status = 422;
+    throw err;
   }
 
   if (provider === 'postsyncer') {

@@ -16,6 +16,10 @@ router.delete('/chat/conversas/:id/mensagens/:messageId', chatController.apagarD
 router.post('/chat/mensagens/:messageId/materia', chatController.salvarMateria);
 router.post('/chat/mensagens/:messageId/materias', chatController.salvarTodasAsMaterias);
 router.post('/chat/pautas/rascunhos', chatController.salvarPautasComoRascunhos);
+// "Ensinar a IA": memória editorial compartilhada com /biblioteca/agendar.
+router.get('/chat/orientacoes', chatController.obterOrientacoes);
+router.put('/chat/orientacoes', chatController.salvarOrientacoes);
+router.post('/chat/orientacoes', chatController.salvarOrientacoes);
 
 router.post('/pesquisar', controller.pesquisar);
 router.post('/em-alta', controller.emAlta);

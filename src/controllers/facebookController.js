@@ -180,6 +180,8 @@ async function listPages(req, res, next) {
           postsyncer_account_id: p.postsyncer_account_id || null,
           ayrshare_profile_key: p.ayrshare_profile_key || null,
           has_ayrshare_profile_key: Boolean(p.ayrshare_profile_key),
+          instagram_ativo: Boolean(p.instagram_ativo),
+          instagram_username: p.instagram_username || null,
           publica_via,
           is_default: Number(p.id) === Number(defaultPageId),
         };

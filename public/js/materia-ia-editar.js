@@ -410,6 +410,13 @@
       .replace(/"/g, '&quot;');
   }
 
+  // Instagram: a caixa só existe quando a Página está ativada em /paginas.
+  const instagramEl = document.getElementById('matter-publicar-instagram');
+  function instagramMarcado() {
+    if (!cfg.instagramAtivo || !instagramEl) return false;
+    return Boolean(instagramEl.checked);
+  }
+
   async function salvar() {
     const res = await fetch('/api/materias-ia/matters/' + cfg.id, {
       method: 'PUT',
@@ -419,6 +426,7 @@
         materia: materiaEl.value,
         fonteCredito: fonteCreditoEl ? fonteCreditoEl.value : undefined,
         tipoPublicacao: tipoEl.value,
+        publicarInstagram: instagramMarcado(),
       }),
     });
     const data = await res.json();
@@ -856,6 +864,7 @@
           tipoPublicacao: cfg.isReel ? 'reel' : tipoEl.value,
           titulo: tituloEl.value,
           materia: materiaEl.value,
+          publicarInstagram: instagramMarcado(),
           sync: true,
           forcar: true,
           republicar: isRepublish,
@@ -870,10 +879,22 @@
       }
 
       showPublishModal('success', data.link || null);
-      setStatus(isRepublish ? 'Republicada com sucesso ✓' : 'Publicado com sucesso ✓');
-      setTimeout(() => {
-        window.location.href = cfg.listUrl || '/minhas-materias';
-      }, 1800);
+      // Instagram recusado não desfaz o post do Facebook — o editor precisa saber.
+      if (data.instagramErro) {
+        setStatus('Publicado no Facebook ✓ — Instagram: ' + data.instagramErro, true);
+      } else if (data.instagramPublicado) {
+        setStatus(
+          (isRepublish ? 'Republicada' : 'Publicado') + ' no Facebook e no Instagram ✓'
+        );
+      } else {
+        setStatus(isRepublish ? 'Republicada com sucesso ✓' : 'Publicado com sucesso ✓');
+      }
+      // Com erro no Instagram, fica na tela para o editor ler o aviso.
+      if (!data.instagramErro) {
+        setTimeout(() => {
+          window.location.href = cfg.listUrl || '/minhas-materias';
+        }, 1800);
+      }
     } catch (err) {
       hidePublishModal();
       setStatus(err.message, true);

@@ -1694,3 +1694,16 @@ body.mia-chat-drawer-open {
   display: inline-flex;
   text-decoration: none;
 }
+
+/* Texto de apoio do modal "Ensinar a IA" (regras fixas para as próximas matérias). */
+.mia-ensinar-ajuda {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.mia-ensinar-ajuda strong {
+  color: #cbd5f5;
+  font-weight: 600;
+}

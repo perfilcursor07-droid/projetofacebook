@@ -118,4 +118,95 @@ async function setProfileKey(req, res, next) {
   }
 }
 
-module.exports = { setProfileKey };
+/**
+ * Liga/desliga a publicação no Instagram de uma Página.
+ *
+ * A conta do Instagram já vem conectada no User Profile da Ayrshare: aqui só
+ * confirmamos que ela existe (activeSocialAccounts) e guardamos a escolha, para
+ * a tela da matéria poder oferecer o botão "publicar também no Instagram".
+ */
+async function setInstagram(req, res, next) {
+  try {
+    ayrshareService.assertConfigured();
+    const pageId = Number(req.body?.facebook_page_id || req.body?.facebookPageId || 0);
+    if (!pageId) {
+      const err = new Error('Informe facebook_page_id');
+      err.status = 400;
+      throw err;
+    }
+
+    const page = await resolvePageForUser(req.session.userId, pageId);
+    if (!page) {
+      const err = new Error('Página não encontrada na sua conta');
+      err.status = 404;
+      throw err;
+    }
+
+    const bruto = req.body?.ativo ?? req.body?.instagram_ativo ?? true;
+    const ativo = bruto === true || bruto === 1 || bruto === '1' || bruto === 'true';
+
+    if (!ativo) {
+      await FacebookPages.setInstagram(page.id, { ativo: false });
+      return res.json({
+        ok: true,
+        page: { id: page.id, page_name: page.page_name, instagram_ativo: false },
+        aviso: 'Instagram desligado para esta Página.',
+      });
+    }
+
+    // Sem Profile Key, a Ayrshare usa o Primary Profile — o Instagram ativado
+    // aqui poderia ser o de outra Página.
+    const profileKey = String(page.ayrshare_profile_key || '').trim();
+    let detalhes = null;
+    try {
+      detalhes = await ayrshareService.fetchProfileByKey(profileKey || null, {
+        permitirPrimary: true,
+      });
+    } catch (validationErr) {
+      const err = new Error(
+        profileKey
+          ? `A Ayrshare recusou o Profile Key desta Página: ${ayrshareService.apiErrorMessage(validationErr)}`
+          : 'Cole primeiro o Profile Key desta Página para verificar o Instagram conectado.'
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    if (!detalhes.instagramConnected) {
+      const err = new Error(
+        'Este profile da Ayrshare não tem Instagram conectado. ' +
+          'Vincule a conta em app.ayrshare.com → Social Accounts e tente de novo.'
+      );
+      err.status = 422;
+      err.code = 'AYRSHARE_INSTAGRAM_NOT_CONNECTED';
+      throw err;
+    }
+
+    await FacebookPages.setInstagram(page.id, {
+      ativo: true,
+      username: detalhes.instagramUsername,
+    });
+
+    return res.json({
+      ok: true,
+      page: {
+        id: page.id,
+        page_name: page.page_name,
+        instagram_ativo: true,
+        instagram_username: detalhes.instagramUsername || null,
+      },
+      profile: {
+        instagram_connected: true,
+        instagram_username: detalhes.instagramUsername || null,
+        active_social_accounts: detalhes.activeSocialAccounts,
+      },
+      aviso: detalhes.instagramUsername
+        ? `Instagram @${detalhes.instagramUsername} ligado a esta Página.`
+        : 'Instagram ligado a esta Página.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { setProfileKey, setInstagram };

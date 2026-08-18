@@ -677,6 +677,14 @@ async function publicarMateria(userId, matterId, overrides = {}) {
 
   const pubTipo = tipo === 'reel' ? 'reel' : tipo === 'foto' ? 'foto' : 'texto';
 
+  // Instagram: o editor marca na matéria e a Página precisa estar ativada em
+  // /paginas. O override do body vence a preferência salva na matéria.
+  const pedidoInstagram =
+    overrides.publicar_instagram != null
+      ? Boolean(overrides.publicar_instagram)
+      : Boolean(matter.publicar_instagram);
+  const querInstagram = pedidoInstagram && Boolean(page.instagram_ativo);
+
   const [pubId] = await Publications.create({
     video_clip_id: matter.video_clip_id || null,
     imagem_id: null,
@@ -694,6 +702,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     error_message: null,
     titulo: overrides.titulo || matter.titulo,
     materia: overrides.materia || matter.materia,
+    publicar_instagram: pedidoInstagram,
   });
 
   const executarPublicacao = async () => {
@@ -777,6 +786,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       texto: mensagem,
       // A legenda completa já contém o título. No PostSyncer, settings.title a substituiria.
       titulo: null,
+      publicarInstagram: querInstagram,
     });
 
     const postId = result.post_id || result.id;
@@ -829,13 +839,25 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       erro_mensagem: null,
     };
     if (nativeId) pubPatch.fb_native_post_id = nativeId;
+    if (result.instagram_post_id) pubPatch.ig_post_id = String(result.instagram_post_id);
+    if (result.instagram_post_url) pubPatch.ig_post_url = String(result.instagram_post_url);
+    // Instagram recusado não derruba a publicação: fica registrado como aviso.
+    if (result.instagram_erro) {
+      pubPatch.erro_mensagem = String(result.instagram_erro).slice(0, 500);
+    }
     await Publications.update(pubId, pubPatch);
     await AiMatters.update(matter.id, {
       status: 'publicado',
       published_at: new Date(),
       error_message: null,
     });
-    return { postId, fbPostUrl };
+    return {
+      postId,
+      fbPostUrl,
+      instagramPublicado: Boolean(result.instagram_publicado),
+      instagramPostUrl: result.instagram_post_url || null,
+      instagramErro: result.instagram_erro || null,
+    };
   };
 
   if (overrides.sync) {
@@ -847,6 +869,10 @@ async function publicarMateria(userId, matterId, overrides = {}) {
         queued: false,
         postId: published.postId,
         fbPostUrl: published.fbPostUrl,
+        instagramPedido: pedidoInstagram,
+        instagramPublicado: published.instagramPublicado,
+        instagramPostUrl: published.instagramPostUrl,
+        instagramErro: published.instagramErro,
       };
     } catch (err) {
       const publishDispatch = require('./publishDispatch');

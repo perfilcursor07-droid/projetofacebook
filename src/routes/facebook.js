@@ -10,6 +10,7 @@ router.get('/pages', facebookController.listPages);
 router.put('/pages/default', facebookController.setDefaultPage);
 router.post('/pages/default', facebookController.setDefaultPage);
 router.post('/ayrshare/profile-key', ayrshareController.setProfileKey);
+router.post('/ayrshare/instagram', ayrshareController.setInstagram);
 router.get('/postpulse/status', postpulseController.statusHandler);
 router.post('/postpulse/sync', postpulseController.syncHandler);
 router.post('/postpulse/link', postpulseController.linkHandler);

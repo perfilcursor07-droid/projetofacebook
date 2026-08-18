@@ -195,6 +195,37 @@ async function salvarPautasComoRascunhos(req, res, next) {
   }
 }
 
+/**
+ * "Ensinar a IA" no chat: mesma memória usada em /biblioteca/agendar.
+ * O editor escreve as regras uma vez e elas valem para as próximas matérias.
+ */
+async function obterOrientacoes(req, res, next) {
+  try {
+    const learning = require('../services/editorialLearningService');
+    const dados = await learning.obterOrientacoes(req.session.userId);
+    return res.json({ ok: true, ...dados });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function salvarOrientacoes(req, res, next) {
+  try {
+    const learning = require('../services/editorialLearningService');
+    const texto = String(req.body?.orientacoes ?? req.body?.texto ?? '');
+    if (texto.length > 8000) {
+      return res.status(400).json({ error: 'Orientações muito longas. Resuma em regras curtas.' });
+    }
+    const acrescentar = req.body?.acrescentar === true || req.body?.modo === 'acrescentar';
+    const salvo = acrescentar
+      ? await learning.acrescentarOrientacao(req.session.userId, texto)
+      : await learning.salvarOrientacoes(req.session.userId, texto);
+    return res.json({ ok: true, ...salvo });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   listar,
   criar,
@@ -206,4 +237,6 @@ module.exports = {
   salvarMateria,
   salvarTodasAsMaterias,
   salvarPautasComoRascunhos,
+  obterOrientacoes,
+  salvarOrientacoes,
 };

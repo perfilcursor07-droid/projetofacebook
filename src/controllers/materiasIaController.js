@@ -371,6 +371,8 @@ async function publicar(req, res, next) {
       imagem_url: body.imagem_url || body.imagemUrl,
       sync: Boolean(body.sync),
       forcar: Boolean(body.forcar || body.republicar),
+      publicar_instagram:
+        body.publicarInstagram ?? body.publicar_instagram ?? body.instagram ?? null,
     });
     res.status(result.queued ? 202 : 200).json({
       ok: true,
@@ -512,6 +514,10 @@ async function atualizarMateria(req, res, next) {
     }
     if (body.facebookPageId != null || body.facebook_page_id != null) {
       patch.facebook_page_id = pickPageId(body);
+    }
+    if (body.publicarInstagram != null || body.publicar_instagram != null) {
+      const raw = body.publicarInstagram != null ? body.publicarInstagram : body.publicar_instagram;
+      patch.publicar_instagram = raw === true || raw === 1 || raw === '1' || raw === 'true';
     }
     if (matter.status === 'publicado') {
       return res.status(400).json({ error: 'Matéria já publicada. Gere uma nova se precisar alterar.' });
@@ -748,10 +754,29 @@ async function showMatter(req, res, next) {
       matter.titulos_alternativos
     );
 
+    // Instagram só aparece na tela quando a Página de destino foi ativada em /paginas.
+    let instagramPagina = { ativo: false, username: null, pageName: null };
+    try {
+      const { resolvePageForUser, defaultPageForUser } = require('../services/facebookPageResolver');
+      const pageDestino = matter.facebook_page_id
+        ? await resolvePageForUser(req.session.userId, matter.facebook_page_id)
+        : await defaultPageForUser(req.session.userId);
+      if (pageDestino) {
+        instagramPagina = {
+          ativo: Boolean(pageDestino.instagram_ativo),
+          username: pageDestino.instagram_username || null,
+          pageName: pageDestino.page_name || null,
+        };
+      }
+    } catch (err) {
+      console.warn('[showMatter] instagram da página:', err.message);
+    }
+
     return res.render('materia-ia-editar', {
       title: matter.titulo || 'Matéria IA',
       matter,
       titulosAlternativos,
+      instagramPagina,
       hashtags: Array.isArray(hashtags) ? hashtags : [],
       ultimoAgendamento,
       proximoSlotLocal,

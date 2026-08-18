@@ -823,6 +823,54 @@ function citacoesNaoTraduzidas(resposta) {
 }
 
 /**
+ * Conta marcas de idioma num texto qualquer (inglês, espanhol e português).
+ * A proporção é o sinal confiável: português de verdade traz muito mais
+ * marcas em pt do que em qualquer outro idioma.
+ */
+const MARCAS_EN = new Set([
+  'the', 'and', 'said', 'was', 'were', 'have', 'has', 'been', 'with', 'from', 'that', 'this',
+  'police', 'church', 'according', 'about', 'after', 'before', 'would', 'will', 'they', 'their',
+  'who', 'which', 'report', 'told', 'of', 'in', 'on', 'for', 'his', 'her', 'she', 'he',
+]);
+
+const MARCAS_ES = new Set([
+  'el', 'la', 'los', 'las', 'del', 'una', 'por', 'pero', 'como', 'según', 'iglesia', 'dijo',
+  'también', 'fueron', 'habría', 'está', 'fue', 'sus', 'esta', 'ese',
+]);
+
+const MARCAS_PT = new Set([
+  'que', 'não', 'para', 'com', 'uma', 'dos', 'das', 'foi', 'era', 'segundo', 'polícia', 'igreja',
+  'disse', 'ele', 'ela', 'mas', 'também', 'sobre', 'pelo', 'pela', 'nesta', 'seria', 'ao', 'à',
+  'são', 'está', 'você', 'muito', 'depois',
+]);
+
+/**
+ * Detecta material em inglês/espanhol contando palavras marcadoras.
+ * A proporção é o sinal confiável: texto em português traz muito mais marcas
+ * em pt do que em qualquer outro idioma.
+ */
+function textoEmOutroIdioma(bruto, { minChars = 120 } = {}) {
+  const texto = String(bruto || '').toLowerCase();
+  if (texto.length < minChars) return false;
+
+  const palavras = texto.match(/[a-zà-ÿ'’]+/g) || [];
+  let en = 0;
+  let es = 0;
+  let pt = 0;
+  for (const palavra of palavras) {
+    if (MARCAS_EN.has(palavra)) en += 1;
+    if (MARCAS_ES.has(palavra)) es += 1;
+    if (MARCAS_PT.has(palavra)) pt += 1;
+  }
+
+  const estrangeiras = Math.max(en, es);
+  return estrangeiras >= 6 && estrangeiras > pt * 1.5;
+}
+
+
+
+
+/**
  * Fonte em inglês/espanhol: a matéria sai em português e as falas são traduzidas.
  * Vale para qualquer fonte que o editor colou (link de site ou de rede social):
  * antes só o link de site entrava, e a matéria vinda de post estrangeiro saía
@@ -832,27 +880,18 @@ function fonteEmOutroIdioma(fontes = []) {
   const texto = (Array.isArray(fontes) ? fontes : [])
     .filter((f) => f?.fonteColada || f?.ehRedeSocial)
     .map((f) => `${f?.titulo || ''} ${f?.trecho || f?.resumo || ''}`)
-    .join(' ')
-    .toLowerCase();
-  if (texto.length < 120) return false;
+    .join(' ');
+  return textoEmOutroIdioma(texto);
+}
 
-  const marcasEn = (
-    texto.match(
-      /\b(the|and|said|was|were|have|has|been|with|from|that|this|police|church|according|about|after|before|would|will|they|their|who|which|pastor's|report|told)\b/g
-    ) || []
-  ).length;
-  const marcasEs = (
-    texto.match(/\b(el|la|los|las|del|una|por|para|pero|como|según|iglesia|dijo|también)\b/g) || []
-  ).length;
-  const marcasPt = (
-    texto.match(
-      /\b(que|não|para|com|uma|dos|das|foi|era|segundo|polícia|igreja|disse|ele|ela|mas|também|sobre)\b/g
-    ) || []
-  ).length;
-  const estrangeiras = Math.max(marcasEn, marcasEs);
-  // Texto curto de link estrangeiro raramente chega a 12 marcas; a proporção é
-  // o sinal confiável — português de verdade traz muito mais marcas em pt.
-  return estrangeiras >= 6 && estrangeiras > marcasPt * 1.5;
+/**
+ * O editor colou o TEXTO da matéria direto no chat (sem link), em inglês ou
+ * espanhol. Sem isso, o pedido em outro idioma saía sem tradução: a IA
+ * respondia no idioma do material colado.
+ */
+function pedidoEmOutroIdioma(pedido) {
+  // Texto colado é longo; instrução curta ("make it shorter") não conta.
+  return textoEmOutroIdioma(pedido, { minChars: 200 });
 }
 
 /**
@@ -1913,11 +1952,16 @@ async function responder({
   const veiculosColados = fontesColadas
     .map((f) => ({ veiculo: f.veiculo, url: f.url || null }))
     .filter((f) => f.veiculo);
-  const fonteEstrangeira = fonteEmOutroIdioma(fontes);
+  // Também vale quando o editor cola o TEXTO em inglês/espanhol direto no chat,
+  // sem link: antes esse caso saía sem tradução.
+  const textoColadoEstrangeiro = pedidoEmOutroIdioma(pedidoSemUrls());
+  const fonteEstrangeira = fonteEmOutroIdioma(fontes) || textoColadoEstrangeiro;
   if (fonteEstrangeira) {
     registrarPasso({
       kind: 'pensando',
-      texto: 'Fonte em outro idioma: traduzindo os fatos e as falas para português.',
+      texto: textoColadoEstrangeiro
+        ? 'Texto colado em outro idioma: traduzindo e reescrevendo em português.'
+        : 'Fonte em outro idioma: traduzindo os fatos e as falas para português.',
     });
   }
 
@@ -1960,7 +2004,7 @@ async function responder({
           fonteSocialChars: fonteAtual.ehRedeSocial
             ? String(fonteAtual.trecho || fonteAtual.resumo || '').trim().length
             : 0,
-          fonteEstrangeira: fonteEmOutroIdioma([fonteAtual]),
+          fonteEstrangeira: fonteEmOutroIdioma([fonteAtual]) || textoColadoEstrangeiro,
           contextoAprendizado,
           onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
         });
@@ -2551,4 +2595,6 @@ module.exports = {
   extrairFontesDeArtigos,
   garantirCitacaoDoVeiculo,
   fonteEmOutroIdioma,
+  pedidoEmOutroIdioma,
+  textoEmOutroIdioma,
 };
