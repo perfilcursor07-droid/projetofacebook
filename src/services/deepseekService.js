@@ -2473,7 +2473,7 @@ Regras:
           .join('\n\n'),
       },
     ],
-    { temperature: 0.3, json: true }
+    { temperature: 0.3, json: true, tarefa: 'conversa' }
   );
 
   let parsed;
@@ -2625,7 +2625,7 @@ BUSCA COMPLEMENTAR:
         content: `PAUTA PEDIDA PELO EDITOR:\n${tema.slice(0, 3000)}\n\nFONTES PESQUISADAS:\n${fontes.slice(0, 26000)}\n\nMonte o dossiê factual para uma matéria completa.`,
       },
     ],
-    { temperature: 0.15, json: true, thinking: true }
+    { temperature: 0.15, json: true, thinking: true, tarefa: 'conversa' }
   );
 
   let dossie;
@@ -2805,7 +2805,7 @@ Responda APENAS JSON:
         content: `PEDIDO DO EDITOR:\n${texto.slice(0, 2000)}\n\nTRECHOS DAS FONTES:\n${blocoFatos.slice(0, 32000)}\n\nAs fontes confirmam o fato central do pedido?`,
       },
     ],
-    { temperature: 0.1, json: true }
+    { temperature: 0.1, json: true, tarefa: 'conversa' }
   );
 
   let parsed;

@@ -3203,6 +3203,7 @@ async function coletarFatosNaWeb({
   onProgress = null,
   incluirRedes = false,
   redesAmplas = false,
+  incluirWebGeral = false,
 } = {}) {
   // Usado pelo chat de matérias para mostrar "buscando / encontrados / lendo".
   const emitir = (evento) => {
@@ -3316,12 +3317,17 @@ async function coletarFatosNaWeb({
   // 1 termo → exige ele; 2+ termos → exige ao menos 2 (nome próprio + contexto)
   const minimoTermos = termosChave.length <= 1 ? termosChave.length : 2;
 
-  function combinaComOTema(...textos) {
+  function combinaComOTema(titulo = '', resumo = '', trecho = '') {
     if (!termosChave.length) return true;
-    const alvo = semAcento(textos.filter(Boolean).join(' '));
+    const alvoPrimario = semAcento([titulo, resumo].filter(Boolean).join(' '));
+    const alvo = semAcento([titulo, resumo, trecho].filter(Boolean).join(' '));
     // Se todas/maioria das consultas repetem uma entidade específica (CGADB,
-    // nome de pessoa etc.), resultados genéricos de "política 2026" não entram.
-    if (termosAncora.length && !termosAncora.some((termo) => alvo.includes(termo))) {
+    // nome de pessoa etc.), ela precisa aparecer no título/resumo. Não aceite
+    // outro personagem só porque surgiu em menu, rodapé ou recomendação.
+    if (
+      termosAncora.length &&
+      !termosAncora.some((termo) => alvoPrimario.includes(termo))
+    ) {
       return false;
     }
     let achados = 0;
@@ -3385,7 +3391,11 @@ async function coletarFatosNaWeb({
         emitir({ tipo: 'buscando', consulta: q, periodo: rotulo });
         // eslint-disable-next-line no-await-in-loop
         const [gnews, brave] = await Promise.all([
-          buscarGoogleNewsRss(q, { when, resolverDiretas: true }).catch(() => []),
+          buscarGoogleNewsRss(q, {
+            when,
+            resolverDiretas: true,
+            incluirWebGeral,
+          }).catch(() => []),
           buscarBraveNews(q, cfgPeriodo).catch(() => []),
         ]);
         const brutos = [...gnews, ...brave];
@@ -3394,6 +3404,30 @@ async function coletarFatosNaWeb({
           foraDoPeriodo += 1;
           return false;
         });
+        const tokensConsultaAtual = [
+          ...new Set(
+            semAcento(q)
+              .split(/[^a-z0-9]+/)
+              .filter((termo) => termo.length >= 4 && !IRRELEVANTES.has(termo))
+          ),
+        ];
+        const encontradosOrdenados = encontrados
+          .map((item, indice) => {
+            const titulo = semAcento(item.titulo || '');
+            const resumo = semAcento(item.resumo || '');
+            let relevancia = 0;
+            for (const ancora of termosAncora) {
+              if (titulo.includes(ancora)) relevancia += 20;
+              else if (resumo.includes(ancora)) relevancia += 10;
+            }
+            for (const termo of tokensConsultaAtual) {
+              if (titulo.includes(termo)) relevancia += TERMOS_AMPLOS.has(termo) ? 1 : 4;
+              else if (resumo.includes(termo)) relevancia += TERMOS_AMPLOS.has(termo) ? 0.5 : 2;
+            }
+            return { item, indice, relevancia };
+          })
+          .sort((a, b) => b.relevancia - a.relevancia || a.indice - b.indice)
+          .map(({ item }) => item);
         emitir({
           tipo: 'encontrados',
           consulta: q,
@@ -3405,7 +3439,7 @@ async function coletarFatosNaWeb({
         const candidatos = [];
         const urlsCandidatas = new Set();
         const titulosCandidatos = [];
-        for (const item of encontrados.slice(0, 20)) {
+        for (const item of encontradosOrdenados.slice(0, 20)) {
           if (!item.link || normalizarUrlFonte(item.link) === urlExcluida) continue;
           const urlItem = normalizarUrlFonte(item.link);
           const tituloItem = String(item.titulo || '').trim();
@@ -3604,7 +3638,11 @@ async function coletarFatosNaWeb({
       const when = whenParaGoogle(cfgPeriodo);
       const brutos = [
         ...(await buscarBraveNews(queries[0], cfgPeriodo)),
-        ...(await buscarGoogleNewsRss(queries[0], { when, resolverDiretas: true })),
+        ...(await buscarGoogleNewsRss(queries[0], {
+          when,
+          resolverDiretas: true,
+          incluirWebGeral,
+        })),
       ].filter((r) => {
         if (itemDentroDoPeriodo(r, cfgPeriodo)) return true;
         foraDoPeriodo += 1;

@@ -53,6 +53,7 @@ async function main() {
       consultas: consultasResgate,
       periodo: '180d',
       max: 8,
+      incluirWebGeral: true,
       logPrefix: '[teste:resgate]',
     });
     const urls = new Set(fontes.map((f) => f.url).filter(Boolean));

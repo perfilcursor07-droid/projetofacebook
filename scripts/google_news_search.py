@@ -268,7 +268,14 @@ class GoogleNewsHtmlParser(HTMLParser):
             self.anchor_href = ""
 
 
-def search(query: str, days: int, limit: int, fixture_xml: str = "", fixture_html: str = "") -> list[dict]:
+def search(
+    query: str,
+    days: int,
+    limit: int,
+    fixture_xml: str = "",
+    fixture_html: str = "",
+    include_web: bool = False,
+) -> list[dict]:
     now = datetime.now(timezone.utc)
     after = (now - timedelta(days=days)).date().isoformat()
     before = (now + timedelta(days=1)).date().isoformat()
@@ -281,9 +288,13 @@ def search(query: str, days: int, limit: int, fixture_xml: str = "", fixture_htm
     html_url = "https://www.google.com/search?" + urllib.parse.urlencode(
         {"q": dated_query, "tbm": "nws", "hl": "pt-BR", "gl": "br", "num": min(limit, 30), "filter": "0"}
     )
+    web_url = "https://www.google.com/search?" + urllib.parse.urlencode(
+        {"q": dated_query, "hl": "pt-BR", "gl": "br", "num": min(limit, 30), "filter": "0"}
+    )
 
     rss_items: list[dict] = []
     html_items: list[dict] = []
+    web_items: list[dict] = []
     errors: list[str] = []
     try:
         rss_data = fixture_xml.encode("utf-8") if fixture_xml else fetch(rss_url)
@@ -301,11 +312,25 @@ def search(query: str, days: int, limit: int, fixture_xml: str = "", fixture_htm
     except Exception as exc:
         errors.append(f"html: {exc}")
 
+    # Portais locais e de nicho nem sempre entram no vertical Google Notícias.
+    # Na rodada de resgate, consulta também o índice web comum.
+    if include_web and not fixture_html:
+        try:
+            web_data = fetch(web_url, timeout=10)
+            web_parser = GoogleNewsHtmlParser()
+            web_parser.feed(web_data.decode("utf-8", errors="replace"))
+            web_items = [
+                {**item, "origem": "google-web-python-html"}
+                for item in web_parser.items
+            ]
+        except Exception as exc:
+            errors.append(f"web: {exc}")
+
     # URLs diretas primeiro; depois RSS para ampliar a cobertura.
     output: list[dict] = []
     seen_urls: set[str] = set()
     seen_titles: set[str] = set()
-    for item in [*html_items, *rss_items]:
+    for item in [*html_items, *web_items, *rss_items]:
         url_key = item["link"].split("#", 1)[0].rstrip("/").lower()
         title_key = re.sub(r"\W+", " ", item["titulo"].lower()).strip()
         if url_key in seen_urls or title_key in seen_titles:
@@ -332,6 +357,7 @@ def main() -> int:
             limit,
             str(payload.get("fixture_xml") or ""),
             str(payload.get("fixture_html") or ""),
+            bool(payload.get("includeWeb")),
         )
         print(json.dumps({"ok": True, "items": items, "errors": errors}, ensure_ascii=False))
         return 0

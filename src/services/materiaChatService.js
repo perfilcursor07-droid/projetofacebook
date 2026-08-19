@@ -2030,6 +2030,7 @@ async function responder({
         max: 10,
         incluirRedes: true,
         redesAmplas: true,
+        incluirWebGeral: true,
         resumoContexto: pedidoDaApuracao.slice(0, 500),
         logPrefix: '[materia-chat:resgate-factual]',
         onProgress: (evento) => {

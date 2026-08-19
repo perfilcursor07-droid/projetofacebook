@@ -343,9 +343,12 @@ function executarGooglePython(binario, payload) {
 }
 
 /** Fallback sem chave: Google News RSS + Google Notícias HTML via Python. */
-async function buscarGoogleNewsPython(termo, { when = '1m', limit = 20 } = {}) {
+async function buscarGoogleNewsPython(
+  termo,
+  { when = '1m', limit = 20, incluirWebGeral = false } = {}
+) {
   const dias = diasDoWhenGoogle(when);
-  const chave = `${String(termo || '').trim().toLowerCase()}|${dias}|${limit}`;
+  const chave = `${String(termo || '').trim().toLowerCase()}|${dias}|${limit}|web:${incluirWebGeral ? 1 : 0}`;
   const cached = GOOGLE_PYTHON_CACHE.get(chave);
   if (cached && cached.expira > Date.now()) return cached.itens;
 
@@ -363,6 +366,7 @@ async function buscarGoogleNewsPython(termo, { when = '1m', limit = 20 } = {}) {
         query: String(termo || '').trim(),
         days: dias,
         limit: Math.min(40, Math.max(1, Number(limit) || 20)),
+        includeWeb: Boolean(incluirWebGeral),
       });
       const itens = encontrados.map((item) => ({
         id: slugId(item.titulo, item.link),
@@ -392,7 +396,14 @@ async function buscarGoogleNewsPython(termo, { when = '1m', limit = 20 } = {}) {
 
 async function buscarGoogleNewsRss(
   termo,
-  { when = '1d', hl = 'pt-BR', gl = 'BR', ceid = 'BR:pt-419', resolverDiretas = false } = {}
+  {
+    when = '1d',
+    hl = 'pt-BR',
+    gl = 'BR',
+    ceid = 'BR:pt-419',
+    resolverDiretas = false,
+    incluirWebGeral = false,
+  } = {}
 ) {
   const q = encodeURIComponent(`${termo}${when ? ` when:${when}` : ''}`);
   const url = `https://news.google.com/rss/search?q=${q}&hl=${hl}&gl=${gl}&ceid=${ceid}`;
@@ -413,13 +424,17 @@ async function buscarGoogleNewsRss(
     }));
     if (itens.length) {
       if (!resolverDiretas) return itens;
-      const diretos = await buscarGoogleNewsPython(termo, { when, limit: 20 });
+      const diretos = await buscarGoogleNewsPython(termo, {
+        when,
+        limit: 20,
+        incluirWebGeral,
+      });
       return diretos.length ? diretos : itens;
     }
-    return buscarGoogleNewsPython(termo, { when });
+    return buscarGoogleNewsPython(termo, { when, incluirWebGeral });
   } catch (err) {
     console.warn('Google News RSS:', err.message);
-    return buscarGoogleNewsPython(termo, { when });
+    return buscarGoogleNewsPython(termo, { when, incluirWebGeral });
   }
 }
 
