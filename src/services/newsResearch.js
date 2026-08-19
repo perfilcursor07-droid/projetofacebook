@@ -313,7 +313,7 @@ function executarGooglePython(binario, payload) {
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error('tempo limite excedido'));
-    }, 25000);
+    }, 35000);
 
     child.stdout.on('data', (chunk) => {
       if (stdout.length < 2_000_000) stdout += chunk.toString('utf8');
@@ -390,7 +390,10 @@ async function buscarGoogleNewsPython(termo, { when = '1m', limit = 20 } = {}) {
   return [];
 }
 
-async function buscarGoogleNewsRss(termo, { when = '1d', hl = 'pt-BR', gl = 'BR', ceid = 'BR:pt-419' } = {}) {
+async function buscarGoogleNewsRss(
+  termo,
+  { when = '1d', hl = 'pt-BR', gl = 'BR', ceid = 'BR:pt-419', resolverDiretas = false } = {}
+) {
   const q = encodeURIComponent(`${termo}${when ? ` when:${when}` : ''}`);
   const url = `https://news.google.com/rss/search?q=${q}&hl=${hl}&gl=${gl}&ceid=${ceid}`;
   try {
@@ -408,7 +411,11 @@ async function buscarGoogleNewsRss(termo, { when = '1d', hl = 'pt-BR', gl = 'BR'
       recente: when === '1d',
       emAlta: false,
     }));
-    if (itens.length) return itens;
+    if (itens.length) {
+      if (!resolverDiretas) return itens;
+      const diretos = await buscarGoogleNewsPython(termo, { when, limit: 20 });
+      return diretos.length ? diretos : itens;
+    }
     return buscarGoogleNewsPython(termo, { when });
   } catch (err) {
     console.warn('Google News RSS:', err.message);

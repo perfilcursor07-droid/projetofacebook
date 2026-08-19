@@ -18,6 +18,7 @@ import sys
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 
@@ -64,6 +65,117 @@ def fetch(url: str, timeout: int = 18) -> bytes:
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read(2_500_000)
+
+
+def google_article_id(url: str) -> str:
+    match = re.search(r"/articles/([^?/#]+)", url or "")
+    return match.group(1) if match else ""
+
+
+def decode_google_news_url(url: str) -> str:
+    """Resolve the Google News article token through its batchexecute endpoint."""
+    article_id = google_article_id(url)
+    if not article_id:
+        return url
+
+    article_html = fetch(url, timeout=10).decode("utf-8", errors="replace")
+    signature = re.search(r'data-n-a-sg="([^"]+)"', article_html)
+    timestamp = re.search(r'data-n-a-ts="([^"]+)"', article_html)
+    if not signature or not timestamp:
+        return url
+
+    request_data = [
+        "garturlreq",
+        [
+            [
+                "X",
+                "X",
+                ["X", "X"],
+                None,
+                None,
+                1,
+                1,
+                "US:en",
+                None,
+                1,
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+                1,
+            ],
+            "X",
+            "X",
+            1,
+            [1, 1, 1],
+            1,
+            1,
+            None,
+            0,
+            0,
+            None,
+            0,
+        ],
+        article_id,
+        int(timestamp.group(1)),
+        signature.group(1),
+    ]
+    rpc = [[[
+        "Fbv4je",
+        json.dumps(request_data, ensure_ascii=False, separators=(",", ":")),
+        None,
+        "generic",
+    ]]]
+    body = urllib.parse.urlencode(
+        {"f.req": json.dumps(rpc, ensure_ascii=False, separators=(",", ":"))}
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        "https://news.google.com/_/DotsSplashUi/data/batchexecute?rpcids=Fbv4je",
+        data=body,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.7",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        response_text = response.read(1_000_000).decode("utf-8", errors="replace")
+
+    for line in response_text.splitlines():
+        line = line.strip()
+        if not line.startswith("[["):
+            continue
+        outer = json.loads(line)
+        for entry in outer:
+            if not isinstance(entry, list) or len(entry) < 3 or entry[0] != "wrb.fr":
+                continue
+            if not isinstance(entry[2], str):
+                continue
+            decoded = json.loads(entry[2])
+            final_url = decoded[1] if isinstance(decoded, list) and len(decoded) > 1 else ""
+            if isinstance(final_url, str) and final_url.startswith(("http://", "https://")):
+                return final_url
+    return url
+
+
+def resolve_rss_urls(items: list[dict]) -> list[dict]:
+    if not items:
+        return items
+
+    def resolve(item: dict) -> dict:
+        try:
+            final_url = decode_google_news_url(item.get("link") or "")
+            if final_url and "news.google.com" not in final_url:
+                return {**item, "link": final_url, "origem": "google-news-python-direto"}
+        except Exception:
+            pass
+        return item
+
+    with ThreadPoolExecutor(max_workers=min(10, len(items))) as executor:
+        return list(executor.map(resolve, items))
 
 
 def parse_rss(xml_data: bytes, cutoff_ms: int, limit: int) -> list[dict]:
@@ -176,11 +288,13 @@ def search(query: str, days: int, limit: int, fixture_xml: str = "", fixture_htm
     try:
         rss_data = fixture_xml.encode("utf-8") if fixture_xml else fetch(rss_url)
         rss_items = parse_rss(rss_data, cutoff_ms, limit)
+        if not fixture_xml:
+            rss_items = resolve_rss_urls(rss_items)
     except Exception as exc:  # rede/XML: o HTML ainda pode funcionar
         errors.append(f"rss: {exc}")
 
     try:
-        html_data = fixture_html.encode("utf-8") if fixture_html else fetch(html_url)
+        html_data = fixture_html.encode("utf-8") if fixture_html else fetch(html_url, timeout=10)
         parser = GoogleNewsHtmlParser()
         parser.feed(html_data.decode("utf-8", errors="replace"))
         html_items = parser.items

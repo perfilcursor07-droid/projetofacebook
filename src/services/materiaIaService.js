@@ -3217,10 +3217,28 @@ async function coletarFatosNaWeb({
   const rotulo = rotuloPeriodo(cfgPeriodo);
   let foraDoPeriodo = 0;
 
-  const queries = (Array.isArray(consultas) ? consultas : [consultas])
+  let queries = (Array.isArray(consultas) ? consultas : [consultas])
     .map((q) => String(q || '').replace(/\s+/g, ' ').trim())
     .filter((q, i, arr) => q.length >= 8 && arr.indexOf(q) === i);
   if (!queries.length) return [];
+
+  const intencaoNormalizada = queries
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  if (
+    /polem|controvers|escandal/.test(intencaoNormalizada) &&
+    /gospel|evangel|pastor|igreja/.test(intencaoNormalizada)
+  ) {
+    const expansoes = [
+      'pastor den\u00fancia OR processo OR golpe',
+      'igreja evang\u00e9lica den\u00fancia OR investiga\u00e7\u00e3o OR esc\u00e2ndalo',
+    ];
+    queries = [queries[0], ...expansoes, ...queries.slice(1)].filter(
+      (q, i, arr) => arr.findIndex((item) => item.toLowerCase() === q.toLowerCase()) === i
+    );
+  }
 
   const limite = Math.max(1, Math.min(24, Number(max) || 5));
   const urlExcluida = excluirUrl ? normalizarUrlFonte(excluirUrl) : '';
@@ -3253,6 +3271,7 @@ async function coletarFatosNaWeb({
     'brasil', 'brasileiro', 'brasileira', 'politica', 'eleicao', 'eleicoes',
     'gospel', 'evangelico', 'evangelica', 'igreja', 'igrejas', 'cristao', 'cristaos',
     'repercussao', 'posicionamento', 'impacto', 'historico', 'noticias',
+    'polemica', 'controversia', 'escandalo', 'denuncia', 'investigacao', 'processo', 'golpe',
   ]);
   const tokensPorConsulta = queries.map((q) => [
     ...new Set(
@@ -3349,7 +3368,7 @@ async function coletarFatosNaWeb({
         emitir({ tipo: 'buscando', consulta: q, periodo: rotulo });
         // eslint-disable-next-line no-await-in-loop
         const [gnews, brave] = await Promise.all([
-          buscarGoogleNewsRss(q, { when }).catch(() => []),
+          buscarGoogleNewsRss(q, { when, resolverDiretas: true }).catch(() => []),
           buscarBraveNews(q, cfgPeriodo).catch(() => []),
         ]);
         const brutos = [...gnews, ...brave];
@@ -3407,6 +3426,11 @@ async function coletarFatosNaWeb({
           );
           for (const { t, meta } of lidos) {
             if (fontes.length >= teto) break;
+            const dataConfirmada = Number(meta?.dataTimestamp) || Number(t.dataTimestamp) || 0;
+            if (dataConfirmada && !itemDentroDoPeriodo({ dataTimestamp: dataConfirmada }, cfgPeriodo)) {
+              foraDoPeriodo += 1;
+              continue;
+            }
             adicionarFonte({
               titulo: meta?.titulo || t.titulo,
               url: meta?.url || t.link,
@@ -3539,7 +3563,18 @@ async function coletarFatosNaWeb({
           linkExcluir: excluirUrl || null,
           max: 4,
         });
-        for (const f of mais) adicionarFonte(f);
+        const exigeDataConfirmada = Boolean(cfgPeriodo.horas) || Number(cfgPeriodo.dias) <= 3;
+        for (const f of mais) {
+          const dataConfirmada = Number(f.dataTimestamp) || 0;
+          if (
+            (exigeDataConfirmada && !dataConfirmada) ||
+            (dataConfirmada && !itemDentroDoPeriodo({ dataTimestamp: dataConfirmada }, cfgPeriodo))
+          ) {
+            foraDoPeriodo += 1;
+            continue;
+          }
+          adicionarFonte(f);
+        }
       } catch (err) {
         console.warn(`${logPrefix} complementares:`, err.message);
       }
@@ -3552,7 +3587,7 @@ async function coletarFatosNaWeb({
       const when = whenParaGoogle(cfgPeriodo);
       const brutos = [
         ...(await buscarBraveNews(queries[0], cfgPeriodo)),
-        ...(await buscarGoogleNewsRss(queries[0], { when })),
+        ...(await buscarGoogleNewsRss(queries[0], { when, resolverDiretas: true })),
       ].filter((r) => {
         if (itemDentroDoPeriodo(r, cfgPeriodo)) return true;
         foraDoPeriodo += 1;
@@ -3567,6 +3602,14 @@ async function coletarFatosNaWeb({
           meta = await extrairMetadadosArtigo(url);
         } catch {
           /* ignore */
+        }
+        const dataConfirmada = Number(meta?.dataTimestamp) || Number(r.dataTimestamp) || 0;
+        if (
+          dataConfirmada &&
+          !itemDentroDoPeriodo({ dataTimestamp: dataConfirmada }, cfgPeriodo)
+        ) {
+          foraDoPeriodo += 1;
+          continue;
         }
         adicionarFonte({
           titulo: meta?.titulo || r.titulo,

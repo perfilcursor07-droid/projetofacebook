@@ -82,6 +82,55 @@ function extrairMeta(html, propriedade) {
   return null;
 }
 
+function parsearDataPublicacao(valor) {
+  const raw = decodificarHtml(valor || '').trim();
+  if (!raw) return 0;
+  const direto = Date.parse(raw);
+  if (!Number.isNaN(direto)) return direto;
+
+  const meses = {
+    janeiro: 0,
+    fevereiro: 1,
+    marco: 2,
+    'mar\u00e7o': 2,
+    abril: 3,
+    maio: 4,
+    junho: 5,
+    julho: 6,
+    agosto: 7,
+    setembro: 8,
+    outubro: 9,
+    novembro: 10,
+    dezembro: 11,
+  };
+  const pt = raw.match(/\b(\d{1,2})\s+de\s+([a-z\u00e0-\u00ff]+)\s+de\s+(\d{4})\b/i);
+  if (!pt) return 0;
+  const mes = meses[pt[2].toLowerCase()];
+  return mes == null ? 0 : new Date(Number(pt[3]), mes, Number(pt[1])).getTime();
+}
+
+function extrairDataPublicacaoDoHtml(html) {
+  const structured = [
+    extrairMeta(html, 'article:published_time'),
+    extrairMeta(html, 'datePublished'),
+    extrairMeta(html, 'publish-date'),
+    extrairMeta(html, 'parsely-pub-date'),
+    extrairMeta(html, 'sailthru.date'),
+    String(html || '').match(/["']datePublished["']\s*:\s*["']([^"']+)["']/i)?.[1],
+    String(html || '').match(/<time[^>]+datetime=["']([^"']+)["']/i)?.[1],
+  ].filter(Boolean);
+  for (const value of structured) {
+    const timestamp = parsearDataPublicacao(value);
+    if (timestamp) return { dataPublicacao: decodificarHtml(value), dataTimestamp: timestamp };
+  }
+
+  const visible = decodificarHtml(String(html || '')).match(
+    /\b\d{1,2}\s+de\s+[a-z\u00e0-\u00ff]+\s+de\s+\d{4}\b/i
+  )?.[0];
+  const timestamp = parsearDataPublicacao(visible);
+  return timestamp ? { dataPublicacao: visible, dataTimestamp: timestamp } : null;
+}
+
 function limparMarkdownReader(texto) {
   return decodificarHtml(texto)
     .replace(/^Title:\s*/gim, '')
@@ -115,6 +164,9 @@ async function extrairMetadadosViaJina(urlReal) {
       validateStatus: (s) => s >= 200 && s < 400,
     });
     const raw = String(res.data || '');
+    const dataJina =
+      raw.match(/^(?:Published Time|Published|Date):\s*(.+)$/im)?.[1]?.trim() || null;
+    const dataTimestamp = parsearDataPublicacao(dataJina);
     const titulo =
       raw.match(/^Title:\s*(.+)$/im)?.[1]?.trim() ||
       raw.match(/^#\s+(.+)$/m)?.[1]?.trim() ||
@@ -141,6 +193,8 @@ async function extrairMetadadosViaJina(urlReal) {
         }
       })(),
       veiculoHost: null,
+      dataPublicacao: dataTimestamp ? dataJina : null,
+      dataTimestamp,
     };
   } catch (err) {
     console.warn('extrairMetadadosArtigo Jina:', err.message);
@@ -520,6 +574,7 @@ async function extrairMetadadosArtigo(url) {
     const imagem = extrairImagemCapa(html, finalUrl);
     const paragrafos = extrairParagrafos(html);
     const autor = extrairAutorDoHtml(html);
+    const dataPublicacao = extrairDataPublicacaoDoHtml(html);
     const veiculoMeta =
       extrairMeta(html, 'og:site_name') ||
       extrairMeta(html, 'application-name') ||
@@ -543,6 +598,8 @@ async function extrairMetadadosArtigo(url) {
       autor: autor || null,
       veiculo: veiculoMeta || veiculoHost,
       veiculoHost,
+      dataPublicacao: dataPublicacao?.dataPublicacao || null,
+      dataTimestamp: dataPublicacao?.dataTimestamp || 0,
     };
     if (String(meta.trecho || '').trim().length < 180) {
       const viaJina = await extrairMetadadosViaJina(finalUrl);
@@ -573,6 +630,8 @@ async function extrairMetadadosArtigo(url) {
       trecho: '',
       autor: null,
       veiculo: null,
+      dataPublicacao: null,
+      dataTimestamp: 0,
     };
   }
 }
@@ -809,6 +868,8 @@ async function coletarFontesComplementares({ titulo, resumo, linkExcluir = null,
       titulo: meta?.titulo || fonte.titulo || query,
       resumo: resumoMeta.slice(0, 500),
       trecho: trecho.slice(0, 2500) || resumoMeta.slice(0, 800),
+      dataPublicacao: meta?.dataPublicacao || null,
+      dataTimestamp: Number(meta?.dataTimestamp) || 0,
       origemBusca: true,
       score: fonte.score || 0,
     });
