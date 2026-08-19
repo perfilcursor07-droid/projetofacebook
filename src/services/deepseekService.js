@@ -47,6 +47,37 @@ function logarDuracao(rotulo, inicio, extra = '') {
   console.log(`[deepseek] ${rotulo} ${s}s${extra ? ` ${extra}` : ''}`);
 }
 
+function erroTransitorioDeepseek(err) {
+  const codigo = String(err?.code || '').toUpperCase();
+  const status = Number(err?.response?.status || err?.status || 0);
+  return (
+    ['ECONNRESET', 'ECONNABORTED', 'ETIMEDOUT', 'EPIPE', 'ENETUNREACH'].includes(codigo) ||
+    status === 408 ||
+    status === 409 ||
+    status === 429 ||
+    status >= 500
+  );
+}
+
+/** Uma queda transitória não deve eliminar o dossiê inteiro da matéria. */
+async function postDeepseekComRetry(body, opcoes, tentativas = 2) {
+  let ultimoErro;
+  for (let tentativa = 1; tentativa <= tentativas; tentativa += 1) {
+    try {
+      return await axios.post(DEEPSEEK_URL, body, opcoes);
+    } catch (err) {
+      ultimoErro = err;
+      if (tentativa >= tentativas || !erroTransitorioDeepseek(err)) throw err;
+      const esperaMs = 600 * tentativa;
+      console.warn(
+        `[deepseek] falha transitória (${err.code || err.response?.status || 'rede'}); repetindo em ${esperaMs}ms`
+      );
+      await new Promise((resolve) => setTimeout(resolve, esperaMs));
+    }
+  }
+  throw ultimoErro;
+}
+
 /**
  * Quais tarefas vao para o Claude. O resto (sugerir imagem, titulo, hashtags,
  * radar, resumo) continua na DeepSeek, que ja resolvia bem e sai mais barato.
@@ -181,7 +212,7 @@ async function chatCompletion(
     if (pensar) body.reasoning_effort = REASONING_EFFORT;
   }
   const inicio = Date.now();
-  const { data } = await axios.post(DEEPSEEK_URL, body, {
+  const { data } = await postDeepseekComRetry(body, {
     headers: {
       Authorization: `Bearer ${env.deepseekApiKey}`,
       'Content-Type': 'application/json',

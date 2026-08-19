@@ -1998,6 +1998,81 @@ async function responder({
     }
   }
 
+  const pedidoDaApuracao = pedidoDeAjuste && contextoMateriaAnterior
+    ? `${contextoMateriaAnterior}\nAjuste solicitado: ${pedido}`
+    : pedido;
+  let resgateFactualExecutado = false;
+
+  /**
+   * Segunda rodada independente do dossiê. Se a chamada de análise cair por
+   * timeout/reset, o resgate continua disponível no portão de checagem.
+   */
+  const executarResgateFactual = async (consultasExtras = []) => {
+    if (resgateFactualExecutado || !usarPesquisa) return 0;
+    const consultasResgate = [...consultasDaPesquisa, ...(consultasExtras || [])]
+      .map((consulta) => String(consulta || '').replace(/\s+/g, ' ').trim())
+      .filter((consulta, indice, lista) =>
+        consulta.length >= 8 &&
+        lista.findIndex((item) => normalizarTexto(item) === normalizarTexto(consulta)) === indice
+      )
+      .slice(0, 6);
+    if (!consultasResgate.length) return 0;
+
+    resgateFactualExecutado = true;
+    registrarPasso({
+      kind: 'busca',
+      texto: 'O fato ainda não foi confirmado; ampliando o período e refinando as buscas…',
+    });
+    try {
+      const fontesComplementares = await materiaIaService.coletarFatosNaWeb({
+        consultas: consultasResgate,
+        periodo: periodoFinal === '180d' ? periodoFinal : '180d',
+        max: 10,
+        incluirRedes: true,
+        redesAmplas: true,
+        resumoContexto: pedidoDaApuracao.slice(0, 500),
+        logPrefix: '[materia-chat:resgate-factual]',
+        onProgress: (evento) => {
+          if (evento.tipo === 'buscando') {
+            registrarPasso({ kind: 'busca', texto: `Busca refinada: “${evento.consulta}”` });
+          } else if (evento.tipo === 'lendo') {
+            registrarPasso({
+              kind: 'lendo',
+              texto: `Conferindo ${evento.veiculo || 'página'}: ${evento.titulo || evento.url}`,
+              url: evento.url || null,
+            });
+          }
+        },
+      });
+      const urlsVistas = new Set(
+        fontes.map((fonte) => normalizarUrlComparacao(fonte?.url)).filter(Boolean)
+      );
+      let adicionadas = 0;
+      for (const fonte of fontesComplementares) {
+        const url = normalizarUrlComparacao(fonte?.url);
+        if (url && urlsVistas.has(url)) continue;
+        if (url) urlsVistas.add(url);
+        fontes.push(fonte);
+        adicionadas += 1;
+      }
+      if (adicionadas) {
+        registrarPasso({
+          kind: 'fontes',
+          texto: `${adicionadas} fonte(s) nova(s) encontrada(s) na busca refinada`,
+        });
+        blocoFatos = materiaIaService.montarBlocoFatos(fontes);
+      }
+      return adicionadas;
+    } catch (err) {
+      console.warn('[materia-chat] busca complementar:', err.message);
+      registrarPasso({
+        kind: 'aviso',
+        texto: 'A busca refinada falhou nesta tentativa; mantendo somente as fontes já lidas.',
+      });
+      return 0;
+    }
+  };
+
   // Antes de escrever uma pauta pesquisada e ampla, sintetiza as fontes em um
   // dossiê. Isso impede que a matéria se limite ao primeiro simpósio/evento e
   // deixa explícitos estrutura, iniciativas, falas, apoios e contrapontos.
@@ -2007,11 +2082,8 @@ async function responder({
       texto: 'Cruzando as fontes e montando o dossiê da matéria…',
     });
     try {
-      const pedidoDoDossie = pedidoDeAjuste && contextoMateriaAnterior
-        ? `${contextoMateriaAnterior}\nAjuste solicitado: ${pedido}`
-        : pedido;
       let dossie = await deepseekService.montarDossieApuracao({
-        pedido: pedidoDoDossie,
+        pedido: pedidoDaApuracao,
         fatosFontes: blocoFatos,
       });
 
@@ -2023,71 +2095,12 @@ async function responder({
         dossie.confirmado === false &&
         dossie.consultasComplementares?.length
       ) {
-        registrarPasso({
-          kind: 'busca',
-          texto: 'A primeira rodada não confirmou o fato; refinando as buscas pelas lacunas…',
-        });
-        try {
-          const consultasResgate = [
-            ...consultasDaPesquisa,
-            ...dossie.consultasComplementares,
-          ]
-            .map((consulta) => String(consulta || '').replace(/\s+/g, ' ').trim())
-            .filter((consulta, indice, lista) =>
-              consulta.length >= 8 &&
-              lista.findIndex((item) => normalizarTexto(item) === normalizarTexto(consulta)) === indice
-            )
-            .slice(0, 6);
-          const fontesComplementares = await materiaIaService.coletarFatosNaWeb({
-            consultas: consultasResgate,
-            // Resultado com o nome certo, mas fato errado, não conta como êxito.
-            // Amplia a janela nesta única rodada de resgate e deixa o dossiê
-            // registrar a data real para não apresentar conteúdo antigo como novo.
-            periodo: periodoFinal === '180d' ? periodoFinal : '180d',
-            max: 8,
-            incluirRedes: true,
-            redesAmplas: true,
-            resumoContexto: pedidoDoDossie.slice(0, 500),
-            logPrefix: '[materia-chat:resgate-factual]',
-            onProgress: (evento) => {
-              if (evento.tipo === 'buscando') {
-                registrarPasso({
-                  kind: 'busca',
-                  texto: `Busca refinada: “${evento.consulta}”`,
-                });
-              } else if (evento.tipo === 'lendo') {
-                registrarPasso({
-                  kind: 'lendo',
-                  texto: `Conferindo ${evento.veiculo || 'página'}: ${evento.titulo || evento.url}`,
-                  url: evento.url || null,
-                });
-              }
-            },
+        const adicionadas = await executarResgateFactual(dossie.consultasComplementares);
+        if (adicionadas) {
+          dossie = await deepseekService.montarDossieApuracao({
+            pedido: pedidoDaApuracao,
+            fatosFontes: blocoFatos,
           });
-          const urlsVistas = new Set(
-            fontes.map((fonte) => normalizarUrlComparacao(fonte?.url)).filter(Boolean)
-          );
-          let adicionadas = 0;
-          for (const fonte of fontesComplementares) {
-            const url = normalizarUrlComparacao(fonte?.url);
-            if (url && urlsVistas.has(url)) continue;
-            if (url) urlsVistas.add(url);
-            fontes.push(fonte);
-            adicionadas += 1;
-          }
-          if (adicionadas) {
-            registrarPasso({
-              kind: 'fontes',
-              texto: `${adicionadas} fonte(s) nova(s) encontrada(s) na busca refinada`,
-            });
-            blocoFatos = materiaIaService.montarBlocoFatos(fontes);
-            dossie = await deepseekService.montarDossieApuracao({
-              pedido: pedidoDoDossie,
-              fatosFontes: blocoFatos,
-            });
-          }
-        } catch (err) {
-          console.warn('[materia-chat] busca complementar:', err.message);
         }
       }
 
@@ -2166,8 +2179,61 @@ async function responder({
       }
     }
 
-    const afirmaFato = !pedidoEmLote && (!checagem || checagem.tipoPedido === 'fato');
-    const naoConfirmado = !blocoFatos || (checagem && checagem.confirmado === false);
+    let afirmaFato = !pedidoEmLote && (!checagem || checagem.tipoPedido === 'fato');
+    let naoConfirmado = !blocoFatos || (checagem && checagem.confirmado === false);
+
+    // O dossiê pode falhar por reset/timeout do provedor. Não deixe essa falha
+    // transitória eliminar a rodada de resgate: amplie a pesquisa aqui também,
+    // reanalise as novas fontes e só então decida bloquear a matéria.
+    if (
+      afirmaFato &&
+      naoConfirmado &&
+      pedeMateria &&
+      !temFonteDoLink &&
+      !resgateFactualExecutado
+    ) {
+      const adicionadas = await executarResgateFactual();
+      if (adicionadas && blocoFatos) {
+        registrarPasso({ kind: 'checagem', texto: 'Rechecando o fato com as novas fontes…' });
+        try {
+          const novoDossie = await deepseekService.montarDossieApuracao({
+            pedido: pedidoDaApuracao,
+            fatosFontes: blocoFatos,
+          });
+          if (novoDossie?.texto) {
+            blocoFatos = `DOSSIÊ EDITORIAL EXTRAÍDO DAS FONTES (não substitui os trechos originais):\n${novoDossie.texto}\n\n--- FONTES ORIGINAIS ---\n\n${blocoFatos}`;
+            checagem = {
+              tipoPedido: novoDossie.tipoPedido,
+              confirmado: novoDossie.confirmado,
+              oQueAsFontesDizem: novoDossie.confirmacaoResumo,
+              oQueFalta: novoDossie.confirmado
+                ? ''
+                : 'O fato central não foi confirmado após a busca ampliada.',
+              sugestao: novoDossie.tipoPedido === 'tema'
+                ? 'Escrever somente com os fatos organizados no dossiê.'
+                : '',
+            };
+          } else {
+            checagem = await deepseekService.checarPedidoNasFontes({
+              pedido,
+              fatosFontes: blocoFatos,
+            });
+          }
+        } catch (err) {
+          console.warn('[materia-chat] rechecagem após resgate:', err.message);
+          try {
+            checagem = await deepseekService.checarPedidoNasFontes({
+              pedido,
+              fatosFontes: blocoFatos,
+            });
+          } catch (errChecagem) {
+            console.warn('[materia-chat] rechecagem simples:', errChecagem.message);
+          }
+        }
+        afirmaFato = !pedidoEmLote && (!checagem || checagem.tipoPedido === 'fato');
+        naoConfirmado = !blocoFatos || (checagem && checagem.confirmado === false);
+      }
+    }
     // Pedido = só o link (ou “faça matéria deste link”): o fato está no próprio
     // post/vídeo/matéria que o editor colou, então não precisa de confirmação extra.
     const pedidoCentadoNoLink =
