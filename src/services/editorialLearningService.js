@@ -6,6 +6,40 @@ const { env } = require('../config/env');
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || env.deepseekModel || 'deepseek-v4-flash';
 
+/**
+ * Destilar estilo e memoria de chat e tarefa curta e repetitiva: vai sempre no
+ * modelo barato (Haiku 4.5 quando o provedor e o Claude) e sem raciocinio.
+ */
+function iaConfigurada() {
+  const claude = String(env.aiProvider || '').toLowerCase() === 'claude';
+  return claude ? Boolean(env.anthropicApiKey) : Boolean(env.deepseekApiKey);
+}
+
+async function chamarIaJson(messages, { timeout = 90_000 } = {}) {
+  if (String(env.aiProvider || '').toLowerCase() === 'claude' && env.anthropicApiKey) {
+    return require('./claudeService').chatCompletion(messages, {
+      json: true,
+      tarefa: 'auxiliar',
+      maxTokens: 1500,
+    });
+  }
+  const body = {
+    model: DEEPSEEK_MODEL,
+    temperature: 0.2,
+    response_format: { type: 'json_object' },
+    messages,
+  };
+  if (String(DEEPSEEK_MODEL).includes('v4')) body.thinking = { type: 'disabled' };
+  const { data } = await axios.post(DEEPSEEK_URL, body, {
+    headers: {
+      Authorization: 'Bearer ' + env.deepseekApiKey,
+      'Content-Type': 'application/json',
+    },
+    timeout,
+  });
+  return data?.choices?.[0]?.message?.content || '';
+}
+
 const MAX_TRECHO = 4000;
 const DISTILL_EVERY = 3;
 const MAX_MEMORIAS_CHAT = 20;
@@ -163,11 +197,7 @@ async function atualizarRegrasEstilo(userId) {
     })
     .join('\n\n');
 
-  const body = {
-    model: DEEPSEEK_MODEL,
-    temperature: 0.35,
-    response_format: { type: 'json_object' },
-    messages: [
+  const messages = [
       {
         role: 'system',
         content:
@@ -177,21 +207,9 @@ async function atualizarRegrasEstilo(userId) {
         role: 'user',
         content: `Com base nestas correções (IA → versão editada), liste as regras de estilo do editor:\n\n${blocos}`,
       },
-    ],
-  };
-  if (String(DEEPSEEK_MODEL).includes('v4')) {
-    body.thinking = { type: 'disabled' };
-  }
+  ];
 
-  const { data } = await axios.post(DEEPSEEK_URL, body, {
-    headers: {
-      Authorization: `Bearer ${env.deepseekApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    timeout: 90_000,
-  });
-
-  const raw = data?.choices?.[0]?.message?.content || '';
+  const raw = await chamarIaJson(messages);
   let regras = [];
   try {
     const parsed = JSON.parse(raw);
@@ -237,15 +255,11 @@ async function registrarFeedbackDoChat({ userId, pedido, respostaAnterior = null
   if (!userId || texto.length < 8 || !PADRAO_FEEDBACK_CHAT.test(texto)) {
     return { registered: false };
   }
-  if (!env.deepseekApiKey) return { registered: false, reason: 'sem_api' };
+  if (!iaConfigurada()) return { registered: false, reason: 'sem_api' };
 
   const estilo = await EditorialEstiloUsuario.findByUser(userId);
   const atuais = memoriasComoLista(estilo?.preferencias_chat);
-  const body = {
-    model: DEEPSEEK_MODEL,
-    temperature: 0.1,
-    response_format: { type: 'json_object' },
-    messages: [
+  const messages = [
       {
         role: 'system',
         content: `Você mantém a memória editorial de um usuário que produz matérias jornalísticas para Facebook e Instagram.
@@ -280,21 +294,11 @@ Escreva cada memória como instrução curta, objetiva e reutilizável. Remova d
           .filter(Boolean)
           .join('\n\n'),
       },
-    ],
-  };
-  if (String(DEEPSEEK_MODEL).includes('v4')) body.thinking = { type: 'disabled' };
-
-  const { data } = await axios.post(DEEPSEEK_URL, body, {
-    headers: {
-      Authorization: `Bearer ${env.deepseekApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    timeout: 90_000,
-  });
+  ];
 
   let parsed = {};
   try {
-    parsed = JSON.parse(data?.choices?.[0]?.message?.content || '{}');
+    parsed = JSON.parse((await chamarIaJson(messages)) || '{}');
   } catch {
     return { registered: false, reason: 'resposta_invalida' };
   }

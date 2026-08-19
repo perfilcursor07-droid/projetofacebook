@@ -13,6 +13,8 @@ const {
   detectarMuletasIa,
   detectarCitacoesInventadas,
   blocoRegrasFacebook,
+  blocoRegrasFacebookBase,
+  blocoRegrasFacebookVariavel,
   mensagemAvisoQualidade,
   quebrarEmParagrafos,
   blocoEstiloNewsGospel,
@@ -43,6 +45,37 @@ function resolverThinking(pedidoDaChamada) {
 function logarDuracao(rotulo, inicio, extra = '') {
   const s = ((Date.now() - inicio) / 1000).toFixed(1);
   console.log(`[deepseek] ${rotulo} ${s}s${extra ? ` ${extra}` : ''}`);
+}
+
+/**
+ * Provedor ativo. Com AI_PROVIDER=claude todas as funcoes deste arquivo passam
+ * a falar com a Anthropic sem mudar prompt nem chamada — e voltam para a
+ * DeepSeek trocando a variavel de ambiente.
+ */
+function usarClaude() {
+  if (String(env.aiProvider || '').toLowerCase() !== 'claude') return false;
+  const claude = require('./claudeService');
+  if (!claude.isConfigured()) {
+    console.warn('[ia] AI_PROVIDER=claude mas ANTHROPIC_API_KEY esta vazia — usando DeepSeek.');
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Qual perfil de custo a chamada merece. O chamador pode mandar `tarefa`
+ * explicitamente; sem isso, o contrato de JSON da materia ("materia" +
+ * "hashtags") identifica a redacao, que e a unica que vai no modelo caro.
+ * Errar aqui so muda o modelo escolhido — nao quebra a chamada.
+ */
+function inferirTarefa(messages, tarefaPedida) {
+  if (tarefaPedida) return tarefaPedida;
+  const system = (messages || [])
+    .filter((m) => m && m.role === 'system')
+    .map((m) => String(m.content || ''))
+    .join(' ');
+  if (system.includes('"materia"') && system.includes('"hashtags"')) return 'redacao';
+  return 'auxiliar';
 }
 
 function assertDeepseek() {
@@ -98,8 +131,15 @@ function finalizarTituloComMarca(titulo, marcaModeloArte) {
 
 async function chatCompletion(
   messages,
-  { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL } = {}
+  { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL, tarefa = null } = {}
 ) {
+  if (usarClaude()) {
+    return require('./claudeService').chatCompletion(messages, {
+      json,
+      thinking,
+      tarefa: inferirTarefa(messages, tarefa),
+    });
+  }
   assertDeepseek();
   const selectedModel = String(model || DEEPSEEK_MODEL);
   const pensar = resolverThinking(thinking);
@@ -150,8 +190,16 @@ async function chatCompletionStream(
     thinking = false,
     timeout = 180_000,
     model = DEEPSEEK_MODEL,
+    tarefa = null,
   } = {}
 ) {
+  if (usarClaude()) {
+    return require('./claudeService').chatCompletionStream(messages, {
+      onDelta,
+      thinking,
+      tarefa: tarefa || 'conversa',
+    });
+  }
   assertDeepseek();
   const selectedModel = String(model || DEEPSEEK_MODEL);
   const pensar = resolverThinking(thinking);
@@ -459,16 +507,15 @@ async function gerarMateriaImagem({
   };
 }
 
-function systemPromptNoticia(
-  faixa,
-  investigativa,
-  furoReportagem = false,
-  volumeFonte = 'media',
-  variacaoViral = false
-) {
+/**
+ * Prefixo ESTÁVEL do system — idêntico em toda matéria, então é ele que o cache
+ * de prompt reaproveita. Qualquer coisa sorteada quebra o cache: mande pelo
+ * systemPromptNoticiaVariavel ou pelo turno do usuário.
+ */
+function systemPromptNoticiaBase() {
   return `Você é redator de Página gospel no Facebook e Instagram (estilo News Gospel). Escreva matérias ORIGINAIS em português brasileiro.
 
-${blocoRegrasFacebook(faixa, volumeFonte)}
+${blocoRegrasFacebookBase()}
 
 Formato Facebook/Instagram (obrigatório):
 - Campo "materia" = texto puro da legenda/matéria (SEM HTML, SEM markdown, SEM meta description).
@@ -480,6 +527,19 @@ Formato Facebook/Instagram (obrigatório):
 - NÃO invente fatos, nomes, cargos, números ou citações que não estejam nas fontes de apuração.
 - Se houver fontes da internet na apuração, use-as para complementar o fato; se não houver, não preencha lacunas com especulação.
 - Reescreva sempre com voz própria (anti-plágio): estrutura e frases novas.
+
+Responda APENAS JSON válido: {"titulo":"...","materia":"...","hashtags":["..."],"termos_imagem":["..."]}`;
+}
+
+/** Parte do system que muda por matéria (tamanho sorteado + modos ativos). */
+function systemPromptNoticiaVariavel(
+  faixa,
+  investigativa,
+  furoReportagem = false,
+  volumeFonte = 'media',
+  variacaoViral = false
+) {
+  return `${blocoRegrasFacebookVariavel(faixa, volumeFonte)}
 
 ${investigativa ? 'MODO INVESTIGATIVO: use SOMENTE evidências documentadas; temperatura baixa de criatividade; zero dramatização falsa.' : ''}
 ${furoReportagem ? `MODO FURO / MINIMATÉRIA (obrigatório):
@@ -499,9 +559,14 @@ ${variacaoViral ? `MODO VARIAÇÃO VIRAL (obrigatório — post que já performo
 - Estrutura nova: pode começar pela curiosidade/motivo, depois o fato, depois o impacto.
 - Proibido copiar frases longas da matéria anterior (exceto 1–2 aspas literais curtas da pessoa citada).
 - Se houver fatos novos da internet, priorize-os no lead e no desenvolvimento.
-- Hashtags podem se sobrepor parcialmente, mas o título e o corpo devem parecer outro post.` : ''}
+- Hashtags podem se sobrepor parcialmente, mas o título e o corpo devem parecer outro post.` : ''}`.trim();
+}
 
-Responda APENAS JSON válido: {"titulo":"...","materia":"...","hashtags":["..."],"termos_imagem":["..."]}`;
+/** Prompt inteiro num bloco só — usado quando o provedor não tem cache. */
+function systemPromptNoticia(faixa, investigativa, furoReportagem = false, volumeFonte = 'media', variacaoViral = false) {
+  return `${systemPromptNoticiaBase()}
+
+${systemPromptNoticiaVariavel(faixa, investigativa, furoReportagem, volumeFonte, variacaoViral)}`;
 }
 
 /**
@@ -571,13 +636,34 @@ async function gerarMateriaNoticiaFacebook({
     .join('\n');
 
   const volumeFonte = classificarVolumeFonte(materialApuracao);
-  const systemMsg = systemPromptNoticia(
-    faixa,
-    investigativa,
-    furoReportagem,
-    volumeFonte,
-    variacaoViral
-  );
+  // Com o Claude o system vai em dois blocos: o fixo entra no cache de prompt e
+  // custa 10% a partir da segunda matéria; o variável fica fora do cache.
+  const systemBlocos = usarClaude()
+    ? [
+        { role: 'system', content: systemPromptNoticiaBase() },
+        {
+          role: 'system',
+          content: systemPromptNoticiaVariavel(
+            faixa,
+            investigativa,
+            furoReportagem,
+            volumeFonte,
+            variacaoViral
+          ),
+        },
+      ]
+    : [
+        {
+          role: 'system',
+          content: systemPromptNoticia(
+            faixa,
+            investigativa,
+            furoReportagem,
+            volumeFonte,
+            variacaoViral
+          ),
+        },
+      ];
 
   let blocoAprendizado = null;
   if (contextoAprendizado) {
@@ -675,7 +761,7 @@ async function gerarMateriaNoticiaFacebook({
   let artigo = parseArtigoJson(
     await chatCompletion(
       [
-        { role: 'system', content: systemMsg },
+        ...systemBlocos,
         { role: 'user', content: userContent },
       ],
       { temperature, json: true, thinking: true }
@@ -687,7 +773,7 @@ async function gerarMateriaNoticiaFacebook({
     artigo = parseArtigoJson(
       await chatCompletion(
         [
-          { role: 'system', content: systemMsg },
+          ...systemBlocos,
           {
             role: 'user',
             content: [
@@ -716,7 +802,7 @@ async function gerarMateriaNoticiaFacebook({
     try {
       const expandido = await chatCompletion(
         [
-          { role: 'system', content: systemMsg },
+          ...systemBlocos,
           {
             role: 'user',
             content: `Matéria ABAIXO DO MÁXIMO Face/Insta (${qualidade.chars} caracteres; alvo ${faixa.min}–${faixa.max}).
@@ -747,7 +833,7 @@ Retorne JSON completo atualizado.`,
     try {
       const enxuto = await chatCompletion(
         [
-          { role: 'system', content: systemMsg },
+          ...systemBlocos,
           {
             role: 'user',
             content: `Matéria ACIMA DO MÁXIMO Face/Insta (${qualidade.chars} caracteres).
@@ -789,7 +875,7 @@ Retorne JSON completo enxuto.`,
     try {
       const humanizado = await chatCompletion(
         [
-          { role: 'system', content: systemMsg },
+          ...systemBlocos,
           {
             role: 'user',
             content: `Revise a matéria corrigindo os problemas. Mantenha FATOS REAIS. Não adicione "vale ressaltar", "além disso", "em suma".

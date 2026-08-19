@@ -1103,10 +1103,14 @@ function atualizarCreditoImagemNaMateria(materia, imagemAutor, fonte = {}) {
   return garantirFonteNoConteudo(anexarHashtagsAoFinal(cleanBody, tags), fonte);
 }
 
-function blocoRegrasFacebook(faixa, volumeFonte = 'media') {
+/**
+ * Parte das diretrizes que NUNCA muda entre matérias. Fica no início do system
+ * para o cache de prompt do Claude poder reaproveitá-la (leitura de cache custa
+ * 10% do token de entrada). Não coloque nada sorteado aqui.
+ */
+function blocoRegrasFacebookBase() {
   return `
 DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
-- Meta de tamanho: SEMPRE o máximo útil do feed (${faixa.min}–${faixa.max} chars no corpo; teto ${MAX_MATERIA_CHARS} com créditos/hashtags).
 - Fonte longa → condensar preservando dados principais. Fonte curta → ampliar SÓ com fatos das fontes de apuração / internet documentadas.
 - NÃO copie a fonte inteira nem frases longas: reescreva com estrutura e palavras próprias (anti-plágio).
 - FALAS LITERAIS: 1 a 3 trechos curtos entre aspas ("…") SOMENTE se estiverem documentados na apuração.
@@ -1120,9 +1124,22 @@ DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
 - FECHAMENTO: no fato jornalístico — PROIBIDO oração / “Que Deus…” / “Seguimos em oração” / “Amém” nas últimas linhas.
 - NÃO inclua bloco Fontes:/Fonte: no corpo — o sistema anexa créditos uma única vez.
 
-${blocoRegraTamanhoAdaptativo(faixa, volumeFonte)}
-
 ${blocoEstiloNewsGospel()}`;
+}
+
+/** Parte que muda a cada matéria: faixa de tamanho sorteada e volume da fonte. */
+function blocoRegrasFacebookVariavel(faixa, volumeFonte = 'media') {
+  return `ALVO DESTA MATÉRIA:
+- Meta de tamanho: SEMPRE o máximo útil do feed (${faixa.min}–${faixa.max} chars no corpo; teto ${MAX_MATERIA_CHARS} com créditos/hashtags).
+
+${blocoRegraTamanhoAdaptativo(faixa, volumeFonte)}`;
+}
+
+/** Mantido para quem monta o prompt num bloco só (caminho DeepSeek). */
+function blocoRegrasFacebook(faixa, volumeFonte = 'media') {
+  return `${blocoRegrasFacebookVariavel(faixa, volumeFonte)}
+
+${blocoRegrasFacebookBase()}`;
 }
 
 function mensagemAvisoQualidade(avaliacao) {
@@ -1157,6 +1174,8 @@ module.exports = {
   tokensAssunto,
   normalizarBusca,
   blocoRegrasFacebook,
+  blocoRegrasFacebookBase,
+  blocoRegrasFacebookVariavel,
   blocoEstiloNewsGospel,
   mensagemAvisoQualidade,
   formatFacebookCaption,
