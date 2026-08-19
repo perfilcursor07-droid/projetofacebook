@@ -708,7 +708,25 @@ function interpretarResposta(conteudo) {
 
   const linhas = textoUtil.split('\n').map((l) => l.trim());
   const primeira = linhas.find((l) => l.length > 0) || '';
-  const restoTexto = textoUtil.slice(textoUtil.indexOf(primeira) + primeira.length).trim();
+  let restoTexto = textoUtil.slice(textoUtil.indexOf(primeira) + primeira.length).trim();
+
+  // Proteção contra a antiga "linha fina": uma frase curta, sem pontuação
+  // final, colocada sozinha entre o título e o lead. Mesmo se o modelo repetir
+  // o formato antigo por causa do histórico, ela não entra no corpo salvo.
+  const blocosCorpo = restoTexto.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const possivelLinhaFina = blocosCorpo[0] || '';
+  const primeiroParagrafo = blocosCorpo[1] || '';
+  if (
+    blocosCorpo.length >= 2 &&
+    !possivelLinhaFina.includes('\n') &&
+    possivelLinhaFina.length >= 55 &&
+    possivelLinhaFina.length <= 260 &&
+    !/[.!?…]["'”’)]?$/.test(possivelLinhaFina) &&
+    primeiroParagrafo.length >= 100 &&
+    /[.!?…]["'”’)]?$/.test(primeiroParagrafo)
+  ) {
+    restoTexto = blocosCorpo.slice(1).join('\n\n');
+  }
   const paragrafos = restoTexto.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
 
   const tituloLimpo = primeira

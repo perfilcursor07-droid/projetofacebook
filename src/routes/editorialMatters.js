@@ -447,8 +447,11 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
           matterId: matter.id,
           sourceUrl,
           title,
-          // Sempre regenera no republicar / para corrigir artes antigas 9:16
-          force: true,
+          // A arte salva em imagem_path já contém o zoom e o deslocamento
+          // escolhidos no editor. Reutilize esse arquivo final quando ele
+          // continua válido; forçar a composição aqui apagava o enquadramento
+          // e publicava a foto centralizada no Facebook/Instagram.
+          force: false,
         });
         imagemUrl = artwork.publicUrl;
       } else if (!matter.imagem_path && !matter.imagem_url) {

@@ -2055,3 +2055,73 @@ body.mia-chat-drawer-open {
     padding-right: 2rem;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Paridade com o ChatGPT
+   Pesquisa: ChatGPT e Claude.ai fixam o container do chat em ~768px (48rem),
+   para manter ~65 caracteres por linha — a medida de leitura confortável. A
+   largura NÃO cresce com o monitor; a sobra vira margem.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@media (min-width: 1024px) {
+  .mia-chat {
+    --mia-chat-stream: 48rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .mia-chat {
+    --mia-chat-stream: 48rem;
+  }
+}
+
+@media (min-width: 1536px) {
+  .mia-chat {
+    --mia-chat-stream: 48rem;
+  }
+}
+
+@media (min-width: 1800px) {
+  .mia-chat {
+    --mia-chat-stream: 48rem;
+  }
+}
+
+/* Bolha do usuário proporcional à coluna nova */
+.mia-msg-user-bubble {
+  max-width: min(85%, 32rem);
+}
+
+@media (min-width: 640px) {
+  .mia-msg-user-bubble {
+    max-width: min(72%, 32rem);
+  }
+}
+
+/* A matéria ganha corpo de documento: fundo próprio, borda e respiro interno.
+   É o que dá o ar de "peça pronta" da captura, em vez de texto solto no fundo.
+   Continua sendo o mesmo HTML — só a moldura mudou. */
+.mia-msg-ai-body {
+  background: rgba(255, 252, 245, 0.04);
+  border: 1px solid var(--mia-chat-border);
+  border-radius: 1.1rem;
+  padding: 1.15rem 1.2rem;
+}
+
+@media (min-width: 640px) {
+  .mia-msg-ai-body {
+    padding: 1.4rem 1.6rem;
+  }
+}
+
+.mia-msg-ai-title {
+  margin-bottom: 0.15rem;
+}
+
+/* Painel de ações (salvar rascunho, copiar, ensinar IA) encosta no cartão,
+   como a barra de ferramentas de um documento */
+.mia-msg-ai > .mia-msg-panel {
+  margin-top: -0.35rem;
+  border-top-left-radius: 0.35rem;
+  border-top-right-radius: 0.35rem;
+}

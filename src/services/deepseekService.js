@@ -2883,8 +2883,8 @@ NÃO CORTE (isto é trabalho correto do redator, não erro):
 
 Regras da devolução:
 - NÃO acrescente informação nova, nem "para completar".
-- Mantenha o formato: 1ª linha título, 2ª linha a linha fina sem rótulo, corpo em parágrafos curtos, última linha as hashtags.
-- Preserve a linha fina quando ela estiver sustentada pelas fontes; não a confunda com introdução descartável.
+- Mantenha o formato: 1ª linha título; uma linha em branco; corpo começando diretamente pelo lead; última linha com hashtags.
+- NÃO crie linha fina, subtítulo ou frase-resumo entre o título e o primeiro parágrafo.
 - PRESERVE A EXTENSÃO: só remova o que for infundado. É erro encurtar a matéria por estilo, por preferir frase literal da fonte ou por "ajustar" paráfrase correta.
 - Quando a fonte for post de rede social, a legenda inteira é fonte válida — tudo que ela afirma pode ser usado.
 - Se sobrar pouco conteúdo, entregue a matéria mais curta — texto curto e checado é melhor que texto grande e furado.
@@ -2995,7 +2995,7 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
 - "Data de publicação da fonte" não prova a data do acontecimento. Só informe a data do fato quando o trecho a declarar.
 - Nunca escreva apenas "sábado, dia 23" ou "quinta-feira, dia 11": use dia, mês e ano confirmados. Se mês/ano não estiverem confirmados, omita a data incompleta.
 - Não use "agora", "hoje", "voltou a criticar" ou "declaração recente" para fala antiga sem uma nova repercussão documentada.
-- Quando o fato for anterior à janela escolhida, deixe isso claro no título, linha fina ou lead, usando a data/período original confirmado.`;
+- Quando o fato for anterior à janela escolhida, deixe isso claro no título ou no lead, usando a data/período original confirmado.`;
   let blocoMemoriaEditorial = null;
   if (contextoAprendizado) {
     try {
@@ -3025,14 +3025,14 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
   const blocoMateriaDePost = fonteSocial
     ? `MATÉRIA BASEADA EM POST OU VÍDEO DE REDE SOCIAL:
 - Com material factual suficiente, reconstrua a história com lead, cronologia, fala central, circunstâncias, contexto documentado e fechamento. Com fonte curta, faça uma matéria proporcional sem criar contexto.
-- Formato obrigatório: 1ª linha com o título; 2ª linha com uma LINHA FINA de 120 a 220 caracteres, sem escrever "Subtítulo:"; depois uma linha em branco e o corpo.
-- A linha fina deve acrescentar informação: quem, onde, quando e por que o assunto voltou a repercutir. Não repita apenas o título.
+- Formato obrigatório: 1ª linha com o título; uma linha em branco; depois o corpo começando diretamente pelo lead.
+- NÃO escreva linha fina, subtítulo ou frase-resumo entre o título e o corpo.
 - Quando houver uma frase forte e literal na fonte, considere colocá-la no título e reproduza a fala completa em um parágrafo próprio no corpo.
 - Se um vídeo, fala ou fato ANTIGO voltou a circular, escreva isso no título ou no lead e informe imediatamente a DATA ORIGINAL. Nunca apresente recirculação como declaração recente.
 - Explique a sequência documentada: o que voltou a circular → quando e onde aconteceu originalmente → o que foi dito/feito → em qual circunstância → antecedentes presentes na fonte → por que a data é relevante agora.
 - O texto factual extraído desta publicação tem aproximadamente ${volumeFonteSocial} caracteres.
 - Siga o tamanho adaptativo definido no bloco TAMANHO E PROFUNDIDADE; use cada fato uma vez e nunca complete lacunas por conta própria.
-- Em uma matéria desse tamanho, não use intertítulos. A linha fina já organiza a leitura.
+- Em uma matéria desse tamanho, não use intertítulos.
 - Entregue somente a matéria pronta. NÃO gere títulos alternativos, chamada para redes sociais, sugestão de arte, notas ao editor nem explicação do processo.`
     : '';
 
@@ -3056,8 +3056,9 @@ COMO RESPONDER:
 - Nunca transforme uma instrução de estilo em pauta nova. Exemplo: "quero mais polêmica" significa dar tom mais incisivo à mesma matéria, não pesquisar polêmicas aleatórias.
 - Se o editor pedir uma MATÉRIA (ou pedir para ajustar/refazer a matéria anterior): entregue a matéria pronta em texto puro.
   · 1ª linha = TÍTULO (máx. 110 caracteres), sem "Título:" e sem aspas em volta.
-  · 2ª linha = LINHA FINA informativa, sem "Subtítulo:". Depois deixe uma linha em branco.
-  · Em seguida, o corpo em parágrafos curtos separados por linha em branco.
+  · Depois do título, deixe uma linha em branco e comece diretamente o primeiro parágrafo do corpo.
+  · NÃO gere linha fina, subtítulo ou frase-resumo antes do lead.
+  · Corpo em parágrafos curtos separados por linha em branco.
   · Pode usar subtítulos curtos para organizar blocos (ex.: "O que diz o decreto", "A reação do governo").
   · Feche com uma linha de hashtags (3 a 6), começando com #.
   · NÃO escreva bloco "Fontes:", "Fonte:", "Foto:" nem URLs no fim — o sistema monta isso ao salvar.
@@ -3218,13 +3219,13 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
     const instrucoesAprofundamento = fonteSocial
       ? [
           'A versão ficou parecendo um resumo, apesar de a publicação trazer material factual suficiente.',
-          `Reescreva a matéria COMPLETA com linha fina, ${perfilTamanho.alvo} caracteres no corpo e ${perfilTamanho.paragrafos} parágrafos substanciais.`,
+          `Reescreva a matéria COMPLETA com ${perfilTamanho.alvo} caracteres no corpo e ${perfilTamanho.paragrafos} parágrafos substanciais.`,
           'Use a fala literal mais forte no título quando ela estiver na fonte e reproduza a declaração completa em um parágrafo próprio.',
           'Reconstrua a cronologia: recirculação atual, data e local originais, circunstância da fala, antecedentes documentados e relevância da data.',
           'Deixe inequívoco quando o vídeo ou a declaração são antigos. Não apresente o conteúdo que voltou a circular como fato novo.',
           'Não use intertítulos, títulos alternativos, chamada para redes sociais, notas ao editor nem sugestões após as hashtags.',
           'Preserve o anti-plágio e use somente fatos presentes na publicação. Não invente reação, motivo, bastidor ou consequência.',
-          'Formato final: primeira linha com o título; segunda linha com a linha fina sem rótulo; linha em branco; corpo; última linha com 3 a 6 hashtags.',
+          'Formato final: primeira linha com o título; linha em branco; corpo iniciando diretamente pelo lead; última linha com 3 a 6 hashtags. Sem linha fina ou subtítulo.',
         ]
       : [
           'A versão ficou curta apesar de haver apuração suficiente.',
@@ -3232,7 +3233,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
           'Aprofunde somente com fatos já presentes nas fontes: contexto institucional, cronologia, posições documentadas, repercussão, impacto e próximos pontos a acompanhar.',
           'Cruze as fontes e cite no corpo pelo menos dois veículos quando houver dois disponíveis.',
           'Preserve o anti-plágio: nova estrutura e palavras próprias. Não invente bastidor, fala, número, consequência nem “furo”.',
-          'Formato final: primeira linha com o título; segunda linha com a linha fina sem rótulo; depois o corpo; última linha com 3 a 6 hashtags. Sem introdução e sem bloco de fontes.',
+          'Formato final: primeira linha com o título; linha em branco; corpo iniciando diretamente pelo lead; última linha com 3 a 6 hashtags. Sem linha fina, subtítulo, introdução ou bloco de fontes.',
         ];
     try {
       const aprofundado = await chatCompletion(
