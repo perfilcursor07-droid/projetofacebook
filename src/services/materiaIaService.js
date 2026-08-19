@@ -688,12 +688,23 @@ async function publicarMateria(userId, matterId, overrides = {}) {
 
   const pubTipo = tipo === 'reel' ? 'reel' : tipo === 'foto' ? 'foto' : 'texto';
 
+  // Facebook permanece selecionado para matérias e clientes antigos; a escolha
+  // só vale para esta publicação, sem alterar a preferência de Instagram salva.
+  const pedidoFacebook =
+    overrides.publicar_facebook != null
+      ? !(overrides.publicar_facebook === false || overrides.publicar_facebook === 'false' || overrides.publicar_facebook === '0')
+      : true;
   // Instagram: o editor marca na matéria e a Página precisa estar ativada em
   // /paginas. O override do body vence a preferência salva na matéria.
   const pedidoInstagram =
     overrides.publicar_instagram != null
       ? Boolean(overrides.publicar_instagram)
       : Boolean(matter.publicar_instagram);
+  if (!pedidoFacebook && !pedidoInstagram) {
+    const err = new Error('Selecione Facebook, Instagram ou os dois para publicar.');
+    err.status = 400;
+    throw err;
+  }
   // O filtro por instagram_ativo fica no publishDispatch: lá o editor recebe
   // o aviso do porquê o post saiu só no Facebook, em vez de silêncio.
   console.log('[publicar] instagram', {
@@ -701,6 +712,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     pageId: page.id,
     page: page.page_name,
     pedido: pedidoInstagram,
+    facebook: pedidoFacebook,
     origem: overrides.publicar_instagram != null ? 'requisicao' : 'materia',
     paginaAtiva: Boolean(page.instagram_ativo),
   });
@@ -806,14 +818,17 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       texto: mensagem,
       // A legenda completa já contém o título. No PostSyncer, settings.title a substituiria.
       titulo: null,
+      publicarFacebook: pedidoFacebook,
       publicarInstagram: pedidoInstagram,
     });
 
     const postId = result.post_id || result.id;
-    let fbPostUrl = result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId);
+    let fbPostUrl = pedidoFacebook
+      ? result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId)
+      : null;
     let nativeId = result.fb_native_post_id || null;
 
-    if (!postId) {
+    if (pedidoFacebook && !postId) {
       console.warn('[publicar] provedor não devolveu ID do post', {
         matterId: matter.id,
         pubId,
@@ -824,7 +839,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
 
     // Sem ID nativo (provedor externo), busca o post no feed da Página para
     // não deixar a publicação órfã — é o ID que a leitura de engajamento usa.
-    if (!nativeId) {
+    if (pedidoFacebook && !nativeId) {
       const tokenPage = String(page.page_access_token || '');
       const podeGraph =
         Boolean(tokenPage) &&
@@ -874,6 +889,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     return {
       postId,
       fbPostUrl,
+      facebookPublicado: pedidoFacebook,
       instagramPublicado: Boolean(result.instagram_publicado),
       instagramPostUrl: result.instagram_post_url || null,
       instagramErro: result.instagram_erro || null,
@@ -889,6 +905,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
         queued: false,
         postId: published.postId,
         fbPostUrl: published.fbPostUrl,
+        facebookPublicado: published.facebookPublicado,
         instagramPedido: pedidoInstagram,
         instagramPublicado: published.instagramPublicado,
         instagramPostUrl: published.instagramPostUrl,

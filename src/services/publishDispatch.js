@@ -123,8 +123,14 @@ async function publishContent({
   titulo,
   link,
   imagemPath,
+  publicarFacebook = true,
   publicarInstagram = false,
 }) {
+  if (!publicarFacebook && !publicarInstagram) {
+    const err = new Error('Selecione Facebook, Instagram ou os dois para publicar.');
+    err.status = 400;
+    throw err;
+  }
   const provider = await resolveProvider(userId, page);
 
   let localFile = filePath || null;
@@ -226,6 +232,11 @@ async function publishContent({
       err.status = 422;
       throw err;
     }
+    if (!publicarFacebook && !querInstagram) {
+      const err = new Error('Instagram não está ativo para esta Página. Ative-o em /paginas antes de publicar somente no Instagram.');
+      err.status = 422;
+      throw err;
+    }
 
     const result = await ayrshareService.publishToFacebook({
       post: content,
@@ -234,6 +245,7 @@ async function publishContent({
       isReel: tipo === 'reel',
       title: titulo || null,
       profileKey: profileKey || null,
+      publicarFacebook,
       publicarInstagram: querInstagram,
     });
 
@@ -244,9 +256,9 @@ async function publishContent({
       id: postId,
       post_id: postId,
       fb_native_post_id: nativeId,
-      fb_post_url:
-        result.postUrl ||
-        buildFbPostUrl(page, nativeId || postId),
+      fb_post_url: publicarFacebook
+        ? result.postUrl || buildFbPostUrl(page, nativeId || postId)
+        : null,
       provider: 'ayrshare',
       instagram_pedido: Boolean(publicarInstagram),
       instagram_publicado: Boolean(result.instagram_publicado),
@@ -262,7 +274,7 @@ async function publishContent({
 
   // Só o Ayrshare integra o Instagram hoje; nos outros provedores o pedido
   // seria silenciosamente ignorado.
-  if (publicarInstagram) {
+  if (publicarInstagram || !publicarFacebook) {
     const err = new Error(
       `Instagram só está disponível pela Ayrshare (provedor atual: ${provider}). ` +
         'Ajuste PUBLISH_PROVIDER ou desmarque a opção de Instagram.'

@@ -316,6 +316,7 @@ async function publishToFacebook({
   isReel = false,
   title = null,
   profileKey = null,
+  publicarFacebook = true,
   // Mesma chamada publica no Instagram do mesmo User Profile da Ayrshare.
   publicarInstagram = false,
 }) {
@@ -336,10 +337,16 @@ async function publishToFacebook({
     throw err;
   }
 
-  const plataformas = ['facebook'];
+  const plataformas = [];
+  if (publicarFacebook) plataformas.push('facebook');
   // Instagram exige mídia: post só de texto é recusado pela API.
   const vaiNoInstagram = Boolean(publicarInstagram) && Boolean(mediaUrl);
   if (vaiNoInstagram) plataformas.push('instagram');
+  if (!plataformas.length) {
+    const err = new Error('Selecione Facebook, Instagram ou os dois para publicar.');
+    err.status = 400;
+    throw err;
+  }
 
   const body = {
     post: content,
@@ -354,7 +361,7 @@ async function publishToFacebook({
     body.instagramOptions = { reels: true };
   }
 
-  if (isReel) {
+  if (isReel && publicarFacebook) {
     body.faceBookOptions = {
       reels: true,
     };
@@ -391,7 +398,7 @@ async function publishToFacebook({
       null;
 
     const status = String(fb?.status || data?.status || '').toLowerCase();
-    if (fb && (status === 'error' || status === 'failed')) {
+    if (publicarFacebook && fb && (status === 'error' || status === 'failed')) {
       const wrap = { response: { data, config: { url: `${API}/post` } } };
       const err = new Error(apiErrorMessage(wrap) || fb.message || fb.error || 'Falha ao publicar no Facebook via Ayrshare');
       err.status = 502;
@@ -413,14 +420,19 @@ async function publishToFacebook({
         ? String(ig.message || ig.error || 'Instagram recusou a publicação')
         : null;
     if (igErro) console.warn('[ayrshare] instagram falhou:', igErro);
+    if (!publicarFacebook && (!ig || igErro)) {
+      const err = new Error(igErro || 'A Ayrshare não confirmou o post no Instagram. Verifique a conta em Social Accounts.');
+      err.status = 502;
+      throw err;
+    }
 
     const ayrshareId = data?.id ? String(data.id) : null;
     const socialId = fb?.id ? String(fb.id) : null;
     const postUrl = fb?.postUrl || null;
     // Guardar sempre o ID Ayrshare (analytics confiável). O ID nativo FB fica em fb_native_post_id.
-    const postId = ayrshareId
+    const postId = publicarFacebook && ayrshareId
       ? `ayrshare:${ayrshareId}`
-      : socialId || null;
+      : publicarFacebook ? socialId || null : null;
 
     return {
       id: postId,

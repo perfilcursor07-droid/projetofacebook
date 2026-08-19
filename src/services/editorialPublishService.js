@@ -21,6 +21,7 @@ async function publishEditorialPhoto({
   title,
   body,
   // null = sem escolha na requisicao; usa o que estiver salvo na materia.
+  publicarFacebook = null,
   publicarInstagram = null,
 }) {
   const matter = await AiMatters.findById(matterId);
@@ -61,8 +62,17 @@ async function publishEditorialPhoto({
     throw err;
   }
 
+  const pedidoFacebook =
+    publicarFacebook != null
+      ? !(publicarFacebook === false || publicarFacebook === 'false' || publicarFacebook === '0')
+      : true;
   const pedidoInstagram =
     publicarInstagram != null ? Boolean(publicarInstagram) : Boolean(matter.publicar_instagram);
+  if (!pedidoFacebook && !pedidoInstagram) {
+    const err = new Error('Selecione Facebook, Instagram ou os dois para publicar.');
+    err.status = 400;
+    throw err;
+  }
   // Quem filtra pelo instagram_ativo da Pagina e o publishDispatch, que tambem
   // devolve o motivo quando o post sai so no Facebook.
   console.log('[publicar] instagram', {
@@ -102,10 +112,13 @@ async function publishEditorialPhoto({
       tipo: 'foto',
       filePath,
       texto: message,
+      publicarFacebook: pedidoFacebook,
       publicarInstagram: pedidoInstagram,
     });
     const postId = result.post_id || result.id;
-    const fbPostUrl = result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId);
+    const fbPostUrl = pedidoFacebook
+      ? result.fb_post_url || publishDispatch.buildFbPostUrl(page, postId)
+      : null;
     const pubPatch = {
       status: 'publicado',
       fb_post_id: postId,
@@ -132,6 +145,7 @@ async function publishEditorialPhoto({
       queued: false,
       postId,
       fbPostUrl,
+      facebookPublicado: pedidoFacebook,
       instagramPedido: pedidoInstagram,
       instagramPublicado: Boolean(result.instagram_publicado),
       instagramPostUrl: result.instagram_post_url || null,

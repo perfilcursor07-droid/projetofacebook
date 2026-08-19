@@ -149,7 +149,7 @@ async function gerar(req, res, next) {
       ok: true,
       ...result,
       preview: result.artigo,
-      link: result.fbPostUrl || null,
+      link: result.fbPostUrl || result.instagramPostUrl || null,
     });
   } catch (err) {
     next(err);
@@ -371,6 +371,8 @@ async function publicar(req, res, next) {
       imagem_url: body.imagem_url || body.imagemUrl,
       sync: Boolean(body.sync),
       forcar: Boolean(body.forcar || body.republicar),
+      publicar_facebook:
+        body.publicarFacebook ?? body.publicar_facebook ?? body.facebook ?? null,
       publicar_instagram:
         body.publicarInstagram ?? body.publicar_instagram ?? body.instagram ?? null,
     });

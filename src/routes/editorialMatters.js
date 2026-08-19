@@ -432,6 +432,9 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
     // null = editor nao mandou opiniao; vale a preferencia salva na materia.
     const pedidoInstagram =
       req.body.publicarInstagram ?? req.body.publicar_instagram ?? req.body.instagram ?? null;
+    // null preserva o comportamento anterior: Facebook marcado por padrão.
+    const pedidoFacebook =
+      req.body.publicarFacebook ?? req.body.publicar_facebook ?? req.body.facebook ?? null;
 
     if (type === 'foto') {
       const title = String(req.body.titulo || matter.titulo || '').trim();
@@ -457,9 +460,15 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
         facebookPageId,
         title,
         body: req.body.materia || matter.materia,
+        publicarFacebook: pedidoFacebook,
         publicarInstagram: pedidoInstagram,
       });
-      return res.json({ ok: true, ...published, link: published.fbPostUrl, imagemUrl });
+      return res.json({
+        ok: true,
+        ...published,
+        link: published.fbPostUrl || published.instagramPostUrl || null,
+        imagemUrl,
+      });
     }
 
     const published = await materiaIaService.publicarMateria(userId, matter.id, {
@@ -469,12 +478,13 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
       materia: req.body.materia,
       sync: Boolean(req.body.sync),
       forcar: Boolean(req.body.forcar || req.body.republicar),
+      publicar_facebook: pedidoFacebook,
       publicar_instagram: pedidoInstagram,
     });
     return res.status(published.queued ? 202 : 200).json({
       ok: true,
       ...published,
-      link: published.fbPostUrl || null,
+      link: published.fbPostUrl || published.instagramPostUrl || null,
     });
   } catch (err) {
     return next(err);

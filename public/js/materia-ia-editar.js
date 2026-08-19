@@ -667,6 +667,12 @@
   // Sem a caixa na tela devolve null para o servidor manter a preferência já
   // salva na matéria — mandar "false" desligaria o Instagram sem o editor pedir.
   const instagramEl = document.getElementById('matter-publicar-instagram');
+  const facebookEl = document.getElementById('matter-publicar-facebook');
+  function facebookMarcado() {
+    // Facebook segue como destino padrão, inclusive em matérias criadas antes
+    // deste seletor.
+    return !facebookEl || Boolean(facebookEl.checked);
+  }
   function instagramMarcado() {
     if (!cfg.instagramAtivo || !instagramEl) return null;
     return Boolean(instagramEl.checked);
@@ -1099,6 +1105,11 @@
       if (!ok) return;
     }
 
+    if (!facebookMarcado() && !instagramMarcado()) {
+      setStatus('Selecione Facebook, Instagram ou os dois para publicar.', true);
+      return;
+    }
+
     if (publishBtn) publishBtn.disabled = true;
 
     showPublishModal('publishing');
@@ -1119,6 +1130,7 @@
           tipoPublicacao: cfg.isReel ? 'reel' : tipoEl.value,
           titulo: tituloEl.value,
           materia: materiaEl.value,
+          publicarFacebook: facebookMarcado(),
           publicarInstagram: instagramMarcado(),
           sync: true,
           forcar: true,
@@ -1134,15 +1146,19 @@
       }
 
       showPublishModal('success', data.link || null);
-      // Instagram recusado não desfaz o post do Facebook — o editor precisa saber.
+      const publicouFacebook = data.facebookPublicado !== false;
+      const publicouInstagram = Boolean(data.instagramPublicado);
       if (data.instagramErro) {
-        setStatus('Publicado no Facebook ✓ — Instagram: ' + data.instagramErro, true);
-      } else if (data.instagramPublicado) {
         setStatus(
-          (isRepublish ? 'Republicada' : 'Publicado') + ' no Facebook e no Instagram ✓'
+          (publicouFacebook ? 'Publicado no Facebook ✓ — ' : '') + 'Instagram: ' + data.instagramErro,
+          true
         );
+      } else if (publicouFacebook && publicouInstagram) {
+        setStatus((isRepublish ? 'Republicada' : 'Publicado') + ' no Facebook e no Instagram ✓');
+      } else if (publicouInstagram) {
+        setStatus((isRepublish ? 'Republicada' : 'Publicado') + ' somente no Instagram ✓');
       } else {
-        setStatus(isRepublish ? 'Republicada com sucesso ✓' : 'Publicado com sucesso ✓');
+        setStatus(isRepublish ? 'Republicada no Facebook ✓' : 'Publicado no Facebook ✓');
       }
       // Com erro no Instagram, fica na tela para o editor ler o aviso.
       if (!data.instagramErro) {
