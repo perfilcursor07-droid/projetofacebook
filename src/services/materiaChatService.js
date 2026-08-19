@@ -1164,7 +1164,14 @@ async function responder({
 }) {
   // 'pautas': pesquisa o tema e devolve a lista de matérias para o usuário
   // escolher qual quer reescrever, em vez de já escrever a matéria.
-  const modoPautas = String(modo) === 'pautas';
+  //
+  // Quem escreve "quero 5 pautas sobre X" está pedindo a lista, mesmo sem ter
+  // clicado no chip "Pautas". Antes esse pedido caía no modo de escrever, que
+  // exige fonte, e a resposta virava "me mande os links".
+  const pedeListaDePautas =
+    /\b(pautas?|sugest(ão|ões)\s+de\s+mat[ée]rias?)\b/i.test(String(texto || '')) &&
+    !/https?:\/\//i.test(String(texto || ''));
+  const modoPautas = String(modo) === 'pautas' || (String(modo) !== 'manual' && pedeListaDePautas);
   const deepseekService = require('./deepseekService');
   const materiaIaService = require('./materiaIaService');
   deepseekService.assertDeepseek();
