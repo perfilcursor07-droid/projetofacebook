@@ -867,8 +867,8 @@ function jmGeometry() {
     barTop: 838,      // faixa da logo, logo acima da manchete
     barHeight: 34,
     barInset: 62,     // margem lateral da faixa
-    titleTop: 904,    // topo da área da manchete (respiro abaixo da faixa)
-    titleBottom: 1228,
+    titleTop: 882,    // começa logo abaixo da faixa, dando espaço ao tamanho escolhido
+    titleBottom: 1264,
     footerY: 1312,
   });
 }
@@ -1161,12 +1161,13 @@ function buildOverlay({
     const textMaxWJm = W - ww(64);
     const minFont = Math.round(30 * Math.min(sx, sy));
 
-    // Manchete em caixa alta: começa grande e só diminui até caber entre a
-    // faixa da logo e o rodapé — é o que dá o texto cheio da arte de referência.
+    // O JM usa uma escala própria, mas o tamanho escolhido precisa continuar
+    // visível. O fator antigo (2.05) fazia 36, 43 e 50 terminarem iguais depois
+    // do auto-fit; 1.4 preserva a diferença e ainda mantém a manchete grande.
     const tituloJm = expandirMarcacaoPorPalavra(
       ensureTituloJm(String(title || '')).toLocaleUpperCase('pt-BR')
     );
-    let headFont = Math.round(fontSize * 2.05);
+    let headFont = Math.round(fontSize * 1.4);
     let headLines = [];
     let headLh = Math.round(headFont * 1.14);
     for (let attempt = 0; attempt < 14; attempt += 1) {
