@@ -43,6 +43,34 @@ function perfilDaTarefa(tarefa) {
   return PERFIS[tarefa] || PERFIS.auxiliar;
 }
 
+/**
+ * `effort` e `thinking` só existem na geração 4.6+. Mandar num modelo antigo
+ * (Haiku 4.5, por exemplo) devolve 400 "does not support the effort parameter".
+ * Modelo desconhecido entra pelo caminho conservador: só o que é obrigatório.
+ */
+const CAPACIDADES = {
+  'claude-opus-5': { effort: true, thinking: true },
+  'claude-opus-4-8': { effort: true, thinking: true },
+  'claude-opus-4-7': { effort: true, thinking: true },
+  'claude-opus-4-6': { effort: true, thinking: true },
+  'claude-sonnet-5': { effort: true, thinking: true },
+  'claude-sonnet-4-6': { effort: true, thinking: true },
+  'claude-haiku-4-5': { effort: false, thinking: false },
+};
+
+function capacidades(modelo) {
+  return CAPACIDADES[String(modelo)] || { effort: false, thinking: false };
+}
+
+/** Monta só os parâmetros que o modelo aceita. */
+function opcoesDoModelo(modelo, perfil, pensar) {
+  const cap = capacidades(modelo);
+  const extra = {};
+  if (cap.thinking) extra.thinking = pensar ? { type: 'adaptive' } : { type: 'disabled' };
+  if (cap.effort) extra.output_config = { effort: perfil.effort };
+  return extra;
+}
+
 let cliente = null;
 
 function assertClaude() {
@@ -155,8 +183,7 @@ async function chatCompletion(
     max_tokens: Number(maxTokens || perfil.maxTokens),
     system,
     messages: conversa,
-    thinking: pensar ? { type: 'adaptive' } : { type: 'disabled' },
-    output_config: { effort: perfil.effort },
+    ...opcoesDoModelo(modelo, perfil, pensar),
   };
 
   const inicio = Date.now();
@@ -214,8 +241,7 @@ async function chatCompletionStream(
       max_tokens: Number(maxTokens || perfil.maxTokens),
       system,
       messages: conversa,
-      thinking: pensar ? { type: 'adaptive' } : { type: 'disabled' },
-      output_config: { effort: perfil.effort },
+      ...opcoesDoModelo(modelo, perfil, pensar),
     });
 
     if (typeof onDelta === 'function') {
