@@ -32,6 +32,36 @@ function recortarTranscricao(texto, limite = 16000) {
  * Por que a busca não trouxe nada. Sem crédito no provedor é o caso mais comum
  * e o mais fácil de resolver — mas invisível para quem está no chat.
  */
+/**
+ * Tira do pedido as palavras que descrevem a TAREFA, não o assunto.
+ *
+ * "pautas sobre silas malafaia" ia inteiro para o buscador e não achava nada:
+ * nenhum portal publica a palavra "pautas" ao lado do nome. O que interessa
+ * pesquisar é "silas malafaia".
+ */
+function assuntoParaBusca(texto) {
+  let t = String(texto || '').replace(/\s+/g, ' ').trim();
+  const metaInicio =
+    /^(?:me\s+)?(?:d[êe]|da|traga|tr[áa]z|quero|queria|preciso|busque|buscar|pesquis(?:e|ar)|procur(?:e|ar)|sugira|sugerir|liste|listar|monte|montar|fa[çc]a|fazer|escreva|escrever|gere|gerar)\b/i;
+  const contador = /^\s*(?:umas?|uns|\d{1,2}|duas?|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez)\b/i;
+  const objeto =
+    /^\s*(?:pautas?|sugest(?:ão|ões)|ideias?|mat[ée]rias?|not[íi]cias?|posts?|temas?|assuntos?)\b/i;
+  const ligacao = /^\s*(?:de|sobre|a\s+respeito\s+de|do|da|dos|das|com|para|pra|em|no|na)\b/i;
+
+  // Remove só o que estiver no começo, em sequência: verbo → quantidade →
+  // objeto → preposição. O resto da frase (o assunto e o período) fica intacto.
+  let mudou = true;
+  while (mudou) {
+    mudou = false;
+    for (const regra of [metaInicio, contador, objeto, ligacao]) {
+      const antes = t;
+      t = t.replace(regra, '').trim();
+      if (t !== antes) mudou = true;
+    }
+  }
+  return t.length >= 3 ? t : String(texto || '').trim();
+}
+
 function motivoDaBuscaVazia() {
   try {
     const pausados = require('./providerHealth').pausados() || [];
@@ -1643,7 +1673,9 @@ async function responder({
       const sugestao = await deepseekService.sugerirConsultasPesquisa({
         // Em continuação, pesquisa o TEMA anterior; nunca a instrução isolada
         // (por exemplo, "mais polêmica recente Brasil").
-        pedido: pedidoParaPesquisa,
+        // O pedido vai sem as palavras de tarefa ("quero 5 pautas sobre…"):
+        // elas não existem nas notícias e afundavam a busca.
+        pedido: assuntoParaBusca(pedidoParaPesquisa),
         palavrasChave: palavrasChave || assuntoDoLink || contextoMateriaAnterior || null,
       });
       consultas = sugestao.consultas || [];
@@ -1659,8 +1691,8 @@ async function responder({
     }
     if (!consultas.length) {
       const semUrls = pedidoSemUrls();
-      const base = String(
-        palavrasChave || semUrls || fontes[0]?.titulo || fontes[0]?.resumo || pedido
+      const base = assuntoParaBusca(
+        String(palavrasChave || semUrls || fontes[0]?.titulo || fontes[0]?.resumo || pedido)
       )
         .replace(/\s+/g, ' ')
         .trim()
@@ -1753,6 +1785,39 @@ async function responder({
       });
     } catch (err) {
       console.warn('[materia-chat] pesquisa:', err.message);
+    }
+
+    // Janela curta some com notícia boa: em 3 dias um portal pode não ter
+    // publicado nada sobre o nome pedido. Em vez de devolver "aumente o
+    // período" e empurrar o trabalho para o editor, a busca se repete sozinha
+    // numa janela maior antes de desistir.
+    const JANELAS_DE_RESGATE = { '24h': '7d', '3d': '15d', '7d': '30d', '15d': '60d', '30d': '90d' };
+    const janelaMaior = JANELAS_DE_RESGATE[periodoFinal];
+    if (!fontesWeb.length && janelaMaior && consultas.length) {
+      const { rotuloPeriodo } = require('./newsResearch');
+      registrarPasso({
+        kind: 'busca',
+        texto: `Nada no período pedido — repetindo a busca em ${rotuloPeriodo(janelaMaior)}`,
+      });
+      try {
+        fontesWeb = await materiaIaService.coletarFatosNaWeb({
+          consultas: consultas.slice(0, 4),
+          periodo: janelaMaior,
+          max: modoPautas ? 16 : 8,
+          incluirRedes: true,
+          redesAmplas: true,
+          resumoContexto: pedidoParaPesquisa.slice(0, 500),
+          logPrefix: '[materia-chat/resgate]',
+        });
+        if (fontesWeb.length) {
+          registrarPasso({
+            kind: 'encontrados',
+            texto: `${fontesWeb.length} resultado(s) em ${rotuloPeriodo(janelaMaior)} — fora da janela pedida, confira as datas`,
+          });
+        }
+      } catch (err) {
+        console.warn('[materia-chat] pesquisa (janela maior):', err.message);
+      }
     }
 
     // Tema amplo não pode virar um texto de três linhas só porque a janela

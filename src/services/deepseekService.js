@@ -2947,8 +2947,6 @@ ${blocoEstiloNewsGospel()}
 
 ${blocoMemoriaEditorial || ''}
 
-${blocoMateriaDePost}
-
 COMO RESPONDER:
 - A conversa tem continuidade. Expressões como "mais polêmica", "mais completa", "troque o título", "aprofunde" e "faça outra versão" referem-se à ÚLTIMA MATÉRIA. Mantenha assunto, pessoas, instituições e fatos; altere somente o que o editor pediu.
 - Nunca transforme uma instrução de estilo em pauta nova. Exemplo: "quero mais polêmica" significa dar tom mais incisivo à mesma matéria, não pesquisar polêmicas aleatórias.
@@ -3005,7 +3003,14 @@ ANTI-PLÁGIO:
 
 FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.`;
 
+  // O bloco da matéria-de-post muda a cada link (tamanho da fonte, tipo de
+  // material) e ficava no MEIO do system: qualquer variação invalidava o
+  // prefixo inteiro e o cache era reescrito toda mensagem em vez de lido.
+  // Agora ele vai depois, num bloco próprio, e o prefixo estável fica de pé.
   const messages = [{ role: 'system', content: system }];
+  if (blocoMateriaDePost && String(blocoMateriaDePost).trim()) {
+    messages.push({ role: 'system', content: String(blocoMateriaDePost).trim() });
+  }
 
   for (const m of (Array.isArray(historico) ? historico : []).slice(-8)) {
     const role = m?.role === 'assistant' ? 'assistant' : 'user';
