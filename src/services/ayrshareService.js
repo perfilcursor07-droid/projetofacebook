@@ -6,6 +6,21 @@ const { env } = require('../config/env');
 const { storageAbsolutePath } = require('./downloadService');
 
 const API = 'https://api.ayrshare.com/api';
+const INSTAGRAM_HASHTAG_LIMIT = 5;
+
+function limitHashtags(text, max = INSTAGRAM_HASHTAG_LIMIT) {
+  let count = 0;
+  const limit = Math.max(0, Number(max) || 0);
+
+  return String(text || '')
+    .replace(/(?<![\p{L}\p{N}_/])#[\p{L}\p{N}_]+/gu, (hashtag) => {
+      count += 1;
+      return count <= limit ? hashtag : '';
+    })
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
 
 function isConfigured() {
   return Boolean(env.ayrshare?.apiKey);
@@ -65,6 +80,17 @@ function apiErrorMessage(err) {
   const code = Number(
     (codeMatch && codeMatch.replace(/^code:/i, '')) || body.code || body.statusCode || NaN
   );
+
+  if (
+    code === 151 ||
+    lower.includes('too many hashtags') ||
+    (lower.includes('hashtag') && lower.includes('maximum'))
+  ) {
+    return (
+      'Instagram: a legenda excedeu o limite de hashtags. ' +
+      `Use no máximo ${INSTAGRAM_HASHTAG_LIMIT} hashtags e publique de novo.`
+    );
+  }
 
   if (
     code === 159 ||
@@ -348,8 +374,16 @@ async function publishToFacebook({
     throw err;
   }
 
+  const instagramContent = vaiNoInstagram
+    ? limitHashtags(content, INSTAGRAM_HASHTAG_LIMIT)
+    : content;
   const body = {
-    post: content,
+    // Ayrshare aceita conteúdo específico por plataforma. Assim o Facebook
+    // conserva a legenda completa e apenas o Instagram recebe o limite exigido.
+    post:
+      vaiNoInstagram && publicarFacebook
+        ? { facebook: content, instagram: instagramContent }
+        : instagramContent,
     platforms: plataformas,
   };
 
@@ -374,6 +408,8 @@ async function publishToFacebook({
     plataformas,
     hasMedia: Boolean(mediaUrl),
     isReel,
+    hashtagsInstagram:
+      vaiNoInstagram && (instagramContent.match(/(?<![\p{L}\p{N}_/])#[\p{L}\p{N}_]+/gu) || []).length,
     hasProfileKey: Boolean(pk),
     mediaHost: mediaUrl ? (() => {
       try {
@@ -824,6 +860,7 @@ module.exports = {
   isConfigured,
   assertConfigured,
   apiErrorMessage,
+  limitHashtags,
   publishToFacebook,
   resolveMediaUrl,
   uploadMediaFile,
