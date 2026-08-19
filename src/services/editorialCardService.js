@@ -867,8 +867,8 @@ function jmGeometry() {
     barTop: 838,      // faixa da logo, logo acima da manchete
     barHeight: 34,
     barInset: 62,     // margem lateral da faixa
-    titleTop: 882,    // começa logo abaixo da faixa, dando espaço ao tamanho escolhido
     titleBottom: 1264,
+    titleGap: 18,
     footerY: 1312,
   });
 }
@@ -891,6 +891,7 @@ function buildOverlay({
   fontId,
   titleColorId,
   titleSizeId,
+  titleGap,
   // Personalização do modelo (Minha marca → clicar no modelo).
   degrade = true,
   sombraFator = 1,
@@ -1156,7 +1157,11 @@ function buildOverlay({
     const barH = Math.max(3, hh(g.barHeight));
     const barX = x(g.barInset);
     const barW = W - ww(g.barInset * 2);
-    const zoneTop = y(g.titleTop);
+    const titleGapNumber = Number(titleGap);
+    const jmTitleGap = Number.isFinite(titleGapNumber)
+      ? Math.min(140, Math.max(0, Math.round(titleGapNumber)))
+      : g.titleGap;
+    const zoneTop = barTop + barH + hh(jmTitleGap);
     const zoneBottom = y(g.titleBottom);
     const textMaxWJm = W - ww(64);
     const minFont = Math.round(30 * Math.min(sx, sy));
@@ -1188,9 +1193,10 @@ function buildOverlay({
       headFont = Math.max(minFont, Math.round(headFont * 0.94));
     }
 
-    // Bloco de texto centralizado entre a faixa e o rodapé.
+    // A distância escolhida parte da base da faixa/logo. O auto-fit acima
+    // continua protegendo o rodapé quando a manchete é muito longa.
     const totalTextH = headLines.length * headLh;
-    const blockTop = zoneTop + Math.round(Math.max(0, zoneBottom - zoneTop - totalTextH) / 2);
+    const blockTop = Math.min(zoneTop, Math.max(barTop + barH, zoneBottom - totalTextH));
 
     headFontCss = headFont;
     layout = `
@@ -1385,7 +1391,10 @@ async function composeBrandOverlayOnImage({
   if (!user?.id) throw new Error('Usuário inválido para compor a capa');
 
   const { normalizeArtModel } = require('./editorialCardModels');
+  const { applyModelConfig } = require('./brandModelConfig');
   const modelId = normalizeArtModel(user.marca_modelo_arte);
+  const cfgModelo = applyModelConfig(user, modelId);
+  user = cfgModelo.user;
   const w = Math.max(320, Math.round(Number(width) || WIDTH));
   const h = Math.max(320, Math.round(Number(height) || HEIGHT));
   const primary = normalizeColor(user.marca_cor_primaria, '#ffbd59');
@@ -1412,6 +1421,9 @@ async function composeBrandOverlayOnImage({
     fontId: user.marca_fonte,
     titleColorId: user.marca_titulo_cor,
     titleSizeId: user.marca_titulo_tamanho,
+    titleGap: cfgModelo.tituloEspaco,
+    degrade: cfgModelo.degrade,
+    sombraFator: cfgModelo.sombraFator,
   });
 
   const composites = [{ input: overlay, left: 0, top: 0 }];
@@ -1702,6 +1714,7 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
     fontId: user.marca_fonte,
     titleColorId: user.marca_titulo_cor,
     titleSizeId: user.marca_titulo_tamanho,
+    titleGap: cfgModelo.tituloEspaco,
     degrade: cfgModelo.degrade,
     sombraFator: cfgModelo.sombraFator,
   });
@@ -1812,6 +1825,7 @@ async function buildBrandModelPreviewPng({
     fontId: user?.marca_fonte,
     titleColorId: user?.marca_titulo_cor,
     titleSizeId: user?.marca_titulo_tamanho,
+    titleGap: cfgModelo.tituloEspaco,
     degrade: cfgModelo.degrade,
     sombraFator: cfgModelo.sombraFator,
   });
@@ -1853,6 +1867,7 @@ async function buildBrandOverlayPng({ title, user } = {}) {
     fontId: user.marca_fonte,
     titleColorId: user.marca_titulo_cor,
     titleSizeId: user.marca_titulo_tamanho,
+    titleGap: cfgModelo.tituloEspaco,
     degrade: cfgModelo.degrade,
     sombraFator: cfgModelo.sombraFator,
   });

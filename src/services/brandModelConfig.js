@@ -20,6 +20,11 @@ const ZOOM_MIN = 80;
 const ZOOM_MAX = 140;
 const ZOOM_PADRAO = 100;
 
+/** Distância vertical entre a faixa/logo do JM e o início da manchete. */
+const JM_TITLE_GAP_MIN = 0;
+const JM_TITLE_GAP_MAX = 140;
+const JM_TITLE_GAP_DEFAULT = 18;
+
 function normalizarCor(valor) {
   const cor = String(valor || '').trim().toLowerCase();
   return /^#[0-9a-f]{6}$/.test(cor) ? cor : null;
@@ -39,6 +44,12 @@ function normalizarZoom(valor) {
   const n = Number(valor);
   if (!Number.isFinite(n)) return ZOOM_PADRAO;
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(n)));
+}
+
+function normalizarEspacoTituloJm(valor) {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return JM_TITLE_GAP_DEFAULT;
+  return Math.min(JM_TITLE_GAP_MAX, Math.max(JM_TITLE_GAP_MIN, Math.round(n)));
 }
 
 function normalizarBooleano(valor, padrao = true) {
@@ -62,6 +73,12 @@ function normalizeModelConfig(entrada = {}) {
   const cfg = {};
   const tamanho = entrada.tituloTamanho ?? entrada.titulo_tamanho;
   if (tamanho != null && tamanho !== '') cfg.tituloTamanho = normalizeTitleSize(tamanho);
+
+  const tituloEspaco =
+    entrada.tituloEspaco ?? entrada.titulo_espaco ?? entrada.titleGap ?? entrada.title_gap;
+  if (tituloEspaco != null && tituloEspaco !== '') {
+    cfg.tituloEspaco = normalizarEspacoTituloJm(tituloEspaco);
+  }
 
   const corTitulo = String(entrada.tituloCor ?? entrada.titulo_cor ?? '').trim();
   if (corTitulo && TITLE_COLORS.some((c) => c.id === corTitulo)) {
@@ -134,6 +151,10 @@ function applyModelConfig(user, modelId, extras = {}) {
     sombra: normalizarSombra(cfg.sombra),
     sombraFator: fatorDaSombra(cfg.sombra),
     zoom: cfg.zoom != null ? normalizarZoom(cfg.zoom) : null,
+    tituloEspaco:
+      cfg.tituloEspaco != null
+        ? normalizarEspacoTituloJm(cfg.tituloEspaco)
+        : JM_TITLE_GAP_DEFAULT,
     config: cfg,
   };
 }
@@ -144,6 +165,9 @@ module.exports = {
   ZOOM_MIN,
   ZOOM_MAX,
   ZOOM_PADRAO,
+  JM_TITLE_GAP_MIN,
+  JM_TITLE_GAP_MAX,
+  JM_TITLE_GAP_DEFAULT,
   normalizeModelConfig,
   parseModelConfigs,
   configForModel,

@@ -241,6 +241,20 @@
                     <input id="cfg-tamanho" type="range" min="<%= typeof titleSizeMin !== 'undefined' ? titleSizeMin : 30 %>" max="<%= typeof titleSizeMax !== 'undefined' ? titleSizeMax : 50 %>" step="1" class="mt-1.5 w-full accent-emerald-500" />
                   </label>
 
+                  <label id="cfg-titulo-espaco-wrap" class="hidden block rounded-lg border border-amber-500/25 bg-amber-500/10 p-3">
+                    <span class="flex items-center justify-between text-xs text-amber-100">
+                      <span>Espaço entre a faixa da logo e o título</span>
+                      <span class="font-semibold text-white"><span id="cfg-titulo-espaco-valor"><%= typeof jmTitleGapDefault !== 'undefined' ? jmTitleGapDefault : 18 %></span>px</span>
+                    </span>
+                    <input id="cfg-titulo-espaco" type="range"
+                      min="<%= typeof jmTitleGapMin !== 'undefined' ? jmTitleGapMin : 0 %>"
+                      max="<%= typeof jmTitleGapMax !== 'undefined' ? jmTitleGapMax : 140 %>"
+                      step="1"
+                      value="<%= typeof jmTitleGapDefault !== 'undefined' ? jmTitleGapDefault : 18 %>"
+                      class="mt-1.5 w-full accent-amber-400" />
+                    <span class="mt-1 block text-[11px] text-slate-500">Diminua para aproximar a manchete do retângulo JM Notícia.</span>
+                  </label>
+
                   <label class="block">
                     <span class="flex items-center justify-between text-xs text-slate-400">
                       <span>Tamanho da foto (zoom)</span>
@@ -626,6 +640,7 @@
       tituloCor: <%- JSON.stringify(profile.marca_titulo_cor || defaultTitleColor) %>,
       fonte: <%- JSON.stringify(profile.marca_fonte || defaultBrandFont) %>,
       zoom: <%= Number(typeof zoomDefault !== 'undefined' ? zoomDefault : 100) %>,
+      tituloEspaco: <%= Number(typeof jmTitleGapDefault !== 'undefined' ? jmTitleGapDefault : 18) %>,
     };
 
     const cfgModal = document.getElementById('modelo-config-modal');
@@ -634,6 +649,9 @@
     const cfgCarregando = document.getElementById('modelo-config-carregando');
     const cfgTamanho = document.getElementById('cfg-tamanho');
     const cfgTamanhoValor = document.getElementById('cfg-tamanho-valor');
+    const cfgTituloEspacoWrap = document.getElementById('cfg-titulo-espaco-wrap');
+    const cfgTituloEspaco = document.getElementById('cfg-titulo-espaco');
+    const cfgTituloEspacoValor = document.getElementById('cfg-titulo-espaco-valor');
     const cfgZoom = document.getElementById('cfg-zoom');
     const cfgZoomValor = document.getElementById('cfg-zoom-valor');
     const cfgCor1 = document.getElementById('cfg-cor1');
@@ -666,6 +684,7 @@
     function cfgValores() {
       return {
         tamanho: Number(cfgTamanho && cfgTamanho.value) || marcaPadrao.tamanho,
+        tituloEspaco: Number(cfgTituloEspaco && cfgTituloEspaco.value),
         zoom: Number(cfgZoom && cfgZoom.value) || marcaPadrao.zoom,
         cor1: (cfgCor1 && cfgCor1.value) || marcaPadrao.cor1,
         cor2: (cfgCor2 && cfgCor2.value) || marcaPadrao.cor2,
@@ -681,6 +700,7 @@
       const v = cfgValores();
       const q = new URLSearchParams({
         tamanho: String(v.tamanho),
+        tituloEspaco: String(v.tituloEspaco),
         zoom: String(v.zoom),
         cor1: v.cor1,
         cor2: v.cor2,
@@ -715,6 +735,8 @@
       const salvo = modelConfigs[modeloId] || {};
       if (cfgNome) cfgNome.textContent = meta.name;
       if (cfgTamanho) cfgTamanho.value = salvo.tituloTamanho != null ? salvo.tituloTamanho : marcaPadrao.tamanho;
+      if (cfgTituloEspaco) cfgTituloEspaco.value = salvo.tituloEspaco != null ? salvo.tituloEspaco : marcaPadrao.tituloEspaco;
+      if (cfgTituloEspacoWrap) cfgTituloEspacoWrap.classList.toggle('hidden', modeloId !== 'jm');
       if (cfgZoom) cfgZoom.value = salvo.zoom != null ? salvo.zoom : marcaPadrao.zoom;
       if (cfgCor1) cfgCor1.value = salvo.corPrimaria || marcaPadrao.cor1;
       if (cfgCor2) cfgCor2.value = salvo.corSecundaria || marcaPadrao.cor2;
@@ -723,6 +745,7 @@
       if (cfgFonte) cfgFonte.value = salvo.fonte || marcaPadrao.fonte;
       cfgSombra = salvo.sombra || 'media';
       if (cfgTamanhoValor && cfgTamanho) cfgTamanhoValor.textContent = String(cfgTamanho.value);
+      if (cfgTituloEspacoValor && cfgTituloEspaco) cfgTituloEspacoValor.textContent = String(cfgTituloEspaco.value);
       if (cfgZoomValor && cfgZoom) cfgZoomValor.textContent = String(cfgZoom.value);
       cfgSyncSombra();
       cfgSetStatus('');
@@ -754,6 +777,12 @@
     if (cfgTamanho) {
       cfgTamanho.addEventListener('input', function () {
         if (cfgTamanhoValor) cfgTamanhoValor.textContent = cfgTamanho.value;
+        cfgAgendarPreview();
+      });
+    }
+    if (cfgTituloEspaco) {
+      cfgTituloEspaco.addEventListener('input', function () {
+        if (cfgTituloEspacoValor) cfgTituloEspacoValor.textContent = cfgTituloEspaco.value;
         cfgAgendarPreview();
       });
     }
@@ -811,6 +840,7 @@
             modelo: cfgModeloAtual,
             config: {
               tituloTamanho: v.tamanho,
+              tituloEspaco: v.tituloEspaco,
               zoom: v.zoom,
               corPrimaria: v.cor1,
               corSecundaria: v.cor2,

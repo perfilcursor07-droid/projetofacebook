@@ -15,6 +15,9 @@ const {
   ZOOM_MIN,
   ZOOM_MAX,
   ZOOM_PADRAO,
+  JM_TITLE_GAP_MIN,
+  JM_TITLE_GAP_MAX,
+  JM_TITLE_GAP_DEFAULT,
   parseModelConfigs,
   withModelConfig,
 } = require('../services/brandModelConfig');
@@ -70,6 +73,7 @@ function brandPreviewVersion(profile = {}) {
     profile.marca_fonte,
     profile.marca_titulo_cor,
     profile.marca_titulo_tamanho,
+    profile.marca_modelo_config,
     profile.logo_path,
     profile.updated_at ? new Date(profile.updated_at).getTime() : '',
   ];
@@ -89,6 +93,7 @@ async function artModelPreview(req, res, next) {
     // antes de salvar. Sem query, sai a miniatura com o que já está gravado.
     const overrides = {
       tituloTamanho: req.query.tamanho,
+      tituloEspaco: req.query.tituloEspaco,
       tituloCor: req.query.tituloCor,
       fonte: req.query.fonte,
       corPrimaria: req.query.cor1,
@@ -160,6 +165,9 @@ async function show(req, res, next) {
       zoomMin: ZOOM_MIN,
       zoomMax: ZOOM_MAX,
       zoomDefault: ZOOM_PADRAO,
+      jmTitleGapMin: JM_TITLE_GAP_MIN,
+      jmTitleGapMax: JM_TITLE_GAP_MAX,
+      jmTitleGapDefault: JM_TITLE_GAP_DEFAULT,
       videoBrandModels: VIDEO_BRAND_MODELS,
       defaultVideoBrandModel: DEFAULT_VIDEO_BRAND_MODEL,
       brandFonts: BRAND_FONTS,
