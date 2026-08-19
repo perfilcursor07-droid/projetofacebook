@@ -182,6 +182,12 @@ async function composeMatterArtwork({
   if (modelId === 'urgente_alerta') {
     titleForArt = ensureTituloUrgenteAlerta(finalTitleRaw);
     titleToStore = titleForArt;
+  } else if (modelId === 'jm') {
+    // No JM, [[trecho]] não é texto decorativo: é a instrução que o
+    // renderizador usa para pintar o trecho com a cor principal. Remover os
+    // marcadores aqui fazia a prévia de "Minha marca" ficar certa, mas a arte
+    // final perder o destaque. O JM não usa a faixa ((...)); só a limpamos.
+    titleForArt = finalTitleRaw.replace(/\(\(|\)\)/g, '');
   } else {
     titleForArt = stripAlertMarks(finalTitleRaw);
   }
