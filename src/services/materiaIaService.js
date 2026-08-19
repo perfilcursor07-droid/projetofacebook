@@ -8,6 +8,7 @@ const { pesquisarNichos } = require('./newsResearch');
 const { buscarEmAltaAgora } = require('./trendingTopics');
 const { apurarTopico } = require('./articleSource');
 const { gerarMateriaNoticiaFacebook, assertDeepseek } = require('./deepseekService');
+const { registrarAprendizado } = require('./editorialLearningService');
 const pexelsService = require('./pexelsService');
 const facebookService = require('./facebookService');
 const { enqueue } = require('../workers/queue');
@@ -585,6 +586,16 @@ async function criarMateriaManual({
     imagem_url: null,
     error_message: null,
   });
+
+  // O texto que o editor escreve do zero é o exemplo mais forte do estilo
+  // dele — vale mais que uma correção sobre texto da IA.
+  registrarAprendizado({
+    userId,
+    matterId: id,
+    tituloDepois: tituloLimpo,
+    materiaDepois: materiaLimpa,
+    origem: 'Matéria escrita à mão pelo editor (estilo dele, sem versão da IA)',
+  }).catch((err) => console.warn('[materia-manual] aprender estilo:', err.message));
 
   // Mesmo na matéria escrita à mão, o editor recebe 3 opções de manchete.
   gerarESalvarTitulosAlternativos({

@@ -78,9 +78,19 @@ function inferirTarefa(messages, tarefaPedida) {
   return 'auxiliar';
 }
 
+/**
+ * Porta de entrada usada por controllers e serviços antes de chamar a IA.
+ * Com AI_PROVIDER=claude o que precisa estar configurado é a chave da
+ * Anthropic — exigir a da DeepSeek aqui derrubaria chat, link e biblioteca.
+ */
 function assertDeepseek() {
+  if (usarClaude()) return;
   if (!env.deepseekApiKey) {
-    const err = new Error('DEEPSEEK_API_KEY não configurada no .env');
+    const err = new Error(
+      String(env.aiProvider || '').toLowerCase() === 'claude'
+        ? 'AI_PROVIDER=claude, mas ANTHROPIC_API_KEY não está configurada no .env'
+        : 'DEEPSEEK_API_KEY não configurada no .env'
+    );
     err.status = 500;
     throw err;
   }
@@ -330,7 +340,8 @@ ${blocoEstiloNewsGospel()}
 
 Regras obrigatórias:
 - NÃO cole a transcrição/legenda inteira nem parafraseie frase a frase.
-- DEIXE 1 a 3 FALAS LITERAIS curtas entre aspas ("…") quando houver na fonte — exatamente como foram ditas.
+- DEIXE no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto quando houver na fonte — exatamente como foram ditas.
+- FORMATO: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres).
 - Não invente fatos, números, nomes ou falas que não estejam na fonte.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
 - Inclua 3 a 5 hashtags relevantes no campo hashtags (sem # no valor).
@@ -410,7 +421,8 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     'PROIBIDO colar a transcrição/legenda inteira. Reescreva como redator de portal gospel.',
     'ESTRUTURA OBRIGATÓRIA:',
     '1) Lead: apresente quem fala / o tema com contexto (nome, o que é conhecido, o assunto).',
-    '2) Desenvolvimento: narre o conteúdo com suas palavras + 1 a 3 falas literais curtas entre aspas ("…").',
+    '2) Desenvolvimento: narre o conteúdo com suas palavras + no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto.',
+    '3) FORMATO: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres).',
     '3) Fechamento no fato jornalístico — PROIBIDO oração / “Que Deus…” / “Seguimos em oração” / “Amém” nas últimas linhas.',
     'Exemplo de aspas: Ele afirma: "Eu entendi que sem Deus eu não era nada".',
     'O campo "titulo" = MANCHETE CURTA (máx. 90 caracteres). NÃO cole a legenda/transcrição no título.',
@@ -548,7 +560,7 @@ ${furoReportagem ? `MODO FURO / MINIMATÉRIA (obrigatório):
 - Se a fonte for CURTA: amplie com contexto real da apuração até o tamanho máximo — sem inventar.
 - Encontre o FURO: o ângulo mais jornalístico e específico.
 - Estrutura: lead (quem + fato) + desenvolvimento com aspas; encerre no fato (sem oração final).
-- OBRIGATÓRIO: preserve 1 a 3 falas literais curtas entre aspas ("…") quando houver declaração na apuração.
+- OBRIGATÓRIO: preserve no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto quando houver declaração na apuração.
 - Título próprio — nunca copie a manchete da fonte.
 - Não inclua bloco "Fontes:" — o sistema anexa créditos da origem e da imagem.` : ''}
 ${variacaoViral ? `MODO VARIAÇÃO VIRAL (obrigatório — post que já performou bem):
@@ -694,12 +706,12 @@ async function gerarMateriaNoticiaFacebook({
     `VOLUME DA FONTE: ${volumeFonte.toUpperCase()}.`,
     blocoRegraTamanhoAdaptativo(faixa, volumeFonte),
     `EXTENSÃO OBRIGATÓRIA DO CORPO: ${faixa.min}–${faixa.max} caracteres (sem hashtags). Meta: perto de ${faixa.max}.`,
-    'FORMATAÇÃO: 5 a 8 parágrafos curtos separados por linha em branco.',
+    'FORMATAÇÃO: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres), separados por linha em branco.',
     'ESTRUTURA: (1) lead com quem + fato; (2) desenvolvimento com dados principais + aspas reais; (3) encerre no fato — sem oração / “Que Deus…” / “Amém”.',
     nicho ? `Nicho/palavras-chave: ${nicho}` : null,
     emAlta ? 'Contexto: assunto em alta agora.' : null,
     redeSocial
-      ? 'A fonte é post/vídeo de rede social. Transforme em minimatéria gospel: contextualize com suas palavras e DEIXE 1–3 falas literais curtas entre aspas ("…") da apuração.'
+      ? 'A fonte é post/vídeo de rede social. Transforme em minimatéria gospel: contextualize com suas palavras e use no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto da apuração.'
       : null,
     furoReportagem
       ? 'PRIORIDADE: ângulo de furo + reescrita total. Fonte longa = condensar; fonte curta = completar SOMENTE com fatos das fontes documentadas / busca na internet abaixo.'
@@ -2305,7 +2317,7 @@ ANTI-PLÁGIO (obrigatório):
 Regras de saída:
 - Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosUsados":["fato 1","fato 2"]}
 - Título: pode ajustar levemente (máx. 110 chars) se um fato novo fortalecer o gancho; senão mantenha próximo.
-- Matéria: português do Brasil, parágrafos curtos com \\n\\n, ideal 1700–2100 chars (sem hashtags).
+- Matéria: português do Brasil, no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres), separados por \\n\\n, no máximo 1100 chars (sem hashtags).
 - Integre os fatos de forma natural no fluxo (não faça lista "segundo o site X").
 - Pode citar o veículo só pelo nome (ex.: "segundo o G1", "pesquisa Quaest") — NUNCA cole URL no campo materia.
 - Preserve bloco "Fontes:" se já existir; se não houver, não invente lista longa de URLs.
@@ -2896,8 +2908,8 @@ async function conversarMateria({
 - Explique a sequência documentada: o que voltou a circular → quando e onde aconteceu originalmente → o que foi dito/feito → em qual circunstância → antecedentes presentes na fonte → por que a data é relevante agora.
 - O texto factual extraído desta publicação tem aproximadamente ${volumeFonteSocial} caracteres.
 ${fonteSocialCurta
-  ? '- A fonte é curta: entregue uma matéria concisa de 3 a 5 parágrafos e cerca de 650 a 1200 caracteres no corpo. Use cada fato uma vez e NÃO tente atingir tamanho com inferências, adjetivos ou contexto não documentado.'
-  : '- A fonte tem material suficiente: entregue de 5 a 8 parágrafos substanciais e cerca de 1500 a 2400 caracteres no corpo. Não repita a mesma informação para atingir tamanho.'}
+  ? '- A fonte é curta: entregue no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres) e cerca de 500 a 900 caracteres no corpo. Use cada fato uma vez e NÃO tente atingir tamanho com inferências, adjetivos ou contexto não documentado.'
+  : '- A fonte tem material suficiente: mesmo assim entregue no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres) e no máximo 1100 caracteres no corpo. Escolha o essencial em vez de contar tudo; não repita informação para atingir tamanho.'}
 - Em uma matéria desse tamanho, não use intertítulos. A linha fina já organiza a leitura.
 - Entregue somente a matéria pronta. NÃO gere títulos alternativos, chamada para redes sociais, sugestão de arte, notas ao editor nem explicação do processo.`
     : '';
@@ -2927,7 +2939,8 @@ COMO RESPONDER:
 - Se o editor pedir um ajuste ("deixe mais curto", "acrescente X", "troque o título"): reescreva a MATÉRIA INTEIRA já ajustada, não só o trecho.
 
 TAMANHO DA MATÉRIA (aproveite TODO o material apurado):
-- Com material suficiente nas fontes: corpo de 2600 a 3800 caracteres, em 7 a 12 parágrafos curtos. Tema amplo deve parecer reportagem completa, não legenda resumida.
+- TAMANHO MÁXIMO: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres), corpo de no máximo 1100 caracteres — vale para qualquer pedido, inclusive tema amplo. Sobrando material, escolha o essencial em vez de alongar.
+- Aspas: no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto.
 - Não pare no resumo do fato: use tudo que as fontes trazem — quem é a pessoa/instituição, o que foi dito (com aspas literais), quando e onde, números e datas, reação e desdobramentos documentados, histórico do caso.
 - Em pedido sobre um TEMA amplo, faça apuração cruzada: apresente o fato central, o contexto, os posicionamentos documentados, a relação com 2026 quando estiver nas fontes, os possíveis impactos objetivos e o que ainda merece acompanhamento.
 - Em tema institucional/político amplo, organize a matéria nesta lógica, usando apenas os blocos sustentados: contexto da instituição → estrutura política → iniciativas e documentos → falas de lideranças → apoios/articulações → controvérsia/contraponto → próximos movimentos.
@@ -3057,7 +3070,7 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
     const instrucoesAprofundamento = fonteSocial
       ? [
           'A versão ficou parecendo um resumo, apesar de a publicação trazer material factual suficiente.',
-          'Reescreva a matéria COMPLETA com linha fina, 1500 a 2400 caracteres no corpo e 5 a 8 parágrafos substanciais.',
+          'Reescreva a matéria COMPLETA com linha fina, no máximo 1100 caracteres no corpo e no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres).',
           'Use a fala literal mais forte no título quando ela estiver na fonte e reproduza a declaração completa em um parágrafo próprio.',
           'Reconstrua a cronologia: recirculação atual, data e local originais, circunstância da fala, antecedentes documentados e relevância da data.',
           'Deixe inequívoco quando o vídeo ou a declaração são antigos. Não apresente o conteúdo que voltou a circular como fato novo.',

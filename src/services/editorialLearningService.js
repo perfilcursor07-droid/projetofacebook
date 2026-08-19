@@ -47,6 +47,20 @@ const MAX_MEMORIAS_CHAT = 20;
 const PADRAO_FEEDBACK_CHAT =
   /\b(aprend[ae]|lembre|memorize|sempre|nunca|prefir|eu gosto|eu n[aã]o gosto|n[aã]o quero|quero que (?:sempre|nunca|n[aã]o|use|mantenha|evite)|quando eu|quando for|da pr[oó]xima|pare de|evite|n[aã]o invent|use a legenda|use o [aá]udio|use a transcri[cç][aã]o|mantenha a fonte|n[aã]o apague a fonte|ficou errado|nada a ver|n[aã]o foi isso)\b/i;
 
+/**
+ * Antes o registro dependia de a frase conter "sempre", "nunca", "prefiro"…
+ * Preferência dita de forma solta ("deixa mais curto", "tira a oração do fim")
+ * passava batido. Agora o filtro só descarta o que claramente não é instrução
+ * — quem decide é o modelo barato, que responde persistir:false na maioria.
+ */
+function podeConterPreferencia(texto) {
+  const t = String(texto || '').trim();
+  if (t.length < 12) return false;
+  if (/^https?:/i.test(t) && !t.includes(' ')) return false;
+  if (PADRAO_FEEDBACK_CHAT.test(t)) return true;
+  return true;
+}
+
 function normText(s) {
   return String(s || '')
     .replace(/\r\n/g, '\n')
@@ -116,11 +130,17 @@ async function registrarAprendizado({
   tituloDepois = null,
   materiaAntes = null,
   materiaDepois = null,
+  // Texto escrito do zero pelo editor entra como exemplo de estilo puro — a
+  // nota vai junto para o destilador saber que ali não houve versão da IA.
+  origem = null,
 }) {
-  const tituloMudou =
-    tituloAntes != null &&
-    tituloDepois != null &&
-    normText(tituloAntes) !== normText(tituloDepois);
+  // Num exemplo escrito do zero não existe "antes": o título dele já é o
+  // padrão, então entra junto com o corpo.
+  const tituloMudou = origem
+    ? Boolean(normText(tituloDepois))
+    : tituloAntes != null &&
+      tituloDepois != null &&
+      normText(tituloAntes) !== normText(tituloDepois);
   const materiaMudou = diffSignificativo(materiaAntes, materiaDepois);
 
   if (!tituloMudou && !materiaMudou) {
@@ -129,7 +149,7 @@ async function registrarAprendizado({
 
   // Matéria precisa de mudança real; título sozinho só conta se também houver corpo alterado
   // ou título bem diferente (>15 chars delta / texto diferente)
-  if (!materiaMudou && tituloMudou) {
+  if (!origem && !materiaMudou && tituloMudou) {
     const ta = normText(tituloAntes);
     const td = normText(tituloDepois);
     if (Math.abs(ta.length - td.length) < 8 && ta.length > 0) {
@@ -146,13 +166,13 @@ async function registrarAprendizado({
   await EditorialAprendizados.create({
     user_id: userId,
     matter_id: matterId || null,
-    titulo_antes: tituloMudou ? String(tituloAntes || '').slice(0, 300) : null,
+    titulo_antes: !origem && tituloMudou ? String(tituloAntes || '').slice(0, 300) : null,
     titulo_depois: tituloMudou ? String(tituloDepois || '').slice(0, 300) : null,
-    materia_antes: materiaMudou ? sliceSafe(materiaAntes) : null,
-    materia_depois: materiaMudou ? sliceSafe(materiaDepois) : null,
-    diff_resumo: materiaMudou
-      ? resumoDiff(materiaAntes, materiaDepois)
-      : 'Ajustou o título',
+    materia_antes: !origem && materiaMudou ? sliceSafe(materiaAntes) : null,
+    materia_depois: materiaMudou || origem ? sliceSafe(materiaDepois) : null,
+    diff_resumo:
+      origem ||
+      (materiaMudou ? resumoDiff(materiaAntes, materiaDepois) : 'Ajustou o título'),
   });
 
   const estilo = await EditorialEstiloUsuario.findByUser(userId);
@@ -165,7 +185,7 @@ async function registrarAprendizado({
     regras_estilo: estilo?.regras_estilo || null,
   });
 
-  if (precisaDestilar && env.deepseekApiKey) {
+  if (precisaDestilar && iaConfigurada()) {
     try {
       await atualizarRegrasEstilo(userId);
     } catch (err) {
@@ -201,7 +221,7 @@ async function atualizarRegrasEstilo(userId) {
       {
         role: 'system',
         content:
-          'Você analisa correções de um editor humano em matérias gospel para Facebook. Extraia padrões de ESTILO (não fatos das matérias). Responda JSON: {"regras":["bullet1",...]} com 8 a 12 bullets curtos em português sobre tom, tamanho, fechamento de fé, como citar cargos/pessoas, o que evitar, preferências de título.',
+          'Você analisa o trabalho de um editor humano em matérias gospel para Facebook. Cada exemplo é uma correção (texto da IA → versão editada) OU uma matéria que ele escreveu do zero — nesta última o texto dele é o padrão a seguir, não uma correção. Extraia padrões de ESTILO (não fatos das matérias). Responda JSON: {"regras":["bullet1",...]} com 8 a 12 bullets curtos em português sobre tom, tamanho, fechamento de fé, como citar cargos/pessoas, o que evitar, preferências de título.',
       },
       {
         role: 'user',
@@ -252,7 +272,7 @@ function memoriasComoLista(valor) {
  */
 async function registrarFeedbackDoChat({ userId, pedido, respostaAnterior = null }) {
   const texto = normText(pedido);
-  if (!userId || texto.length < 8 || !PADRAO_FEEDBACK_CHAT.test(texto)) {
+  if (!userId || !podeConterPreferencia(texto)) {
     return { registered: false };
   }
   if (!iaConfigurada()) return { registered: false, reason: 'sem_api' };

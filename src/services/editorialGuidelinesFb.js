@@ -12,7 +12,7 @@
 const MAX_MATERIA_CHARS = 2200;
 
 /** Alvo do corpo da minimatéria (sem hashtags/créditos). Sempre perto do máximo. */
-const FAIXA_CORPO_FB = Object.freeze({ min: 1700, max: 2100 });
+const FAIXA_CORPO_FB = Object.freeze({ min: 600, max: 1100 });
 
 /** Abaixo disso a fonte é tratada como “texto pequeno” (precisa expandir). */
 const FONTE_CURTA_CHARS = 700;
@@ -59,7 +59,7 @@ function blocoRegraTamanhoAdaptativo(faixa, volumeFonte) {
   if (volumeFonte === 'longa') {
     return `TAMANHO (fonte LONGA — CONDENSE):
 - A apuração é extensa. CONDENSE até ${alvo} caracteres (máx. Face/Insta).
-- Preserve TODOS os dados principais: nomes, números, datas, lugares, decisões e 1–3 falas literais.
+- Preserve os dados principais: nomes, números, datas, lugares, decisões e até 3 falas literais.
 - Corte só repetição, enrolação e detalhes secundários — nunca o furo.
 - O texto final deve chegar PERTO do máximo (${faixa.max}), não ficar telegráfico.`;
   }
@@ -117,10 +117,10 @@ function blocoEstiloNewsGospel() {
 ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
 1) LEAD: apresente quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
 2) DESENVOLVIMENTO: minimatéria do conteúdo original. Se a fonte for grande, condense preservando os dados principais; se for pequena, complete com contexto real da apuração — sempre no tamanho máximo Face/Insta.
-3) Use 1 a 3 FALAS LITERAIS entre aspas ("…") quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
+3) Use no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
 4) FECHAMENTO: encerre no fato / última informação jornalística. PROIBIDO terminar com oração, “Que Deus…”, “Seguimos em oração”, “Amém”, pedido de fé ou as 1–2 últimas linhas só de reflexão espiritual.
 5) TOM: jornalístico + evangélico caloroso. Sem clickbait.
-6) FORMATO: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n). Texto puro. Sem HTML/markdown. Sem emoji obrigatório no final.
+6) FORMATO: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres), separados por linha em branco (\\n\\n). Texto puro. Sem HTML/markdown. Sem emoji obrigatório no final.
 7) PROIBIDO: colar a fonte inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
 8) NÃO coloque bloco de "Fontes:" / "Fonte:" / créditos no JSON — o sistema anexa créditos automaticamente (uma vez só).
 9) VOZ PRÓPRIA — NÃO COMENTE A FONTE: escreva a NOTÍCIA como reportagem nossa, nunca como resenha do que outro site publicou.
@@ -1113,11 +1113,11 @@ function blocoRegrasFacebookBase() {
 DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
 - Fonte longa → condensar preservando dados principais. Fonte curta → ampliar SÓ com fatos das fontes de apuração / internet documentadas.
 - NÃO copie a fonte inteira nem frases longas: reescreva com estrutura e palavras próprias (anti-plágio).
-- FALAS LITERAIS: 1 a 3 trechos curtos entre aspas ("…") SOMENTE se estiverem documentados na apuração.
+- FALAS LITERAIS: no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto — SOMENTE se estiverem documentadas na apuração.
 - NÃO invente fatos, números, datas, igrejas, pastores, locais, cargos nem declarações.
 - Se um detalhe NÃO estiver nas fontes documentadas: omita ou generalize (“segundo informações divulgadas”) — nunca preencha com “conhecimento geral” duvidoso.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
-- Formato: 5 a 8 parágrafos curtos separados por linha em branco (\\n\\n).
+- Formato: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres), separados por linha em branco (\\n\\n).
 - Gancho forte nos primeiros ~120 caracteres (quem + fato).
 - 3 a 5 hashtags no campo hashtags, SEM espaços internos, sem # no valor.
 - Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 22).map((f) => `"${f}"`).join(', ')}…
