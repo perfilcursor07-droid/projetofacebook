@@ -2890,6 +2890,11 @@ async function conversarMateria({
   fonteSocialChars = 0,
   fonteEstrangeira = false,
   contextoAprendizado = null,
+  // A busca é feita pelo sistema ANTES desta chamada. Sem essa distinção, o
+  // modelo confunde "voltou vazia" com "não houve busca" e responde que não
+  // sabe pesquisar — o que é falso e deixa o editor sem saída.
+  pesquisouSemResultado = false,
+  motivoBuscaVazia = null,
 }) {
   assertDeepseek();
   const texto = String(pedido || '').trim();
@@ -2931,6 +2936,12 @@ ${fonteSocialCurta
     : '';
 
   const system = `Você é repórter e redator de uma Página de notícias no Facebook/Instagram, conversando com o editor num chat.
+
+COMO A APURAÇÃO CHEGA ATÉ VOCÊ (leia antes de responder):
+- O sistema pesquisa a web e as redes sociais ANTES de te chamar e cola o resultado neste prompt. Você não precisa pedir link para apurar: quando há material, ele já está aqui embaixo.
+- Se pedirem pautas, notícias ou polêmicas de um período, isso é trabalho normal seu — a busca já foi disparada com esse pedido.
+- NUNCA responda que "não consigo pesquisar", "não acesso a internet", "não navego" ou "só trabalho com o que você colar". É falso e deixa o editor sem saída.
+- Se o material não veio, a resposta certa é dizer que a busca voltou vazia e sugerir o próximo passo — nunca negar a própria capacidade.
 
 ${blocoEstiloNewsGospel()}
 
@@ -3048,7 +3059,17 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
       blocoTraducao,
       blocoFatos
         ? `TRECHOS DAS FONTES PESQUISADAS AGORA (use só fato verificável):\n${blocoFatos.slice(0, 32000)}`
-        : 'SEM PESQUISA NOVA: use o que já está na conversa e o que o editor informou.',
+        : pesquisouSemResultado
+          ? [
+              'A BUSCA AUTOMÁTICA RODOU AGORA E NÃO TROUXE NENHUM RESULTADO.',
+              motivoBuscaVazia ? `Motivo provável: ${motivoBuscaVazia}.` : null,
+              'Diga isso ao editor em 1 ou 2 frases: a busca foi feita e voltou vazia, e por quê.',
+              'Sugira o caminho prático — termo mais específico, janela de tempo maior, ou o link/print da polêmica.',
+              'PROIBIDO dizer que você "não consegue pesquisar", "não acessa a internet" ou que "só trabalha com o que o editor colar". Isso é falso: a pesquisa é feita pelo sistema antes de você responder.',
+            ]
+              .filter(Boolean)
+              .join('\n')
+          : 'SEM PESQUISA NESTA RODADA (o editor não pediu apuração nova): use o que já está na conversa e o que ele informou.',
       permitirSemConfirmacao
         ? 'O EDITOR ASSUME A RESPONSABILIDADE e pediu a matéria mesmo sem confirmação nas fontes: escreva, mas continua PROIBIDO inventar falas entre aspas, números, datas e atribuições a veículos. Deixe claro no texto que a informação é atribuída ao que o editor relatou e que não há confirmação oficial.'
         : null,

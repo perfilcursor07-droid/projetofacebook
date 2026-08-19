@@ -28,6 +28,25 @@ function recortarTranscricao(texto, limite = 16000) {
   ].join('\n\n');
 }
 
+/**
+ * Por que a busca não trouxe nada. Sem crédito no provedor é o caso mais comum
+ * e o mais fácil de resolver — mas invisível para quem está no chat.
+ */
+function motivoDaBuscaVazia() {
+  try {
+    const pausados = require('./providerHealth').pausados() || [];
+    const busca = pausados
+      .map((p) => String(p.provedor || '').toLowerCase())
+      .filter((nome) => ['serper', 'serpapi', 'brave', 'scrapecreators'].includes(nome));
+    if (busca.length) {
+      return `os provedores de busca ${[...new Set(busca)].join(', ')} estão sem crédito ou fora do ar neste momento`;
+    }
+  } catch {
+    /* diagnóstico é acessório: nunca derruba a resposta */
+  }
+  return 'a busca não encontrou publicações no período pedido';
+}
+
 function erro(mensagem, status = 400) {
   const err = new Error(mensagem);
   err.status = status;
@@ -2035,6 +2054,9 @@ async function responder({
       }
       resposta = partes.join('\n\n');
     } else {
+      // A busca rodou e voltou vazia é situação diferente de "não pesquisei".
+      // Sem esse aviso o modelo responde que não sabe pesquisar.
+      const buscaVazia = Boolean(usarPesquisa) && !blocoFatos;
       resposta = await deepseekService.conversarMateria({
         pedido,
         historico,
@@ -2046,6 +2068,8 @@ async function responder({
         fonteSocialChars: caracteresFonteSocial,
         fonteEstrangeira,
         contextoAprendizado,
+        pesquisouSemResultado: buscaVazia,
+        motivoBuscaVazia: buscaVazia ? motivoDaBuscaVazia() : null,
         onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
       });
     }
