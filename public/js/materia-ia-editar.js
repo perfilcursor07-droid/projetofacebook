@@ -1942,5 +1942,99 @@
     }
   });
 
+  // ── Ensinar IA ────────────────────────────────────────────────────────────
+  // A lição não altera esta matéria: vira regra permanente para as próximas.
+  const ensinarModal = document.getElementById('ensinar-modal');
+  const ensinarTexto = document.getElementById('ensinar-texto');
+  const ensinarLista = document.getElementById('ensinar-lista');
+  const ensinarStatus = document.getElementById('ensinar-status');
+  const btnEnsinarSalvar = document.getElementById('ensinar-salvar');
+
+  function ensinarAviso(msg, isError) {
+    if (!ensinarStatus) return;
+    ensinarStatus.textContent = msg || '';
+    ensinarStatus.classList.toggle('hidden', !msg);
+    ensinarStatus.classList.toggle('text-rose-300', Boolean(isError));
+    ensinarStatus.classList.toggle('text-emerald-300', Boolean(msg) && !isError);
+  }
+
+  function renderEnsinamentos(texto) {
+    if (!ensinarLista) return;
+    const linhas = String(texto || '')
+      .split(/\r?\n/)
+      .map((l) => l.replace(/^\s*[-•*]\s*/, '').trim())
+      .filter(Boolean);
+    if (!linhas.length) {
+      ensinarLista.innerHTML =
+        '<span class="text-slate-600">Nada ainda. A primeira lição aparece aqui.</span>';
+      return;
+    }
+    ensinarLista.innerHTML = linhas
+      .map((l) => `<div class="border-b border-slate-800/60 py-1 last:border-0">• ${escapeHtml(l)}</div>`)
+      .join('');
+  }
+
+  async function carregarEnsinamentos() {
+    if (!ensinarLista) return;
+    ensinarLista.textContent = 'Carregando…';
+    try {
+      const res = await fetch('/api/materias-ia/ensinamentos');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao carregar');
+      renderEnsinamentos(data.orientacoes);
+    } catch (err) {
+      ensinarLista.innerHTML = `<span class="text-rose-300">${escapeHtml(err.message)}</span>`;
+    }
+  }
+
+  function abrirEnsinar() {
+    if (!ensinarModal) return;
+    ensinarModal.classList.remove('hidden');
+    ensinarAviso('');
+    carregarEnsinamentos();
+    ensinarTexto?.focus();
+  }
+
+  function fecharEnsinar() {
+    ensinarModal?.classList.add('hidden');
+  }
+
+  document.getElementById('btn-ensinar-ia')?.addEventListener('click', abrirEnsinar);
+  document.getElementById('ensinar-fechar')?.addEventListener('click', fecharEnsinar);
+  ensinarModal?.addEventListener('click', (ev) => {
+    if (ev.target === ensinarModal) fecharEnsinar();
+  });
+
+  btnEnsinarSalvar?.addEventListener('click', async () => {
+    const licao = String(ensinarTexto?.value || '').trim();
+    if (licao.length < 6) {
+      ensinarAviso('Escreva o que a IA deve aprender.', true);
+      return;
+    }
+    btnEnsinarSalvar.disabled = true;
+    ensinarAviso('Guardando…');
+    try {
+      const res = await fetch(`/api/materias-ia/matters/${cfg.id}/ensinar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ licao }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao gravar a lição');
+      if (ensinarTexto) ensinarTexto.value = '';
+      renderEnsinamentos(data.orientacoes);
+      ensinarAviso(
+        data.normalizada
+          ? `Guardado como: "${data.regra}"`
+          : 'Lição guardada para as próximas matérias ✓'
+      );
+      setStatus('IA ensinada — vale a partir da próxima matéria ✓');
+    } catch (err) {
+      ensinarAviso(err.message, true);
+    } finally {
+      btnEnsinarSalvar.disabled = false;
+    }
+  });
+
   window.addEventListener('beforeunload', releaseImagePreview);
 })();

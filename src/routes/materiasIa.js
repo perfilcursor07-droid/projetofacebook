@@ -37,6 +37,10 @@ router.post('/gerar-manual', (req, res, next) => {
     return controller.gerarManual(req, res, next);
   });
 });
+// Ensinar IA a partir da matéria aberta (regra vale para as próximas).
+router.get('/ensinamentos', controller.listarEnsinamentos);
+router.post('/matters/:id/ensinar', controller.ensinarIa);
+
 router.get('/matters', controller.listarMaterias);
 router.post('/matters/excluir-lote', controller.removerMateriasLote);
 router.post('/matters/sincronizar-engajamento', controller.sincronizarEngajamento);

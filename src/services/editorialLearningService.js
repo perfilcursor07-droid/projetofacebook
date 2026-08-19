@@ -394,6 +394,67 @@ async function acrescentarOrientacao(userId, texto) {
 }
 
 /**
+ * "Ensinar IA" na tela da matéria: o editor escreve a lição olhando para o
+ * texto que acabou de sair ("em matéria assim, faça isso"). Essa frase só faz
+ * sentido com a matéria na tela, então o modelo barato a reescreve como regra
+ * que se sustenta sozinha antes de virar orientação permanente.
+ */
+async function ensinarComContexto({ userId, licao, titulo = null, materia = null }) {
+  if (!userId) {
+    const err = new Error('Usuário não identificado');
+    err.status = 401;
+    throw err;
+  }
+  const texto = normText(licao);
+  if (texto.length < 6) {
+    const err = new Error('Escreva o que a IA deve aprender para as próximas matérias.');
+    err.status = 400;
+    throw err;
+  }
+
+  let regra = texto;
+  let normalizada = false;
+
+  if (iaConfigurada()) {
+    const instrucao = [
+      'Você transforma a instrução de um editor numa REGRA de estilo reutilizável.',
+      'Responda apenas JSON: {"regra":"..."}.',
+      'A regra vale para matérias FUTURAS e será lida sem a matéria atual na tela:',
+      '- se o editor disser "matérias assim" ou "esse tipo", descreva em palavras que tipo é (tema, tipo de fonte, tipo de personagem);',
+      '- não guarde fatos, nomes próprios da pauta atual, números, datas nem links;',
+      '- guarde só o padrão de escrita, formatação, tom, título ou tratamento de fonte.',
+      'Uma frase, imperativa, curta, em português. Se não houver regra reaproveitável, devolva {"regra":""}.',
+    ].join('\n');
+
+    const contexto = [
+      titulo ? `Matéria aberta na tela (contexto, não memorize): ${String(titulo).slice(0, 300)}` : null,
+      materia ? `Trecho da matéria (contexto, não memorize): ${sliceSafe(materia, 800)}` : null,
+      `Instrução do editor: ${texto}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    try {
+      const raw = await chamarIaJson([
+        { role: 'system', content: instrucao },
+        { role: 'user', content: contexto },
+      ]);
+      const limpa = String(JSON.parse(raw || '{}').regra || '').trim();
+      if (limpa.length >= 8) {
+        regra = limpa;
+        normalizada = true;
+      }
+    } catch (err) {
+      // Sem o modelo, a frase do editor vale como está — nunca perder a lição.
+      console.warn('[ensinar-ia] normalizar regra:', err.message);
+    }
+  }
+
+  const salvo = await salvarOrientacoes(userId, `${(await obterOrientacoes(userId)).orientacoes}\n${regra}`);
+  return { ...salvo, regra, normalizada };
+}
+
+/**
  * Contexto para injetar no prompt de geração.
  */
 async function obterContextoAprendizado(userId) {
@@ -481,6 +542,7 @@ module.exports = {
   obterOrientacoes,
   salvarOrientacoes,
   acrescentarOrientacao,
+  ensinarComContexto,
   obterContextoAprendizado,
   formatarContextoAprendizadoParaPrompt,
   diffSignificativo,

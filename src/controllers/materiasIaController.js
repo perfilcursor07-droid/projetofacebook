@@ -487,6 +487,43 @@ function parseHashtags(value) {
   return [];
 }
 
+/**
+ * "Ensinar IA" na tela da matéria: grava uma regra permanente a partir do que
+ * o editor escreve olhando para a matéria aberta. Vale para as próximas.
+ */
+async function ensinarIa(req, res, next) {
+  try {
+    const matterId = Number(req.params.id);
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+
+    const learning = require('../services/editorialLearningService');
+    const salvo = await learning.ensinarComContexto({
+      userId: req.session.userId,
+      licao: req.body?.licao ?? req.body?.texto ?? '',
+      titulo: matter.titulo,
+      materia: matter.materia,
+    });
+
+    return res.json({ ok: true, ...salvo });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** Regras que a IA já aprendeu, para a tela mostrar antes de ensinar outra. */
+async function listarEnsinamentos(req, res, next) {
+  try {
+    const learning = require('../services/editorialLearningService');
+    const dados = await learning.obterOrientacoes(req.session.userId);
+    return res.json({ ok: true, ...dados });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function atualizarMateria(req, res, next) {
   try {
     const matterId = Number(req.params.id);
@@ -1752,6 +1789,8 @@ module.exports = {
   removerMateria,
   removerMateriasLote,
   atualizarMateria,
+  ensinarIa,
+  listarEnsinamentos,
   sugerirTitulo,
   titulosAlternativos,
   revisarTextoManual,
