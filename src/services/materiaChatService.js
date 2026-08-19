@@ -709,7 +709,22 @@ function interpretarResposta(conteudo) {
 
   // Recado da checagem nunca é matéria (não pode virar rascunho nem seguir
   // para a revisão). Respostas longas com opções antes eram confundidas com artigo.
+  const ofereceOpcoesNumeradas =
+    /(?:^|[\s:;])1\s*[).:\-]\s*[\s\S]{10,}/i.test(textoUtil) &&
+    /(?:^|[\s:;])(?:ou\s+)?2\s*[).:\-]\s*[\s\S]{10,}/i.test(textoUtil);
+  const ofereceAlternativas =
+    ofereceOpcoesNumeradas ||
+    /\bse\s+(?:quiser|preferir),?\s+(?:eu\s+)?posso\b/i.test(textoUtil) ||
+    /\bposso\s+(?:escrever|desenvolver|transformar|seguir)\b[\s\S]{0,240}\bou\b/i.test(
+      textoUtil
+    );
+  const terminaPedindoEscolha =
+    /\b(?:qual|quais)[^?]{0,180}\b(?:prefere|quer|escolhe|deseja|desenvolv)[^?]*\?\s*$/i.test(
+      textoUtil
+    ) ||
+    /\bvoc[êe]\s+(?:prefere|escolhe|quer)[^?]{0,180}\?\s*$/i.test(textoUtil);
   const aguardaEscolha =
+    (ofereceAlternativas && terminaPedindoEscolha) ||
     /\b(?:qual|quais)\s+(?:desses|destes|dessas|destas|dos)\b[\s\S]{0,180}\b(?:quer|prefere|escolhe|desenvolv)/i.test(
       textoUtil
     ) ||
