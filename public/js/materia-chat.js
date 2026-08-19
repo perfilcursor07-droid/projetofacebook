@@ -36,7 +36,9 @@
     iniciado: false,
     chatId: null,
     conversas: [],
-    pesquisarWeb: false,
+    // Como Claude/DeepSeek: pedidos de notícia pesquisam por padrão. O editor
+    // ainda pode desligar em Ferramentas quando quiser trabalhar só com o texto enviado.
+    pesquisarWeb: true,
     transcreverVideo: true,
     enviando: false,
     controller: null,
@@ -1398,7 +1400,7 @@
     }
     el.titulo.textContent = 'Nova conversa';
     el.renomear?.classList.add('hidden');
-    state.pesquisarWeb = false;
+    state.pesquisarWeb = true;
     aplicarToggleWeb();
     limparMensagens();
     renderConversas();

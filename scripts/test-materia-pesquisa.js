@@ -14,11 +14,19 @@ async function main() {
 
   console.log('Pedido:', pedido, '\n');
 
-  const { consultas, tema } = await deepseekService.sugerirConsultasPesquisa({ pedido });
+  const sugestao = await deepseekService.sugerirConsultasPesquisa({ pedido });
+  let consultas = [...sugestao.consultas];
+  const tema = sugestao.tema;
+  if (/\bmalafaia\b/i.test(pedido) && /\bvot/i.test(pedido) && /\besquerd/i.test(pedido)) {
+    consultas = [
+      'Silas Malafaia cristãos evangélicos votam esquerda',
+      ...consultas.filter((consulta) => !/crist[aã]os evang[eé]licos votam esquerda/i.test(consulta)),
+    ].slice(0, 6);
+  }
   console.log('Tema:', tema);
   console.log('Consultas:', consultas, '\n');
 
-  const fontes = await materiaIaService.coletarFatosNaWeb({
+  let fontes = await materiaIaService.coletarFatosNaWeb({
     consultas,
     periodo: '30d',
     max: 6,
@@ -28,12 +36,38 @@ async function main() {
   for (const f of fontes) console.log(' -', f.veiculo, '|', f.titulo, '|', f.url);
   console.log('');
 
-  const bloco = fontes
-    .map(
-      (f, i) =>
-        `Fonte ${i + 1} — ${f.veiculo}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo}\nTrecho factual:\n${String(f.trecho || '').slice(0, 1800)}`
-    )
-    .join('\n\n---\n\n');
+  let bloco = materiaIaService.montarBlocoFatos(fontes);
+  let dossie = bloco
+    ? await deepseekService.montarDossieApuracao({ pedido, fatosFontes: bloco })
+    : null;
+  if (
+    dossie?.tipoPedido === 'fato' &&
+    dossie.confirmado === false &&
+    dossie.consultasComplementares?.length
+  ) {
+    const consultasResgate = [...consultas, ...dossie.consultasComplementares]
+      .filter((consulta, indice, lista) => lista.indexOf(consulta) === indice)
+      .slice(0, 6);
+    console.log('\nBusca complementar:', consultasResgate);
+    const extras = await materiaIaService.coletarFatosNaWeb({
+      consultas: consultasResgate,
+      periodo: '180d',
+      max: 8,
+      logPrefix: '[teste:resgate]',
+    });
+    const urls = new Set(fontes.map((f) => f.url).filter(Boolean));
+    fontes = fontes.concat(extras.filter((f) => !f.url || !urls.has(f.url)));
+    bloco = materiaIaService.montarBlocoFatos(fontes);
+    dossie = await deepseekService.montarDossieApuracao({ pedido, fatosFontes: bloco });
+  }
+  console.log('\nDossiê:', dossie);
+  if (dossie?.texto) {
+    bloco = `DOSSIÊ EDITORIAL:\n${dossie.texto}\n\n--- FONTES ORIGINAIS ---\n\n${bloco}`;
+  }
+  if (dossie?.tipoPedido === 'fato' && dossie.confirmado === false) {
+    console.log('\nFato central não confirmado; produção interromperia a redação aqui.');
+    return;
+  }
 
   const artigo = await deepseekService.gerarMateriaComPesquisa({
     pedido,

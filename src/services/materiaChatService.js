@@ -1556,6 +1556,7 @@ async function responder({
   let blocoFatos = null;
   let checagemDoDossie = null;
   let pesquisaExigeDossie = false;
+  let consultasDaPesquisa = [];
   let temFonteDoLink = false;
   let falhasLinksSociais = [];
   // Assunto extraído do post, usado para buscar contexto quando o pedido é só o link
@@ -1725,10 +1726,11 @@ async function responder({
       : assuntoDoLink
         ? `${assuntoDoLink} ${pedido}`.trim()
         : pedido;
-    pesquisaExigeDossie =
-      /\b(como|panorama|posicionamento|atua[cç][aã]o|estrat[eé]gia|influ[eê]ncia|crescimento|estrutura|papel|rela[cç][aã]o|hist[oó]ria|mobiliza[cç][aã]o|articula[cç][aã]o)\b/i.test(
-        pedidoParaPesquisa
-      );
+    // Chats de ponta organizam a apuração antes de redigir. O fluxo antigo só
+    // fazia isso quando uma regex reconhecia meia dúzia de palavras e deixava
+    // pedidos factuais importantes receberem snippets crus.
+    pesquisaExigeDossie = !modoPautas;
+    let tipoPedidoPesquisa = 'tema';
     try {
       const sugestao = await deepseekService.sugerirConsultasPesquisa({
         // Em continuação, pesquisa o TEMA anterior; nunca a instrução isolada
@@ -1740,6 +1742,8 @@ async function responder({
       });
       consultas = sugestao.consultas || [];
       temaPesquisa = sugestao.tema || '';
+      tipoPedidoPesquisa = sugestao.tipoPedido || 'tema';
+      pesquisaExigeDossie = !modoPautas && sugestao.exigeDossie !== false;
     } catch (err) {
       console.warn('[materia-chat] consultas:', err.message);
     }
@@ -1760,6 +1764,24 @@ async function responder({
       if (base.length >= 8) consultas = [base];
     }
 
+    // No nicho gospel, buscas vagas sobre "voto" frequentemente retornam a
+    // disputa eleitoral errada. Inclui a variação semântica que portais usam
+    // nas manchetes (cristãos/evangélicos), sem tratá-la como fato confirmado.
+    if (
+      /\b(malafaia|pastor|bispo|evang[eé]lic|crist[aã]o)/i.test(pedidoParaPesquisa) &&
+      /\bvot(?:a|am|ar|o|ou|os)?\b/i.test(pedidoParaPesquisa) &&
+      /\besquerd/i.test(pedidoParaPesquisa)
+    ) {
+      const sujeito = String(consultas[0] || temaPesquisa || pedidoParaPesquisa)
+        .split(/\s+/)
+        .slice(0, 2)
+        .join(' ');
+      const consultaNicho = `${sujeito} cristãos evangélicos votam esquerda`.trim();
+      consultas = [consultaNicho, ...consultas.filter(
+        (item) => normalizarTexto(item) !== normalizarTexto(consultaNicho)
+      )].slice(0, 6);
+    }
+
     // O modelo às vezes devolve só 1–2 consultas. Para uma pauta ampla isso
     // concentra a apuração no primeiro evento encontrado. Garante ângulos
     // editoriais diferentes antes de coletar as páginas.
@@ -1770,12 +1792,15 @@ async function responder({
       .trim()
       .slice(0, 110);
     if (baseAprofundamento.length >= 8 && consultas.length < 4) {
-      for (const complemento of [
-        'estrutura e posicionamento',
-        'ações documentos e lideranças',
-        'apoios articulações eleições',
-        'controvérsias e contrapontos',
-      ]) {
+      const complementos = tipoPedidoPesquisa === 'fato'
+        ? ['declaração entrevista origem', 'data contexto', 'repercussão contraponto']
+        : [
+            'estrutura e posicionamento',
+            'ações documentos e lideranças',
+            'apoios articulações eleições',
+            'controvérsias e contrapontos',
+          ];
+      for (const complemento of complementos) {
         const consulta = `${baseAprofundamento} ${complemento}`.trim();
         if (!consultas.some((item) => normalizarTexto(item) === normalizarTexto(consulta))) {
           consultas.push(consulta);
@@ -1783,6 +1808,7 @@ async function responder({
         if (consultas.length >= 4) break;
       }
     }
+    consultasDaPesquisa = [...consultas];
 
     let lidas = 0;
     let fontesWeb = [];
@@ -1981,12 +2007,90 @@ async function responder({
       texto: 'Cruzando as fontes e montando o dossiê da matéria…',
     });
     try {
-      const dossie = await deepseekService.montarDossieApuracao({
-        pedido: pedidoDeAjuste && contextoMateriaAnterior
-          ? `${contextoMateriaAnterior}\nAjuste solicitado: ${pedido}`
-          : pedido,
+      const pedidoDoDossie = pedidoDeAjuste && contextoMateriaAnterior
+        ? `${contextoMateriaAnterior}\nAjuste solicitado: ${pedido}`
+        : pedido;
+      let dossie = await deepseekService.montarDossieApuracao({
+        pedido: pedidoDoDossie,
         fatosFontes: blocoFatos,
       });
+
+      // Se a primeira rodada encontrou apenas notícias com nomes parecidos, o
+      // próprio dossiê aponta consultas de resgate. É a iteração que faltava
+      // para o fluxo se comportar como um chat com pesquisa agentiva.
+      if (
+        dossie?.tipoPedido === 'fato' &&
+        dossie.confirmado === false &&
+        dossie.consultasComplementares?.length
+      ) {
+        registrarPasso({
+          kind: 'busca',
+          texto: 'A primeira rodada não confirmou o fato; refinando as buscas pelas lacunas…',
+        });
+        try {
+          const consultasResgate = [
+            ...consultasDaPesquisa,
+            ...dossie.consultasComplementares,
+          ]
+            .map((consulta) => String(consulta || '').replace(/\s+/g, ' ').trim())
+            .filter((consulta, indice, lista) =>
+              consulta.length >= 8 &&
+              lista.findIndex((item) => normalizarTexto(item) === normalizarTexto(consulta)) === indice
+            )
+            .slice(0, 6);
+          const fontesComplementares = await materiaIaService.coletarFatosNaWeb({
+            consultas: consultasResgate,
+            // Resultado com o nome certo, mas fato errado, não conta como êxito.
+            // Amplia a janela nesta única rodada de resgate e deixa o dossiê
+            // registrar a data real para não apresentar conteúdo antigo como novo.
+            periodo: periodoFinal === '180d' ? periodoFinal : '180d',
+            max: 8,
+            incluirRedes: true,
+            redesAmplas: true,
+            resumoContexto: pedidoDoDossie.slice(0, 500),
+            logPrefix: '[materia-chat:resgate-factual]',
+            onProgress: (evento) => {
+              if (evento.tipo === 'buscando') {
+                registrarPasso({
+                  kind: 'busca',
+                  texto: `Busca refinada: “${evento.consulta}”`,
+                });
+              } else if (evento.tipo === 'lendo') {
+                registrarPasso({
+                  kind: 'lendo',
+                  texto: `Conferindo ${evento.veiculo || 'página'}: ${evento.titulo || evento.url}`,
+                  url: evento.url || null,
+                });
+              }
+            },
+          });
+          const urlsVistas = new Set(
+            fontes.map((fonte) => normalizarUrlComparacao(fonte?.url)).filter(Boolean)
+          );
+          let adicionadas = 0;
+          for (const fonte of fontesComplementares) {
+            const url = normalizarUrlComparacao(fonte?.url);
+            if (url && urlsVistas.has(url)) continue;
+            if (url) urlsVistas.add(url);
+            fontes.push(fonte);
+            adicionadas += 1;
+          }
+          if (adicionadas) {
+            registrarPasso({
+              kind: 'fontes',
+              texto: `${adicionadas} fonte(s) nova(s) encontrada(s) na busca refinada`,
+            });
+            blocoFatos = materiaIaService.montarBlocoFatos(fontes);
+            dossie = await deepseekService.montarDossieApuracao({
+              pedido: pedidoDoDossie,
+              fatosFontes: blocoFatos,
+            });
+          }
+        } catch (err) {
+          console.warn('[materia-chat] busca complementar:', err.message);
+        }
+      }
+
       if (dossie?.texto) {
         blocoFatos = `DOSSIÊ EDITORIAL EXTRAÍDO DAS FONTES (não substitui os trechos originais):\n${dossie.texto}\n\n--- FONTES ORIGINAIS ---\n\n${blocoFatos}`;
         checagemDoDossie = {

@@ -26,17 +26,18 @@ const PRECOS = {
 const MODELO_REDATOR = process.env.CLAUDE_WRITER_MODEL || env.claudeWriterModel || 'claude-sonnet-5';
 const MODELO_AUXILIAR = process.env.CLAUDE_AUX_MODEL || env.claudeAuxModel || 'claude-haiku-4-5';
 
-/** off | adaptive — raciocínio custa token de saída, então fica desligado. */
-const THINKING_MODO = String(process.env.CLAUDE_THINKING || 'off').toLowerCase();
+/** off | auto | adaptive — no padrão auto, tarefas complexas decidem por chamada. */
+const THINKING_MODO = String(process.env.CLAUDE_THINKING || 'auto').toLowerCase();
 const CACHE_LIGADO = String(process.env.CLAUDE_CACHE || 'on').toLowerCase() !== 'off';
 
 /**
- * Perfis por tipo de tarefa. `redacao` é a única que usa o modelo caro.
+ * Perfis por tipo de tarefa. Redação e conversa editorial usam o modelo redator;
+ * classificações curtas continuam no auxiliar barato.
  */
 const PERFIS = {
-  redacao: { modelo: MODELO_REDATOR, effort: 'medium', maxTokens: 8000 },
+  redacao: { modelo: MODELO_REDATOR, effort: 'high', maxTokens: 8000 },
   auxiliar: { modelo: MODELO_AUXILIAR, effort: 'low', maxTokens: 2000 },
-  conversa: { modelo: MODELO_REDATOR, effort: 'low', maxTokens: 4000 },
+  conversa: { modelo: MODELO_REDATOR, effort: 'high', maxTokens: 8000 },
 };
 
 function perfilDaTarefa(tarefa) {
