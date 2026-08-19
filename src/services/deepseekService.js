@@ -442,7 +442,7 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     '3) Fechamento no fato jornalístico — PROIBIDO oração / “Que Deus…” / “Seguimos em oração” / “Amém” nas últimas linhas.',
     'Exemplo de aspas: Ele afirma: "Eu entendi que sem Deus eu não era nada".',
     'O campo "titulo" = MANCHETE CURTA (máx. 90 caracteres). NÃO cole a legenda/transcrição no título.',
-    'Separe parágrafos com linha em branco. Alvo: 1700–2100 caracteres (máximo útil Face/Insta).',
+    'Separe parágrafos com linha em branco. Alvo: 1400–1750 caracteres; nunca ultrapasse 1850 contando as hashtags.',
     'Se a base for longa, condense preservando os dados principais; se for curta, complete com contexto real até o máximo.',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
     titulo ? `Título/contexto do vídeo de origem: ${String(titulo).slice(0, 120)}` : null,
@@ -521,7 +521,7 @@ async function gerarMateriaImagem({
     'ESTRUTURA: lead com quem + fato → desenvolvimento com detalhes das infos → encerre no fato (sem oração final).',
     'Título próprio, curto e chamativo (máx. 110 chars) — baseado nas infos, sem clickbait mentiroso.',
     blocoMarca,
-    'Parágrafos curtos com linha em branco. Alvo: 1700–2100 caracteres (máximo útil Face/Insta).',
+    'Parágrafos curtos com linha em branco. Alvo: 1400–1750 caracteres; nunca ultrapasse 1850 contando as hashtags.',
     'NÃO inclua bloco Fontes:/créditos no campo materia — o sistema anexa depois.',
     'Responda JSON: {"titulo":"...","materia":"...","hashtags":["..."]}',
   ]
@@ -2139,7 +2139,7 @@ Regras:
 - O título pode melhorar levemente (máx. 110 chars) se as novas infos mudarem o gancho; senão mantenha próximo do atual.
 - A matéria deve ficar mais forte e completa: use as infos extras (fatos, nomes, números, contexto) sem inventar o que não estiver no texto atual nem nas extras.
 - Português do Brasil, parágrafos curtos separados por linha em branco (\\n\\n).
-- Ideal 1700–2100 caracteres no corpo (máximo útil Face/Insta, sem hashtags).
+- Ideal 1400–1750 caracteres no corpo; o texto com hashtags não pode ultrapassar 1850.
 - 3 a 5 hashtags sem # no JSON.
 - Sem pedir like, sem clickbait mentiroso, sem Caps Lock excessivo.
 - Preserve o bloco "Fontes:" se já existir no texto atual.`,
@@ -2669,7 +2669,7 @@ ANTI-PLÁGIO:
 ESTRUTURA:
 - Título próprio, curto e chamativo (máx. 110 chars), sem clickbait mentiroso.
 - Lead com o fato central → desenvolvimento com os dados e falas apuradas → fechamento no fato (sem oração final).
-- Parágrafos curtos separados por linha em branco. Alvo: 1700–2100 caracteres.
+- Parágrafos curtos separados por linha em branco. Alvo: 1400–1750 caracteres; máximo de 1850 com hashtags.
 - NÃO inclua bloco "Fontes:" nem URLs no campo materia — o sistema anexa "Fonte: Globo, UOL" depois.
 ${blocoMarca ? `\n${blocoMarca}\n` : ''}
 Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosUsados":["fato + veículo"],"aviso":""}`,

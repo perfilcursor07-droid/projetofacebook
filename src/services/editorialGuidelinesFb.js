@@ -5,14 +5,13 @@
  * - Fonte curta → ampliar com contexto real da apuração.
  */
 
-/**
- * Teto do corpo + créditos + hashtags (limite prático Face/Insta).
- * Instagram caption ≈ 2200; usamos isso como referência dura.
- */
-const MAX_MATERIA_CHARS = 2200;
+/** Limite duro da legenda do Instagram, incluindo fonte, foto e hashtags. */
+const INSTAGRAM_CAPTION_MAX_CHARS = 2200;
+/** Reserva espaço para os créditos anexados depois da geração do corpo. */
+const MAX_MATERIA_CHARS = 1850;
 
 /** Alvo do corpo da minimatéria (sem hashtags/créditos). Sempre perto do máximo. */
-const FAIXA_CORPO_FB = Object.freeze({ min: 600, max: 1100 });
+const FAIXA_CORPO_FB = Object.freeze({ min: 1300, max: 1750 });
 
 /** Abaixo disso a fonte é tratada como “texto pequeno” (precisa expandir). */
 const FONTE_CURTA_CHARS = 700;
@@ -136,6 +135,64 @@ function sortearTemperatura(investigativa = false) {
 
 function contarChars(texto) {
   return String(texto || '').trim().length;
+}
+
+/** Encurta no fim de uma frase (ou palavra), sem deixar a legenda quebrada. */
+function cortarTextoComSeguranca(texto, limite) {
+  const raw = String(texto || '').replace(/\r\n/g, '\n').trim();
+  const max = Math.max(40, Math.floor(Number(limite) || 0));
+  if (!raw || raw.length <= max) return raw;
+
+  const margem = Math.floor(max * 0.62);
+  const trecho = raw.slice(0, Math.max(1, max - 1)).trimEnd();
+  let corteFrase = -1;
+  const reFim = /[.!?…]["”')\]]?(?=\s|$)/g;
+  let match;
+  while ((match = reFim.exec(trecho))) {
+    const fim = match.index + match[0].length;
+    if (fim >= margem) corteFrase = fim;
+  }
+  if (corteFrase >= margem) return trecho.slice(0, corteFrase).trim();
+
+  const quebraParagrafo = trecho.lastIndexOf('\n\n');
+  if (quebraParagrafo >= margem) return trecho.slice(0, quebraParagrafo).trim();
+
+  const espaco = trecho.lastIndexOf(' ');
+  const corte = espaco >= margem ? espaco : trecho.length;
+  return `${trecho.slice(0, corte).trim()}…`;
+}
+
+/**
+ * Garante uma legenda publicável no Instagram e preserva, sempre que possível,
+ * os blocos finais de fonte, crédito da foto e hashtags.
+ */
+function limitarLegendaInstagram(texto, limite = INSTAGRAM_CAPTION_MAX_CHARS) {
+  const raw = String(texto || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const max = Math.max(200, Math.floor(Number(limite) || INSTAGRAM_CAPTION_MAX_CHARS));
+  if (!raw || raw.length <= max) return raw;
+
+  const blocos = raw.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const rodape = [];
+  const ehRodape = (p) =>
+    /^(?:#|Fontes?\s*:|Foto\s*:|\(Foto\s*:|Por\s+.+?[—–-]\s*Site\s*:)/i.test(p);
+  while (blocos.length > 1 && ehRodape(blocos[blocos.length - 1])) {
+    rodape.unshift(blocos.pop());
+  }
+
+  let sufixo = rodape.join('\n\n');
+  if (sufixo.length > Math.floor(max * 0.35)) {
+    sufixo = cortarTextoComSeguranca(sufixo, Math.floor(max * 0.35));
+  }
+  const separador = sufixo ? 2 : 0;
+  const corpo = cortarTextoComSeguranca(
+    blocos.join('\n\n'),
+    Math.max(120, max - sufixo.length - separador)
+  );
+  const final = [corpo, sufixo].filter(Boolean).join('\n\n').trim();
+  return final.length <= max ? final : cortarTextoComSeguranca(final, max);
 }
 
 function avaliarComprimentoFb(materia, faixa) {
@@ -864,6 +921,7 @@ function montarRodapeMateriaComFontes({
     Array.isArray(hashtags) && hashtags.length ? hashtags : tags
   );
   if (tagLine) parts.push(tagLine);
+  const materiaFinal = limitarLegendaInstagram(parts.join('\n\n').trim());
 
   const fonteCreditoParts = [];
   if (linhasCredito.length) {
@@ -872,7 +930,7 @@ function montarRodapeMateriaComFontes({
   fonteCreditoParts.push(`(Foto: ${foto})`);
 
   return {
-    materia: sanitizeFacebookMentions(parts.join('\n\n').trim()),
+    materia: sanitizeFacebookMentions(materiaFinal),
     fonteCredito: fonteCreditoParts.join('\n').trim().slice(0, 2000),
   };
 }
@@ -1153,6 +1211,7 @@ function mensagemAvisoQualidade(avaliacao) {
 }
 
 module.exports = {
+  INSTAGRAM_CAPTION_MAX_CHARS,
   MAX_MATERIA_CHARS,
   FAIXA_CORPO_FB,
   FONTE_CURTA_CHARS,
@@ -1166,6 +1225,8 @@ module.exports = {
   sortearVozRedator,
   sortearTemperatura,
   contarChars,
+  cortarTextoComSeguranca,
+  limitarLegendaInstagram,
   avaliarComprimentoFb,
   detectarMuletasIa,
   detectarCitacoesInventadas,
