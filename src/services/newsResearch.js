@@ -1,9 +1,12 @@
 const axios = require('axios');
+const path = require('path');
+const { spawn } = require('child_process');
 const { apurarTopico, decodificarHtml } = require('./articleSource');
 const { env } = require('../config/env');
 
 const USER_AGENT = 'Mozilla/5.0 (compatible; ViralizeAI/1.0)';
 const MS_DIA = 24 * 60 * 60 * 1000;
+const GOOGLE_PYTHON_CACHE = new Map();
 
 function limparResumo(texto, max = 400) {
   let t = decodificarHtml(texto || '')
@@ -289,6 +292,104 @@ function deduplicarTopicos(lista) {
   return out;
 }
 
+function diasDoWhenGoogle(when) {
+  const match = String(when || '').trim().match(/^(\d+)([dmy])$/i);
+  if (!match) return 30;
+  const quantidade = Math.max(1, Number(match[1]) || 1);
+  if (match[2].toLowerCase() === 'y') return Math.min(365, quantidade * 365);
+  if (match[2].toLowerCase() === 'm') return Math.min(365, quantidade * 30);
+  return Math.min(365, quantidade);
+}
+
+function executarGooglePython(binario, payload) {
+  return new Promise((resolve, reject) => {
+    const script = path.resolve(__dirname, '../../scripts/google_news_search.py');
+    const child = spawn(binario, [script], {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('tempo limite excedido'));
+    }, 25000);
+
+    child.stdout.on('data', (chunk) => {
+      if (stdout.length < 2_000_000) stdout += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk) => {
+      if (stderr.length < 8000) stderr += chunk.toString('utf8');
+    });
+    child.once('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.once('close', (code) => {
+      clearTimeout(timer);
+      try {
+        const parsed = JSON.parse(stdout || '{}');
+        if (code !== 0 || parsed.ok !== true) {
+          reject(new Error(parsed.error || stderr.trim() || `Python encerrou com código ${code}`));
+          return;
+        }
+        resolve(Array.isArray(parsed.items) ? parsed.items : []);
+      } catch (err) {
+        reject(new Error(stderr.trim() || err.message));
+      }
+    });
+    child.stdin.end(JSON.stringify(payload));
+  });
+}
+
+/** Fallback sem chave: Google News RSS + Google Notícias HTML via Python. */
+async function buscarGoogleNewsPython(termo, { when = '1m', limit = 20 } = {}) {
+  const dias = diasDoWhenGoogle(when);
+  const chave = `${String(termo || '').trim().toLowerCase()}|${dias}|${limit}`;
+  const cached = GOOGLE_PYTHON_CACHE.get(chave);
+  if (cached && cached.expira > Date.now()) return cached.itens;
+
+  const candidatos = [
+    String(env.pythonPath || '').trim(),
+    process.platform === 'win32' ? 'python' : 'python3',
+    process.platform === 'win32' ? 'py' : 'python',
+  ].filter((item, index, lista) => item && lista.indexOf(item) === index);
+
+  let ultimoErro = null;
+  for (const binario of candidatos) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const encontrados = await executarGooglePython(binario, {
+        query: String(termo || '').trim(),
+        days: dias,
+        limit: Math.min(40, Math.max(1, Number(limit) || 20)),
+      });
+      const itens = encontrados.map((item) => ({
+        id: slugId(item.titulo, item.link),
+        titulo: limparTitulo(item.titulo),
+        link: item.link,
+        resumo: limparResumo(item.resumo),
+        data: item.data || null,
+        dataTimestamp: Number(item.dataTimestamp) || 0,
+        veiculo: item.veiculo || 'Google News',
+        fonte: 'Google via Python',
+        tipoFonte: 'noticia',
+        recente: true,
+        emAlta: false,
+      }));
+      GOOGLE_PYTHON_CACHE.set(chave, { itens, expira: Date.now() + 10 * 60_000 });
+      if (itens.length) console.info(`[google-python] "${termo}": ${itens.length} resultado(s)`);
+      return itens;
+    } catch (err) {
+      ultimoErro = err;
+      if (!/ENOENT|not found|não foi possível encontrar/i.test(String(err.message || ''))) break;
+    }
+  }
+  console.warn('Google Python:', ultimoErro?.message || 'Python indisponível');
+  GOOGLE_PYTHON_CACHE.set(chave, { itens: [], expira: Date.now() + 2 * 60_000 });
+  return [];
+}
+
 async function buscarGoogleNewsRss(termo, { when = '1d', hl = 'pt-BR', gl = 'BR', ceid = 'BR:pt-419' } = {}) {
   const q = encodeURIComponent(`${termo}${when ? ` when:${when}` : ''}`);
   const url = `https://news.google.com/rss/search?q=${q}&hl=${hl}&gl=${gl}&ceid=${ceid}`;
@@ -297,7 +398,7 @@ async function buscarGoogleNewsRss(termo, { when = '1d', hl = 'pt-BR', gl = 'BR'
       headers: { 'User-Agent': USER_AGENT, Accept: 'application/rss+xml, text/xml' },
       timeout: 15000,
     });
-    return extrairItensRss(String(data || '')).map((item) => ({
+    const itens = extrairItensRss(String(data || '')).map((item) => ({
       ...item,
       id: slugId(item.titulo, item.link),
       nicho: termo,
@@ -307,9 +408,11 @@ async function buscarGoogleNewsRss(termo, { when = '1d', hl = 'pt-BR', gl = 'BR'
       recente: when === '1d',
       emAlta: false,
     }));
+    if (itens.length) return itens;
+    return buscarGoogleNewsPython(termo, { when });
   } catch (err) {
     console.warn('Google News RSS:', err.message);
-    return [];
+    return buscarGoogleNewsPython(termo, { when });
   }
 }
 
@@ -621,6 +724,7 @@ async function pesquisarNichos(palavrasChave, quantidadePorNicho = 8, opcoes = {
 module.exports = {
   pesquisarNichos,
   buscarGoogleNewsRss,
+  buscarGoogleNewsPython,
   buscarGoogleNewsEmAlta,
   buscarBraveNews,
   buscarSerperRedes,

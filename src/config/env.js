@@ -23,9 +23,12 @@ const env = {
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
   /** deepseek-v4-flash | deepseek-v4-pro | deepseek-chat (legado) */
   deepseekModel: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
-  /** Modelo de maior qualidade usado apenas na redação final das matérias. */
+  /**
+   * A redação da matéria é do Claude agora; o que sobrou na DeepSeek são passes
+   * curtos e auxiliares, que não justificam o v4-pro. Padrão = flash.
+   */
   deepseekWriterModel:
-    process.env.DEEPSEEK_WRITER_MODEL || 'deepseek-v4-pro',
+    process.env.DEEPSEEK_WRITER_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
   pexelsApiKey: process.env.PEXELS_API_KEY || '',
   braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   serperApiKey: process.env.SERPER_API_KEY || '',
