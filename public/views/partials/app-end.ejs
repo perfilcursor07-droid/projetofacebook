@@ -24,7 +24,12 @@
         document.body.classList.toggle('overflow-hidden', open && !isDesktop());
       }
 
-      function applyCollapse(collapsed) {
+      // Páginas que pedem a tela inteira (o chat de matérias) abrem com o menu
+      // recolhido. Sem gravar a preferência: nas outras telas vale a escolha
+      // que o usuário fez no botão.
+      const recolherNestaPagina = Boolean(document.querySelector('[data-recolher-menu]'));
+
+      function applyCollapse(collapsed, persistir) {
         if (!isDesktop()) return;
         root.classList.toggle('sidebar-collapsed', collapsed);
         if (toggleBtn) {
@@ -37,12 +42,17 @@
             ? '<path d="M9 6l6 6-6 6"/>'
             : '<path d="M15 6l-6 6 6 6"/>';
         }
+        if (persistir === false) return;
         try { localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'); } catch (_) {}
       }
 
       function syncForViewport() {
         if (isDesktop()) {
           setMobileOpen(false);
+          if (recolherNestaPagina) {
+            applyCollapse(true, false);
+            return;
+          }
           let collapsed = false;
           try { collapsed = localStorage.getItem(COLLAPSE_KEY) === '1'; } catch (_) {}
           applyCollapse(collapsed);

@@ -1,7 +1,7 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260818ensinarIA" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260819tema" />
 
-  <main class="mia-chat">
+  <main class="mia-chat" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
 
     <div id="mia-manual" class="mia-chat-shell mia-panel">
@@ -62,8 +62,9 @@
                 <path d="M12 5v14M5 12h14"/>
               </svg>
             </button>
-            <button type="button" id="chat-ensinar" class="mia-chat-icon-btn" title="Ensinar a IA (regras fixas para as próximas matérias)" aria-label="Ensinar a IA">
+            <button type="button" id="chat-ensinar" class="mia-chat-icon-btn mia-chat-icon-btn--rotulo" title="Ensinar a IA (regras fixas para as próximas matérias)" aria-label="Ensinar a IA">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M6 10.5V16c0 1.7 2.7 3 6 3s6-1.3 6-3v-5.5"/></svg>
+              <span class="mia-chat-btn-rotulo">Ensinar IA</span>
             </button>
             <button type="button" id="chat-renomear" class="mia-chat-icon-btn hidden" title="Renomear conversa" aria-label="Renomear conversa">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>

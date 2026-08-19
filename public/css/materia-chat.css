@@ -1707,3 +1707,198 @@ body.mia-chat-drawer-open {
   color: #cbd5f5;
   font-weight: 600;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Tema Claude — só aparência (cores, ritmo, tipografia e caixa de escrita).
+   Nenhuma classe nova: as regras abaixo apenas sobrescrevem as de cima, então
+   o HTML e o JS do chat continuam iguais.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.mia-chat {
+  /* Fundo quente em vez do cinza-azulado: é a marca visual do chat do Claude */
+  --mia-chat-bg: #262624;
+  --mia-chat-sidebar: #1f1e1d;
+  --mia-chat-surface: #30302e;
+  --mia-chat-surface-hover: #3a3a37;
+  --mia-chat-border: rgba(235, 227, 214, 0.11);
+  --mia-chat-text: #f2efe9;
+  --mia-chat-muted: #a8a29a;
+  --mia-chat-user-bg: #3b3a36;
+  /* Coluna de leitura mais estreita: linha longa cansa e atrapalha a revisão */
+  --mia-chat-stream: 100%;
+}
+
+@media (min-width: 1024px) {
+  .mia-chat {
+    --mia-chat-stream: 45rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .mia-chat {
+    --mia-chat-stream: 46rem;
+  }
+}
+
+@media (min-width: 1536px) {
+  .mia-chat {
+    --mia-chat-stream: 47rem;
+  }
+}
+
+/* Cabeçalho discreto: no Claude ele quase some para o texto ficar em primeiro plano */
+.mia-chat-header {
+  border-bottom: 1px solid transparent;
+  background: transparent;
+}
+
+.mia-chat-header-title p {
+  font-weight: 500;
+  color: var(--mia-chat-muted);
+}
+
+/* Respiro entre turnos — o principal responsável pela sensação de "conversa calma" */
+.mia-chat-messages {
+  gap: 1.9rem;
+  padding: 1.5rem 1rem 2.25rem;
+}
+
+@media (min-width: 640px) {
+  .mia-chat-messages {
+    gap: 2.1rem;
+    padding: 2rem 1.5rem 2.5rem;
+  }
+}
+
+/* Bolha do usuário: cantos iguais, sem "rabinho", como no Claude */
+.mia-msg-user-bubble {
+  border-radius: 1.15rem;
+  padding: 0.8rem 1.05rem;
+  font-size: 0.975rem;
+  line-height: 1.65;
+  background: var(--mia-chat-user-bg);
+  color: #f4f2ec;
+  max-width: min(85%, 34rem);
+}
+
+@media (min-width: 640px) {
+  .mia-msg-user-bubble {
+    max-width: min(72%, 34rem);
+  }
+}
+
+/* Resposta da IA: texto solto na página, sem caixa, com leitura mais folgada */
+.mia-msg-ai {
+  gap: 0.9rem;
+}
+
+.mia-msg-ai-text {
+  font-size: 1rem;
+  line-height: 1.78;
+  color: #e8e4dc;
+}
+
+.mia-msg-ai-body {
+  gap: 1rem;
+}
+
+.mia-msg-ai-title {
+  font-size: 1.2rem;
+  line-height: 1.32;
+  letter-spacing: -0.011em;
+  color: #faf8f4;
+}
+
+/* Painéis (salvar rascunho, pautas, ensinar IA) acompanham o fundo quente */
+.mia-msg-panel {
+  border-radius: 0.9rem;
+  border-color: var(--mia-chat-border);
+  background: rgba(255, 252, 245, 0.035);
+}
+
+/* Caixa de escrita: mais alta, mais arredondada e com foco discreto */
+.mia-chat-composer-wrap {
+  padding: 0.6rem 0.75rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, var(--mia-chat-bg) 62%, transparent);
+}
+
+@media (min-width: 640px) {
+  .mia-chat-composer-wrap {
+    padding: 0.75rem 1rem calc(1.15rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.mia-chat-composer {
+  border-radius: 1.5rem;
+  padding: 0.75rem 0.9rem 0.65rem;
+  background: var(--mia-chat-surface);
+  border-color: rgba(235, 227, 214, 0.14);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.3);
+}
+
+@media (min-width: 640px) {
+  .mia-chat-composer {
+    border-radius: 1.6rem;
+    padding: 0.85rem 1rem 0.7rem;
+  }
+}
+
+.mia-chat-composer:focus-within {
+  border-color: rgba(235, 227, 214, 0.26);
+  box-shadow: 0 0 0 1px rgba(235, 227, 214, 0.12), 0 12px 38px rgba(0, 0, 0, 0.34);
+}
+
+.mia-chat-input {
+  font-size: 1rem;
+  line-height: 1.6;
+  padding: 0.45rem 0.5rem;
+  max-height: 12rem;
+}
+
+/* Lista de conversas: item ativo marcado por fundo, sem borda colorida */
+.mia-chat-sidebar {
+  background: var(--mia-chat-sidebar);
+  border-right: 1px solid var(--mia-chat-border);
+}
+
+.mia-chat-conv-btn {
+  border-radius: 0.6rem;
+}
+
+.mia-chat-sidebar-label,
+.mia-chat-sidebar-head-title {
+  color: var(--mia-chat-muted);
+  letter-spacing: 0.02em;
+}
+
+/* Estado vazio centrado e mais silencioso */
+.mia-chat-empty-title {
+  letter-spacing: -0.015em;
+}
+
+.mia-chat-empty-sub {
+  color: var(--mia-chat-muted);
+}
+
+/* Botão de ícone que ganha rótulo: ícone sozinho não é descoberto por ninguém.
+   O texto some no celular, onde o cabeçalho é apertado. */
+.mia-chat-icon-btn--rotulo {
+  width: auto;
+  gap: 0.4rem;
+  padding: 0 0.7rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--mia-chat-text);
+  border: 1px solid var(--mia-chat-border);
+}
+
+.mia-chat-btn-rotulo {
+  display: none;
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .mia-chat-btn-rotulo {
+    display: inline;
+  }
+}
