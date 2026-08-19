@@ -449,12 +449,28 @@ async function publishToFacebook({
         data.posts.find((p) => String(p.platform).toLowerCase() === 'instagram')) ||
       null;
 
+    // Em falhas de validação a Ayrshare pode devolver postIds: [] e colocar o
+    // erro somente no array superior `errors` (por exemplo, código 151).
+    const igTopLevelError =
+      (Array.isArray(data?.errors) &&
+        data.errors.find((item) => {
+          const platform = String(item?.platform || '').toLowerCase();
+          return platform === 'instagram' || (!platform && plataformas.length === 1);
+        })) ||
+      null;
+
     // Falha só no Instagram não invalida o post do Facebook: o editor é avisado.
     const igStatus = String(ig?.status || '').toLowerCase();
-    const igErro =
+    let igErro =
       ig && (igStatus === 'error' || igStatus === 'failed')
         ? String(ig.message || ig.error || 'Instagram recusou a publicação')
         : null;
+    if (!igErro && igTopLevelError) {
+      igErro = apiErrorMessage({ response: { data: { errors: [igTopLevelError] } } });
+    }
+    if (!igErro && !ig && String(data?.status || '').toLowerCase() === 'error') {
+      igErro = apiErrorMessage({ response: { data } });
+    }
     if (igErro) console.warn('[ayrshare] instagram falhou:', igErro);
     if (!publicarFacebook && (!ig || igErro)) {
       const err = new Error(igErro || 'A Ayrshare não confirmou o post no Instagram. Verifique a conta em Social Accounts.');
