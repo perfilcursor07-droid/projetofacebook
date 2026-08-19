@@ -659,11 +659,85 @@
       el.input.placeholder = 'Ex.: deixe mais curto, acrescente a reação do governo, troque o título…';
     });
 
+    // "Ensinar IA": a regra que o editor escreve aqui não muda esta matéria —
+    // ela é guardada e passa a valer nas próximas.
+    const ensinar = criarBotao(
+      'Ensinar IA',
+      'rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-500/20'
+    );
+
+    const painelEnsinar = document.createElement('div');
+    painelEnsinar.className = 'mt-2 hidden rounded-lg border border-sky-500/30 bg-sky-500/5 p-3';
+
+    const ensinarLabel = document.createElement('p');
+    ensinarLabel.className = 'text-[11px] leading-relaxed text-sky-100';
+    ensinarLabel.textContent =
+      'O que a IA deve aprender com esta matéria? Vale para as próximas — esta aqui não muda.';
+
+    const ensinarTexto = document.createElement('textarea');
+    ensinarTexto.rows = 3;
+    ensinarTexto.placeholder =
+      'Ex.: em matéria de apóstolo ou pastor, escreva o cargo antes do nome e não use aspas no título.';
+    ensinarTexto.className =
+      'mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-sky-500 focus:outline-none';
+
+    const ensinarBarra = document.createElement('div');
+    ensinarBarra.className = 'mt-2 flex flex-wrap items-center gap-2';
+    const ensinarSalvar = criarBotao(
+      'Gravar lição',
+      'rounded-lg bg-sky-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-sky-400'
+    );
+    const ensinarAviso = document.createElement('span');
+    ensinarAviso.className = 'text-[11px] text-slate-400';
+    ensinarBarra.appendChild(ensinarSalvar);
+    ensinarBarra.appendChild(ensinarAviso);
+
+    painelEnsinar.appendChild(ensinarLabel);
+    painelEnsinar.appendChild(ensinarTexto);
+    painelEnsinar.appendChild(ensinarBarra);
+
+    ensinar.addEventListener('click', () => {
+      painelEnsinar.classList.toggle('hidden');
+      if (!painelEnsinar.classList.contains('hidden')) ensinarTexto.focus();
+    });
+
+    ensinarSalvar.addEventListener('click', async () => {
+      const licao = ensinarTexto.value.trim();
+      if (licao.length < 6) {
+        ensinarAviso.textContent = 'Escreva o que a IA deve aprender.';
+        return;
+      }
+      ensinarSalvar.disabled = true;
+      ensinarSalvar.classList.add('opacity-60');
+      ensinarAviso.textContent = 'Guardando…';
+      try {
+        const data = await api('/api/materias-ia/ensinar', {
+          method: 'POST',
+          body: JSON.stringify({
+            licao,
+            titulo: tituloEscolhido || null,
+            materia: mensagem.content || null,
+          }),
+        });
+        ensinarTexto.value = '';
+        ensinarAviso.textContent = data.normalizada
+          ? `Guardado: "${data.regra}"`
+          : 'Lição guardada para as próximas matérias ✓';
+      } catch (err) {
+        ensinarAviso.textContent = err.message;
+      } finally {
+        ensinarSalvar.disabled = false;
+        ensinarSalvar.classList.remove('opacity-60');
+      }
+    });
+
     acoes.appendChild(salvar);
     acoes.appendChild(copiar);
     acoes.appendChild(ajustar);
+    acoes.appendChild(ensinar);
     acoes.appendChild(aviso);
     box.appendChild(acoes);
+    box.appendChild(painelEnsinar);
 
     if (mensagem.matterId) {
       salvar.disabled = true;

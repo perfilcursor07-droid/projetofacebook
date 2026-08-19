@@ -9,6 +9,25 @@ const PERIODOS = ['24h', '3d', '7d', '15d', '30d', '60d', '90d', '180d'];
 const PERIODO_PADRAO = '30d';
 const MAX_URLS_PEDIDO = 12;
 
+/**
+ * Corta transcrição longa preservando começo E fim.
+ *
+ * O corte simples pelos primeiros N caracteres derrubava justamente o desfecho:
+ * em vídeo de julgamento, votação ou leitura de decisão, o resultado vem no
+ * final, e o modelo respondia que "a fonte não traz a conclusão".
+ */
+function recortarTranscricao(texto, limite = 16000) {
+  const t = String(texto || '');
+  if (t.length <= limite) return t;
+  const inicio = Math.floor(limite * 0.55);
+  const fim = limite - inicio;
+  return [
+    t.slice(0, inicio).trim(),
+    `[…trecho do meio omitido (${t.length - limite} caracteres) — início e FINAL da transcrição estão preservados…]`,
+    t.slice(-fim).trim(),
+  ].join('\n\n');
+}
+
 function erro(mensagem, status = 400) {
   const err = new Error(mensagem);
   err.status = status;
@@ -216,7 +235,7 @@ function fonteDoPostSalvo(post, url, plataforma) {
     titulo: tituloUtil || texto.slice(0, 120),
     url: String(post?.url || url).trim(),
     resumo: texto.slice(0, 400),
-    trecho: trecho.slice(0, 9000),
+    trecho: recortarTranscricao(trecho, 9000),
     ehRedeSocial: true,
     plataforma,
     imagem: post?.thumbnail || null,
@@ -312,6 +331,8 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
   const descricao = String(info.description || '').trim();
   const veiculo = String(info.uploader || info.channel || 'YouTube').trim();
   let trecho = [titulo ? `Título: ${titulo}` : null, descricao || null].filter(Boolean).join('\n\n');
+  // Cortar só o começo escondia o desfecho: em vídeo de decisão, julgamento ou
+  // votação, o resultado está no fim. Por isso o corte leva início e fim.
 
   // Com a opcao ativa, usa Whisper quando nao existem legendas prontas.
   try {
@@ -319,7 +340,7 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
       ? await transcreverVideoComoFonte(url, { onPasso, rotulo: 'YouTube' })
       : String((await require('./transcriptionService').trySubtitlesFromUrl(url))?.text || '').trim();
     if (String(transcricao || '').length >= 40) {
-      trecho = `${trecho}\n\nTranscrição/legendas:\n${transcricao.slice(0, 12000)}`;
+      trecho = `${trecho}\n\nTranscrição/legendas:\n${recortarTranscricao(transcricao)}`;
       if (!transcreverVideo && typeof onPasso === 'function') {
         onPasso({
           kind: 'fontes',
@@ -344,7 +365,7 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
     titulo: titulo || `Vídeo — ${veiculo}`,
     url,
     resumo: String(descricao || trecho).slice(0, 400),
-    trecho: trecho.slice(0, 14000),
+    trecho: recortarTranscricao(trecho, 14000),
     ehRedeSocial: true,
     plataforma: 'youtube',
   };
@@ -407,8 +428,10 @@ async function extrairFontesDeLinks(
                 rotulo,
               });
               if (transcricao) {
-                fonteSalva.trecho = `${fonteSalva.trecho}\n\nTRANSCRIÇÃO DO ÁUDIO DO VÍDEO:\n${transcricao.slice(0, 12000)}`.slice(
-                  0,
+                // O corte final também precisa preservar o fim — senão o
+                // desfecho que acabou de ser salvo volta a ser descartado.
+                fonteSalva.trecho = recortarTranscricao(
+                  `${fonteSalva.trecho}\n\nTRANSCRIÇÃO DO ÁUDIO DO VÍDEO:\n${recortarTranscricao(transcricao)}`,
                   14000
                 );
               }
@@ -457,14 +480,14 @@ async function extrairFontesDeLinks(
           rotulo,
         });
         if (transcricao) {
-          trecho = `${texto}\n\nTRANSCRIÇÃO DO ÁUDIO DO VÍDEO:\n${transcricao.slice(0, 12000)}`;
+          trecho = `${texto}\n\nTRANSCRIÇÃO DO ÁUDIO DO VÍDEO:\n${recortarTranscricao(transcricao)}`;
         }
       } else if (texto.length < 220 && ehVideo) {
         try {
           const { trySubtitlesFromUrl } = require('./transcriptionService');
           const subs = await trySubtitlesFromUrl(link);
           if (subs?.text && String(subs.text).trim().length >= 40) {
-            trecho = `${texto}\n\nTranscrição/legendas:\n${String(subs.text).trim().slice(0, 3500)}`;
+            trecho = `${texto}\n\nTranscrição/legendas:\n${recortarTranscricao(String(subs.text).trim(), 8000)}`;
           }
         } catch {
           /* opcional */
@@ -493,7 +516,7 @@ async function extrairFontesDeLinks(
         titulo: social.titulo || texto.slice(0, 120),
         url: social.url || link,
         resumo: texto.slice(0, 400),
-        trecho: trecho.slice(0, 9000),
+        trecho: recortarTranscricao(trecho, 9000),
         ehRedeSocial: true,
         plataforma: tipo,
         imagem: social.imagem || null,

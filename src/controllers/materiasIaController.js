@@ -513,6 +513,25 @@ async function ensinarIa(req, res, next) {
   }
 }
 
+/**
+ * Mesmo "Ensinar IA", mas sem matéria salva: o chat manda o texto que está na
+ * tela como contexto, então dá para ensinar antes mesmo de virar rascunho.
+ */
+async function ensinarIaLivre(req, res, next) {
+  try {
+    const learning = require('../services/editorialLearningService');
+    const salvo = await learning.ensinarComContexto({
+      userId: req.session.userId,
+      licao: req.body?.licao ?? req.body?.texto ?? '',
+      titulo: String(req.body?.titulo || '').slice(0, 300) || null,
+      materia: String(req.body?.materia || '').slice(0, 4000) || null,
+    });
+    return res.json({ ok: true, ...salvo });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 /** Regras que a IA já aprendeu, para a tela mostrar antes de ensinar outra. */
 async function listarEnsinamentos(req, res, next) {
   try {
@@ -1790,6 +1809,7 @@ module.exports = {
   removerMateriasLote,
   atualizarMateria,
   ensinarIa,
+  ensinarIaLivre,
   listarEnsinamentos,
   sugerirTitulo,
   titulosAlternativos,
