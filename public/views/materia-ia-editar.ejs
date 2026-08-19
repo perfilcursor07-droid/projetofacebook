@@ -785,8 +785,12 @@
         <div class="flex min-h-[240px] items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-black/60 p-2">
           <div id="matter-crop-stage" class="relative inline-block max-w-full overflow-hidden" style="touch-action:none; user-select:none; cursor:move;">
             <img id="matter-crop-image" src="" alt="Foto original para recorte" class="block max-w-full object-contain" style="max-height:55vh;" draggable="false" />
-            <div id="matter-crop-selection" class="pointer-events-none absolute border-2 border-amber-300" style="box-shadow:0 0 0 9999px rgba(2,6,23,.72);">
-              <span class="absolute left-1 top-1 rounded px-1.5 py-0.5 text-[9px] font-bold text-slate-950" style="background:#fcd34d">ÁREA DA FOTO</span>
+            <div id="matter-crop-selection" class="absolute border-2 border-amber-300" style="box-shadow:0 0 0 9999px rgba(2,6,23,.72); cursor:move; touch-action:none;">
+              <span class="pointer-events-none absolute left-1 top-1 rounded px-1.5 py-0.5 text-[9px] font-bold text-slate-950" style="background:#fcd34d">ARRASTE PARA MOVER</span>
+              <span data-crop-handle="nw" title="Redimensionar" class="absolute rounded-full" style="left:-8px;top:-8px;width:16px;height:16px;background:#fcd34d;border:2px solid #020617;cursor:nwse-resize;"></span>
+              <span data-crop-handle="ne" title="Redimensionar" class="absolute rounded-full" style="right:-8px;top:-8px;width:16px;height:16px;background:#fcd34d;border:2px solid #020617;cursor:nesw-resize;"></span>
+              <span data-crop-handle="sw" title="Redimensionar" class="absolute rounded-full" style="left:-8px;bottom:-8px;width:16px;height:16px;background:#fcd34d;border:2px solid #020617;cursor:nesw-resize;"></span>
+              <span data-crop-handle="se" title="Redimensionar" class="absolute rounded-full" style="right:-8px;bottom:-8px;width:16px;height:16px;background:#fcd34d;border:2px solid #020617;cursor:nwse-resize;"></span>
             </div>
           </div>
         </div>
@@ -794,9 +798,9 @@
         <div class="mt-3 grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
           <label class="block">
             <span class="flex items-center justify-between text-[10px] text-slate-400">
-              Tamanho da área <span id="matter-crop-size-value" class="tabular-nums text-slate-500">100%</span>
+              Tamanho da área <span id="matter-crop-size-value" class="tabular-nums text-slate-500">82%</span>
             </span>
-            <input id="matter-crop-size" type="range" min="30" max="100" step="1" value="100" class="mt-1 w-full accent-amber-400" />
+            <input id="matter-crop-size" type="range" min="30" max="100" step="1" value="82" class="mt-1 w-full accent-amber-400" />
           </label>
           <label class="block">
             <span class="flex items-center justify-between text-[10px] text-slate-400">
@@ -811,7 +815,7 @@
             <input id="matter-crop-y" type="range" min="0" max="100" step="1" value="50" class="mt-1 w-full accent-sky-500" />
           </label>
         </div>
-        <p id="matter-crop-help" class="mt-2 text-center text-[10px] text-slate-500">Arraste diretamente sobre a foto ou use os controles.</p>
+        <p id="matter-crop-help" class="mt-2 text-center text-[10px] text-slate-500">Arraste dentro do quadro para mover. Arraste as bolinhas dos cantos para aumentar ou diminuir.</p>
       </div>
 
       <div class="flex items-center justify-end gap-2 border-t border-slate-800 px-4 py-3">
@@ -909,5 +913,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260819crop"></script>
+  <script src="/js/materia-ia-editar.js?v=20260819cropdrag"></script>
 <%- include('partials/app-end') %>

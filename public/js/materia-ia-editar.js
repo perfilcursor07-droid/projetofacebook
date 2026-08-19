@@ -329,7 +329,7 @@
   const cropSizeValue = document.getElementById('matter-crop-size-value');
   const cropXValue = document.getElementById('matter-crop-x-value');
   const cropYValue = document.getElementById('matter-crop-y-value');
-  let cropDragging = false;
+  let cropInteraction = null;
   let bodyOverflowBeforeCrop = '';
 
   function clampCropValue(value, min = 0, max = 100) {
@@ -377,7 +377,7 @@
   }
 
   function closeCropModal() {
-    cropDragging = false;
+    cropInteraction = null;
     cropModal?.classList.add('hidden');
     document.body.style.overflow = bodyOverflowBeforeCrop;
   }
@@ -388,7 +388,7 @@
       setStatus('A foto original não está disponível para recortar.', true);
       return;
     }
-    if (cropSize) cropSize.value = '100';
+    if (cropSize) cropSize.value = '82';
     if (cropX) cropX.value = '50';
     if (cropY) cropY.value = '50';
     bodyOverflowBeforeCrop = document.body.style.overflow;
@@ -402,25 +402,66 @@
     requestAnimationFrame(updateCropSelection);
   }
 
-  function moveCropToPointer(event) {
-    const geometry = cropGeometry();
-    const stageRect = cropStage?.getBoundingClientRect();
-    if (!geometry || !stageRect) return;
+  function setCropPosition(left, top, geometry) {
     const availableX = Math.max(0, geometry.imageWidth - geometry.width);
     const availableY = Math.max(0, geometry.imageHeight - geometry.height);
-    const desiredLeft = event.clientX - stageRect.left - geometry.width / 2;
-    const desiredTop = event.clientY - stageRect.top - geometry.height / 2;
     if (cropX) {
       cropX.value = String(
-        Math.round(availableX ? clampCropValue((desiredLeft / availableX) * 100) : 50)
+        Math.round(availableX ? clampCropValue((left / availableX) * 100) : 50)
       );
     }
     if (cropY) {
       cropY.value = String(
-        Math.round(availableY ? clampCropValue((desiredTop / availableY) * 100) : 50)
+        Math.round(availableY ? clampCropValue((top / availableY) * 100) : 50)
       );
     }
     updateCropSelection();
+  }
+
+  function moveCropInteraction(event) {
+    if (!cropInteraction) return;
+    const geometry = cropGeometry();
+    const stageRect = cropStage?.getBoundingClientRect();
+    if (!geometry || !stageRect) return;
+    const pointerX = event.clientX - stageRect.left;
+    const pointerY = event.clientY - stageRect.top;
+
+    if (cropInteraction.type === 'move') {
+      setCropPosition(
+        pointerX - cropInteraction.grabX,
+        pointerY - cropInteraction.grabY,
+        geometry
+      );
+      return;
+    }
+
+    const start = cropInteraction.startGeometry;
+    const handle = cropInteraction.handle;
+    const east = handle.includes('e');
+    const south = handle.includes('s');
+    const deltaX = (event.clientX - cropInteraction.startClientX) * (east ? 1 : -1);
+    const deltaY = (event.clientY - cropInteraction.startClientY) * (south ? 1 : -1);
+    const targetRatio = 4 / 5;
+    const desiredWidth = start.width + (deltaX + deltaY * targetRatio) / 2;
+    const maxFrameWidth = start.width / (start.sizePct / 100);
+    const anchorX = east ? start.left : start.left + start.width;
+    const anchorY = south ? start.top : start.top + start.height;
+    const availableWidth = east ? start.imageWidth - anchorX : anchorX;
+    const availableHeightAsWidth = (south ? start.imageHeight - anchorY : anchorY) * targetRatio;
+    const maximumWidth = Math.min(maxFrameWidth, availableWidth, availableHeightAsWidth);
+    const minimumWidth = maxFrameWidth * 0.3;
+    const width = Math.min(maximumWidth, Math.max(minimumWidth, desiredWidth));
+    const height = width / targetRatio;
+    const left = east ? anchorX : anchorX - width;
+    const top = south ? anchorY : anchorY - height;
+
+    if (cropSize) {
+      cropSize.value = String(
+        Math.round(clampCropValue((width / maxFrameWidth) * 100, 30, 100))
+      );
+    }
+    const resized = cropGeometry();
+    if (resized) setCropPosition(left, top, resized);
   }
 
   [cropSize, cropX, cropY].forEach((el) => el?.addEventListener('input', updateCropSelection));
@@ -431,19 +472,49 @@
     if (event.target === cropModal) closeCropModal();
   });
   cropStage?.addEventListener('pointerdown', (event) => {
-    cropDragging = true;
+    const geometry = cropGeometry();
+    const stageRect = cropStage.getBoundingClientRect();
+    if (!geometry || !stageRect) return;
+    event.preventDefault();
+    const handle = event.target.closest?.('[data-crop-handle]')?.dataset?.cropHandle;
+    const pointerX = event.clientX - stageRect.left;
+    const pointerY = event.clientY - stageRect.top;
+    if (handle) {
+      cropInteraction = {
+        type: 'resize',
+        handle,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startGeometry: geometry,
+      };
+    } else if (cropSelection?.contains(event.target)) {
+      cropInteraction = {
+        type: 'move',
+        grabX: pointerX - geometry.left,
+        grabY: pointerY - geometry.top,
+      };
+    } else {
+      cropInteraction = {
+        type: 'move',
+        grabX: geometry.width / 2,
+        grabY: geometry.height / 2,
+      };
+      moveCropInteraction(event);
+    }
     cropStage.setPointerCapture?.(event.pointerId);
-    moveCropToPointer(event);
   });
   cropStage?.addEventListener('pointermove', (event) => {
-    if (cropDragging) moveCropToPointer(event);
+    if (cropInteraction) {
+      event.preventDefault();
+      moveCropInteraction(event);
+    }
   });
   cropStage?.addEventListener('pointerup', (event) => {
-    cropDragging = false;
+    cropInteraction = null;
     cropStage.releasePointerCapture?.(event.pointerId);
   });
   cropStage?.addEventListener('pointercancel', () => {
-    cropDragging = false;
+    cropInteraction = null;
   });
   window.addEventListener('resize', () => {
     if (cropModal && !cropModal.classList.contains('hidden')) updateCropSelection();
