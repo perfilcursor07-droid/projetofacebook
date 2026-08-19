@@ -14,7 +14,7 @@ const {
  */
 
 /** Quantos posts abrir por scan (cada um custa ~3 MB de HTML). */
-const MAX_DETALHES = Math.min(40, Math.max(1, Number(process.env.FB_PAGE_MAX_POSTS) || 15));
+const MAX_DETALHES = Math.min(40, Math.max(1, Number(process.env.FB_PAGE_MAX_POSTS) || 40));
 const CONCORRENCIA = Math.min(6, Math.max(1, Number(process.env.FB_PAGE_CONCORRENCIA) || 3));
 
 function isConfigured() {

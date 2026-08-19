@@ -7,6 +7,7 @@ const {
   composeMatterArtwork,
   applyBrandArtworkToResult,
   storeMatterSourceImage,
+  cropMatterSourceImage,
   removeMatterSourceImage,
 } = require('../services/matterArtworkService');
 const { publishEditorialPhoto } = require('../services/editorialPublishService');
@@ -243,6 +244,74 @@ router.post('/matters/:id/arte/enquadrar', async (req, res, next) => {
       offsetY,
     });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+});
+
+router.post('/matters/:id/arte/recortar', async (req, res, next) => {
+  let storedSource = null;
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID da matéria inválido' });
+    }
+
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'A imagem de uma matéria publicada não pode ser alterada' });
+    }
+
+    let sourceUrl = String(matter.imagem_fonte_url || '').trim();
+    if (/\/media\/artes\//i.test(sourceUrl)) sourceUrl = '';
+    if (
+      !sourceUrl &&
+      !matter.imagem_path &&
+      (/^https?:\/\//i.test(String(matter.imagem_url || '')) ||
+        String(matter.imagem_url || '').startsWith('/media/fontes/')) &&
+      !/\/media\/artes\//i.test(String(matter.imagem_url || ''))
+    ) {
+      sourceUrl = String(matter.imagem_url).trim();
+    }
+    if (!sourceUrl) {
+      return res.status(400).json({
+        error: 'A foto original não está disponível para recortar. Escolha outra imagem primeiro.',
+      });
+    }
+
+    storedSource = await cropMatterSourceImage({
+      userId: req.session.userId,
+      matterId,
+      sourceUrl,
+      left: req.body?.left,
+      top: req.body?.top,
+      width: req.body?.width,
+      height: req.body?.height,
+    });
+
+    const artwork = await composeMatterArtwork({
+      userId: req.session.userId,
+      matterId,
+      sourceUrl: storedSource.publicUrl,
+      title: String(req.body?.titulo || matter.titulo || '').trim(),
+      force: true,
+      zoom: 100,
+      offsetX: 50,
+      offsetY: 50,
+    });
+
+    return res.json({
+      ok: true,
+      matter: artwork.matter,
+      imagemUrl: artwork.publicUrl,
+      imagemFonteUrl: storedSource.publicUrl,
+      hasLogo: artwork.hasLogo,
+    });
+  } catch (err) {
+    if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
     if (err.status) return res.status(err.status).json({ error: err.message });
     return next(err);
   }

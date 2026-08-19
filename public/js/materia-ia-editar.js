@@ -62,6 +62,7 @@
   const artOffsetXValor = document.getElementById('art-offset-x-valor');
   const artOffsetYValor = document.getElementById('art-offset-y-valor');
   const btnArtEnquadrar = document.getElementById('btn-art-enquadrar');
+  const btnAbrirRecorte = document.getElementById('btn-abrir-recorte');
   const artFramePreview = document.getElementById('matter-img-frame-preview');
 
   function getFonteBackgroundEl() {
@@ -97,6 +98,7 @@
   function setFontePreviewUrl(url) {
     if (!url) return;
     cfg.imagemFonteUrl = url;
+    btnAbrirRecorte?.classList.remove('hidden');
     const el = getFontePreviewEl();
     if (el) {
       el.src = url + (String(url).includes('?') ? '&' : '?') + 't=' + Date.now();
@@ -310,6 +312,186 @@
     } finally {
       btnArtEnquadrar.disabled = false;
       btnArtEnquadrar.textContent = original || 'Aplicar enquadramento';
+    }
+  });
+
+  /* —— Recorte real da foto de origem em 4:5 —— */
+  const cropModal = document.getElementById('matter-crop-modal');
+  const cropClose = document.getElementById('matter-crop-close');
+  const cropCancel = document.getElementById('matter-crop-cancel');
+  const cropSave = document.getElementById('matter-crop-save');
+  const cropStage = document.getElementById('matter-crop-stage');
+  const cropImage = document.getElementById('matter-crop-image');
+  const cropSelection = document.getElementById('matter-crop-selection');
+  const cropSize = document.getElementById('matter-crop-size');
+  const cropX = document.getElementById('matter-crop-x');
+  const cropY = document.getElementById('matter-crop-y');
+  const cropSizeValue = document.getElementById('matter-crop-size-value');
+  const cropXValue = document.getElementById('matter-crop-x-value');
+  const cropYValue = document.getElementById('matter-crop-y-value');
+  let cropDragging = false;
+  let bodyOverflowBeforeCrop = '';
+
+  function clampCropValue(value, min = 0, max = 100) {
+    return Math.min(max, Math.max(min, Number(value) || 0));
+  }
+
+  function cropGeometry() {
+    if (!cropImage?.complete || !cropImage.naturalWidth || !cropImage.clientWidth) return null;
+    const imageWidth = cropImage.clientWidth;
+    const imageHeight = cropImage.clientHeight;
+    const targetRatio = 4 / 5;
+    let maxWidth;
+    let maxHeight;
+
+    if (imageWidth / imageHeight > targetRatio) {
+      maxHeight = imageHeight;
+      maxWidth = maxHeight * targetRatio;
+    } else {
+      maxWidth = imageWidth;
+      maxHeight = maxWidth / targetRatio;
+    }
+
+    const sizePct = clampCropValue(cropSize?.value ?? 100, 30, 100);
+    const xPct = clampCropValue(cropX?.value ?? 50);
+    const yPct = clampCropValue(cropY?.value ?? 50);
+    const width = maxWidth * (sizePct / 100);
+    const height = maxHeight * (sizePct / 100);
+    const left = Math.max(0, imageWidth - width) * (xPct / 100);
+    const top = Math.max(0, imageHeight - height) * (yPct / 100);
+
+    return { imageWidth, imageHeight, width, height, left, top, sizePct, xPct, yPct };
+  }
+
+  function updateCropSelection() {
+    const geometry = cropGeometry();
+    if (!geometry || !cropSelection) return null;
+    cropSelection.style.left = geometry.left + 'px';
+    cropSelection.style.top = geometry.top + 'px';
+    cropSelection.style.width = geometry.width + 'px';
+    cropSelection.style.height = geometry.height + 'px';
+    if (cropSizeValue) cropSizeValue.textContent = Math.round(geometry.sizePct) + '%';
+    if (cropXValue) cropXValue.textContent = Math.round(geometry.xPct) + '%';
+    if (cropYValue) cropYValue.textContent = Math.round(geometry.yPct) + '%';
+    return geometry;
+  }
+
+  function closeCropModal() {
+    cropDragging = false;
+    cropModal?.classList.add('hidden');
+    document.body.style.overflow = bodyOverflowBeforeCrop;
+  }
+
+  function openCropModal() {
+    const sourceUrl = String(cfg.imagemFonteUrl || '').trim();
+    if (!sourceUrl || !cropModal || !cropImage) {
+      setStatus('A foto original não está disponível para recortar.', true);
+      return;
+    }
+    if (cropSize) cropSize.value = '100';
+    if (cropX) cropX.value = '50';
+    if (cropY) cropY.value = '50';
+    bodyOverflowBeforeCrop = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    cropModal.classList.remove('hidden');
+    cropImage.onload = () => requestAnimationFrame(updateCropSelection);
+    cropImage.onerror = () => setStatus('Não foi possível abrir a foto original para recorte.', true);
+    cropImage.src = sourceUrl.startsWith('/media/')
+      ? sourceUrl + (sourceUrl.includes('?') ? '&' : '?') + 'crop=' + Date.now()
+      : sourceUrl;
+    requestAnimationFrame(updateCropSelection);
+  }
+
+  function moveCropToPointer(event) {
+    const geometry = cropGeometry();
+    const stageRect = cropStage?.getBoundingClientRect();
+    if (!geometry || !stageRect) return;
+    const availableX = Math.max(0, geometry.imageWidth - geometry.width);
+    const availableY = Math.max(0, geometry.imageHeight - geometry.height);
+    const desiredLeft = event.clientX - stageRect.left - geometry.width / 2;
+    const desiredTop = event.clientY - stageRect.top - geometry.height / 2;
+    if (cropX) {
+      cropX.value = String(
+        Math.round(availableX ? clampCropValue((desiredLeft / availableX) * 100) : 50)
+      );
+    }
+    if (cropY) {
+      cropY.value = String(
+        Math.round(availableY ? clampCropValue((desiredTop / availableY) * 100) : 50)
+      );
+    }
+    updateCropSelection();
+  }
+
+  [cropSize, cropX, cropY].forEach((el) => el?.addEventListener('input', updateCropSelection));
+  btnAbrirRecorte?.addEventListener('click', openCropModal);
+  cropClose?.addEventListener('click', closeCropModal);
+  cropCancel?.addEventListener('click', closeCropModal);
+  cropModal?.addEventListener('click', (event) => {
+    if (event.target === cropModal) closeCropModal();
+  });
+  cropStage?.addEventListener('pointerdown', (event) => {
+    cropDragging = true;
+    cropStage.setPointerCapture?.(event.pointerId);
+    moveCropToPointer(event);
+  });
+  cropStage?.addEventListener('pointermove', (event) => {
+    if (cropDragging) moveCropToPointer(event);
+  });
+  cropStage?.addEventListener('pointerup', (event) => {
+    cropDragging = false;
+    cropStage.releasePointerCapture?.(event.pointerId);
+  });
+  cropStage?.addEventListener('pointercancel', () => {
+    cropDragging = false;
+  });
+  window.addEventListener('resize', () => {
+    if (cropModal && !cropModal.classList.contains('hidden')) updateCropSelection();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && cropModal && !cropModal.classList.contains('hidden')) {
+      closeCropModal();
+    }
+  });
+
+  cropSave?.addEventListener('click', async () => {
+    const geometry = updateCropSelection();
+    if (!geometry) {
+      setStatus('Aguarde a foto carregar para salvar o recorte.', true);
+      return;
+    }
+
+    const originalLabel = cropSave.textContent;
+    cropSave.disabled = true;
+    cropSave.textContent = 'Recortando…';
+    setStatus('Recortando a foto e atualizando a imagem destacada…');
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/recortar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          left: geometry.left / geometry.imageWidth,
+          top: geometry.top / geometry.imageHeight,
+          width: geometry.width / geometry.imageWidth,
+          height: geometry.height / geometry.imageHeight,
+          titulo: tituloEl?.value || '',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao recortar a foto');
+      if (data.imagemUrl) {
+        setArtImage(data.imagemUrl, {
+          matter: data.matter,
+          imagemFonteUrl: data.imagemFonteUrl,
+        });
+      }
+      closeCropModal();
+      setStatus('Foto recortada e salva como imagem destacada ✓');
+    } catch (err) {
+      setStatus(err.message || 'Erro ao recortar a foto', true);
+    } finally {
+      cropSave.disabled = false;
+      cropSave.textContent = originalLabel || 'Recortar e salvar';
     }
   });
 

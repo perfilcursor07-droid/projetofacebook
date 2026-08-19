@@ -176,9 +176,10 @@ async function listarPostsPerfil(pageUrl, limit = 20) {
 
   const max = Math.min(40, Math.max(1, Number(limit) || 20));
   // ~3 posts/request → precisa de várias páginas para encher o limite
-  const maxRequests = Math.min(12, Math.ceil(max / 3) + 1);
+  const maxRequests = Math.min(20, Math.ceil(max / 3) + 2);
   const out = [];
   const seen = new Set();
+  const seenCursors = new Set();
   let cursor = null;
 
   for (let i = 0; i < maxRequests && out.length < max; i++) {
@@ -187,7 +188,7 @@ async function listarPostsPerfil(pageUrl, limit = 20) {
 
     const data = await fetchPostsPage(params);
     const batch = Array.isArray(data.posts) ? data.posts : [];
-    cursor = data.cursor || null;
+    const nextCursor = String(data.cursor || '').trim() || null;
 
     for (const raw of batch) {
       const post = normalizarItem(raw);
@@ -201,7 +202,9 @@ async function listarPostsPerfil(pageUrl, limit = 20) {
       if (out.length >= max) break;
     }
 
-    if (!batch.length || !cursor) break;
+    if (!batch.length || !nextCursor || seenCursors.has(nextCursor)) break;
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
   }
 
   return out;

@@ -358,7 +358,7 @@ function nextRun(intervaloMinutos) {
 
 const SCAN_LIMIT = 10;
 /** Facebook: API devolve poucos por página — pedimos mais e paginamos. */
-const SCAN_LIMIT_FACEBOOK = 25;
+const SCAN_LIMIT_FACEBOOK = 40;
 const SCAN_LIMIT_SITE = 20;
 
 function dataPublicacaoValida(value) {
@@ -476,32 +476,44 @@ async function coletarItensFonte(fonte) {
     const erros = [];
     const scrapeCreatorsFb = require('./scrapeCreatorsFacebook');
 
-    // Sessão própria (YTDLP_FB_COOKIES_FILE) primeiro: é gratuita e lê a página
-    // logada, então não depende de créditos de ScrapeCreators/Serper.
     const fbPageScrape = require('./facebookPageScrape');
-    if (fbPageScrape.isConfigured()) {
-      try {
-        const itens = await fbPageScrape.listarPostsPerfil(url, SCAN_LIMIT_FACEBOOK);
-        if (itens.length) {
-          return dedupeItens(itens, SCAN_LIMIT_FACEBOOK);
-        }
-        erros.push('sessão do Facebook não encontrou posts na página');
-      } catch (err) {
-        console.warn('[biblioteca] fb-page:', err.message);
-        erros.push(`sessão FB: ${err.message}`);
-      }
-    }
 
+    // A API pagina o feed de forma previsível. A sessão autenticada entra como
+    // complemento/fallback, especialmente para conteúdo ausente no modo público.
     if (scrapeCreatorsFb.isConfigured()) {
       try {
         const itens = await scrapeCreatorsFb.listarPostsPerfil(url, SCAN_LIMIT_FACEBOOK);
         if (itens.length) {
           console.log(`[scrapecreators-fb] ${url}: ${itens.length} post(s)`);
-          return dedupeItens(itens, SCAN_LIMIT_FACEBOOK);
+          collected.push(...itens);
+          if (dedupeItens(collected, SCAN_LIMIT_FACEBOOK).length >= SCAN_LIMIT_FACEBOOK) {
+            return dedupeItens(collected, SCAN_LIMIT_FACEBOOK);
+          }
         }
       } catch (err) {
         console.warn('[biblioteca] scrapecreators-fb:', err.message);
         erros.push(err.message);
+      }
+    }
+
+    if (
+      dedupeItens(collected, SCAN_LIMIT_FACEBOOK).length < SCAN_LIMIT_FACEBOOK &&
+      fbPageScrape.isConfigured()
+    ) {
+      try {
+        const itens = await fbPageScrape.listarPostsPerfil(url, SCAN_LIMIT_FACEBOOK);
+        if (itens.length) {
+          collected.push(...itens);
+          console.log(`[fb-page] ${url}: ${itens.length} post(s) aproveitado(s)`);
+          if (dedupeItens(collected, SCAN_LIMIT_FACEBOOK).length >= SCAN_LIMIT_FACEBOOK) {
+            return dedupeItens(collected, SCAN_LIMIT_FACEBOOK);
+          }
+        } else {
+          erros.push('sessão do Facebook não encontrou posts na página');
+        }
+      } catch (err) {
+        console.warn('[biblioteca] fb-page:', err.message);
+        erros.push(`sessão FB: ${err.message}`);
       }
     }
 
@@ -1427,6 +1439,12 @@ async function atualizarFonte(userId, fonteId, patch = {}) {
 
 async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) {
   const novos = [];
+  // Em redes sociais, posts distintos podem ter legendas/títulos muito parecidos.
+  // O link/external_id é a identidade confiável; dedupe semântico por título
+  // fica restrito a sites, onde republicações são comuns.
+  const deduplicarPorTitulo = ['site', 'outro'].includes(
+    String(fonte.plataforma || '').toLowerCase()
+  );
   // Pool recente da fonte p/ dedupe por URL normalizada e título parecido
   const recentes = await BibliotecaPosts.findByFonte(fonte.id, 120);
   const urlsVistas = new Set(
@@ -1445,19 +1463,18 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
 
     const tituloBruto = String(item.titulo || 'Sem título').slice(0, 500);
     if (
+      deduplicarPorTitulo &&
       tituloBruto.length >= 24 &&
       titulosVistos.some((t) => titulosParecidos(t, tituloBruto) || mesmoAssuntoNoticia(t, tituloBruto))
     ) {
       continue;
     }
 
-    const estrangeiro =
-      pareceTextoEstrangeiro(item.titulo) || pareceTextoEstrangeiro(item.resumo);
-    // Sempre traduz/resume em PT quando for língua estrangeira; senão só se gerarResumoIa
+    // A IA pode ser desligada em coletas grandes; o item bruto continua íntegro.
     let tituloFinal = tituloBruto;
     let resumoFinal = item.resumo ? String(item.resumo).slice(0, 2000) : null;
 
-    if ((gerarResumoIa || estrangeiro) && env.deepseekApiKey) {
+    if (gerarResumoIa && env.deepseekApiKey) {
       try {
         const ia = await resumirAlertaBiblioteca({
           plataforma: fonte.plataforma,
@@ -1478,6 +1495,7 @@ async function registrarItensNovos(fonte, itens, { gerarResumoIa = true } = {}) 
 
     // Re-checa título após IA (às vezes a IA padroniza e bate com alerta anterior)
     if (
+      deduplicarPorTitulo &&
       tituloFinal.length >= 24 &&
       titulosVistos.some((t) => titulosParecidos(t, tituloFinal) || mesmoAssuntoNoticia(t, tituloFinal))
     ) {
@@ -1548,8 +1566,11 @@ async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
       const externalId = stableExternalId(item.externalId || url);
       const exists = await BibliotecaPosts.findByExternal(fonte.id, externalId);
       if (exists) continue;
-      // Mesmo na baseline: traduz título/resumo estrangeiro para PT
-      const traduzido = await traduzirItemBrutoSeEstrangeiro(fonte, item);
+      // Facebook pode trazer 40 itens: salve a base imediatamente e traduza depois.
+      const traduzido =
+        fonte.plataforma === 'facebook'
+          ? { titulo: item.titulo, resumo: item.resumo }
+          : await traduzirItemBrutoSeEstrangeiro(fonte, item);
       await BibliotecaPosts.create({
         fonte_id: fonte.id,
         user_id: fonte.user_id,
@@ -1581,7 +1602,9 @@ async function salvarItensFonte(fonte, itens, { silentFirst = false } = {}) {
     return { novos: [], itens: lote.length, salvos };
   }
 
-  const novos = await registrarItensNovos(fonte, lote, { gerarResumoIa: true });
+  const novos = await registrarItensNovos(fonte, lote, {
+    gerarResumoIa: fonte.plataforma !== 'facebook',
+  });
   await BibliotecaFontes.update(fonte.id, {
     ultimo_scan: new Date(),
     proxima_execucao: nextRun(fonte.intervalo_minutos),
@@ -1732,11 +1755,18 @@ async function escanearFonte(fonte, { silentFirst = false } = {}) {
     resultado = await salvarColetados(itens);
   }
 
-  // Traduz posts antigos ainda em inglês/outro idioma (para a lista e a matéria)
-  try {
-    await traduzirPostsPendentesDaFonte(fonte, 12);
-  } catch (err) {
-    console.warn('[biblioteca] traduzir pendentes:', err.message);
+  // No Facebook, não segura o scan com várias chamadas de IA: os posts aparecem
+  // primeiro e o enriquecimento dos mais recentes acontece em segundo plano.
+  if (fonte.plataforma === 'facebook') {
+    traduzirPostsPendentesDaFonte(fonte, 12).catch((err) => {
+      console.warn('[biblioteca] traduzir pendentes:', err.message);
+    });
+  } else {
+    try {
+      await traduzirPostsPendentesDaFonte(fonte, 12);
+    } catch (err) {
+      console.warn('[biblioteca] traduzir pendentes:', err.message);
+    }
   }
   return resultado;
 }
@@ -1762,7 +1792,7 @@ async function escanearAgora(userId, fonteId) {
     throw err;
   }
   try {
-    // Scan manual: salva até 10 posts como novos (para gerar matéria na hora)
+    // Scan manual: Facebook salva até 40 posts; os demais usam o limite da plataforma.
     return await escanearFonte(fonte, { silentFirst: false });
   } catch (err) {
     await BibliotecaFontes.update(fonte.id, {
