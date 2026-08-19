@@ -185,6 +185,22 @@ function finalizarTituloComMarca(titulo, marcaModeloArte) {
   return t.slice(0, 140);
 }
 
+function tituloEstruturalmenteValido(titulo) {
+  const texto = String(titulo || '');
+  const abreDestaque = (texto.match(/\[\[/g) || []).length;
+  const fechaDestaque = (texto.match(/\]\]/g) || []).length;
+  const abreFaixa = (texto.match(/\(\(/g) || []).length;
+  const fechaFaixa = (texto.match(/\)\)/g) || []).length;
+  const aspasSimples = (texto.match(/'/g) || []).length;
+  const aspasDuplas = (texto.match(/"/g) || []).length;
+  return (
+    abreDestaque === fechaDestaque &&
+    abreFaixa === fechaFaixa &&
+    aspasSimples % 2 === 0 &&
+    aspasDuplas % 2 === 0
+  );
+}
+
 async function chatCompletion(
   messages,
   { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL, tarefa = null } = {}
@@ -2123,6 +2139,7 @@ Regras:
       marcaModeloArte
     );
     if (limpo.length < 25) continue;
+    if (!tituloEstruturalmenteValido(limpo)) continue;
     const norm = normalizeTituloCmp(limpo);
     if (!norm || usados.includes(norm)) continue;
     usados.push(norm);
@@ -2945,6 +2962,9 @@ async function conversarMateria({
   fonteSocialChars = 0,
   fonteEstrangeira = false,
   contextoAprendizado = null,
+  periodoPesquisa = null,
+  pesquisaAmpliada = false,
+  periodoPesquisaAmpliada = null,
   // A busca é feita pelo sistema ANTES desta chamada. Sem essa distinção, o
   // modelo confunde "voltou vazia" com "não houve busca" e responde que não
   // sabe pesquisar — o que é falso e deixa o editor sem saída.
@@ -2962,6 +2982,20 @@ async function conversarMateria({
   const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
   const tomDesc = TITULO_TOMES[tomKey];
   const blocoFatos = String(fatosFontes || '').trim();
+  const hojeEditorial = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Araguaina',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date());
+  const blocoTemporal = `CONTEXTO TEMPORAL OBRIGATÓRIO:
+- Hoje é ${hojeEditorial}.
+- Janela escolhida pelo editor: ${String(periodoPesquisa || 'não informada')}.
+${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampliou excepcionalmente para ${String(periodoPesquisaAmpliada || 'uma janela maior')}. Fontes encontradas apenas nessa ampliação NÃO são fatos novos de hoje.` : '- A pesquisa não precisou ampliar a janela escolhida.'}
+- "Data de publicação da fonte" não prova a data do acontecimento. Só informe a data do fato quando o trecho a declarar.
+- Nunca escreva apenas "sábado, dia 23" ou "quinta-feira, dia 11": use dia, mês e ano confirmados. Se mês/ano não estiverem confirmados, omita a data incompleta.
+- Não use "agora", "hoje", "voltou a criticar" ou "declaração recente" para fala antiga sem uma nova repercussão documentada.
+- Quando o fato for anterior à janela escolhida, deixe isso claro no título, linha fina ou lead, usando a data/período original confirmado.`;
   let blocoMemoriaEditorial = null;
   if (contextoAprendizado) {
     try {
@@ -3013,6 +3047,8 @@ COMO A APURAÇÃO CHEGA ATÉ VOCÊ (leia antes de responder):
 ${blocoEstiloNewsGospel()}
 
 ${blocoMemoriaEditorial || ''}
+
+${blocoTemporal}
 
 COMO RESPONDER:
 - Antes de redigir, planeje silenciosamente: (1) intenção exata do editor, (2) fato central confirmado, (3) melhor ângulo sustentado, (4) ordem dos fatos, (5) lacunas e contraponto. Mostre apenas a resposta final.

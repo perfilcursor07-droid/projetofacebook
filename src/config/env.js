@@ -8,6 +8,10 @@ function required(name, fallback) {
   return value;
 }
 
+function habilitado(name) {
+  return /^(1|true|yes|on)$/i.test(String(process.env[name] || '').trim());
+}
+
 const env = {
   port: Number(process.env.PORT || 3000),
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -30,8 +34,14 @@ const env = {
   deepseekWriterModel:
     process.env.DEEPSEEK_WRITER_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
   pexelsApiKey: process.env.PEXELS_API_KEY || '',
-  braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
-  serperApiKey: process.env.SERPER_API_KEY || '',
+  // Desligados por padrão: chaves esgotadas/403 estavam atrasando toda busca.
+  // Reative explicitamente somente depois de validar saldo e funcionamento.
+  braveSearchApiKey: habilitado('SEARCH_ENABLE_BRAVE')
+    ? process.env.BRAVE_SEARCH_API_KEY || ''
+    : '',
+  serperApiKey: habilitado('SEARCH_ENABLE_SERPER')
+    ? process.env.SERPER_API_KEY || ''
+    : '',
   /** SerpApi (serpapi.com) — Google Images para sugestões de capa */
   serpApiKey: process.env.SERPAPI_API_KEY || '',
   facebook: {
@@ -66,7 +76,9 @@ const env = {
   /** URL pública do app (opcional; útil para mídia https) */
   appPublicUrl: String(process.env.APP_PUBLIC_URL || '').replace(/\/$/, ''),
   brightdataApiToken: process.env.BRIGHTDATA_API_TOKEN || '',
-  scrapeCreatorsApiKey: process.env.SCRAPECREATORS_API_KEY || '',
+  scrapeCreatorsApiKey: habilitado('SEARCH_ENABLE_SCRAPECREATORS')
+    ? process.env.SCRAPECREATORS_API_KEY || ''
+    : '',
   /** ElevenLabs — narração humanizada para Reels (imagem + voz) */
   elevenLabsApiKey: process.env.ELEVENLABS_API_KEY || '',
   /**

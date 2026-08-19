@@ -3204,6 +3204,7 @@ async function coletarFatosNaWeb({
   incluirRedes = false,
   redesAmplas = false,
   incluirWebGeral = false,
+  maxConsultasNoticias = 4,
 } = {}) {
   // Usado pelo chat de matérias para mostrar "buscando / encontrados / lendo".
   const emitir = (evento) => {
@@ -3364,6 +3365,8 @@ async function coletarFatosNaWeb({
       titulo: tit || queries[0],
       resumo: String(f.resumo || '').slice(0, 500),
       trecho: trecho.slice(0, 2500),
+      dataPublicacao: f.dataPublicacao || f.data || null,
+      dataTimestamp: Number(f.dataTimestamp) || 0,
       ...(f.ehRedeSocial || f.redeSocial ? { ehRedeSocial: true } : {}),
     });
   }
@@ -3378,8 +3381,9 @@ async function coletarFatosNaWeb({
   // Leitura em paralelo: 8 links por vez em vez de 4 (o gargalo é rede, não CPU).
   const LOTE_LEITURA = 8;
   const consultasNoticiasProcessadas = new Set();
+  const limiteConsultasNoticias = Math.max(1, Math.min(6, Number(maxConsultasNoticias) || 4));
   async function coletarNoticias(teto) {
-    for (const q of queries.slice(0, 4)) {
+    for (const q of queries.slice(0, limiteConsultasNoticias)) {
       if (fontes.length >= teto) break;
       const chaveConsulta = semAcento(q).replace(/\s+/g, ' ').trim();
       // A segunda passagem serve para consultar ângulos que ainda não rodaram,
@@ -3488,6 +3492,8 @@ async function coletarFatosNaWeb({
               veiculo: meta?.veiculo || t.veiculo || t.fonte,
               resumo: meta?.resumo || t.resumo,
               trecho: meta?.trecho || t.resumo,
+              dataPublicacao: meta?.dataPublicacao || t.data || null,
+              dataTimestamp: dataConfirmada,
             });
           }
         }
@@ -3672,6 +3678,8 @@ async function coletarFatosNaWeb({
           veiculo: meta?.veiculo || r.veiculo || r.fonte,
           resumo: meta?.resumo || r.resumo,
           trecho: meta?.trecho || r.resumo,
+          dataPublicacao: meta?.dataPublicacao || r.data || null,
+          dataTimestamp: dataConfirmada,
         });
       }
     } catch (err) {
@@ -3705,7 +3713,16 @@ function montarBlocoFatos(fontes) {
         f?.fonteColada
           ? 9000
           : 1800;
-      return `Fonte ${i + 1} — ${f.veiculo || 'Web'}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo || ''}\nTrecho factual:\n${String(f.trecho || f.resumo || '').slice(0, limiteTrecho)}`;
+      const timestamp = Number(f?.dataTimestamp) || Date.parse(String(f?.dataPublicacao || '')) || 0;
+      const dataFonte = timestamp
+        ? new Intl.DateTimeFormat('pt-BR', {
+            timeZone: 'America/Araguaina',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          }).format(new Date(timestamp))
+        : null;
+      return `Fonte ${i + 1} — ${f.veiculo || 'Web'}${f.url ? ` (${f.url})` : ''}\nTítulo: ${f.titulo || ''}${dataFonte ? `\nData de publicação da fonte: ${dataFonte}` : '\nData de publicação da fonte: não confirmada'}\nTrecho factual:\n${String(f.trecho || f.resumo || '').slice(0, limiteTrecho)}`;
     })
     .join('\n\n---\n\n');
 }

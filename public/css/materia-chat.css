@@ -1902,3 +1902,106 @@ body.mia-chat-drawer-open {
     display: inline;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Topo enxuto (estilo Claude/ChatGPT)
+   Antes: cabeçalho com rótulo + título, mais uma barra de 5 atalhos com borda,
+   fixos no topo a conversa inteira. Somados, comiam ~130px da altura útil.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.mia-chat-header {
+  min-height: 2.6rem;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 0;
+}
+
+@media (min-width: 640px) {
+  .mia-chat-header {
+    padding: 0.4rem 1rem;
+  }
+}
+
+/* O "MATÉRIA MANUAL" acima do título repete o que o menu lateral já diz */
+.mia-chat-header-title > span {
+  display: none;
+}
+
+.mia-chat-header-title p {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--mia-chat-muted);
+}
+
+/* Atalhos só enquanto a conversa está vazia — depois da primeira mensagem o
+   espaço pertence ao texto. Navegador sem :has() mantém o comportamento antigo. */
+.mia-chat-main:has(#chat-vazio.hidden) .mia-chat-shortcuts-bar {
+  display: none;
+}
+
+.mia-chat-shortcuts-bar {
+  border-bottom: 0;
+  background: transparent;
+  padding: 0.25rem 0.75rem 0.5rem;
+  overflow-x: visible;
+}
+
+@media (min-width: 640px) {
+  .mia-chat-shortcuts-bar {
+    padding: 0.25rem 1.5rem 0.75rem;
+  }
+}
+
+/* Sugestões centradas e quebrando em linhas, como cartões de partida —
+   em vez de uma faixa que rola na horizontal colada no topo */
+.mia-chat-shortcuts-bar .mia-chat-prompts {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: var(--mia-chat-stream);
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.mia-chat-prompt {
+  border-radius: 0.85rem;
+  background: rgba(255, 252, 245, 0.035);
+  border: 1px solid var(--mia-chat-border);
+  max-width: 21rem;
+}
+
+.mia-chat-prompt:hover {
+  background: rgba(255, 252, 245, 0.07);
+}
+
+/* Estado vazio mais alto na tela, com a saudação perto dos atalhos */
+.mia-chat-empty {
+  padding-top: 2rem;
+  padding-bottom: 1rem;
+}
+
+.mia-chat-empty-title {
+  font-size: 1.6rem;
+}
+
+@media (min-width: 640px) {
+  .mia-chat-empty-title {
+    font-size: 1.9rem;
+  }
+}
+
+/* Ordem visual da coluna: cabeçalho → conversa → atalhos → caixa de escrita.
+   No DOM os atalhos vêm antes da conversa (precisam ficar fora da área que
+   rola); o `order` coloca eles logo acima do campo de escrita, que é onde o
+   Claude e o ChatGPT mostram sugestões. */
+.mia-chat-header {
+  order: 1;
+}
+.mia-chat-messages {
+  order: 2;
+}
+.mia-chat-shortcuts-bar {
+  order: 3;
+}
+.mia-chat-composer-wrap {
+  order: 4;
+}

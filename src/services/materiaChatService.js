@@ -8,6 +8,16 @@ const PERIODOS = ['24h', '3d', '7d', '15d', '30d', '60d', '90d', '180d'];
 // padrão para assuntos institucionais, políticos ou eleitorais.
 const PERIODO_PADRAO = '30d';
 const MAX_URLS_PEDIDO = 12;
+const JANELAS_DE_RESGATE = Object.freeze({
+  '24h': '7d',
+  '3d': '15d',
+  '7d': '30d',
+  '15d': '60d',
+  '30d': '90d',
+  '60d': '90d',
+  '90d': '180d',
+  '180d': '180d',
+});
 
 /**
  * Corta transcrição longa preservando começo E fim.
@@ -1556,6 +1566,7 @@ async function responder({
   let blocoFatos = null;
   let checagemDoDossie = null;
   let pesquisaExigeDossie = false;
+  let tipoPedidoDaPesquisa = 'tema';
   let consultasDaPesquisa = [];
   let temFonteDoLink = false;
   let falhasLinksSociais = [];
@@ -1743,6 +1754,7 @@ async function responder({
       consultas = sugestao.consultas || [];
       temaPesquisa = sugestao.tema || '';
       tipoPedidoPesquisa = sugestao.tipoPedido || 'tema';
+      tipoPedidoDaPesquisa = tipoPedidoPesquisa;
       pesquisaExigeDossie = !modoPautas && sugestao.exigeDossie !== false;
     } catch (err) {
       console.warn('[materia-chat] consultas:', err.message);
@@ -1817,9 +1829,9 @@ async function responder({
         consultas: consultas.slice(0, 6),
         periodo: periodoFinal,
         // Apuração ampla: mais sites e também redes sociais
-        max: modoPautas ? 16 : temFonteDoLink ? 10 : pesquisaExigeDossie ? 10 : 8,
-        incluirRedes: true,
-        redesAmplas: true,
+        max: modoPautas ? 12 : temFonteDoLink ? 8 : tipoPedidoPesquisa === 'fato' ? 6 : 8,
+        incluirRedes: false,
+        maxConsultasNoticias: tipoPedidoPesquisa === 'fato' ? 2 : 4,
         resumoContexto: pedidoParaPesquisa.slice(0, 500),
         logPrefix: '[materia-chat]',
         onProgress: (evento) => {
@@ -1877,7 +1889,6 @@ async function responder({
     // publicado nada sobre o nome pedido. Em vez de devolver "aumente o
     // período" e empurrar o trabalho para o editor, a busca se repete sozinha
     // numa janela maior antes de desistir.
-    const JANELAS_DE_RESGATE = { '24h': '7d', '3d': '15d', '7d': '30d', '15d': '60d', '30d': '90d' };
     const janelaMaior = JANELAS_DE_RESGATE[periodoFinal];
     if (!fontesWeb.length && janelaMaior && consultas.length) {
       const { rotuloPeriodo } = require('./newsResearch');
@@ -1890,8 +1901,8 @@ async function responder({
           consultas: consultas.slice(0, 4),
           periodo: janelaMaior,
           max: modoPautas ? 16 : 8,
-          incluirRedes: true,
-          redesAmplas: true,
+          incluirRedes: false,
+          maxConsultasNoticias: 2,
           resumoContexto: pedidoParaPesquisa.slice(0, 500),
           logPrefix: '[materia-chat/resgate]',
         });
@@ -1932,8 +1943,8 @@ async function responder({
           consultas: consultas.slice(0, 6),
           periodo: '180d',
           max: 14,
-          incluirRedes: true,
-          redesAmplas: true,
+          incluirRedes: false,
+          maxConsultasNoticias: 2,
           resumoContexto: pedidoParaPesquisa.slice(0, 500),
           logPrefix: '[materia-chat:ampliada]',
           onProgress: (evento) => {
@@ -2002,6 +2013,8 @@ async function responder({
     ? `${contextoMateriaAnterior}\nAjuste solicitado: ${pedido}`
     : pedido;
   let resgateFactualExecutado = false;
+  let pesquisaFoiAmpliada = false;
+  let periodoResgateUsado = null;
 
   /**
    * Segunda rodada independente do dossiê. Se a chamada de análise cair por
@@ -2024,12 +2037,13 @@ async function responder({
       texto: 'O fato ainda não foi confirmado; ampliando o período e refinando as buscas…',
     });
     try {
+      const periodoResgate = JANELAS_DE_RESGATE[periodoFinal] || periodoFinal;
       const fontesComplementares = await materiaIaService.coletarFatosNaWeb({
         consultas: consultasResgate,
-        periodo: periodoFinal === '180d' ? periodoFinal : '180d',
-        max: 10,
-        incluirRedes: true,
-        redesAmplas: true,
+        periodo: periodoResgate,
+        max: 7,
+        incluirRedes: false,
+        maxConsultasNoticias: 2,
         incluirWebGeral: true,
         resumoContexto: pedidoDaApuracao.slice(0, 500),
         logPrefix: '[materia-chat:resgate-factual]',
@@ -2057,6 +2071,8 @@ async function responder({
         adicionadas += 1;
       }
       if (adicionadas) {
+        pesquisaFoiAmpliada = periodoResgate !== periodoFinal;
+        periodoResgateUsado = periodoResgate;
         registrarPasso({
           kind: 'fontes',
           texto: `${adicionadas} fonte(s) nova(s) encontrada(s) na busca refinada`,
@@ -2074,10 +2090,50 @@ async function responder({
     }
   };
 
+  // Pedido factual curto não precisa de um dossiê de milhares de tokens para
+  // descobrir que as primeiras fontes não confirmam a frase. Faz uma checagem
+  // pequena, resgata se necessário e deixa o redator trabalhar com as fontes.
+  // Isso elimina o primeiro dos dois dossiês que dominavam a latência do chat.
+  if (
+    !modoPautas &&
+    tipoPedidoDaPesquisa === 'fato' &&
+    usarPesquisa &&
+    blocoFatos &&
+    fontes.length >= 1 &&
+    !temFonteDoLink
+  ) {
+    registrarPasso({ kind: 'checagem', texto: 'Validando rapidamente o fato central…' });
+    try {
+      let checagemFactual = await deepseekService.checarPedidoNasFontes({
+        pedido: pedidoDaApuracao,
+        fatosFontes: blocoFatos,
+      });
+      if (checagemFactual?.confirmado === false) {
+        const adicionadas = await executarResgateFactual();
+        if (adicionadas && blocoFatos) {
+          checagemFactual = await deepseekService.checarPedidoNasFontes({
+            pedido: pedidoDaApuracao,
+            fatosFontes: blocoFatos,
+          });
+        }
+      }
+      checagemDoDossie = checagemFactual;
+    } catch (err) {
+      console.warn('[materia-chat] checagem factual rápida:', err.message);
+    }
+  }
+
   // Antes de escrever uma pauta pesquisada e ampla, sintetiza as fontes em um
   // dossiê. Isso impede que a matéria se limite ao primeiro simpósio/evento e
   // deixa explícitos estrutura, iniciativas, falas, apoios e contrapontos.
-  if (!modoPautas && pesquisaExigeDossie && usarPesquisa && blocoFatos && fontes.length >= 2) {
+  if (
+    !modoPautas &&
+    tipoPedidoDaPesquisa !== 'fato' &&
+    pesquisaExigeDossie &&
+    usarPesquisa &&
+    blocoFatos &&
+    fontes.length >= 2
+  ) {
     registrarPasso({
       kind: 'pensando',
       texto: 'Cruzando as fontes e montando o dossiê da matéria…',
@@ -2351,6 +2407,9 @@ async function responder({
             : 0,
           fonteEstrangeira: fonteEmOutroIdioma([fonteAtual]) || textoColadoEstrangeiro,
           contextoAprendizado,
+          periodoPesquisa: periodoFinal,
+          pesquisaAmpliada: pesquisaFoiAmpliada,
+          periodoPesquisaAmpliada: periodoResgateUsado,
           onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
         });
         partes.push(`${marcador}\n${textoMateria}`);
@@ -2371,6 +2430,9 @@ async function responder({
         fonteSocialChars: caracteresFonteSocial,
         fonteEstrangeira,
         contextoAprendizado,
+        periodoPesquisa: periodoFinal,
+        pesquisaAmpliada: pesquisaFoiAmpliada,
+        periodoPesquisaAmpliada: periodoResgateUsado,
         pesquisouSemResultado: buscaVazia,
         motivoBuscaVazia: buscaVazia ? motivoDaBuscaVazia() : null,
         onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
