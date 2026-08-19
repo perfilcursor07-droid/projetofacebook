@@ -2005,3 +2005,53 @@ body.mia-chat-drawer-open {
 .mia-chat-composer-wrap {
   order: 4;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Largura da coluna de leitura
+   46rem deixava sobra demais dos dois lados em tela grande. Aqui a coluna
+   acompanha o monitor: quanto maior a tela, mais texto por linha — sem virar
+   linha corrida de ponta a ponta, que é o que cansa a leitura.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@media (min-width: 1024px) {
+  .mia-chat {
+    --mia-chat-stream: 50rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .mia-chat {
+    --mia-chat-stream: 55rem;
+  }
+}
+
+@media (min-width: 1536px) {
+  .mia-chat {
+    --mia-chat-stream: 60rem;
+  }
+}
+
+@media (min-width: 1800px) {
+  .mia-chat {
+    --mia-chat-stream: 64rem;
+  }
+}
+
+/* A bolha do usuário cresce junto, senão fica desproporcional na coluna larga */
+.mia-msg-user-bubble {
+  max-width: min(88%, 40rem);
+}
+
+@media (min-width: 640px) {
+  .mia-msg-user-bubble {
+    max-width: min(75%, 40rem);
+  }
+}
+
+/* Menos margem lateral: em telas grandes a sobra já vem da própria coluna */
+@media (min-width: 1024px) {
+  .mia-chat-messages {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}

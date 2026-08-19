@@ -39,6 +39,9 @@ const env = {
   braveSearchApiKey: habilitado('SEARCH_ENABLE_BRAVE')
     ? process.env.BRAVE_SEARCH_API_KEY || ''
     : '',
+  // Brave Images é independente da pesquisa jornalística. A mesma chave
+  // continua disponível no botão "Trocar imagem", mesmo com Brave News off.
+  braveImageApiKey: process.env.BRAVE_SEARCH_API_KEY || '',
   serperApiKey: habilitado('SEARCH_ENABLE_SERPER')
     ? process.env.SERPER_API_KEY || ''
     : '',

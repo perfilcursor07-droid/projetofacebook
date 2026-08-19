@@ -126,13 +126,13 @@ async function buscarSerperImagens(consulta, { num = 10 } = {}) {
 
 async function buscarBraveImagens(consulta, { count = 10 } = {}) {
   const providerHealth = require('./providerHealth');
-  if (!env.braveSearchApiKey || providerHealth.estaFora('brave')) return [];
+  if (!env.braveImageApiKey || providerHealth.estaFora('brave-images')) return [];
   try {
     const { data } = await axios.get('https://api.search.brave.com/res/v1/images/search', {
       params: { q: consulta, count: Math.min(count, 20) },
       headers: {
         Accept: 'application/json',
-        'X-Subscription-Token': env.braveSearchApiKey,
+        'X-Subscription-Token': env.braveImageApiKey,
       },
       timeout: 20000,
     });
@@ -162,7 +162,10 @@ async function buscarBraveImagens(consulta, { count = 10 } = {}) {
   } catch (err) {
     console.warn('[sugerirImagens] brave:', err.response?.data?.error?.detail || err.message);
     falhasProvedor.registrar('Brave', err.response?.data?.error?.detail || err.message);
-    require('./providerHealth').registrarFalha('brave', err.response?.data?.error?.detail || err.message);
+    require('./providerHealth').registrarFalha(
+      'brave-images',
+      err.response?.data?.error?.detail || err.message
+    );
     return [];
   }
 }
@@ -408,8 +411,8 @@ async function sugerirImagensParaMateria({
     if (imagens.length <= (imagemAtual ? 1 : 0)) {
       const err = new Error(
         temPessoa
-          ? `Não encontramos fotos de “${plano.pessoa}”. Confira SERPAPI_API_KEY no .env.`
-          : 'Nenhuma imagem sugerida. Configure SERPAPI_API_KEY no .env.'
+          ? `Não encontramos fotos de “${plano.pessoa}” no SerpApi nem no Brave Images. Confira SERPAPI_API_KEY e BRAVE_SEARCH_API_KEY no .env.`
+          : 'Nenhuma imagem sugerida. Confira SERPAPI_API_KEY e BRAVE_SEARCH_API_KEY no .env.'
       );
       err.status = 422;
       throw err;
@@ -427,7 +430,7 @@ async function sugerirImagensParaMateria({
     motivo: plano.motivo,
     consultas: consultasUsadas,
     imagens: imagens.slice(0, limite),
-    fontePreferida: fonteUsada || (env.serpApiKey ? 'serpapi' : 'brave'),
+    fontePreferida: fonteUsada || (env.serpApiKey ? 'serpapi' : env.braveImageApiKey ? 'brave' : 'pexels'),
     aviso: avisoParts.length ? avisoParts.join(' · ') : null,
   };
 }
