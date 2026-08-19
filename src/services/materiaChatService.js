@@ -707,8 +707,24 @@ function interpretarResposta(conteudo) {
     .replace(/^["“”']+|["“”']+$/g, '')
     .trim();
 
-  // Recado da checagem nunca é matéria (não pode virar rascunho)
-  const ehRecadoDeChecagem = /^n[ãa]o achei confirma/i.test(tituloLimpo);
+  // Recado da checagem nunca é matéria (não pode virar rascunho nem seguir
+  // para a revisão). Respostas longas com opções antes eram confundidas com artigo.
+  const aguardaEscolha =
+    /\b(?:qual|quais)\s+(?:desses|destes|dessas|destas|dos)\b[\s\S]{0,180}\b(?:quer|prefere|escolhe|desenvolv)/i.test(
+      textoUtil
+    ) ||
+    /\b(?:escolha|selecione)\s+(?:um|uma|qual|o|a)\b[\s\S]{0,180}\b(?:[aâ]ngulo|op[cç][aã]o|tema|desenvolv)/i.test(
+      textoUtil
+    ) ||
+    /\bposso\s+transformar\s+em\s+mat[ée]ria\s+com\s+(?:um\s+)?destes\s+[aâ]ngulos/i.test(
+      textoUtil
+    );
+  const ehRecadoDeChecagem =
+    aguardaEscolha ||
+    /^n[ãa]o achei confirma/i.test(tituloLimpo) ||
+    /^as fontes trazem\b[\s\S]{0,180}\b(?:assuntos?|temas?|[aâ]ngulos?)\s+distintos/i.test(
+      textoUtil
+    );
 
   const ehMateria =
     !ehRecadoDeChecagem &&
@@ -722,6 +738,7 @@ function interpretarResposta(conteudo) {
     titulo: ehMateria ? tituloLimpo.slice(0, 180) : null,
     corpo: ehMateria ? restoTexto : body,
     hashtags: tags.slice(0, 6),
+    aguardaEscolha,
   };
 }
 
@@ -1397,6 +1414,24 @@ async function responder({
     return partes.join('\n\n');
   };
 
+  const ultimaRespostaAssistente = [...anteriores]
+    .reverse()
+    .find((mensagem) => mensagem?.role === 'assistant');
+  const infoUltimaRespostaAssistente = ultimaRespostaAssistente
+    ? interpretarResposta(ultimaRespostaAssistente.content)
+    : null;
+  const fontesDaEscolhaPendente = infoUltimaRespostaAssistente?.aguardaEscolha
+    ? parseJson(ultimaRespostaAssistente.fontes, []).filter((fonte) => fonte && !fonte.ehPauta)
+    : [];
+  const pedidoSelecionaAngulo =
+    Boolean(infoUltimaRespostaAssistente?.aguardaEscolha) &&
+    pedido.length <= 300 &&
+    !/https?:\/\//i.test(pedido) &&
+    (/^\s*(?:(?:quero|escolho|prefiro)\s+)?(?:(?:a\s+)?op[cç][aã]o|(?:o\s+)?[aâ]ngulo|n[uú]mero)?\s*[1-9]\b/i.test(
+      pedido
+    ) ||
+      /\b(?:primeir[oa]|segund[oa]|terceir[oa]|quarta|quint[oa]|sext[oa])\b/i.test(pedido));
+
   const ultimaMateriaAnterior = [...anteriores]
     .reverse()
     .find((mensagem) => mensagem?.role === 'assistant' && interpretarResposta(mensagem.content).ehMateria);
@@ -1500,6 +1535,7 @@ async function responder({
   // Mudança apenas editorial reutiliza a apuração anterior. Só volta à web
   // quando o editor pedir explicitamente mais dados, atualização ou repercussão.
   if (pedidoDeAjuste && !ajustePedeNovaApuracao) usarPesquisa = false;
+  if (pedidoSelecionaAngulo && fontesDaEscolhaPendente.length) usarPesquisa = false;
 
   let fontes = [];
   let blocoFatos = null;
@@ -1509,6 +1545,15 @@ async function responder({
   let falhasLinksSociais = [];
   // Assunto extraído do post, usado para buscar contexto quando o pedido é só o link
   let assuntoDoLink = '';
+
+  if (pedidoSelecionaAngulo && fontesDaEscolhaPendente.length) {
+    fontes = [...fontesDaEscolhaPendente];
+    blocoFatos = materiaIaService.montarBlocoFatos(fontes);
+    registrarPasso({
+      kind: 'pensando',
+      texto: 'Escolha recebida. Escrevendo somente o ângulo selecionado com as fontes já apuradas.',
+    });
+  }
 
   if (pedidoDeAjuste && ultimaMateriaAnterior) {
     fontes = [...fontesDaMateriaAnterior];
@@ -2150,6 +2195,18 @@ async function responder({
     throw err;
   }
 
+  const classificacaoResposta = interpretarResposta(resposta);
+  if (classificacaoResposta.aguardaEscolha) {
+    registrarPasso({
+      kind: 'pensando',
+      texto: 'Aguardando você escolher o ângulo antes de escrever a matéria.',
+    });
+    return finalizar(resposta, {
+      fontesUsadas: fontes,
+      usouWeb: Boolean(usarPesquisa || fontes.some((f) => !f.ehRedeSocial)),
+    });
+  }
+
   const contexto = [blocoFatos || '', pedido, ...historico.map((h) => h.content || '')].join('\n');
 
   /** Trechos que a checagem local considera sem lastro nas fontes. */
@@ -2181,7 +2238,7 @@ async function responder({
     return lista;
   };
 
-  const ehMateriaGerada = interpretarResposta(resposta).ehMateria;
+  const ehMateriaGerada = classificacaoResposta.ehMateria;
 
   // Rede de segurança: matéria sem nenhuma fonte (web ou link), com pesquisa pedida, não vale
   if (
