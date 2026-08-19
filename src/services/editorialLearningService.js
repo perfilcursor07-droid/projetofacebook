@@ -7,16 +7,24 @@ const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || env.deepseekModel || 'deepseek-v4-flash';
 
 /**
- * Destilar estilo e memoria de chat e tarefa curta e repetitiva: vai sempre no
- * modelo barato (Haiku 4.5 quando o provedor e o Claude) e sem raciocinio.
+ * Destilar estilo, memória de chat e a lição do "Ensinar IA" são tarefas curtas
+ * e repetitivas — entram como `auxiliar`, então seguem o mesmo roteamento do
+ * resto do sistema (DeepSeek por padrão; Claude só se CLAUDE_TAREFAS incluir).
  */
+function claudeParaAuxiliar() {
+  try {
+    return require('./deepseekService').usarClaude('auxiliar');
+  } catch {
+    return false;
+  }
+}
+
 function iaConfigurada() {
-  const claude = String(env.aiProvider || '').toLowerCase() === 'claude';
-  return claude ? Boolean(env.anthropicApiKey) : Boolean(env.deepseekApiKey);
+  return claudeParaAuxiliar() ? Boolean(env.anthropicApiKey) : Boolean(env.deepseekApiKey);
 }
 
 async function chamarIaJson(messages, { timeout = 90_000 } = {}) {
-  if (String(env.aiProvider || '').toLowerCase() === 'claude' && env.anthropicApiKey) {
+  if (claudeParaAuxiliar()) {
     return require('./claudeService').chatCompletion(messages, {
       json: true,
       tarefa: 'auxiliar',

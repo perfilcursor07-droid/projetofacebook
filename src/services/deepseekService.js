@@ -48,18 +48,33 @@ function logarDuracao(rotulo, inicio, extra = '') {
 }
 
 /**
- * Provedor ativo. Com AI_PROVIDER=claude todas as funcoes deste arquivo passam
- * a falar com a Anthropic sem mudar prompt nem chamada — e voltam para a
- * DeepSeek trocando a variavel de ambiente.
+ * Quais tarefas vao para o Claude. O resto (sugerir imagem, titulo, hashtags,
+ * radar, resumo) continua na DeepSeek, que ja resolvia bem e sai mais barato.
+ * Ajustavel sem editar codigo: CLAUDE_TAREFAS=redacao,conversa,auxiliar
  */
-function usarClaude() {
+const TAREFAS_NO_CLAUDE = new Set(
+  String(process.env.CLAUDE_TAREFAS || 'redacao,conversa')
+    .toLowerCase()
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+);
+
+const TODAS_AS_TAREFAS = ['redacao', 'conversa', 'auxiliar'];
+
+function claudeDisponivel() {
   if (String(env.aiProvider || '').toLowerCase() !== 'claude') return false;
-  const claude = require('./claudeService');
-  if (!claude.isConfigured()) {
+  if (!require('./claudeService').isConfigured()) {
     console.warn('[ia] AI_PROVIDER=claude mas ANTHROPIC_API_KEY esta vazia — usando DeepSeek.');
     return false;
   }
   return true;
+}
+
+/** Esta chamada especifica vai no Claude? */
+function usarClaude(tarefa = 'redacao') {
+  if (!claudeDisponivel()) return false;
+  return TAREFAS_NO_CLAUDE.has(String(tarefa || 'auxiliar').toLowerCase());
 }
 
 /**
@@ -80,11 +95,11 @@ function inferirTarefa(messages, tarefaPedida) {
 
 /**
  * Porta de entrada usada por controllers e serviços antes de chamar a IA.
- * Com AI_PROVIDER=claude o que precisa estar configurado é a chave da
- * Anthropic — exigir a da DeepSeek aqui derrubaria chat, link e biblioteca.
+ * Só dispensa a chave da DeepSeek quando TODAS as tarefas foram movidas para o
+ * Claude — com a divisão padrão ela continua sendo necessária.
  */
 function assertDeepseek() {
-  if (usarClaude()) return;
+  if (claudeDisponivel() && TODAS_AS_TAREFAS.every((t) => TAREFAS_NO_CLAUDE.has(t))) return;
   if (!env.deepseekApiKey) {
     const err = new Error(
       String(env.aiProvider || '').toLowerCase() === 'claude'
@@ -143,11 +158,12 @@ async function chatCompletion(
   messages,
   { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL, tarefa = null } = {}
 ) {
-  if (usarClaude()) {
+  const tarefaResolvida = inferirTarefa(messages, tarefa);
+  if (usarClaude(tarefaResolvida)) {
     return require('./claudeService').chatCompletion(messages, {
       json,
       thinking,
-      tarefa: inferirTarefa(messages, tarefa),
+      tarefa: tarefaResolvida,
     });
   }
   assertDeepseek();
@@ -203,7 +219,7 @@ async function chatCompletionStream(
     tarefa = null,
   } = {}
 ) {
-  if (usarClaude()) {
+  if (usarClaude(tarefa || 'conversa')) {
     return require('./claudeService').chatCompletionStream(messages, {
       onDelta,
       thinking,
@@ -650,7 +666,7 @@ async function gerarMateriaNoticiaFacebook({
   const volumeFonte = classificarVolumeFonte(materialApuracao);
   // Com o Claude o system vai em dois blocos: o fixo entra no cache de prompt e
   // custa 10% a partir da segunda matéria; o variável fica fora do cache.
-  const systemBlocos = usarClaude()
+  const systemBlocos = usarClaude('redacao')
     ? [
         { role: 'system', content: systemPromptNoticiaBase() },
         {
@@ -3507,5 +3523,6 @@ module.exports = {
   extrairTermosRadar,
   TITULO_TOMES,
   assertDeepseek,
+  usarClaude,
   MAX_MATERIA_CHARS,
 };

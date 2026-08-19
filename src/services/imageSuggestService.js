@@ -304,6 +304,33 @@ async function buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef, m
 
 
 /**
+ * Consultas montadas do próprio título, sem IA. É o plano B de "Trocar imagem":
+ * a busca de fotos não pode depender do modelo estar de pé.
+ */
+function planoDeConsultasSemIa({ titulo, fonteTitulo }) {
+  const limpo = String(titulo || '')
+    .replace(/\[\[|\]\]|\(\(|\)\)/g, ' ')
+    .replace(/["'“”]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const consultas = [];
+  if (limpo) {
+    consultas.push(limpo.slice(0, 120));
+    const palavras = limpo.split(' ');
+    if (palavras.length > 6) consultas.push(palavras.slice(0, 6).join(' '));
+  }
+  const fonte = String(fonteTitulo || '').replace(/\s+/g, ' ').trim();
+  if (fonte && fonte.toLowerCase() !== limpo.toLowerCase()) consultas.push(fonte.slice(0, 120));
+
+  // Duas maiúsculas seguidas = provável nome de pessoa. Marcar isso evita cair
+  // em banco de stock genérico quando a matéria é sobre alguém.
+  const pessoa = /\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ]+\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ]+/.test(limpo);
+
+  return { consultas: consultas.filter(Boolean).slice(0, 3), pessoa };
+}
+
+/**
  * IA analisa a matéria → busca fotos reais (SerpApi → Serper → Brave → Pexels).
  */
 async function sugerirImagensParaMateria({
@@ -313,14 +340,21 @@ async function sugerirImagensParaMateria({
   imagemAtual = null,
   limite = 12,
 }) {
-  deepseekService.assertDeepseek();
   falhasProvedor.iniciar();
 
-  const plano = await deepseekService.sugerirConsultasImagem({
-    titulo,
-    materia,
-    fonteTitulo,
-  });
+  // A IA só melhora as consultas; se ela falhar, o título ainda dá busca boa.
+  let plano = null;
+  try {
+    deepseekService.assertDeepseek();
+    plano = await deepseekService.sugerirConsultasImagem({ titulo, materia, fonteTitulo });
+  } catch (err) {
+    console.warn('[sugerirImagens] planejar consultas com IA falhou:', err.message);
+    falhasProvedor.registrar('IA', err.message);
+  }
+  if (!plano?.consultas?.length) {
+    plano = planoDeConsultasSemIa({ titulo, fonteTitulo });
+    console.log('[sugerirImagens] usando consultas do título:', plano.consultas.join(' | '));
+  }
 
   const temPessoa = Boolean(plano.pessoa);
   const vistos = new Set();
