@@ -134,13 +134,17 @@ function detectPlatformFromUrl(url) {
  * @param {Function} executable
  * @param {string} url
  * @param {object} [flags]
- * @param {{ platform?: string, noCookies?: boolean, cookiesFile?: string }} [authOpts]
+ * @param {{ platform?: string, noCookies?: boolean, cookiesFile?: string, timeoutMs?: number }} [authOpts]
  */
 function runYtDlp(executable, url, flags = {}, authOpts = {}) {
   const platform = authOpts.platform || detectPlatformFromUrl(url);
   const auth = getYtDlpAuthFlags({ ...authOpts, platform });
   const base = getYtDlpBaseFlags();
   const merged = { ...base, ...auth, ...flags };
+  // Sem limite de tempo, um yt-dlp preso (rede, desafio JS, CDN lento) segura a
+  // requisição do chat indefinidamente. SIGKILL porque SIGTERM às vezes não pega.
+  const timeoutMs = Number(authOpts.timeoutMs) || 0;
+  const spawnOpts = timeoutMs > 0 ? { timeout: timeoutMs, killSignal: 'SIGKILL' } : {};
 
   // Chamada pediu cookies: false / null → remove
   if (flags.cookies === false || flags.cookies === null) {
@@ -152,9 +156,18 @@ function runYtDlp(executable, url, flags = {}, authOpts = {}) {
     delete merged.noJsRuntimes;
   }
 
-  return executable(url, merged).catch((error) => {
+  return executable(url, merged, spawnOpts).catch((error) => {
     const raw = String(error?.stderr || error?.message || '').toLowerCase();
     const temCookies = Object.keys(auth).length > 0;
+
+    // Morto pelo timeout do spawn: a mensagem crua do tinyspawn não diz isso.
+    if (timeoutMs > 0 && (error?.signalCode === 'SIGKILL' || error?.killed === true)) {
+      const message = `yt-dlp passou de ${Math.round(timeoutMs / 1000)}s e foi encerrado.`;
+      error.message = message;
+      error.stderr = message;
+      error.timedOut = true;
+      throw error;
+    }
     const mensagensAuth = {
       instagram: {
         expirada: 'A sessão do Instagram expirou. Atualize YTDLP_IG_COOKIES_FILE e tente novamente.',

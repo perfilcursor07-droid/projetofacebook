@@ -323,8 +323,17 @@ async function transcreverVideoComoFonte(
   }
 
   try {
-    const { transcribeUrl } = require('./transcriptionService');
-    const resultado = await transcribeUrl({ sourceUrl: url, mediaUrl, preferSubtitles: true });
+    const { transcribeUrl, comLimiteDeTempo } = require('./transcriptionService');
+    const { env } = require('../config/env');
+    // Teto do processo inteiro: mesmo com cada etapa limitada, o editor não pode
+    // ficar olhando "transcrevendo…" por meia hora.
+    const resultado = await comLimiteDeTempo(
+      transcribeUrl({ sourceUrl: url, mediaUrl, preferSubtitles: true }),
+      env.transcricao.totalChatMs,
+      `A transcrição do ${rotulo} passou de ${Math.round(
+        env.transcricao.totalChatMs / 60000
+      )} min. Cole a descrição do vídeo no chat ou tente um vídeo mais curto.`
+    );
     const texto = String(resultado?.text || '').trim();
     if (texto.length < 20) return null;
 

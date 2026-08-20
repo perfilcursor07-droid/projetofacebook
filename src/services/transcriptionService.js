@@ -10,6 +10,78 @@ const { storageAbsolutePath } = require('./downloadService');
 const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/transcribe.py');
 const MAX_URL_AUDIO_BYTES = 300 * 1024 * 1024;
 const MAX_URL_DURATION_SECONDS = 45 * 60;
+const LIMITES = env.transcricao;
+
+function erroDeTempo(mensagem) {
+  const err = new Error(mensagem);
+  err.status = 504;
+  err.timedOut = true;
+  return err;
+}
+
+/** Corta qualquer etapa que passe do tempo, em vez de deixar o chat pendurado. */
+function comLimiteDeTempo(promise, ms, mensagem) {
+  if (!Number(ms) || Number(ms) <= 0) return promise;
+  let timer = null;
+  return Promise.race([
+    Promise.resolve(promise).finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(erroDeTempo(mensagem)), Number(ms));
+    }),
+  ]);
+}
+
+/**
+ * Whisper "small" na CPU consome o servidor inteiro. Vários pedidos ao mesmo
+ * tempo (o editor reenviando o link) faziam todos rastejarem sem nunca acabar.
+ * A fila garante que só `concorrencia` transcrições rodem de fato.
+ */
+const filaWhisper = { ativos: 0, espera: [] };
+
+function liberarVaga() {
+  filaWhisper.ativos -= 1;
+  const proximo = filaWhisper.espera.shift();
+  if (proximo) {
+    filaWhisper.ativos += 1;
+    proximo.resolve();
+  }
+}
+
+function pegarVaga() {
+  if (filaWhisper.ativos < LIMITES.concorrencia) {
+    filaWhisper.ativos += 1;
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const item = { resolve: null };
+    const timer = setTimeout(() => {
+      const i = filaWhisper.espera.indexOf(item);
+      if (i >= 0) filaWhisper.espera.splice(i, 1);
+      reject(
+        erroDeTempo('A fila de transcrição está cheia. Tente de novo em alguns minutos.')
+      );
+    }, LIMITES.filaMs);
+
+    item.resolve = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    filaWhisper.espera.push(item);
+    console.info(
+      `[transcricao] aguardando vaga no Whisper (ativos=${filaWhisper.ativos}, fila=${filaWhisper.espera.length})`
+    );
+  });
+}
+
+async function comVagaNoWhisper(tarefa) {
+  await pegarVaga();
+  try {
+    return await tarefa();
+  } finally {
+    liberarVaga();
+  }
+}
 
 function ytDlpExecutable() {
   const configured = String(process.env.YTDLP_PATH || '').trim();
@@ -31,6 +103,7 @@ function runYtDlpForUrl(url, flags, authOpts = {}) {
       return await runYtDlp(ytDlpExecutable(), url, flags, {
         platform: 'instagram',
         noCookies: true,
+        timeoutMs: authOpts.timeoutMs,
       });
     } catch (publicError) {
       throw publicError || error;
@@ -151,21 +224,28 @@ function parseVtt(content) {
 async function trySubtitlesFromUrl(url) {
   if (!url || !/^https?:\/\//i.test(url)) return null;
 
-  const tmpDir = path.resolve(env.storagePath, 'tmp', `subs_${Date.now()}`);
-  fs.mkdirSync(tmpDir, { recursive: true });
+  // mkdtemp em vez de Date.now(): dois pedidos no mesmo milissegundo dividiam a
+  // mesma pasta e um apagava os .vtt do outro no finally.
+  const tmpRoot = path.resolve(env.storagePath, 'tmp');
+  fs.mkdirSync(tmpRoot, { recursive: true });
+  const tmpDir = fs.mkdtempSync(path.join(tmpRoot, 'subs_'));
   const outTemplate = path.join(tmpDir, 'subs');
 
   try {
-    await runYtDlpForUrl(url, {
-      skipDownload: true,
-      writeSub: true,
-      writeAutoSub: true,
-      subLangs: 'pt,pt-BR,en',
-      subFormat: 'vtt',
-      output: outTemplate,
-      noWarnings: true,
-      noPlaylist: true,
-    });
+    await runYtDlpForUrl(
+      url,
+      {
+        skipDownload: true,
+        writeSub: true,
+        writeAutoSub: true,
+        subLangs: 'pt,pt-BR,en',
+        subFormat: 'vtt',
+        output: outTemplate,
+        noWarnings: true,
+        noPlaylist: true,
+      },
+      { timeoutMs: LIMITES.legendasMs }
+    );
 
     const files = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.vtt'));
     if (!files.length) return null;
@@ -202,7 +282,7 @@ async function inspectUrlMedia(url, authOpts = {}) {
       skipDownload: true,
       noPlaylist: true,
       noWarnings: true,
-    }, authOpts);
+    }, { timeoutMs: LIMITES.inspecaoMs, ...authOpts });
   } catch {
     return null;
   }
@@ -239,7 +319,11 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
 
   if (preferSubtitles) {
     const subtitles = await trySubtitlesFromUrl(original);
-    if (subtitles?.text && String(subtitles.text).trim().length >= 20) return subtitles;
+    if (subtitles?.text && String(subtitles.text).trim().length >= 20) {
+      console.info(`[transcricao] legendas prontas encontradas: ${original}`);
+      return subtitles;
+    }
+    console.info(`[transcricao] sem legendas; vai transcrever o áudio: ${original}`);
   }
 
   assertWhisperAvailable();
@@ -259,6 +343,7 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
   const wavPath = path.join(tmpDir, 'audio.wav');
 
   try {
+    console.info(`[transcricao] baixando áudio: ${downloadUrl}`);
     await runYtDlpForUrl(
       downloadUrl,
       {
@@ -268,7 +353,7 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
         noWarnings: true,
         maxFilesize: '300M',
       },
-      directAuth
+      { timeoutMs: LIMITES.downloadMs, ...directAuth }
     );
 
     const downloaded = fs
@@ -280,8 +365,18 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
       throw new Error('O áudio deste vídeo é grande demais para transcrição automática.');
     }
 
-    await extractAudioWav(downloaded, wavPath);
-    const result = await runPythonTranscribe(wavPath);
+    await extractAudioWav(downloaded, wavPath, { timeoutMs: LIMITES.audioMs });
+
+    const result = await comVagaNoWhisper(() => {
+      console.info(`[transcricao] Whisper iniciado: ${original}`);
+      const inicio = Date.now();
+      return runPythonTranscribe(wavPath).then((r) => {
+        console.info(
+          `[transcricao] Whisper terminou em ${Math.round((Date.now() - inicio) / 1000)}s: ${original}`
+        );
+        return r;
+      });
+    });
     if (!result?.text || String(result.text).trim().length < 20) {
       throw new Error('Não encontrei fala suficiente no áudio deste vídeo.');
     }
@@ -289,7 +384,8 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
   } catch (err) {
     // URLs diretas do CDN do Instagram expiram. Se isso aconteceu, deixa o
     // yt-dlp resolver novamente a mídia a partir do permalink original.
-    if (usingDirectMedia) {
+    // Repetir depois de um estouro de tempo só dobraria a espera do editor.
+    if (usingDirectMedia && !err?.timedOut) {
       return transcribeUrl({ sourceUrl: original, mediaUrl: null, preferSubtitles: false });
     }
     throw err;
@@ -378,6 +474,34 @@ function runPythonTranscribe(wavPath) {
 
     let stdout = '';
     let stderr = '';
+    let encerrado = false;
+
+    const finalizar = (fn, valor) => {
+      if (encerrado) return;
+      encerrado = true;
+      clearTimeout(timer);
+      fn(valor);
+    };
+
+    // Sem isto, um Whisper preso (download do modelo, memória no limite) nunca
+    // fechava o processo e a resposta do chat ficava pendurada para sempre.
+    const timer = setTimeout(() => {
+      if (encerrado) return;
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+      finalizar(
+        reject,
+        erroDeTempo(
+          `A transcrição passou de ${Math.round(
+            LIMITES.whisperMs / 60000
+          )} min e foi interrompida. Tente um vídeo mais curto.`
+        )
+      );
+    }, LIMITES.whisperMs);
+
     child.stdout.on('data', (d) => {
       stdout += d.toString();
     });
@@ -386,7 +510,8 @@ function runPythonTranscribe(wavPath) {
     });
 
     child.on('error', (err) => {
-      reject(
+      finalizar(
+        reject,
         new Error(
           `Falha ao iniciar Python (${python.cmd}): ${err.message}. Recrie o ambiente .venv e instale scripts/requirements.txt.`
         )
@@ -394,6 +519,7 @@ function runPythonTranscribe(wavPath) {
     });
 
     child.on('close', (code) => {
+      if (encerrado) return;
       let parsed;
       try {
         parsed = JSON.parse(stdout.trim() || '{}');
@@ -401,13 +527,15 @@ function runPythonTranscribe(wavPath) {
         const launcherHint = /No suitable Python runtime|PYLAUNCHER/i.test(stderr)
           ? ' O launcher `py` não achou a versão pedida — use `python` no PATH ou PYTHON_PATH=C:\\\\Python313\\\\python.exe'
           : '';
-        return reject(
+        return finalizar(
+          reject,
           new Error((stderr.slice(0, 400) || 'Saída inválida do Whisper') + launcherHint)
         );
       }
 
       if (code !== 0 || parsed.error) {
-        return reject(
+        return finalizar(
+          reject,
           new Error(
             parsed.error ||
               stderr.slice(0, 400) ||
@@ -417,7 +545,7 @@ function runPythonTranscribe(wavPath) {
       }
       const text = String(parsed.text || '').trim();
       // Áudio sem fala: não é erro fatal — deixa o chamador decidir (análise IA usa título)
-      resolve({
+      return finalizar(resolve, {
         text,
         language: parsed.language || null,
         source: 'faster-whisper',
@@ -428,7 +556,13 @@ function runPythonTranscribe(wavPath) {
   });
 }
 
+// spawnSync trava o event loop inteiro. Como a resposta não muda enquanto o
+// processo vive, o teste roda uma vez só.
+let whisperDisponivel = null;
+
 function assertWhisperAvailable() {
+  if (whisperDisponivel === true) return;
+
   const python = resolvePythonCommand();
   if (!python) {
     const err = new Error(
@@ -450,6 +584,8 @@ function assertWhisperAvailable() {
     err.status = 503;
     throw err;
   }
+
+  whisperDisponivel = true;
 }
 
 /**
@@ -475,8 +611,8 @@ async function transcribeClip({ clipPath, sourceUrl }) {
   const wavRel = `tmp/clip_audio_${Date.now()}.wav`;
   const wavAbs = storageAbsolutePath(wavRel);
   try {
-    await extractAudioWav(absClip, wavAbs);
-    return await runPythonTranscribe(wavAbs);
+    await extractAudioWav(absClip, wavAbs, { timeoutMs: LIMITES.audioMs });
+    return await comVagaNoWhisper(() => runPythonTranscribe(wavAbs));
   } finally {
     try {
       if (fs.existsSync(wavAbs)) fs.unlinkSync(wavAbs);
@@ -492,4 +628,5 @@ module.exports = {
   trySubtitlesFromUrl,
   resolvePythonCommand,
   parseVtt,
+  comLimiteDeTempo,
 };

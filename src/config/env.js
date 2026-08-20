@@ -127,6 +127,23 @@ const env = {
     /** caminho do binário node/deno (opcional) */
     jsRuntimePath: process.env.YTDLP_JS_RUNTIME_PATH || '',
   },
+  /**
+   * Limites de tempo da transcrição de vídeo (ms). Sem eles, um yt-dlp ou um
+   * Whisper travado deixava o chat parado em "transcrevendo…" para sempre.
+   */
+  transcricao: {
+    legendasMs: Number(process.env.TRANSCRICAO_LEGENDAS_TIMEOUT_MS) || 90_000,
+    inspecaoMs: Number(process.env.TRANSCRICAO_INSPECAO_TIMEOUT_MS) || 60_000,
+    downloadMs: Number(process.env.TRANSCRICAO_DOWNLOAD_TIMEOUT_MS) || 300_000,
+    audioMs: Number(process.env.TRANSCRICAO_AUDIO_TIMEOUT_MS) || 180_000,
+    whisperMs: Number(process.env.TRANSCRICAO_WHISPER_TIMEOUT_MS) || 600_000,
+    /** Whisper "small" na CPU: rodar vários ao mesmo tempo trava o servidor. */
+    concorrencia: Math.max(1, Number(process.env.TRANSCRICAO_CONCORRENCIA) || 1),
+    /** Espera máxima na fila antes de desistir. */
+    filaMs: Number(process.env.TRANSCRICAO_FILA_TIMEOUT_MS) || 600_000,
+    /** Teto do processo inteiro quando o pedido vem do chat de matérias. */
+    totalChatMs: Number(process.env.TRANSCRICAO_TOTAL_TIMEOUT_MS) || 720_000,
+  },
 };
 
 module.exports = { env, required };

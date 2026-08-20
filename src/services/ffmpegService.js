@@ -315,17 +315,48 @@ function overlayTextoFixo({ videoPath, overlayPath, outputPath }) {
  * Extrai áudio WAV mono 16kHz para STT (Whisper).
  * @returns {Promise<string>} caminho absoluto do wav
  */
-function extractAudioWav(inputPath, outputPath) {
+function extractAudioWav(inputPath, outputPath, { timeoutMs = 0 } = {}) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    let encerrado = false;
+    let timer = null;
+
+    const command = ffmpeg(inputPath)
       .noVideo()
       .audioChannels(1)
       .audioFrequency(16000)
       .format('wav')
-      .on('error', reject)
-      .on('end', () => resolve(outputPath))
-      .save(outputPath);
+      .on('error', (err) => {
+        if (encerrado) return;
+        encerrado = true;
+        clearTimeout(timer);
+        reject(err);
+      })
+      .on('end', () => {
+        if (encerrado) return;
+        encerrado = true;
+        clearTimeout(timer);
+        resolve(outputPath);
+      });
+
+    // Arquivo corrompido ou stream que nunca termina deixava o ffmpeg pendurado.
+    if (Number(timeoutMs) > 0) {
+      timer = setTimeout(() => {
+        if (encerrado) return;
+        encerrado = true;
+        try {
+          command.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+        const err = new Error(`Extração do áudio passou de ${Math.round(timeoutMs / 1000)}s.`);
+        err.status = 504;
+        err.timedOut = true;
+        reject(err);
+      }, Number(timeoutMs));
+    }
+
+    command.save(outputPath);
   });
 }
 
