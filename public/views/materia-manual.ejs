@@ -123,49 +123,64 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
                   </summary>
                   <div class="mia-chat-more-menu">
-                    <div class="mia-chat-tools">
-                      <button type="button" id="chat-toggle-web" aria-pressed="false"
-                        title="Ligado: a IA busca notícias recentes na web. Desligado: escreve apenas com o que você enviar."
-                        class="mia-chat-chip">
-                        <span class="mia-chat-chip-dot"></span>
-                        Pesquisar na web
-                      </button>
+                    <!-- Anexos e atalhos de pauta entram por materia-chat-extras.js.
+                         A seção some sozinha quando o script não preenche nada. -->
+                    <section class="mia-chat-menu-sec">
+                      <p class="mia-chat-menu-label">Anexar ao pedido</p>
+                      <div class="mia-chat-menu-grid" id="chat-menu-anexos"></div>
+                    </section>
 
-                      <button type="button" id="chat-toggle-transcricao" aria-pressed="true"
-                        title="Ligado: usar legendas ou transcrever o áudio do vídeo"
-                        class="mia-chat-chip is-on">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                          <path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 7v10"/><path d="M20 10v4"/>
-                        </svg>
-                        Transcrever vídeo
-                      </button>
+                    <section class="mia-chat-menu-sec">
+                      <p class="mia-chat-menu-label">Descobrir pautas</p>
+                      <div class="mia-chat-menu-grid" id="chat-menu-descobrir"></div>
+                    </section>
 
-                      <label class="mia-chat-tool-field">
-                        <span>Período da busca</span>
-                        <select id="chat-periodo" title="Período da busca" class="mia-chat-select">
-                          <option value="24h">24h</option>
-                          <option value="3d">3 dias</option>
-                          <option value="7d">7 dias</option>
-                          <option value="15d">15 dias</option>
-                          <option value="30d" selected>30 dias</option>
-                          <option value="60d">60 dias</option>
-                          <option value="90d">90 dias</option>
-                          <option value="180d">180 dias</option>
-                        </select>
-                      </label>
+                    <section class="mia-chat-menu-sec">
+                      <p class="mia-chat-menu-label">Ajustes</p>
+                      <div class="mia-chat-tools">
+                        <button type="button" id="chat-toggle-web" aria-pressed="false"
+                          title="Ligado: a IA busca notícias recentes na web. Desligado: escreve apenas com o que você enviar."
+                          class="mia-chat-chip">
+                          <span class="mia-chat-chip-dot"></span>
+                          Pesquisar na web
+                        </button>
 
-                      <label class="mia-chat-tool-field">
-                        <span>Tom da escrita</span>
-                        <select id="chat-tom" title="Tom da escrita" class="mia-chat-select">
-                          <option value="natural" selected>Natural</option>
-                          <option value="polemico">Polêmico</option>
-                          <option value="direto">Direto</option>
-                          <option value="curiosidade">Curiosidade</option>
-                          <option value="emocional">Emocional</option>
-                          <option value="factual">Factual</option>
-                        </select>
-                      </label>
-                    </div>
+                        <button type="button" id="chat-toggle-transcricao" aria-pressed="true"
+                          title="Ligado: usar legendas ou transcrever o áudio do vídeo"
+                          class="mia-chat-chip is-on">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 7v10"/><path d="M20 10v4"/>
+                          </svg>
+                          Transcrever vídeo
+                        </button>
+
+                        <label class="mia-chat-tool-field">
+                          <span>Período da busca</span>
+                          <select id="chat-periodo" title="Período da busca" class="mia-chat-select">
+                            <option value="24h">24h</option>
+                            <option value="3d">3 dias</option>
+                            <option value="7d">7 dias</option>
+                            <option value="15d">15 dias</option>
+                            <option value="30d" selected>30 dias</option>
+                            <option value="60d">60 dias</option>
+                            <option value="90d">90 dias</option>
+                            <option value="180d">180 dias</option>
+                          </select>
+                        </label>
+
+                        <label class="mia-chat-tool-field">
+                          <span>Tom da escrita</span>
+                          <select id="chat-tom" title="Tom da escrita" class="mia-chat-select">
+                            <option value="natural" selected>Natural</option>
+                            <option value="polemico">Polêmico</option>
+                            <option value="direto">Direto</option>
+                            <option value="curiosidade">Curiosidade</option>
+                            <option value="emocional">Emocional</option>
+                            <option value="factual">Factual</option>
+                          </select>
+                        </label>
+                      </div>
+                    </section>
                   </div>
                 </details>
 

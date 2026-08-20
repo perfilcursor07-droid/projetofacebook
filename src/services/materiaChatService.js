@@ -309,7 +309,7 @@ function fonteDoPostSalvo(post, url, plataforma) {
 
 async function transcreverVideoComoFonte(
   url,
-  { mediaUrl = null, onPasso, rotulo = 'vídeo' } = {}
+  { mediaUrl = null, mediaInfo = null, onPasso, rotulo = 'vídeo' } = {}
 ) {
   console.info(
     `[materia-chat] iniciando transcrição ${rotulo}: ${url}${mediaUrl ? ' (mídia direta disponível)' : ''}`
@@ -328,7 +328,7 @@ async function transcreverVideoComoFonte(
     // Teto do processo inteiro: mesmo com cada etapa limitada, o editor não pode
     // ficar olhando "transcrevendo…" por meia hora.
     const resultado = await comLimiteDeTempo(
-      transcribeUrl({ sourceUrl: url, mediaUrl, preferSubtitles: true }),
+      transcribeUrl({ sourceUrl: url, mediaUrl, mediaInfo, preferSubtitles: true }),
       env.transcricao.totalChatMs,
       `A transcrição do ${rotulo} passou de ${Math.round(
         env.transcricao.totalChatMs / 60000
@@ -406,7 +406,7 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
   // Com a opcao ativa, usa Whisper quando nao existem legendas prontas.
   try {
     const transcricao = transcreverVideo
-      ? await transcreverVideoComoFonte(url, { onPasso, rotulo: 'YouTube' })
+      ? await transcreverVideoComoFonte(url, { onPasso, rotulo: 'YouTube', mediaInfo: info })
       : String((await require('./transcriptionService').trySubtitlesFromUrl(url))?.text || '').trim();
     if (String(transcricao || '').length >= 40) {
       trecho = `${trecho}\n\nTranscrição/legendas:\n${recortarTranscricao(transcricao)}`;

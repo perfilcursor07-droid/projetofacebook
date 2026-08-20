@@ -19,6 +19,11 @@
   const el = {
     seg: document.querySelector('.mia-chat-seg'),
     tools: document.querySelector('.mia-chat-tools'),
+    // Atalhos de pauta e anexos moram no menu "+". Sem os contêineres novos
+    // (view antiga em cache), voltam para onde ficavam antes.
+    descobrir: document.getElementById('chat-menu-descobrir'),
+    anexos: document.getElementById('chat-menu-anexos'),
+    ferramentas: document.getElementById('chat-ferramentas'),
     composer: document.getElementById('chat-composer'),
     input: document.getElementById('chat-input'),
     enviar: document.getElementById('chat-enviar'),
@@ -29,6 +34,16 @@
   };
 
   if (!el.seg || !el.tools || !el.input || !el.enviar || !el.mensagens) return;
+
+  const alvoDescobrir = el.descobrir || el.seg;
+  const alvoAnexos = el.anexos || el.tools;
+  /** No menu os itens são chips de largura cheia; na faixa antiga, segmentos. */
+  const classeDescobrir = el.descobrir ? 'mia-chat-chip' : 'mia-chat-seg-btn';
+
+  /** Um atalho escolhido já mostra o resultado no chat: o menu não precisa ficar aberto. */
+  function fecharFerramentas() {
+    if (el.ferramentas) el.ferramentas.open = false;
+  }
 
   let anexo = null;
   let anexoImagem = null;
@@ -240,29 +255,44 @@
 
   /* --------------------------- botão "Em alta" -------------------------- */
 
-  const btnAlta = document.createElement('button');
-  btnAlta.type = 'button';
-  btnAlta.className = 'mia-chat-seg-btn mia-x-alta-btn';
-  btnAlta.setAttribute('aria-pressed', 'false');
-  btnAlta.title = 'Mostra os assuntos em alta agora para você escolher';
-  btnAlta.textContent = 'Em alta';
-  el.seg.appendChild(btnAlta);
+  const ICONE_ALTA =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M13 2L4.5 12.5a1 1 0 0 0 .8 1.6H11l-1 7.9 8.5-10.5a1 1 0 0 0-.8-1.6H12z"/></svg>';
+  const ICONE_PUBLICO =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>';
+  const ICONE_FACEBOOK =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>';
 
-  const btnPublico = document.createElement('button');
-  btnPublico.type = 'button';
-  btnPublico.className = 'mia-chat-seg-btn mia-x-publico-btn';
-  btnPublico.setAttribute('aria-pressed', 'false');
-  btnPublico.title = 'Sugere pautas novas com base no que viralizou na sua página';
-  btnPublico.textContent = 'Meu público';
-  el.seg.appendChild(btnPublico);
+  function criarBotaoDescobrir(classe, rotulo, dica, icone) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `${classeDescobrir} ${classe}`;
+    b.setAttribute('aria-pressed', 'false');
+    b.title = dica;
+    b.innerHTML = el.descobrir ? `${icone}<span>${rotulo}</span>` : rotulo;
+    alvoDescobrir.appendChild(b);
+    return b;
+  }
 
-  const btnPaginaFacebook = document.createElement('button');
-  btnPaginaFacebook.type = 'button';
-  btnPaginaFacebook.className = 'mia-chat-seg-btn mia-x-facebook-btn';
-  btnPaginaFacebook.setAttribute('aria-pressed', 'false');
-  btnPaginaFacebook.title = 'Cole uma página do Facebook, escolha os posts e crie rascunhos';
-  btnPaginaFacebook.textContent = 'Página Facebook';
-  el.seg.appendChild(btnPaginaFacebook);
+  const btnAlta = criarBotaoDescobrir(
+    'mia-x-alta-btn',
+    'Em alta',
+    'Mostra os assuntos em alta agora para você escolher',
+    ICONE_ALTA
+  );
+
+  const btnPublico = criarBotaoDescobrir(
+    'mia-x-publico-btn',
+    'Meu público',
+    'Sugere pautas novas com base no que viralizou na sua página',
+    ICONE_PUBLICO
+  );
+
+  const btnPaginaFacebook = criarBotaoDescobrir(
+    'mia-x-facebook-btn',
+    'Página do Facebook',
+    'Cole uma página do Facebook, escolha os posts e crie rascunhos',
+    ICONE_FACEBOOK
+  );
 
   function desativarPaginaFacebook() {
     paginaFacebookAtiva = false;
@@ -963,6 +993,7 @@
   }
 
   btnAlta.addEventListener('click', () => {
+    fecharFerramentas();
     marcarAlta(true);
     carregarAlta('');
   });
@@ -992,6 +1023,7 @@
   }
 
   btnPublico.addEventListener('click', () => {
+    fecharFerramentas();
     marcarPublico(true);
     carregarParaPublico();
   });
@@ -1026,6 +1058,7 @@
   }
 
   btnPaginaFacebook.addEventListener('click', () => {
+    fecharFerramentas();
     marcarPaginaFacebook(true);
     renderPaginaFacebookEntrada();
   });
@@ -1044,7 +1077,7 @@
   btnAnexo.title = 'Anexar um PDF para a IA escrever a matéria com base nele';
   btnAnexo.innerHTML =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> PDF';
-  el.tools.appendChild(btnAnexo);
+  alvoAnexos.appendChild(btnAnexo);
 
   const inputImagem = document.createElement('input');
   inputImagem.type = 'file';
@@ -1058,7 +1091,7 @@
   btnImagem.title = 'Enviar uma imagem ou print; a IA lê o texto e cria a matéria';
   btnImagem.innerHTML =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> Imagem';
-  el.tools.appendChild(btnImagem);
+  alvoAnexos.appendChild(btnImagem);
 
   // O chip fica logo abaixo do campo de texto, fora da barra de ferramentas.
   const chipWrap = document.createElement('div');

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 const { spawn, spawnSync } = require('child_process');
 const youtubedlExec = require('youtube-dl-exec');
 const { runYtDlp, detectPlatformFromUrl } = require('./ytDlpAuth');
@@ -238,7 +239,8 @@ async function trySubtitlesFromUrl(url) {
         skipDownload: true,
         writeSub: true,
         writeAutoSub: true,
-        subLangs: 'pt,pt-BR,en',
+        // `pt-orig` é a chave da legenda automática original em português.
+        subLangs: 'pt-orig,pt-BR,pt,pt-PT,en-orig,en',
         subFormat: 'vtt',
         output: outTemplate,
         noWarnings: true,
@@ -288,6 +290,63 @@ async function inspectUrlMedia(url, authOpts = {}) {
   }
 }
 
+function captionTrackFromInfo(info) {
+  const sources = [
+    { tracks: info?.subtitles, source: 'youtube-subtitles-url' },
+    { tracks: info?.automatic_captions, source: 'youtube-auto-captions-url' },
+  ];
+  const languages = ['pt-orig', 'pt-BR', 'pt', 'pt-PT', 'en-orig', 'en'];
+
+  for (const language of languages) {
+    for (const source of sources) {
+      const entries = Array.isArray(source.tracks?.[language])
+        ? source.tracks[language]
+        : [];
+      const entry = entries.find((item) => item?.ext === 'vtt' && item?.url);
+      if (entry) return { ...entry, language, source: source.source };
+    }
+  }
+  return null;
+}
+
+/**
+ * Fallback para quando `--write-auto-subs` falha silenciosamente. O JSON do
+ * próprio yt-dlp já traz a URL temporária da legenda pública do YouTube.
+ */
+async function tryYouTubeCaptionsFromInfo(info) {
+  const track = captionTrackFromInfo(info);
+  if (!track) return null;
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(track.url);
+  } catch {
+    return null;
+  }
+  if (!/(^|\.)youtube\.com$/i.test(parsedUrl.hostname)) return null;
+
+  try {
+    const response = await axios.get(track.url, {
+      responseType: 'text',
+      timeout: Math.min(LIMITES.legendasMs, 30_000),
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    const parsed = parseVtt(response.data);
+    if (!parsed.text || parsed.text.length < 20) return null;
+    return {
+      ...parsed,
+      source: track.source,
+      language: track.language,
+    };
+  } catch (err) {
+    console.warn(
+      '[transcricao] fallback da legenda YouTube falhou:',
+      err.response?.status || err.message
+    );
+    return null;
+  }
+}
+
 function assertUrlMediaLimits(info) {
   const duration = Number(info?.duration) || 0;
   if (duration > MAX_URL_DURATION_SECONDS) {
@@ -308,7 +367,12 @@ function assertUrlMediaLimits(info) {
  * Obtém a fala de um link social. Usa legendas prontas primeiro e, quando
  * necessário, baixa somente o áudio para transcrição local com Whisper.
  */
-async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = true } = {}) {
+async function transcribeUrl({
+  sourceUrl,
+  mediaUrl = null,
+  preferSubtitles = true,
+  mediaInfo = null,
+} = {}) {
   const original = String(sourceUrl || '').trim();
   const directMedia = String(mediaUrl || '').trim();
   if (!/^https?:\/\//i.test(original)) {
@@ -318,6 +382,13 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
   }
 
   if (preferSubtitles) {
+    if (mediaInfo && /(?:youtube\.com|youtu\.be)/i.test(original)) {
+      const captions = await tryYouTubeCaptionsFromInfo(mediaInfo);
+      if (captions?.text) {
+        console.info(`[transcricao] legenda YouTube obtida dos metadados: ${original}`);
+        return captions;
+      }
+    }
     const subtitles = await trySubtitlesFromUrl(original);
     if (subtitles?.text && String(subtitles.text).trim().length >= 20) {
       console.info(`[transcricao] legendas prontas encontradas: ${original}`);
@@ -326,14 +397,21 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
     console.info(`[transcricao] sem legendas; vai transcrever o áudio: ${original}`);
   }
 
-  assertWhisperAvailable();
-
   const usingDirectMedia = /^https?:\/\//i.test(directMedia);
   const downloadUrl = usingDirectMedia ? directMedia : original;
   const directAuth = usingDirectMedia
     ? { platform: detectPlatformFromUrl(original), noCookies: true }
     : {};
-  const info = await inspectUrlMedia(downloadUrl, directAuth);
+  const info = mediaInfo || await inspectUrlMedia(downloadUrl, directAuth);
+  if (preferSubtitles && /(?:youtube\.com|youtu\.be)/i.test(original)) {
+    const captions = await tryYouTubeCaptionsFromInfo(info);
+    if (captions?.text) {
+      console.info(`[transcricao] legenda YouTube obtida pelo fallback: ${original}`);
+      return captions;
+    }
+  }
+
+  assertWhisperAvailable();
   assertUrlMediaLimits(info);
 
   const tmpRoot = path.resolve(env.storagePath, 'tmp');
@@ -344,10 +422,15 @@ async function transcribeUrl({ sourceUrl, mediaUrl = null, preferSubtitles = tru
 
   try {
     console.info(`[transcricao] baixando áudio: ${downloadUrl}`);
+    const isYouTube = /(?:youtube\.com|youtu\.be)/i.test(original);
     await runYtDlpForUrl(
       downloadUrl,
       {
-        format: 'bestaudio/best',
+        // Voz não precisa de áudio em alta taxa. Em YouTube, 48–80 kbps reduz
+        // drasticamente download e conversão sem prejudicar o Whisper.
+        format: isYouTube
+          ? 'bestaudio[abr<=80]/worstaudio/bestaudio/best'
+          : 'bestaudio/best',
         output,
         noPlaylist: true,
         noWarnings: true,
