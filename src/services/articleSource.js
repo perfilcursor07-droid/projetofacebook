@@ -539,6 +539,88 @@ function extrairAutorDoHtml(html) {
   return null;
 }
 
+/**
+ * O Google Translate também funciona como proxy de leitura para páginas que
+ * bloqueiam datacenters (403/WAF). O texto pode continuar no idioma original;
+ * isso não é problema, porque a etapa de redação detecta e traduz a fonte.
+ */
+function urlProxyGoogleTranslate(urlReal) {
+  try {
+    const source = new URL(String(urlReal || '').trim());
+    if (!/^https?:$/.test(source.protocol)) return null;
+    const hostTraduzido = source.hostname
+      .replace(/-/g, '--')
+      .replace(/\./g, '-');
+    const proxy = new URL(`https://${hostTraduzido}.translate.goog${source.pathname || '/'}`);
+    for (const [key, value] of source.searchParams.entries()) {
+      proxy.searchParams.append(key, value);
+    }
+    proxy.searchParams.set('_x_tr_sl', 'auto');
+    proxy.searchParams.set('_x_tr_tl', 'pt');
+    proxy.searchParams.set('_x_tr_hl', 'pt-BR');
+    return proxy.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function extrairMetadadosViaGoogleTranslate(urlReal) {
+  const proxyUrl = urlProxyGoogleTranslate(urlReal);
+  if (!proxyUrl) return null;
+  try {
+    const res = await axios.get(proxyUrl, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      },
+      timeout: 20000,
+      maxRedirects: 5,
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+    const html = String(res.data || '');
+    const titulo =
+      extrairMeta(html, 'og:title') ||
+      decodificarHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '');
+    const resumo = extrairMeta(html, 'og:description') || extrairMeta(html, 'description') || '';
+    const paragrafos = extrairParagrafos(html);
+    const trecho = paragrafos.slice(0, 20).join('\n\n');
+    if (trecho.trim().length < 180) return null;
+    const autor = extrairAutorDoHtml(html);
+    const dataPublicacao = extrairDataPublicacaoDoHtml(html);
+    const veiculoHost = (() => {
+      try {
+        return new URL(urlReal).hostname.replace(/^www\./, '');
+      } catch {
+        return null;
+      }
+    })();
+    const veiculo =
+      extrairMeta(html, 'og:site_name') ||
+      extrairMeta(html, 'application-name') ||
+      extrairMeta(html, 'publisher') ||
+      extrairVeiculoJsonLd(html) ||
+      veiculoHost;
+    console.info(`[article-source] Google Translate leu ${veiculoHost || urlReal}: ${trecho.length} caracteres`);
+    return {
+      url: urlReal,
+      titulo: titulo || null,
+      resumo: resumo || null,
+      imagem: extrairImagemCapa(html, urlReal) || null,
+      trecho,
+      autor: autor || null,
+      veiculo,
+      veiculoHost,
+      dataPublicacao: dataPublicacao?.dataPublicacao || null,
+      dataTimestamp: dataPublicacao?.dataTimestamp || 0,
+      leitorFallback: 'google-translate',
+    };
+  } catch (err) {
+    console.warn('extrairMetadadosArtigo GoogleTranslate:', err.message);
+    return null;
+  }
+}
+
 async function extrairMetadadosArtigo(url) {
   const urlReal = (await resolverUrlNoticia(url)) || url;
   if (!urlReal) return null;
@@ -552,7 +634,9 @@ async function extrairMetadadosArtigo(url) {
   } catch {
     host = '';
   }
-  if (host && providerHealth.estaFora(`site:${host}`)) return null;
+  if (host && providerHealth.estaFora(`site:${host}`)) {
+    return extrairMetadadosViaGoogleTranslate(urlReal);
+  }
 
   try {
     const res = await axios.get(urlReal, {
@@ -615,6 +699,22 @@ async function extrairMetadadosArtigo(url) {
           veiculoHost: meta.veiculoHost || viaJina.veiculoHost,
         };
       }
+      const viaTranslate = await extrairMetadadosViaGoogleTranslate(finalUrl);
+      if (
+        String(viaTranslate?.trecho || '').trim().length >
+        String(meta.trecho || '').trim().length
+      ) {
+        return {
+          ...meta,
+          ...viaTranslate,
+          titulo: viaTranslate.titulo || meta.titulo,
+          resumo: viaTranslate.resumo || meta.resumo,
+          imagem: meta.imagem || viaTranslate.imagem,
+          autor: meta.autor || viaTranslate.autor,
+          veiculo: meta.veiculo || viaTranslate.veiculo,
+          veiculoHost: meta.veiculoHost || viaTranslate.veiculoHost,
+        };
+      }
     }
     return meta;
   } catch (err) {
@@ -622,6 +722,8 @@ async function extrairMetadadosArtigo(url) {
     if (host) providerHealth.registrarFalha(`site:${host}`, err.message, { pausaMs: 5 * 60 * 1000 });
     const viaJina = await extrairMetadadosViaJina(urlReal);
     if (viaJina) return viaJina;
+    const viaTranslate = await extrairMetadadosViaGoogleTranslate(urlReal);
+    if (viaTranslate) return viaTranslate;
     return {
       url: urlReal,
       titulo: null,
@@ -1098,6 +1200,8 @@ module.exports = {
   apurarTopico,
   extrairMetadadosArtigo,
   extrairMetadadosViaJina,
+  extrairMetadadosViaGoogleTranslate,
+  urlProxyGoogleTranslate,
   extrairImagemCapa,
   resolverUrlNoticia,
   buscarFontesPorTitulo,
