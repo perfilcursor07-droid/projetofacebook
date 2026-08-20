@@ -796,7 +796,7 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
     throw err;
   }
 
-  const limit = Math.min(30, Math.max(1, Number(opts.limit) || 15));
+  const limit = Math.min(40, Math.max(1, Number(opts.limit) || 15));
   const maxAgeDays = Number(opts.maxAgeDays) || 14;
   const handle = handleDaPaginaUrl(url).toLowerCase();
   const aliases = Array.isArray(opts.aliases)
@@ -822,6 +822,7 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
   const preferApify = Boolean(opts.preferApify);
 
   async function tentarScrapeCreators() {
+    if (opts.skipScrapeCreators) return false;
     let sc;
     try {
       sc = require('./scrapeCreatorsFacebook');
@@ -848,7 +849,7 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
   }
 
   async function tentarWeb() {
-    const web = await buscarPostsPaginaViaWeb(url, { limit });
+    const web = await buscarPostsPaginaViaWeb(url, { limit, serper: opts.serper });
     if (web.length) {
       posts = web;
       fonte = 'web-index';
@@ -913,7 +914,7 @@ async function buscarPostsDaPagina(pageUrl, opts = {}) {
 
   async function tentarApifySearchHandle() {
     // Search é outro actor — não bloqueia só porque o page-scraper bateu free tier.
-    if (!isConfigured() || !handle) return false;
+    if (opts.skipSearch || !isConfigured() || !handle) return false;
     const queries = [];
     const pushQ = (q) => {
       const t = String(q || '').trim();

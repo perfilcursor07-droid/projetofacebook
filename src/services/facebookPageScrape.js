@@ -188,6 +188,13 @@ function extrairDetalhesDoPost(html, urlAlvo = null) {
     // Sem uma mensagem perto do ID exato, descarta. Usar a maior mensagem ou
     // a mais próxima sem limite trouxe uma notícia de outro perfil/recomendado.
     texto = candidatoMaisPerto(mensagensComIndice, ancoras, 8_000)?.valor || null;
+    // Em /NomeDaPagina/posts/... o dono está provado pela própria URL. Nesse
+    // formato podemos usar o seletor ancorado mais tolerante; para photo/reel
+    // genérico continuamos no filtro estrito acima.
+    if (!texto && /^https?:\/\/[^/]*facebook\.com\/[A-Za-z0-9.-]+\/(?:posts|videos)\//i.test(urlAlvo)) {
+      const { escolherMensagemDoPost } = require('./socialPostExtract');
+      texto = escolherMensagemDoPost(html, urlAlvo).texto || null;
+    }
   }
 
   const imagem = (() => {
@@ -334,6 +341,17 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
     handleEsperado = '';
   }
   const slugEsperado = handleEsperado.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const urlComDonoEsperado = (url) => {
+    if (!slugEsperado) return false;
+    try {
+      const u = new URL(url);
+      const partes = u.pathname.split('/').filter(Boolean);
+      const slugUrl = String(partes[0] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return slugUrl === slugEsperado && /\/(?:posts|videos)\//i.test(u.pathname);
+    } catch {
+      return false;
+    }
+  };
 
   // Etapa 1: colher permalinks de todas as variantes da página.
   const variantes = variantesDaPagina(pageUrl);
@@ -401,6 +419,7 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
   const itensOrdenados = detalhes
     .filter((d) => {
       if (!d.texto || d.texto.trim().length < 20) return false;
+      if (urlComDonoEsperado(d.url)) return true;
       if (!slugEsperado || !d.autor) return true;
       const slugAutor = d.autor.toLowerCase().replace(/[^a-z0-9]/g, '');
       return slugAutor.includes(slugEsperado) || slugEsperado.includes(slugAutor);

@@ -107,6 +107,28 @@ async function listarPostsDaPagina(pageUrl, { limit = 20 } = {}) {
     avisos.push('YTDLP_FB_COOKIES_FILE não está configurado; usando o índice web.');
   }
 
+  // O HTML inicial de algumas páginas (ex.: FollowJesus153) expõe só 4
+  // links. Nesses casos usa o ator de página que já está configurado no
+  // projeto. Ele é complementar e não chama ScrapeCreators nem Serper.
+  if (reunidos.filter(Boolean).length < Math.min(10, limite) && apifyFacebookService.isConfigured()) {
+    try {
+      const apify = await apifyFacebookService.buscarPostsDaPagina(paginaUrl, {
+        limit: limite,
+        maxAgeDays: 90,
+        preferApify: true,
+        skipScrapeCreators: true,
+        serper: false,
+      });
+      for (const post of apify.posts || []) {
+        reunidos.push(normalizarPost(post, handle, apify.fonte || 'apify-page'));
+      }
+      if (apify.apifyLimited) avisos.push('Apify atingiu o limite do plano nesta consulta.');
+    } catch (err) {
+      console.warn('[materia-facebook] apify:', err.message);
+      avisos.push(`Apify: ${err.message}`);
+    }
+  }
+
   // Complemento gratuito por índice web. Não usa Serper/ScrapeCreators e
   // ajuda a preencher a lista quando o HTML inicial do Facebook traz poucos.
   if (reunidos.filter(Boolean).length < limite) {

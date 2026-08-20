@@ -561,6 +561,7 @@
     const paginaFacebook = data.origem === 'pagina-facebook';
     const podeSalvarRascunho = paraPublico || paginaFacebook;
     const basesVirais = Array.isArray(data.basesVirais) ? data.basesVirais : [];
+    const avisosPagina = Array.isArray(data.avisos) ? data.avisos.filter(Boolean) : [];
 
     limparBlocosAlta();
     el.vazio?.classList.add('hidden');
@@ -578,6 +579,12 @@
         ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais e eu escrevo tudo de uma vez.`
         : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
     corpo.appendChild(p);
+    if (paginaFacebook && avisosPagina.length) {
+      const aviso = document.createElement('p');
+      aviso.className = 'mia-x-result-note is-warning';
+      aviso.textContent = avisosPagina.slice(0, 2).join(' ');
+      corpo.appendChild(aviso);
+    }
     if (paraPublico && Number(data.totalOcultado) > 0) {
       const ocultadas = document.createElement('p');
       ocultadas.className = 'mia-x-result-note';
