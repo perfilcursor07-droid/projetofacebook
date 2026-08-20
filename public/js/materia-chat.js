@@ -991,6 +991,8 @@
 
     const box = document.createElement('div');
     box.className = 'mia-msg-pautas';
+    const listaFacebook = pautas.some((pauta) => Boolean(pauta?.pagina));
+    if (listaFacebook) box.classList.add('is-facebook-page');
     box.dataset.pautas = '1';
     const selecionadas = new Map();
     const checkboxes = [];
@@ -999,7 +1001,9 @@
     cabecalho.className = 'mia-msg-pautas-head';
     const titulo = document.createElement('p');
     titulo.className = 'mia-msg-pautas-title';
-    titulo.textContent = `Escolha uma ou mais pautas para salvar (${pautas.length})`;
+    titulo.textContent = listaFacebook
+      ? `Escolha os posts para transformar em matéria (${pautas.length})`
+      : `Escolha uma ou mais pautas para salvar (${pautas.length})`;
     cabecalho.appendChild(titulo);
 
     const acoesCabecalho = document.createElement('div');
@@ -1178,14 +1182,13 @@
       card.appendChild(h);
 
       if (pauta.imagem) {
+        card.classList.add('has-image');
         const img = document.createElement('img');
         img.src = pauta.imagem;
         img.alt = '';
         img.loading = 'lazy';
         img.referrerPolicy = 'no-referrer';
-        img.className = 'mt-2 rounded-lg object-cover';
-        img.style.width = '100%';
-        img.style.height = '9rem';
+        img.className = 'mia-msg-pauta-imagem';
         img.addEventListener('error', () => img.remove());
         card.appendChild(img);
       }
@@ -1193,7 +1196,9 @@
       if (pauta.resumo) {
         const r = document.createElement('p');
         r.className = 'mia-msg-pauta-resumo';
-        r.textContent = pauta.resumo;
+        r.textContent = listaFacebook
+          ? String(pauta.resumo).replace(/\s+/g, ' ').slice(0, 180)
+          : pauta.resumo;
         card.appendChild(r);
       }
 

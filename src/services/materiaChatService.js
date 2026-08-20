@@ -1434,7 +1434,7 @@ async function responder({
     }));
 
     const fontesSalvas = pautas
-      ? pautas.slice(0, 12).map((p) => ({
+      ? pautas.slice(0, 20).map((p) => ({
           veiculo: limparParaBanco(p.veiculo, 120),
           titulo: limparParaBanco(p.titulo, 300),
           url: limparParaBanco(p.url, 500),

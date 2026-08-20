@@ -1695,6 +1695,67 @@ body.mia-chat-drawer-open {
   text-decoration: none;
 }
 
+/* Página do Facebook: lista curta, sem exibir a legenda inteira em cada item. */
+.mia-msg-pautas.is-facebook-page .mia-msg-pautas-list {
+  gap: 0.35rem;
+}
+
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 0.65rem;
+  padding: 0.55rem 0.65rem;
+}
+
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta.has-image {
+  grid-template-columns: minmax(0, 1fr) 4.5rem;
+}
+
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-meta,
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-titulo,
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-resumo,
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-acoes {
+  grid-column: 1;
+}
+
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-titulo {
+  display: -webkit-box;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.8125rem;
+}
+
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-resumo {
+  display: -webkit-box;
+  margin-top: 0.2rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.35;
+}
+
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-imagem {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  width: 4.5rem;
+  height: 4.5rem;
+  align-self: center;
+  border-radius: 0.5rem;
+  object-fit: cover;
+}
+
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-acoes {
+  margin-top: 0.35rem;
+}
+
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-acoes .mia-chat-ghost-btn,
+.mia-msg-pautas.is-facebook-page .mia-msg-pauta-acoes .mia-chat-btn-primary {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.6875rem;
+}
+
 /* Texto de apoio do modal "Ensinar a IA" (regras fixas para as próximas matérias). */
 .mia-ensinar-ajuda {
   margin: 0.5rem 0 0;

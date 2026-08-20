@@ -151,7 +151,7 @@ function indicesDaAncora(html, idPost) {
   return out;
 }
 
-function candidatoMaisPerto(candidatos, ancoras) {
+function candidatoMaisPerto(candidatos, ancoras, distanciaMaxima = Infinity) {
   if (!candidatos.length) return null;
   if (!ancoras.length) return candidatos.length === 1 ? candidatos[0] : null;
   let melhor = null;
@@ -165,7 +165,7 @@ function candidatoMaisPerto(candidatos, ancoras) {
       }
     }
   }
-  return melhor;
+  return distancia <= distanciaMaxima ? melhor : null;
 }
 
 /** Texto, imagem e data ancorados no identificador do post aberto. */
@@ -185,13 +185,9 @@ function extrairDetalhesDoPost(html, urlAlvo = null) {
   const idPost = idDoPostNaUrl(urlAlvo);
   const ancoras = indicesDaAncora(html, idPost);
   if (urlAlvo) {
-    // O HTML inclui posts recomendados. Esta função já seleciona a mensagem
-    // mais próxima do pfbid/fbid pedido e rejeita resultados ambíguos.
-    const { escolherMensagemDoPost } = require('./socialPostExtract');
-    texto =
-      candidatoMaisPerto(mensagensComIndice, ancoras)?.valor ||
-      escolherMensagemDoPost(html, urlAlvo).texto ||
-      null;
+    // Sem uma mensagem perto do ID exato, descarta. Usar a maior mensagem ou
+    // a mais próxima sem limite trouxe uma notícia de outro perfil/recomendado.
+    texto = candidatoMaisPerto(mensagensComIndice, ancoras, 8_000)?.valor || null;
   }
 
   const imagem = (() => {
@@ -207,7 +203,7 @@ function extrairDetalhesDoPost(html, urlAlvo = null) {
         candidatos.push({ valor: url, indice: m.index ?? 0 });
       }
     }
-    return candidatoMaisPerto(candidatos, ancoras)?.valor || null;
+    return candidatoMaisPerto(candidatos, ancoras, 50_000)?.valor || null;
   })();
 
   const tempos = coletarComIndice(
@@ -215,12 +211,20 @@ function extrairDetalhesDoPost(html, urlAlvo = null) {
     /"creation_time"\s*:\s*(\d{9,13})/g,
     (valor) => Number(valor) || null
   );
-  const ts = Number(candidatoMaisPerto(tempos, ancoras)?.valor) || 0;
+  const ts = Number(candidatoMaisPerto(tempos, ancoras, 50_000)?.valor) || 0;
   const publicadoEm = ts ? new Date(ts > 10_000_000_000 ? ts : ts * 1000) : null;
+
+  const atores = coletarComIndice(
+    html,
+    /"actors"\s*:\s*\[\s*\{[\s\S]{0,1200}?"name"\s*:\s*"((?:\\.|[^"\\])*)"/g,
+    (valor) => unescapeJsonString(valor).trim() || null
+  );
+  const autor = candidatoMaisPerto(atores, ancoras, 20_000)?.valor || null;
 
   return {
     texto,
     imagem,
+    autor,
     publicadoEm: publicadoEm && !Number.isNaN(publicadoEm.getTime()) ? publicadoEm : null,
   };
 }
@@ -316,6 +320,14 @@ async function mapearComLimite(itens, limite, tarefa) {
  */
 async function listarPostsPerfil(pageUrl, limite = 20) {
   const max = Math.min(40, Math.max(1, Number(limite) || 20));
+  let handleEsperado = '';
+  try {
+    const u = new URL(pageUrl);
+    if (!/profile\.php/i.test(u.pathname)) handleEsperado = u.pathname.split('/').filter(Boolean)[0] || '';
+  } catch {
+    handleEsperado = '';
+  }
+  const slugEsperado = handleEsperado.toLowerCase().replace(/[^a-z0-9]/g, '');
 
   // Etapa 1: colher permalinks de todas as variantes da página.
   const variantes = variantesDaPagina(pageUrl);
@@ -343,6 +355,18 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
     htmlTotal += pagina.htmlLen;
     porVariante[pagina.variante.replace('https://www.facebook.com', '')] = pagina.encontrados.length;
     for (const url of pagina.encontrados) {
+      // /OutraPagina/posts/... é recomendação lateral, não publicação
+      // da página solicitada. Links genéricos de foto/reel são validados
+      // novamente pelo autor ancorado ao abrir o detalhe.
+      if (slugEsperado) {
+        try {
+          const primeiro = new URL(url).pathname.split('/').filter(Boolean)[0] || '';
+          const slugUrl = primeiro.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (/\/(?:posts|videos)\//i.test(new URL(url).pathname) && slugUrl !== slugEsperado) continue;
+        } catch {
+          continue;
+        }
+      }
       const chave = url.toLowerCase();
       if (vistos.has(chave)) continue;
       vistos.add(chave);
@@ -359,7 +383,8 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
   const detalhes = await mapearComLimite(alvos, CONCORRENCIA, async (url) => {
     try {
       const res = await baixarHtmlPagina(url);
-      return { url, ...extrairDetalhesDoPost(res.html, url) };
+      const urlFinal = ehUrlDePostValida(res.finalUrl) ? res.finalUrl : url;
+      return { url: urlFinal, ...extrairDetalhesDoPost(res.html, urlFinal) };
     } catch (err) {
       console.warn(`[fb-page] detalhe ${url.slice(0, 70)}: ${err.message}`);
       return { url, texto: null, imagem: null, publicadoEm: null };
@@ -368,7 +393,12 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
 
   // Para criar matéria, foto de perfil/capa sem legenda não é pauta.
   const itensOrdenados = detalhes
-    .filter((d) => d.texto && d.texto.trim().length >= 20)
+    .filter((d) => {
+      if (!d.texto || d.texto.trim().length < 20) return false;
+      if (!slugEsperado || !d.autor) return true;
+      const slugAutor = d.autor.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return slugAutor.includes(slugEsperado) || slugEsperado.includes(slugAutor);
+    })
     .map((d) => ({
       externalId: d.url,
       mediaType: /\/(reel|videos)\//i.test(d.url) ? 'video' : 'image',
@@ -377,12 +407,35 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
       texto: d.texto || null,
       resumo: d.texto ? d.texto.slice(0, 400) : null,
       thumbnail: d.imagem || null,
+      autor: d.autor || null,
       publicadoEm: d.publicadoEm,
     }))
     .sort((a, b) => {
       const da = a.publicadoEm instanceof Date ? a.publicadoEm.getTime() : 0;
       const db = b.publicadoEm instanceof Date ? b.publicadoEm.getTime() : 0;
       return db - da;
+    })
+    .filter((item, indice, lista) => {
+      const chave = String(item.texto || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/https?:\/\/\S+/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+        .slice(0, 600);
+      if (!chave) return false;
+      return lista.findIndex((outro) => {
+        const outraChave = String(outro.texto || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .replace(/https?:\/\/\S+/g, ' ')
+          .replace(/[^a-z0-9]+/g, ' ')
+          .trim()
+          .slice(0, 600);
+        return outraChave === chave;
+      }) === indice;
     });
 
   const limiteRecente = Date.now() - 90 * 24 * 60 * 60 * 1000;
