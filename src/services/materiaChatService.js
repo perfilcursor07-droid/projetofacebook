@@ -342,7 +342,8 @@ async function transcreverVideoComoFonte(
     );
 
     if (typeof onPasso === 'function') {
-      const origem = resultado.source === 'yt-dlp-subtitles' ? 'legendas' : 'áudio';
+      const source = String(resultado.source || '');
+      const origem = /subtitle|caption/i.test(source) ? 'legendas' : 'áudio';
       onPasso({
         kind: 'transcricao',
         texto: `Transcrição obtida pelo ${origem} (${texto.length} caracteres)`,
