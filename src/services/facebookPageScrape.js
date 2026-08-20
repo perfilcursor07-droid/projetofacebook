@@ -251,14 +251,20 @@ function variantesDaPagina(pageUrl) {
         out.push(`https://www.facebook.com/profile.php?id=${id}&sk=timeline`);
         out.push(`https://www.facebook.com/profile.php?id=${id}&sk=photos`);
         out.push(`https://www.facebook.com/profile.php?id=${id}&sk=videos`);
+        out.push(`https://m.facebook.com/profile.php?id=${id}&sk=timeline`);
+        out.push(`https://m.facebook.com/profile.php?id=${id}&sk=posts`);
       }
     } else {
       const base = `https://www.facebook.com${u.pathname.replace(/\/+$/, '')}`;
+      const mobile = `https://m.facebook.com${u.pathname.replace(/\/+$/, '')}`;
       out.push(`${base}/posts`);
       out.push(`${base}/?sk=timeline`);
       out.push(`${base}/photos`);
       out.push(`${base}/reels`);
       out.push(`${base}/videos`);
+      out.push(`${mobile}/posts`);
+      out.push(`${mobile}/?sk=timeline`);
+      out.push(`${mobile}/?sk=posts`);
     }
   } catch {
     /* a URL original ainda será tentada */

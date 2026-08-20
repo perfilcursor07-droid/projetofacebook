@@ -755,7 +755,7 @@ async function buscarPostsPaginaViaWeb(pageUrl, opts = {}) {
     }
   }
 
-  if (env.serperApiKey && out.length < limit) {
+  if (opts.serper !== false && env.serperApiKey && out.length < limit) {
     try {
       const { data } = await axios.post(
         'https://google.serper.dev/search',

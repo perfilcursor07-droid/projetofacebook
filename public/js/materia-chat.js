@@ -971,16 +971,33 @@
   }
 
   async function salvarRascunhosDePautas(pautas = []) {
-    const lista = (Array.isArray(pautas) ? pautas : []).filter(Boolean).slice(0, MAX_PAUTAS_LOTE);
+    const lista = (Array.isArray(pautas) ? pautas : []).filter(Boolean);
     if (!lista.length) throw new Error('Selecione ao menos uma pauta.');
-    return api(`${API}/pautas/rascunhos`, {
-      method: 'POST',
-      body: JSON.stringify({
-        pautas: lista,
-        pesquisarWeb: state.pesquisarWeb,
-        periodo: el.periodo?.value || '30d',
-      }),
-    });
+    const salvas = [];
+    const erros = [];
+    for (let inicio = 0; inicio < lista.length; inicio += MAX_PAUTAS_LOTE) {
+      const lote = lista.slice(inicio, inicio + MAX_PAUTAS_LOTE);
+      try {
+        const data = await api(`${API}/pautas/rascunhos`, {
+          method: 'POST',
+          body: JSON.stringify({
+            pautas: lote,
+            pesquisarWeb: state.pesquisarWeb,
+            periodo: el.periodo?.value || '30d',
+          }),
+        });
+        for (const item of data.salvas || []) salvas.push({ ...item, indice: inicio + Number(item.indice) });
+        for (const item of data.erros || []) erros.push({ ...item, indice: inicio + Number(item.indice) });
+      } catch (err) {
+        lote.forEach((pauta, i) => erros.push({ indice: inicio + i + 1, titulo: pauta.titulo, error: err.message }));
+      }
+    }
+    if (!salvas.length) throw new Error(erros[0]?.error || 'Não foi possível criar os rascunhos.');
+    return {
+      salvas,
+      erros,
+      mensagem: `${salvas.length} rascunho(s) criado(s)${erros.length ? ` · ${erros.length} falha(s)` : ''}.`,
+    };
   }
 
   function blocoPautas(pautas = []) {
@@ -992,6 +1009,7 @@
     const box = document.createElement('div');
     box.className = 'mia-msg-pautas';
     const listaFacebook = pautas.some((pauta) => Boolean(pauta?.pagina));
+    const limiteSelecao = listaFacebook ? pautas.length : Math.min(MAX_PAUTAS_LOTE, pautas.length);
     if (listaFacebook) box.classList.add('is-facebook-page');
     box.dataset.pautas = '1';
     const selecionadas = new Map();
@@ -1009,7 +1027,7 @@
     const acoesCabecalho = document.createElement('div');
     acoesCabecalho.className = 'mia-msg-pautas-head-actions';
     const selecionarTodas = criarBotao(
-      `Selecionar até ${Math.min(MAX_PAUTAS_LOTE, pautas.length)}`,
+      listaFacebook ? `Selecionar todos (${pautas.length})` : `Selecionar até ${limiteSelecao}`,
       'mia-chat-ghost-btn'
     );
     const salvarSelecionadas = criarBotao(
@@ -1045,7 +1063,9 @@
       gerarSelecionadas.classList.toggle('opacity-60', total === 0 || ocupado);
       selecionarTodas.textContent = total
         ? 'Limpar seleção'
-        : `Selecionar até ${Math.min(MAX_PAUTAS_LOTE, pautas.length)}`;
+        : listaFacebook
+          ? `Selecionar todos (${pautas.length})`
+          : `Selecionar até ${limiteSelecao}`;
     }
 
     selecionarTodas.addEventListener('click', () => {
@@ -1060,12 +1080,12 @@
       }
 
       checkboxes.forEach((item, indice) => {
-        const marcar = indice < MAX_PAUTAS_LOTE;
+        const marcar = indice < limiteSelecao;
         item.input.checked = marcar;
         item.card.classList.toggle('is-selected', marcar);
         if (marcar) selecionadas.set(item.key, item.pauta);
       });
-      if (checkboxes.length > MAX_PAUTAS_LOTE) {
+      if (!listaFacebook && checkboxes.length > limiteSelecao) {
         setStatus(`Selecionei as ${MAX_PAUTAS_LOTE} primeiras pautas. Salve esse lote e depois escolha mais.`);
       }
       atualizarLote();
@@ -1077,7 +1097,7 @@
         setStatus('Marque ao menos uma pauta.');
         return;
       }
-      if (alvos.length > MAX_PAUTAS_LOTE) {
+      if (!listaFacebook && alvos.length > MAX_PAUTAS_LOTE) {
         setStatus(`Selecione no máximo ${MAX_PAUTAS_LOTE} pautas por vez.`);
         return;
       }
@@ -1121,7 +1141,7 @@
         setStatus('Marque ao menos uma pauta.');
         return;
       }
-      if (alvos.length > MAX_PAUTAS_LOTE) {
+      if (!listaFacebook && alvos.length > MAX_PAUTAS_LOTE) {
         setStatus(`Selecione no máximo ${MAX_PAUTAS_LOTE} pautas por vez.`);
         return;
       }
@@ -1222,9 +1242,9 @@
       };
       selecionar.addEventListener('click', (ev) => ev.stopPropagation());
       check.addEventListener('change', () => {
-        if (check.checked && !selecionadas.has(key) && selecionadas.size >= MAX_PAUTAS_LOTE) {
+        if (check.checked && !selecionadas.has(key) && selecionadas.size >= limiteSelecao) {
           check.checked = false;
-          setStatus(`Selecione no máximo ${MAX_PAUTAS_LOTE} pautas por vez.`);
+          setStatus(`Selecione no máximo ${limiteSelecao} pautas por vez.`);
           return;
         }
         if (check.checked) selecionadas.set(key, pauta);

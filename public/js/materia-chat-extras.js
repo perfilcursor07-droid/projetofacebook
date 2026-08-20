@@ -369,7 +369,6 @@
   async function salvarTopicosComoRascunhos(topicos) {
     const pautas = (Array.isArray(topicos) ? topicos : [])
       .filter(Boolean)
-      .slice(0, MAX_TOPICOS_LOTE)
       .map((topico) => ({
         titulo: topico.titulo || '',
         url: topico.url || '',
@@ -383,14 +382,31 @@
           : topico.veiculo || 'Reprodução',
       }));
     if (!pautas.length) throw new Error('Selecione ao menos uma pauta.');
-    return apiJson('/api/materias-ia/chat/pautas/rascunhos', {
-      method: 'POST',
-      body: JSON.stringify({
-        pautas,
-        pesquisarWeb: true,
-        periodo: el.periodo?.value || '30d',
-      }),
-    });
+    const salvas = [];
+    const erros = [];
+    for (let inicio = 0; inicio < pautas.length; inicio += MAX_TOPICOS_LOTE) {
+      const lote = pautas.slice(inicio, inicio + MAX_TOPICOS_LOTE);
+      try {
+        const data = await apiJson('/api/materias-ia/chat/pautas/rascunhos', {
+          method: 'POST',
+          body: JSON.stringify({
+            pautas: lote,
+            pesquisarWeb: true,
+            periodo: el.periodo?.value || '30d',
+          }),
+        });
+        for (const item of data.salvas || []) salvas.push({ ...item, indice: inicio + Number(item.indice) });
+        for (const item of data.erros || []) erros.push({ ...item, indice: inicio + Number(item.indice) });
+      } catch (err) {
+        lote.forEach((pauta, i) => erros.push({ indice: inicio + i + 1, titulo: pauta.titulo, error: err.message }));
+      }
+    }
+    if (!salvas.length) throw new Error(erros[0]?.error || 'Não foi possível criar os rascunhos.');
+    return {
+      salvas,
+      erros,
+      mensagem: `${salvas.length} rascunho(s) criado(s)${erros.length ? ` · ${erros.length} falha(s)` : ''}.`,
+    };
   }
 
   function marcarPaginaFacebook(ativa) {
@@ -664,13 +680,16 @@
     if (topicos.length) {
       const selecionados = new Map();
       const itens = [];
+      const limiteSelecao = paginaFacebook ? topicos.length : Math.min(MAX_TOPICOS_LOTE, topicos.length);
 
       const lote = document.createElement('div');
       lote.className = 'mia-x-lote';
       const selecionar = document.createElement('button');
       selecionar.type = 'button';
       selecionar.className = 'mia-x-lote-select';
-      selecionar.textContent = `Selecionar até ${Math.min(MAX_TOPICOS_LOTE, topicos.length)}`;
+      selecionar.textContent = paginaFacebook
+        ? `Selecionar todos (${topicos.length})`
+        : `Selecionar até ${limiteSelecao}`;
       const salvar = document.createElement('button');
       salvar.type = 'button';
       salvar.className = 'mia-x-lote-save';
@@ -710,7 +729,9 @@
             : 'Gerar selecionados';
         selecionar.textContent = total
           ? 'Limpar seleção'
-          : `Selecionar até ${Math.min(MAX_TOPICOS_LOTE, topicos.length)}`;
+          : paginaFacebook
+            ? `Selecionar todos (${topicos.length})`
+            : `Selecionar até ${limiteSelecao}`;
       }
 
       selecionar.addEventListener('click', () => {
@@ -725,12 +746,12 @@
         }
 
         itens.forEach((item, indice) => {
-          const marcar = indice < MAX_TOPICOS_LOTE;
+          const marcar = indice < limiteSelecao;
           item.input.checked = marcar;
           item.card.classList.toggle('is-selected', marcar);
           if (marcar) selecionados.set(item.key, item.topico);
         });
-        if (itens.length > MAX_TOPICOS_LOTE) {
+        if (!paginaFacebook && itens.length > limiteSelecao) {
           setStatus(`Selecionei os ${MAX_TOPICOS_LOTE} primeiros assuntos. Gere esse lote e depois escolha mais.`);
         }
         atualizarLote();
@@ -876,9 +897,9 @@
 
         checkWrap.addEventListener('click', (ev) => ev.stopPropagation());
         check.addEventListener('change', () => {
-          if (check.checked && !selecionados.has(key) && selecionados.size >= MAX_TOPICOS_LOTE) {
+          if (check.checked && !selecionados.has(key) && selecionados.size >= limiteSelecao) {
             check.checked = false;
-            setStatus(`Selecione no máximo ${MAX_TOPICOS_LOTE} assuntos por vez.`);
+            setStatus(`Selecione no máximo ${limiteSelecao} assuntos por vez.`);
             return;
           }
           if (check.checked) selecionados.set(key, t);
@@ -983,7 +1004,7 @@
     try {
       const data = await apiJson(`${API}/pagina-facebook/posts`, {
         method: 'POST',
-        body: JSON.stringify({ url: paginaUrl, limit: 20 }),
+        body: JSON.stringify({ url: paginaUrl, limit: 40 }),
       });
       renderAlta(data);
       setStatus(`${(data.topicos || []).length} post(s) encontrados em ${data.pagina || 'Facebook'}`);

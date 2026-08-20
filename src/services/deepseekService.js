@@ -2513,6 +2513,71 @@ Regras:
   };
 }
 
+/** Tradução curta em lote para os cartões de posts do Facebook. */
+async function traduzirPostsParaPortugues(posts = []) {
+  const lista = (Array.isArray(posts) ? posts : []).filter(Boolean);
+  if (!lista.length) return [];
+  const lotes = [];
+  for (let i = 0; i < lista.length; i += 10) lotes.push(lista.slice(i, i + 10));
+
+  const traducoes = new Map();
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(2, lotes.length) }, async () => {
+    while (cursor < lotes.length) {
+      const indiceLote = cursor++;
+      const lote = lotes[indiceLote];
+      const entrada = lote.map((post, posicao) => ({
+        id: indiceLote * 10 + posicao,
+        titulo: String(post.titulo || '').slice(0, 220),
+        texto: String(post.resumo || post.texto || '').slice(0, 1200),
+      }));
+      const raw = await chatCompletion(
+        [
+          {
+            role: 'system',
+            content: [
+              'Você é tradutor jornalístico para português brasileiro.',
+              'Traduza fielmente, sem acrescentar fatos, corrigir opiniões ou suavizar o texto.',
+              'Nomes próprios permanecem no original. Texto que já estiver em português deve ser preservado.',
+              'Responda somente JSON válido: {"itens":[{"id":0,"titulo":"...","texto":"..."}]}',
+            ].join('\n'),
+          },
+          { role: 'user', content: JSON.stringify({ itens: entrada }) },
+        ],
+        { temperature: 0.1, json: true, thinking: false, tarefa: 'auxiliar' }
+      );
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = null;
+      }
+      for (const item of parsed?.itens || []) {
+        const id = Number(item?.id);
+        if (!Number.isInteger(id)) continue;
+        traducoes.set(id, {
+          titulo: String(item.titulo || '').replace(/\s+/g, ' ').trim().slice(0, 220),
+          texto: String(item.texto || '').replace(/\s+/g, ' ').trim().slice(0, 1400),
+        });
+      }
+    }
+  });
+  await Promise.all(workers);
+
+  return lista.map((post, id) => {
+    const traducao = traducoes.get(id);
+    if (!traducao) return post;
+    return {
+      ...post,
+      tituloOriginal: post.titulo,
+      resumoOriginal: post.resumo,
+      titulo: traducao.titulo || post.titulo,
+      resumo: traducao.texto || post.resumo,
+      traduzido: true,
+    };
+  });
+}
+
 /**
  * Compara pautas recentes com o histórico que realmente engajou na Página.
  * O modelo apenas ranqueia itens já encontrados; não cria notícias nem fontes.
@@ -3650,6 +3715,7 @@ module.exports = {
   checarPedidoNasFontes,
   revisarMateriaContraFontes,
   chatCompletionStream,
+  traduzirPostsParaPortugues,
   sugerirConsultasImagem,
   identificarAutorImagem,
   extrairTermosRadar,

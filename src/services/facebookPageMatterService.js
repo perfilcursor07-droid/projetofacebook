@@ -89,7 +89,7 @@ function normalizarPost(item, pagina, origem) {
 
 async function listarPostsDaPagina(pageUrl, { limit = 20 } = {}) {
   const paginaUrl = validarPaginaFacebook(pageUrl);
-  const limite = Math.min(30, Math.max(3, Number(limit) || 20));
+  const limite = Math.min(40, Math.max(3, Number(limit) || 40));
   const handle = apifyFacebookService.handleDaPaginaUrl(paginaUrl) || 'Página do Facebook';
   const avisos = [];
   const reunidos = [];
@@ -107,12 +107,13 @@ async function listarPostsDaPagina(pageUrl, { limit = 20 } = {}) {
     avisos.push('YTDLP_FB_COOKIES_FILE não está configurado; usando o índice web.');
   }
 
-  // Fallback gratuito. Só roda quando a sessão não conseguiu listar posts,
-  // evitando latência e chamadas em provedores sem créditos.
-  if (!reunidos.filter(Boolean).length) {
+  // Complemento gratuito por índice web. Não usa Serper/ScrapeCreators e
+  // ajuda a preencher a lista quando o HTML inicial do Facebook traz poucos.
+  if (reunidos.filter(Boolean).length < limite) {
     try {
       const postsWeb = await apifyFacebookService.buscarPostsPaginaViaWeb(paginaUrl, {
         limit: limite,
+        serper: false,
       });
       for (const post of postsWeb) reunidos.push(normalizarPost(post, handle, 'indice-web'));
     } catch (err) {
@@ -122,7 +123,7 @@ async function listarPostsDaPagina(pageUrl, { limit = 20 } = {}) {
   }
 
   const vistos = new Set();
-  const posts = reunidos
+  let posts = reunidos
     .filter(Boolean)
     .filter((post) => {
       const chave = chavePost(post);
@@ -139,6 +140,13 @@ async function listarPostsDaPagina(pageUrl, { limit = 20 } = {}) {
     err.status = 422;
     err.avisos = avisos;
     throw err;
+  }
+
+  try {
+    posts = await require('./deepseekService').traduzirPostsParaPortugues(posts);
+  } catch (err) {
+    console.warn('[materia-facebook] tradução:', err.message);
+    avisos.push(`Tradução: ${err.message}`);
   }
 
   return {

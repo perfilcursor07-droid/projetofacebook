@@ -282,7 +282,7 @@ router.post('/pagina-facebook/posts', async (req, res, next) => {
   try {
     const service = require('../services/facebookPageMatterService');
     const resultado = await service.listarPostsDaPagina(req.body?.url, {
-      limit: req.body?.limit || 20,
+      limit: req.body?.limit || 40,
     });
     return res.json({
       ok: true,

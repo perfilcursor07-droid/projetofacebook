@@ -1434,7 +1434,7 @@ async function responder({
     }));
 
     const fontesSalvas = pautas
-      ? pautas.slice(0, 20).map((p) => ({
+      ? pautas.slice(0, 40).map((p) => ({
           veiculo: limparParaBanco(p.veiculo, 120),
           titulo: limparParaBanco(p.titulo, 300),
           url: limparParaBanco(p.url, 500),
@@ -1616,7 +1616,7 @@ async function responder({
     const paginaUrl = urlsPaginasFacebook[0];
     registrarPasso({ kind: 'pesquisa', texto: 'Lendo os posts recentes da página do Facebook…' });
     try {
-      const resultado = await facebookPageMatterService.listarPostsDaPagina(paginaUrl, { limit: 20 });
+      const resultado = await facebookPageMatterService.listarPostsDaPagina(paginaUrl, { limit: 40 });
       const pautas = resultado.posts.map((post) => ({
         veiculo: post.pagina || 'Facebook',
         titulo: post.titulo,
