@@ -94,39 +94,15 @@ async function listarPostsDaPagina(pageUrl, { limit = 20 } = {}) {
   const avisos = [];
   const reunidos = [];
 
-  // Principal: sessão autenticada, sem consumo de API paga.
-  if (facebookPageScrape.isConfigured()) {
-    try {
-      const posts = await facebookPageScrape.listarPostsPerfil(paginaUrl, limite);
-      for (const post of posts) reunidos.push(normalizarPost(post, handle, 'sessao-facebook'));
-    } catch (err) {
-      console.warn('[materia-facebook] sessão:', err.message);
-      avisos.push(`Sessão do Facebook: ${err.message}`);
-    }
-  } else {
-    avisos.push('YTDLP_FB_COOKIES_FILE não está configurado; usando o índice web.');
-  }
-
-  // O HTML inicial de algumas páginas (ex.: FollowJesus153) expõe só 4
-  // links. Nesses casos usa o ator de página que já está configurado no
-  // projeto. Ele é complementar e não chama ScrapeCreators nem Serper.
-  if (reunidos.filter(Boolean).length < Math.min(10, limite) && apifyFacebookService.isConfigured()) {
-    try {
-      const apify = await apifyFacebookService.buscarPostsDaPagina(paginaUrl, {
-        limit: limite,
-        maxAgeDays: 90,
-        preferApify: true,
-        skipScrapeCreators: true,
-        serper: false,
-      });
-      for (const post of apify.posts || []) {
-        reunidos.push(normalizarPost(post, handle, apify.fonte || 'apify-page'));
-      }
-      if (apify.apifyLimited) avisos.push('Apify atingiu o limite do plano nesta consulta.');
-    } catch (err) {
-      console.warn('[materia-facebook] apify:', err.message);
-      avisos.push(`Apify: ${err.message}`);
-    }
+  // Principal: feed público paginado do Page Plugin oficial da Meta. Não usa
+  // Apify, ScrapeCreators nem Serper; a sessão fica apenas como fallback para
+  // perfis que o plugin não aceita.
+  try {
+    const posts = await facebookPageScrape.listarPostsPerfil(paginaUrl, limite);
+    for (const post of posts) reunidos.push(normalizarPost(post, handle, 'feed-publico-facebook'));
+  } catch (err) {
+    console.warn('[materia-facebook] feed público:', err.message);
+    avisos.push(`Facebook: ${err.message}`);
   }
 
   // Complemento gratuito por índice web. Não usa Serper/ScrapeCreators e

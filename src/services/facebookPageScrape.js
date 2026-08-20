@@ -16,6 +16,8 @@ const {
 /** Quantos posts abrir por scan (cada um custa ~3 MB de HTML). */
 const MAX_DETALHES = Math.min(40, Math.max(1, Number(process.env.FB_PAGE_MAX_POSTS) || 40));
 const CONCORRENCIA = Math.min(6, Math.max(1, Number(process.env.FB_PAGE_CONCORRENCIA) || 3));
+const FACEBOOK_PAGE_PLUGIN_APP_ID = '776730922422337';
+const FACEBOOK_PAGE_PLUGIN_RENDERER = 'https://www.facebook.com/platform/plugin/tab/renderer/';
 
 function isConfigured() {
   return Boolean(buildFacebookCookieHeader());
@@ -140,6 +142,50 @@ function idDoPostNaUrl(url) {
   );
 }
 
+function decodificarEntidadesHtml(valor) {
+  const mapa = {
+    amp: '&',
+    quot: '"',
+    apos: "'",
+    lt: '<',
+    gt: '>',
+    nbsp: ' ',
+  };
+  return String(valor || '')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+      try {
+        return String.fromCodePoint(parseInt(hex, 16));
+      } catch {
+        return '';
+      }
+    })
+    .replace(/&#(\d+);/g, (_, numero) => {
+      try {
+        return String.fromCodePoint(Number(numero));
+      } catch {
+        return '';
+      }
+    })
+    .replace(/&(amp|quot|apos|lt|gt|nbsp);/gi, (_, nome) => mapa[nome.toLowerCase()] || '');
+}
+
+function textoDeHtml(valor) {
+  return decodificarEntidadesHtml(
+    String(valor || '')
+      .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<span\b[^>]*class="[^"]*text_exposed_hide[^"]*"[^>]*>[\s\S]*?<\/span>/gi, ' ')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p\s*>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+  )
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/(?:Ver mais|See more)\s*$/i, '')
+    .trim();
+}
+
 function indicesDaAncora(html, idPost) {
   if (!idPost) return [];
   const out = [];
@@ -244,6 +290,162 @@ function tituloDoTexto(texto, fallback) {
   return String(primeiraLinha || fallback || 'Post do Facebook').slice(0, 120);
 }
 
+function paginaCanonicaParaPlugin(pageUrl) {
+  const u = new URL(String(pageUrl || '').trim());
+  u.protocol = 'https:';
+  u.hostname = 'www.facebook.com';
+  u.hash = '';
+  for (const key of [...u.searchParams.keys()]) {
+    if (!(/^\/profile\.php$/i.test(u.pathname) && key === 'id')) u.searchParams.delete(key);
+  }
+  u.pathname = u.pathname.replace(/\/(?:posts|photos|videos|reels)\/?$/i, '').replace(/\/+$/, '') || '/';
+  return u.toString();
+}
+
+/** Converte a marcação do Page Plugin em posts sem abrir cada link. */
+function extrairPostsDoMarkupPlugin(markup, pagina) {
+  const html = String(markup || '');
+  const inicios = [...html.matchAll(/<div class="_4-u2\s+mbm\b/gi)].map((match) => match.index || 0);
+  const itens = [];
+
+  for (let indice = 0; indice < inicios.length; indice += 1) {
+    const bloco = html.slice(inicios[indice], inicios[indice + 1] || html.length);
+    const urls = extrairUrlsDePosts(bloco).urls;
+    const url =
+      urls.find((item) => /\/(?:posts|videos)\/|\/(?:permalink|story)\.php/i.test(item)) ||
+      urls[0];
+    if (!url) continue;
+
+    const mensagemHtml =
+      bloco.match(/data-testid="post_message"[^>]*>([\s\S]*?)(?=<div class="_2162\b)/i)?.[1] ||
+      '';
+    const texto = textoDeHtml(mensagemHtml);
+    if (texto.length < 20) continue;
+
+    const imagens = [...bloco.matchAll(/<img\b[^>]*\bsrc="(https:\/\/[^"\s]+)"/gi)]
+      .map((match) => decodificarEntidadesHtml(match[1]))
+      .filter((src) => /scontent|fbcdn/i.test(src))
+      .filter((src) => !/s50x50|t39\.30808-1\//i.test(src));
+    const timestamp = Number(bloco.match(/\bdata-utime="(\d{9,13})"/i)?.[1]) || 0;
+    const autorHtml = bloco.match(/<div class="_2_79[^"<>]*">([\s\S]*?)<\/div>/i)?.[1] || '';
+    const autor = textoDeHtml(autorHtml) || pagina || null;
+    const publicadoEm = timestamp
+      ? new Date(timestamp > 10_000_000_000 ? timestamp : timestamp * 1000)
+      : null;
+
+    itens.push({
+      externalId: url,
+      mediaType: /video_redirect|<video\b|\/(?:reel|videos)\//i.test(bloco) ? 'video' : 'image',
+      titulo: tituloDoTexto(texto, 'Post do Facebook'),
+      url,
+      texto,
+      resumo: texto.slice(0, 400),
+      thumbnail: imagens[0] || null,
+      autor,
+      publicadoEm:
+        publicadoEm && !Number.isNaN(publicadoEm.getTime()) ? publicadoEm : null,
+    });
+  }
+
+  return itens;
+}
+
+function proximoCursorDoPlugin(raw) {
+  return (
+    String(raw || '').match(
+      /\["PluginTabLoadMore","setCursor",\[\],\["([^"]+)"\]\]/
+    )?.[1] || ''
+  );
+}
+
+/**
+ * Pagina o feed público pelo renderer usado pelo Page Plugin oficial da Meta.
+ * São cinco posts por página e até oito páginas, sem consumir API paga.
+ */
+async function listarPostsViaPlugin(pageUrl, limite = 20) {
+  const max = Math.min(40, Math.max(1, Number(limite) || 20));
+  const pagina = paginaCanonicaParaPlugin(pageUrl);
+  const config = {
+    app_id: FACEBOOK_PAGE_PLUGIN_APP_ID,
+    href: pagina,
+    width: 500,
+    height: 800,
+    has_cta: false,
+    has_small_header: true,
+    has_adapt_container_width: true,
+    has_cover: false,
+    has_posts: false,
+    tabs: 'timeline',
+    can_personalize: false,
+    is_xfbml: false,
+    referer_uri: '',
+  };
+  const referer = `https://www.facebook.com/plugins/page.php?href=${encodeURIComponent(pagina)}&tabs=timeline&width=500&height=800&small_header=true&adapt_container_width=true&hide_cover=true&show_facepile=false`;
+  const itens = [];
+  const urlsVistas = new Set();
+  const cursoresVistos = new Set();
+  let cursor = '';
+  let paginas = 0;
+  const maxPaginas = Math.min(8, Math.max(1, Math.ceil(max / 5)));
+
+  while (itens.length < max && paginas < maxPaginas) {
+    const resposta = await axios.get(FACEBOOK_PAGE_PLUGIN_RENDERER, {
+      params: {
+        key: 'timeline',
+        config_json: JSON.stringify(config),
+        ...(cursor ? { cursor } : {}),
+      },
+      timeout: 30000,
+      maxRedirects: 3,
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        Accept: 'application/json,text/javascript,*/*;q=0.01',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        'X-Requested-With': 'XMLHttpRequest',
+        Referer: referer,
+      },
+      validateStatus: () => true,
+    });
+    if (resposta.status >= 400) {
+      // O renderer às vezes mantém um cursor na última página, mas responde
+      // 400 quando ele é usado. Os lotes já recebidos continuam válidos.
+      if (itens.length) break;
+      const detalhe = String(resposta.data || '').replace(/\s+/g, ' ').slice(0, 180);
+      throw new Error(
+        `Feed público do Facebook respondeu HTTP ${resposta.status}${detalhe ? `: ${detalhe}` : '.'}`
+      );
+    }
+
+    const raw = String(resposta.data || '');
+    let json;
+    try {
+      json = JSON.parse(raw.replace(/^for\s*\(;;\);\s*/, ''));
+    } catch {
+      throw new Error('O Facebook devolveu uma resposta inválida ao listar o feed público.');
+    }
+    const markup = String(json?.payload?.content?.markup?.__html || '');
+    const lote = extrairPostsDoMarkupPlugin(markup, pagina);
+    let novos = 0;
+    for (const item of lote) {
+      const chave = String(item.url || '').toLowerCase();
+      if (!chave || urlsVistas.has(chave)) continue;
+      urlsVistas.add(chave);
+      itens.push(item);
+      novos += 1;
+      if (itens.length >= max) break;
+    }
+
+    paginas += 1;
+    const proximo = proximoCursorDoPlugin(raw);
+    if (!proximo || cursoresVistos.has(proximo) || !novos) break;
+    cursoresVistos.add(proximo);
+    cursor = proximo;
+  }
+
+  console.log(`[fb-plugin] ${pagina}: ${itens.length} post(s) em ${paginas} página(s)`);
+  return itens.slice(0, max);
+}
+
 /**
  * Variantes da mesma página que costumam renderizar conjuntos diferentes de
  * permalinks. Unir as três aumenta bastante a colheita por scan.
@@ -341,6 +543,20 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
     handleEsperado = '';
   }
   const slugEsperado = handleEsperado.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // Caminho principal: o renderer do Page Plugin já entrega páginas de cinco
+  // posts com texto, imagem e data. É público, rápido e não consome créditos.
+  try {
+    const postsPlugin = await listarPostsViaPlugin(pageUrl, max);
+    if (postsPlugin.length) return postsPlugin;
+  } catch (err) {
+    console.warn(`[fb-plugin] ${pageUrl}: ${err.message}`);
+  }
+
+  // Perfis que não são aceitos pelo Page Plugin ainda usam a sessão como
+  // fallback. Sem cookies, encerra sem repetir nove requisições que falhariam.
+  if (!isConfigured()) return [];
+
   const urlComDonoEsperado = (url) => {
     if (!slugEsperado) return false;
     try {
@@ -480,9 +696,11 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
 module.exports = {
   isConfigured,
   listarPostsPerfil,
+  listarPostsViaPlugin,
   baixarHtmlPagina,
   extrairUrlsDePosts,
   extrairDetalhesDoPost,
+  extrairPostsDoMarkupPlugin,
   ehUrlDePostValida,
   variantesDaPagina,
 };
