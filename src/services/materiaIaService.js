@@ -2254,8 +2254,8 @@ async function gerarMateriaManual({
           url: /^https?:\/\//i.test(String(fonteBase.url || '').trim())
             ? String(fonteBase.url).trim().slice(0, 1000)
             : null,
-          resumo: String(fonteBase.resumo || '').trim().slice(0, 1500),
-          trecho: String(fonteBase.resumo || '').trim().slice(0, 2500),
+          resumo: String(fonteBase.resumo || '').trim().slice(0, 2500),
+          trecho: String(fonteBase.resumo || '').trim().slice(0, 5000),
           data: String(fonteBase.data || '').trim().slice(0, 80) || null,
           dataTimestamp: Number(fonteBase.dataTimestamp) || null,
           fonteSelecionada: true,

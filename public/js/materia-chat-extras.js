@@ -36,12 +36,14 @@
   let carregandoAlta = false;
   let publicoAtivo = false;
   let carregandoPublico = false;
+  let paginaFacebookAtiva = false;
+  let carregandoPaginaFacebook = false;
 
   /* ------------------------------ estilos ------------------------------ */
 
   const estilos = document.createElement('style');
   estilos.textContent = `
-    .mia-x-anexo-btn, .mia-x-imagem-btn, .mia-x-alta-btn { cursor: pointer; }
+    .mia-x-anexo-btn, .mia-x-imagem-btn, .mia-x-alta-btn, .mia-x-publico-btn, .mia-x-facebook-btn { cursor: pointer; }
     .mia-x-chip {
       display: inline-flex; align-items: center; gap: .4rem;
       max-width: 100%; margin: .5rem 0 0; padding: .35rem .5rem .35rem .6rem;
@@ -133,6 +135,10 @@
       font-size: .68rem; font-weight: 700; font-variant-numeric: tabular-nums;
     }
     .mia-x-card-txt { min-width: 0; flex: 1; }
+    .mia-x-card-thumb {
+      flex: 0 0 4.5rem; width: 4.5rem; height: 4.5rem; border-radius: .55rem;
+      object-fit: cover; background: #020617; border: 1px solid #1e293b;
+    }
     .mia-x-card-tit { display: block; font-size: .8125rem; font-weight: 500; line-height: 1.35; color: #e2e8f0; }
     .mia-x-card-meta { display: block; margin-top: .2rem; font-size: .65rem; color: #64748b; }
     .mia-x-card-res { display: block; margin-top: .25rem; font-size: .7rem; line-height: 1.4; color: #94a3b8; }
@@ -150,6 +156,7 @@
     .mia-x-card-fonte:hover { border-color: #64748b; color: #fff; }
     @media (max-width: 560px) {
       .mia-x-card { flex-wrap: wrap; }
+      .mia-x-card-thumb { flex-basis: 4rem; width: 4rem; height: 4rem; }
       .mia-x-card-txt { flex-basis: calc(100% - 4rem); }
       .mia-x-card-actions { width: 100%; justify-content: flex-end; }
     }
@@ -249,11 +256,26 @@
   btnPublico.textContent = 'Meu público';
   el.seg.appendChild(btnPublico);
 
+  const btnPaginaFacebook = document.createElement('button');
+  btnPaginaFacebook.type = 'button';
+  btnPaginaFacebook.className = 'mia-chat-seg-btn mia-x-facebook-btn';
+  btnPaginaFacebook.setAttribute('aria-pressed', 'false');
+  btnPaginaFacebook.title = 'Cole uma página do Facebook, escolha os posts e crie rascunhos';
+  btnPaginaFacebook.textContent = 'Página Facebook';
+  el.seg.appendChild(btnPaginaFacebook);
+
+  function desativarPaginaFacebook() {
+    paginaFacebookAtiva = false;
+    btnPaginaFacebook.setAttribute('aria-pressed', 'false');
+    btnPaginaFacebook.classList.remove('is-active');
+  }
+
   function marcarPublico(ativa) {
     publicoAtivo = ativa;
     btnPublico.setAttribute('aria-pressed', ativa ? 'true' : 'false');
     btnPublico.classList.toggle('is-active', ativa);
     if (!ativa) return;
+    desativarPaginaFacebook();
     altaAtiva = false;
     btnAlta.setAttribute('aria-pressed', 'false');
     btnAlta.classList.remove('is-active');
@@ -268,6 +290,7 @@
     btnAlta.setAttribute('aria-pressed', ativa ? 'true' : 'false');
     btnAlta.classList.toggle('is-active', ativa);
     if (!ativa) return;
+    desativarPaginaFacebook();
     publicoAtivo = false;
     btnPublico.setAttribute('aria-pressed', 'false');
     btnPublico.classList.remove('is-active');
@@ -283,6 +306,7 @@
     b.addEventListener('click', () => {
       marcarAlta(false);
       marcarPublico(false);
+      desativarPaginaFacebook();
     });
   });
 
@@ -331,6 +355,7 @@
     const lista = (Array.isArray(topicos) ? topicos : []).filter(Boolean);
     if (!lista.length) return;
     marcarAlta(false);
+    desativarPaginaFacebook();
     botaoModo('escrever')?.click();
     el.input.value = textoPedidoTopicosSelecionados(lista);
     el.input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -348,10 +373,14 @@
       .map((topico) => ({
         titulo: topico.titulo || '',
         url: topico.url || '',
-        veiculo: topico.veiculo || 'Web',
+        veiculo: topico.pagina ? `Facebook · ${topico.pagina}` : topico.veiculo || 'Web',
         resumo: topico.resumo || '',
         data: topico.data || '',
         dataTimestamp: Number(topico.dataTimestamp) || null,
+        imagemUrl: topico.imagem || topico.imagemUrl || null,
+        creditoImagem: topico.pagina
+          ? `Reprodução/Facebook · ${topico.pagina}`
+          : topico.veiculo || 'Reprodução',
       }));
     if (!pautas.length) throw new Error('Selecione ao menos uma pauta.');
     return apiJson('/api/materias-ia/chat/pautas/rascunhos', {
@@ -364,11 +393,28 @@
     });
   }
 
+  function marcarPaginaFacebook(ativa) {
+    paginaFacebookAtiva = ativa;
+    btnPaginaFacebook.setAttribute('aria-pressed', ativa ? 'true' : 'false');
+    btnPaginaFacebook.classList.toggle('is-active', ativa);
+    if (!ativa) return;
+    altaAtiva = false;
+    publicoAtivo = false;
+    btnAlta.setAttribute('aria-pressed', 'false');
+    btnAlta.classList.remove('is-active');
+    btnPublico.setAttribute('aria-pressed', 'false');
+    btnPublico.classList.remove('is-active');
+    document.querySelectorAll('.chat-modo-btn').forEach((b) => {
+      b.classList.remove('is-active');
+      b.setAttribute('aria-pressed', 'false');
+    });
+  }
+
   /**
    * Aviso de carregando com esqueletos. Entra na hora do clique para o usuário
    * não olhar uma área vazia achando que nada aconteceu.
    */
-  function renderCarregando(termo, paraPublico = false) {
+  function renderCarregando(termo, paraPublico = false, paginaFacebook = false) {
     limparBlocosAlta();
     el.vazio?.classList.add('hidden');
 
@@ -384,8 +430,10 @@
     spin.className = 'mia-x-spin';
     linha.appendChild(spin);
     const txt = document.createElement('span');
-    txt.textContent = paraPublico
-      ? 'Analisando o que viralizou e procurando pautas novas para o seu público...'
+    txt.textContent = paginaFacebook
+      ? 'Abrindo a página do Facebook e extraindo os posts...'
+      : paraPublico
+        ? 'Analisando o que viralizou e procurando pautas novas para o seu público...'
       : termo
         ? `Carregando matérias em alta sobre “${termo}”… aguarde.`
         : 'Carregando as matérias em alta agora… aguarde alguns segundos.';
@@ -436,11 +484,66 @@
     mostrarBloco(wrap);
   }
 
+  function renderPaginaFacebookEntrada(url = '', mensagemErro = '') {
+    limparBlocosAlta();
+    el.vazio?.classList.add('hidden');
+    const wrap = novoBlocoAlta();
+    const corpo = document.createElement('div');
+    corpo.className = 'mia-msg-ai-body';
+    const texto = document.createElement('p');
+    texto.textContent =
+      'Cole o link de uma página ou perfil público do Facebook. Vou listar os posts para você escolher quais devem virar matérias em rascunho.';
+    corpo.appendChild(texto);
+    wrap.appendChild(corpo);
+
+    const box = document.createElement('div');
+    box.className = 'mia-x-alta';
+    const titulo = document.createElement('p');
+    titulo.className = 'mia-x-alta-title';
+    titulo.textContent = 'Página Facebook';
+    box.appendChild(titulo);
+    if (mensagemErro) {
+      const erro = document.createElement('p');
+      erro.className = 'mia-x-erro';
+      erro.textContent = mensagemErro;
+      box.appendChild(erro);
+    }
+    const busca = document.createElement('div');
+    busca.className = 'mia-x-busca';
+    const campo = document.createElement('input');
+    campo.type = 'url';
+    campo.placeholder = 'https://www.facebook.com/NomeDaPagina';
+    campo.value = String(url || '');
+    campo.setAttribute('aria-label', 'URL da página do Facebook');
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.textContent = 'Listar posts';
+    const disparar = () => carregarPaginaFacebook(campo.value);
+    botao.addEventListener('click', disparar);
+    campo.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter') return;
+      ev.preventDefault();
+      disparar();
+    });
+    busca.appendChild(campo);
+    busca.appendChild(botao);
+    box.appendChild(busca);
+    const ajuda = document.createElement('p');
+    ajuda.className = 'mia-x-result-note';
+    ajuda.textContent = 'A leitura usa primeiro a sessão gratuita configurada no servidor; nenhuma publicação é feita automaticamente.';
+    box.appendChild(ajuda);
+    wrap.appendChild(box);
+    mostrarBloco(wrap);
+    setTimeout(() => campo.focus(), 0);
+  }
+
   function renderAlta(data) {
     const topicos = data.topicos || [];
     const temas = data.temas || [];
     const horas = data.horas || 24;
     const paraPublico = data.origem === 'viralizadas';
+    const paginaFacebook = data.origem === 'pagina-facebook';
+    const podeSalvarRascunho = paraPublico || paginaFacebook;
     const basesVirais = Array.isArray(data.basesVirais) ? data.basesVirais : [];
 
     limparBlocosAlta();
@@ -451,8 +554,10 @@
     const corpo = document.createElement('div');
     corpo.className = 'mia-msg-ai-body';
     const p = document.createElement('p');
-    p.textContent = paraPublico
-      ? `${topicos.length} pauta(s) nova(s) encontradas a partir do que mais engajou na sua página. Selecione uma ou mais para salvar como rascunho.`
+    p.textContent = paginaFacebook
+      ? `${topicos.length} post(s) encontrados em ${data.pagina || 'Facebook'}. Selecione um ou mais para criar as matérias como rascunho.`
+      : paraPublico
+        ? `${topicos.length} pauta(s) nova(s) encontradas a partir do que mais engajou na sua página. Selecione uma ou mais para salvar como rascunho.`
       : topicos.length
         ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais e eu escrevo tudo de uma vez.`
         : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
@@ -478,8 +583,10 @@
     head.className = 'mia-x-alta-head';
     const titulo = document.createElement('p');
     titulo.className = 'mia-x-alta-title';
-    titulo.textContent = paraPublico
-      ? 'Sugestões para o seu público'
+    titulo.textContent = paginaFacebook
+      ? `Posts de ${data.pagina || 'Facebook'}`
+      : paraPublico
+        ? 'Sugestões para o seu público'
       : data.padrao
         ? 'Em alta agora'
         : 'Em alta — sua busca';
@@ -489,7 +596,8 @@
     recarregar.className = 'mia-chat-ghost-btn';
     recarregar.textContent = 'Atualizar';
     recarregar.addEventListener('click', () => {
-      if (paraPublico) carregarParaPublico();
+      if (paginaFacebook) carregarPaginaFacebook(data.paginaUrl);
+      else if (paraPublico) carregarParaPublico();
       else carregarAlta(data.padrao ? '' : temas.join(', '));
     });
     head.appendChild(recarregar);
@@ -515,7 +623,7 @@
       box.appendChild(bases);
     }
 
-    if (!paraPublico && temas.length) {
+    if (!paraPublico && !paginaFacebook && temas.length) {
       const chips = document.createElement('div');
       chips.className = 'mia-x-temas';
       temas.forEach((t) => {
@@ -532,13 +640,17 @@
     busca.className = 'mia-x-busca';
     const campo = document.createElement('input');
     campo.type = 'search';
-    campo.placeholder = 'Buscar outro tema. Ex.: Malafaia, política evangélica';
-    campo.setAttribute('aria-label', 'Buscar tema em alta');
-    if (!data.padrao) campo.value = temas.join(', ');
+    campo.placeholder = paginaFacebook
+      ? 'https://www.facebook.com/NomeDaPagina'
+      : 'Buscar outro tema. Ex.: Malafaia, política evangélica';
+    campo.setAttribute('aria-label', paginaFacebook ? 'URL da página do Facebook' : 'Buscar tema em alta');
+    if (paginaFacebook) campo.value = data.paginaUrl || '';
+    else if (!data.padrao) campo.value = temas.join(', ');
     const botao = document.createElement('button');
     botao.type = 'button';
-    botao.textContent = 'Buscar';
-    const disparar = () => carregarAlta(campo.value);
+    botao.textContent = paginaFacebook ? 'Listar posts' : 'Buscar';
+    const disparar = () =>
+      paginaFacebook ? carregarPaginaFacebook(campo.value) : carregarAlta(campo.value);
     botao.addEventListener('click', disparar);
     campo.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Enter') return;
@@ -570,8 +682,8 @@
       gerar.textContent = paraPublico ? 'Gerar no chat' : 'Gerar selecionados';
       gerar.disabled = true;
       lote.appendChild(selecionar);
-      if (paraPublico) lote.appendChild(salvar);
-      lote.appendChild(gerar);
+      if (podeSalvarRascunho) lote.appendChild(salvar);
+      if (!paginaFacebook) lote.appendChild(gerar);
       box.appendChild(lote);
 
       const resultadoLote = document.createElement('p');
@@ -638,7 +750,7 @@
         if (!alvos.length || salvando) return;
         salvando = true;
         atualizarLote();
-        setStatus(`Criando ${alvos.length} rascunho(s) para o seu público...`);
+        setStatus(`Criando ${alvos.length} rascunho(s)${paginaFacebook ? ' dos posts selecionados' : ' para o seu público'}...`);
         try {
           const result = await salvarTopicosComoRascunhos(alvos);
           resultadoLote.classList.remove('hidden');
@@ -681,6 +793,16 @@
         pos.textContent = String(i + 1);
         card.appendChild(pos);
 
+        if (t.imagem) {
+          const thumb = document.createElement('img');
+          thumb.className = 'mia-x-card-thumb';
+          thumb.src = t.imagem;
+          thumb.alt = '';
+          thumb.loading = 'lazy';
+          thumb.referrerPolicy = 'no-referrer';
+          card.appendChild(thumb);
+        }
+
         const txt = document.createElement('span');
         txt.className = 'mia-x-card-txt';
 
@@ -695,8 +817,10 @@
           t.tema ? t.tema : '',
           paraPublico && t.afinidadePublico ? `${t.afinidadePublico}% de afinidade` : '',
           paraPublico && t.potencialPublico ? `${t.potencialPublico}% potencial` : '',
+          paginaFacebook && t.pagina ? t.pagina : '',
           t.veiculo || 'Web',
           formatarDataPauta(t),
+          paginaFacebook && t.mediaType === 'video' ? 'Vídeo' : '',
           t.contagemFontes > 1 ? `${t.contagemFontes} fontes` : '',
         ]
           .filter(Boolean)
@@ -728,10 +852,10 @@
         const gerarUm = document.createElement('button');
         gerarUm.type = 'button';
         gerarUm.className = 'mia-x-card-gerar';
-        gerarUm.textContent = paraPublico ? 'Salvar' : 'Gerar';
+        gerarUm.textContent = podeSalvarRascunho ? 'Salvar' : 'Gerar';
         gerarUm.addEventListener('click', async (ev) => {
           ev.stopPropagation();
-          if (!paraPublico) {
+          if (!podeSalvarRascunho) {
             pedirMateriaDoTopico(t);
             return;
           }
@@ -842,6 +966,40 @@
   btnPublico.addEventListener('click', () => {
     marcarPublico(true);
     carregarParaPublico();
+  });
+
+  async function carregarPaginaFacebook(url) {
+    if (carregandoPaginaFacebook) return;
+    const paginaUrl = String(url || '').trim();
+    if (!/^https?:\/\/(?:[^/]+\.)?(?:facebook\.com|fb\.com)\//i.test(paginaUrl)) {
+      setStatus('Cole uma URL válida de página do Facebook.');
+      renderPaginaFacebookEntrada(paginaUrl, 'O link precisa ser de uma página ou perfil do Facebook.');
+      return;
+    }
+    carregandoPaginaFacebook = true;
+    btnPaginaFacebook.disabled = true;
+    setStatus('Extraindo posts da página do Facebook...');
+    renderCarregando(paginaUrl, false, true);
+    try {
+      const data = await apiJson(`${API}/pagina-facebook/posts`, {
+        method: 'POST',
+        body: JSON.stringify({ url: paginaUrl, limit: 20 }),
+      });
+      renderAlta(data);
+      setStatus(`${(data.topicos || []).length} post(s) encontrados em ${data.pagina || 'Facebook'}`);
+    } catch (err) {
+      const mensagem = err.message || 'Não consegui extrair os posts dessa página.';
+      setStatus(mensagem);
+      renderPaginaFacebookEntrada(paginaUrl, mensagem);
+    } finally {
+      carregandoPaginaFacebook = false;
+      btnPaginaFacebook.disabled = false;
+    }
+  }
+
+  btnPaginaFacebook.addEventListener('click', () => {
+    marcarPaginaFacebook(true);
+    renderPaginaFacebookEntrada();
   });
 
   /* ---------------------------- anexo em PDF ---------------------------- */

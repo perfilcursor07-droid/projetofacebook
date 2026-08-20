@@ -3033,11 +3033,18 @@ function limparPautaParaRascunho(pauta) {
   const resumo = String(pauta.resumo || pauta.trecho || '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 1200);
+    .slice(0, 5000);
   const data = String(pauta.data || pauta.dataReferencia || '').trim().slice(0, 80);
   const dataTimestamp = Number(pauta.dataTimestamp) || null;
+  const imagemUrl = String(pauta.imagemUrl || pauta.imagem || pauta.thumbnail || '')
+    .trim()
+    .slice(0, 1500) || null;
+  const creditoImagem = String(pauta.creditoImagem || pauta.credito || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200) || null;
   if (!titulo && !url && !resumo) return null;
-  return { titulo, url, veiculo, resumo, data, dataTimestamp };
+  return { titulo, url, veiculo, resumo, data, dataTimestamp, imagemUrl, creditoImagem };
 }
 
 function montarInformacoesDaPauta(pauta) {
@@ -3090,8 +3097,8 @@ async function salvarPautasComoRascunhos({
         pesquisarWeb,
         palavrasChave: [pauta.titulo, pauta.veiculo].filter(Boolean).join(' '),
         periodo,
-        imagemUrl: null,
-        creditoImagem: pauta.veiculo || 'Reproducao',
+        imagemUrl: pauta.imagemUrl || null,
+        creditoImagem: pauta.creditoImagem || pauta.veiculo || 'Reproducao',
         fonteBase: {
           titulo: pauta.titulo,
           veiculo: pauta.veiculo,

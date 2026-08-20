@@ -303,6 +303,7 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
       mediaType: /\/(reel|videos)\//i.test(d.url) ? 'video' : 'image',
       titulo: tituloDoTexto(d.texto, 'Post do Facebook'),
       url: d.url,
+      texto: d.texto || null,
       resumo: d.texto ? d.texto.slice(0, 400) : null,
       thumbnail: d.imagem || null,
       publicadoEm: d.publicadoEm,

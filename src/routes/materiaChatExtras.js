@@ -277,6 +277,27 @@ router.post('/para-meu-publico', async (req, res, next) => {
   }
 });
 
+/** Lista posts de uma página do Facebook para o editor escolher no chat. */
+router.post('/pagina-facebook/posts', async (req, res, next) => {
+  try {
+    const service = require('../services/facebookPageMatterService');
+    const resultado = await service.listarPostsDaPagina(req.body?.url, {
+      limit: req.body?.limit || 20,
+    });
+    return res.json({
+      ok: true,
+      origem: 'pagina-facebook',
+      ...resultado,
+      topicos: resultado.posts,
+    });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message, avisos: err.avisos || [] });
+    }
+    return next(err);
+  }
+});
+
 /**
  * Anexo PDF. O arquivo não é guardado: o texto volta para o navegador,
  * que o envia junto da mensagem do chat.
