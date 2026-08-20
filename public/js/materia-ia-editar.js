@@ -1160,12 +1160,13 @@
       } else {
         setStatus(isRepublish ? 'Republicada no Facebook ✓' : 'Publicado no Facebook ✓');
       }
-      // Com erro no Instagram, fica na tela para o editor ler o aviso.
-      if (!data.instagramErro) {
-        setTimeout(() => {
-          window.location.href = cfg.listUrl || '/minhas-materias';
-        }, 1800);
-      }
+      // A requisição terminou com sucesso e pelo menos um destino aceitou a
+      // publicação. Avisos parciais do Instagram não podem prender o editor
+      // neste modal; damos apenas mais tempo para ele ler a mensagem.
+      const redirectDelay = data.instagramErro ? 4200 : 1800;
+      setTimeout(() => {
+        window.location.assign(cfg.listUrl || '/minhas-materias');
+      }, redirectDelay);
     } catch (err) {
       hidePublishModal();
       setStatus(err.message, true);
