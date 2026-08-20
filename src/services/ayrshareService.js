@@ -428,6 +428,10 @@ async function publishToFacebook({
       headers: authHeaders({ 'Content-Type': 'application/json' }, pk || null),
       timeout: 120000,
     });
+    // O POST pode devolver somente o ID da submissão enquanto as plataformas
+    // ainda estão processando. Preserve-o mesmo que a consulta seguinte venha
+    // com outro formato de resposta.
+    const submissionId = data?.id ? String(data.id) : null;
 
     const platformOutcome = (payload, platform) =>
       (Array.isArray(payload?.postIds) &&
@@ -461,7 +465,13 @@ async function publishToFacebook({
           headers: authHeaders({}, pk || null),
           timeout: 30000,
         });
-        if (checked?.data && typeof checked.data === 'object') data = checked.data;
+        if (checked?.data && typeof checked.data === 'object') {
+          data = {
+            ...data,
+            ...checked.data,
+            id: checked.data.id || data.id || submissionId,
+          };
+        }
       } catch (checkErr) {
         console.warn(
           '[ayrshare] consulta do post ainda indisponível:',
@@ -509,13 +519,13 @@ async function publishToFacebook({
     if (!igErro && !ig && String(data?.status || '').toLowerCase() === 'error') {
       igErro = apiErrorMessage({ response: { data } });
     }
-    const ayrshareId = data?.id ? String(data.id) : null;
+    const ayrshareId = data?.id ? String(data.id) : submissionId;
     const overallStatus = String(data?.status || '').toLowerCase();
     const igAcceptedWithoutDetails =
       !igErro &&
       !ig &&
       Boolean(ayrshareId) &&
-      ['success', 'processing', 'pending'].includes(overallStatus);
+      !['error', 'failed'].includes(overallStatus);
     if (igErro) console.warn('[ayrshare] instagram falhou:', igErro);
     if (igAcceptedWithoutDetails) {
       console.warn('[ayrshare] instagram aceito sem detalhes da plataforma', {
@@ -531,7 +541,7 @@ async function publishToFacebook({
     const socialId = fb?.id ? String(fb.id) : null;
     const postUrl = fb?.postUrl || null;
     // Guardar sempre o ID Ayrshare (analytics confiável). O ID nativo FB fica em fb_native_post_id.
-    const postId = publicarFacebook && ayrshareId
+    const postId = ayrshareId
       ? `ayrshare:${ayrshareId}`
       : publicarFacebook ? socialId || null : null;
 
@@ -543,18 +553,20 @@ async function publishToFacebook({
       postUrl,
       provider: 'ayrshare',
       instagram_pedido: Boolean(publicarInstagram),
-      instagram_publicado: Boolean(!igErro && (ig || overallStatus === 'success')),
+      // A publicação nas redes é assíncrona; o ID nativo pode chegar depois.
+      instagram_publicado: Boolean(
+        vaiNoInstagram && !igErro && (ig || igAcceptedWithoutDetails || overallStatus === 'success')
+      ),
+      instagram_pendente: Boolean(igAcceptedWithoutDetails && overallStatus !== 'success'),
       instagram_post_id: ig && !igErro && ig.id ? String(ig.id) : null,
       instagram_post_url: (ig && !igErro && ig.postUrl) || null,
       instagram_erro:
         igErro ||
         (publicarInstagram && !vaiNoInstagram
           ? 'Instagram exige imagem ou vídeo — a publicação saiu só no Facebook.'
-          : publicarInstagram && igAcceptedWithoutDetails && overallStatus !== 'success'
-            ? 'A Ayrshare aceitou o post e ainda está processando o Instagram. Confira novamente em alguns instantes.'
-            : publicarInstagram && !ig && !igAcceptedWithoutDetails
-              ? 'A Ayrshare não confirmou o post no Instagram. Verifique a conta em Social Accounts.'
-              : null),
+          : publicarInstagram && !ig && !igAcceptedWithoutDetails
+            ? 'A Ayrshare não confirmou o post no Instagram. Verifique a conta em Social Accounts.'
+            : null),
       raw: data,
     };
   } catch (err) {

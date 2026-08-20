@@ -148,6 +148,7 @@ async function publishEditorialPhoto({
       facebookPublicado: pedidoFacebook,
       instagramPedido: pedidoInstagram,
       instagramPublicado: Boolean(result.instagram_publicado),
+      instagramPendente: Boolean(result.instagram_pendente),
       instagramPostUrl: result.instagram_post_url || null,
       instagramErro: result.instagram_erro || null,
     };
