@@ -621,6 +621,42 @@ async function extrairMetadadosViaGoogleTranslate(urlReal) {
   }
 }
 
+async function extrairMetadadosViaClaudeWebFetch(urlReal) {
+  try {
+    const claudeService = require('./claudeService');
+    if (!claudeService.isConfigured()) return null;
+    const dados = await claudeService.extrairArtigoViaWebFetch(urlReal);
+    if (!dados?.trecho) return null;
+    const veiculoHost = (() => {
+      try {
+        return new URL(urlReal).hostname.replace(/^www\./i, '');
+      } catch {
+        return null;
+      }
+    })();
+    const dataTimestamp = parsearDataPublicacao(dados.dataPublicacao);
+    console.info(
+      `[article-source] Claude web_fetch leu ${veiculoHost || urlReal}: ${dados.trecho.length} caracteres`
+    );
+    return {
+      url: urlReal,
+      titulo: dados.titulo || null,
+      resumo: dados.resumo || null,
+      imagem: null,
+      trecho: dados.trecho,
+      autor: dados.autor || null,
+      veiculo: dados.veiculo || veiculoHost,
+      veiculoHost,
+      dataPublicacao: dados.dataPublicacao || null,
+      dataTimestamp,
+      leitorFallback: 'claude-web-fetch',
+    };
+  } catch (err) {
+    console.warn('extrairMetadadosArtigo ClaudeWebFetch:', err.message);
+    return null;
+  }
+}
+
 async function extrairMetadadosArtigo(url) {
   const urlReal = (await resolverUrlNoticia(url)) || url;
   if (!urlReal) return null;
@@ -635,7 +671,9 @@ async function extrairMetadadosArtigo(url) {
     host = '';
   }
   if (host && providerHealth.estaFora(`site:${host}`)) {
-    return extrairMetadadosViaGoogleTranslate(urlReal);
+    const viaTranslate = await extrairMetadadosViaGoogleTranslate(urlReal);
+    if (viaTranslate) return viaTranslate;
+    return extrairMetadadosViaClaudeWebFetch(urlReal);
   }
 
   try {
@@ -724,6 +762,8 @@ async function extrairMetadadosArtigo(url) {
     if (viaJina) return viaJina;
     const viaTranslate = await extrairMetadadosViaGoogleTranslate(urlReal);
     if (viaTranslate) return viaTranslate;
+    const viaClaude = await extrairMetadadosViaClaudeWebFetch(urlReal);
+    if (viaClaude) return viaClaude;
     return {
       url: urlReal,
       titulo: null,
@@ -1201,6 +1241,7 @@ module.exports = {
   extrairMetadadosArtigo,
   extrairMetadadosViaJina,
   extrairMetadadosViaGoogleTranslate,
+  extrairMetadadosViaClaudeWebFetch,
   urlProxyGoogleTranslate,
   extrairImagemCapa,
   resolverUrlNoticia,
