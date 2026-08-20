@@ -145,6 +145,27 @@ function textoDaResposta(message) {
     .trim();
 }
 
+function interpretarBlocosWebFetch(raw, host = '') {
+  const texto = String(raw || '').trim();
+  const bloco = (nome, aceitarFim = false) => {
+    const fechamento = aceitarFim ? `(?:<\\/${nome}>|$)` : `<\\/${nome}>`;
+    const match = texto.match(new RegExp(`<${nome}>\\s*([\\s\\S]*?)\\s*${fechamento}`, 'i'));
+    return String(match?.[1] || '').trim();
+  };
+  // Aceitar o fim do texto evita perder toda a apuração caso a resposta seja
+  // truncada exatamente antes da tag final.
+  const trecho = bloco('APURACAO', true) || bloco('TRECHO', true);
+  if (trecho.length < 300) return null;
+  return {
+    titulo: bloco('TITULO') || null,
+    veiculo: bloco('VEICULO') || host || null,
+    autor: bloco('AUTOR') || null,
+    dataPublicacao: bloco('DATA') || null,
+    resumo: bloco('RESUMO') || trecho.slice(0, 400),
+    trecho: trecho.slice(0, 12000),
+  };
+}
+
 /**
  * Último recurso para portais que bloqueiam o IP do servidor. O web_fetch é
  * executado pela infraestrutura da Anthropic e devolve uma apuração estruturada
@@ -165,13 +186,18 @@ async function extrairArtigoViaWebFetch(url) {
     name: 'web_fetch',
     max_uses: 1,
     allowed_domains: [host],
-    max_content_tokens: 9000,
+    max_content_tokens: 6000,
   };
   const prompt = [
     `Leia integralmente esta reportagem usando web_fetch: ${link}`,
-    'Retorne SOMENTE JSON válido, sem markdown, com estas chaves:',
-    '{"titulo":"","veiculo":"","autor":"","dataPublicacao":"","resumo":"","trecho":""}',
-    'Em "trecho", produza uma apuração detalhada em português, com nomes, contexto, dados, argumentos e todas as falas relevantes atribuídas corretamente.',
+    'Retorne somente os blocos abaixo, sem JSON e sem markdown:',
+    '<TITULO>título original</TITULO>',
+    '<VEICULO>nome do veículo</VEICULO>',
+    '<AUTOR>nome do autor</AUTOR>',
+    '<DATA>data de publicação</DATA>',
+    '<RESUMO>resumo factual curto</RESUMO>',
+    '<APURACAO>apuração detalhada em português</APURACAO>',
+    'Em APURACAO, inclua nomes, contexto, dados, argumentos e todas as falas relevantes atribuídas corretamente.',
     'Não escreva a matéria final, não invente e não troque o assunto por outra página.',
   ].join('\n');
   const mensagens = [{ role: 'user', content: prompt }];
@@ -199,17 +225,9 @@ async function extrairArtigoViaWebFetch(url) {
     logarUso(MODELO_REDATOR, inicio, resposta.usage, 'web-fetch-artigo');
     const raw = textoDaResposta(resposta);
     if (!raw) return null;
-    const dados = JSON.parse(limparJson(raw));
-    const trecho = String(dados?.trecho || '').trim();
-    if (trecho.length < 300) return null;
-    return {
-      titulo: String(dados?.titulo || '').trim() || null,
-      veiculo: String(dados?.veiculo || '').trim() || host,
-      autor: String(dados?.autor || '').trim() || null,
-      dataPublicacao: String(dados?.dataPublicacao || '').trim() || null,
-      resumo: String(dados?.resumo || '').trim() || trecho.slice(0, 400),
-      trecho: trecho.slice(0, 12000),
-    };
+    const artigo = interpretarBlocosWebFetch(raw, host);
+    if (!artigo) console.warn('[claude] web fetch artigo: resposta sem bloco APURACAO utilizável');
+    return artigo;
   } catch (err) {
     console.warn('[claude] web fetch artigo:', err.message);
     return null;
@@ -338,6 +356,7 @@ module.exports = {
   chatCompletion,
   chatCompletionStream,
   extrairArtigoViaWebFetch,
+  interpretarBlocosWebFetch,
   isConfigured,
   limparJson,
   MODELO_REDATOR,
