@@ -133,7 +133,7 @@ async function listarPostsDaPagina(pageUrl, { limit = 20 } = {}) {
 
   if (!posts.length) {
     const err = new Error(
-      'Não consegui listar posts dessa página. Confira se ela é pública e valide os cookies com scripts/test-fb-page.js.'
+      'Não consegui listar posts dessa página. Confira se ela é pública e teste com scripts/test-fb-page.js.'
     );
     err.status = 422;
     err.avisos = avisos;

@@ -5,15 +5,12 @@ const {
 } = require('./facebookCookies');
 
 /**
- * Lista posts de uma página do Facebook usando a sessão de YTDLP_FB_COOKIES_FILE.
- *
- * O HTML da página traz os PERMALINKS dos posts, mas não os textos: o feed é
- * carregado por GraphQL depois (uma página de 2,6 MB costuma ter ~13 permalinks
- * e apenas 1 "message"). Por isso o fluxo é em duas etapas — coletar os links na
- * página e abrir cada post individualmente, onde o texto vem renderizado.
+ * Lista posts públicos de uma página do Facebook. O caminho principal pagina o
+ * renderer do Page Plugin oficial; a sessão de YTDLP_FB_COOKIES_FILE é apenas
+ * fallback para perfis que o plugin não aceita.
  */
 
-/** Quantos posts abrir por scan (cada um custa ~3 MB de HTML). */
+/** Limites do fallback que abre os posts individualmente pela sessão. */
 const MAX_DETALHES = Math.min(40, Math.max(1, Number(process.env.FB_PAGE_MAX_POSTS) || 40));
 const CONCORRENCIA = Math.min(6, Math.max(1, Number(process.env.FB_PAGE_CONCORRENCIA) || 3));
 const FACEBOOK_PAGE_PLUGIN_APP_ID = '776730922422337';
@@ -387,8 +384,10 @@ async function listarPostsViaPlugin(pageUrl, limite = 20) {
   let cursor = '';
   let paginas = 0;
   const maxPaginas = Math.min(8, Math.max(1, Math.ceil(max / 5)));
+  const maxRequisicoes = Math.min(10, maxPaginas + 2);
+  let repeticoesCursor = 0;
 
-  while (itens.length < max && paginas < maxPaginas) {
+  while (itens.length < max && paginas < maxRequisicoes) {
     const resposta = await axios.get(FACEBOOK_PAGE_PLUGIN_RENDERER, {
       params: {
         key: 'timeline',
@@ -425,19 +424,27 @@ async function listarPostsViaPlugin(pageUrl, limite = 20) {
     }
     const markup = String(json?.payload?.content?.markup?.__html || '');
     const lote = extrairPostsDoMarkupPlugin(markup, pagina);
-    let novos = 0;
     for (const item of lote) {
       const chave = String(item.url || '').toLowerCase();
       if (!chave || urlsVistas.has(chave)) continue;
       urlsVistas.add(chave);
       itens.push(item);
-      novos += 1;
       if (itens.length >= max) break;
     }
 
     paginas += 1;
     const proximo = proximoCursorDoPlugin(raw);
-    if (!proximo || cursoresVistos.has(proximo) || !novos) break;
+    // O Facebook ocasionalmente omite ou repete o cursor em uma resposta e o
+    // devolve normalmente ao repetir a mesma página. Faz uma única repetição
+    // antes de considerar que o feed terminou.
+    if (!proximo || cursoresVistos.has(proximo)) {
+      if (repeticoesCursor < 1 && itens.length < max) {
+        repeticoesCursor += 1;
+        continue;
+      }
+      break;
+    }
+    repeticoesCursor = 0;
     cursoresVistos.add(proximo);
     cursor = proximo;
   }

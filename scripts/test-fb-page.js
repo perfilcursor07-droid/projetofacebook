@@ -21,6 +21,7 @@ const {
   extrairUrlsDePosts,
   extrairDetalhesDoPost,
   listarPostsPerfil,
+  listarPostsViaPlugin,
   variantesDaPagina,
 } = require('../src/services/facebookPageScrape');
 
@@ -36,12 +37,27 @@ const DUMP = process.argv.includes('--dump');
   console.log('=== Diagnóstico listagem de página do Facebook ===');
   const diag = diagnoseFacebookCookies();
   console.log('Cookies:', { ok: diag.ok, reason: diag.reason, file: diag.file });
-  if (!isConfigured()) {
-    console.log('FAIL: sessão do Facebook não configurada — veja YTDLP_FB_COOKIES_FILE.');
-    process.exit(2);
+  console.log('Página:', PAGE);
+
+  console.log('\nFeed público oficial (sem API paga):');
+  const pluginItens = await listarPostsViaPlugin(PAGE, 40).catch((err) => {
+    console.log('  ERRO:', err.message);
+    return [];
+  });
+  console.log(`  Itens aproveitáveis: ${pluginItens.length}`);
+  for (const item of pluginItens.slice(0, 5)) {
+    console.log('  -', {
+      titulo: String(item.titulo).slice(0, 60),
+      temThumb: Boolean(item.thumbnail),
+      publicadoEm: item.publicadoEm ? item.publicadoEm.toISOString().slice(0, 10) : null,
+    });
   }
 
-  console.log('Página:', PAGE);
+  if (!isConfigured()) {
+    console.log('Sessão não configurada; o feed público acima continua disponível.');
+    process.exit(pluginItens.length ? 0 : 2);
+  }
+
   const { html, finalUrl, status } = await baixarHtmlPagina(PAGE);
   console.log('Resposta:', { status, finalUrl: finalUrl.slice(0, 120), len: html.length });
 
