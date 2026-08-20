@@ -315,7 +315,7 @@
     }
   });
 
-  /* —— Recorte real da foto de origem em 4:5 —— */
+  /* —— Recorte livre da foto de origem —— */
   const cropModal = document.getElementById('matter-crop-modal');
   const cropClose = document.getElementById('matter-crop-close');
   const cropCancel = document.getElementById('matter-crop-cancel');
@@ -323,13 +323,16 @@
   const cropStage = document.getElementById('matter-crop-stage');
   const cropImage = document.getElementById('matter-crop-image');
   const cropSelection = document.getElementById('matter-crop-selection');
-  const cropSize = document.getElementById('matter-crop-size');
+  const cropWidth = document.getElementById('matter-crop-width');
+  const cropHeight = document.getElementById('matter-crop-height');
   const cropX = document.getElementById('matter-crop-x');
   const cropY = document.getElementById('matter-crop-y');
-  const cropSizeValue = document.getElementById('matter-crop-size-value');
+  const cropWidthValue = document.getElementById('matter-crop-width-value');
+  const cropHeightValue = document.getElementById('matter-crop-height-value');
   const cropXValue = document.getElementById('matter-crop-x-value');
   const cropYValue = document.getElementById('matter-crop-y-value');
   let cropInteraction = null;
+  let cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
   let bodyOverflowBeforeCrop = '';
 
   function clampCropValue(value, min = 0, max = 100) {
@@ -340,27 +343,31 @@
     if (!cropImage?.complete || !cropImage.naturalWidth || !cropImage.clientWidth) return null;
     const imageWidth = cropImage.clientWidth;
     const imageHeight = cropImage.clientHeight;
-    const targetRatio = 4 / 5;
-    let maxWidth;
-    let maxHeight;
+    const width = Math.max(1, Math.min(imageWidth, cropBox.width * imageWidth));
+    const height = Math.max(1, Math.min(imageHeight, cropBox.height * imageHeight));
+    const left = Math.max(0, Math.min(imageWidth - width, cropBox.left * imageWidth));
+    const top = Math.max(0, Math.min(imageHeight - height, cropBox.top * imageHeight));
+    const xPct = imageWidth > width ? (left / (imageWidth - width)) * 100 : 50;
+    const yPct = imageHeight > height ? (top / (imageHeight - height)) * 100 : 50;
+    return { imageWidth, imageHeight, width, height, left, top, xPct, yPct };
+  }
 
-    if (imageWidth / imageHeight > targetRatio) {
-      maxHeight = imageHeight;
-      maxWidth = maxHeight * targetRatio;
-    } else {
-      maxWidth = imageWidth;
-      maxHeight = maxWidth / targetRatio;
-    }
-
-    const sizePct = clampCropValue(cropSize?.value ?? 100, 30, 100);
-    const xPct = clampCropValue(cropX?.value ?? 50);
-    const yPct = clampCropValue(cropY?.value ?? 50);
-    const width = maxWidth * (sizePct / 100);
-    const height = maxHeight * (sizePct / 100);
-    const left = Math.max(0, imageWidth - width) * (xPct / 100);
-    const top = Math.max(0, imageHeight - height) * (yPct / 100);
-
-    return { imageWidth, imageHeight, width, height, left, top, sizePct, xPct, yPct };
+  function setCropBoxPixels(left, top, width, height, baseGeometry = null) {
+    const geometry = baseGeometry || cropGeometry();
+    if (!geometry) return null;
+    const minWidth = Math.min(1, geometry.imageWidth);
+    const minHeight = Math.min(1, geometry.imageHeight);
+    const safeWidth = Math.max(minWidth, Math.min(geometry.imageWidth, width));
+    const safeHeight = Math.max(minHeight, Math.min(geometry.imageHeight, height));
+    const safeLeft = Math.max(0, Math.min(geometry.imageWidth - safeWidth, left));
+    const safeTop = Math.max(0, Math.min(geometry.imageHeight - safeHeight, top));
+    cropBox = {
+      left: safeLeft / geometry.imageWidth,
+      top: safeTop / geometry.imageHeight,
+      width: safeWidth / geometry.imageWidth,
+      height: safeHeight / geometry.imageHeight,
+    };
+    return updateCropSelection();
   }
 
   function updateCropSelection() {
@@ -370,7 +377,12 @@
     cropSelection.style.top = geometry.top + 'px';
     cropSelection.style.width = geometry.width + 'px';
     cropSelection.style.height = geometry.height + 'px';
-    if (cropSizeValue) cropSizeValue.textContent = Math.round(geometry.sizePct) + '%';
+    if (cropWidth) cropWidth.value = String(Math.round((geometry.width / geometry.imageWidth) * 100));
+    if (cropHeight) cropHeight.value = String(Math.round((geometry.height / geometry.imageHeight) * 100));
+    if (cropX) cropX.value = String(Math.round(geometry.xPct));
+    if (cropY) cropY.value = String(Math.round(geometry.yPct));
+    if (cropWidthValue) cropWidthValue.textContent = Math.round((geometry.width / geometry.imageWidth) * 100) + '%';
+    if (cropHeightValue) cropHeightValue.textContent = Math.round((geometry.height / geometry.imageHeight) * 100) + '%';
     if (cropXValue) cropXValue.textContent = Math.round(geometry.xPct) + '%';
     if (cropYValue) cropYValue.textContent = Math.round(geometry.yPct) + '%';
     return geometry;
@@ -388,9 +400,7 @@
       setStatus('A foto original não está disponível para recortar.', true);
       return;
     }
-    if (cropSize) cropSize.value = '82';
-    if (cropX) cropX.value = '50';
-    if (cropY) cropY.value = '50';
+    cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
     bodyOverflowBeforeCrop = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     cropModal.classList.remove('hidden');
@@ -402,20 +412,14 @@
     requestAnimationFrame(updateCropSelection);
   }
 
-  function setCropPosition(left, top, geometry) {
-    const availableX = Math.max(0, geometry.imageWidth - geometry.width);
-    const availableY = Math.max(0, geometry.imageHeight - geometry.height);
-    if (cropX) {
-      cropX.value = String(
-        Math.round(availableX ? clampCropValue((left / availableX) * 100) : 50)
-      );
-    }
-    if (cropY) {
-      cropY.value = String(
-        Math.round(availableY ? clampCropValue((top / availableY) * 100) : 50)
-      );
-    }
-    updateCropSelection();
+  function applyCropControls() {
+    const geometry = cropGeometry();
+    if (!geometry) return;
+    const width = geometry.imageWidth * (clampCropValue(cropWidth?.value ?? 100, 0.1, 100) / 100);
+    const height = geometry.imageHeight * (clampCropValue(cropHeight?.value ?? 100, 0.1, 100) / 100);
+    const left = Math.max(0, geometry.imageWidth - width) * (clampCropValue(cropX?.value ?? 50) / 100);
+    const top = Math.max(0, geometry.imageHeight - height) * (clampCropValue(cropY?.value ?? 50) / 100);
+    setCropBoxPixels(left, top, width, height, geometry);
   }
 
   function moveCropInteraction(event) {
@@ -427,9 +431,11 @@
     const pointerY = event.clientY - stageRect.top;
 
     if (cropInteraction.type === 'move') {
-      setCropPosition(
+      setCropBoxPixels(
         pointerX - cropInteraction.grabX,
         pointerY - cropInteraction.grabY,
+        geometry.width,
+        geometry.height,
         geometry
       );
       return;
@@ -437,34 +443,23 @@
 
     const start = cropInteraction.startGeometry;
     const handle = cropInteraction.handle;
-    const east = handle.includes('e');
-    const south = handle.includes('s');
-    const deltaX = (event.clientX - cropInteraction.startClientX) * (east ? 1 : -1);
-    const deltaY = (event.clientY - cropInteraction.startClientY) * (south ? 1 : -1);
-    const targetRatio = 4 / 5;
-    const desiredWidth = start.width + (deltaX + deltaY * targetRatio) / 2;
-    const maxFrameWidth = start.width / (start.sizePct / 100);
-    const anchorX = east ? start.left : start.left + start.width;
-    const anchorY = south ? start.top : start.top + start.height;
-    const availableWidth = east ? start.imageWidth - anchorX : anchorX;
-    const availableHeightAsWidth = (south ? start.imageHeight - anchorY : anchorY) * targetRatio;
-    const maximumWidth = Math.min(maxFrameWidth, availableWidth, availableHeightAsWidth);
-    const minimumWidth = maxFrameWidth * 0.3;
-    const width = Math.min(maximumWidth, Math.max(minimumWidth, desiredWidth));
-    const height = width / targetRatio;
-    const left = east ? anchorX : anchorX - width;
-    const top = south ? anchorY : anchorY - height;
+    const deltaX = event.clientX - cropInteraction.startClientX;
+    const deltaY = event.clientY - cropInteraction.startClientY;
+    let left = start.left;
+    let right = start.left + start.width;
+    let top = start.top;
+    let bottom = start.top + start.height;
+    const minWidth = Math.min(1, start.imageWidth);
+    const minHeight = Math.min(1, start.imageHeight);
 
-    if (cropSize) {
-      cropSize.value = String(
-        Math.round(clampCropValue((width / maxFrameWidth) * 100, 30, 100))
-      );
-    }
-    const resized = cropGeometry();
-    if (resized) setCropPosition(left, top, resized);
+    if (handle.includes('w')) left = Math.max(0, Math.min(right - minWidth, start.left + deltaX));
+    if (handle.includes('e')) right = Math.min(start.imageWidth, Math.max(left + minWidth, start.left + start.width + deltaX));
+    if (handle.includes('n')) top = Math.max(0, Math.min(bottom - minHeight, start.top + deltaY));
+    if (handle.includes('s')) bottom = Math.min(start.imageHeight, Math.max(top + minHeight, start.top + start.height + deltaY));
+    setCropBoxPixels(left, top, right - left, bottom - top, start);
   }
 
-  [cropSize, cropX, cropY].forEach((el) => el?.addEventListener('input', updateCropSelection));
+  [cropWidth, cropHeight, cropX, cropY].forEach((el) => el?.addEventListener('input', applyCropControls));
   btnAbrirRecorte?.addEventListener('click', openCropModal);
   cropClose?.addEventListener('click', closeCropModal);
   cropCancel?.addEventListener('click', closeCropModal);

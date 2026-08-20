@@ -301,6 +301,7 @@ router.post('/matters/:id/arte/recortar', async (req, res, next) => {
       zoom: 100,
       offsetX: 50,
       offsetY: 50,
+      fitMode: 'contain',
     });
 
     return res.json({

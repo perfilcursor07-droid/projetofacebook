@@ -784,7 +784,7 @@
       <div class="flex items-start justify-between gap-3 border-b border-slate-800 px-4 py-3">
         <div>
           <h2 id="matter-crop-title" class="text-sm font-semibold text-white">Recortar foto da imagem destacada</h2>
-          <p class="mt-1 text-[11px] leading-relaxed text-slate-400">Mova o quadro para retirar textos e partes indesejadas. O recorte final será salvo em 4:5 para o Facebook.</p>
+          <p class="mt-1 text-[11px] leading-relaxed text-slate-400">Escolha livremente qualquer parte da foto. Mova o quadro ou arraste cantos e laterais sem proporção fixa.</p>
         </div>
         <button type="button" id="matter-crop-close" class="rounded px-2 py-1 text-lg leading-none text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Fechar">×</button>
       </div>
@@ -799,6 +799,10 @@
               <span data-crop-handle="ne" title="Redimensionar" class="absolute rounded-full" style="right:-8px;top:-8px;width:16px;height:16px;background:#fcd34d;border:2px solid #020617;cursor:nesw-resize;"></span>
               <span data-crop-handle="sw" title="Redimensionar" class="absolute rounded-full" style="left:-8px;bottom:-8px;width:16px;height:16px;background:#fcd34d;border:2px solid #020617;cursor:nesw-resize;"></span>
               <span data-crop-handle="se" title="Redimensionar" class="absolute rounded-full" style="right:-8px;bottom:-8px;width:16px;height:16px;background:#fcd34d;border:2px solid #020617;cursor:nwse-resize;"></span>
+              <span data-crop-handle="n" title="Mover borda superior" class="absolute rounded-full" style="left:50%;top:-7px;transform:translateX(-50%);width:22px;height:12px;background:#fcd34d;border:2px solid #020617;cursor:ns-resize;"></span>
+              <span data-crop-handle="s" title="Mover borda inferior" class="absolute rounded-full" style="left:50%;bottom:-7px;transform:translateX(-50%);width:22px;height:12px;background:#fcd34d;border:2px solid #020617;cursor:ns-resize;"></span>
+              <span data-crop-handle="w" title="Mover borda esquerda" class="absolute rounded-full" style="left:-7px;top:50%;transform:translateY(-50%);width:12px;height:22px;background:#fcd34d;border:2px solid #020617;cursor:ew-resize;"></span>
+              <span data-crop-handle="e" title="Mover borda direita" class="absolute rounded-full" style="right:-7px;top:50%;transform:translateY(-50%);width:12px;height:22px;background:#fcd34d;border:2px solid #020617;cursor:ew-resize;"></span>
             </div>
           </div>
         </div>
@@ -806,9 +810,15 @@
         <div class="mt-3 grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
           <label class="block">
             <span class="flex items-center justify-between text-[10px] text-slate-400">
-              Tamanho da área <span id="matter-crop-size-value" class="tabular-nums text-slate-500">82%</span>
+              Largura <span id="matter-crop-width-value" class="tabular-nums text-slate-500">90%</span>
             </span>
-            <input id="matter-crop-size" type="range" min="30" max="100" step="1" value="82" class="mt-1 w-full accent-amber-400" />
+            <input id="matter-crop-width" type="range" min="0.1" max="100" step="0.1" value="90" class="mt-1 w-full accent-amber-400" />
+          </label>
+          <label class="block">
+            <span class="flex items-center justify-between text-[10px] text-slate-400">
+              Altura <span id="matter-crop-height-value" class="tabular-nums text-slate-500">90%</span>
+            </span>
+            <input id="matter-crop-height" type="range" min="0.1" max="100" step="0.1" value="90" class="mt-1 w-full accent-amber-400" />
           </label>
           <label class="block">
             <span class="flex items-center justify-between text-[10px] text-slate-400">
@@ -823,7 +833,7 @@
             <input id="matter-crop-y" type="range" min="0" max="100" step="1" value="50" class="mt-1 w-full accent-sky-500" />
           </label>
         </div>
-        <p id="matter-crop-help" class="mt-2 text-center text-[10px] text-slate-500">Arraste dentro do quadro para mover. Arraste as bolinhas dos cantos para aumentar ou diminuir.</p>
+        <p id="matter-crop-help" class="mt-2 text-center text-[10px] text-slate-500">Arraste dentro do quadro para mover. Use cantos e laterais para definir exatamente a área desejada.</p>
       </div>
 
       <div class="flex items-center justify-end gap-2 border-t border-slate-800 px-4 py-3">
@@ -921,5 +931,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260819publishredirect"></script>
+  <script src="/js/materia-ia-editar.js?v=20260820freecrop"></script>
 <%- include('partials/app-end') %>

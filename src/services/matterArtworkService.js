@@ -88,7 +88,7 @@ function clampCropFraction(value, fallback) {
 }
 
 /**
- * Recorta a foto original e salva uma nova fonte local em 4:5 (1080×1350).
+ * Recorta exatamente a área livre escolhida pelo usuário, sem forçar proporção.
  * As coordenadas são frações da imagem já orientada: 0 = início, 1 = fim.
  */
 async function cropMatterSourceImage({
@@ -118,35 +118,16 @@ async function cropMatterSourceImage({
 
   const x = clampCropFraction(left, 0);
   const y = clampCropFraction(top, 0);
-  const w = Math.min(1 - x, Math.max(0.03, clampCropFraction(width, 1)));
-  const h = Math.min(1 - y, Math.max(0.03, clampCropFraction(height, 1)));
+  const w = Math.min(1 - x, Math.max(0.001, clampCropFraction(width, 1)));
+  const h = Math.min(1 - y, Math.max(0.001, clampCropFraction(height, 1)));
 
   let cropLeft = Math.min(sourceWidth - 1, Math.max(0, Math.round(x * sourceWidth)));
   let cropTop = Math.min(sourceHeight - 1, Math.max(0, Math.round(y * sourceHeight)));
   let cropWidth = Math.min(sourceWidth - cropLeft, Math.max(1, Math.round(w * sourceWidth)));
   let cropHeight = Math.min(sourceHeight - cropTop, Math.max(1, Math.round(h * sourceHeight)));
 
-  if (cropWidth < 40 || cropHeight < 50) {
-    const err = new Error('A área selecionada é pequena demais. Aumente o quadro de recorte.');
-    err.status = 400;
-    throw err;
-  }
-
-  // Corrige pequenos desvios de arredondamento para preservar 4:5 sem distorcer.
-  const targetRatio = ART_WIDTH / ART_HEIGHT;
-  if (cropWidth / cropHeight > targetRatio) {
-    const adjustedWidth = Math.max(1, Math.round(cropHeight * targetRatio));
-    cropLeft += Math.round((cropWidth - adjustedWidth) / 2);
-    cropWidth = adjustedWidth;
-  } else {
-    const adjustedHeight = Math.max(1, Math.round(cropWidth / targetRatio));
-    cropTop += Math.round((cropHeight - adjustedHeight) / 2);
-    cropHeight = adjustedHeight;
-  }
-
   const croppedBuffer = await sharp(oriented, { failOn: 'error', limitInputPixels: 40_000_000 })
     .extract({ left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight })
-    .resize(ART_WIDTH, ART_HEIGHT, { fit: 'fill' })
     .jpeg({ quality: 95, chromaSubsampling: '4:4:4', mozjpeg: true })
     .toBuffer();
 
@@ -162,6 +143,7 @@ async function composeMatterArtwork({
   zoom,
   offsetX,
   offsetY,
+  fitMode,
   model,
 } = {}) {
   const matter = await AiMatters.findById(matterId);
@@ -237,6 +219,7 @@ async function composeMatterArtwork({
     zoom,
     offsetX,
     offsetY,
+    fitMode,
     model: modelId,
   });
 

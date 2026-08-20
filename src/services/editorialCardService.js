@@ -1591,6 +1591,17 @@ async function buildFeedBaseImage(sourceBuffer, options = {}) {
   const offsetX = clampArtOffset(options.offsetX, 50);
   const offsetY = clampArtOffset(options.offsetY, 50);
 
+  // Recorte livre: mostra 100% da área selecionada, centralizada, e preenche
+  // apenas as sobras da proporção 4:5 com o fundo desfocado. Nunca estica nem
+  // corta novamente a seleção feita pelo usuário.
+  if (options.mode === 'contain') {
+    return coverPaneBuffer(sourceBuffer, WIDTH, HEIGHT, {
+      zoom: 99,
+      offsetX,
+      offsetY,
+    });
+  }
+
   // Padrão / cover / enquadramento manual → preenche 4:5 com zoom e pan.
   if (options.mode !== 'auto') {
     return coverPaneBuffer(sourceBuffer, WIDTH, HEIGHT, { zoom, offsetX, offsetY });
@@ -1675,7 +1686,7 @@ async function buildDualCollageBuffer(bufferA, bufferB, opts = {}) {
     .toBuffer();
 }
 
-async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offsetY, model } = {}) {
+async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offsetY, fitMode, model } = {}) {
   if (!sourceUrl) throw new Error('A matéria não possui imagem editorial para compor a arte');
   if (!title) throw new Error('Informe o título da arte');
   if (!user?.id) throw new Error('Usuário inválido para compor a arte');
@@ -1729,7 +1740,7 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
   if (logo) composites.push(logo);
 
   const feedBase = await buildFeedBaseImage(source, {
-    mode: 'cover',
+    mode: fitMode === 'contain' ? 'contain' : 'cover',
     // Sem enquadramento manual na matéria, vale o tamanho de foto do modelo.
     zoom: zoom != null ? zoom : cfgModelo.zoom != null ? cfgModelo.zoom : 100,
     offsetX: offsetX != null ? offsetX : 50,
