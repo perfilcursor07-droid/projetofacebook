@@ -7,11 +7,11 @@
 
 /** Limite duro da legenda do Instagram, incluindo fonte, foto e hashtags. */
 const INSTAGRAM_CAPTION_MAX_CHARS = 2200;
-/** Reserva espaço para os créditos anexados depois da geração do corpo. */
-const MAX_MATERIA_CHARS = 1850;
+/** Teto do corpo; o corte final ainda reserva o limite de 2.200 para o Instagram. */
+const MAX_MATERIA_CHARS = 2050;
 
-/** Alvo do corpo da minimatéria (sem hashtags/créditos). Sempre perto do máximo. */
-const FAIXA_CORPO_FB = Object.freeze({ min: 1300, max: 1750 });
+/** Alvo do corpo sem créditos, para a legenda final chegar perto de 2.000–2.200. */
+const FAIXA_CORPO_FB = Object.freeze({ min: 1750, max: 1950 });
 
 /** Abaixo disso a fonte é tratada como “texto pequeno” (precisa expandir). */
 const FONTE_CURTA_CHARS = 700;
@@ -119,7 +119,7 @@ ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
 3) Use no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
 4) FECHAMENTO: encerre no fato / última informação jornalística. PROIBIDO terminar com oração, “Que Deus…”, “Seguimos em oração”, “Amém”, pedido de fé ou as 1–2 últimas linhas só de reflexão espiritual.
 5) TOM: jornalístico + evangélico caloroso. Sem clickbait.
-6) FORMATO: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres), separados por linha em branco (\\n\\n). Texto puro. Sem HTML/markdown. Sem emoji obrigatório no final.
+6) FORMATO: normalmente 5 a 7 parágrafos de 250–400 caracteres, separados por linha em branco (\\n\\n), desenvolvendo os fatos sem repetição. Texto puro. Sem HTML/markdown. Sem emoji obrigatório no final.
 7) PROIBIDO: colar a fonte inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
 8) NÃO coloque bloco de "Fontes:" / "Fonte:" / créditos no JSON — o sistema anexa créditos automaticamente (uma vez só).
 9) VOZ PRÓPRIA — NÃO COMENTE A FONTE: escreva a NOTÍCIA como reportagem nossa, nunca como resenha do que outro site publicou.
@@ -1175,7 +1175,7 @@ DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
 - NÃO invente fatos, números, datas, igrejas, pastores, locais, cargos nem declarações.
 - Se um detalhe NÃO estiver nas fontes documentadas: omita ou generalize (“segundo informações divulgadas”) — nunca preencha com “conhecimento geral” duvidoso.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
-- Formato: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres), separados por linha em branco (\\n\\n).
+- Formato: normalmente 5 a 7 parágrafos de 250–400 caracteres, separados por linha em branco (\\n\\n), sem repetição.
 - Gancho forte nos primeiros ~120 caracteres (quem + fato).
 - 3 a 5 hashtags no campo hashtags, SEM espaços internos, sem # no valor.
 - Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 22).map((f) => `"${f}"`).join(', ')}…

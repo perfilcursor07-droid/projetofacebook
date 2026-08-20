@@ -404,7 +404,7 @@ ${blocoEstiloNewsGospel()}
 Regras obrigatórias:
 - NÃO cole a transcrição/legenda inteira nem parafraseie frase a frase.
 - DEIXE no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto quando houver na fonte — exatamente como foram ditas.
-- FORMATO: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres).
+- FORMATO: normalmente 5 a 7 parágrafos de 250–400 caracteres, separados por linha em branco, sem repetição.
 - Não invente fatos, números, nomes ou falas que não estejam na fonte.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
 - Inclua 3 a 5 hashtags relevantes no campo hashtags (sem # no valor).
@@ -485,11 +485,11 @@ async function gerarMateriaVideo({ transcricao, titulo, tema, idioma }) {
     'ESTRUTURA OBRIGATÓRIA:',
     '1) Lead: apresente quem fala / o tema com contexto (nome, o que é conhecido, o assunto).',
     '2) Desenvolvimento: narre o conteúdo com suas palavras + no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto.',
-    '3) FORMATO: no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres).',
+    '3) FORMATO: normalmente 5 a 7 parágrafos de 250–400 caracteres, separados por linha em branco, sem repetição.',
     '3) Fechamento no fato jornalístico — PROIBIDO oração / “Que Deus…” / “Seguimos em oração” / “Amém” nas últimas linhas.',
     'Exemplo de aspas: Ele afirma: "Eu entendi que sem Deus eu não era nada".',
     'O campo "titulo" = MANCHETE CURTA (máx. 90 caracteres). NÃO cole a legenda/transcrição no título.',
-    'Separe parágrafos com linha em branco. Alvo: 1400–1750 caracteres; nunca ultrapasse 1850 contando as hashtags.',
+    'Separe parágrafos com linha em branco. Alvo: 1750–1950 caracteres; nunca ultrapasse 2050 contando as hashtags.',
     'Se a base for longa, condense preservando os dados principais; se for curta, complete com contexto real até o máximo.',
     tema ? `Ângulo / tipo de matéria pedido pelo usuário: ${tema}` : null,
     titulo ? `Título/contexto do vídeo de origem: ${String(titulo).slice(0, 120)}` : null,
@@ -568,7 +568,7 @@ async function gerarMateriaImagem({
     'ESTRUTURA: lead com quem + fato → desenvolvimento com detalhes das infos → encerre no fato (sem oração final).',
     'Título próprio, curto e chamativo (máx. 110 chars) — baseado nas infos, sem clickbait mentiroso.',
     blocoMarca,
-    'Parágrafos curtos com linha em branco. Alvo: 1400–1750 caracteres; nunca ultrapasse 1850 contando as hashtags.',
+    'Parágrafos curtos com linha em branco. Alvo: 1750–1950 caracteres; nunca ultrapasse 2050 contando as hashtags.',
     'NÃO inclua bloco Fontes:/créditos no campo materia — o sistema anexa depois.',
     'Responda JSON: {"titulo":"...","materia":"...","hashtags":["..."]}',
   ]
@@ -2187,7 +2187,7 @@ Regras:
 - O título pode melhorar levemente (máx. 110 chars) se as novas infos mudarem o gancho; senão mantenha próximo do atual.
 - A matéria deve ficar mais forte e completa: use as infos extras (fatos, nomes, números, contexto) sem inventar o que não estiver no texto atual nem nas extras.
 - Português do Brasil, parágrafos curtos separados por linha em branco (\\n\\n).
-- Ideal 1400–1750 caracteres no corpo; o texto com hashtags não pode ultrapassar 1850.
+- Ideal 1750–1950 caracteres no corpo; o texto com hashtags não pode ultrapassar 2050.
 - 3 a 5 hashtags sem # no JSON.
 - Sem pedir like, sem clickbait mentiroso, sem Caps Lock excessivo.
 - Preserve o bloco "Fontes:" se já existir no texto atual.`,
@@ -2381,7 +2381,7 @@ ANTI-PLÁGIO (obrigatório):
 Regras de saída:
 - Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosUsados":["fato 1","fato 2"]}
 - Título: pode ajustar levemente (máx. 110 chars) se um fato novo fortalecer o gancho; senão mantenha próximo.
-- Matéria: português do Brasil, no máximo 5 parágrafos, cada um com no máximo 5 linhas (~220 caracteres), separados por \\n\\n, no máximo 1100 chars (sem hashtags).
+- Matéria: português do Brasil, em parágrafos substanciais separados por \\n\\n, sem repetição, respeitando o tamanho solicitado para esta tarefa.
 - Integre os fatos de forma natural no fluxo (não faça lista "segundo o site X").
 - Pode citar o veículo só pelo nome (ex.: "segundo o G1", "pesquisa Quaest") — NUNCA cole URL no campo materia.
 - Preserve bloco "Fontes:" se já existir; se não houver, não invente lista longa de URLs.
@@ -2741,7 +2741,7 @@ ANTI-PLÁGIO:
 ESTRUTURA:
 - Título próprio, curto e chamativo (máx. 110 chars), sem clickbait mentiroso.
 - Lead com o fato central → desenvolvimento com os dados e falas apuradas → fechamento no fato (sem oração final).
-- Parágrafos curtos separados por linha em branco. Alvo: 1400–1750 caracteres; máximo de 1850 com hashtags.
+- Parágrafos curtos separados por linha em branco. Alvo: 1750–1950 caracteres; máximo de 2050 com hashtags.
 - NÃO inclua bloco "Fontes:" nem URLs no campo materia — o sistema anexa "Fonte: Globo, UOL" depois.
 ${blocoMarca ? `\n${blocoMarca}\n` : ''}
 Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosUsados":["fato + veículo"],"aviso":""}`,
@@ -3011,15 +3011,14 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
   const volumeApuracao = blocoFatos.length;
   const perfilTamanho = fonteSocial
     ? fonteSocialCurta
-      ? { alvo: '500 a 900', paragrafos: '3 a 5', minimo: 450 }
-      : { alvo: '800 a 1.300', paragrafos: '4 a 6', minimo: 750 }
+      ? { alvo: '1.750 a 1.950', paragrafos: '5 a 7', minimo: 1500 }
+      : { alvo: '1.750 a 2.050', paragrafos: '5 a 7', minimo: 1600 }
     : volumeApuracao < 1800
-      ? { alvo: '700 a 1.200', paragrafos: '4 a 6', minimo: 650 }
-      : volumeApuracao < 6000
-        ? { alvo: '1.400 a 2.200', paragrafos: '6 a 8', minimo: 1250 }
-        : { alvo: '2.200 a 3.200', paragrafos: '8 a 11', minimo: 1950 };
+      ? { alvo: '1.750 a 1.950', paragrafos: '5 a 7', minimo: 1500 }
+      : { alvo: '1.850 a 2.050', paragrafos: '6 a 8', minimo: 1700 };
   const blocoTamanhoMateria = `TAMANHO E PROFUNDIDADE DESTA RESPOSTA:
 - O tamanho é proporcional ao material realmente apurado: alvo de ${perfilTamanho.alvo} caracteres no corpo e ${perfilTamanho.paragrafos} parágrafos substanciais.
+- Meta da legenda pronta: 2.000 a 2.200 caracteres contando fonte, foto e hashtags; nunca ultrapasse 2.050 caracteres no corpo.
 - Não estique texto com repetição, adjetivos ou inferências. Se a fonte não sustentar o alvo, entregue menos e informe a lacuna.
 - Se houver material abundante, desenvolva contexto, cronologia, posições, contraponto e impacto documentados; não entregue apenas um resumo.`;
   const blocoMateriaDePost = fonteSocial

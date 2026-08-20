@@ -4,6 +4,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { env } = require('../config/env');
 const { storageAbsolutePath } = require('./downloadService');
+const { limitarLegendaInstagram } = require('./editorialGuidelinesFb');
 
 const API = 'https://api.ayrshare.com/api';
 const INSTAGRAM_HASHTAG_LIMIT = 5;
@@ -375,7 +376,7 @@ async function publishToFacebook({
   }
 
   const instagramContent = vaiNoInstagram
-    ? limitHashtags(content, INSTAGRAM_HASHTAG_LIMIT)
+    ? limitarLegendaInstagram(limitHashtags(content, INSTAGRAM_HASHTAG_LIMIT))
     : content;
   const body = {
     // Ayrshare aceita conteúdo específico por plataforma. Assim o Facebook
@@ -410,6 +411,8 @@ async function publishToFacebook({
     isReel,
     hashtagsInstagram:
       vaiNoInstagram && (instagramContent.match(/(?<![\p{L}\p{N}_/])#[\p{L}\p{N}_]+/gu) || []).length,
+    caracteresFacebook: publicarFacebook ? content.length : 0,
+    caracteresInstagram: vaiNoInstagram ? instagramContent.length : 0,
     hasProfileKey: Boolean(pk),
     mediaHost: mediaUrl ? (() => {
       try {
