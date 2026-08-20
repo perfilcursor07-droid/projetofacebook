@@ -3,6 +3,7 @@ const AiMatters = require('../models/AiMatters');
 const AiMonitors = require('../models/AiMonitors');
 const Users = require('../models/Users');
 const { composeMatterArtwork } = require('../services/matterArtworkService');
+const { extractMatterSourceLinks } = require('../services/matterSourceLinks');
 
 function pickPageId(body = {}) {
   const raw = body.facebookPageId ?? body.facebook_page_id;
@@ -654,6 +655,7 @@ async function showMatter(req, res, next) {
     if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
       return res.status(404).render('404', { title: 'Não encontrado', path: req.path });
     }
+    matter.fontes_links = extractMatterSourceLinks(matter);
 
     let hashtags = [];
     try {

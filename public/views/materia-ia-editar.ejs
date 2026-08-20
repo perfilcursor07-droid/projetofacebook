@@ -28,10 +28,7 @@
       (!matter.imagem_path && /^https?:\/\//i.test(String(imageUrl))));
   const fonteUrl = String(matter.fonte_url || '').trim();
   const fonteTitulo = String(matter.fonte_titulo || '').trim();
-  let fonteHost = '';
-  if (fonteUrl) {
-    try { fonteHost = new URL(fonteUrl).hostname.replace(/^www\./i, ''); } catch (_) {}
-  }
+  const fontesLinks = Array.isArray(matter.fontes_links) ? matter.fontes_links : [];
   const hashtagsList = hashtags && hashtags.length
     ? hashtags.map((h) => '#' + String(h).replace(/^#/, '')).join(' ')
     : '';
@@ -334,19 +331,25 @@
           </details>
 
           <!-- Metabox: Fonte da matéria -->
-          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 <%= (fonteUrl || fonteTitulo) ? '' : 'hidden' %>" id="matter-fonte-wrap" <%= (fonteUrl || fonteTitulo) ? 'open' : '' %>>
+          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 <%= (fontesLinks.length || fonteTitulo) ? '' : 'hidden' %>" id="matter-fonte-wrap" <%= (fontesLinks.length || fonteTitulo) ? 'open' : '' %>>
             <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-transparent px-3 py-2.5 text-xs font-semibold text-slate-200 group-open:border-slate-800 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
-              <span>Link da fonte</span>
+              <span><%= fontesLinks.length > 1 ? 'Links das fontes' : 'Link da fonte' %></span>
               <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
             </summary>
             <div class="space-y-1 border-t border-slate-800 px-3 py-3">
               <p class="text-sm text-slate-300" id="matter-fonte-titulo"><%= fonteTitulo %></p>
-              <% if (fonteUrl) { %>
-                <a id="matter-fonte-link" href="<%= fonteUrl %>" target="_blank" rel="noopener"
-                  class="inline-flex items-center gap-1 text-sm text-sky-400 hover:underline break-all">
-                  <%= fonteHost || 'Abrir fonte' %> →
-                </a>
-                <p class="text-[10px] text-slate-600 break-all"><%= fonteUrl %></p>
+              <% if (fontesLinks.length) { %>
+                <div id="matter-fonte-links" class="space-y-2">
+                  <% fontesLinks.forEach((fonte, index) => { %>
+                    <div class="rounded border border-slate-800/80 bg-slate-950/40 px-2.5 py-2">
+                      <a <%= index === 0 ? 'id="matter-fonte-link"' : '' %> href="<%= fonte.url %>" target="_blank" rel="noopener noreferrer"
+                        class="inline-flex items-center gap-1 text-sm font-medium text-sky-400 hover:underline break-all">
+                        <%= fonte.label || 'Abrir fonte' %> →
+                      </a>
+                      <p class="mt-0.5 text-[10px] text-slate-600 break-all"><%= fonte.url %></p>
+                    </div>
+                  <% }) %>
+                </div>
               <% } else { %>
                 <a id="matter-fonte-link" href="#" target="_blank" rel="noopener"
                   class="hidden inline-flex items-center gap-1 text-sm text-sky-400 hover:underline break-all"></a>
