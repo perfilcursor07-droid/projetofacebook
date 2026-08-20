@@ -129,38 +129,97 @@ function extrairUrlsDePosts(html) {
   };
 }
 
-/** Texto, imagem e data de um post já renderizado. */
-function extrairDetalhesDoPost(html) {
-  const mensagens = coletarComIndice(
+function idDoPostNaUrl(url) {
+  const alvo = String(url || '');
+  return (
+    alvo.match(/story_fbid=(pfbid[A-Za-z0-9]+|\d{6,})/i)?.[1] ||
+    alvo.match(/\/posts\/(pfbid[A-Za-z0-9]+|\d{6,})/i)?.[1] ||
+    alvo.match(/[?&]fbid=(\d{6,})/i)?.[1] ||
+    alvo.match(/\/(?:reel|videos)\/(\d{6,})/i)?.[1] ||
+    null
+  );
+}
+
+function indicesDaAncora(html, idPost) {
+  if (!idPost) return [];
+  const out = [];
+  let indice = String(html || '').indexOf(idPost);
+  while (indice !== -1 && out.length < 250) {
+    out.push(indice);
+    indice = String(html).indexOf(idPost, indice + 1);
+  }
+  return out;
+}
+
+function candidatoMaisPerto(candidatos, ancoras) {
+  if (!candidatos.length) return null;
+  if (!ancoras.length) return candidatos.length === 1 ? candidatos[0] : null;
+  let melhor = null;
+  let distancia = Infinity;
+  for (const candidato of candidatos) {
+    for (const ancora of ancoras) {
+      const atual = Math.abs(candidato.indice - ancora);
+      if (atual < distancia) {
+        distancia = atual;
+        melhor = candidato;
+      }
+    }
+  }
+  return melhor;
+}
+
+/** Texto, imagem e data ancorados no identificador do post aberto. */
+function extrairDetalhesDoPost(html, urlAlvo = null) {
+  const mensagensComIndice = coletarComIndice(
     html,
     /"message"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g,
     (v) => {
       const t = unescapeJsonString(v).trim();
       return t.length >= 20 ? t : null;
     }
-  ).map((m) => m.valor);
+  );
+  const mensagens = mensagensComIndice.map((m) => m.valor);
   mensagens.sort((a, b) => b.length - a.length);
 
+  let texto = mensagens[0] || null;
+  const idPost = idDoPostNaUrl(urlAlvo);
+  const ancoras = indicesDaAncora(html, idPost);
+  if (urlAlvo) {
+    // O HTML inclui posts recomendados. Esta função já seleciona a mensagem
+    // mais próxima do pfbid/fbid pedido e rejeita resultados ambíguos.
+    const { escolherMensagemDoPost } = require('./socialPostExtract');
+    texto =
+      candidatoMaisPerto(mensagensComIndice, ancoras)?.valor ||
+      escolherMensagemDoPost(html, urlAlvo).texto ||
+      null;
+  }
+
   const imagem = (() => {
+    const candidatos = [];
     for (const re of [
-      /"photo_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
-      /"full_width_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
-      /"uri"\s*:\s*"(https:[^"]*scontent[^"]+)"/i,
+      /"photo_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/gi,
+      /"full_width_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/gi,
+      /"uri"\s*:\s*"(https:[^"]*scontent[^"]+)"/gi,
     ]) {
-      const m = html.match(re);
-      if (!m?.[1]) continue;
-      const candidato = desescapar(m[1]);
-      if (/rsrc\.php|static\.xx\.fbcdn/i.test(candidato)) continue;
-      return candidato;
+      for (const m of String(html || '').matchAll(re)) {
+        const url = desescapar(m[1]);
+        if (/rsrc\.php|static\.xx\.fbcdn/i.test(url)) continue;
+        candidatos.push({ valor: url, indice: m.index ?? 0 });
+      }
     }
-    return null;
+    return candidatoMaisPerto(candidatos, ancoras)?.valor || null;
   })();
 
-  const ts = Number(html.match(/"creation_time"\s*:\s*(\d{9,13})/)?.[1]) || 0;
+  const tempos = coletarComIndice(
+    html,
+    /"creation_time"\s*:\s*(\d{9,13})/g,
+    (valor) => Number(valor) || null
+  );
+  const ts = Number(candidatoMaisPerto(tempos, ancoras)?.valor) || 0;
   const publicadoEm = ts ? new Date(ts > 10_000_000_000 ? ts : ts * 1000) : null;
 
   return {
-    texto: mensagens[0] || null,
+    texto,
     imagem,
     publicadoEm: publicadoEm && !Number.isNaN(publicadoEm.getTime()) ? publicadoEm : null,
   };
@@ -179,7 +238,7 @@ function tituloDoTexto(texto, fallback) {
  * permalinks. Unir as três aumenta bastante a colheita por scan.
  */
 function variantesDaPagina(pageUrl) {
-  const out = [String(pageUrl).trim()];
+  const out = [];
   try {
     const u = new URL(pageUrl);
     if (/profile\.php/i.test(u.pathname)) {
@@ -187,15 +246,20 @@ function variantesDaPagina(pageUrl) {
       if (id) {
         out.push(`https://www.facebook.com/profile.php?id=${id}&sk=timeline`);
         out.push(`https://www.facebook.com/profile.php?id=${id}&sk=photos`);
+        out.push(`https://www.facebook.com/profile.php?id=${id}&sk=videos`);
       }
     } else {
       const base = `https://www.facebook.com${u.pathname.replace(/\/+$/, '')}`;
       out.push(`${base}/posts`);
       out.push(`${base}/?sk=timeline`);
+      out.push(`${base}/photos`);
+      out.push(`${base}/reels`);
+      out.push(`${base}/videos`);
     }
   } catch {
-    /* mantém só a original */
+    /* a URL original ainda será tentada */
   }
+  out.push(String(pageUrl).trim());
   return [...new Set(out)];
 }
 
@@ -260,23 +324,31 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
   let htmlTotal = 0;
   const porVariante = {};
 
-  await mapearComLimite(variantes, 2, async (variante) => {
+  const paginas = await mapearComLimite(variantes, 2, async (variante) => {
     try {
       const { html } = await baixarHtmlPagina(variante);
-      htmlTotal += html.length;
       const encontrados = extrairUrlsDePosts(html).urls;
-      porVariante[variante.replace('https://www.facebook.com', '')] = encontrados.length;
-      for (const url of encontrados) {
-        const chave = url.toLowerCase();
-        if (vistos.has(chave)) continue;
-        vistos.add(chave);
-        urls.push(url);
-      }
+      return { variante, encontrados, htmlLen: html.length };
     } catch (err) {
       // Variante indisponível não invalida o scan; a principal já basta.
       console.warn(`[fb-page] variante ${variante.slice(-40)}: ${err.message}`);
+      return { variante, encontrados: [], htmlLen: 0 };
     }
   });
+
+  // Junta na ordem de prioridade definida acima. Antes, duas requisições
+  // concorrentes disputavam quem inseria primeiro e fotos de cabeçalho podiam
+  // ocupar o limite antes dos posts reais.
+  for (const pagina of paginas) {
+    htmlTotal += pagina.htmlLen;
+    porVariante[pagina.variante.replace('https://www.facebook.com', '')] = pagina.encontrados.length;
+    for (const url of pagina.encontrados) {
+      const chave = url.toLowerCase();
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+      urls.push(url);
+    }
+  }
 
   if (!urls.length) {
     console.log(`[fb-page] ${pageUrl}: nenhum permalink — variantes=${JSON.stringify(porVariante)}`);
@@ -287,17 +359,16 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
   const detalhes = await mapearComLimite(alvos, CONCORRENCIA, async (url) => {
     try {
       const res = await baixarHtmlPagina(url);
-      return { url, ...extrairDetalhesDoPost(res.html) };
+      return { url, ...extrairDetalhesDoPost(res.html, url) };
     } catch (err) {
       console.warn(`[fb-page] detalhe ${url.slice(0, 70)}: ${err.message}`);
       return { url, texto: null, imagem: null, publicadoEm: null };
     }
   });
 
-  // Item sem texto vira card "conteúdo não disponível" na Biblioteca; descartar
-  // é melhor do que poluir a fonte com posts vazios.
-  const itens = detalhes
-    .filter((d) => d.texto || d.imagem)
+  // Para criar matéria, foto de perfil/capa sem legenda não é pauta.
+  const itensOrdenados = detalhes
+    .filter((d) => d.texto && d.texto.trim().length >= 20)
     .map((d) => ({
       externalId: d.url,
       mediaType: /\/(reel|videos)\//i.test(d.url) ? 'video' : 'image',
@@ -307,7 +378,20 @@ async function listarPostsPerfil(pageUrl, limite = 20) {
       resumo: d.texto ? d.texto.slice(0, 400) : null,
       thumbnail: d.imagem || null,
       publicadoEm: d.publicadoEm,
-    }));
+    }))
+    .sort((a, b) => {
+      const da = a.publicadoEm instanceof Date ? a.publicadoEm.getTime() : 0;
+      const db = b.publicadoEm instanceof Date ? b.publicadoEm.getTime() : 0;
+      return db - da;
+    });
+
+  const limiteRecente = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  const itensRecentes = itensOrdenados.filter(
+    (item) => item.publicadoEm instanceof Date && item.publicadoEm.getTime() >= limiteRecente
+  );
+  // Se pelo menos uma data confiável veio do Facebook, elimina cabeçalho,
+  // capa e posts antigos. Sem data alguma, mantém o fallback para não zerar.
+  const itens = itensRecentes.length ? itensRecentes : itensOrdenados;
 
   console.log(
     `[fb-page] ${pageUrl}: ${itens.length} post(s) de ${urls.length} link(s) — abertos=${alvos.length} variantes=${JSON.stringify(porVariante)} htmlLen=${htmlTotal}`
