@@ -600,12 +600,69 @@ function hostDoLink(url) {
 }
 
 /**
+ * Quando a página bloqueia o leitor, o slug ainda preserva o assunto real.
+ * Ele serve somente para localizar o mesmo artigo; nunca para escolher outra pauta.
+ */
+function tituloProvavelDoLink(url) {
+  try {
+    const partes = new URL(url).pathname.split('/').filter(Boolean);
+    return decodeURIComponent(partes.at(-1) || '')
+      .replace(/\.(?:s?html?|php|aspx?)$/i, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 180);
+  } catch {
+    return '';
+  }
+}
+
+function fonteCorrespondeAoLink(fonte, link, assunto) {
+  const normalizarUrl = (valor) => {
+    try {
+      const u = new URL(valor);
+      return `${u.hostname.replace(/^www\./i, '').toLowerCase()}${u.pathname.replace(/\/$/, '')}`;
+    } catch {
+      return '';
+    }
+  };
+  if (normalizarUrl(fonte?.url) && normalizarUrl(fonte?.url) === normalizarUrl(link)) return true;
+
+  const ignorar = new Set([
+    'about', 'after', 'before', 'from', 'have', 'into', 'news', 'should', 'that', 'their',
+    'this', 'were', 'what', 'when', 'where', 'which', 'with', 'would', 'sobre', 'para',
+    'como', 'pela', 'pelo', 'uma', 'mais', 'site',
+  ]);
+  const tokens = (texto) =>
+    new Set(
+      String(texto || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .match(/[a-z0-9]{4,}/g)
+        ?.filter((token) => !ignorar.has(token)) || []
+    );
+  const alvo = tokens(assunto);
+  const material = tokens(
+    [fonte?.titulo, fonte?.resumo, fonte?.trecho, fonte?.url].filter(Boolean).join(' ')
+  );
+  if (!alvo.size) return false;
+  let coincidencias = 0;
+  for (const token of alvo) if (material.has(token)) coincidencias += 1;
+  return coincidencias >= Math.min(3, alvo.size);
+}
+
+/**
  * Links de sites de notícia colados no chat → veículo, título e corpo do texto.
  * Usa o mesmo extrator do "reescrever link" (og tags + parágrafos + fallback Jina),
  * para o link virar fonte documentada em vez de ser ignorado.
  */
 async function extrairFontesDeArtigos(urls, { onPasso } = {}) {
-  const { extrairMetadadosArtigo, extrairMetadadosViaJina } = require('./articleSource');
+  const {
+    extrairMetadadosArtigo,
+    extrairMetadadosViaJina,
+    extrairMetadadosViaGoogleTranslate,
+  } = require('./articleSource');
 
   const fontes = [];
   const falhas = [];
@@ -638,6 +695,21 @@ async function extrairFontesDeArtigos(urls, { onPasso } = {}) {
         const viaJina = await extrairMetadadosViaJina(meta?.url || raw);
         const outro = String(viaJina?.trecho || '').trim();
         if (outro.length > trecho.length) trecho = outro;
+      } catch {
+        /* fallback opcional */
+      }
+    }
+
+    // Portais internacionais podem bloquear o servidor com 403. Faz uma
+    // tentativa explícita pelo proxy de leitura antes de abandonar o link.
+    if (trecho.length < 900) {
+      try {
+        const viaTranslate = await extrairMetadadosViaGoogleTranslate(meta?.url || raw);
+        const outro = String(viaTranslate?.trecho || '').trim();
+        if (outro.length > trecho.length) {
+          meta = { ...(meta || {}), ...viaTranslate };
+          trecho = outro;
+        }
       } catch {
         /* fallback opcional */
       }
@@ -1588,6 +1660,7 @@ async function responder({
   let consultasDaPesquisa = [];
   let temFonteDoLink = false;
   let falhasLinksSociais = [];
+  let resgateArtigoPorTitulo = false;
   // Assunto extraído do post, usado para buscar contexto quando o pedido é só o link
   let assuntoDoLink = '';
 
@@ -1674,7 +1747,6 @@ async function responder({
     const { fontes: fontesArtigo, falhas } = await extrairFontesDeArtigos(urlsArtigos, {
       onPasso: registrarPasso,
     });
-
     if (fontesArtigo.length) {
       fontes = [...fontes, ...fontesArtigo];
       temFonteDoLink = true;
@@ -1691,6 +1763,18 @@ async function responder({
         texto: `Não li o link: ${f.erro}`,
         url: f.url || null,
       });
+    }
+
+    if (urlsArtigos.length === 1 && !fontesArtigo.length) {
+      assuntoDoLink = tituloProvavelDoLink(urlsArtigos[0]);
+      resgateArtigoPorTitulo = Boolean(assuntoDoLink);
+      if (resgateArtigoPorTitulo) {
+        registrarPasso({
+          kind: 'busca',
+          texto: `Leitura direta bloqueada. Localizando o mesmo artigo pelo título: “${assuntoDoLink}”`,
+          url: urlsArtigos[0],
+        });
+      }
     }
   }
 
@@ -1778,6 +1862,21 @@ async function responder({
       console.warn('[materia-chat] consultas:', err.message);
     }
 
+    // Um link único que bloqueou leitura nunca pode virar pesquisa genérica.
+    // O título do slug entra na frente e o domínio original ancora o resgate.
+    if (resgateArtigoPorTitulo && assuntoDoLink && urlsArtigos[0]) {
+      const hostAlvo = hostDoLink(urlsArtigos[0]);
+      const exata = `"${assuntoDoLink}"`;
+      const ancorada = hostAlvo ? `${exata} site:${hostAlvo}` : exata;
+      consultas = [ancorada, exata, ...consultas].filter(
+        (item, indice, lista) =>
+          item && lista.findIndex((outro) => normalizarTexto(outro) === normalizarTexto(item)) === indice
+      ).slice(0, 6);
+      temaPesquisa = assuntoDoLink;
+      tipoPedidoPesquisa = 'fato';
+      tipoPedidoDaPesquisa = 'fato';
+    }
+
     // Garante variação de consultas para alcançar mais veículos
     if (consultas.length === 1) {
       const extra = String(consultas[0]).replace(/\s+/g, ' ').trim();
@@ -1838,10 +1937,17 @@ async function responder({
         if (consultas.length >= 4) break;
       }
     }
+
     consultasDaPesquisa = [...consultas];
 
     let lidas = 0;
     let fontesWeb = [];
+    const filtrarParaArtigoAlvo = (lista) => {
+      if (!resgateArtigoPorTitulo) return Array.isArray(lista) ? lista : [];
+      return (Array.isArray(lista) ? lista : []).filter((fonte) =>
+        fonteCorrespondeAoLink(fonte, urlsArtigos[0], assuntoDoLink)
+      );
+    };
     try {
       fontesWeb = await materiaIaService.coletarFatosNaWeb({
         consultas: consultas.slice(0, 6),
@@ -1902,6 +2008,7 @@ async function responder({
     } catch (err) {
       console.warn('[materia-chat] pesquisa:', err.message);
     }
+    fontesWeb = filtrarParaArtigoAlvo(fontesWeb);
 
     // Janela curta some com notícia boa: em 3 dias um portal pode não ter
     // publicado nada sobre o nome pedido. Em vez de devolver "aumente o
@@ -1924,6 +2031,7 @@ async function responder({
           resumoContexto: pedidoParaPesquisa.slice(0, 500),
           logPrefix: '[materia-chat/resgate]',
         });
+        fontesWeb = filtrarParaArtigoAlvo(fontesWeb);
         if (fontesWeb.length) {
           registrarPasso({
             kind: 'encontrados',
@@ -1997,6 +2105,14 @@ async function responder({
     }
 
     if (fontesWeb.length) {
+      if (resgateArtigoPorTitulo) {
+        temFonteDoLink = true;
+        fontesWeb = fontesWeb.map((fonte) => ({ ...fonte, fonteColada: true }));
+        registrarPasso({
+          kind: 'fontes',
+          texto: 'Artigo original recuperado pelo título. Escrevendo somente essa pauta.',
+        });
+      }
       const urlsJa = new Set(fontes.map((f) => String(f.url || '').toLowerCase()).filter(Boolean));
       const extras = fontesWeb.filter((f) => {
         const u = String(f.url || '').toLowerCase();
