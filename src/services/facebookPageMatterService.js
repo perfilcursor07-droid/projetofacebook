@@ -22,6 +22,30 @@ function validarPaginaFacebook(valor) {
   return url.toString();
 }
 
+/** Diferencia uma página/perfil de um link de publicação. */
+function ehUrlPaginaFacebook(valor) {
+  let url;
+  try {
+    url = new URL(String(valor || '').trim());
+  } catch {
+    return false;
+  }
+  const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+  if (!['facebook.com', 'm.facebook.com', 'web.facebook.com', 'fb.com'].includes(host)) return false;
+  if (facebookPageScrape.ehUrlDePostValida(url.toString())) return false;
+
+  if (/^\/profile\.php$/i.test(url.pathname)) return /^\d+$/.test(url.searchParams.get('id') || '');
+
+  const partes = url.pathname.split('/').filter(Boolean);
+  if (partes.length !== 1) return false;
+  const reservados = new Set([
+    'login', 'watch', 'groups', 'marketplace', 'gaming', 'events', 'friends',
+    'notifications', 'messages', 'settings', 'help', 'share', 'photo', 'photos',
+    'videos', 'reel', 'reels', 'posts',
+  ]);
+  return !reservados.has(String(partes[0] || '').toLowerCase());
+}
+
 function chavePost(item) {
   return String(item?.url || item?.externalId || '')
     .replace(/[?#].*$/, '')
@@ -129,6 +153,7 @@ async function listarPostsDaPagina(pageUrl, { limit = 20 } = {}) {
 
 module.exports = {
   validarPaginaFacebook,
+  ehUrlPaginaFacebook,
   normalizarPost,
   listarPostsDaPagina,
 };

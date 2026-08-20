@@ -1,6 +1,7 @@
 const AiChats = require('../models/AiChats');
 const AiChatMessages = require('../models/AiChatMessages');
 const AiMatters = require('../models/AiMatters');
+const facebookPageMatterService = require('./facebookPageMatterService');
 
 const PERIODOS = ['24h', '3d', '7d', '15d', '30d', '60d', '90d', '180d'];
 // Um pedido de tema (sem link) precisa de contexto suficiente para virar matéria
@@ -1437,7 +1438,10 @@ async function responder({
           veiculo: limparParaBanco(p.veiculo, 120),
           titulo: limparParaBanco(p.titulo, 300),
           url: limparParaBanco(p.url, 500),
-          resumo: limparParaBanco(p.resumo, 320),
+          resumo: limparParaBanco(p.resumo, 5000),
+          ...(p.imagem ? { imagem: limparParaBanco(p.imagem, 1500) } : {}),
+          ...(p.pagina ? { pagina: limparParaBanco(p.pagina, 160) } : {}),
+          ...(p.data ? { data: limparParaBanco(p.data, 80) } : {}),
           ehPauta: true,
         }))
       : (fontesUsadas || []).slice(0, 12).map((f) => ({
@@ -1597,10 +1601,50 @@ async function responder({
     );
 
   const urlsNoPedido = extrairUrlsDoTexto(pedido);
-  const urlsSociais = urlsNoPedido.filter((u) => classificarUrlFonte(u));
+  const urlsPaginasFacebook = urlsNoPedido.filter((u) =>
+    facebookPageMatterService.ehUrlPaginaFacebook(u)
+  );
+  const urlsSociais = urlsNoPedido.filter(
+    (u) => classificarUrlFonte(u) && !urlsPaginasFacebook.includes(u)
+  );
   // Todo o resto é tratado como matéria/artigo de site: também precisa ser lido.
   const urlsArtigos = urlsNoPedido.filter((u) => !classificarUrlFonte(u) && hostDoLink(u));
   const urlsFonte = [...urlsSociais, ...urlsArtigos];
+
+  // Colar uma página no campo principal lista seus posts selecionáveis.
+  if (urlsPaginasFacebook.length === 1 && urlsNoPedido.length === 1) {
+    const paginaUrl = urlsPaginasFacebook[0];
+    registrarPasso({ kind: 'pesquisa', texto: 'Lendo os posts recentes da página do Facebook…' });
+    try {
+      const resultado = await facebookPageMatterService.listarPostsDaPagina(paginaUrl, { limit: 20 });
+      const pautas = resultado.posts.map((post) => ({
+        veiculo: post.pagina || 'Facebook',
+        titulo: post.titulo,
+        url: post.url,
+        resumo: post.resumo,
+        imagem: post.imagem || null,
+        pagina: post.pagina || null,
+        data: post.data || null,
+        ehPauta: true,
+      }));
+      registrarPasso({
+        kind: 'fontes',
+        texto: `${pautas.length} post(s) encontrados em ${resultado.pagina}`,
+      });
+      const resposta = `Encontrei ${pautas.length} post(s) recentes em ${resultado.pagina}. Selecione quais você quer transformar em matéria e salve como rascunho.`;
+      onEvent({ tipo: 'inicio-resposta' });
+      onEvent({ tipo: 'delta', texto: resposta });
+      onEvent({ tipo: 'pautas', pautas });
+      return finalizar(resposta, { usouWeb: true, pautas });
+    } catch (err) {
+      console.warn('[materia-chat] página facebook:', err.message);
+      registrarPasso({ kind: 'aviso', texto: 'Não consegui listar os posts dessa página.' });
+      const resposta = err.message || 'Não consegui listar os posts dessa página do Facebook.';
+      onEvent({ tipo: 'inicio-resposta' });
+      onEvent({ tipo: 'delta', texto: resposta });
+      return finalizar(resposta, { usouWeb: true });
+    }
+  }
   // Vários links já significam "uma matéria para cada link", mesmo sem o
   // editor escrever essa instrução por extenso.
   if (urlsFonte.length > 1) pedidoEmLote = true;

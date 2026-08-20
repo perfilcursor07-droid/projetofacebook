@@ -1177,6 +1177,19 @@
       h.textContent = pauta.titulo || 'Sem título';
       card.appendChild(h);
 
+      if (pauta.imagem) {
+        const img = document.createElement('img');
+        img.src = pauta.imagem;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.referrerPolicy = 'no-referrer';
+        img.className = 'mt-2 rounded-lg object-cover';
+        img.style.width = '100%';
+        img.style.height = '9rem';
+        img.addEventListener('error', () => img.remove());
+        card.appendChild(img);
+      }
+
       if (pauta.resumo) {
         const r = document.createElement('p');
         r.className = 'mia-msg-pauta-resumo';
