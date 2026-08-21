@@ -372,6 +372,8 @@ async function transcribeUrl({
   mediaUrl = null,
   preferSubtitles = true,
   mediaInfo = null,
+  allowAudioFallback = true,
+  onFallbackToAudio = null,
 } = {}) {
   const original = String(sourceUrl || '').trim();
   const directMedia = String(mediaUrl || '').trim();
@@ -394,7 +396,7 @@ async function transcribeUrl({
       console.info(`[transcricao] legendas prontas encontradas: ${original}`);
       return subtitles;
     }
-    console.info(`[transcricao] sem legendas; vai transcrever o áudio: ${original}`);
+    console.info(`[transcricao] legenda não obtida na primeira tentativa: ${original}`);
   }
 
   const usingDirectMedia = /^https?:\/\//i.test(directMedia);
@@ -410,6 +412,13 @@ async function transcribeUrl({
       return captions;
     }
   }
+
+  if (!allowAudioFallback) {
+    console.info(`[transcricao] sem legendas; fallback de áudio desativado: ${original}`);
+    return null;
+  }
+  console.info(`[transcricao] sem legendas; vai transcrever somente o áudio: ${original}`);
+  if (typeof onFallbackToAudio === 'function') onFallbackToAudio();
 
   assertWhisperAvailable();
   assertUrlMediaLimits(info);

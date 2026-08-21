@@ -36,9 +36,8 @@
     iniciado: false,
     chatId: null,
     conversas: [],
-    // Como Claude/DeepSeek: pedidos de notícia pesquisam por padrão. O editor
-    // ainda pode desligar em Ferramentas quando quiser trabalhar só com o texto enviado.
-    pesquisarWeb: true,
+    // O link enviado já é a fonte. Pesquisa extra só roda quando o editor optar.
+    pesquisarWeb: false,
     transcreverVideo: true,
     enviando: false,
     controller: null,
@@ -1438,7 +1437,7 @@
     }
     el.titulo.textContent = 'Nova conversa';
     el.renomear?.classList.add('hidden');
-    state.pesquisarWeb = true;
+    state.pesquisarWeb = false;
     aplicarToggleWeb();
     limparMensagens();
     renderConversas();
@@ -1459,7 +1458,7 @@
       }
       el.titulo.textContent = chat.titulo || 'Nova conversa';
       el.renomear?.classList.remove('hidden');
-      state.pesquisarWeb = chat.pesquisarWeb !== false;
+      state.pesquisarWeb = chat.pesquisarWeb === true;
       aplicarToggleWeb();
       if (el.tom) el.tom.value = chat.tom || 'natural';
       if (el.periodo) el.periodo.value = chat.periodo || '30d';
@@ -1478,7 +1477,7 @@
     if (!el.toggleWeb) return;
     const on = state.pesquisarWeb;
     el.toggleWeb.setAttribute('aria-pressed', on ? 'true' : 'false');
-    el.toggleWeb.className = on ? 'mia-chat-chip is-on' : 'mia-chat-chip';
+    el.toggleWeb.classList.toggle('is-on', on);
     const dot = el.toggleWeb.querySelector('.mia-chat-chip-dot') || el.toggleWeb.firstElementChild;
     if (dot) {
       dot.className = 'mia-chat-chip-dot';
@@ -1494,8 +1493,8 @@
     el.toggleTranscricao.setAttribute('aria-pressed', on ? 'true' : 'false');
     el.toggleTranscricao.classList.toggle('is-on', on);
     el.toggleTranscricao.title = on
-      ? 'Ligado: usar legendas ou transcrever o áudio do vídeo'
-      : 'Extrair legendas ou transcrever o áudio do vídeo enviado';
+      ? 'Primeiro usa as legendas. Se não houver, transcreve somente o áudio.'
+      : 'Usa somente legendas disponíveis; não baixa nem transcreve o áudio.';
   }
 
   /**

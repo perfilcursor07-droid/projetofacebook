@@ -309,15 +309,21 @@ function fonteDoPostSalvo(post, url, plataforma) {
 
 async function transcreverVideoComoFonte(
   url,
-  { mediaUrl = null, mediaInfo = null, onPasso, rotulo = 'vídeo' } = {}
+  {
+    mediaUrl = null,
+    mediaInfo = null,
+    onPasso,
+    rotulo = 'vídeo',
+    permitirAudio = true,
+  } = {}
 ) {
   console.info(
-    `[materia-chat] iniciando transcrição ${rotulo}: ${url}${mediaUrl ? ' (mídia direta disponível)' : ''}`
+    `[materia-chat] procurando fala/legenda ${rotulo}: ${url}${mediaUrl ? ' (mídia direta disponível)' : ''}`
   );
   if (typeof onPasso === 'function') {
     onPasso({
       kind: 'lendo',
-      texto: `Procurando legendas ou transcrevendo o áudio do ${rotulo}…`,
+      texto: `Procurando legendas disponíveis do ${rotulo}…`,
       url,
     });
   }
@@ -328,7 +334,22 @@ async function transcreverVideoComoFonte(
     // Teto do processo inteiro: mesmo com cada etapa limitada, o editor não pode
     // ficar olhando "transcrevendo…" por meia hora.
     const resultado = await comLimiteDeTempo(
-      transcribeUrl({ sourceUrl: url, mediaUrl, mediaInfo, preferSubtitles: true }),
+      transcribeUrl({
+        sourceUrl: url,
+        mediaUrl,
+        mediaInfo,
+        preferSubtitles: true,
+        allowAudioFallback: permitirAudio,
+        onFallbackToAudio: () => {
+          if (typeof onPasso === 'function') {
+            onPasso({
+              kind: 'transcricao',
+              texto: `Nenhuma legenda disponível; transcrevendo somente o áudio do ${rotulo}…`,
+              url,
+            });
+          }
+        },
+      }),
       env.transcricao.totalChatMs,
       `A transcrição do ${rotulo} passou de ${Math.round(
         env.transcricao.totalChatMs / 60000
@@ -343,10 +364,12 @@ async function transcreverVideoComoFonte(
 
     if (typeof onPasso === 'function') {
       const source = String(resultado.source || '');
-      const origem = /subtitle|caption/i.test(source) ? 'legendas' : 'áudio';
+      const veioDeLegenda = /subtitle|caption/i.test(source);
       onPasso({
         kind: 'transcricao',
-        texto: `Transcrição obtida pelo ${origem} (${texto.length} caracteres)`,
+        texto: veioDeLegenda
+          ? `Legenda encontrada (${texto.length} caracteres)`
+          : `Áudio transcrito (${texto.length} caracteres)`,
         url,
       });
     }
@@ -356,7 +379,7 @@ async function transcreverVideoComoFonte(
     if (typeof onPasso === 'function') {
       onPasso({
         kind: 'transcricao-falhou',
-        texto: `Não consegui transcrever o áudio do ${rotulo}: ${err.message}`,
+        texto: `Não consegui obter legenda nem transcrever o áudio do ${rotulo}: ${err.message}`,
         url,
       });
     }
@@ -404,19 +427,17 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
   // Cortar só o começo escondia o desfecho: em vídeo de decisão, julgamento ou
   // votação, o resultado está no fim. Por isso o corte leva início e fim.
 
-  // Com a opcao ativa, usa Whisper quando nao existem legendas prontas.
+  // Sempre tenta a faixa de legenda já presente nos metadados. O áudio só é
+  // baixado quando não há legenda e o fallback de transcrição está habilitado.
   try {
-    const transcricao = transcreverVideo
-      ? await transcreverVideoComoFonte(url, { onPasso, rotulo: 'YouTube', mediaInfo: info })
-      : String((await require('./transcriptionService').trySubtitlesFromUrl(url))?.text || '').trim();
+    const transcricao = await transcreverVideoComoFonte(url, {
+      onPasso,
+      rotulo: 'YouTube',
+      mediaInfo: info,
+      permitirAudio: transcreverVideo,
+    });
     if (String(transcricao || '').length >= 40) {
       trecho = `${trecho}\n\nTranscrição/legendas:\n${recortarTranscricao(transcricao)}`;
-      if (!transcreverVideo && typeof onPasso === 'function') {
-        onPasso({
-          kind: 'fontes',
-          texto: `Transcrição do YouTube encontrada (${transcricao.length} caracteres)`,
-        });
-      }
     }
   } catch (err) {
     console.warn('[materia-chat] youtube subs:', err.message);
@@ -1333,7 +1354,7 @@ async function responder({
   userId,
   chatId = null,
   texto,
-  pesquisarWeb = true,
+  pesquisarWeb = false,
   tom = 'natural',
   periodo = PERIODO_PADRAO,
   palavrasChave = null,
@@ -1861,19 +1882,9 @@ async function responder({
     return finalizar(resposta, { fontesUsadas: [], usouWeb: false });
   }
 
-  // Link colado já é a fonte da matéria: o padrão é reescrever só com ele,
-  // sem pesquisa na web. A busca extra só entra se o editor pedir.
-  const pediuContextoExtra =
-    /\b(pesquis|busqu|busque|procur|mais informa|mais dados|contexto|complement|atualiz|repercuss|apure|apurar|cruz)/i.test(
-      pedidoSemUrls()
-    );
-  if (temFonteDoLink && usarPesquisa && !modoPautas && !pediuContextoExtra) {
-    usarPesquisa = false;
-    registrarPasso({
-      kind: 'pensando',
-      texto: 'Fonte do link é suficiente: reescrevendo sem pesquisa extra na web.',
-    });
-  } else if (temFonteDoLink && usarPesquisa && !modoPautas) {
+  // O botão "Pesquisar na web" é a autoridade: desligado = somente extrair e
+  // reescrever o link; ligado = buscar outras fontes, checar e revisar.
+  if (temFonteDoLink && usarPesquisa && !modoPautas) {
     assuntoDoLink = String(fontes[0]?.titulo || fontes[0]?.resumo || '')
       .replace(/\s+/g, ' ')
       .trim()
@@ -1881,8 +1892,13 @@ async function responder({
     registrarPasso({
       kind: 'pensando',
       texto: assuntoDoLink
-        ? `Link lido. Buscando reportagens sobre “${assuntoDoLink}” para dar contexto, como você pediu.`
-        : 'Link lido. Buscando reportagens para dar contexto, como você pediu.',
+        ? `Pesquisar na web está ligado. Verificando “${assuntoDoLink}” em outras fontes.`
+        : 'Pesquisar na web está ligado. Verificando o conteúdo em outras fontes.',
+    });
+  } else if (temFonteDoLink && !usarPesquisa && !modoPautas) {
+    registrarPasso({
+      kind: 'pensando',
+      texto: 'Pesquisa desligada: extraindo e reescrevendo somente o conteúdo do link.',
     });
   }
 
@@ -2419,9 +2435,9 @@ async function responder({
   // Link social/YouTube já é fonte documentada — a checagem usa o texto extraído.
   // Pedido = só o link (ou "faça uma matéria" + link): o fato está no próprio
   // texto que o editor colou, então não gasta uma chamada de checagem.
-  const soReescreverOLink = temFonteDoLink && pedidoSemUrls().length < 40;
+  const soReescreverOLink = temFonteDoLink && !usarPesquisa;
 
-  if ((usarPesquisa || temFonteDoLink) && !pedidoDeAjuste && !usuarioInsiste) {
+  if (usarPesquisa && !pedidoDeAjuste && !usuarioInsiste) {
     let checagem = checagemDoDossie;
     if (blocoFatos && !soReescreverOLink && !checagem) {
       registrarPasso({ kind: 'checagem', texto: 'Checando o pedido contra as fontes…' });
@@ -2491,6 +2507,7 @@ async function responder({
     // post/vídeo/matéria que o editor colou, então não precisa de confirmação extra.
     const pedidoCentadoNoLink =
       temFonteDoLink &&
+      !usarPesquisa &&
       (pedidoEmLote || !checagem || checagem.tipoPedido === 'tema' || pedidoSemUrls().length < 40);
 
     if (afirmaFato && naoConfirmado && pedeMateria && !pedidoCentadoNoLink) {
@@ -2602,6 +2619,7 @@ async function responder({
             ? String(fonteAtual.trecho || fonteAtual.resumo || '').trim().length
             : 0,
           fonteEstrangeira: fonteEmOutroIdioma([fonteAtual]) || textoColadoEstrangeiro,
+          reescritaDireta: !usarPesquisa,
           contextoAprendizado,
           politicasEditor,
           periodoPesquisa: periodoFinal,
@@ -2626,6 +2644,7 @@ async function responder({
         fonteSocial: temFonteSocial,
         fonteSocialChars: caracteresFonteSocial,
         fonteEstrangeira,
+        reescritaDireta: temFonteDoLink && !usarPesquisa,
         contextoAprendizado,
         politicasEditor,
         periodoPesquisa: periodoFinal,
@@ -2689,7 +2708,7 @@ async function responder({
   // Rede de segurança: matéria sem nenhuma fonte (web ou link), com pesquisa pedida, não vale
   if (
     ehMateriaGerada &&
-    pesquisarWeb &&
+    usarPesquisa &&
     !pediuSemPesquisa &&
     !blocoFatos &&
     !temFonteDoLink &&
@@ -2704,15 +2723,11 @@ async function responder({
     return finalizar(aviso, { fontesUsadas: [], usouWeb: false });
   }
 
-  const suspeitasIniciais = levantarSuspeitas(resposta);
-  // Web desligada (ou link sem pedido de contexto): só reescreve/traduz o link.
-  // Mesmo assim, revisa a resposta contra a legenda para impedir mistura de pauta.
+  const suspeitasIniciais = usarPesquisa ? levantarSuspeitas(resposta) : [];
+  // Web desligada: só extrai e reescreve o link, sem as etapas de checagem e
+  // revisão que atrasavam a entrega e faziam o modelo pedir confirmação.
   const soReescritaDoLink = Boolean(temFonteDoLink && !usarPesquisa);
-  const pularRevisao =
-    soReescritaDoLink &&
-    soReescreverOLink &&
-    !suspeitasIniciais.length &&
-    !politicasEditor.omitirVeiculoNoCorpo;
+
   if (soReescritaDoLink && ehMateriaGerada) {
     registrarPasso({
       kind: 'fontes',
@@ -2723,7 +2738,7 @@ async function responder({
   }
 
   // Revisão frase a frase só quando houve pesquisa/apuração na web
-  if (ehMateriaGerada && blocoFatos && !pularRevisao) {
+  if (ehMateriaGerada && usarPesquisa && blocoFatos) {
     registrarPasso({ kind: 'checagem', texto: 'Revisando a matéria frase por frase contra as fontes…' });
     try {
       const revisao = await deepseekService.revisarMateriaContraFontes({
@@ -2792,9 +2807,11 @@ async function responder({
     }
   }
 
-  // Última passada local no texto que vai ficar salvo
-  for (const suspeita of levantarSuspeitas(resposta)) {
-    registrarPasso({ kind: 'aviso', texto: `Confira antes de publicar — ${suspeita}` });
+  // A verificação local também só roda quando o editor ligou a pesquisa.
+  if (usarPesquisa) {
+    for (const suspeita of levantarSuspeitas(resposta)) {
+      registrarPasso({ kind: 'aviso', texto: `Confira antes de publicar — ${suspeita}` });
+    }
   }
 
   // Correções como “não invente fatos do Instagram” ou “sempre mantenha a

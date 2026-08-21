@@ -1402,6 +1402,11 @@ body.mia-chat-drawer-open {
   cursor: pointer;
 }
 
+.mia-chat-web-toggle {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .mia-chat-chip.is-on {
   border-color: rgba(16, 185, 129, 0.45);
   background: rgba(16, 185, 129, 0.12);

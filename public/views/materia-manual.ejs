@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260820facebookpt2" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260821weboptin" />
 
   <main class="mia-chat" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -138,20 +138,13 @@
                     <section class="mia-chat-menu-sec">
                       <p class="mia-chat-menu-label">Ajustes</p>
                       <div class="mia-chat-tools">
-                        <button type="button" id="chat-toggle-web" aria-pressed="false"
-                          title="Ligado: a IA busca notícias recentes na web. Desligado: escreve apenas com o que você enviar."
-                          class="mia-chat-chip">
-                          <span class="mia-chat-chip-dot"></span>
-                          Pesquisar na web
-                        </button>
-
                         <button type="button" id="chat-toggle-transcricao" aria-pressed="true"
-                          title="Ligado: usar legendas ou transcrever o áudio do vídeo"
+                          title="Primeiro usa as legendas. Se não houver, transcreve somente o áudio."
                           class="mia-chat-chip is-on">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 7v10"/><path d="M20 10v4"/>
                           </svg>
-                          Transcrever vídeo
+                          Áudio se não houver legenda
                         </button>
 
                         <label class="mia-chat-tool-field">
@@ -192,6 +185,12 @@
                     title="A IA pesquisa o tema e lista as matérias publicadas para você escolher"
                     class="chat-modo-btn mia-chat-seg-btn">Pautas</button>
                 </div>
+                <button type="button" id="chat-toggle-web" aria-pressed="false"
+                  title="Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa."
+                  class="mia-chat-chip mia-chat-web-toggle">
+                  <span class="mia-chat-chip-dot"></span>
+                  Pesquisar na web
+                </button>
               </div>
 
               <span id="chat-status" class="mia-chat-status" aria-live="polite"></span>
@@ -437,6 +436,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260820facebookpt2"></script>
+  <script src="/js/materia-chat.js?v=20260821weboptin"></script>
   <script src="/js/materia-chat-extras.js?v=20260820facebookextract3"></script>
 <%- include('partials/app-end') %>

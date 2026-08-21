@@ -110,7 +110,9 @@ async function enviar(req, res, next) {
       userId: req.session.userId,
       chatId: chatIdParam,
       texto: body.texto || body.mensagem || '',
-      pesquisarWeb: body.pesquisarWeb !== false && body.pesquisarWeb !== '0',
+      pesquisarWeb: ['1', 'true', 'on', 'sim'].includes(
+        String(body.pesquisarWeb ?? body.pesquisar_web ?? '').toLowerCase()
+      ),
       tom: body.tom || 'natural',
       periodo: body.periodo || undefined,
       palavrasChave: body.palavrasChave || null,
