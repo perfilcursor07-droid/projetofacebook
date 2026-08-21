@@ -3107,17 +3107,19 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
   const volumeFonteSocial = Math.max(0, Number(fonteSocialChars) || 0);
   const fonteSocialCurta = fonteSocial && volumeFonteSocial < 900;
   const volumeApuracao = blocoFatos.length;
-  const perfilTamanho = fonteSocial
-    ? fonteSocialCurta
+  const perfilTamanho = reescritaDireta && fonteSocialCurta
+    ? { alvo: '600 a 1.200', paragrafos: '2 a 4', minimo: 500 }
+    : fonteSocial
+      ? fonteSocialCurta
       ? { alvo: '1.750 a 1.950', paragrafos: '5 a 7', minimo: 1500 }
       : { alvo: '1.750 a 2.050', paragrafos: '5 a 7', minimo: 1600 }
     : volumeApuracao < 1800
       ? { alvo: '1.750 a 1.950', paragrafos: '5 a 7', minimo: 1500 }
-      : { alvo: '1.850 a 2.050', paragrafos: '6 a 8', minimo: 1700 };
+        : { alvo: '1.850 a 2.050', paragrafos: '6 a 8', minimo: 1700 };
   const blocoTamanhoMateria = `TAMANHO E PROFUNDIDADE DESTA RESPOSTA:
 - O tamanho é proporcional ao material realmente apurado: alvo de ${perfilTamanho.alvo} caracteres no corpo e ${perfilTamanho.paragrafos} parágrafos substanciais.
 - Meta da legenda pronta: 2.000 a 2.200 caracteres contando fonte, foto e hashtags; nunca ultrapasse 2.050 caracteres no corpo.
-- Não estique texto com repetição, adjetivos ou inferências. Se a fonte não sustentar o alvo, entregue menos e informe a lacuna.
+- Não estique texto com repetição, adjetivos ou inferências. ${reescritaDireta ? 'Se o conteúdo não sustentar o alvo, entregue menos sem comentar lacunas, ausência de confirmação ou verificação.' : 'Se a fonte não sustentar o alvo, entregue menos e informe a lacuna.'}
 - Se houver material abundante, desenvolva contexto, cronologia, posições, contraponto e impacto documentados; não entregue apenas um resumo.`;
   const blocoMateriaDePost = fonteSocial
     ? `MATÉRIA BASEADA EM POST OU VÍDEO DE REDE SOCIAL:
@@ -3156,6 +3158,9 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
 - É PROIBIDO julgar a credibilidade da página, exigir boletim de ocorrência, fonte policial, veículo local, confirmação oficial ou repercussão independente. Essa verificação só acontece quando o editor liga “Pesquisar na web”.
 - Mesmo que o relato pareça extraordinário, viral ou impossível de verificar externamente, ESCREVA a matéria atribuindo com clareza: “segundo a publicação”, “de acordo com o relato divulgado pela página” ou “o post afirma”.
 - Não transforme alegação da publicação em confirmação independente. Preserve “teria”, “segundo o relato” e outras marcas de incerteza quando forem necessárias.
+- A atribuição ao post já é suficiente. NÃO inclua parágrafo ou frase dizendo que “não foi possível confirmar”, que faltam dados oficiais, boletim de ocorrência, localização exata, identificação, testemunhas, repercussão ou verificação independente.
+- Não catalogue o que a publicação deixou de informar. Escreva somente as afirmações positivas disponíveis e encerre a nota quando os dados acabarem.
+- Não avalie a qualidade, a credibilidade ou o “padrão jornalístico” da fonte dentro da matéria; apenas reescreva o que ela traz.
 - Nunca responda “não vou escrever”, “isso não atende ao padrão mínimo”, “não há elemento checável” ou peça outra fonte. O conteúdo extraído é a pauta autorizada pelo editor para esta reescrita.`
     : `- Se as fontes NÃO confirmarem o fato central do pedido: NÃO escreva a matéria. Responda em 2 ou 3 frases dizendo o que as fontes realmente trazem, o que não foi confirmado, e ofereça o ângulo que dá para sustentar. Aguarde o editor decidir.
 - Preferir matéria curta e 100% checada a matéria completa com achismo.`;
@@ -3168,7 +3173,7 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
 - Quando houver duas ou mais fontes aproveitáveis, cite naturalmente no corpo pelo menos dois veículos diferentes. Não coloque URL no corpo.
 - Matéria de outro site como base (link que o editor colou): aproveite TODO o factual dela — quem, o que, quando, onde, números, datas e falas entre aspas que estão no texto — e reescreva com suas palavras. CITE o veículo no corpo pelo menos uma vez, do jeito jornalístico ("segundo a BBC News", "de acordo com o g1"), usando o nome que aparece no cabeçalho da fonte. Nunca troque o nome do veículo nem atribua a informação a quem não está nas fontes.`;
 
-  const system = `Você é repórter e redator de uma Página de notícias no Facebook/Instagram, conversando com o editor num chat.
+  const systemPesquisa = `Você é repórter e redator de uma Página de notícias no Facebook/Instagram, conversando com o editor num chat.
 
 COMO A APURAÇÃO CHEGA ATÉ VOCÊ (leia antes de responder):
 - O sistema pesquisa a web e as redes sociais ANTES de te chamar e cola o resultado neste prompt. Você não precisa pedir link para apurar: quando há material, ele já está aqui embaixo.
@@ -3237,12 +3242,42 @@ ANTI-PLÁGIO:
 
 FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.`;
 
+  const systemReescritaDireta = `Você é redator de uma Página de notícias no Facebook/Instagram. Sua única tarefa nesta rodada é transformar o conteúdo extraído de um link em uma matéria original.
+
+MODO SEM PESQUISA NA WEB:
+- O conteúdo do link será fornecido integralmente na mensagem do usuário e é a única base desta matéria.
+- Não pesquise, não cheque com fontes externas, não avalie a credibilidade da página e não peça confirmação.
+- Entregue a matéria mesmo se for uma única publicação, relato, opinião, legenda ou transcrição.
+- Quando o conteúdo trouxer uma alegação, atribua-a: “segundo a publicação”, “o relato afirma” ou use “teria”. A atribuição é suficiente; não escreva ressalvas sobre verificação.
+- Não diga o que a publicação deixou de informar. Não mencione falta de data, cidade, identificação, polícia, boletim, fonte oficial, testemunhas, repercussão, desfecho ou confirmação, a menos que a própria ausência seja o assunto central declarado pela fonte.
+- Nunca responda que não vai escrever, que não há elementos checáveis ou que a fonte não atende a um padrão jornalístico.
+
+FIDELIDADE ABSOLUTA:
+- Cada informação do texto final precisa aparecer explicitamente no conteúdo extraído.
+- É proibido acrescentar reação, comoção, gravidade, alerta espiritual, testemunho, consequência, histórico da página, comportamento do público, motivação ou contexto não escrito na fonte.
+- Não conclua que o episódio “reforça um alerta”, “chamou atenção”, “gerou repercussão” ou “serve de reflexão” se isso não estiver documentado.
+- Não invente nomes, cargos, datas, números, lugares, falas ou desdobramentos.
+- Aspas somente para frase literal presente no conteúdo. Opinião continua atribuída como opinião.
+- Reescreva com estrutura e palavras próprias; não copie a legenda em bloco.
+
+FORMATO OBRIGATÓRIO:
+- Primeira linha: título de até 110 caracteres, sem “Título:”.
+- Uma linha em branco e depois o corpo começando diretamente pelo relato.
+- ${blocoTamanhoMateria}
+- Post curto: 2 a 4 parágrafos. Material mais completo: siga a quantidade proporcional indicada acima.
+- Quando acabarem os dados, encerre a matéria; não preencha espaço.
+- Última linha: 3 a 6 hashtags.
+- Não gere linha fina, intertítulos, títulos alternativos, chamada, sugestão de arte, nota ao editor, “Falta apurar”, bloco de fontes ou URLs.
+- Entregue somente a matéria pronta em português do Brasil.`;
+
+  const system = reescritaDireta ? systemReescritaDireta : systemPesquisa;
+
   // O bloco da matéria-de-post muda a cada link (tamanho da fonte, tipo de
   // material) e ficava no MEIO do system: qualquer variação invalidava o
   // prefixo inteiro e o cache era reescrito toda mensagem em vez de lido.
   // Agora ele vai depois, num bloco próprio, e o prefixo estável fica de pé.
   const messages = [{ role: 'system', content: system }];
-  if (blocoMateriaDePost && String(blocoMateriaDePost).trim()) {
+  if (!reescritaDireta && blocoMateriaDePost && String(blocoMateriaDePost).trim()) {
     messages.push({ role: 'system', content: String(blocoMateriaDePost).trim() });
   }
   if (blocoReescritaDireta) {
@@ -3347,6 +3382,44 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
     thinking: Boolean(blocoFatos) && !fonteSocial && !reescritaDireta,
     model: DEEPSEEK_WRITER_MODEL,
   });
+
+  // Última proteção do modo sem web: se o modelo insistir em recusar ou inserir
+  // sermão de checagem, refaz em silêncio. O evento final substitui a prévia que
+  // eventualmente já tenha chegado pelo stream.
+  const recusouReescritaDireta =
+    reescritaDireta &&
+    blocoFatos.length >= 80 &&
+    /\b(?:n[ãa]o\s+(?:vou|posso|d[áa]\s+para)\s+escrever|n[ãa]o\s+(?:[ée]|foi)\s+poss[ií]vel\s+confirmar|n[ãa]o\s+h[áa]\s+(?:como\s+confirmar|detalhes?\s+adicionais?)|(?:verifica|confirma)[çc][ãa]o\s+independente|sem\s+detalhes?\s+oficiais?|padr[ãa]o\s+m[ií]nimo\s+de\s+apura[çc][ãa]o)\b/i.test(
+      String(raw || '')
+    );
+
+  if (recusouReescritaDireta) {
+    console.warn('[materia-chat] reescrita direta recusada pela IA; refazendo sem aviso de checagem');
+    try {
+      raw = await chatCompletionStream(
+        [
+          ...messages,
+          {
+            role: 'system',
+            content: `CORREÇÃO OBRIGATÓRIA — MODO SEM PESQUISA:
+- A resposta anterior contrariou o pedido ao recusar ou comentar falta de confirmação.
+- Entregue somente a matéria pronta, usando o conteúdo extraído.
+- Atribua alegações ao post (“segundo a publicação”, “o relato afirma”, “teria”), mas NÃO mencione ausência de confirmação, verificação independente, fonte oficial, boletim de ocorrência, polícia ou padrão de apuração.
+- Não liste informações ausentes e não invente reação, comoção, testemunho, alerta espiritual, consequência ou histórico da página.
+- Se houver pouco conteúdo, faça uma nota curta de 2 a 4 parágrafos. Não invente nenhum dado.`,
+          },
+        ],
+        {
+          temperature: sortearTemperatura(tomKey === 'polemico'),
+          onDelta: null,
+          thinking: false,
+          model: DEEPSEEK_WRITER_MODEL,
+        }
+      );
+    } catch (err) {
+      console.warn('[materia-chat] correção da reescrita direta:', err.message);
+    }
+  }
 
   // Quality gate do chat: com apuração suficiente, uma resposta telegráfica não
   // é entrega final. O segundo passe usa as mesmas fontes e apenas desenvolve o
