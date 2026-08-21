@@ -147,25 +147,64 @@ function textoDaResposta(message) {
 
 function interpretarBlocosWebFetch(raw, host = '') {
   const texto = String(raw || '').trim();
-  const bloco = (nome, aceitarFim = false) => {
-    const fechamento = aceitarFim ? `(?:<\\/${nome}>|$)` : `<\\/${nome}>`;
-    const match = texto.match(new RegExp(`<${nome}>\\s*([\\s\\S]*?)\\s*${fechamento}`, 'i'));
+  const aliases = (nomes) => (Array.isArray(nomes) ? nomes : [nomes]);
+  const bloco = (nomes, aceitarFim = false) => {
+    const nome = aliases(nomes).join('|');
+    const fechamento = aceitarFim
+      ? `(?:<\\\/\\s*(?:${nome})\\s*>|$)`
+      : `<\\\/\\s*(?:${nome})\\s*>`;
+    const match = texto.match(
+      new RegExp(`<\\s*(?:${nome})\\s*>\\s*([\\s\\S]*?)\\s*${fechamento}`, 'i')
+    );
     return String(match?.[1] || '').trim();
   };
-  // Aceitar o fim do texto evita perder toda a apuração caso a resposta seja
-  // truncada exatamente antes da tag final.
-  const trecho = bloco('APURACAO', true) || bloco('TRECHO', true);
-  if (trecho.length < 300) return null;
+  const campo = (nomes) => {
+    const porTag = bloco(nomes);
+    if (porTag) return porTag;
+    const nome = aliases(nomes).join('|');
+    return String(
+      texto.match(
+        new RegExp(`^\\s*(?:#{1,6}\\s*)?(?:${nome})\\s*[:=-]\\s*(.+)$`, 'im')
+      )?.[1] || ''
+    ).trim();
+  };
+  const limparTextoLivre = (valor) =>
+    String(valor || '')
+      .replace(/^```(?:xml|html|text|markdown)?\s*|\s*```$/gim, '')
+      .replace(
+        /<\/?\s*(?:TITULO|TÍTULO|VEICULO|VEÍCULO|AUTOR|DATA|RESUMO|APURACAO|APURAÇÃO|TRECHO|CONTEUDO|CONTEÚDO|CORPO|TEXTO)\s*>/gi,
+        '\n'
+      )
+      .replace(
+        /^\s*(?:#{1,6}\s*)?(?:TITULO|TÍTULO|VEICULO|VEÍCULO|AUTOR|DATA|RESUMO|APURACAO|APURAÇÃO|TRECHO|CONTEUDO|CONTEÚDO|CORPO|TEXTO)\s*[:=-]\s*/gim,
+        ''
+      )
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+  // O Claude às vezes devolve <APURAÇÃO>, <CONTEUDO>, um cabeçalho Markdown
+  // ou apenas a apuração em prosa. Todos são resultados úteis do web_fetch.
+  let trecho = bloco(
+    ['APURACAO', 'APURAÇÃO', 'TRECHO', 'CONTEUDO', 'CONTEÚDO', 'CORPO', 'TEXTO'],
+    true
+  );
+  if (trecho.length < 180) trecho = limparTextoLivre(texto);
+
+  const recusouLeitura =
+    /(?:n[ãa]o (?:consegui|foi poss[ií]vel) (?:acessar|abrir|ler)|acesso (?:negado|bloqueado)|conte[uú]do indispon[ií]vel)/i.test(
+      trecho
+    );
+  if (trecho.length < 180 || recusouLeitura) return null;
+
   return {
-    titulo: bloco('TITULO') || null,
-    veiculo: bloco('VEICULO') || host || null,
-    autor: bloco('AUTOR') || null,
-    dataPublicacao: bloco('DATA') || null,
-    resumo: bloco('RESUMO') || trecho.slice(0, 400),
-    trecho: trecho.slice(0, 12000),
+    titulo: campo(['TITULO', 'TÍTULO']) || null,
+    veiculo: campo(['VEICULO', 'VEÍCULO']) || host || null,
+    autor: campo('AUTOR') || null,
+    dataPublicacao: campo('DATA') || null,
+    resumo: campo('RESUMO') || trecho.slice(0, 400),
+    trecho: limparTextoLivre(trecho).slice(0, 12000),
   };
 }
-
 /**
  * Último recurso para portais que bloqueiam o IP do servidor. O web_fetch é
  * executado pela infraestrutura da Anthropic e devolve uma apuração estruturada
