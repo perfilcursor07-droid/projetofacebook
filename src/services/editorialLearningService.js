@@ -350,6 +350,49 @@ Escreva cada memória como instrução curta, objetiva e reutilizável. Remova d
 /** Limite do texto que o editor escreve à mão na tela de agendar. */
 const MAX_ORIENTACOES = 4000;
 
+function normalizarOrientacaoParaPolitica(texto) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Transforma regras editoriais que tambem afetam o pos-processamento local em
+ * politicas deterministicas. As linhas sao lidas de cima para baixo; em caso
+ * de conflito, a ultima regra vence, igual ao bloco enviado ao modelo.
+ */
+function analisarOrientacoesEditor(orientacoesOuContexto) {
+  const texto =
+    orientacoesOuContexto && typeof orientacoesOuContexto === 'object'
+      ? orientacoesOuContexto.orientacoesEditor
+      : orientacoesOuContexto;
+  let omitirVeiculoNoCorpo = false;
+
+  for (const linha of String(texto || '').split(/\r?\n/)) {
+    const regra = normalizarOrientacaoParaPolitica(linha.replace(/^\s*[-•*]\s*/, ''));
+    if (!regra) continue;
+
+    const mencionaVeiculo = /\b(veiculo|site|portal|nome da fonte|nome do site)\b/.test(regra);
+    const proibeCitacao =
+      mencionaVeiculo &&
+      (/\bnao\s+(cite|citar|mencione|mencionar|use|usar)\b/.test(regra) ||
+        /\b(apenas|somente|so)\s+(na|no)\s+(fonte|credito|rodape)\b/.test(regra) ||
+        /\b(cite|citar|mencione|mencionar)\b.*\b(apenas|somente|so)\b.*\b(fonte|credito|rodape)\b/.test(regra));
+    const exigeCitacaoNoCorpo =
+      mencionaVeiculo &&
+      !/\bnao\b/.test(regra) &&
+      /\b(cite|citar|mencione|mencionar|use|usar)\b.*\b(corpo|texto|materia)\b/.test(regra);
+
+    if (proibeCitacao) omitirVeiculoNoCorpo = true;
+    if (exigeCitacaoNoCorpo) omitirVeiculoNoCorpo = false;
+  }
+
+  return { omitirVeiculoNoCorpo };
+}
+
 /**
  * Orientações que o editor escreve na tela de agendar. Valem para todas as
  * próximas matérias — é instrução manual, não memória inferida do chat.
@@ -507,6 +550,7 @@ function formatarContextoAprendizadoParaPrompt(ctx) {
     parts.push(
       [
         'ORIENTAÇÕES FIXAS DO EDITOR (prioridade máxima — valem para TODAS as matérias):',
+        'As regras abaixo estão em ordem. Se duas se contradisserem, siga a ÚLTIMA regra (a mais abaixo).',
         String(ctx.orientacoesEditor).slice(0, 4000),
         'Se uma orientação conflitar com outro padrão aprendido, siga a orientação do editor. Nenhuma orientação autoriza inventar fato ou ignorar a fonte.',
       ].join('\n')
@@ -552,6 +596,7 @@ module.exports = {
   acrescentarOrientacao,
   ensinarComContexto,
   obterContextoAprendizado,
+  analisarOrientacoesEditor,
   formatarContextoAprendizadoParaPrompt,
   diffSignificativo,
   normText,

@@ -196,7 +196,7 @@ async function salvarPautasComoRascunhos(req, res, next) {
 }
 
 /**
- * "Ensinar a IA" no chat: mesma memória usada em /biblioteca/agendar.
+ * "Ensinar a IA" no chat: memória editorial do editor.
  * O editor escreve as regras uma vez e elas valem para as próximas matérias.
  */
 async function obterOrientacoes(req, res, next) {

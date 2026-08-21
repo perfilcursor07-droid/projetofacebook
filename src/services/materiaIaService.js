@@ -576,7 +576,7 @@ async function criarMateriaManual({
     titulo_ia: null,
     materia_ia: null,
     hashtags: JSON.stringify(tags),
-    fonte_titulo: 'Matéria manual',
+    fonte_titulo: 'Conteúdo enviado pelo editor',
     fonte_url: null,
     fonte_resumo: null,
     fonte_credito: String(fonteCredito || '').trim() || null,
@@ -603,7 +603,7 @@ async function criarMateriaManual({
     userId,
     titulo: tituloLimpo,
     materia: materiaLimpa,
-    fonteTitulo: 'Matéria manual',
+    fonteTitulo: 'Conteúdo enviado pelo editor',
   }).catch(() => {});
 
   return AiMatters.findById(id);
@@ -2377,7 +2377,7 @@ async function gerarMateriaManual({
       fonteSelecionada?.titulo ||
       fontePrincipal?.titulo ||
       fonteSelecionada?.veiculo ||
-      (usarPesquisa ? 'Matéria manual + pesquisa na web' : 'Matéria manual'),
+      (usarPesquisa ? 'Pesquisa na web' : 'Conteúdo enviado pelo editor'),
     fonte_url: fontePrincipal?.url || null,
     fonte_resumo: (fonteSelecionada?.resumo || fatos).slice(0, 1500),
     contexto_apuracao: fontesPesquisa.length

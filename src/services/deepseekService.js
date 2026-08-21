@@ -750,9 +750,19 @@ async function gerarMateriaNoticiaFacebook({
     }
   }
 
+  const blocoAprendizadoFinal = blocoAprendizado
+    ? [
+        'INSTRUÇÕES EDITORIAIS FINAIS DO USUÁRIO (prioridade máxima de estilo):',
+        blocoAprendizado,
+        'Estas regras substituem qualquer padrão conflitante de título, tom, formatação, chamada ou tratamento de fonte. Nunca autorizam inventar fatos.',
+      ].join('\n\n')
+    : null;
+  const systemBlocosComAprendizado = blocoAprendizadoFinal
+    ? systemBlocos.concat({ role: 'system', content: blocoAprendizadoFinal })
+    : systemBlocos;
+
   const userContent = [
     'Crie uma MINIMATÉRIA ORIGINAL estilo News Gospel para Facebook/Instagram (foto + legenda).',
-    blocoAprendizado,
     `VOZ DO REDATOR (obrigatório): ${voz}`,
     factualEstrito
       ? [
@@ -836,7 +846,7 @@ async function gerarMateriaNoticiaFacebook({
   let artigo = parseArtigoJson(
     await chatCompletion(
       [
-        ...systemBlocos,
+        ...systemBlocosComAprendizado,
         { role: 'user', content: userContent },
       ],
       { temperature, json: true, thinking: true }
@@ -848,7 +858,7 @@ async function gerarMateriaNoticiaFacebook({
     artigo = parseArtigoJson(
       await chatCompletion(
         [
-          ...systemBlocos,
+          ...systemBlocosComAprendizado,
           {
             role: 'user',
             content: [
@@ -877,7 +887,7 @@ async function gerarMateriaNoticiaFacebook({
     try {
       const expandido = await chatCompletion(
         [
-          ...systemBlocos,
+          ...systemBlocosComAprendizado,
           {
             role: 'user',
             content: `Matéria ABAIXO DO MÁXIMO Face/Insta (${qualidade.chars} caracteres; alvo ${faixa.min}–${faixa.max}).
@@ -908,7 +918,7 @@ Retorne JSON completo atualizado.`,
     try {
       const enxuto = await chatCompletion(
         [
-          ...systemBlocos,
+          ...systemBlocosComAprendizado,
           {
             role: 'user',
             content: `Matéria ACIMA DO MÁXIMO Face/Insta (${qualidade.chars} caracteres).
@@ -950,7 +960,7 @@ Retorne JSON completo enxuto.`,
     try {
       const humanizado = await chatCompletion(
         [
-          ...systemBlocos,
+          ...systemBlocosComAprendizado,
           {
             role: 'user',
             content: `Revise a matéria corrigindo os problemas. Mantenha FATOS REAIS. Não adicione "vale ressaltar", "além disso", "em suma".
@@ -2918,11 +2928,24 @@ async function revisarMateriaContraFontes({
   suspeitas = [],
   fonteEstrangeira = false,
   veiculosColados = [],
+  contextoAprendizado = null,
+  politicasEditor = null,
 }) {
   assertDeepseek();
   const materia = String(texto || '').trim();
   const blocoFatos = String(fatosFontes || '').trim();
   if (!materia || !blocoFatos) return { problemas: [], texto: materia };
+
+  const omitirVeiculoNoCorpo = politicasEditor?.omitirVeiculoNoCorpo === true;
+  let blocoMemoriaEditorial = null;
+  if (contextoAprendizado) {
+    try {
+      const { formatarContextoAprendizadoParaPrompt } = require('./editorialLearningService');
+      blocoMemoriaEditorial = formatarContextoAprendizadoParaPrompt(contextoAprendizado);
+    } catch {
+      blocoMemoriaEditorial = null;
+    }
+  }
 
   const raw = await chatCompletion(
     [
@@ -2955,6 +2978,10 @@ Regras da devolução:
 - Se sobrar pouco conteúdo, entregue a matéria mais curta — texto curto e checado é melhor que texto grande e furado.
 - Mantenha o tom e o estilo do original no que for verdadeiro.
 
+${blocoMemoriaEditorial ? `${blocoMemoriaEditorial}
+
+As orientações fixas acima também valem nesta revisão. Preserve título, tom, formatação, chamada e tratamento das fontes pedidos pelo editor; altere somente o necessário para corrigir fatos sem lastro.` : ''}
+
 Responda APENAS JSON:
 {"problemas":["trecho cortado/ajustado — motivo em poucas palavras"],"texto":"matéria revisada completa"}`,
       },
@@ -2968,7 +2995,10 @@ Responda APENAS JSON:
                 'Se sobrou alguma frase ou aspas em inglês/espanhol no texto, TRADUZA para o português mantendo o sentido — a matéria não pode ter trecho em outro idioma.',
               ].join('\n')
             : null,
-          (Array.isArray(veiculosColados) ? veiculosColados : []).length
+          omitirVeiculoNoCorpo
+            ? 'ORIENTAÇÃO FIXA DO EDITOR: remova nomes de veículos do corpo da matéria. Os nomes permanecem somente no campo/rodapé de fonte; preserve atribuições genéricas pedidas pelo editor.'
+            : null,
+          !omitirVeiculoNoCorpo && (Array.isArray(veiculosColados) ? veiculosColados : []).length
             ? `MANTENHA a citação do veículo no corpo (${veiculosColados
                 .map((v) => (typeof v === 'string' ? v : v?.veiculo || ''))
                 .filter(Boolean)
@@ -3027,6 +3057,7 @@ async function conversarMateria({
   fonteSocialChars = 0,
   fonteEstrangeira = false,
   contextoAprendizado = null,
+  politicasEditor = null,
   periodoPesquisa = null,
   pesquisaAmpliada = false,
   periodoPesquisaAmpliada = null,
@@ -3071,6 +3102,7 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
     }
   }
 
+  const omitirVeiculoNoCorpo = politicasEditor?.omitirVeiculoNoCorpo === true;
   const volumeFonteSocial = Math.max(0, Number(fonteSocialChars) || 0);
   const fonteSocialCurta = fonteSocial && volumeFonteSocial < 900;
   const volumeApuracao = blocoFatos.length;
@@ -3100,6 +3132,15 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
 - Entregue somente a matéria pronta. NÃO gere títulos alternativos, chamada para redes sociais, sugestão de arte, notas ao editor nem explicação do processo.`
     : '';
 
+  const blocoAtribuicaoFontes = omitirVeiculoNoCorpo
+    ? `ATRIBUIÇÃO DAS FONTES NO CORPO (orientação fixa do editor):
+- NÃO escreva o nome de site, portal ou veículo no título nem no corpo da matéria.
+- Quando for necessário atribuir, use somente a expressão genérica definida nas orientações do editor.
+- Os nomes e links reais ficam preservados no campo/rodapé de fontes montado pelo sistema.`
+    : `ATRIBUIÇÃO DAS FONTES NO CORPO:
+- Quando houver duas ou mais fontes aproveitáveis, cite naturalmente no corpo pelo menos dois veículos diferentes. Não coloque URL no corpo.
+- Matéria de outro site como base (link que o editor colou): aproveite TODO o factual dela — quem, o que, quando, onde, números, datas e falas entre aspas que estão no texto — e reescreva com suas palavras. CITE o veículo no corpo pelo menos uma vez, do jeito jornalístico ("segundo a BBC News", "de acordo com o g1"), usando o nome que aparece no cabeçalho da fonte. Nunca troque o nome do veículo nem atribua a informação a quem não está nas fontes.`;
+
   const system = `Você é repórter e redator de uma Página de notícias no Facebook/Instagram, conversando com o editor num chat.
 
 COMO A APURAÇÃO CHEGA ATÉ VOCÊ (leia antes de responder):
@@ -3110,7 +3151,6 @@ COMO A APURAÇÃO CHEGA ATÉ VOCÊ (leia antes de responder):
 
 ${blocoEstiloNewsGospel()}
 
-${blocoMemoriaEditorial || ''}
 
 ${blocoTemporal}
 
@@ -3140,8 +3180,7 @@ APROVEITAMENTO DA APURAÇÃO:
 - Em pedido sobre um TEMA amplo, faça apuração cruzada: apresente o fato central, o contexto, os posicionamentos documentados, a relação com 2026 quando estiver nas fontes, os possíveis impactos objetivos e o que ainda merece acompanhamento.
 - Em tema institucional/político amplo, organize a matéria nesta lógica, usando apenas os blocos sustentados: contexto da instituição → estrutura política → iniciativas e documentos → falas de lideranças → apoios/articulações → controvérsia/contraponto → próximos movimentos.
 - Use subtítulos curtos quando ajudarem a separar pelo menos três desses blocos. Não use emojis como substitutos de informação.
-- Quando houver duas ou mais fontes aproveitáveis, cite naturalmente no corpo pelo menos dois veículos diferentes. Não coloque URL no corpo.
-- Matéria de outro site como base (link que o editor colou): aproveite TODO o factual dela — quem, o que, quando, onde, números, datas e falas entre aspas que estão no texto — e reescreva com suas palavras. CITE o veículo no corpo pelo menos uma vez, do jeito jornalístico ("segundo a BBC News", "de acordo com o g1"), usando o nome que aparece no cabeçalho da fonte. Nunca troque o nome do veículo nem atribua a informação a quem não está nas fontes.
+${blocoAtribuicaoFontes}
 - Post de rede social como base: aproveite TODOS os dados da legenda (nome completo, idade, falas entre aspas, números de família, igreja e desde quando, conselhos e mensagens) e organize em parágrafos com lead, desenvolvimento e fechamento. Se houver reportagens apuradas, some o contexto delas; se não houver, construa a matéria com o conteúdo do post — sem repetir a legenda em bloco e sem inventar.
 - Se a fonte trouxer "REPERCUSSÃO NOS COMENTÁRIOS PÚBLICOS", use 2 a 4 comentários relevantes para criar um bloco de repercussão e ampliar a matéria. Deixe explícito que são opiniões de internautas, atribua cada fala ao perfil indicado e nunca apresente comentário como fato comprovado nem generalize como opinião de todos.
 - Se houver "CONTEÚDO VISÍVEL NAS IMAGENS DO POST", aproveite os detalhes legíveis dos cards ou prints como parte do relato, sempre atribuindo-os à publicação.
@@ -3181,6 +3220,16 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
   if (blocoMateriaDePost && String(blocoMateriaDePost).trim()) {
     messages.push({ role: 'system', content: String(blocoMateriaDePost).trim() });
   }
+  if (blocoMemoriaEditorial) {
+    messages.push({
+      role: 'system',
+      content: [
+        'INSTRUÇÕES EDITORIAIS FINAIS DO USUÁRIO (prioridade máxima de estilo):',
+        blocoMemoriaEditorial,
+        'Estas regras substituem qualquer regra padrão conflitante de título, tom, formatação, chamada ou tratamento de fonte. Elas nunca autorizam inventar fatos, falas, datas ou números.',
+      ].join('\n\n'),
+    });
+  }
 
   for (const m of (Array.isArray(historico) ? historico : []).slice(-8)) {
     const role = m?.role === 'assistant' ? 'assistant' : 'user';
@@ -3197,15 +3246,20 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
     .slice(0, 3);
 
   const blocoFonteColada = nomesColados.length
-    ? [
+    ? omitirVeiculoNoCorpo
+      ? [
+          `FONTES QUE O EDITOR COLOU: ${nomesColados.join(', ')}.`,
+          'ORIENTAÇÃO FIXA: não cite esses nomes no título nem no corpo. Use a forma genérica salva pelo editor quando precisar atribuir; os nomes e URLs serão mantidos somente no crédito de fontes.',
+        ].join('\n')
+      : [
         `FONTE QUE O EDITOR COLOU: ${nomesColados.join(', ')}.`,
         `OBRIGATÓRIO: cite ${nomesColados.length > 1 ? 'pelo menos um desses nomes' : `"${nomesColados[0]}"`} no corpo da matéria, com esse nome exato, do jeito jornalístico — "Segundo o ${nomesColados[0]}, …" / "Ainda de acordo com o ${nomesColados[0]}, …" / "em reportagem do ${nomesColados[0]}".`,
         // A matéria é nossa: o crédito é atribuição de apuração, não resenha do
         // texto do outro site. Fora do lead, o leitor lê a notícia, não a fonte.
         'O crédito NUNCA vai no título nem na primeira frase do lead: entra depois do lead (a partir do 2º parágrafo) ou no fecho da matéria.',
         'No máximo 2 menções ao veículo em toda a matéria, sempre nessa forma padrão.',
-        'Não troque o nome do veículo, não abrevie e não atribua a informação a outro veículo.',
-      ].join('\n')
+          'Não troque o nome do veículo, não abrevie e não atribua a informação a outro veículo.',
+        ].join('\n')
     : null;
 
   const blocoTraducao = fonteEstrangeira
@@ -3220,7 +3274,9 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
         'TRADUZA E REESCREVA A NOTÍCIA COMO NOSSA — não comente, não resuma e não descreva a reportagem estrangeira.',
         'PROIBIDO escrever sobre o artigo: "o site americano publicou", "o texto em inglês afirma", "a reportagem estrangeira relata", "de acordo com a publicação do portal, o artigo diz", "segundo o site, a matéria conta", "conforme noticiado pelo veículo internacional em seu site".',
         'Escreva os fatos direto, como se a apuração fosse da nossa redação: sujeito da frase é a pessoa/instituição do fato, nunca o site que publicou.',
-        `Crédito da fonte estrangeira: só na forma padrão e no máximo 2 vezes — "Segundo o ${nomesColados[0] || '<veículo>'}, …" ou "Ainda de acordo com o ${nomesColados[0] || '<veículo>'}, o pastor teria…" —, sempre depois do lead ou no fecho, nunca no título e nunca na 1ª frase.`,
+        omitirVeiculoNoCorpo
+          ? 'Não cite o nome do veículo estrangeiro no corpo; mantenha-o somente no crédito de fontes e use a atribuição genérica salva pelo editor.'
+          : `Crédito da fonte estrangeira: só na forma padrão e no máximo 2 vezes — "Segundo o ${nomesColados[0] || '<veículo>'}, …" ou "Ainda de acordo com o ${nomesColados[0] || '<veículo>'}, o pastor teria…" —, sempre depois do lead ou no fecho, nunca no título e nunca na 1ª frase.`,
         'Fato que a fonte estrangeira apresenta como não confirmado continua no condicional ("teria", "segundo relatos"), com o crédito ao veículo.',
       ].join('\n')
     : null;
@@ -3295,7 +3351,9 @@ FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.
           'A versão ficou curta apesar de haver apuração suficiente.',
           `Reescreva a matéria COMPLETA, com ${perfilTamanho.alvo} caracteres no corpo e ${perfilTamanho.paragrafos} parágrafos substanciais.`,
           'Aprofunde somente com fatos já presentes nas fontes: contexto institucional, cronologia, posições documentadas, repercussão, impacto e próximos pontos a acompanhar.',
-          'Cruze as fontes e cite no corpo pelo menos dois veículos quando houver dois disponíveis.',
+          omitirVeiculoNoCorpo
+            ? 'Cruze os fatos das fontes sem citar o nome dos veículos no corpo; mantenha-os somente no crédito de fontes.'
+            : 'Cruze as fontes e cite no corpo pelo menos dois veículos quando houver dois disponíveis.',
           'Preserve o anti-plágio: nova estrutura e palavras próprias. Não invente bastidor, fala, número, consequência nem “furo”.',
           'Formato final: primeira linha com o título; linha em branco; corpo iniciando diretamente pelo lead; última linha com 3 a 6 hashtags. Sem linha fina, subtítulo, introdução ou bloco de fontes.',
         ];

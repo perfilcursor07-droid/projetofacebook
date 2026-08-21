@@ -1115,10 +1115,16 @@ function pedidoEmOutroIdioma(pedido) {
  * ("As informações foram publicadas originalmente por X"). No lead soa como comentário sobre
  * a reportagem do outro site — a matéria é nossa, o crédito é do fim.
  */
-function garantirCitacaoDoVeiculo(resposta, fontesColadas = []) {
+function garantirCitacaoDoVeiculo(
+  resposta,
+  fontesColadas = [],
+  { omitirVeiculoNoCorpo = false } = {}
+) {
   const texto = String(resposta || '');
   const lista = (Array.isArray(fontesColadas) ? fontesColadas : []).filter((f) => f?.veiculo);
-  if (!texto.trim() || !lista.length) return { texto, inserido: null };
+  if (omitirVeiculoNoCorpo || !texto.trim() || !lista.length) {
+    return { texto, inserido: null };
+  }
 
   const { nomeCurtoFonte } = require('./editorialGuidelinesFb');
   const nomes = [];
@@ -1350,9 +1356,11 @@ async function responder({
   deepseekService.assertDeepseek();
 
   let contextoAprendizado = null;
+  let politicasEditor = { omitirVeiculoNoCorpo: false };
   try {
     const learning = require('./editorialLearningService');
     contextoAprendizado = await learning.obterContextoAprendizado(userId);
+    politicasEditor = learning.analisarOrientacoesEditor(contextoAprendizado);
   } catch (err) {
     console.warn('[materia-chat] carregar memória editorial:', err.message);
   }
@@ -2595,6 +2603,7 @@ async function responder({
             : 0,
           fonteEstrangeira: fonteEmOutroIdioma([fonteAtual]) || textoColadoEstrangeiro,
           contextoAprendizado,
+          politicasEditor,
           periodoPesquisa: periodoFinal,
           pesquisaAmpliada: pesquisaFoiAmpliada,
           periodoPesquisaAmpliada: periodoResgateUsado,
@@ -2618,6 +2627,7 @@ async function responder({
         fonteSocialChars: caracteresFonteSocial,
         fonteEstrangeira,
         contextoAprendizado,
+        politicasEditor,
         periodoPesquisa: periodoFinal,
         pesquisaAmpliada: pesquisaFoiAmpliada,
         periodoPesquisaAmpliada: periodoResgateUsado,
@@ -2699,7 +2709,10 @@ async function responder({
   // Mesmo assim, revisa a resposta contra a legenda para impedir mistura de pauta.
   const soReescritaDoLink = Boolean(temFonteDoLink && !usarPesquisa);
   const pularRevisao =
-    soReescritaDoLink && soReescreverOLink && !suspeitasIniciais.length;
+    soReescritaDoLink &&
+    soReescreverOLink &&
+    !suspeitasIniciais.length &&
+    !politicasEditor.omitirVeiculoNoCorpo;
   if (soReescritaDoLink && ehMateriaGerada) {
     registrarPasso({
       kind: 'fontes',
@@ -2720,6 +2733,8 @@ async function responder({
         suspeitas: suspeitasIniciais,
         fonteEstrangeira,
         veiculosColados,
+        contextoAprendizado,
+        politicasEditor,
       });
       if (revisao.revisaoDescartada) {
         registrarPasso({
@@ -2762,7 +2777,11 @@ async function responder({
         texto: 'Fonte e foto de crédito anexadas ao final da matéria.',
       });
     } else {
-      const { texto: comCredito, inserido } = garantirCitacaoDoVeiculo(resposta, fontesColadas);
+      const { texto: comCredito, inserido } = garantirCitacaoDoVeiculo(
+        resposta,
+        fontesColadas,
+        politicasEditor
+      );
       if (inserido) {
         resposta = comCredito;
         registrarPasso({
