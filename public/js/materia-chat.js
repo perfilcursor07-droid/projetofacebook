@@ -1493,8 +1493,8 @@
     el.toggleTranscricao.setAttribute('aria-pressed', on ? 'true' : 'false');
     el.toggleTranscricao.classList.toggle('is-on', on);
     el.toggleTranscricao.title = on
-      ? 'Primeiro usa as legendas. Se não houver, transcreve somente o áudio.'
-      : 'Usa somente legendas disponíveis; não baixa nem transcreve o áudio.';
+      ? 'Primeiro usa a transcrição disponibilizada pela plataforma. Se não houver, processa somente o áudio.'
+      : 'Usa somente a transcrição disponibilizada pela plataforma; não baixa nem processa o áudio.';
   }
 
   /**

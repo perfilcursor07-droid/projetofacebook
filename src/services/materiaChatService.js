@@ -318,12 +318,15 @@ async function transcreverVideoComoFonte(
   } = {}
 ) {
   console.info(
-    `[materia-chat] procurando fala/legenda ${rotulo}: ${url}${mediaUrl ? ' (mídia direta disponível)' : ''}`
+    `[materia-chat] procurando transcrição ${rotulo}: ${url}${mediaUrl ? ' (mídia direta disponível)' : ''}`
   );
   if (typeof onPasso === 'function') {
     onPasso({
       kind: 'lendo',
-      texto: `Procurando legendas disponíveis do ${rotulo}…`,
+      texto:
+        rotulo === 'YouTube'
+          ? 'Procurando a transcrição disponibilizada pelo YouTube…'
+          : `Procurando a transcrição disponível do ${rotulo}…`,
       url,
     });
   }
@@ -344,7 +347,7 @@ async function transcreverVideoComoFonte(
           if (typeof onPasso === 'function') {
             onPasso({
               kind: 'transcricao',
-              texto: `Nenhuma legenda disponível; transcrevendo somente o áudio do ${rotulo}…`,
+              texto: `Nenhuma transcrição disponibilizada; processando somente o áudio do ${rotulo}…`,
               url,
             });
           }
@@ -364,11 +367,11 @@ async function transcreverVideoComoFonte(
 
     if (typeof onPasso === 'function') {
       const source = String(resultado.source || '');
-      const veioDeLegenda = /subtitle|caption/i.test(source);
+      const veioDeTexto = /subtitle|caption|transcript/i.test(source);
       onPasso({
         kind: 'transcricao',
-        texto: veioDeLegenda
-          ? `Legenda encontrada (${texto.length} caracteres)`
+        texto: veioDeTexto
+          ? `Transcrição do vídeo encontrada (${texto.length} caracteres)`
           : `Áudio transcrito (${texto.length} caracteres)`,
         url,
       });
@@ -379,7 +382,7 @@ async function transcreverVideoComoFonte(
     if (typeof onPasso === 'function') {
       onPasso({
         kind: 'transcricao-falhou',
-        texto: `Não consegui obter legenda nem transcrever o áudio do ${rotulo}: ${err.message}`,
+        texto: `Não consegui obter a transcrição nem processar o áudio do ${rotulo}: ${err.message}`,
         url,
       });
     }
@@ -388,7 +391,7 @@ async function transcreverVideoComoFonte(
 }
 
 /**
- * YouTube → título + descrição (+ legendas/auto-captions se existirem).
+ * YouTube → título + descrição + transcrição disponibilizada, quando existir.
  * Não baixa o vídeo inteiro.
  */
 async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false } = {}) {
@@ -427,8 +430,8 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
   // Cortar só o começo escondia o desfecho: em vídeo de decisão, julgamento ou
   // votação, o resultado está no fim. Por isso o corte leva início e fim.
 
-  // Sempre tenta a faixa de legenda já presente nos metadados. O áudio só é
-  // baixado quando não há legenda e o fallback de transcrição está habilitado.
+  // Sempre tenta a transcrição disponibilizada pelo YouTube. O áudio só é
+  // baixado quando ela não existe e o fallback local está habilitado.
   try {
     const transcricao = await transcreverVideoComoFonte(url, {
       onPasso,
@@ -437,7 +440,7 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
       permitirAudio: transcreverVideo,
     });
     if (String(transcricao || '').length >= 40) {
-      trecho = `${trecho}\n\nTranscrição/legendas:\n${recortarTranscricao(transcricao)}`;
+      trecho = `${trecho}\n\nTranscrição do vídeo:\n${recortarTranscricao(transcricao)}`;
     }
   } catch (err) {
     console.warn('[materia-chat] youtube subs:', err.message);
@@ -578,7 +581,7 @@ async function extrairFontesDeLinks(
           const { trySubtitlesFromUrl } = require('./transcriptionService');
           const subs = await trySubtitlesFromUrl(link);
           if (subs?.text && String(subs.text).trim().length >= 40) {
-            trecho = `${texto}\n\nTranscrição/legendas:\n${recortarTranscricao(String(subs.text).trim(), 8000)}`;
+            trecho = `${texto}\n\nTranscrição do vídeo:\n${recortarTranscricao(String(subs.text).trim(), 8000)}`;
           }
         } catch {
           /* opcional */

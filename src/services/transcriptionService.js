@@ -220,7 +220,7 @@ function parseVtt(content) {
 }
 
 /**
- * Tenta obter legendas manuais/automáticas do link via yt-dlp (sem baixar vídeo).
+ * Tenta obter a transcrição manual/automática do link via yt-dlp (sem baixar vídeo).
  */
 async function trySubtitlesFromUrl(url) {
   if (!url || !/^https?:\/\//i.test(url)) return null;
@@ -231,42 +231,88 @@ async function trySubtitlesFromUrl(url) {
   fs.mkdirSync(tmpRoot, { recursive: true });
   const tmpDir = fs.mkdtempSync(path.join(tmpRoot, 'subs_'));
   const outTemplate = path.join(tmpDir, 'subs');
+  const isYouTube = /(?:youtube\.com|youtu\.be)/i.test(url);
+  const commonFlags = {
+    skipDownload: true,
+    writeSub: true,
+    writeAutoSub: true,
+    // pt-orig é a transcrição automática no idioma original.
+    subLangs: 'pt-orig,pt-BR,pt,pt-PT,en-orig,en',
+    subFormat: 'vtt',
+    output: outTemplate,
+    noWarnings: true,
+    noPlaylist: true,
+  };
+  const attempts = isYouTube
+    ? [
+        {
+          // O cliente público android_vr expõe a mesma faixa de “Mostrar
+          // transcrição” mesmo quando o cliente padrão retorna
+          // automatic_captions vazio no servidor.
+          source: 'youtube-public-transcript',
+          flags: {
+            ...commonFlags,
+            writeSub: false,
+            subLangs: 'pt-orig,en-orig',
+            extractorArgs: 'youtube:player_client=android_vr;skip=translated_subs',
+          },
+          auth: {
+            platform: 'youtube',
+            noCookies: true,
+            timeoutMs: LIMITES.legendasMs,
+          },
+        },
+        {
+          // Vídeos restritos ainda podem precisar dos cookies configurados.
+          source: 'yt-dlp-subtitles',
+          flags: commonFlags,
+          auth: { platform: 'youtube', timeoutMs: LIMITES.legendasMs },
+        },
+      ]
+    : [
+        {
+          source: 'yt-dlp-subtitles',
+          flags: commonFlags,
+          auth: { timeoutMs: LIMITES.legendasMs },
+        },
+      ];
 
   try {
-    await runYtDlpForUrl(
-      url,
-      {
-        skipDownload: true,
-        writeSub: true,
-        writeAutoSub: true,
-        // `pt-orig` é a chave da legenda automática original em português.
-        subLangs: 'pt-orig,pt-BR,pt,pt-PT,en-orig,en',
-        subFormat: 'vtt',
-        output: outTemplate,
-        noWarnings: true,
-        noPlaylist: true,
-      },
-      { timeoutMs: LIMITES.legendasMs }
-    );
+    for (const attempt of attempts) {
+      for (const oldFile of fs.readdirSync(tmpDir)) {
+        try {
+          fs.rmSync(path.join(tmpDir, oldFile), { force: true });
+        } catch {
+          // ignore
+        }
+      }
 
-    const files = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.vtt'));
-    if (!files.length) return null;
+      try {
+        await runYtDlpForUrl(url, attempt.flags, attempt.auth);
+      } catch {
+        // O yt-dlp pode salvar pt-orig e depois falhar em outra língua (429).
+        // O arquivo já obtido continua válido e deve ser aproveitado.
+      }
 
-    files.sort((a, b) => {
-      const score = (name) =>
-        /pt-?br/i.test(name) ? 0 : /pt/i.test(name) ? 1 : /en/i.test(name) ? 2 : 3;
-      return score(a) - score(b);
-    });
+      const files = fs.readdirSync(tmpDir).filter((file) => file.endsWith('.vtt'));
+      if (!files.length) continue;
 
-    const raw = fs.readFileSync(path.join(tmpDir, files[0]), 'utf8');
-    const parsed = parseVtt(raw);
-    if (!parsed.text || parsed.text.length < 20) return null;
-    return {
-      ...parsed,
-      source: 'yt-dlp-subtitles',
-      language: files[0].includes('.en') ? 'en' : 'pt',
-    };
-  } catch {
+      files.sort((a, b) => {
+        const score = (name) =>
+          /pt-?br/i.test(name) ? 0 : /pt/i.test(name) ? 1 : /en/i.test(name) ? 2 : 3;
+        return score(a) - score(b);
+      });
+
+      const raw = fs.readFileSync(path.join(tmpDir, files[0]), 'utf8');
+      const parsed = parseVtt(raw);
+      if (!parsed.text || parsed.text.length < 20) continue;
+      return {
+        ...parsed,
+        source: attempt.source,
+        language: files[0].includes('.en') ? 'en' : 'pt',
+      };
+    }
+
     return null;
   } finally {
     try {
@@ -311,7 +357,7 @@ function captionTrackFromInfo(info) {
 
 /**
  * Fallback para quando `--write-auto-subs` falha silenciosamente. O JSON do
- * próprio yt-dlp já traz a URL temporária da legenda pública do YouTube.
+ * próprio yt-dlp já traz a URL temporária da transcrição pública do YouTube.
  */
 async function tryYouTubeCaptionsFromInfo(info) {
   const track = captionTrackFromInfo(info);
@@ -340,7 +386,7 @@ async function tryYouTubeCaptionsFromInfo(info) {
     };
   } catch (err) {
     console.warn(
-      '[transcricao] fallback da legenda YouTube falhou:',
+      '[transcricao] fallback da transcrição do YouTube falhou:',
       err.response?.status || err.message
     );
     return null;
@@ -364,7 +410,7 @@ function assertUrlMediaLimits(info) {
 }
 
 /**
- * Obtém a fala de um link social. Usa legendas prontas primeiro e, quando
+ * Obtém a fala de um link social. Usa a transcrição disponibilizada primeiro e, quando
  * necessário, baixa somente o áudio para transcrição local com Whisper.
  */
 async function transcribeUrl({
@@ -387,16 +433,16 @@ async function transcribeUrl({
     if (mediaInfo && /(?:youtube\.com|youtu\.be)/i.test(original)) {
       const captions = await tryYouTubeCaptionsFromInfo(mediaInfo);
       if (captions?.text) {
-        console.info(`[transcricao] legenda YouTube obtida dos metadados: ${original}`);
+        console.info(`[transcricao] transcrição do YouTube obtida dos metadados: ${original}`);
         return captions;
       }
     }
     const subtitles = await trySubtitlesFromUrl(original);
     if (subtitles?.text && String(subtitles.text).trim().length >= 20) {
-      console.info(`[transcricao] legendas prontas encontradas: ${original}`);
+      console.info(`[transcricao] transcrição disponibilizada encontrada: ${original}`);
       return subtitles;
     }
-    console.info(`[transcricao] legenda não obtida na primeira tentativa: ${original}`);
+    console.info(`[transcricao] transcrição não obtida na primeira tentativa: ${original}`);
   }
 
   const usingDirectMedia = /^https?:\/\//i.test(directMedia);
@@ -408,16 +454,16 @@ async function transcribeUrl({
   if (preferSubtitles && /(?:youtube\.com|youtu\.be)/i.test(original)) {
     const captions = await tryYouTubeCaptionsFromInfo(info);
     if (captions?.text) {
-      console.info(`[transcricao] legenda YouTube obtida pelo fallback: ${original}`);
+      console.info(`[transcricao] transcrição do YouTube obtida pelo fallback: ${original}`);
       return captions;
     }
   }
 
   if (!allowAudioFallback) {
-    console.info(`[transcricao] sem legendas; fallback de áudio desativado: ${original}`);
+    console.info(`[transcricao] sem transcrição; fallback de áudio desativado: ${original}`);
     return null;
   }
-  console.info(`[transcricao] sem legendas; vai transcrever somente o áudio: ${original}`);
+  console.info(`[transcricao] sem transcrição; vai transcrever somente o áudio: ${original}`);
   if (typeof onFallbackToAudio === 'function') onFallbackToAudio();
 
   assertWhisperAvailable();
