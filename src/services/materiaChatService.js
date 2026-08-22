@@ -1829,6 +1829,7 @@ async function responder({
   let consultasDaPesquisa = [];
   let temFonteDoLink = false;
   let falhasLinksSociais = [];
+  let falhasLinksArtigos = [];
   let resgateArtigoPorTitulo = false;
   // Assunto extraído do post, usado para buscar contexto quando o pedido é só o link
   let assuntoDoLink = '';
@@ -1916,6 +1917,7 @@ async function responder({
     const { fontes: fontesArtigo, falhas } = await extrairFontesDeArtigos(urlsArtigos, {
       onPasso: registrarPasso,
     });
+    falhasLinksArtigos = falhas;
     if (fontesArtigo.length) {
       fontes = [...fontes, ...fontesArtigo];
       temFonteDoLink = true;
@@ -1962,6 +1964,33 @@ async function responder({
     registrarPasso({
       kind: 'aviso',
       texto: 'Link social não confirmado: geração interrompida para não trocar a pauta.',
+    });
+    onEvent({ tipo: 'inicio-resposta' });
+    onEvent({ tipo: 'delta', texto: resposta });
+    return finalizar(resposta, { fontesUsadas: [], usouWeb: false });
+  }
+
+  // Com a pesquisa desligada, um portal que bloqueia todos os leitores nao
+  // deixa base factual para reescrever. Interrompe de forma explicita em vez
+  // de manter o stream aberto ate a IA tentar escrever apenas pelo slug.
+  if (
+    urlsFonte.length === 1 &&
+    urlsArtigos.length === 1 &&
+    !temFonteDoLink &&
+    !usarPesquisa
+  ) {
+    const detalhe = String(falhasLinksArtigos[0]?.erro || '').trim();
+    const resposta = [
+      'Nao consegui ler o texto deste link de noticia, entao nao gerei a materia para evitar inventar informacoes.',
+      detalhe || null,
+      'Cole o texto da reportagem junto com o link ou ative "Pesquisar na web" para localizar outras fontes sobre a mesma pauta.',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    registrarPasso({
+      kind: 'aviso',
+      texto: 'O portal bloqueou a leitura: geracao interrompida sem base factual.',
+      url: urlsArtigos[0],
     });
     onEvent({ tipo: 'inicio-resposta' });
     onEvent({ tipo: 'delta', texto: resposta });

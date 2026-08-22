@@ -151,7 +151,11 @@
     $('model-title').textContent = claude.modelo || 'claude-sonnet-5';
     $('model-detail').textContent = claude.modeloDisponivel
       ? 'Modelo listado pelo gateway.'
-      : 'Inicie e autorize o gateway para confirmar o modelo.';
+      : claude.modeloErro
+        ? claude.modeloErro
+        : claude.modelosListados > 0
+          ? `O gateway lista ${claude.modelosListados} modelo(s), mas não ${claude.modelo || 'claude-sonnet-5'}. Execute npm run gateway:setup no servidor.`
+          : 'Inicie e autorize o gateway para confirmar o modelo.';
 
     const authVisible = ['running', 'waiting_login', 'success', 'error'].includes(auth.status);
     progress?.classList.toggle('hidden', !authVisible);

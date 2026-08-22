@@ -92,12 +92,20 @@ async function enviar(req, res, next) {
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
   let encerrado = false;
-  req.on('close', () => {
+  // `close` no IncomingMessage tambem acontece quando o corpo do POST foi
+  // recebido normalmente. Marcar o stream como encerrado nesse evento corta
+  // todos os passos/deltas de geracoes mais longas. `aborted` representa o
+  // cancelamento prematuro da requisicao; no response, `close` so e falha se
+  // ainda nao houve `end`.
+  req.on('aborted', () => {
     encerrado = true;
+  });
+  res.on('close', () => {
+    if (!res.writableEnded) encerrado = true;
   });
 
   const enviarEvento = (evento) => {
-    if (encerrado || res.writableEnded) return;
+    if (encerrado || res.writableEnded || res.destroyed) return;
     res.write(`${JSON.stringify(evento)}\n`);
   };
 

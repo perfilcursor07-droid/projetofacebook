@@ -102,12 +102,25 @@ async function authMetadata() {
 
 async function configMetadata() {
   const config = await lerJsonSeguro(CONFIG_FILE, {});
+  const chaveGateway = String(
+    process.env.TOKEN_FREE_GATEWAY_API_KEY || process.env.TFG_API_KEY || config.apiKey || ''
+  ).trim();
   return {
     porta: Number(config.port) || 3456,
     cdpUrl: String(config.cdpUrl || 'http://127.0.0.1:9222'),
-    apiKeyProtegida: Boolean(String(process.env.TFG_API_KEY || config.apiKey || '').trim()),
+    apiKeyProtegida: Boolean(chaveGateway),
     timeoutSegundos: Number(config.requestTimeoutSec) || 300,
   };
+}
+
+function ambienteGateway() {
+  // O cliente prioriza TOKEN_FREE_GATEWAY_API_KEY. Repassa esse mesmo valor
+  // como TFG_API_KEY ao processo filho para impedir que /health funcione
+  // (rota publica), mas /v1/models e /chat retornem 401 por chaves diferentes.
+  const apiKey = String(
+    process.env.TOKEN_FREE_GATEWAY_API_KEY || process.env.TFG_API_KEY || ''
+  ).trim();
+  return apiKey ? { TFG_API_KEY: apiKey } : {};
 }
 
 function authJobPublico() {
@@ -146,13 +159,15 @@ async function status() {
   let health = null;
   let healthError = null;
   let modelos = [];
+  let modelosError = null;
 
   try {
     health = await gatewayClient.verificarSaude({ timeout: 3_500 });
     try {
       modelos = await gatewayClient.listarModelos({ timeout: 3_500 });
-    } catch {
+    } catch (err) {
       modelos = [];
+      modelosError = err.message;
     }
   } catch (err) {
     healthError = err.message;
@@ -187,6 +202,8 @@ async function status() {
       motivo: sessao?.reason || null,
       modelo: modeloConfigurado,
       modeloDisponivel,
+      modelosListados: modelos.length,
+      modeloErro: modelosError,
     },
     seguranca: {
       apiKeyProtegida: config.apiKeyProtegida,
@@ -258,7 +275,10 @@ function assertCli() {
 
 async function comandoGateway(command) {
   assertCli();
-  return executar(BUN_PATH, [ENTRY_FILE, command], { cwd: TOOL_DIR });
+  return executar(BUN_PATH, [ENTRY_FILE, command], {
+    cwd: TOOL_DIR,
+    env: ambienteGateway(),
+  });
 }
 
 async function iniciar() {

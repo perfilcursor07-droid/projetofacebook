@@ -101,10 +101,17 @@ function normalizarErro(err) {
   const status = Number(err?.response?.status || err?.status || 0);
   const codigo = String(err?.code || '').toUpperCase();
   const remoto = String(mensagemRemota(err)).trim();
+  const tipoRemoto = String(err?.response?.data?.error?.type || '').trim().toLowerCase();
   let mensagem;
 
   if (codigo === 'ECONNREFUSED' || codigo === 'ENOTFOUND') {
     mensagem = `Token-Free Gateway nao esta acessivel em ${BASE_URL}. Execute "token-free-gateway start".`;
+  } else if (
+    status === 401 &&
+    (tipoRemoto === 'unauthorized' || /^unauthorized$/i.test(remoto))
+  ) {
+    mensagem =
+      'Bearer token recusado pelo Token-Free Gateway. Confira se TFG_API_KEY e TOKEN_FREE_GATEWAY_API_KEY possuem exatamente o mesmo valor.';
   } else if (status === 401 || /session expired|sess[aã]o expir/i.test(remoto)) {
     mensagem = `Sessao do Token-Free Gateway expirada ou sem autorizacao. Execute "token-free-gateway webauth". (${remoto})`;
   } else if (status === 404 && /authorized provider|model/i.test(remoto)) {
@@ -296,6 +303,7 @@ module.exports = {
   cobreTarefa,
   prepararMensagens,
   limparCercaJson,
+  normalizarErro,
   normalizarBaseUrl,
   BASE_URL,
   MODELO,
