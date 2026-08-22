@@ -94,15 +94,3 @@ test('consulta saude e modelos', async () => {
   assert.equal(saude.status, 'ok');
   assert.equal(modelos[0].id, 'claude-sonnet-5');
 });
-
-test('distingue Bearer token incorreto de sessao do Claude expirada', () => {
-  const erro = gateway.normalizarErro({
-    response: {
-      status: 401,
-      data: { error: { message: 'Unauthorized', type: 'unauthorized' } },
-    },
-  });
-  assert.match(erro.message, /TFG_API_KEY/);
-  assert.match(erro.message, /TOKEN_FREE_GATEWAY_API_KEY/);
-  assert.doesNotMatch(erro.message, /Sessao.*expirada/i);
-});

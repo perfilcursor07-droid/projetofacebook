@@ -63,15 +63,6 @@ async function continuarAutorizacao(_req, res, next) {
   }
 }
 
-async function importarSessao(req, res, next) {
-  try {
-    return res.json(await tokenFreeAdminService.importarSessao(req.body?.sessao));
-  } catch (err) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
-    return next(err);
-  }
-}
-
 async function testar(_req, res, next) {
   try {
     return res.json(await tokenFreeAdminService.testar());
@@ -88,6 +79,5 @@ module.exports = {
   reiniciar,
   autorizar,
   continuarAutorizacao,
-  importarSessao,
   testar,
 };

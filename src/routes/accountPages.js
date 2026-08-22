@@ -37,7 +37,6 @@ router.post('/api/admin/claude-gateway/start', requireAuth, requireAdmin, tokenF
 router.post('/api/admin/claude-gateway/restart', requireAuth, requireAdmin, tokenFreeAdminController.reiniciar);
 router.post('/api/admin/claude-gateway/authorize', requireAuth, requireAdmin, tokenFreeAdminController.autorizar);
 router.post('/api/admin/claude-gateway/authorize/continue', requireAuth, requireAdmin, tokenFreeAdminController.continuarAutorizacao);
-router.post('/api/admin/claude-gateway/import', requireAuth, requireAdmin, tokenFreeAdminController.importarSessao);
 router.post('/api/admin/claude-gateway/test', requireAuth, requireAdmin, tokenFreeAdminController.testar);
 
 module.exports = router;

@@ -12,18 +12,6 @@ const TOOL_DIR = path.resolve(
 );
 const ENTRY_FILE = path.join(TOOL_DIR, 'index.ts');
 
-function localizarNoPath(nome) {
-  const extensoes = process.platform === 'win32' ? ['', '.exe', '.cmd'] : [''];
-  for (const pasta of String(process.env.PATH || '').split(path.delimiter)) {
-    if (!pasta) continue;
-    for (const extensao of extensoes) {
-      const candidato = path.join(pasta, `${nome}${extensao}`);
-      if (fs.existsSync(candidato)) return candidato;
-    }
-  }
-  return null;
-}
-
 function localizarBun() {
   const configurado = String(process.env.BUN_PATH || '').trim();
   if (configurado) return configurado;
@@ -34,11 +22,7 @@ function localizarBun() {
         path.join(os.homedir(), '.bun', 'bin', 'bun.exe'),
       ]
     : [path.join(os.homedir(), '.bun', 'bin', 'bun')];
-  return (
-    candidatos.find((candidato) => candidato && fs.existsSync(candidato)) ||
-    localizarNoPath('bun') ||
-    'bun'
-  );
+  return candidatos.find((candidato) => candidato && fs.existsSync(candidato)) || 'bun';
 }
 
 const BUN_PATH = localizarBun();
@@ -51,22 +35,6 @@ const CLEAR_SESSION_SCRIPT = path.join(PROJECT_ROOT, 'scripts/token-free-clear-c
 const AUTH_TIMEOUT_MS = 6 * 60 * 1000;
 const COMMAND_TIMEOUT_MS = 45 * 1000;
 const MAX_OUTPUT_CHARS = 12_000;
-const MAX_AUTH_IMPORT_CHARS = 512_000;
-const MAX_COOKIE_CHARS = 256_000;
-
-const CHROME_CANDIDATES = process.platform === 'win32'
-  ? [
-      path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-      path.join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    ]
-  : [
-      '/opt/google/chrome/google-chrome',
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable',
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser',
-      '/snap/bin/chromium',
-    ];
 
 let authJob = {
   status: 'idle',
@@ -102,25 +70,12 @@ async function authMetadata() {
 
 async function configMetadata() {
   const config = await lerJsonSeguro(CONFIG_FILE, {});
-  const chaveGateway = String(
-    process.env.TOKEN_FREE_GATEWAY_API_KEY || process.env.TFG_API_KEY || config.apiKey || ''
-  ).trim();
   return {
     porta: Number(config.port) || 3456,
     cdpUrl: String(config.cdpUrl || 'http://127.0.0.1:9222'),
-    apiKeyProtegida: Boolean(chaveGateway),
+    apiKeyProtegida: Boolean(String(process.env.TFG_API_KEY || config.apiKey || '').trim()),
     timeoutSegundos: Number(config.requestTimeoutSec) || 300,
   };
-}
-
-function ambienteGateway() {
-  // O cliente prioriza TOKEN_FREE_GATEWAY_API_KEY. Repassa esse mesmo valor
-  // como TFG_API_KEY ao processo filho para impedir que /health funcione
-  // (rota publica), mas /v1/models e /chat retornem 401 por chaves diferentes.
-  const apiKey = String(
-    process.env.TOKEN_FREE_GATEWAY_API_KEY || process.env.TFG_API_KEY || ''
-  ).trim();
-  return apiKey ? { TFG_API_KEY: apiKey } : {};
 }
 
 function authJobPublico() {
@@ -137,37 +92,18 @@ function estaDentroDaPasta(pasta, arquivo) {
   return relativo === '' || (!relativo.startsWith('..') && !path.isAbsolute(relativo));
 }
 
-function loginVisualDisponivel() {
-  if (process.platform !== 'linux') return true;
-  return Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
-}
-
-function diagnosticoInstalacao() {
-  const cliDisponivel = fs.existsSync(ENTRY_FILE);
-  const bunDisponivel = path.isAbsolute(BUN_PATH) ? fs.existsSync(BUN_PATH) : BUN_PATH !== 'bun';
-  const chromeInstalado = CHROME_CANDIDATES.some((candidate) => candidate && fs.existsSync(candidate));
-  let pendencia = null;
-  if (!cliDisponivel) pendencia = 'Execute npm run gateway:setup para instalar o token-free-gateway.';
-  else if (!bunDisponivel) pendencia = 'Bun não encontrado. Instale-o para o usuário que executa o Node.';
-  else if (!chromeInstalado) pendencia = 'Google Chrome ou Chromium não encontrado no servidor.';
-  return { cliDisponivel, bunDisponivel, chromeInstalado, pendencia };
-}
-
 async function status() {
   const [auth, config] = await Promise.all([authMetadata(), configMetadata()]);
-  const instalacao = diagnosticoInstalacao();
   let health = null;
   let healthError = null;
   let modelos = [];
-  let modelosError = null;
 
   try {
     health = await gatewayClient.verificarSaude({ timeout: 3_500 });
     try {
       modelos = await gatewayClient.listarModelos({ timeout: 3_500 });
-    } catch (err) {
+    } catch {
       modelos = [];
-      modelosError = err.message;
     }
   } catch (err) {
     healthError = err.message;
@@ -183,17 +119,12 @@ async function status() {
       status: health?.status || 'offline',
       erro: healthError,
       url: gatewayClient.BASE_URL,
-      cliDisponivel: instalacao.cliDisponivel,
-      bunDisponivel: instalacao.bunDisponivel,
-      chromeInstalado: instalacao.chromeInstalado,
-      pendencia: instalacao.pendencia,
+      cliDisponivel: fs.existsSync(ENTRY_FILE),
       plataforma: process.platform,
     },
     chrome: {
       conectado: health?.browser === 'connected',
       cdpUrl: config.cdpUrl,
-      loginVisualDisponivel: loginVisualDisponivel(),
-      modoHeadless: process.platform === 'linux' && !loginVisualDisponivel(),
     },
     claude: {
       autorizada: auth.autorizada,
@@ -202,8 +133,6 @@ async function status() {
       motivo: sessao?.reason || null,
       modelo: modeloConfigurado,
       modeloDisponivel,
-      modelosListados: modelos.length,
-      modeloErro: modelosError,
     },
     seguranca: {
       apiKeyProtegida: config.apiKeyProtegida,
@@ -245,10 +174,6 @@ function executar(executavel, args, { cwd = PROJECT_ROOT, timeout = COMMAND_TIME
       if (finished) return;
       finished = true;
       clearTimeout(timer);
-      if (err.code === 'ENOENT') {
-        err.message = `Executável não encontrado: ${executavel}. Execute npm run gateway:setup.`;
-        err.status = 503;
-      }
       reject(err);
     });
     child.on('close', (code) => {
@@ -267,7 +192,7 @@ function executar(executavel, args, { cwd = PROJECT_ROOT, timeout = COMMAND_TIME
 function assertCli() {
   if (fs.existsSync(ENTRY_FILE)) return;
   const err = new Error(
-    'Token-free-gateway não instalado neste servidor. Execute npm run gateway:setup.'
+    'Código-fonte do token-free-gateway não encontrado em .tools/token-free-gateway.'
   );
   err.status = 503;
   throw err;
@@ -275,10 +200,7 @@ function assertCli() {
 
 async function comandoGateway(command) {
   assertCli();
-  return executar(BUN_PATH, [ENTRY_FILE, command], {
-    cwd: TOOL_DIR,
-    env: ambienteGateway(),
-  });
+  return executar(BUN_PATH, [ENTRY_FILE, command], { cwd: TOOL_DIR });
 }
 
 async function iniciar() {
@@ -297,109 +219,10 @@ async function removerCredencialClaude() {
   if (!store.profiles['claude-web']) return false;
   delete store.profiles['claude-web'];
   await fsp.mkdir(path.dirname(AUTH_FILE), { recursive: true });
-  await salvarAuthStore(store);
-  return true;
-}
-
-async function salvarAuthStore(store) {
-  await fsp.mkdir(path.dirname(AUTH_FILE), { recursive: true, mode: 0o700 });
-  const tempPath = `${AUTH_FILE}.${process.pid}.${Date.now()}.tmp`;
-  await fsp.writeFile(tempPath, `${JSON.stringify(store, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
+  const tempPath = `${AUTH_FILE}.tmp`;
+  await fsp.writeFile(tempPath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
   await fsp.rename(tempPath, AUTH_FILE);
-  await fsp.chmod(AUTH_FILE, 0o600).catch(() => {});
-}
-
-function extrairPerfilClaude(payload) {
-  let conteudo = payload;
-  if (typeof conteudo === 'string') {
-    if (conteudo.length > MAX_AUTH_IMPORT_CHARS) {
-      const err = new Error('O arquivo de sessão é maior que o limite permitido.');
-      err.status = 413;
-      throw err;
-    }
-    try {
-      conteudo = JSON.parse(conteudo);
-    } catch {
-      const err = new Error('O arquivo selecionado não contém JSON válido.');
-      err.status = 400;
-      throw err;
-    }
-  }
-
-  if (!conteudo || typeof conteudo !== 'object') {
-    const err = new Error('Arquivo de sessão inválido.');
-    err.status = 400;
-    throw err;
-  }
-  if (JSON.stringify(conteudo).length > MAX_AUTH_IMPORT_CHARS) {
-    const err = new Error('O arquivo de sessão é maior que o limite permitido.');
-    err.status = 413;
-    throw err;
-  }
-
-  const perfil = conteudo?.profiles?.['claude-web'] || conteudo?.profile || conteudo;
-  const credentials = perfil?.credentials || perfil;
-  const sessionKey = String(credentials?.sessionKey || '').trim();
-  if (!/^sk-ant-sid0[12]-[A-Za-z0-9_-]+$/.test(sessionKey)) {
-    const err = new Error('A sessão não contém uma sessionKey válida do Claude.');
-    err.status = 400;
-    throw err;
-  }
-
-  let cookie = String(credentials?.cookie || '').trim();
-  if (cookie.length > MAX_COOKIE_CHARS) {
-    const err = new Error('Os cookies da sessão excedem o limite permitido.');
-    err.status = 413;
-    throw err;
-  }
-  if (!cookie) cookie = `sessionKey=${sessionKey}`;
-
-  return {
-    providerId: 'claude-web',
-    credentials: {
-      sessionKey,
-      cookie,
-      userAgent: String(credentials?.userAgent || '').slice(0, 1_000),
-      ...(credentials?.organizationId
-        ? { organizationId: String(credentials.organizationId).slice(0, 200) }
-        : {}),
-    },
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-async function importarSessao(payload) {
-  const perfil = extrairPerfilClaude(payload);
-  const store = await lerJsonSeguro(AUTH_FILE, { profiles: {} });
-  if (!store.profiles || typeof store.profiles !== 'object') store.profiles = {};
-  store.profiles['claude-web'] = perfil;
-  await salvarAuthStore(store);
-
-  if (!diagnosticoInstalacao().cliDisponivel) {
-    return {
-      ok: true,
-      gatewayReiniciado: false,
-      message: 'Sessão importada. Instale o gateway e depois clique em Iniciar gateway.',
-    };
-  }
-
-  try {
-    await reiniciar();
-    return {
-      ok: true,
-      gatewayReiniciado: true,
-      message: 'Sessão importada e gateway reiniciado.',
-    };
-  } catch (err) {
-    return {
-      ok: true,
-      gatewayReiniciado: false,
-      message: `Sessão importada, mas o gateway não iniciou: ${String(err.message).slice(0, 300)}`,
-    };
-  }
+  return true;
 }
 
 async function limparSessaoClaudeDoChrome() {
@@ -425,13 +248,6 @@ async function limparSessaoClaudeDoChrome() {
 
 function iniciarAutorizacao({ trocarConta = false } = {}) {
   assertCli();
-  if (!loginVisualDisponivel() && process.env.TOKEN_FREE_GATEWAY_ALLOW_HEADLESS_AUTH !== 'true') {
-    const err = new Error(
-      'Este servidor não possui área de trabalho. Autorize no seu computador e importe o arquivo de sessão nesta página.'
-    );
-    err.status = 409;
-    throw err;
-  }
   if (authJob.status === 'running' || authJob.status === 'waiting_login') {
     const err = new Error('Já existe uma autorização do Claude em andamento.');
     err.status = 409;
@@ -634,7 +450,6 @@ module.exports = {
   reiniciar,
   iniciarAutorizacao,
   continuarAutorizacao,
-  importarSessao,
   testar,
   // Metadados expostos para teste; nunca incluem cookie/sessionKey.
   paths: { TOOL_DIR, AUTH_FILE, CONFIG_FILE, LOG_FILE },
