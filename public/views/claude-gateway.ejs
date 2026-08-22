@@ -67,6 +67,27 @@
       </div>
     </section>
 
+    <section id="claude-server-desktop" class="mt-5 hidden rounded-2xl border border-violet-500/30 bg-violet-500/5 p-5">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 class="font-semibold text-white">Login no Chrome do servidor</h2>
+          <p id="desktop-detail" class="mt-1 text-sm leading-relaxed text-slate-400">Verificando o desktop privado…</p>
+        </div>
+        <span id="desktop-badge" class="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-400">Verificando</span>
+      </div>
+      <ol class="mt-4 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-300">
+        <li>No PowerShell do seu computador, execute o túnel abaixo e deixe a janela aberta.</li>
+        <li>Abra o desktop privado e, nesta página, clique em <strong>Entrar novamente</strong>.</li>
+        <li>Faça o login no Claude dentro do Chrome exibido. O sistema confirma e reinicia o gateway automaticamente.</li>
+      </ol>
+      <div class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center">
+        <code id="desktop-ssh-command" class="min-w-0 flex-1 select-all overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-slate-300">—</code>
+        <button type="button" id="desktop-copy" class="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:text-white">Copiar comando</button>
+        <a id="desktop-open" href="#" target="_blank" rel="noopener" class="rounded-lg bg-violet-500 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-violet-400">Abrir desktop privado</a>
+      </div>
+      <p class="mt-3 text-xs leading-relaxed text-slate-500">As portas VNC ficam ligadas somente em 127.0.0.1 no servidor. Não publique 5900 ou 6080 no firewall/nginx.</p>
+    </section>
+
     <section class="mt-5 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
       <div>
         <h2 class="font-semibold text-white">Recuperação e manutenção</h2>

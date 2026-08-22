@@ -58,7 +58,7 @@
 
   function syncButtons() {
     const authStatus = currentStatus?.autorizacao?.status;
-    const authActive = authStatus === 'running' || authStatus === 'waiting_login';
+    const authActive = ['running', 'waiting_login', 'waiting_browser_login'].includes(authStatus);
     buttons.forEach((button) => {
       const action = button.dataset.action;
       button.disabled = busy || (authActive && action !== 'continue');
@@ -76,6 +76,7 @@
     const claude = currentStatus.claude || {};
     const security = currentStatus.seguranca || {};
     const auth = currentStatus.autorizacao || {};
+    const desktop = currentStatus.desktop || {};
 
     setBadge('gateway-badge', gateway.online ? 'Online' : 'Offline', gateway.online ? 'good' : 'bad');
     $('gateway-title').textContent = gateway.online ? 'Serviço respondendo' : 'Serviço indisponível';
@@ -113,7 +114,26 @@
       ? 'Modelo listado pelo gateway.'
       : 'Inicie e autorize o gateway para confirmar o modelo.';
 
-    const authVisible = ['running', 'waiting_login', 'success', 'error'].includes(auth.status);
+    const desktopSection = $('claude-server-desktop');
+    desktopSection?.classList.toggle('hidden', !desktop.necessario);
+    if (desktop.necessario) {
+      setBadge(
+        'desktop-badge',
+        desktop.online ? 'Online' : desktop.configurado ? 'Offline' : 'Não instalado',
+        desktop.online ? 'good' : 'warn'
+      );
+      if ($('desktop-detail')) {
+        $('desktop-detail').textContent = desktop.online
+          ? `Desktop privado disponível em 127.0.0.1:${desktop.porta}.`
+          : desktop.configurado
+            ? 'Inicie os processos claude-xvfb, claude-vnc e claude-novnc no PM2.'
+            : 'Execute o instalador do desktop privado e recarregue o PM2.';
+      }
+      if ($('desktop-ssh-command')) $('desktop-ssh-command').textContent = desktop.comandoSsh || '';
+      if ($('desktop-open')) $('desktop-open').href = desktop.urlLocal || '#';
+    }
+
+    const authVisible = ['running', 'waiting_login', 'waiting_browser_login', 'success', 'error'].includes(auth.status);
     progress?.classList.toggle('hidden', !authVisible);
     if ($('claude-auth-label')) {
       $('claude-auth-label').textContent = auth.status === 'error' ? 'Falha na autorização' : 'Autorização do Claude';
@@ -211,6 +231,16 @@
     button.addEventListener('click', () => runAction(button.dataset.action));
   });
   $('claude-refresh')?.addEventListener('click', () => refresh(false));
+  $('desktop-copy')?.addEventListener('click', async () => {
+    const command = $('desktop-ssh-command')?.textContent || '';
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      setFeedback('Comando do túnel SSH copiado.', 'good');
+    } catch {
+      setFeedback('Não foi possível copiar automaticamente. Selecione o comando e copie.', 'warn');
+    }
+  });
 
   render(currentStatus);
   window.setInterval(() => refresh(true), 5000);

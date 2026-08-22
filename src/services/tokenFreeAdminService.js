@@ -2,6 +2,7 @@ const axios = require('axios');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const fsp = require('fs/promises');
+const net = require('net');
 const os = require('os');
 const path = require('path');
 const gatewayClient = require('./tokenFreeGatewayService');
@@ -35,6 +36,7 @@ const CLEAR_SESSION_SCRIPT = path.join(PROJECT_ROOT, 'scripts/token-free-clear-c
 const AUTH_TIMEOUT_MS = 6 * 60 * 1000;
 const COMMAND_TIMEOUT_MS = 45 * 1000;
 const MAX_OUTPUT_CHARS = 12_000;
+const DEFAULT_NOVNC_PORT = 6080;
 
 let authJob = {
   status: 'idle',
@@ -92,8 +94,58 @@ function estaDentroDaPasta(pasta, arquivo) {
   return relativo === '' || (!relativo.startsWith('..') && !path.isAbsolute(relativo));
 }
 
+function portaLocalAberta(porta, timeout = 700) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port: porta });
+    let concluido = false;
+    const finalizar = (online) => {
+      if (concluido) return;
+      concluido = true;
+      socket.destroy();
+      resolve(online);
+    };
+    socket.setTimeout(timeout);
+    socket.once('connect', () => finalizar(true));
+    socket.once('timeout', () => finalizar(false));
+    socket.once('error', () => finalizar(false));
+  });
+}
+
+function destinoSshDesktop() {
+  const configurado = String(process.env.CLAUDE_SSH_TARGET || '').trim();
+  if (configurado) return configurado;
+  let host = 'SEU-SERVIDOR';
+  try {
+    host = new URL(process.env.APP_PUBLIC_URL || '').hostname || host;
+  } catch {
+    // Mantém o texto genérico quando APP_PUBLIC_URL não for uma URL válida.
+  }
+  return `${os.userInfo().username}@${host}`;
+}
+
+async function desktopMetadata() {
+  const portaConfigurada = Number(process.env.CLAUDE_NOVNC_PORT);
+  const porta = Number.isInteger(portaConfigurada) && portaConfigurada > 0
+    ? portaConfigurada
+    : DEFAULT_NOVNC_PORT;
+  const online = process.platform === 'linux' ? await portaLocalAberta(porta) : false;
+  return {
+    necessario: process.platform === 'linux',
+    configurado: process.platform !== 'linux' || Boolean(process.env.DISPLAY),
+    online,
+    display: String(process.env.DISPLAY || ''),
+    porta,
+    urlLocal: `http://127.0.0.1:${porta}/vnc.html?autoconnect=1&resize=remote&reconnect=1`,
+    comandoSsh: `ssh -N -L ${porta}:127.0.0.1:${porta} ${destinoSshDesktop()}`,
+  };
+}
+
 async function status() {
-  const [auth, config] = await Promise.all([authMetadata(), configMetadata()]);
+  const [auth, config, desktop] = await Promise.all([
+    authMetadata(),
+    configMetadata(),
+    desktopMetadata(),
+  ]);
   let health = null;
   let healthError = null;
   let modelos = [];
@@ -126,6 +178,7 @@ async function status() {
       conectado: health?.browser === 'connected',
       cdpUrl: config.cdpUrl,
     },
+    desktop,
     claude: {
       autorizada: auth.autorizada,
       atualizadaEm: auth.atualizadaEm,
@@ -248,7 +301,14 @@ async function limparSessaoClaudeDoChrome() {
 
 function iniciarAutorizacao({ trocarConta = false } = {}) {
   assertCli();
-  if (authJob.status === 'running' || authJob.status === 'waiting_login') {
+  if (process.platform === 'linux' && !process.env.DISPLAY) {
+    const err = new Error(
+      'Desktop do Claude não configurado. Instale o desktop privado e recarregue o PM2 antes de entrar novamente.'
+    );
+    err.status = 409;
+    throw err;
+  }
+  if (['running', 'waiting_login', 'waiting_browser_login'].includes(authJob.status)) {
     const err = new Error('Já existe uma autorização do Claude em andamento.');
     err.status = 409;
     throw err;
@@ -301,12 +361,12 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
 
       const analisar = (chunk) => {
         buffer = `${buffer}${chunk.toString('utf8')}`.slice(-MAX_OUTPUT_CHARS);
-        if (!detectouPromptLogin && /Please log in[\s\S]*press Enter/i.test(buffer)) {
+        if (!detectouPromptLogin && /Please log(?:in| in) to Claude/i.test(buffer)) {
           detectouPromptLogin = true;
           authJob = {
             ...authJob,
-            status: 'waiting_login',
-            message: 'Chrome aberto. Entre no Claude e depois clique em “Já entrei, concluir”.',
+            status: 'waiting_browser_login',
+            message: 'Chrome aberto no desktop privado. Entre no Claude; a confirmação será detectada automaticamente.',
           };
         }
         if (!enviouClaude && /Enter selection:/i.test(buffer)) {
@@ -338,7 +398,7 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
         if (activeAuthTimer) clearTimeout(activeAuthTimer);
         activeAuthTimer = null;
         activeAuthChild = null;
-        if (!['running', 'waiting_login'].includes(authJob.status)) return;
+        if (!['running', 'waiting_login', 'waiting_browser_login'].includes(authJob.status)) return;
         if (!concluida) {
           authJob = {
             ...authJob,

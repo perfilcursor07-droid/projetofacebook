@@ -25,6 +25,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3010,
+        // Chrome visível no desktop virtual privado usado para renovar o Claude.
+        DISPLAY: ':99',
         // Garante yt-dlp/node do sistema mesmo com PATH reduzido do PM2.
         // NVM do viralizeai vem PRIMEIRO: /usr/local/bin/node é symlink para o
         // NVM de outro usuário (sem permissão) e quebra o desafio JS do YouTube.
