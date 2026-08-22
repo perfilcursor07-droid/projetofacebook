@@ -5,7 +5,7 @@ const AiMatters = require('../models/AiMatters');
 const bibliotecaService = require('./bibliotecaService');
 const materiaIaService = require('./materiaIaService');
 
-const SLOT_MINUTES = 30;
+const SLOT_MINUTES = 10;
 const DEFAULT_START_HOUR = 7;
 const DEFAULT_END_HOUR = 22;
 const DEFAULT_MAX_ITENS = 20;
@@ -34,12 +34,12 @@ function dayBoundsAmanha() {
   return { start, end };
 }
 
-/** Todos os horários possíveis amanhã (7h–22h, de 30 em 30 min). */
+/** Todos os horários possíveis amanhã (7h–22h, de 10 em 10 min). */
 function buildAllDaySlots({ startHour = DEFAULT_START_HOUR, endHour = DEFAULT_END_HOUR } = {}) {
   const base = startOfTomorrowAraguaina();
   const slots = [];
   for (let h = startHour; h <= endHour; h += 1) {
-    for (const min of [0, SLOT_MINUTES]) {
+    for (let min = 0; min < 60; min += SLOT_MINUTES) {
       if (h === endHour && min > 0) break;
       slots.push(new Date(base.getTime() + (h * 60 + min) * 60 * 1000));
     }
@@ -97,7 +97,7 @@ function buildSlots({
   return free.slice(0, lim);
 }
 
-/** Horários de hoje: primeiro agora e os demais a cada 30 minutos. */
+/** Horários de hoje: primeiro agora e os demais a cada 10 minutos. */
 function buildSlotsHoje({
   endHour = DEFAULT_END_HOUR,
   max = DEFAULT_MAX_ITENS,
@@ -504,7 +504,7 @@ function buildAllDaySlotsForDay(
   const base = startOfDayAraguaina(dayKey);
   const slots = [];
   for (let h = startHour; h <= endHour; h += 1) {
-    for (const min of [0, SLOT_MINUTES]) {
+    for (let min = 0; min < 60; min += SLOT_MINUTES) {
       if (h === endHour && min > 0) break;
       slots.push(new Date(base.getTime() + (h * 60 + min) * 60 * 1000));
     }
@@ -553,8 +553,8 @@ async function diasAtivosAgenda(userId) {
 }
 
 /**
- * Compacta pendentes do dia em horários contínuos de 30 em 30 min.
- * Ex.: 08:00, 08:30, 10:30 → 08:00, 08:30, 09:00
+ * Compacta pendentes do dia em horários contínuos de 10 em 10 min.
+ * Ex.: 08:00, 08:30, 10:30 → 08:00, 08:10, 08:20
  *
  * Confirmados/publicados ficam fixos; a tela da Biblioteca organiza apenas pendentes.
  */
@@ -1032,7 +1032,7 @@ async function agendarViralizada({
 }
 
 /**
- * Puxa posts de site da biblioteca, gera matérias e pré-agenda amanhã de 30 em 30 min.
+ * Puxa posts de site da biblioteca, gera matérias e pré-agenda amanhã de 10 em 10 min.
  * Novos itens começam no próximo slot após o último já agendado/confirmado.
  */
 async function montarAgendaAmanha({
@@ -1712,7 +1712,7 @@ async function excluirItem(userId, id, { apagarMateria = false, marcarRecusa = t
       /* ignore */
     }
   }
-  // Reagenda pendentes + confirmados do mesmo dia sem buracos de 30 min
+  // Reagenda pendentes + confirmados do mesmo dia sem buracos de 10 min
   await compactarHorariosDoDia(userId, {
     dayKey: toDatetimeLocal(slotLiberado).slice(0, 10),
   });
