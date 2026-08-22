@@ -1459,7 +1459,7 @@ async function responder({
   const modoPautas = String(modo) === 'pautas' || (String(modo) !== 'manual' && pedeListaDePautas);
   const deepseekService = require('./deepseekService');
   const materiaIaService = require('./materiaIaService');
-  deepseekService.assertDeepseek();
+  deepseekService.assertDeepseek('conversa');
 
   let contextoAprendizado = null;
   let politicasEditor = { omitirVeiculoNoCorpo: false };
@@ -1537,6 +1537,7 @@ async function responder({
           titulo: info.titulo,
           materia: info.corpo,
           marcaModeloArte: user?.marca_modelo_arte || null,
+          tarefa: 'conversa',
         });
       } catch (err) {
         console.warn('[materia-chat] títulos alternativos:', err.message);

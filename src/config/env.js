@@ -17,13 +17,20 @@ const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   databaseUrl: process.env.DATABASE_URL || 'mysql://root:@localhost:3306/clipador',
   sessionSecret: process.env.SESSION_SECRET || 'dev-session-secret-change-me',
-  /** deepseek | claude — quem escreve as materias. */
+  /** deepseek | claude | token-free — quem escreve as materias. */
   aiProvider: String(process.env.AI_PROVIDER || 'deepseek').toLowerCase(),
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
   /** Modelo caro: so a redacao da materia. */
   claudeWriterModel: process.env.CLAUDE_WRITER_MODEL || 'claude-sonnet-5',
   /** Modelo barato: titulo, hashtags, resumo, classificacao, memoria de estilo. */
   claudeAuxModel: process.env.CLAUDE_AUX_MODEL || 'claude-haiku-4-5',
+  /** token-free-gateway local, compativel com a API da OpenAI. */
+  tokenFreeGateway: {
+    baseUrl: process.env.TOKEN_FREE_GATEWAY_BASE_URL || 'http://127.0.0.1:3456/v1',
+    apiKey: process.env.TOKEN_FREE_GATEWAY_API_KEY || process.env.TFG_API_KEY || 'qualquer-coisa',
+    model: process.env.TOKEN_FREE_GATEWAY_MODEL || 'claude-sonnet-5',
+    timeoutMs: Number(process.env.TOKEN_FREE_GATEWAY_TIMEOUT_MS) || 330_000,
+  },
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
   /** deepseek-v4-flash | deepseek-v4-pro | deepseek-chat (legado) */
   deepseekModel: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',

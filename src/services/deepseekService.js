@@ -108,6 +108,48 @@ function usarClaude(tarefa = 'redacao') {
   return TAREFAS_NO_CLAUDE.has(String(tarefa || 'auxiliar').toLowerCase());
 }
 
+function tokenFreeDisponivel() {
+  return require('./tokenFreeGatewayService').isConfigured();
+}
+
+/** Esta chamada especifica vai no gateway local? */
+function usarTokenFree(tarefa = 'conversa') {
+  return require('./tokenFreeGatewayService').cobreTarefa(tarefa);
+}
+
+/**
+ * Primeiro degrau da cascata: gratis -> DeepSeek/Claude.
+ *
+ * Passes auxiliares (titulo, hashtags, resumo, termos de imagem, classificacao)
+ * sao curtos e mecanicos, mas sao muitos por materia — e eram eles que pesavam
+ * na conta do Claude. Aqui eles tentam o free tier antes.
+ *
+ * Devolve null quando nao ha provedor gratis, quando a tarefa nao esta na
+ * lista, ou quando todos falharam. Nesses casos o fluxo pago segue igual.
+ */
+async function tentarFreeTier(messages, { temperature, json, tarefa }) {
+  const freeTier = require('./freeTierGateway');
+  if (!freeTier.cobreTarefa(tarefa)) return null;
+  try {
+    return await freeTier.chatCompletion(messages, { temperature, json });
+  } catch (err) {
+    console.warn('[ia] free tier falhou, seguindo para o provedor pago:', err.message);
+    return null;
+  }
+}
+
+/** Igual ao tentarFreeTier, mas para o streaming do /materia-manual. */
+async function tentarFreeTierStream(messages, { temperature, onDelta, tarefa }) {
+  const freeTier = require('./freeTierGateway');
+  if (!freeTier.cobreTarefa(tarefa)) return null;
+  try {
+    return await freeTier.chatCompletionStream(messages, { temperature, onDelta });
+  } catch (err) {
+    console.warn('[ia] free tier (stream) falhou, seguindo para o pago:', err.message);
+    return null;
+  }
+}
+
 /**
  * Qual perfil de custo a chamada merece. O chamador pode mandar `tarefa`
  * explicitamente; sem isso, o contrato de JSON da materia ("materia" +
@@ -129,11 +171,23 @@ function inferirTarefa(messages, tarefaPedida) {
  * Só dispensa a chave da DeepSeek quando TODAS as tarefas foram movidas para o
  * Claude — com a divisão padrão ela continua sendo necessária.
  */
-function assertDeepseek() {
+function assertDeepseek(tarefa = null) {
+  if (tokenFreeDisponivel() && (!tarefa || usarTokenFree(tarefa))) return;
   if (claudeDisponivel() && TODAS_AS_TAREFAS.every((t) => TAREFAS_NO_CLAUDE.has(t))) return;
+  // Com o free tier cobrindo o que sobrou do Claude, a chave da DeepSeek deixa
+  // de ser obrigatória na entrada. Se um provedor grátis cair no meio, o erro
+  // aparece na hora da chamada — com mensagem própria, não neste assert.
+  const freeTier = require('./freeTierGateway');
+  const coberta = (t) => TAREFAS_NO_CLAUDE.has(t) || freeTier.cobreTarefa(t);
+  if (claudeDisponivel() && freeTier.isConfigured() && TODAS_AS_TAREFAS.every(coberta)) return;
   if (!env.deepseekApiKey) {
+    const provedor = String(env.aiProvider || '').toLowerCase();
     const err = new Error(
-      String(env.aiProvider || '').toLowerCase() === 'claude'
+      ['token-free', 'token_free', 'tokenfree'].includes(provedor)
+        ? tarefa
+          ? `AI_PROVIDER=token-free, mas TOKEN_FREE_GATEWAY_TAREFAS nao inclui "${tarefa}".`
+          : 'AI_PROVIDER=token-free, mas o Token-Free Gateway nao esta configurado.'
+        : provedor === 'claude'
         ? 'AI_PROVIDER=claude, mas ANTHROPIC_API_KEY não está configurada no .env'
         : 'DEEPSEEK_API_KEY não configurada no .env'
     );
@@ -212,6 +266,13 @@ async function chatCompletion(
     tarefa: tarefaResolvida,
   });
   if (gratis) return gratis;
+  if (usarTokenFree(tarefaResolvida)) {
+    return require('./tokenFreeGatewayService').chatCompletion(messages, {
+      temperature,
+      json,
+      tarefa: tarefaResolvida,
+    });
+  }
   if (usarClaude(tarefaResolvida)) {
     return require('./claudeService').chatCompletion(messages, {
       json,
@@ -278,11 +339,20 @@ async function chatCompletionStream(
     tarefa: tarefa || 'conversa',
   });
   if (gratisStream) return gratisStream;
-  if (usarClaude(tarefa || 'conversa')) {
+  const tarefaResolvida = tarefa || 'conversa';
+  if (usarTokenFree(tarefaResolvida)) {
+    return require('./tokenFreeGatewayService').chatCompletionStream(messages, {
+      temperature,
+      onDelta,
+      timeout,
+      tarefa: tarefaResolvida,
+    });
+  }
+  if (usarClaude(tarefaResolvida)) {
     return require('./claudeService').chatCompletionStream(messages, {
       onDelta,
       thinking,
-      tarefa: tarefa || 'conversa',
+      tarefa: tarefaResolvida,
     });
   }
   assertDeepseek();
@@ -349,6 +419,7 @@ async function chatCompletionStream(
     json: false,
     thinking,
     model: selectedModel,
+    tarefa: tarefaResolvida,
   });
   if (typeof onDelta === 'function') onDelta(raw);
   return String(raw || '').trim();
@@ -2091,8 +2162,9 @@ async function gerarTitulosAlternativos({
   marcaModeloArte = null,
   quantidade = 3,
   evitar = [],
+  tarefa = 'auxiliar',
 }) {
-  assertDeepseek();
+  assertDeepseek(tarefa);
   const tituloAtual = String(titulo || '').trim();
   const corpo = String(materia || '').trim();
   if (corpo.length < 80 && !tituloAtual) return [];
@@ -2133,7 +2205,7 @@ Regras:
 
   let raw = '';
   try {
-    raw = await chatCompletion(messages, { temperature: 0.95, json: true });
+    raw = await chatCompletion(messages, { temperature: 0.95, json: true, tarefa });
   } catch (err) {
     // Alternativas são um extra: nunca podem derrubar a geração da matéria.
     console.warn('[titulos-alternativos]', err.message);
@@ -3027,7 +3099,7 @@ Responda APENAS JSON:
           .join('\n\n'),
       },
     ],
-    { temperature: 0.15, json: true }
+    { temperature: 0.15, json: true, tarefa: 'conversa' }
   );
 
   let parsed;
@@ -3427,6 +3499,7 @@ FORMATO OBRIGATÓRIO:
     // o silêncio antes do primeiro token sem melhorar uma reescrita curta.
     thinking: Boolean(blocoFatos) && !fonteSocial && !reescritaDireta,
     model: DEEPSEEK_WRITER_MODEL,
+    tarefa: 'conversa',
   });
 
   // Última proteção do modo sem web: se o modelo insistir em recusar ou inserir
@@ -3460,6 +3533,7 @@ FORMATO OBRIGATÓRIO:
           onDelta: null,
           thinking: false,
           model: DEEPSEEK_WRITER_MODEL,
+          tarefa: 'conversa',
         }
       );
     } catch (err) {
@@ -3525,6 +3599,7 @@ FORMATO OBRIGATÓRIO:
           json: false,
           thinking: !fonteSocial,
           model: DEEPSEEK_WRITER_MODEL,
+          tarefa: 'conversa',
         }
       );
       const corpoAprofundado = corpoSemTituloEHashtags(aprofundado);
@@ -3930,5 +4005,6 @@ module.exports = {
   TITULO_TOMES,
   assertDeepseek,
   usarClaude,
+  usarTokenFree,
   MAX_MATERIA_CHARS,
 };

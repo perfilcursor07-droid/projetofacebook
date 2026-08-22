@@ -1,0 +1,302 @@
+const axios = require('axios');
+const { env } = require('../config/env');
+
+/**
+ * Cliente OpenAI-compatible do token-free-gateway.
+ *
+ * O gateway usa a sessao do Chrome para falar com o Claude. Este adaptador
+ * roda somente no backend: cookie, perfil de autenticacao e porta CDP nunca
+ * sao enviados ao navegador do usuario do ViralizeAI.
+ */
+
+const TAREFAS = new Set(
+  String(process.env.TOKEN_FREE_GATEWAY_TAREFAS || 'conversa')
+    .toLowerCase()
+    .split(',')
+    .map((tarefa) => tarefa.trim())
+    .filter(Boolean)
+);
+
+function normalizarBaseUrl(valor) {
+  const texto = String(valor || 'http://127.0.0.1:3456/v1').trim().replace(/\/+$/, '');
+  return /\/v1$/i.test(texto) ? texto : `${texto}/v1`;
+}
+
+const BASE_URL = normalizarBaseUrl(env.tokenFreeGateway?.baseUrl);
+const API_KEY = String(env.tokenFreeGateway?.apiKey || 'qualquer-coisa').trim();
+const MODELO = String(
+  env.tokenFreeGateway?.model || 'claude-sonnet-5'
+).trim();
+const TIMEOUT_MS = Math.max(10_000, Number(env.tokenFreeGateway?.timeoutMs) || 330_000);
+
+function provedorSelecionado() {
+  return ['token-free', 'token_free', 'tokenfree'].includes(
+    String(env.aiProvider || '').trim().toLowerCase()
+  );
+}
+
+function isConfigured() {
+  return provedorSelecionado() && Boolean(BASE_URL && MODELO);
+}
+
+function cobreTarefa(tarefa = 'conversa') {
+  return isConfigured() && TAREFAS.has(String(tarefa || 'conversa').trim().toLowerCase());
+}
+
+function headers(aceitarStream = false) {
+  return {
+    Authorization: `Bearer ${API_KEY || 'qualquer-coisa'}`,
+    'Content-Type': 'application/json',
+    ...(aceitarStream ? { Accept: 'text/event-stream' } : {}),
+  };
+}
+
+/**
+ * O token-free-gateway aceita o campo response_format, mas a versao atual nao
+ * o transforma em instrucao para o provedor web. Reforcar o contrato no system
+ * evita respostas Markdown onde o restante do app espera JSON puro.
+ */
+function prepararMensagens(messages, json) {
+  const copia = (Array.isArray(messages) ? messages : [])
+    .filter((mensagem) => mensagem && mensagem.content != null)
+    .map((mensagem) => ({
+      ...mensagem,
+      content: String(mensagem.content || ''),
+    }));
+
+  if (!json) return copia;
+
+  const regra =
+    '\n\nResponda SOMENTE com JSON valido, sem markdown, sem cerca de codigo e sem texto antes ou depois do JSON.';
+  const indiceSystem = copia.findIndex((mensagem) => mensagem.role === 'system');
+  if (indiceSystem >= 0) copia[indiceSystem].content += regra;
+  else copia.unshift({ role: 'system', content: regra.trim() });
+  return copia;
+}
+
+function limparCercaJson(valor) {
+  let texto = String(valor || '').trim();
+  const cerca = texto.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (cerca) texto = cerca[1].trim();
+  if (texto.startsWith('{') || texto.startsWith('[')) return texto;
+
+  const inicio = texto.search(/[\[{]/);
+  if (inicio < 0) return texto;
+  const abre = texto[inicio];
+  const fecha = abre === '{' ? '}' : ']';
+  const fim = texto.lastIndexOf(fecha);
+  return fim > inicio ? texto.slice(inicio, fim + 1).trim() : texto;
+}
+
+function mensagemRemota(err) {
+  return (
+    err?.response?.data?.error?.message ||
+    err?.response?.data?.message ||
+    err?.message ||
+    'erro desconhecido'
+  );
+}
+
+function normalizarErro(err) {
+  const status = Number(err?.response?.status || err?.status || 0);
+  const codigo = String(err?.code || '').toUpperCase();
+  const remoto = String(mensagemRemota(err)).trim();
+  let mensagem;
+
+  if (codigo === 'ECONNREFUSED' || codigo === 'ENOTFOUND') {
+    mensagem = `Token-Free Gateway nao esta acessivel em ${BASE_URL}. Execute "token-free-gateway start".`;
+  } else if (status === 401 || /session expired|sess[aã]o expir/i.test(remoto)) {
+    mensagem = `Sessao do Token-Free Gateway expirada ou sem autorizacao. Execute "token-free-gateway webauth". (${remoto})`;
+  } else if (status === 404 && /authorized provider|model/i.test(remoto)) {
+    mensagem = `Modelo ${MODELO} nao esta autorizado no Token-Free Gateway. Execute "token-free-gateway webauth" e confira /v1/models. (${remoto})`;
+  } else if (status === 429) {
+    mensagem = `Claude limitou temporariamente as requisicoes do Token-Free Gateway. Tente novamente em alguns minutos. (${remoto})`;
+  } else if (codigo === 'ECONNABORTED' || status === 504) {
+    mensagem = `Token-Free Gateway excedeu o limite de ${Math.round(TIMEOUT_MS / 1000)}s. Confira o Chrome e a sessao do Claude. (${remoto})`;
+  } else {
+    mensagem = `Token-Free Gateway falhou${status ? ` (HTTP ${status})` : ''}: ${remoto}`;
+  }
+
+  const normalizado = new Error(mensagem);
+  normalizado.status = status || 502;
+  normalizado.code = codigo || undefined;
+  normalizado.cause = err;
+  return normalizado;
+}
+
+function assertConfigured(tarefa = 'conversa') {
+  if (!provedorSelecionado()) {
+    const err = new Error('Defina AI_PROVIDER=token-free para usar o Token-Free Gateway.');
+    err.status = 500;
+    throw err;
+  }
+  if (!TAREFAS.has(String(tarefa || 'conversa').trim().toLowerCase())) {
+    const err = new Error(
+      `TOKEN_FREE_GATEWAY_TAREFAS nao inclui a tarefa "${tarefa}".`
+    );
+    err.status = 500;
+    throw err;
+  }
+}
+
+function bodyDaChamada(messages, { temperature, json, stream }) {
+  return {
+    model: MODELO,
+    messages: prepararMensagens(messages, json),
+    temperature,
+    stream: Boolean(stream),
+    ...(json ? { response_format: { type: 'json_object' } } : {}),
+  };
+}
+
+function logar(inicio, tipo, usage = null) {
+  const segundos = ((Date.now() - inicio) / 1000).toFixed(1);
+  const tokens = usage?.total_tokens || '?';
+  console.log(`[token-free] ${MODELO} ${tipo} ${segundos}s tokens=${tokens}`);
+}
+
+async function chatCompletion(
+  messages,
+  { temperature = 0.7, json = true, timeout = TIMEOUT_MS, tarefa = 'conversa' } = {}
+) {
+  assertConfigured(tarefa);
+  const inicio = Date.now();
+
+  try {
+    const { data } = await axios.post(
+      `${BASE_URL}/chat/completions`,
+      bodyDaChamada(messages, { temperature, json, stream: false }),
+      { headers: headers(false), timeout }
+    );
+    const texto = String(data?.choices?.[0]?.message?.content || '').trim();
+    if (!texto) throw new Error('resposta vazia');
+    logar(inicio, tarefa, data?.usage);
+    return json ? limparCercaJson(texto) : texto;
+  } catch (err) {
+    throw normalizarErro(err);
+  }
+}
+
+/**
+ * Streaming SSE compativel com a interface usada pelo /materia-manual.
+ * Se a conexao falhar antes do primeiro delta, tenta a chamada comum. Depois
+ * do primeiro delta nao repete a requisicao, para nao duplicar texto na tela.
+ */
+async function chatCompletionStream(
+  messages,
+  {
+    temperature = 0.7,
+    onDelta = null,
+    timeout = TIMEOUT_MS,
+    tarefa = 'conversa',
+  } = {}
+) {
+  assertConfigured(tarefa);
+  const inicio = Date.now();
+  let full = '';
+
+  try {
+    const response = await axios.post(
+      `${BASE_URL}/chat/completions`,
+      bodyDaChamada(messages, { temperature, json: false, stream: true }),
+      {
+        headers: headers(true),
+        responseType: 'stream',
+        timeout,
+      }
+    );
+
+    await new Promise((resolve, reject) => {
+      let buffer = '';
+      const processarLinha = (linha) => {
+        const texto = String(linha || '').trim();
+        if (!texto.startsWith('data:')) return;
+        const payload = texto.slice(5).trim();
+        if (!payload || payload === '[DONE]') return;
+
+        try {
+          const evento = JSON.parse(payload);
+          if (evento?.error?.message) {
+            const erro = new Error(evento.error.message);
+            erro.status = 502;
+            reject(erro);
+            return;
+          }
+          const delta = evento?.choices?.[0]?.delta?.content || '';
+          if (delta) {
+            full += delta;
+            if (typeof onDelta === 'function') onDelta(delta);
+          }
+        } catch (err) {
+          if (err instanceof SyntaxError) return;
+          reject(err);
+        }
+      };
+
+      response.data.on('data', (chunk) => {
+        buffer += chunk.toString('utf8');
+        const linhas = buffer.split(/\r?\n/);
+        buffer = linhas.pop() || '';
+        linhas.forEach(processarLinha);
+      });
+      response.data.on('end', () => {
+        if (buffer.trim()) processarLinha(buffer);
+        resolve();
+      });
+      response.data.on('error', reject);
+    });
+
+    if (!full.trim()) throw new Error('stream vazio');
+    logar(inicio, `${tarefa}/stream`);
+    return full.trim();
+  } catch (err) {
+    if (full.trim()) throw normalizarErro(err);
+    console.warn('[token-free-stream] stream indisponivel; tentando modo comum:', mensagemRemota(err));
+    const texto = await chatCompletion(messages, {
+      temperature,
+      json: false,
+      timeout,
+      tarefa,
+    });
+    if (typeof onDelta === 'function') onDelta(texto);
+    return texto;
+  }
+}
+
+async function verificarSaude({ timeout = 8_000 } = {}) {
+  try {
+    const url = new URL(BASE_URL);
+    url.pathname = '/health';
+    url.search = '';
+    const { data } = await axios.get(url.toString(), { timeout });
+    return data;
+  } catch (err) {
+    throw normalizarErro(err);
+  }
+}
+
+async function listarModelos({ timeout = 8_000 } = {}) {
+  try {
+    const { data } = await axios.get(`${BASE_URL}/models`, {
+      headers: headers(false),
+      timeout,
+    });
+    return Array.isArray(data?.data) ? data.data : [];
+  } catch (err) {
+    throw normalizarErro(err);
+  }
+}
+
+module.exports = {
+  chatCompletion,
+  chatCompletionStream,
+  verificarSaude,
+  listarModelos,
+  isConfigured,
+  cobreTarefa,
+  prepararMensagens,
+  limparCercaJson,
+  normalizarBaseUrl,
+  BASE_URL,
+  MODELO,
+};
