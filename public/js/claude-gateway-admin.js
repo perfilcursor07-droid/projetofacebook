@@ -7,6 +7,8 @@
   const feedback = $('claude-feedback');
   const progress = $('claude-auth-progress');
   const loginDone = $('claude-login-done');
+  const importInput = $('claude-session-file');
+  const importButton = $('claude-import-session');
   let busy = false;
   let currentStatus = {};
 
@@ -58,15 +60,34 @@
 
   function syncButtons() {
     const authStatus = currentStatus?.autorizacao?.status;
+    const gateway = currentStatus?.gateway || {};
+    const chrome = currentStatus?.chrome || {};
     const authActive = authStatus === 'running' || authStatus === 'waiting_login';
+    const ferramentasProntas =
+      gateway.cliDisponivel !== false &&
+      gateway.bunDisponivel !== false &&
+      gateway.chromeInstalado !== false;
     buttons.forEach((button) => {
       const action = button.dataset.action;
-      button.disabled = busy || (authActive && action !== 'continue');
+      const precisaCli = ['start', 'restart', 'authorize', 'switch', 'continue'].includes(action);
+      const precisaGatewayOnline = action === 'test';
+      const precisaLoginVisual = ['authorize', 'switch', 'continue'].includes(action);
+      button.disabled =
+        busy ||
+        (authActive && action !== 'continue') ||
+        (precisaCli && !ferramentasProntas) ||
+        (precisaGatewayOnline && gateway.online !== true) ||
+        (precisaLoginVisual && chrome.loginVisualDisponivel === false);
     });
     if (loginDone) {
       loginDone.classList.toggle('hidden', authStatus !== 'waiting_login');
-      loginDone.disabled = busy || authStatus !== 'waiting_login';
+      loginDone.disabled =
+        busy ||
+        authStatus !== 'waiting_login' ||
+        !ferramentasProntas ||
+        chrome.loginVisualDisponivel === false;
     }
+    if (importButton) importButton.disabled = busy || !importInput?.files?.length;
   }
 
   function render(status) {
@@ -77,15 +98,34 @@
     const security = currentStatus.seguranca || {};
     const auth = currentStatus.autorizacao || {};
 
+    const installAlert = $('gateway-install-alert');
+    installAlert?.classList.toggle('hidden', !gateway.pendencia);
+    if ($('gateway-install-message')) $('gateway-install-message').textContent = gateway.pendencia || '';
+
     setBadge('gateway-badge', gateway.online ? 'Online' : 'Offline', gateway.online ? 'good' : 'bad');
     $('gateway-title').textContent = gateway.online ? 'Serviço respondendo' : 'Serviço indisponível';
     $('gateway-detail').textContent = gateway.online
       ? `${gateway.url || 'Gateway local'} · ${gateway.status || 'ok'}`
-      : gateway.erro || (gateway.cliDisponivel ? 'Pronto para iniciar.' : 'Código-fonte do gateway não encontrado.');
+      : gateway.pendencia || gateway.erro || 'Pronto para iniciar.';
 
     setBadge('chrome-badge', chrome.conectado ? 'Conectado' : 'Desconectado', chrome.conectado ? 'good' : 'warn');
     $('chrome-title').textContent = chrome.conectado ? 'Navegador disponível' : 'Aguardando navegador';
-    $('chrome-detail').textContent = chrome.cdpUrl || 'CDP local não informado';
+    $('chrome-detail').textContent = !gateway.chromeInstalado
+      ? 'Chrome/Chromium não instalado neste servidor.'
+      : chrome.modoHeadless
+        ? `${chrome.cdpUrl || 'CDP local'} · modo headless`
+        : chrome.cdpUrl || 'CDP local não informado';
+
+    if ($('claude-authorize-hint')) {
+      $('claude-authorize-hint').textContent = chrome.loginVisualDisponivel === false
+        ? 'Indisponível sem desktop; importe a sessão acima.'
+        : 'Atualiza a sessão usando a conta já aberta no Chrome.';
+    }
+    if ($('claude-switch-hint')) {
+      $('claude-switch-hint').textContent = chrome.loginVisualDisponivel === false
+        ? 'Troque a conta no seu computador e importe a nova sessão.'
+        : 'Sai somente do Claude no Chrome isolado e pede outra conta.';
+    }
 
     let claudeTone = 'bad';
     let claudeBadge = 'Não autorizada';
@@ -207,10 +247,41 @@
     }
   }
 
+  async function importSession() {
+    const file = importInput?.files?.[0];
+    if (!file || busy) return;
+    if (file.size > 512000) {
+      setFeedback('O arquivo de sessão excede o limite de 500 KB.', 'bad');
+      return;
+    }
+
+    busy = true;
+    syncButtons();
+    setFeedback('Importando a sessão e preparando o gateway…', 'neutral');
+    try {
+      const raw = await file.text();
+      const sessao = JSON.parse(raw);
+      const data = await request('/import', { method: 'POST', body: { sessao } });
+      setFeedback(data.message || 'Sessão importada.', data.gatewayReiniciado ? 'good' : 'warn');
+      importInput.value = '';
+      await refresh(true);
+    } catch (err) {
+      setFeedback(
+        err instanceof SyntaxError ? 'O arquivo selecionado não contém JSON válido.' : err.message,
+        'bad'
+      );
+    } finally {
+      busy = false;
+      syncButtons();
+    }
+  }
+
   buttons.forEach((button) => {
     button.addEventListener('click', () => runAction(button.dataset.action));
   });
   $('claude-refresh')?.addEventListener('click', () => refresh(false));
+  importInput?.addEventListener('change', syncButtons);
+  importButton?.addEventListener('click', importSession);
 
   render(currentStatus);
   window.setInterval(() => refresh(true), 5000);

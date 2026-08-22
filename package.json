@@ -12,6 +12,7 @@
     "seed": "knex seed:run",
     "build:css": "tailwindcss -i ./src/assets/input.css -o ./public/css/app.css --minify",
     "watch:css": "tailwindcss -i ./src/assets/input.css -o ./public/css/app.css --watch",
+    "gateway:setup": "bash scripts/setup-token-free-gateway.sh",
     "gateway:auth": "bun .tools/token-free-gateway/index.ts webauth",
     "gateway:start": "bun .tools/token-free-gateway/index.ts start",
     "gateway:stop": "bun .tools/token-free-gateway/index.ts stop",

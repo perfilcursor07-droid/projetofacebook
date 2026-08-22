@@ -17,6 +17,15 @@
 
     <div id="claude-feedback" class="mt-5 hidden rounded-xl border px-4 py-3 text-sm" role="status" aria-live="polite"></div>
 
+    <section id="gateway-install-alert" class="mt-5 hidden rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5" aria-live="polite">
+      <p class="text-xs font-semibold uppercase tracking-wide text-amber-300">Preparação do servidor</p>
+      <p id="gateway-install-message" class="mt-2 text-sm leading-relaxed text-amber-100"></p>
+      <p class="mt-3 text-xs leading-relaxed text-slate-400">
+        No SSH, como usuário <code class="rounded bg-slate-950 px-1.5 py-0.5 text-slate-300">viralizeai</code>, entre na pasta do site e execute
+        <code class="rounded bg-slate-950 px-1.5 py-0.5 text-slate-300">npm run gateway:setup</code>.
+      </p>
+    </section>
+
     <section class="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Estado dos serviços">
       <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
         <div class="flex items-center justify-between gap-3">
@@ -67,6 +76,33 @@
       </div>
     </section>
 
+    <section class="mt-5 rounded-2xl border border-cyan-500/25 bg-cyan-500/5 p-5">
+      <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)] lg:items-start">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wide text-cyan-300">CloudPanel / servidor remoto</p>
+          <h2 class="mt-1 font-semibold text-white">Importar sessão do seu computador</h2>
+          <p class="mt-2 text-sm leading-relaxed text-slate-400">
+            Faça o login do Claude no Chrome do seu computador e selecione o arquivo
+            <code class="rounded bg-slate-950 px-1.5 py-0.5 text-xs text-slate-300">auth-profiles.json</code>.
+            O servidor extrai somente o perfil do Claude, grava com permissão privada e reinicia o gateway.
+          </p>
+          <p id="claude-remote-hint" class="mt-3 text-xs leading-relaxed text-slate-500">
+            No Windows, o arquivo normalmente fica em C:\Users\SEU-USUARIO\.token-free-gateway\auth-profiles.json.
+          </p>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <label for="claude-session-file" class="block text-xs font-medium text-slate-300">Arquivo privado da sessão</label>
+          <input id="claude-session-file" type="file" accept=".json,application/json"
+            class="mt-2 block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-cyan-500 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-slate-950 hover:file:bg-cyan-400" />
+          <button type="button" id="claude-import-session"
+            class="mt-3 w-full rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">
+            Importar e iniciar
+          </button>
+          <p class="mt-2 text-[11px] leading-relaxed text-slate-600">O conteúdo não é exibido na página nem salvo no navegador.</p>
+        </div>
+      </div>
+    </section>
+
     <section class="mt-5 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
       <div>
         <h2 class="font-semibold text-white">Recuperação e manutenção</h2>
@@ -88,11 +124,11 @@
         </button>
         <button type="button" data-action="authorize" class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-left transition hover:border-amber-400 disabled:cursor-not-allowed disabled:opacity-50">
           <span class="block text-sm font-semibold text-amber-200">Entrar novamente</span>
-          <span class="mt-1 block text-xs leading-relaxed text-slate-400">Atualiza a sessão usando a conta já aberta no Chrome.</span>
+          <span id="claude-authorize-hint" class="mt-1 block text-xs leading-relaxed text-slate-400">Atualiza a sessão usando a conta já aberta no Chrome.</span>
         </button>
         <button type="button" data-action="switch" class="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-left transition hover:border-rose-400 disabled:cursor-not-allowed disabled:opacity-50">
           <span class="block text-sm font-semibold text-rose-200">Trocar conta Claude</span>
-          <span class="mt-1 block text-xs leading-relaxed text-slate-400">Sai somente do Claude no Chrome isolado e pede outra conta.</span>
+          <span id="claude-switch-hint" class="mt-1 block text-xs leading-relaxed text-slate-400">Sai somente do Claude no Chrome isolado e pede outra conta.</span>
         </button>
       </div>
     </section>
@@ -109,7 +145,7 @@
       <article class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
         <h2 class="text-sm font-semibold text-amber-200">Importante em produção</h2>
         <p class="mt-2 text-sm leading-relaxed text-slate-400">
-          A janela de login abre na máquina onde o processo Node está rodando. Neste computador ela abre aqui; em um servidor remoto, ela abrirá no servidor e precisará de acesso à área de trabalho dele.
+          Em servidor sem área de trabalho, o Chrome roda em modo headless e não mostra uma janela de login. Gere ou atualize a sessão em um computador com Chrome e use a importação acima.
         </p>
       </article>
     </section>

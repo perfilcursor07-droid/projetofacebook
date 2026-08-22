@@ -1,0 +1,65 @@
+diff --git a/src/cli/chrome.ts b/src/cli/chrome.ts
+index 7abcc32..dc08a75 100644
+--- a/src/cli/chrome.ts
++++ b/src/cli/chrome.ts
+@@ -119,6 +119,8 @@ export async function startChrome() {
+ 	console.log(`  CDP     : http://127.0.0.1:${CDP_PORT}`);
+ 	console.log("");
+ 
++	const headlessLinux = process.platform === "linux" && !process.env.DISPLAY;
++	const semSandbox = process.env.TFG_CHROME_NO_SANDBOX === "true";
+ 	const flags = [
+ 		`--remote-debugging-port=${CDP_PORT}`,
+ 		`--user-data-dir=${userDataDir}`,
+@@ -130,6 +132,12 @@ export async function startChrome() {
+ 		"--disable-translate",
+ 		"--disable-features=TranslateUI",
+ 		"--remote-allow-origins=*",
++		...(headlessLinux
++			? ["--headless=new", "--disable-dev-shm-usage", "--window-size=1440,1000"]
++			: []),
++		// Use somente quando o sandbox do Chrome não estiver disponível no servidor.
++		// O padrão permanece seguro, com sandbox habilitado.
++		...(semSandbox ? ["--no-sandbox"] : []),
+-		...PROVIDER_URLS,
++		...(headlessLinux ? ["https://claude.ai/new"] : PROVIDER_URLS),
+ 	];
+ 
+diff --git a/src/providers/claude/client.ts b/src/providers/claude/client.ts
+index f2d5081..3fa8f37 100644
+--- a/src/providers/claude/client.ts
++++ b/src/providers/claude/client.ts
+@@ -24,8 +24,9 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
+ 		hostKey: "claude.ai",
+ 		startUrl: "https://claude.ai/",
+ 		cookieDomain: ".claude.ai",
+-		defaultModel: "claude-sonnet-4-20250514",
++		defaultModel: "claude-sonnet-5",
+ 		models: [
++			{ id: "claude-sonnet-5", name: "Claude Sonnet 5" },
+ 			{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
+ 			{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+ 			{ id: "claude-opus-4-20250514", name: "Claude Opus 4" },
+diff --git a/src/providers/claude/index.ts b/src/providers/claude/index.ts
+index 3ac2a9d..c0730e3 100644
+--- a/src/providers/claude/index.ts
++++ b/src/providers/claude/index.ts
+@@ -6,6 +6,7 @@ export const definition: ProviderDefinition = {
+ 	id: "claude-web",
+ 	name: "Claude Web",
+ 	models: [
++		{ id: "claude-sonnet-5", name: "Claude Sonnet 5" },
+ 		{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
+ 		{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+ 		{ id: "claude-opus-4-20250514", name: "Claude Opus 4" },
+diff --git a/src/server.ts b/src/server.ts
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -150,6 +150,7 @@ async function handleRequest(req: Request): Promise<Response> {
+ // ── Server bootstrap ─────────────────────────────────────────
+ 
+ const server = Bun.serve({
++	hostname: process.env.TFG_HOST || "127.0.0.1",
+ 	port: config.port,
+ 	fetch: handleRequest,
+ 	// Disable Bun's built-in idle timeout (default 10s).
