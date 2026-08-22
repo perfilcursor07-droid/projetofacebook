@@ -1419,6 +1419,19 @@ body.mia-chat-drawer-open {
   white-space: nowrap;
 }
 
+.mia-chat-multi-link {
+  flex-shrink: 0;
+  gap: 0.22rem;
+  padding: 0.28rem 0.45rem;
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.mia-chat-multi-link svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
 .mia-chat-chip.is-on {
   border-color: rgba(16, 185, 129, 0.45);
   background: rgba(16, 185, 129, 0.12);
