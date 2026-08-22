@@ -425,8 +425,50 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
 
   const titulo = String(info.title || '').trim() || null;
   const descricao = String(info.description || '').trim();
-  const veiculo = String(info.uploader || info.channel || 'YouTube').trim();
-  let trecho = [titulo ? `Título: ${titulo}` : null, descricao || null].filter(Boolean).join('\n\n');
+  const canal = String(info.channel || info.uploader || 'YouTube').trim();
+  const criador = String(info.uploader || info.channel || canal).trim();
+  const videoId = String(info.id || '').trim() || null;
+  const requestedVideoId = (() => {
+    try {
+      const parsed = new URL(url);
+      if (/youtu\.be$/i.test(parsed.hostname)) return parsed.pathname.split('/').filter(Boolean)[0] || null;
+      return parsed.searchParams.get('v') || parsed.pathname.match(/\/(?:shorts|embed|live)\/([^/?#]+)/i)?.[1] || null;
+    } catch {
+      return null;
+    }
+  })();
+  if (requestedVideoId && videoId && requestedVideoId !== videoId) {
+    const err = new Error(
+      `O YouTube devolveu o vídeo ${videoId}, mas o link solicitado era ${requestedVideoId}. A matéria não foi gerada para evitar misturar vídeos.`
+    );
+    err.status = 422;
+    throw err;
+  }
+
+  const uploadDateRaw = String(info.upload_date || '').replace(/\D/g, '');
+  const dataPublicacao =
+    uploadDateRaw.length === 8
+      ? `${uploadDateRaw.slice(0, 4)}-${uploadDateRaw.slice(4, 6)}-${uploadDateRaw.slice(6, 8)}`
+      : null;
+  const dataTimestamp = dataPublicacao
+    ? Date.parse(`${dataPublicacao}T12:00:00Z`)
+    : Number(info.timestamp) > 0
+      ? Number(info.timestamp) * 1000
+      : null;
+
+  const veiculo = canal;
+  let trecho = [
+    'IDENTIDADE DO VÍDEO DO YOUTUBE (preserve estes nomes na matéria):',
+    videoId ? `ID do vídeo: ${videoId}` : null,
+    titulo ? `Título do vídeo: ${titulo}` : null,
+    `Canal: ${canal}`,
+    criador && criador !== canal ? `Criador/publicador: ${criador}` : null,
+    info.uploader_id ? `Identificador do canal: ${String(info.uploader_id).trim()}` : null,
+    dataPublicacao ? `Publicado em: ${dataPublicacao}` : null,
+    descricao ? `Descrição do vídeo:\n${descricao}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   // Cortar só o começo escondia o desfecho: em vídeo de decisão, julgamento ou
   // votação, o resultado está no fim. Por isso o corte leva início e fim.
 
@@ -456,10 +498,15 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
 
   return {
     veiculo,
+    canal,
+    criador,
+    videoId,
     titulo: titulo || `Vídeo — ${veiculo}`,
     url,
     resumo: String(descricao || trecho).slice(0, 400),
     trecho: recortarTranscricao(trecho, 14000),
+    dataPublicacao,
+    dataTimestamp,
     ehRedeSocial: true,
     plataforma: 'youtube',
   };
@@ -1195,6 +1242,34 @@ function garantirCitacaoDoVeiculo(
   linhas[idx] = comCredito;
 
   return { texto: linhas.join('\n'), inserido: nome };
+}
+
+/**
+ * O nome do canal/criador do YouTube é identidade da pauta, não veículo de imprensa.
+ * Garante a atribuição mesmo quando uma orientação editorial manda omitir sites.
+ */
+function garantirIdentidadeDoYoutube(resposta, fontes = []) {
+  const fonte = (Array.isArray(fontes) ? fontes : []).find(
+    (f) => String(f?.plataforma || '').toLowerCase() === 'youtube'
+  );
+  const canal = String(fonte?.canal || fonte?.criador || fonte?.veiculo || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const texto = String(resposta || '');
+  if (!canal || /^youtube$/i.test(canal) || !texto.trim()) return texto;
+
+  const info = interpretarResposta(texto);
+  if (!info.ehMateria || !info.titulo) return texto;
+  if (normalizarTexto(texto).includes(normalizarTexto(canal))) return texto;
+
+  const linhas = texto.replace(/\r\n/g, '\n').split('\n');
+  const idxCorpo = linhas.findIndex(
+    (linha, idx) => idx > 0 && String(linha || '').trim() && !/^\s*#/.test(linha)
+  );
+  if (idxCorpo < 0) return texto;
+
+  linhas[idxCorpo] = `O vídeo foi publicado no canal ${canal}, no YouTube. ${linhas[idxCorpo].trim()}`;
+  return linhas.join('\n');
 }
 
 /**
@@ -2574,7 +2649,15 @@ async function responder({
       0
     );
   const veiculosColados = fontesColadas
-    .map((f) => ({ veiculo: f.veiculo, url: f.url || null }))
+    .map((f) => ({
+      veiculo: f.veiculo,
+      url: f.url || null,
+      plataforma: f.plataforma || null,
+      canal: f.canal || null,
+      criador: f.criador || null,
+      titulo: f.titulo || null,
+      videoId: f.videoId || null,
+    }))
     .filter((f) => f.veiculo);
   // Também vale quando o editor cola o TEXTO em inglês/espanhol direto no chat,
   // sem link: antes esse caso saía sem tradução.
@@ -2624,7 +2707,15 @@ async function responder({
           tom,
           permitirSemConfirmacao: usuarioInsiste,
           veiculosColados: fonteAtual.veiculo
-            ? [{ veiculo: fonteAtual.veiculo, url: fonteAtual.url || null }]
+            ? [{
+                veiculo: fonteAtual.veiculo,
+                url: fonteAtual.url || null,
+                plataforma: fonteAtual.plataforma || null,
+                canal: fonteAtual.canal || null,
+                criador: fonteAtual.criador || null,
+                titulo: fonteAtual.titulo || null,
+                videoId: fonteAtual.videoId || null,
+              }]
             : [],
           fonteSocial: Boolean(fonteAtual.ehRedeSocial),
           fonteSocialChars: fonteAtual.ehRedeSocial
@@ -2639,12 +2730,12 @@ async function responder({
           periodoPesquisaAmpliada: periodoResgateUsado,
           onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
         });
-        let textoMateriaFinal = textoMateria;
+        let textoMateriaFinal = garantirIdentidadeDoYoutube(textoMateria, [fonteAtual]);
         if (!usarPesquisa) {
-          textoMateriaFinal = montarRespostaComRodapeOffline(textoMateria, [fonteAtual]);
+          textoMateriaFinal = montarRespostaComRodapeOffline(textoMateriaFinal, [fonteAtual]);
         } else if (fonteAtual.veiculo) {
           textoMateriaFinal = garantirCitacaoDoVeiculo(
-            textoMateria,
+            textoMateriaFinal,
             [fonteAtual],
             politicasEditor
           ).texto;
@@ -2676,6 +2767,7 @@ async function responder({
         motivoBuscaVazia: buscaVazia ? motivoDaBuscaVazia() : null,
         onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
       });
+      resposta = garantirIdentidadeDoYoutube(resposta, fontes);
     }
   } catch (err) {
     await AiChats.touch(chat.id);

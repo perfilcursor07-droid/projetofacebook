@@ -829,6 +829,14 @@ function nomeCurtoFonte(veiculo, url) {
   }
   const blob = `${host} ${v}`.toLowerCase();
 
+  // Em rede social, o nome útil é o canal/perfil que publicou, não apenas
+  // “YouTube”, “Instagram” ou “Facebook”. Mantém o criador no crédito.
+  const hostSocial = /(^|\.)(?:youtube\.com|youtu\.be|instagram\.com|facebook\.com|fb\.watch|tiktok\.com|x\.com|twitter\.com)$/.test(
+    host
+  );
+  const nomeGenericoSocial = /^(?:youtube|instagram|facebook|tiktok|x|twitter)$/i.test(v);
+  if (hostSocial && v && !nomeGenericoSocial) return v.slice(0, 60);
+
   if (/\bg1\b/.test(blob) || host.startsWith('g1.')) return 'G1';
   if (/folha/.test(blob)) return 'Folha';
   if (/\buol\b/.test(blob) || /(^|\.)uol\./.test(host)) return 'UOL';

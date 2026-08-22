@@ -3294,19 +3294,53 @@ FORMATO OBRIGATÓRIO:
     });
   }
 
+
+  // Link colado pelo editor: o nome do veículo tem de aparecer no corpo,
+  // como crédito da apuração ("segundo a BBC News").
+  const fontesColadasNormalizadas = Array.isArray(veiculosColados) ? veiculosColados : [];
+  const nomesColados = fontesColadasNormalizadas
+    // Canal/criador do YouTube não é veículo de imprensa; recebe regra própria abaixo.
+    .filter((v) => typeof v === 'string' || String(v?.plataforma || '').toLowerCase() !== 'youtube')
+    .map((v) => String(typeof v === 'string' ? v : v?.veiculo || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .slice(0, 3);
+  const canaisYoutube = fontesColadasNormalizadas
+    .filter((v) => typeof v === 'object' && String(v?.plataforma || '').toLowerCase() === 'youtube')
+    .map((v) => ({
+      canal: String(v?.canal || v?.criador || v?.veiculo || '').replace(/\s+/g, ' ').trim(),
+      criador: String(v?.criador || v?.canal || v?.veiculo || '').replace(/\s+/g, ' ').trim(),
+      titulo: String(v?.titulo || '').replace(/\s+/g, ' ').trim(),
+      videoId: String(v?.videoId || '').trim(),
+    }))
+    .filter((v) => v.canal);
+  const blocoIdentidadeYoutube = canaisYoutube.length
+    ? [
+        'IDENTIDADE OBRIGATÓRIA DA FONTE DO YOUTUBE:',
+        ...canaisYoutube.map((v) =>
+          [
+            `Canal/criador: ${v.canal}`,
+            v.titulo ? `Título do vídeo: ${v.titulo}` : null,
+            v.videoId ? `ID exato do vídeo: ${v.videoId}` : null,
+          ]
+            .filter(Boolean)
+            .join(' | ')
+        ),
+        '- Nome de canal, criador, pastor, entrevistado ou pessoa que aparece na pauta NÃO é nome de site/portal de notícias.',
+        '- Preserve esses nomes no título ou no corpo quando identificados nos metadados/transcrição. Não substitua a pessoa por “líder evangélico”, “pregador” ou outro genérico.',
+        '- A orientação do editor para omitir nome de veículo aplica-se a sites e portais; ela não autoriza apagar o nome da pessoa ou do canal que produziu o vídeo.',
+        '- Não presuma que o dono do canal é quem fala se isso não estiver sustentado pelo título ou pela transcrição.',
+      ].join('\n')
+    : null;
+  if (blocoIdentidadeYoutube) {
+    messages.push({ role: 'system', content: blocoIdentidadeYoutube });
+  }
+
   for (const m of (Array.isArray(historico) ? historico : []).slice(-8)) {
     const role = m?.role === 'assistant' ? 'assistant' : 'user';
     const content = String(m?.content || '').trim();
     if (content) messages.push({ role, content: content.slice(0, 6000) });
   }
-
-  // Link colado pelo editor: o nome do veículo tem de aparecer no corpo,
-  // como crédito da apuração ("segundo a BBC News").
-  const nomesColados = (Array.isArray(veiculosColados) ? veiculosColados : [])
-    .map((v) => String(typeof v === 'string' ? v : v?.veiculo || '').replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
-    .filter((v, i, arr) => arr.indexOf(v) === i)
-    .slice(0, 3);
 
   const blocoFonteColada = nomesColados.length
     ? omitirVeiculoNoCorpo

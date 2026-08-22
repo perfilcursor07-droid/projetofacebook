@@ -253,7 +253,7 @@ async function trySubtitlesFromUrl(url) {
           flags: {
             ...commonFlags,
             writeSub: false,
-            subLangs: 'pt-orig,en-orig',
+            subLangs: 'pt-orig,pt-BR,pt,pt-PT,en-orig,en',
             extractorArgs: 'youtube:player_client=android_vr;skip=translated_subs',
           },
           auth: {

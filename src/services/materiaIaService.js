@@ -1241,18 +1241,56 @@ async function agendarMateria({ userId, matterId, runAt }) {
   return { jobId, matterId: matter.id, runAt: slotLivre };
 }
 
-async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = 30 } = {}) {
+async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = 10 } = {}) {
+  const agora = new Date();
+
+  // A Agenda da Biblioteca é a fonte da verdade. A compactação pode alterar
+  // proposed_at; antes de listar, replica esse horário na matéria e no job.
+  const agendasConfirmadas = await db('biblioteca_agenda')
+    .where({ user_id: userId, status: 'confirmado' })
+    .whereNotNull('matter_id')
+    .whereNotNull('proposed_at')
+    .where('proposed_at', '>', agora)
+    .select('matter_id', 'proposed_at');
+
+  let sincronizados = 0;
+  for (const agenda of agendasConfirmadas || []) {
+    const matterId = Number(agenda.matter_id);
+    const horario =
+      agenda.proposed_at instanceof Date ? agenda.proposed_at : new Date(agenda.proposed_at);
+    if (!matterId || Number.isNaN(horario.getTime())) continue;
+
+    const matter = await AiMatters.findById(matterId);
+    const horarioMatter = matter?.scheduled_at ? new Date(matter.scheduled_at) : null;
+    if (
+      !matter ||
+      Number(matter.user_id) !== Number(userId) ||
+      String(matter.status) !== 'agendado' ||
+      (horarioMatter &&
+        !Number.isNaN(horarioMatter.getTime()) &&
+        Math.abs(horarioMatter.getTime() - horario.getTime()) <= 60_000)
+    ) {
+      continue;
+    }
+
+    await AiMatters.update(matterId, { scheduled_at: horario });
+    await db('ai_fila_jobs')
+      .where({ matter_id: matterId, status: 'pendente' })
+      .update({ run_at: horario, updated_at: db.fn.now() });
+    sincronizados += 1;
+  }
+
   const rows = await db('ai_matters')
     .where({ user_id: userId, status: 'agendado' })
     .whereNotNull('scheduled_at')
-    .where('scheduled_at', '>', new Date())
+    .where('scheduled_at', '>', agora)
     .orderBy('scheduled_at', 'asc')
     .orderBy('id', 'asc')
     .select('id', 'scheduled_at');
 
   let cursor = null;
   let ajustados = 0;
-  const intervaloMs = Math.max(5, Number(intervaloMinutos) || 30) * 60 * 1000;
+  const intervaloMs = Math.max(5, Number(intervaloMinutos) || 10) * 60 * 1000;
 
   for (const row of rows || []) {
     const atual = row.scheduled_at instanceof Date ? row.scheduled_at : new Date(row.scheduled_at);
@@ -1265,13 +1303,18 @@ async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = 30 } 
     await db('ai_fila_jobs')
       .where({ matter_id: row.id, status: 'pendente' })
       .update({ run_at: novo, updated_at: db.fn.now() });
+    await db('biblioteca_agenda')
+      .where({ user_id: userId, matter_id: row.id, status: 'confirmado' })
+      .update({ proposed_at: novo, updated_at: db.fn.now() });
     ajustados += 1;
   }
 
-  if (ajustados > 0) {
-    console.log(`[agendar] user #${userId}: ${ajustados} agendamento(s) redistribuído(s) ${intervaloMinutos}m`);
+  if (sincronizados > 0 || ajustados > 0) {
+    console.log(
+      `[agendar] user #${userId}: ${sincronizados} sincronizado(s), ${ajustados} redistribuído(s) ${intervaloMinutos}m`
+    );
   }
-  return { ajustados };
+  return { ajustados, sincronizados };
 }
 
 /** Formata Date → YYYY-MM-DDTHH:mm no fuso America/Araguaina. */

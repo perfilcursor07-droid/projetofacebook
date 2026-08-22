@@ -734,9 +734,7 @@ async function showMatter(req, res, next) {
         // Pré-agendada na Biblioteca: mostra o horário no editor sem confirmar ainda
         horarioAtualAgendado = agendaBiblioteca.horario;
       }
-      const info = await materiaIaService.obterUltimoAgendamento(req.session.userId, {
-        excludeMatterId: jaAgendada ? matter.id : null,
-      });
+      const info = await materiaIaService.obterUltimoAgendamento(req.session.userId);
       ultimoAgendamento = info.ultimo || null;
       proximoSlotLocal = info.proximoSlotLocal || null;
       proximoSlotLabel = info.proximoSlotLabel || null;
@@ -905,7 +903,7 @@ async function listMinhasMaterias(req, res, next) {
         const agendaService = require('../services/bibliotecaAgendaService');
         await agendaService.cancelarAgendamentosPendentesDaBiblioteca(req.session.userId);
         await materiaIaService.repararAgendamentosSobrepostos(req.session.userId, {
-          intervaloMinutos: 30,
+          intervaloMinutos: 10,
         });
       } catch (err) {
         console.warn('[minhas-materias] reparar agendados:', err.message);
