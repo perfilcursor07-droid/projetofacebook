@@ -143,30 +143,30 @@
                   use <code class="text-yellow-400/90">[[palavra]]</code> na cor principal e
                   <code class="text-red-400/90">((frase))</code> na faixa vermelha da imagem destacada.
                 </p>
-              <% } %>
+            <% } %>
               <% if (typeof marcaModeloArte !== 'undefined' && (marcaModeloArte === 'jm' || (typeof artModelChoices !== 'undefined' && artModelChoices.some((m) => m.id === 'jm')))) { %>
                 <p class="mt-1.5 pb-1 text-[11px] leading-relaxed text-slate-500">
                   Modelo <span class="text-slate-400">JM</span>:
                   use <code class="text-amber-400/90">[[palavra]]</code> para destacar um trecho na cor principal da marca.
                   Sem marcação, o destaque é escolhido automaticamente.
-                </p>
-              <% } %>
-              <% if (canEdit) { %>
+          </p>
+        <% } %>
+        <% if (canEdit) { %>
                 <div class="mt-2 space-y-2 pb-3">
                   <div class="flex flex-wrap items-center gap-2">
                     <label class="flex items-center gap-1.5 text-[11px] text-slate-500">
                       <span>Tom</span>
                       <select id="matter-titulo-tom" class="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 focus:border-emerald-500 focus:outline-none">
-                        <option value="natural" selected>Natural</option>
+                <option value="natural" selected>Natural</option>
                         <option value="polemico">Polêmico (forte)</option>
-                        <option value="direto">Direto</option>
-                        <option value="curiosidade">Curiosidade</option>
-                        <option value="emocional">Emocional</option>
-                        <option value="factual">Factual</option>
+                <option value="direto">Direto</option>
+                <option value="curiosidade">Curiosidade</option>
+                <option value="emocional">Emocional</option>
+                <option value="factual">Factual</option>
                         <option value="manual">Manual (eu escrevo)</option>
-                      </select>
-                    </label>
-                    <button type="button" id="btn-sugerir-titulo"
+              </select>
+            </label>
+            <button type="button" id="btn-sugerir-titulo"
                       class="rounded border border-slate-600 px-2 py-1 text-[11px] text-slate-300 hover:border-emerald-500 hover:text-sky-300">
                       Sugerir título
                     </button>
@@ -313,11 +313,11 @@
                   <button type="button" id="btn-reescrever-info"
                     class="mt-2 rounded border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/20">
                     Reescrever com informações
-                  </button>
-                </div>
+            </button>
+          </div>
               </div>
             </details>
-          <% } %>
+        <% } %>
 
           <!-- Metabox: Hashtags -->
           <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 <%= hashtagsList ? '' : 'hidden' %>" id="matter-hashtags-wrap" <%= hashtagsList ? 'open' : '' %>>
@@ -419,10 +419,10 @@
                   Instagram desligado para esta Página.
                   <a href="/paginas" class="text-pink-300 hover:underline">Ativar em /paginas</a>
                 </p>
-              <% } %>
+        <% } %>
             </div>
 
-            <% if (canEdit) { %>
+        <% if (canEdit) { %>
               <div class="flex flex-col gap-1.5 border-t border-slate-800 pt-3">
                 <button type="button" class="wp-btn-publicar-dup rounded bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
                   <%= reelProcessing ? 'disabled' : '' %>
@@ -553,18 +553,18 @@
               <span class="text-[10px] text-slate-500">9:16</span>
             </div>
             <div class="p-2">
-              <% if (videoUrl) { %>
+            <% if (videoUrl) { %>
                 <video id="matter-reel-video" class="block w-full rounded border border-slate-800 bg-black" controls playsinline
-                  src="<%= videoUrl %>?t=<%= Date.now() %>" poster="<%= imageUrl || '' %>"></video>
-              <% } else { %>
+                src="<%= videoUrl %>?t=<%= Date.now() %>" poster="<%= imageUrl || '' %>"></video>
+            <% } else { %>
                 <div id="matter-reel-placeholder" class="flex min-h-[220px] flex-col items-center justify-center gap-2 rounded border border-dashed border-slate-800 bg-slate-900/50 px-3 py-6 text-center">
                   <span class="inline-block h-6 w-6 animate-spin rounded-full border-2 border-violet-400/30 border-t-violet-300"></span>
                   <p class="text-xs text-slate-300">Processando o Reel…</p>
-                </div>
-              <% } %>
-              <% if (matter.error_message) { %>
+              </div>
+            <% } %>
+            <% if (matter.error_message) { %>
                 <p class="mt-2 text-[11px] text-amber-200"><%= matter.error_message %></p>
-              <% } %>
+            <% } %>
             </div>
           </div>
         <% } else { %>
@@ -606,8 +606,8 @@
                     </button>
                   <% }) %>
                 </div>
-              </div>
-            <% } %>
+          </div>
+        <% } %>
             <div class="p-2">
               <div id="matter-img-frame-preview" class="relative overflow-hidden rounded border border-slate-800 bg-slate-900/50">
                 <% if (canEdit && imagemFonteUrl) { %>
@@ -657,7 +657,7 @@
                     class="w-full rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40">
                     Aplicar enquadramento
                   </button>
-                </div>
+            </div>
               <% } %>
             </div>
           </div>
@@ -685,15 +685,15 @@
                 <button type="button" id="btn-recarregar-marca" class="w-full rounded border border-emerald-500/40 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/10">
                   ↻ Aplicar Minha marca
                 </button>
-              <% } else { %>
+            <% } else { %>
                 <p class="rounded border border-amber-500/20 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-200">Escolha uma imagem para aplicar a marca.</p>
-                <% if (matter.fonte_url) { %>
-                  <button type="button" id="btn-buscar-imagem-fonte"
+              <% if (matter.fonte_url) { %>
+                <button type="button" id="btn-buscar-imagem-fonte"
                     class="w-full rounded border border-sky-500/40 px-2.5 py-1.5 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/10">
-                    Buscar imagem da fonte
-                  </button>
-                <% } %>
+                  Buscar imagem da fonte
+                </button>
               <% } %>
+            <% } %>
 
               <button type="button" id="btn-sugerir-imagens"
                 class="w-full rounded border border-violet-500/40 px-2.5 py-1.5 text-[11px] font-semibold text-violet-200 hover:bg-violet-500/10">
@@ -702,8 +702,8 @@
 
               <label class="block cursor-pointer rounded border border-dashed border-slate-600 px-2.5 py-2 text-center text-[11px] font-medium text-slate-300 hover:border-emerald-500 hover:text-emerald-200">
                 Enviar imagem
-                <input id="matter-image-input" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" />
-              </label>
+              <input id="matter-image-input" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" />
+            </label>
 
               <div class="space-y-1.5 rounded-lg border border-slate-700/80 bg-slate-950/50 p-2">
                 <label for="matter-img-busca-q" class="block text-[10px] font-medium uppercase tracking-wide text-slate-500">
@@ -862,7 +862,7 @@
           <textarea id="ensinar-texto" rows="4"
             class="mt-1 w-full rounded border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
             placeholder="Ex.: em matéria de política, cite o partido junto do nome do parlamentar e não use adjetivo antes do cargo."></textarea>
-        </label>
+              </label>
         <p class="text-[10px] leading-relaxed text-slate-500">
           Pode escrever "em matéria assim, faça isso" — a IA reescreve como regra que se entende sozinha
           depois, sem guardar os nomes e fatos desta pauta.
@@ -872,7 +872,7 @@
           <p class="mb-1.5 text-[11px] font-semibold text-slate-300">Já aprendido</p>
           <div id="ensinar-lista" class="max-h-40 overflow-y-auto rounded border border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px] leading-relaxed text-slate-400">
             Carregando…
-          </div>
+            </div>
         </div>
 
         <p id="ensinar-status" class="hidden text-[11px] leading-relaxed"></p>

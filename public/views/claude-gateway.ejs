@@ -1,0 +1,120 @@
+<%- include('partials/app-start') %>
+
+  <main id="claude-gateway-page" class="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-8">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-violet-400">Administração</p>
+        <h1 class="mt-1 text-2xl font-semibold text-white">Sessão do Claude</h1>
+        <p class="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
+          Acompanhe o token-free-gateway, recupere a sessão e troque a conta usada pelo Sonnet 5.
+        </p>
+      </div>
+      <button type="button" id="claude-refresh"
+        class="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:text-white">
+        Atualizar status
+      </button>
+    </div>
+
+    <div id="claude-feedback" class="mt-5 hidden rounded-xl border px-4 py-3 text-sm" role="status" aria-live="polite"></div>
+
+    <section class="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Estado dos serviços">
+      <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Gateway</p>
+          <span id="gateway-badge" class="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-400">Verificando</span>
+        </div>
+        <p id="gateway-title" class="mt-4 font-semibold text-white">—</p>
+        <p id="gateway-detail" class="mt-1 break-words text-xs leading-relaxed text-slate-500">—</p>
+      </article>
+
+      <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Chrome isolado</p>
+          <span id="chrome-badge" class="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-400">Verificando</span>
+        </div>
+        <p id="chrome-title" class="mt-4 font-semibold text-white">—</p>
+        <p id="chrome-detail" class="mt-1 break-words text-xs leading-relaxed text-slate-500">—</p>
+      </article>
+
+      <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Conta Claude</p>
+          <span id="claude-badge" class="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-400">Verificando</span>
+        </div>
+        <p id="claude-title" class="mt-4 font-semibold text-white">—</p>
+        <p id="claude-detail" class="mt-1 break-words text-xs leading-relaxed text-slate-500">—</p>
+      </article>
+
+      <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Modelo</p>
+          <span id="model-badge" class="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-400">Verificando</span>
+        </div>
+        <p id="model-title" class="mt-4 break-all font-semibold text-white">—</p>
+        <p id="model-detail" class="mt-1 text-xs leading-relaxed text-slate-500">—</p>
+      </article>
+    </section>
+
+    <section id="claude-auth-progress" class="mt-5 hidden rounded-2xl border border-sky-500/30 bg-sky-500/10 p-5" aria-live="polite">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p id="claude-auth-label" class="text-xs font-semibold uppercase tracking-wide text-sky-300">Autorização</p>
+          <p id="claude-auth-message" class="mt-1 text-sm leading-relaxed text-sky-100"></p>
+        </div>
+        <button type="button" id="claude-login-done" data-action="continue" class="hidden rounded-lg bg-sky-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-50">
+          Já entrei, concluir
+        </button>
+      </div>
+    </section>
+
+    <section class="mt-5 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <div>
+        <h2 class="font-semibold text-white">Recuperação e manutenção</h2>
+        <p class="mt-1 text-sm text-slate-400">Se a geração parar, reinicie primeiro. Se a sessão tiver expirado, faça o login novamente.</p>
+      </div>
+
+      <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <button type="button" data-action="start" class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-left transition hover:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-50">
+          <span class="block text-sm font-semibold text-emerald-200">Iniciar gateway</span>
+          <span class="mt-1 block text-xs leading-relaxed text-slate-400">Use quando o serviço estiver offline.</span>
+        </button>
+        <button type="button" data-action="restart" class="rounded-xl border border-violet-500/30 bg-violet-500/10 p-4 text-left transition hover:border-violet-400 disabled:cursor-not-allowed disabled:opacity-50">
+          <span class="block text-sm font-semibold text-violet-200">Reiniciar gateway</span>
+          <span class="mt-1 block text-xs leading-relaxed text-slate-400">Reconecta o gateway ao Chrome e recarrega a sessão.</span>
+        </button>
+        <button type="button" data-action="test" class="rounded-xl border border-sky-500/30 bg-sky-500/10 p-4 text-left transition hover:border-sky-400 disabled:cursor-not-allowed disabled:opacity-50">
+          <span class="block text-sm font-semibold text-sky-200">Testar Sonnet 5</span>
+          <span class="mt-1 block text-xs leading-relaxed text-slate-400">Envia uma solicitação curta e confirma a resposta.</span>
+        </button>
+        <button type="button" data-action="authorize" class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-left transition hover:border-amber-400 disabled:cursor-not-allowed disabled:opacity-50">
+          <span class="block text-sm font-semibold text-amber-200">Entrar novamente</span>
+          <span class="mt-1 block text-xs leading-relaxed text-slate-400">Atualiza a sessão usando a conta já aberta no Chrome.</span>
+        </button>
+        <button type="button" data-action="switch" class="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-left transition hover:border-rose-400 disabled:cursor-not-allowed disabled:opacity-50">
+          <span class="block text-sm font-semibold text-rose-200">Trocar conta Claude</span>
+          <span class="mt-1 block text-xs leading-relaxed text-slate-400">Sai somente do Claude no Chrome isolado e pede outra conta.</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="mt-5 grid gap-4 lg:grid-cols-2">
+      <article class="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+        <h2 class="text-sm font-semibold text-emerald-200">Onde a sessão fica gravada</h2>
+        <p class="mt-2 text-sm leading-relaxed text-slate-400">
+          A credencial fica na pasta privada <code class="rounded bg-slate-950 px-1.5 py-0.5 text-xs text-slate-300">~/.token-free-gateway</code> do usuário que executa o Node. Ela não é salva no banco, no navegador do ViralizeAI nem dentro de <code class="rounded bg-slate-950 px-1.5 py-0.5 text-xs text-slate-300">public/</code>.
+        </p>
+        <p id="claude-security-status" class="mt-3 text-xs text-slate-500">Verificando a configuração de segurança…</p>
+      </article>
+
+      <article class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+        <h2 class="text-sm font-semibold text-amber-200">Importante em produção</h2>
+        <p class="mt-2 text-sm leading-relaxed text-slate-400">
+          A janela de login abre na máquina onde o processo Node está rodando. Neste computador ela abre aqui; em um servidor remoto, ela abrirá no servidor e precisará de acesso à área de trabalho dele.
+        </p>
+      </article>
+    </section>
+  </main>
+
+  <script id="claude-initial-status" type="application/json"><%- JSON.stringify(initialStatus).replace(/</g, '\\u003c') %></script>
+  <script src="/js/claude-gateway-admin.js"></script>
+<%- include('partials/app-end') %>

@@ -88,6 +88,10 @@
       <span class="sidebar-text">Minha marca</span>
     </a>
     <% if (loggedUser && loggedUser.nivel_acesso === 'administrador') { %>
+      <a href="/claude" title="Sessão do Claude" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= itemClass('/claude') %>">
+        <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4v1a5 5 0 0 0-3 4.58V16a4 4 0 0 0 4 4h1"/><path d="M12 2a4 4 0 0 1 4 4v1a5 5 0 0 1 3 4.58V16a4 4 0 0 1-4 4h-1"/><path d="M9 12h.01M15 12h.01M9 16c2 1.33 4 1.33 6 0"/></svg>
+        <span class="sidebar-text">Sessão Claude</span>
+      </a>
       <p class="sidebar-label mb-2 mt-5 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-600">Administração</p>
       <a href="/usuarios" title="Usuários" class="sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 transition <%= itemClass('/usuarios') %>">
         <svg class="h-4 w-4 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>

@@ -1463,10 +1463,10 @@
 
     const variasMaterias = Array.isArray(mensagem.materias) && mensagem.materias.length >= 2;
     if (!variasMaterias) {
-      const corpo = document.createElement('div');
+    const corpo = document.createElement('div');
       corpo.className = 'mia-msg-ai-body';
-      renderTexto(corpo, mensagem.content);
-      wrap.appendChild(corpo);
+    renderTexto(corpo, mensagem.content);
+    wrap.appendChild(corpo);
     }
 
     const pautas = blocoPautas(mensagem.pautas || []);
@@ -1741,10 +1741,10 @@
       state.modo === 'pautas'
         ? `Procurando matérias sobre o tema${janela ? ` — ${janela.toLowerCase()}` : ''}…`
         : state.pesquisarWeb
-          ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''}…`
+        ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''}…`
           : linksPedido.length > 1
             ? 'Lendo ' + Math.min(linksPedido.length, MAX_LINKS_LOTE) + ' links e criando uma matéria para cada…'
-            : 'Escrevendo…'
+        : 'Escrevendo…'
     );
 
     el.mensagens.appendChild(blocoUsuario({ content: texto }));

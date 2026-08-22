@@ -15,6 +15,7 @@
     "gateway:auth": "bun .tools/token-free-gateway/index.ts webauth",
     "gateway:start": "bun .tools/token-free-gateway/index.ts start",
     "gateway:stop": "bun .tools/token-free-gateway/index.ts stop",
+    "gateway:restart": "bun .tools/token-free-gateway/index.ts restart",
     "gateway:status": "bun .tools/token-free-gateway/index.ts status",
     "check:token-free": "node scripts/check-token-free-gateway.js",
     "test:token-free": "node --test --experimental-test-isolation=none tests/tokenFreeGatewayService.test.js",

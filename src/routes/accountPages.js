@@ -4,6 +4,7 @@ const { loadCurrentUser, requireAdmin } = require('../middleware/accessControl')
 const { uploadLogo } = require('../middleware/uploadLogo');
 const profileController = require('../controllers/profileController');
 const usersController = require('../controllers/usersController');
+const tokenFreeAdminController = require('../controllers/tokenFreeAdminController');
 
 const router = express.Router();
 
@@ -29,5 +30,13 @@ router.post('/usuarios/:id/remover', requireAuth, requireAdmin, usersController.
 
 const midiasController = require('../controllers/midiasController');
 router.get('/midias', requireAuth, requireAdmin, midiasController.index);
+
+router.get('/claude', requireAuth, requireAdmin, tokenFreeAdminController.index);
+router.get('/api/admin/claude-gateway/status', requireAuth, requireAdmin, tokenFreeAdminController.status);
+router.post('/api/admin/claude-gateway/start', requireAuth, requireAdmin, tokenFreeAdminController.iniciar);
+router.post('/api/admin/claude-gateway/restart', requireAuth, requireAdmin, tokenFreeAdminController.reiniciar);
+router.post('/api/admin/claude-gateway/authorize', requireAuth, requireAdmin, tokenFreeAdminController.autorizar);
+router.post('/api/admin/claude-gateway/authorize/continue', requireAuth, requireAdmin, tokenFreeAdminController.continuarAutorizacao);
+router.post('/api/admin/claude-gateway/test', requireAuth, requireAdmin, tokenFreeAdminController.testar);
 
 module.exports = router;
