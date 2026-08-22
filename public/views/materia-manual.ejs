@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260821batchlinks1" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260821batchlinks2" />
 
   <main class="mia-chat" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -83,7 +83,7 @@
               <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg></span>
               <span><span class="mia-chat-prompt-label">Link</span><span class="mia-chat-prompt-text">Faça uma matéria deste link</span></span>
             </button>
-            <button type="button" id="chat-varios-links" class="mia-chat-prompt" title="Cole até 12 links, um por linha">
+            <button type="button" id="chat-varios-links" class="chat-varios-links mia-chat-prompt" title="Cole até 12 links, um por linha">
               <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/><path d="M5 4h4M7 2v4"/></svg></span>
               <span><span class="mia-chat-prompt-label">Vários links</span><span class="mia-chat-prompt-text">Criar uma matéria por link</span></span>
             </button>
@@ -181,6 +181,14 @@
                     </section>
                   </div>
                 </details>
+
+                <button type="button" class="chat-varios-links mia-chat-chip" title="Cole até 12 links e gere uma matéria separada para cada um">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/>
+                    <path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/>
+                  </svg>
+                  Vários links
+                </button>
 
                 <div class="mia-chat-seg" role="group" aria-label="O que a IA deve fazer">
                   <button type="button" data-chat-modo="escrever" aria-pressed="true"
@@ -441,6 +449,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260821batchlinks1"></script>
+  <script src="/js/materia-chat.js?v=20260821batchlinks2"></script>
   <script src="/js/materia-chat-extras.js?v=20260820facebookextract3"></script>
 <%- include('partials/app-end') %>

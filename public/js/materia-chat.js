@@ -17,7 +17,7 @@
     vazio: document.getElementById('chat-vazio'),
     input: document.getElementById('chat-input'),
     linksDetectados: document.getElementById('chat-links-detectados'),
-    variosLinks: document.getElementById('chat-varios-links'),
+    variosLinks: document.querySelectorAll('.chat-varios-links'),
     enviar: document.getElementById('chat-enviar'),
     voz: document.getElementById('chat-voz'),
     parar: document.getElementById('chat-parar'),
@@ -1955,16 +1955,18 @@
     }
   });
 
-  el.variosLinks?.addEventListener('click', () => {
-    definirModo('escrever');
-    if (!String(el.input.value || '').trim()) {
-      el.input.value = 'Crie uma matéria separada para cada link:\n';
-    }
-    autoGrowInput();
-    atualizarLinksDetectados();
-    setStatus('Cole até 12 links, um por linha, e clique em enviar.');
-    el.input.focus();
-    el.input.setSelectionRange(el.input.value.length, el.input.value.length);
+  el.variosLinks?.forEach((botao) => {
+    botao.addEventListener('click', () => {
+      definirModo('escrever');
+      if (!String(el.input.value || '').trim()) {
+        el.input.value = 'Crie uma matéria separada para cada link:\n';
+      }
+      autoGrowInput();
+      atualizarLinksDetectados();
+      setStatus('Cole até 12 links, um por linha, e clique em enviar.');
+      el.input.focus();
+      el.input.setSelectionRange(el.input.value.length, el.input.value.length);
+    });
   });
 
   document.querySelectorAll('.chat-exemplo').forEach((btn) => {

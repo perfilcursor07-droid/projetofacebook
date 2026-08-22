@@ -530,6 +530,7 @@ async function extrairFontesDeLinks(
                 );
               }
             }
+            fonteSalva.urlOriginal = raw;
             fontes.push(fonteSalva);
             console.info(
               `[materia-chat] ${tipo}: post #${postSalvo.id} recuperado da Biblioteca`
@@ -609,6 +610,7 @@ async function extrairFontesDeLinks(
         veiculo: social.veiculo || rotulo,
         titulo: social.titulo || texto.slice(0, 120),
         url: social.url || link,
+        urlOriginal: raw,
         resumo: texto.slice(0, 400),
         trecho: recortarTranscricao(trecho, 9000),
         ehRedeSocial: true,
@@ -767,6 +769,7 @@ async function extrairFontesDeArtigos(urls, { onPasso } = {}) {
       veiculoHost: meta?.veiculoHost || host,
       titulo: meta?.titulo || `Matéria — ${veiculo}`,
       url: meta?.url || raw,
+      urlOriginal: raw,
       resumo: (resumo || corpo).slice(0, 400),
       trecho: corpo.slice(0, 9000),
       imagem: meta?.imagem || null,
@@ -1244,7 +1247,10 @@ function serializarMensagem(row) {
   // mas o navegador só precisa dos metadados exibidos no painel de fontes.
   const fontesVisiveis = (Array.isArray(guardadas) ? guardadas : [])
     .filter((f) => f && !f.ehPauta)
-    .map(({ trecho, ...fonte }) => fonte);
+    .map(({ trecho, ...fonte }) => ({
+      ...fonte,
+      url: fonte.urlOriginal || fonte.url || null,
+    }));
   const multiplas = row.role === 'assistant' ? separarMaterias(conteudo) : [];
   const salvos = parseJson(row.matter_ids, {}) || {};
 
@@ -2590,7 +2596,9 @@ async function responder({
       const instrucaoExtra = pedidoSemUrls();
       const urlsSelecionadas = new Set(urlsFonte.map(normalizarUrlComparacao).filter(Boolean));
       const fontesDoLote = (urlsSelecionadas.size
-        ? fontes.filter((f) => urlsSelecionadas.has(normalizarUrlComparacao(f?.url)))
+        ? fontes.filter((f) =>
+            urlsSelecionadas.has(normalizarUrlComparacao(f?.urlOriginal || f?.url))
+          )
         : fontes
       ).slice(0, limiteMateriasLote || urlsFonte.length || fontes.length);
       for (let indiceFonte = 0; indiceFonte < fontesDoLote.length; indiceFonte += 1) {
@@ -2631,7 +2639,17 @@ async function responder({
           periodoPesquisaAmpliada: periodoResgateUsado,
           onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
         });
-        partes.push(`${marcador}\n${textoMateria}`);
+        let textoMateriaFinal = textoMateria;
+        if (!usarPesquisa) {
+          textoMateriaFinal = montarRespostaComRodapeOffline(textoMateria, [fonteAtual]);
+        } else if (fonteAtual.veiculo) {
+          textoMateriaFinal = garantirCitacaoDoVeiculo(
+            textoMateria,
+            [fonteAtual],
+            politicasEditor
+          ).texto;
+        }
+        partes.push(`${marcador}\n${textoMateriaFinal}`);
       }
       resposta = partes.join('\n\n');
     } else {
@@ -2789,7 +2807,12 @@ async function responder({
 
   // Crédito da fonte no texto
   if (ehMateriaGerada && fontesColadas.length) {
-    if (soReescritaDoLink) {
+    if (pedidoEmLote) {
+      registrarPasso({
+        kind: 'fontes',
+        texto: 'Fonte e crédito anexados separadamente em cada matéria do lote.',
+      });
+    } else if (soReescritaDoLink) {
       resposta = montarRespostaComRodapeOffline(resposta, fontes);
       registrarPasso({
         kind: 'fontes',
