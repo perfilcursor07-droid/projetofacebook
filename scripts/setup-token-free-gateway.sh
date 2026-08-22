@@ -4,9 +4,11 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOL_DIR="${TOKEN_FREE_GATEWAY_SOURCE_DIR:-${PROJECT_ROOT}/.tools/token-free-gateway}"
 PATCH_FILE="${PROJECT_ROOT}/patches/token-free-gateway-production.patch"
+SESSION_PATCH_FILE="${PROJECT_ROOT}/patches/token-free-gateway-session-portability.patch"
 PINNED_REVISION="769399b720f2826038d91df4cb6b5236735c220c"
 REPOSITORY="https://github.com/andeya/token-free-gateway.git"
 MARKER_FILE="${TOOL_DIR}/.viralizeai-production-patch"
+SESSION_MARKER_FILE="${TOOL_DIR}/.viralizeai-session-portability-v1"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "Este instalador foi preparado para o servidor Linux/CloudPanel."
@@ -56,6 +58,16 @@ if [[ ! -f "${MARKER_FILE}" ]]; then
     exit 1
   fi
   printf '%s\n' "${PINNED_REVISION}" > "${MARKER_FILE}"
+fi
+
+if [[ ! -f "${SESSION_MARKER_FILE}" ]]; then
+  if git -C "${TOOL_DIR}" apply --check "${SESSION_PATCH_FILE}"; then
+    git -C "${TOOL_DIR}" apply "${SESSION_PATCH_FILE}"
+  elif ! git -C "${TOOL_DIR}" apply --reverse --check "${SESSION_PATCH_FILE}"; then
+    echo "Não foi possível aplicar o patch de portabilidade da sessão do Claude."
+    exit 1
+  fi
+  printf '%s\n' "applied" > "${SESSION_MARKER_FILE}"
 fi
 
 "${BUN_BIN}" install --cwd "${TOOL_DIR}" --frozen-lockfile
