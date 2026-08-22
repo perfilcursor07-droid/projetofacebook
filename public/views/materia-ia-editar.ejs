@@ -475,12 +475,12 @@
                 <% if (ult && ult.label) { %>
                   <button
                     type="button"
-                    id="btn-agendar-mais-30"
+                    id="btn-agendar-mais-10"
                     class="w-full rounded border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20"
                     data-slot="<%= proxLocal || '' %>"
-                    title="Preenche o horário com 30 minutos após o último agendamento das Matérias"
+                    title="Preenche o horário com 10 minutos após o último agendamento das Matérias"
                   >
-                    +30 min após o último<%= proxLabel ? ' → ' + proxLabel : '' %>
+                    +10 min após o último<%= proxLabel ? ' → ' + proxLabel : '' %>
                   </button>
                   <p id="matter-ultimo-agendamento" class="text-[10px] leading-snug text-slate-500">
                     Última matéria agendada:
@@ -934,5 +934,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260820freecrop"></script>
+  <script src="/js/materia-ia-editar.js?v=20260821schedule10"></script>
 <%- include('partials/app-end') %>

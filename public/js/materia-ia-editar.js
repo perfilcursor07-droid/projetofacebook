@@ -1239,7 +1239,7 @@
 
   const scheduleInput = document.getElementById('matter-schedule');
   if (scheduleInput) {
-    // Prioridade: horário já agendado / pré-agenda da Biblioteca → +30 → agora+10.
+    // Prioridade: horário já agendado / pré-agenda da Biblioteca → +10 → agora+10.
     if (!scheduleInput.value) {
       if (cfg.horarioAtualAgendado?.local) {
         scheduleInput.value = cfg.horarioAtualAgendado.local;
@@ -1253,15 +1253,15 @@
     }
   }
 
-  document.getElementById('btn-agendar-mais-30')?.addEventListener('click', () => {
-    const btn = document.getElementById('btn-agendar-mais-30');
+  document.getElementById('btn-agendar-mais-10')?.addEventListener('click', () => {
+    const btn = document.getElementById('btn-agendar-mais-10');
     const slot = btn?.dataset?.slot || cfg.proximoSlotLocal;
     if (!slot || !scheduleInput) {
-      setStatus('Não há matéria agendada para calcular +30 min.', true);
+      setStatus('Não há matéria agendada para calcular +10 min.', true);
       return;
     }
     scheduleInput.value = slot;
-    setStatus('Horário preenchido: 30 min após a última matéria agendada');
+    setStatus('Horário preenchido: 10 min após a última matéria agendada');
     scheduleInput.focus();
   });
 
