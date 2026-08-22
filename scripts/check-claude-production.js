@@ -11,6 +11,7 @@ const AUTH_FILE = process.env.TFG_STORE_PATH || path.join(
   '.token-free-gateway',
   'auth-profiles.json'
 );
+const GATEWAY_LOG = path.join(path.dirname(AUTH_FILE), 'gateway.log');
 
 function portaAberta(porta, timeout = 1000) {
   return new Promise((resolve) => {
@@ -55,6 +56,20 @@ function lerPerfilSemSegredos() {
   }
 }
 
+function ultimosLogsGateway() {
+  try {
+    return fs.readFileSync(GATEWAY_LOG, 'utf8')
+      .split(/\r?\n/)
+      .filter((line) => /ClaudeWeb|chat-completions|session|not found|error/i.test(line))
+      .slice(-30)
+      .map((line) => line
+        .replace(/sk-ant-sid0[12]-[A-Za-z0-9_-]+/g, '[SESSION_REMOVIDA]')
+        .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [CHAVE_REMOVIDA]'));
+  } catch {
+    return [];
+  }
+}
+
 async function testarCdp() {
   try {
     const response = await fetch('http://127.0.0.1:9222/json/version', {
@@ -94,6 +109,7 @@ async function main() {
   const report = {
     usuario: os.userInfo().username,
     authFile: AUTH_FILE,
+    gatewayLog: GATEWAY_LOG,
     auth,
     display: process.env.DISPLAY || null,
     desktopNoVnc: desktop,
@@ -110,6 +126,7 @@ async function main() {
       modelo: gateway.MODELO,
       modeloListado: models.some((model) => model?.id === gateway.MODELO),
       erroModelos: modelsError,
+      ultimosLogs: ultimosLogsGateway(),
     },
   };
 

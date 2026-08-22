@@ -12,6 +12,13 @@ const TOOL_DIR = path.resolve(
   process.env.TOKEN_FREE_GATEWAY_SOURCE_DIR || path.join(PROJECT_ROOT, '.tools/token-free-gateway')
 );
 const ENTRY_FILE = path.join(TOOL_DIR, 'index.ts');
+const CHROME_LINUX_CANDIDATES = [
+  '/opt/google/chrome/google-chrome',
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+];
 
 function localizarBun() {
   const configurado = String(process.env.BUN_PATH || '').trim();
@@ -251,6 +258,69 @@ function assertCli() {
   throw err;
 }
 
+async function aguardarChromeCdp(timeout = 20_000) {
+  const limite = Date.now() + timeout;
+  while (Date.now() < limite) {
+    try {
+      const response = await axios.get('http://127.0.0.1:9222/json/version', { timeout: 1_000 });
+      if (response.status === 200) return true;
+    } catch {
+      // O Chrome ainda está iniciando.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return false;
+}
+
+async function iniciarChromeVisualServidor() {
+  const chromePath = CHROME_LINUX_CANDIDATES.find((candidate) => fs.existsSync(candidate));
+  if (!chromePath) {
+    const err = new Error('Google Chrome/Chromium não encontrado no servidor.');
+    err.status = 503;
+    throw err;
+  }
+
+  const userDataDir = path.join(os.homedir(), '.config', 'chrome-tfg-debug');
+  fs.mkdirSync(userDataDir, { recursive: true });
+  await fsp.mkdir(DATA_DIR, { recursive: true });
+  const chromeLog = path.join(DATA_DIR, 'chrome.log');
+  const logFd = fs.openSync(chromeLog, 'a');
+  const flags = [
+    '--remote-debugging-port=9222',
+    `--user-data-dir=${userDataDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-background-networking',
+    '--disable-sync',
+    '--disable-translate',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--password-store=basic',
+    '--remote-allow-origins=*',
+    '--window-size=1440,1000',
+    'https://claude.ai/new',
+  ];
+
+  try {
+    const chrome = spawn(chromePath, flags, {
+      cwd: os.homedir(),
+      env: process.env,
+      detached: true,
+      windowsHide: true,
+      stdio: ['ignore', logFd, logFd],
+    });
+    chrome.unref();
+  } finally {
+    fs.closeSync(logFd);
+  }
+
+  if (!(await aguardarChromeCdp())) {
+    const err = new Error(`Chrome visual não iniciou no DISPLAY ${process.env.DISPLAY}. Consulte ${chromeLog}.`);
+    err.status = 502;
+    throw err;
+  }
+}
+
 async function comandoGateway(command) {
   assertCli();
   return executar(BUN_PATH, [ENTRY_FILE, command], { cwd: TOOL_DIR });
@@ -335,6 +405,17 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
         timeout: COMMAND_TIMEOUT_MS,
       });
 
+      // Em produção, abre o Chrome no Xvfb antes do webauth. Assim o wizard
+      // encontra o CDP pronto, pula a confirmação genérica de terminal e
+      // aguarda diretamente o login do Claude no desktop privado.
+      if (process.platform === 'linux' && process.env.DISPLAY) {
+        authJob = {
+          ...authJob,
+          message: 'Iniciando o Chrome no desktop privado…',
+        };
+        await iniciarChromeVisualServidor();
+      }
+
       const child = spawn(BUN_PATH, [ENTRY_FILE, 'webauth'], {
         cwd: TOOL_DIR,
         env: process.env,
@@ -343,7 +424,8 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
       });
       activeAuthChild = child;
       let buffer = '';
-      let detectouPromptLogin = false;
+      let detectouPromptInicial = false;
+      let detectouPromptClaude = false;
       let enviouClaude = false;
       let concluida = false;
 
@@ -361,12 +443,20 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
 
       const analisar = (chunk) => {
         buffer = `${buffer}${chunk.toString('utf8')}`.slice(-MAX_OUTPUT_CHARS);
-        if (!detectouPromptLogin && /Please log(?:in| in) to Claude/i.test(buffer)) {
-          detectouPromptLogin = true;
+        if (!detectouPromptInicial && /Please log in[\s\S]*press Enter to continue/i.test(buffer)) {
+          detectouPromptInicial = true;
+          authJob = {
+            ...authJob,
+            status: 'waiting_login',
+            message: 'Chrome aberto no desktop privado. Entre no Claude e depois clique em “Já entrei, concluir”.',
+          };
+        }
+        if (!detectouPromptClaude && /Please log(?:in| in) to Claude/i.test(buffer)) {
+          detectouPromptClaude = true;
           authJob = {
             ...authJob,
             status: 'waiting_browser_login',
-            message: 'Chrome aberto no desktop privado. Entre no Claude; a confirmação será detectada automaticamente.',
+            message: 'Aguardando o Claude confirmar a sessão no Chrome…',
           };
         }
         if (!enviouClaude && /Enter selection:/i.test(buffer)) {
