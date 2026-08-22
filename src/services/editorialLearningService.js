@@ -11,20 +11,27 @@ const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || env.deepseekModel || 'deeps
  * e repetitivas — entram como `auxiliar`, então seguem o mesmo roteamento do
  * resto do sistema (DeepSeek por padrão; Claude só se CLAUDE_TAREFAS incluir).
  */
-function claudeParaAuxiliar() {
+function provedorAlternativoParaAuxiliar() {
   try {
-    return require('./deepseekService').usarClaude('auxiliar');
+    return require('./deepseekService').usarProvedorAlternativo('auxiliar');
   } catch {
     return false;
   }
 }
 
 function iaConfigurada() {
-  return claudeParaAuxiliar() ? Boolean(env.anthropicApiKey) : Boolean(env.deepseekApiKey);
+  return provedorAlternativoParaAuxiliar() || Boolean(env.deepseekApiKey);
 }
 
 async function chamarIaJson(messages, { timeout = 90_000 } = {}) {
-  if (claudeParaAuxiliar()) {
+  const deepseekService = require('./deepseekService');
+  if (deepseekService.usarTokenFreeGateway('auxiliar')) {
+    return require('./tokenFreeGatewayService').chatCompletion(messages, {
+      temperature: 0.2,
+      maxTokens: 1500,
+    });
+  }
+  if (deepseekService.usarClaude('auxiliar')) {
     return require('./claudeService').chatCompletion(messages, {
       json: true,
       tarefa: 'auxiliar',
@@ -47,7 +54,6 @@ async function chamarIaJson(messages, { timeout = 90_000 } = {}) {
   });
   return data?.choices?.[0]?.message?.content || '';
 }
-
 const MAX_TRECHO = 4000;
 const DISTILL_EVERY = 3;
 const MAX_MEMORIAS_CHAT = 20;

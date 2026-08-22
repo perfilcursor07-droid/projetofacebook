@@ -17,8 +17,16 @@ const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   databaseUrl: process.env.DATABASE_URL || 'mysql://root:@localhost:3306/clipador',
   sessionSecret: process.env.SESSION_SECRET || 'dev-session-secret-change-me',
-  /** deepseek | claude — quem escreve as materias. */
+  /** deepseek | claude | token-free-gateway — quem escreve as materias. */
   aiProvider: String(process.env.AI_PROVIDER || 'deepseek').toLowerCase(),
+  /** Gateway OpenAI-compatible local, conectado ao Chrome/CDP do token-free-gateway. */
+  tokenFreeGateway: {
+    baseUrl: String(process.env.TFG_BASE_URL || 'http://127.0.0.1:3456/v1').replace(/\/+$/, ''),
+    apiKey: process.env.TFG_API_KEY || '',
+    // O catálogo atual do token-free-gateway expõe Claude Sonnet 4.6, não Sonnet 5.
+    claudeModel: process.env.TFG_CLAUDE_MODEL || 'claude-sonnet-4-6',
+    timeoutMs: Number(process.env.TFG_TIMEOUT_MS) || 300_000,
+  },
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
   /** Modelo caro: so a redacao da materia. */
   claudeWriterModel: process.env.CLAUDE_WRITER_MODEL || 'claude-sonnet-5',

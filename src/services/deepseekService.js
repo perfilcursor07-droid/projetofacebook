@@ -91,6 +91,17 @@ const TAREFAS_NO_CLAUDE = new Set(
     .filter(Boolean)
 );
 
+/**
+ * Tarefas que usam o gateway local. O padrão cobre tudo para que o projeto
+ * funcione sem DEEPSEEK_API_KEY quando AI_PROVIDER=token-free-gateway.
+ */
+const TAREFAS_NO_GATEWAY = new Set(
+  String(process.env.TFG_TAREFAS || 'redacao,conversa,auxiliar')
+    .toLowerCase()
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+);
 const TODAS_AS_TAREFAS = ['redacao', 'conversa', 'auxiliar'];
 
 function claudeDisponivel() {
@@ -108,6 +119,24 @@ function usarClaude(tarefa = 'redacao') {
   return TAREFAS_NO_CLAUDE.has(String(tarefa || 'auxiliar').toLowerCase());
 }
 
+function gatewayDisponivel() {
+  if (String(env.aiProvider || '').toLowerCase() !== 'token-free-gateway') return false;
+  if (!require('./tokenFreeGatewayService').isConfigured()) {
+    console.warn('[ia] AI_PROVIDER=token-free-gateway, mas TFG_BASE_URL/TFG_CLAUDE_MODEL não foram configurados.');
+    return false;
+  }
+  return true;
+}
+
+/** Esta chamada específica vai para o Claude pelo token-free-gateway? */
+function usarTokenFreeGateway(tarefa = 'redacao') {
+  if (!gatewayDisponivel()) return false;
+  return TAREFAS_NO_GATEWAY.has(String(tarefa || 'auxiliar').toLowerCase());
+}
+
+function usarProvedorAlternativo(tarefa = 'redacao') {
+  return usarClaude(tarefa) || usarTokenFreeGateway(tarefa);
+}
 /**
  * Qual perfil de custo a chamada merece. O chamador pode mandar `tarefa`
  * explicitamente; sem isso, o contrato de JSON da materia ("materia" +
@@ -130,18 +159,21 @@ function inferirTarefa(messages, tarefaPedida) {
  * Claude — com a divisão padrão ela continua sendo necessária.
  */
 function assertDeepseek() {
-  if (claudeDisponivel() && TODAS_AS_TAREFAS.every((t) => TAREFAS_NO_CLAUDE.has(t))) return;
+  if (TODAS_AS_TAREFAS.every((tarefa) => usarProvedorAlternativo(tarefa))) return;
   if (!env.deepseekApiKey) {
-    const err = new Error(
-      String(env.aiProvider || '').toLowerCase() === 'claude'
-        ? 'AI_PROVIDER=claude, mas ANTHROPIC_API_KEY não está configurada no .env'
-        : 'DEEPSEEK_API_KEY não configurada no .env'
-    );
+    const provider = String(env.aiProvider || '').toLowerCase();
+    let mensagem = 'DEEPSEEK_API_KEY não configurada no .env';
+    if (provider === 'claude') {
+      mensagem = 'AI_PROVIDER=claude, mas ANTHROPIC_API_KEY não está configurada no .env';
+    } else if (provider === 'token-free-gateway') {
+      mensagem =
+        'AI_PROVIDER=token-free-gateway requer o gateway ativo e TFG_TAREFAS=redacao,conversa,auxiliar; ou configure DEEPSEEK_API_KEY para as tarefas que ficarem fora do gateway.';
+    }
+    const err = new Error(mensagem);
     err.status = 500;
     throw err;
   }
 }
-
 /** Instruções de marcação do título quando Minha marca = Urgente alerta. */
 function blocoTituloMarcaArte(marcaModeloArte) {
   const { normalizeArtModel } = require('./editorialCardModels');
@@ -206,6 +238,9 @@ async function chatCompletion(
   { temperature = 0.78, json = true, thinking = false, model = DEEPSEEK_MODEL, tarefa = null } = {}
 ) {
   const tarefaResolvida = inferirTarefa(messages, tarefa);
+  if (usarTokenFreeGateway(tarefaResolvida)) {
+    return require('./tokenFreeGatewayService').chatCompletion(messages, { temperature });
+  }
   if (usarClaude(tarefaResolvida)) {
     return require('./claudeService').chatCompletion(messages, {
       json,
@@ -266,6 +301,13 @@ async function chatCompletionStream(
     tarefa = null,
   } = {}
 ) {
+  if (usarTokenFreeGateway(tarefa || 'conversa')) {
+    return require('./tokenFreeGatewayService').chatCompletionStream(messages, {
+      temperature,
+      onDelta,
+      timeout,
+    });
+  }
   if (usarClaude(tarefa || 'conversa')) {
     return require('./claudeService').chatCompletionStream(messages, {
       onDelta,
@@ -3918,5 +3960,7 @@ module.exports = {
   TITULO_TOMES,
   assertDeepseek,
   usarClaude,
+  usarTokenFreeGateway,
+  usarProvedorAlternativo,
   MAX_MATERIA_CHARS,
 };
