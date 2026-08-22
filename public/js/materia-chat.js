@@ -4,6 +4,7 @@
   const API = '/api/materias-ia/chat';
   const STORAGE_KEY = 'mia_chat_atual';
   const MAX_PAUTAS_LOTE = 8;
+  const MAX_LINKS_LOTE = 12;
 
   const el = {
     lista: document.getElementById('chat-lista'),
@@ -15,6 +16,8 @@
     mensagens: document.getElementById('chat-mensagens'),
     vazio: document.getElementById('chat-vazio'),
     input: document.getElementById('chat-input'),
+    linksDetectados: document.getElementById('chat-links-detectados'),
+    variosLinks: document.getElementById('chat-varios-links'),
     enviar: document.getElementById('chat-enviar'),
     voz: document.getElementById('chat-voz'),
     parar: document.getElementById('chat-parar'),
@@ -54,6 +57,26 @@
     ancorarTopo: false,
     ancoradoAtivo: false,
   };
+
+  function urlsDoTexto(texto) {
+    const encontradas = String(texto || '').match(/https?:\/\/[^\s<>"']+/gi) || [];
+    return [...new Set(encontradas.map((url) => url.replace(/[),.;!?]+$/, '')))];
+  }
+
+  function atualizarLinksDetectados() {
+    if (!el.linksDetectados) return;
+    const total = urlsDoTexto(el.input?.value).length;
+    if (total < 2) {
+      el.linksDetectados.classList.add('hidden');
+      el.linksDetectados.textContent = '';
+      return;
+    }
+    el.linksDetectados.classList.remove('hidden');
+    el.linksDetectados.textContent =
+      total > MAX_LINKS_LOTE
+        ? total + ' links detectados · serão usados somente os primeiros ' + MAX_LINKS_LOTE
+        : total + ' links detectados · será criada uma matéria separada para cada link';
+  }
 
   /** URLs das pautas que um pedido de reescrita aponta (linhas "Link: ..."). */
   function urlsDoPedido(texto) {
@@ -757,151 +780,212 @@
   }
 
   /**
-   * Resposta com várias matérias: um cartão por matéria, com botão próprio,
-   * além de "Salvar todas". Cada uma vira um rascunho separado.
+   * Resposta com várias matérias: exibe somente uma lista compacta e permite
+   * escolher quais itens serão salvos como rascunhos separados.
    */
   function areaSalvarVarias(mensagem, container) {
+    const materias = Array.isArray(mensagem.materias) ? mensagem.materias : [];
     const box = document.createElement('div');
     box.className = 'mia-msg-panel mt-1';
 
-    const materias = mensagem.materias || [];
     const info = document.createElement('p');
-    info.className = 'text-xs text-slate-300';
-    info.textContent = `A IA escreveu ${materias.length} matérias. Salve todas de uma vez ou uma por uma.`;
+    info.className = 'text-sm font-medium text-white';
+    info.textContent = materias.length + ' matérias criadas';
     box.appendChild(info);
 
-    const topo = document.createElement('div');
-    topo.className = 'mt-2 flex flex-wrap items-center gap-2';
-    const salvarTodas = criarBotao(
-      `Salvar as ${materias.length} como rascunho`,
-      'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400'
+    const ajuda = document.createElement('p');
+    ajuda.className = 'mt-1 text-xs text-slate-400';
+    ajuda.textContent = 'Confira o título e a prévia, marque as que deseja guardar e salve como rascunho.';
+    box.appendChild(ajuda);
+
+    const selecionados = new Set(
+      materias
+        .filter((materia) => materia.salvavel && !materia.matterId)
+        .map((materia) => Number(materia.indice))
+    );
+    const controles = new Map();
+
+    const ferramentas = document.createElement('div');
+    ferramentas.className = 'mt-3 flex flex-wrap items-center gap-2';
+    const selecionarTodas = criarBotao(
+      'Selecionar todas',
+      'rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] font-semibold text-slate-200 hover:border-emerald-500'
+    );
+    const limparSelecao = criarBotao(
+      'Limpar seleção',
+      'rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] font-semibold text-slate-400 hover:border-slate-500 hover:text-white'
+    );
+    ferramentas.appendChild(selecionarTodas);
+    ferramentas.appendChild(limparSelecao);
+    box.appendChild(ferramentas);
+
+    const lista = document.createElement('div');
+    lista.className = 'mt-3 space-y-2';
+    box.appendChild(lista);
+
+    const rodape = document.createElement('div');
+    rodape.className = 'mt-3 flex flex-wrap items-center gap-2';
+    const salvarSelecionadas = criarBotao(
+      '',
+      'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50'
     );
     const credito = document.createElement('input');
     credito.type = 'text';
     credito.placeholder = 'Crédito da foto (opcional)';
     credito.className =
       'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none sm:w-56';
-    const avisoTodas = document.createElement('span');
-    avisoTodas.className = 'text-xs text-slate-400';
-    topo.appendChild(salvarTodas);
-    topo.appendChild(credito);
-    topo.appendChild(avisoTodas);
-    box.appendChild(topo);
+    const aviso = document.createElement('span');
+    aviso.className = 'w-full text-xs text-slate-400';
+    rodape.appendChild(salvarSelecionadas);
+    rodape.appendChild(credito);
+    rodape.appendChild(aviso);
+    box.appendChild(rodape);
 
-    const lista = document.createElement('div');
-    lista.className = 'mt-3 space-y-2';
-    box.appendChild(lista);
-
-    const marcarSalva = (linhaBtn, avisoEl, matterId) => {
-      linhaBtn.disabled = true;
-      linhaBtn.textContent = 'Rascunho salvo';
-      linhaBtn.classList.add('opacity-60');
-      avisoEl.replaceChildren();
-      const link = document.createElement('a');
-      link.href = `/materias-ia/${matterId}`;
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.className = 'text-emerald-300 underline hover:text-emerald-200';
-      link.textContent = `Rascunho #${matterId} — abrir`;
-      avisoEl.appendChild(link);
+    const atualizarAcao = () => {
+      const total = selecionados.size;
+      salvarSelecionadas.disabled = total === 0;
+      salvarSelecionadas.textContent =
+        total === 1 ? 'Salvar 1 selecionada' : 'Salvar ' + total + ' selecionadas';
     };
 
-    const controles = [];
+    const linkRascunho = (matterId) => {
+      const abrir = document.createElement('a');
+      abrir.href = '/materias-ia/' + matterId;
+      abrir.target = '_blank';
+      abrir.rel = 'noopener';
+      abrir.className = 'text-[11px] font-medium text-emerald-300 underline hover:text-emerald-200';
+      abrir.textContent = 'Rascunho #' + matterId + ' — abrir';
+      abrir.addEventListener('click', (event) => event.stopPropagation());
+      return abrir;
+    };
 
-    materias.forEach((materia, i) => {
-      const linha = document.createElement('div');
-      linha.className =
-        'flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2';
+    const marcarSalva = (indice, matterId) => {
+      const controle = controles.get(Number(indice));
+      if (!controle) return;
+      selecionados.delete(Number(indice));
+      controle.check.checked = false;
+      controle.check.disabled = true;
+      controle.card.classList.add('opacity-60');
+      controle.estado.replaceChildren(linkRascunho(matterId));
+      atualizarAcao();
+    };
 
-      const txt = document.createElement('span');
-      txt.className = 'min-w-0 flex-1';
-      const t = document.createElement('span');
-      t.className = 'block text-xs font-medium text-white';
-      t.textContent = `${i + 1}. ${materia.titulo}`;
-      txt.appendChild(t);
+    materias.forEach((materia, posicao) => {
+      const card = document.createElement('label');
+      card.className =
+        'flex cursor-pointer items-start gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-3 transition hover:border-slate-700';
+
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'mt-0.5 h-4 w-4 shrink-0 accent-emerald-500';
+      check.checked = selecionados.has(Number(materia.indice));
+      check.disabled = !materia.salvavel || Boolean(materia.matterId);
+      card.appendChild(check);
+
+      const conteudo = document.createElement('span');
+      conteudo.className = 'min-w-0 flex-1';
+
+      const titulo = document.createElement('span');
+      titulo.className = 'block text-xs font-semibold leading-5 text-white';
+      titulo.textContent = posicao + 1 + '. ' + (materia.titulo || 'Matéria sem título');
+      conteudo.appendChild(titulo);
+
       if (materia.previa) {
-        const p = document.createElement('span');
-        p.className = 'mt-0.5 block text-[11px] text-slate-500';
-        p.textContent = `${materia.previa}…`;
-        txt.appendChild(p);
-      }
-      linha.appendChild(txt);
-
-      const acoes = document.createElement('span');
-      acoes.className = 'flex shrink-0 items-center gap-2';
-      const btn = criarBotao(
-        'Salvar rascunho',
-        'rounded-lg border border-emerald-600/60 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:border-emerald-400'
-      );
-      const aviso = document.createElement('span');
-      aviso.className = 'text-[11px] text-slate-400';
-      acoes.appendChild(btn);
-      acoes.appendChild(aviso);
-      linha.appendChild(acoes);
-
-      if (!materia.salvavel) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50');
-        aviso.textContent = 'texto curto';
+        const previa = document.createElement('span');
+        previa.className = 'mt-1 block text-[11px] leading-4 text-slate-400';
+        previa.textContent = materia.previa + (materia.previa.endsWith('…') ? '' : '…');
+        conteudo.appendChild(previa);
       }
 
-      btn.addEventListener('click', async () => {
-        btn.disabled = true;
-        btn.classList.add('opacity-60');
-        aviso.textContent = 'Salvando…';
-        try {
-          const data = await api(`${API}/mensagens/${mensagem.id}/materia`, {
-            method: 'POST',
-            body: JSON.stringify({
-              indice: materia.indice,
-              creditoImagem: credito.value.trim() || null,
-            }),
-          });
-          marcarSalva(btn, aviso, data.matterId);
-        } catch (err) {
-          aviso.textContent = err.message;
-          btn.disabled = false;
-          btn.classList.remove('opacity-60');
-        }
+      const meta = document.createElement('span');
+      meta.className = 'mt-2 flex flex-wrap items-center gap-2';
+      const estado = document.createElement('span');
+      estado.className = 'text-[11px] text-slate-500';
+      meta.appendChild(estado);
+
+      if (materia.fonte?.url) {
+        const fonte = document.createElement('a');
+        fonte.href = materia.fonte.url;
+        fonte.target = '_blank';
+        fonte.rel = 'noopener noreferrer';
+        fonte.className = 'text-[11px] text-sky-300 underline hover:text-sky-200';
+        fonte.textContent = materia.fonte.veiculo || materia.fonte.plataforma || 'Abrir fonte';
+        fonte.addEventListener('click', (event) => event.stopPropagation());
+        meta.appendChild(fonte);
+      }
+      conteudo.appendChild(meta);
+      card.appendChild(conteudo);
+
+      if (!materia.salvavel) estado.textContent = 'Texto curto demais para salvar';
+      controles.set(Number(materia.indice), { card, check, estado });
+
+      check.addEventListener('change', () => {
+        if (check.checked) selecionados.add(Number(materia.indice));
+        else selecionados.delete(Number(materia.indice));
+        atualizarAcao();
       });
 
-      if (materia.matterId) marcarSalva(btn, aviso, materia.matterId);
-
-      controles.push({ materia, btn, aviso });
-      lista.appendChild(linha);
+      lista.appendChild(card);
+      if (materia.matterId) marcarSalva(materia.indice, materia.matterId);
     });
 
-    salvarTodas.addEventListener('click', async () => {
-      salvarTodas.disabled = true;
-      salvarTodas.classList.add('opacity-60');
-      avisoTodas.textContent = 'Salvando rascunhos…';
+    selecionarTodas.addEventListener('click', () => {
+      for (const materia of materias) {
+        const controle = controles.get(Number(materia.indice));
+        if (!controle || controle.check.disabled) continue;
+        controle.check.checked = true;
+        selecionados.add(Number(materia.indice));
+      }
+      atualizarAcao();
+    });
+
+    limparSelecao.addEventListener('click', () => {
+      selecionados.clear();
+      for (const controle of controles.values()) {
+        if (!controle.check.disabled) controle.check.checked = false;
+      }
+      atualizarAcao();
+    });
+
+    salvarSelecionadas.addEventListener('click', async () => {
+      const indices = [...selecionados];
+      if (!indices.length) return;
+      salvarSelecionadas.disabled = true;
+      salvarSelecionadas.classList.add('opacity-60');
+      aviso.textContent = 'Salvando rascunhos…';
       try {
-        const data = await api(`${API}/mensagens/${mensagem.id}/materias`, {
+        const data = await api(API + '/mensagens/' + mensagem.id + '/materias', {
           method: 'POST',
-          body: JSON.stringify({ creditoImagem: credito.value.trim() || null }),
+          body: JSON.stringify({
+            indices,
+            creditoImagem: credito.value.trim() || null,
+          }),
         });
+
         for (const salva of data.salvas || []) {
-          const alvo = controles.find((c) => Number(c.materia.indice) === Number(salva.indice));
-          if (alvo) marcarSalva(alvo.btn, alvo.aviso, salva.matterId);
+          marcarSalva(salva.indice, salva.matterId);
         }
-        avisoTodas.replaceChildren();
+
+        aviso.replaceChildren();
         const resumo = document.createElement('span');
-        resumo.className = 'text-emerald-300';
+        resumo.className = data.erros?.length ? 'text-amber-300' : 'text-emerald-300';
         resumo.textContent = data.mensagem || 'Rascunhos criados.';
-        avisoTodas.appendChild(resumo);
+        aviso.appendChild(resumo);
+
         const abrir = document.createElement('a');
         abrir.href = '/minhas-materias';
         abrir.className = 'ml-2 text-emerald-300 underline hover:text-emerald-200';
         abrir.textContent = 'ver em Matérias salvas';
-        avisoTodas.appendChild(abrir);
-        salvarTodas.textContent = 'Rascunhos salvos';
+        aviso.appendChild(abrir);
       } catch (err) {
-        avisoTodas.textContent = err.message;
-        salvarTodas.disabled = false;
-        salvarTodas.classList.remove('opacity-60');
+        aviso.textContent = err.message;
+      } finally {
+        salvarSelecionadas.classList.remove('opacity-60');
+        atualizarAcao();
       }
     });
 
+    atualizarAcao();
     container.appendChild(box);
   }
 
@@ -1377,10 +1461,13 @@
       // repetia a mesma lista e atrapalhava a leitura da matéria.
     }
 
-    const corpo = document.createElement('div');
-    corpo.className = 'mia-msg-ai-body';
-    renderTexto(corpo, mensagem.content);
-    wrap.appendChild(corpo);
+    const variasMaterias = Array.isArray(mensagem.materias) && mensagem.materias.length >= 2;
+    if (!variasMaterias) {
+      const corpo = document.createElement('div');
+      corpo.className = 'mia-msg-ai-body';
+      renderTexto(corpo, mensagem.content);
+      wrap.appendChild(corpo);
+    }
 
     const pautas = blocoPautas(mensagem.pautas || []);
     if (pautas) wrap.appendChild(pautas);
@@ -1388,7 +1475,7 @@
     const fontes = blocoFontes(mensagem.fontes || []);
     if (fontes) wrap.appendChild(fontes);
 
-    if (Array.isArray(mensagem.materias) && mensagem.materias.length >= 2) {
+    if (variasMaterias) {
       areaSalvarVarias(mensagem, wrap);
       if (ultima) {
         const continuar = blocoContinuar();
@@ -1638,6 +1725,7 @@
   async function enviar() {
     if (state.enviando) return;
     const texto = String(el.input.value || '').trim();
+    const linksPedido = urlsDoTexto(texto);
     if (texto.length < 3) {
       setStatus('Escreva o que você quer que a IA faça');
       return;
@@ -1646,6 +1734,7 @@
     esconderVazio();
     el.input.value = '';
     autoGrowInput();
+    atualizarLinksDetectados();
     setEnviando(true);
     const janela = el.periodo?.selectedOptions?.[0]?.textContent?.trim() || '';
     setStatus(
@@ -1653,7 +1742,9 @@
         ? `Procurando matérias sobre o tema${janela ? ` — ${janela.toLowerCase()}` : ''}…`
         : state.pesquisarWeb
           ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''}…`
-          : 'Escrevendo…'
+          : linksPedido.length > 1
+            ? 'Lendo ' + Math.min(linksPedido.length, MAX_LINKS_LOTE) + ' links e criando uma matéria para cada…'
+            : 'Escrevendo…'
     );
 
     el.mensagens.appendChild(blocoUsuario({ content: texto }));
@@ -1840,8 +1931,12 @@
     el.input.style.height = 'auto';
     el.input.style.height = `${Math.min(el.input.scrollHeight, 144)}px`;
   }
-  el.input.addEventListener('input', autoGrowInput);
+  el.input.addEventListener('input', () => {
+    autoGrowInput();
+    atualizarLinksDetectados();
+  });
   autoGrowInput();
+  atualizarLinksDetectados();
 
   el.renomear?.addEventListener('click', async () => {
     if (!state.chatId) return;
@@ -1858,6 +1953,18 @@
     } catch (err) {
       alert(err.message);
     }
+  });
+
+  el.variosLinks?.addEventListener('click', () => {
+    definirModo('escrever');
+    if (!String(el.input.value || '').trim()) {
+      el.input.value = 'Crie uma matéria separada para cada link:\n';
+    }
+    autoGrowInput();
+    atualizarLinksDetectados();
+    setStatus('Cole até 12 links, um por linha, e clique em enviar.');
+    el.input.focus();
+    el.input.setSelectionRange(el.input.value.length, el.input.value.length);
   });
 
   document.querySelectorAll('.chat-exemplo').forEach((btn) => {

@@ -172,6 +172,7 @@ async function salvarTodasAsMaterias(req, res, next) {
       messageId: Number(req.params.messageId),
       facebookPageId: req.body?.facebookPageId || req.body?.facebook_page_id || null,
       creditoImagem: req.body?.creditoImagem || req.body?.credito_imagem || null,
+      indices: req.body?.indices ?? null,
     });
     return res.status(201).json({ ok: true, ...resultado });
   } catch (err) {

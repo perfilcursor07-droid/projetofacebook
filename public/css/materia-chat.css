@@ -1157,6 +1157,18 @@ body.mia-chat-drawer-open {
   color: var(--mia-chat-muted);
 }
 
+.mia-chat-links-hint {
+  display: block;
+  padding: 0.05rem 0.4rem 0.15rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #6ee7b7;
+}
+
+.mia-chat-links-hint.hidden {
+  display: none;
+}
+
 .mia-chat-toolbar {
   display: flex;
   flex-wrap: wrap;

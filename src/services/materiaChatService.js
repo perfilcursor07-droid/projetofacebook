@@ -1272,6 +1272,7 @@ function serializarMensagem(row) {
       hashtags: m.hashtags,
       salvavel: m.salvavel,
       matterId: salvos[String(m.indice)] || null,
+      fonte: fontesVisiveis[Number(m.indice)] || null,
     })),
     ehMateria:
       row.role === 'assistant' ? Boolean(info?.ehMateria) || multiplas.length >= 2 : false,
@@ -3068,6 +3069,7 @@ async function salvarTodasAsMateriasDoChat({
   messageId,
   facebookPageId = null,
   creditoImagem = null,
+  indices = null,
 }) {
   const row = await AiChatMessages.findByIdWithChat(messageId);
   if (!row || Number(row.chat_user_id) !== Number(userId)) {
@@ -3079,10 +3081,27 @@ async function salvarTodasAsMateriasDoChat({
     throw erro('Esta resposta tem só uma matéria. Use “Salvar como rascunho”.', 400);
   }
 
+  const recebeuSelecao = Array.isArray(indices);
+  const indicesSelecionados = recebeuSelecao
+    ? [...new Set(indices.map(Number).filter((indice) => Number.isInteger(indice) && indice >= 0))]
+    : [];
+
+  if (recebeuSelecao && !indicesSelecionados.length) {
+    throw erro('Selecione pelo menos uma matéria para salvar.', 400);
+  }
+
+  const materiasAlvo = recebeuSelecao
+    ? multiplas.filter((materia) => indicesSelecionados.includes(Number(materia.indice)))
+    : multiplas;
+
+  if (recebeuSelecao && materiasAlvo.length !== indicesSelecionados.length) {
+    throw erro('Uma ou mais matérias selecionadas não existem nesta resposta.', 400);
+  }
+
   const salvas = [];
   const erros = [];
 
-  for (const materia of multiplas) {
+  for (const materia of materiasAlvo) {
     if (!materia.salvavel) {
       erros.push({ indice: materia.indice, titulo: materia.titulo, error: 'Texto curto demais' });
       continue;
@@ -3108,7 +3127,8 @@ async function salvarTodasAsMateriasDoChat({
   }
 
   return {
-    total: multiplas.length,
+    total: materiasAlvo.length,
+    totalDisponivel: multiplas.length,
     salvas,
     erros,
     mensagem: `${salvas.length} rascunho(s) criado(s)${erros.length ? ` · ${erros.length} falha(s)` : ''}.`,
