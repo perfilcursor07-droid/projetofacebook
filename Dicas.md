@@ -14,7 +14,8 @@ git pull origin main
 npm install --omit=dev
 npm run build:css
 NODE_ENV=production npm run migrate
-pm2 reload viralizeai || pm2 start ecosystem.config.cjs
+npm run gateway:restart
+pm2 reload viralizeai --update-env || pm2 start ecosystem.config.cjs
 pm2 save
 pm2 logs viralizeai --lines 50
 
@@ -33,6 +34,7 @@ npm install --omit=dev
 npm run migrate
 npm run build:css
 NODE_ENV=production npm run migrate
+npm run gateway:restart
 pm2 reload viralizeai --update-env
 pm2 save
 pm2 logs viralizeai --lines 200 
