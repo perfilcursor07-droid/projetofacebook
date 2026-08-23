@@ -1,4 +1,8 @@
 const axios = require('axios');
+const fs = require('node:fs');
+const net = require('node:net');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
@@ -438,7 +442,7 @@ function extrairParagrafos(html) {
       .split(/(?:\n{2,}|(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ]))/)
       .map((p) => limparTextoArtigo(p))
       .filter(paragrafoUtil)
-      .slice(0, 20);
+      .slice(0, 60);
   }
 
   const paragrafosDe = (trechoHtml) => {
@@ -452,7 +456,7 @@ function extrairParagrafos(html) {
       if (vistos.has(key)) continue;
       vistos.add(key);
       textos.push(t);
-      if (textos.join(' ').length > 6000) break;
+      if (textos.join(' ').length > 9000) break;
     }
     return textos;
   };
@@ -621,6 +625,205 @@ async function extrairMetadadosViaGoogleTranslate(urlReal) {
   }
 }
 
+let chromiumLeitorPromise = null;
+let chromeLeitorPromise = null;
+
+function hostLiteralPrivado(hostname) {
+  const host = String(hostname || '')
+    .trim()
+    .replace(/^\[|\]$/g, '')
+    .toLowerCase();
+  if (!host) return true;
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
+
+  const versao = net.isIP(host);
+  if (versao === 4) {
+    const partes = host.split('.').map(Number);
+    return (
+      partes[0] === 10 ||
+      partes[0] === 127 ||
+      partes[0] === 0 ||
+      (partes[0] === 169 && partes[1] === 254) ||
+      (partes[0] === 172 && partes[1] >= 16 && partes[1] <= 31) ||
+      (partes[0] === 192 && partes[1] === 168)
+    );
+  }
+  if (versao === 6) {
+    return (
+      host === '::1' ||
+      host === '::' ||
+      /^f[cd]/i.test(host) ||
+      /^fe[89ab]/i.test(host) ||
+      /^::ffff:(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/i.test(host)
+    );
+  }
+  return false;
+}
+
+function urlPublicaParaChrome(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    return /^https?:$/.test(parsed.protocol) && !hostLiteralPrivado(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+async function carregarChromiumLeitor() {
+  if (chromiumLeitorPromise) return chromiumLeitorPromise;
+  chromiumLeitorPromise = (async () => {
+    try {
+      return require('playwright-core').chromium;
+    } catch {
+      // Em produção o Playwright pertence ao token-free-gateway, não ao app.
+    }
+
+    const sourceDir = String(process.env.TOKEN_FREE_GATEWAY_SOURCE_DIR || '').trim();
+    const caminhoConfigurado = String(process.env.PLAYWRIGHT_CORE_PATH || '').trim();
+    const candidatos = [
+      caminhoConfigurado,
+      sourceDir && path.join(sourceDir, 'node_modules', 'playwright-core', 'index.mjs'),
+      path.resolve(__dirname, '../../.tools/token-free-gateway/node_modules/playwright-core/index.mjs'),
+    ].filter(Boolean);
+
+    for (const candidato of candidatos) {
+      let arquivo = candidato;
+      if (fs.existsSync(arquivo) && fs.statSync(arquivo).isDirectory()) {
+        arquivo = path.join(arquivo, 'index.mjs');
+      }
+      if (!fs.existsSync(arquivo)) continue;
+      const modulo = await import(pathToFileURL(arquivo).href);
+      if (modulo?.chromium) return modulo.chromium;
+    }
+    throw new Error('playwright-core não encontrado');
+  })().catch((err) => {
+    chromiumLeitorPromise = null;
+    throw err;
+  });
+  return chromiumLeitorPromise;
+}
+
+async function conectarChromeLeitor() {
+  if (chromeLeitorPromise) {
+    const atual = await chromeLeitorPromise.catch(() => null);
+    if (atual?.isConnected?.()) return atual;
+    chromeLeitorPromise = null;
+  }
+
+  chromeLeitorPromise = (async () => {
+    const chromium = await carregarChromiumLeitor();
+    const cdpUrl =
+      String(process.env.TOKEN_FREE_GATEWAY_CDP_URL || process.env.TFG_CDP_URL || '').trim() ||
+      'http://127.0.0.1:9222';
+    const browser = await chromium.connectOverCDP(cdpUrl, { timeout: 4_000 });
+    browser.on('disconnected', () => {
+      chromeLeitorPromise = null;
+    });
+    return browser;
+  })().catch((err) => {
+    chromeLeitorPromise = null;
+    throw err;
+  });
+  return chromeLeitorPromise;
+}
+
+/**
+ * Último leitor do link exato: abre uma aba temporária no Chrome já mantido
+ * pelo gateway. Isso resolve portais que devolvem 403 para Axios/datacenters,
+ * sem transformar a opção "Pesquisar na web" em busca por outras fontes.
+ */
+async function extrairMetadadosViaChrome(urlReal) {
+  if (!urlPublicaParaChrome(urlReal)) return null;
+
+  let page = null;
+  let contextoCriado = null;
+  try {
+    const browser = await conectarChromeLeitor();
+    let context = browser.contexts()[0];
+    if (!context) {
+      context = await browser.newContext({ locale: 'pt-BR' });
+      contextoCriado = context;
+    }
+    page = await context.newPage();
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+    });
+    await page.route('**/*', async (route) => {
+      try {
+        const requisicao = new URL(route.request().url());
+        if (/^https?:$/.test(requisicao.protocol) && hostLiteralPrivado(requisicao.hostname)) {
+          await route.abort('blockedbyclient');
+          return;
+        }
+      } catch {
+        // data:, blob: e outros recursos internos do navegador são permitidos.
+      }
+      await route.continue();
+    });
+
+    const timeout = Math.max(
+      10_000,
+      Math.min(45_000, Number(process.env.ARTICLE_BROWSER_TIMEOUT_MS) || 30_000)
+    );
+    await page.goto(urlReal, { waitUntil: 'domcontentloaded', timeout });
+    await page
+      .waitForFunction(
+        () => {
+          const paragrafos = [
+            ...document.querySelectorAll('article p, main p, [class*="content"] p'),
+          ];
+          return (
+            paragrafos.length >= 3 &&
+            paragrafos.reduce((n, p) => n + (p.innerText || '').length, 0) >= 600
+          );
+        },
+        null,
+        { timeout: Math.min(12_000, timeout) }
+      )
+      .catch(() => {});
+
+    const finalUrl = page.url() || urlReal;
+    if (!urlPublicaParaChrome(finalUrl)) return null;
+    const html = await page.content();
+    const titulo =
+      extrairMeta(html, 'og:title') ||
+      decodificarHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '');
+    const resumo = extrairMeta(html, 'og:description') || extrairMeta(html, 'description') || '';
+    const paragrafos = extrairParagrafos(html);
+    const trecho = paragrafos.join('\n\n');
+    if (trecho.trim().length < 180) return null;
+
+    const veiculoHost = new URL(finalUrl).hostname.replace(/^www\./i, '');
+    const dataPublicacao = extrairDataPublicacaoDoHtml(html);
+    const veiculo =
+      extrairMeta(html, 'og:site_name') ||
+      extrairMeta(html, 'application-name') ||
+      extrairMeta(html, 'publisher') ||
+      extrairVeiculoJsonLd(html) ||
+      veiculoHost;
+    console.info(`[article-source] Chrome leu ${veiculoHost}: ${trecho.length} caracteres`);
+    return {
+      url: finalUrl,
+      titulo: titulo || null,
+      resumo: resumo || null,
+      imagem: extrairImagemCapa(html, finalUrl) || null,
+      trecho,
+      autor: extrairAutorDoHtml(html) || null,
+      veiculo,
+      veiculoHost,
+      dataPublicacao: dataPublicacao?.dataPublicacao || null,
+      dataTimestamp: dataPublicacao?.dataTimestamp || 0,
+      leitorFallback: 'chrome',
+    };
+  } catch (err) {
+    console.warn('extrairMetadadosArtigo Chrome:', err.message);
+    return null;
+  } finally {
+    if (page) await page.close().catch(() => {});
+    if (contextoCriado) await contextoCriado.close().catch(() => {});
+  }
+}
+
 async function extrairMetadadosViaClaudeWebFetch(urlReal) {
   try {
     const claudeService = require('./claudeService');
@@ -657,6 +860,54 @@ async function extrairMetadadosViaClaudeWebFetch(urlReal) {
   }
 }
 
+function metaVazia(urlReal) {
+  return {
+    url: urlReal,
+    titulo: null,
+    resumo: null,
+    imagem: null,
+    trecho: '',
+    autor: null,
+    veiculo: null,
+    veiculoHost: null,
+    dataPublicacao: null,
+    dataTimestamp: 0,
+  };
+}
+
+function mesclarMetaMaisCompleta(base, candidata) {
+  if (!candidata) return base;
+  const textoBase = String(base?.trecho || '').trim();
+  const textoCandidato = String(candidata?.trecho || '').trim();
+  if (textoCandidato.length <= textoBase.length) return base;
+  return {
+    ...(base || {}),
+    ...candidata,
+    titulo: candidata.titulo || base?.titulo || null,
+    resumo: candidata.resumo || base?.resumo || null,
+    imagem: base?.imagem || candidata.imagem || null,
+    autor: candidata.autor || base?.autor || null,
+    veiculo: candidata.veiculo || base?.veiculo || null,
+    veiculoHost: candidata.veiculoHost || base?.veiculoHost || null,
+  };
+}
+
+async function completarMetaComLeitores(meta, urlReal) {
+  let atual = meta || metaVazia(urlReal);
+  const leitores = [
+    extrairMetadadosViaChrome,
+    extrairMetadadosViaJina,
+    extrairMetadadosViaGoogleTranslate,
+    extrairMetadadosViaClaudeWebFetch,
+  ];
+  for (const leitor of leitores) {
+    if (String(atual?.trecho || '').trim().length >= 900) break;
+    const candidata = await leitor(atual?.url || urlReal);
+    atual = mesclarMetaMaisCompleta(atual, candidata);
+  }
+  return atual;
+}
+
 async function extrairMetadadosArtigo(url) {
   const urlReal = (await resolverUrlNoticia(url)) || url;
   if (!urlReal) return null;
@@ -671,9 +922,7 @@ async function extrairMetadadosArtigo(url) {
     host = '';
   }
   if (host && providerHealth.estaFora(`site:${host}`)) {
-    const viaTranslate = await extrairMetadadosViaGoogleTranslate(urlReal);
-    if (viaTranslate) return viaTranslate;
-    return extrairMetadadosViaClaudeWebFetch(urlReal);
+    return completarMetaComLeitores(metaVazia(urlReal), urlReal);
   }
 
   try {
@@ -723,58 +972,13 @@ async function extrairMetadadosArtigo(url) {
       dataPublicacao: dataPublicacao?.dataPublicacao || null,
       dataTimestamp: dataPublicacao?.dataTimestamp || 0,
     };
-    if (String(meta.trecho || '').trim().length < 180) {
-      const viaJina = await extrairMetadadosViaJina(finalUrl);
-      if (String(viaJina?.trecho || '').trim().length > String(meta.trecho || '').trim().length) {
-        return {
-          ...meta,
-          ...viaJina,
-          titulo: viaJina.titulo || meta.titulo,
-          resumo: viaJina.resumo || meta.resumo,
-          imagem: meta.imagem || viaJina.imagem,
-          autor: meta.autor || viaJina.autor,
-          veiculo: meta.veiculo || viaJina.veiculo,
-          veiculoHost: meta.veiculoHost || viaJina.veiculoHost,
-        };
-      }
-      const viaTranslate = await extrairMetadadosViaGoogleTranslate(finalUrl);
-      if (
-        String(viaTranslate?.trecho || '').trim().length >
-        String(meta.trecho || '').trim().length
-      ) {
-        return {
-          ...meta,
-          ...viaTranslate,
-          titulo: viaTranslate.titulo || meta.titulo,
-          resumo: viaTranslate.resumo || meta.resumo,
-          imagem: meta.imagem || viaTranslate.imagem,
-          autor: meta.autor || viaTranslate.autor,
-          veiculo: meta.veiculo || viaTranslate.veiculo,
-          veiculoHost: meta.veiculoHost || viaTranslate.veiculoHost,
-        };
-      }
-    }
-    return meta;
+    return String(meta.trecho || '').trim().length < 900
+      ? completarMetaComLeitores(meta, finalUrl)
+      : meta;
   } catch (err) {
     console.warn('extrairMetadadosArtigo:', err.message);
     if (host) providerHealth.registrarFalha(`site:${host}`, err.message, { pausaMs: 5 * 60 * 1000 });
-    const viaJina = await extrairMetadadosViaJina(urlReal);
-    if (viaJina) return viaJina;
-    const viaTranslate = await extrairMetadadosViaGoogleTranslate(urlReal);
-    if (viaTranslate) return viaTranslate;
-    const viaClaude = await extrairMetadadosViaClaudeWebFetch(urlReal);
-    if (viaClaude) return viaClaude;
-    return {
-      url: urlReal,
-      titulo: null,
-      resumo: null,
-      imagem: null,
-      trecho: '',
-      autor: null,
-      veiculo: null,
-      dataPublicacao: null,
-      dataTimestamp: 0,
-    };
+    return completarMetaComLeitores(metaVazia(urlReal), urlReal);
   }
 }
 
@@ -1241,6 +1445,7 @@ module.exports = {
   extrairMetadadosArtigo,
   extrairMetadadosViaJina,
   extrairMetadadosViaGoogleTranslate,
+  extrairMetadadosViaChrome,
   extrairMetadadosViaClaudeWebFetch,
   urlProxyGoogleTranslate,
   extrairImagemCapa,

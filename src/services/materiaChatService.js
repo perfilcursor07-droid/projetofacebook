@@ -742,11 +742,7 @@ function fonteCorrespondeAoLink(fonte, link, assunto) {
  * para o link virar fonte documentada em vez de ser ignorado.
  */
 async function extrairFontesDeArtigos(urls, { onPasso } = {}) {
-  const {
-    extrairMetadadosArtigo,
-    extrairMetadadosViaJina,
-    extrairMetadadosViaGoogleTranslate,
-  } = require('./articleSource');
+  const { extrairMetadadosArtigo } = require('./articleSource');
 
   const fontes = [];
   const falhas = [];
@@ -771,33 +767,6 @@ async function extrairFontesDeArtigos(urls, { onPasso } = {}) {
 
     let trecho = String(meta?.trecho || '').trim();
     const resumo = String(meta?.resumo || '').trim();
-
-    // O link colado é a base factual da matéria: corpo curto rende texto raso.
-    // Tenta o leitor alternativo e fica com a versão mais completa.
-    if (trecho.length < 900) {
-      try {
-        const viaJina = await extrairMetadadosViaJina(meta?.url || raw);
-        const outro = String(viaJina?.trecho || '').trim();
-        if (outro.length > trecho.length) trecho = outro;
-      } catch {
-        /* fallback opcional */
-      }
-    }
-
-    // Portais internacionais podem bloquear o servidor com 403. Faz uma
-    // tentativa explícita pelo proxy de leitura antes de abandonar o link.
-    if (trecho.length < 900) {
-      try {
-        const viaTranslate = await extrairMetadadosViaGoogleTranslate(meta?.url || raw);
-        const outro = String(viaTranslate?.trecho || '').trim();
-        if (outro.length > trecho.length) {
-          meta = { ...(meta || {}), ...viaTranslate };
-          trecho = outro;
-        }
-      } catch {
-        /* fallback opcional */
-      }
-    }
 
     const corpo =
       trecho.length >= 180 ? trecho : [resumo, trecho].filter(Boolean).join('\n\n').trim();
@@ -1938,7 +1907,10 @@ async function responder({
 
     if (urlsArtigos.length === 1 && !fontesArtigo.length) {
       assuntoDoLink = tituloProvavelDoLink(urlsArtigos[0]);
-      resgateArtigoPorTitulo = Boolean(assuntoDoLink);
+      // Procurar o título em outros sites já é pesquisa externa. O link exato
+      // continua sendo lido acima, mas este resgate só pode rodar com a opção
+      // "Pesquisar na web" ligada.
+      resgateArtigoPorTitulo = Boolean(assuntoDoLink && usarPesquisa);
       if (resgateArtigoPorTitulo) {
         registrarPasso({
           kind: 'busca',
@@ -2635,7 +2607,7 @@ async function responder({
       onEvent({ tipo: 'delta', texto: resposta });
       return finalizar(resposta, {
         fontesUsadas: fontes,
-        usouWeb: Boolean(fontes.some((f) => !f.ehRedeSocial)),
+        usouWeb: Boolean(usarPesquisa),
       });
     }
 
@@ -2812,7 +2784,7 @@ async function responder({
     });
     return finalizar(resposta, {
       fontesUsadas: fontes,
-      usouWeb: Boolean(usarPesquisa || fontes.some((f) => !f.ehRedeSocial)),
+      usouWeb: Boolean(usarPesquisa),
     });
   }
 
@@ -2987,7 +2959,7 @@ async function responder({
 
   const finalizada = await finalizar(resposta, {
     fontesUsadas: fontes,
-    usouWeb: Boolean(usarPesquisa || fontes.some((f) => !f.ehRedeSocial)),
+    usouWeb: Boolean(usarPesquisa),
   });
 
   return finalizada;
