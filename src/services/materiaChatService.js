@@ -842,8 +842,16 @@ function interpretarResposta(conteudo) {
   const blocosCorpo = restoTexto.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   const possivelLinhaFina = blocosCorpo[0] || '';
   const primeiroParagrafo = blocosCorpo[1] || '';
+  const ancoraJm =
+    /^(\*{0,2})[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9\s?!,.;:\-–—'"]{20,}\1$/.test(
+      possivelLinhaFina.replace(/\s+/g, ' ').trim()
+    ) ||
+    (possivelLinhaFina.replace(/[^\p{L}]/gu, '').length >= 20 &&
+      possivelLinhaFina.replace(/[^\p{L}]/gu, '') ===
+        possivelLinhaFina.replace(/[^\p{L}]/gu, '').toLocaleUpperCase('pt-BR'));
   if (
     blocosCorpo.length >= 2 &&
+    !ancoraJm &&
     !possivelLinhaFina.includes('\n') &&
     possivelLinhaFina.length >= 55 &&
     possivelLinhaFina.length <= 260 &&
@@ -857,7 +865,7 @@ function interpretarResposta(conteudo) {
 
   const tituloLimpo = primeira
     .replace(/^#{1,6}\s*/, '')
-    .replace(/^\*+|\*+$/g, '')
+    .replace(/^\*{1,2}|\*{1,2}$/g, '')
     .replace(/^["“”']+|["“”']+$/g, '')
     .trim();
 
@@ -1246,7 +1254,8 @@ function garantirIdentidadeDoYoutube(resposta, fontes = []) {
  * no final da matéria, para o editor já ver o crédito antes de salvar.
  */
 function montarRespostaComRodapeOffline(resposta, fontes = []) {
-  const { montarRodapeMateriaComFontes } = require('./editorialGuidelinesFb');
+  const { montarRodapeMateriaComFontes, pareceFormatoJmNoticia } = require('./editorialGuidelinesFb');
+  if (pareceFormatoJmNoticia(resposta)) return resposta;
   const info = interpretarResposta(resposta);
   if (!info.ehMateria || !info.titulo) return resposta;
 
@@ -2978,7 +2987,7 @@ async function salvarMateriaDoChat({
   indice = null,
   titulo: tituloEscolhido = null,
 }) {
-  const { montarRodapeMateriaComFontes } = require('./editorialGuidelinesFb');
+  const { montarRodapeMateriaComFontes, pareceFormatoJmNoticia } = require('./editorialGuidelinesFb');
   const materiaIaService = require('./materiaIaService');
 
   const row = await AiChatMessages.findByIdWithChat(messageId);
@@ -3043,12 +3052,14 @@ async function salvarMateriaDoChat({
     pageId = page?.id || null;
   }
 
-  const rodape = montarRodapeMateriaComFontes({
-    materia: corpo,
-    fontes: fontesDaMateria,
-    creditoImagem: creditoImagem || 'Reprodução',
-    hashtags: info.hashtags || parseJson(row.hashtags, []),
-  });
+  const rodape = pareceFormatoJmNoticia(corpo)
+    ? { materia: corpo, fonteCredito: null }
+    : montarRodapeMateriaComFontes({
+        materia: corpo,
+        fontes: fontesDaMateria,
+        creditoImagem: creditoImagem || 'Reprodução',
+        hashtags: info.hashtags || parseJson(row.hashtags, []),
+      });
   const materia = rodape.materia;
 
   // Alternativas geradas junto com a matéria: o editor pode ter escolhido uma

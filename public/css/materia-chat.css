@@ -1007,6 +1007,28 @@ body.mia-chat-drawer-open {
   color: #6ee7b7;
 }
 
+.mia-msg-ai-anchor {
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.45;
+  color: #fde68a;
+}
+
+.mia-msg-ai-meta {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.mia-msg-ai-text strong,
+.mia-msg-ai-title strong,
+.mia-msg-ai-anchor strong,
+.mia-msg-ai-meta strong {
+  font-weight: 700;
+  color: #fff;
+}
+
 .mia-msg-panel {
   border-radius: 0.75rem;
   border: 1px solid var(--mia-chat-border);

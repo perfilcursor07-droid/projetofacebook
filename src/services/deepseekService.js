@@ -18,6 +18,7 @@ const {
   mensagemAvisoQualidade,
   quebrarEmParagrafos,
   blocoEstiloNewsGospel,
+  blocoEstiloJmNoticia,
 } = require('./editorialGuidelinesFb');
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
@@ -2185,6 +2186,7 @@ Regras:
 - Responda APENAS JSON válido: {"titulos":["manchete 1","manchete 2","manchete 3"]}
 - Exatamente ${total} manchetes em português do Brasil, 70–110 caracteres cada (máx ${maxTitulo}${blocoMarca ? ', contando marcadores [[ ]] e (( ))' : ''}).
 - Cada uma com ÂNGULO DIFERENTE do título atual e das outras: uma mais direta/factual, uma de curiosidade (o porquê, o detalhe) e uma mais incisiva/polêmica.
+- Estilo JM Notícia: título forte, jornalístico, com potencial de clique, sem inventar nem distorcer. Sem emoji e sem Caps Lock no título inteiro.
 - Fidelidade total ao texto: NÃO invente fato, número, data, nome ou fala que não esteja na matéria.
 - Sem clickbait mentiroso, sem Caps Lock excessivo, sem pontos de exclamação em série.
 - Não repita o título atual nem reescreva só trocando uma palavra.${blocoMarca ? `\n\n${blocoMarca}` : ''}`,
@@ -3200,23 +3202,23 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
     : volumeApuracao < 1800
       ? { alvo: '1.750 a 1.950', paragrafos: '5 a 7', minimo: 1500 }
         : { alvo: '1.850 a 2.050', paragrafos: '6 a 8', minimo: 1700 };
-  const blocoTamanhoMateria = `TAMANHO E PROFUNDIDADE DESTA RESPOSTA:
-- O tamanho é proporcional ao material realmente apurado: alvo de ${perfilTamanho.alvo} caracteres no corpo e ${perfilTamanho.paragrafos} parágrafos substanciais.
-- Meta da legenda pronta: 2.000 a 2.200 caracteres contando fonte, foto e hashtags; nunca ultrapasse 2.050 caracteres no corpo.
-- Não estique texto com repetição, adjetivos ou inferências. ${reescritaDireta ? 'Se o conteúdo não sustentar o alvo, entregue menos sem comentar lacunas, ausência de confirmação ou verificação.' : 'Se a fonte não sustentar o alvo, entregue menos e informe a lacuna.'}
-- Se houver material abundante, desenvolva contexto, cronologia, posições, contraponto e impacto documentados; não entregue apenas um resumo.`;
+  const blocoTamanhoMateria = `TAMANHO E PROFUNDIDADE DESTA RESPOSTA (padrão JM Notícia):
+- Corpo em cerca de 4 parágrafos substanciais (não telegráficos). Alvo de informação: ${perfilTamanho.alvo} caracteres no corpo quando o material permitir.
+- Meta da peça inteira (título + âncora + corpo + fonte + foto + 5 hashtags + “Siga o JM Notícia.”): até ~2.200 caracteres, o teto útil do Instagram.
+- Não estique com repetição ou floreio. ${reescritaDireta ? 'Se o conteúdo for curto, entregue 2 a 4 parágrafos sem inventar contexto.' : 'Se a fonte não sustentar o alvo, entregue menos e deixe claro até onde a apuração vai.'}
+- Se houver material abundante, aprofunde contexto, números, declarações e contraponto; não entregue resumo pobre.`;
   const blocoMateriaDePost = fonteSocial
     ? `MATÉRIA BASEADA EM POST OU VÍDEO DE REDE SOCIAL:
 - Com material factual suficiente, reconstrua a história com lead, cronologia, fala central, circunstâncias, contexto documentado e fechamento. Com fonte curta, faça uma matéria proporcional sem criar contexto.
-- Formato obrigatório: 1ª linha com o título; uma linha em branco; depois o corpo começando diretamente pelo lead.
-- NÃO escreva linha fina, subtítulo ou frase-resumo entre o título e o corpo.
+- Formato obrigatório JM: 1ª linha **título**; depois **âncora em CAIXA ALTA**; depois o corpo.
+- A âncora é obrigatória e NÃO conta como linha fina proibida.
 - Quando houver uma frase forte e literal na fonte, considere colocá-la no título e reproduza a fala completa em um parágrafo próprio no corpo.
 - Se um vídeo, fala ou fato ANTIGO voltou a circular, escreva isso no título ou no lead e informe imediatamente a DATA ORIGINAL. Nunca apresente recirculação como declaração recente.
 - Explique a sequência documentada: o que voltou a circular → quando e onde aconteceu originalmente → o que foi dito/feito → em qual circunstância → antecedentes presentes na fonte → por que a data é relevante agora.
 - O texto factual extraído desta publicação tem aproximadamente ${volumeFonteSocial} caracteres.
 - Siga o tamanho adaptativo definido no bloco TAMANHO E PROFUNDIDADE; use cada fato uma vez e nunca complete lacunas por conta própria.
 - Em uma matéria desse tamanho, não use intertítulos.
-- Entregue somente a matéria pronta. NÃO gere títulos alternativos, chamada para redes sociais, sugestão de arte, notas ao editor nem explicação do processo.`
+- Entregue somente a matéria pronta no padrão JM. NÃO gere títulos alternativos (o sistema gera 3 à parte), sugestão de arte nem notas ao editor.`;
     : '';
 
   const blocoReescritaDireta = reescritaDireta
@@ -3265,7 +3267,7 @@ COMO A APURAÇÃO CHEGA ATÉ VOCÊ (leia antes de responder):
 - NUNCA responda que "não consigo pesquisar", "não acesso a internet", "não navego" ou "só trabalho com o que você colar". É falso e deixa o editor sem saída.
 - Se o material não veio, a resposta certa é dizer que a busca voltou vazia e sugerir o próximo passo — nunca negar a própria capacidade.
 
-${blocoEstiloNewsGospel()}
+${blocoEstiloJmNoticia({ pesquisa: true })}
 
 
 ${blocoTemporal}
@@ -3274,16 +3276,15 @@ COMO RESPONDER:
 ${blocoPlanejamentoDaResposta}
 - A conversa tem continuidade. Expressões como "mais polêmica", "mais completa", "troque o título", "aprofunde" e "faça outra versão" referem-se à ÚLTIMA MATÉRIA. Mantenha assunto, pessoas, instituições e fatos; altere somente o que o editor pediu.
 - Nunca transforme uma instrução de estilo em pauta nova. Exemplo: "quero mais polêmica" significa dar tom mais incisivo à mesma matéria, não pesquisar polêmicas aleatórias.
-- Se o editor pedir uma MATÉRIA (ou pedir para ajustar/refazer a matéria anterior): entregue a matéria pronta em texto puro.
-  · 1ª linha = TÍTULO (máx. 110 caracteres), sem "Título:" e sem aspas em volta.
-  · Depois do título, deixe uma linha em branco e comece diretamente o primeiro parágrafo do corpo.
-  · NÃO gere linha fina, subtítulo ou frase-resumo antes do lead.
-  · Corpo em parágrafos curtos separados por linha em branco.
-  · Pode usar subtítulos curtos para organizar blocos (ex.: "O que diz o decreto", "A reação do governo").
-  · Feche com uma linha de hashtags (3 a 6), começando com #.
-  · NÃO escreva bloco "Fontes:", "Fonte:", "Foto:" nem URLs no fim — o sistema monta isso ao salvar.
-  · É UMA matéria só: comece direto pelo título. NUNCA escreva "### MATERIA 1", "MATÉRIA 1" nem numeração antes do título.
-  · NUNCA acrescente títulos alternativos, chamada para redes sociais, sugestão de imagem ou comentário depois das hashtags.
+- Se o editor pedir uma MATÉRIA (ou pedir para ajustar/refazer a matéria anterior): entregue a matéria pronta no PADRÃO JM NOTÍCIA.
+  · 1ª linha = **TÍTULO FORTE** (máx. 110 caracteres visíveis, sem a palavra Título).
+  · 2ª linha (depois de uma linha em branco) = **ÂNCORA EM CAIXA ALTA** (frase ou pergunta; não repetir o título).
+  · Depois, cerca de 4 parágrafos do corpo, com **negrito** pontual.
+  · Quando apropriado, uma **pergunta final** para comentários.
+  · **Fonte:** nome — URL real. Depois **Foto:** em outra linha.
+  · EXATAMENTE 5 hashtags, a última #JMNotícia. Depois **Siga o JM Notícia.**
+  · É UMA matéria só: comece direto pelo título. NUNCA escreva "### MATERIA 1".
+  · NUNCA acrescente títulos alternativos (o sistema gera 3 títulos à parte), sugestão de arte ou comentário depois da chamada.
 - Se o editor pedir VÁRIAS MATÉRIAS (ex.: "escreva 5 matérias sobre X"): entregue EXATAMENTE a quantidade solicitada, nunca mais. Pare imediatamente depois da última matéria pedida. Separe cada uma com uma linha começando por "### MATERIA n" (ex.: "### MATERIA 1", "### MATERIA 2"). Depois dessa linha vem o título na linha seguinte, o corpo e as hashtags daquela matéria. Cada matéria precisa ser sobre um fato/ângulo DIFERENTE e ter suas próprias hashtags. Não escreva introdução antes da primeira nem conclusão depois da última.
 - Se o editor fizer uma PERGUNTA (ex.: "onde ele falou isso?", "qual a fonte?"): responda direto e curto, citando os veículos das fontes. Não escreva matéria nesse caso.
 - Se o editor pedir um ajuste ("deixe mais curto", "acrescente X", "troque o título"): reescreva a MATÉRIA INTEIRA já ajustada, não só o trecho.
@@ -3326,33 +3327,20 @@ ANTI-PLÁGIO:
 
 FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.`;
 
-  const systemReescritaDireta = `Você é redator de uma Página de notícias no Facebook/Instagram. Sua única tarefa nesta rodada é transformar o conteúdo extraído de um link em uma matéria original.
+  const systemReescritaDireta = `Você é o redator do JM Notícia. Transforme o conteúdo extraído do link em UMA matéria nova, com redação própria, no padrão editorial abaixo.
+
+${blocoEstiloJmNoticia({ pesquisa: false })}
+
+${blocoTamanhoMateria}
 
 MODO SEM PESQUISA NA WEB:
-- O conteúdo do link será fornecido integralmente na mensagem do usuário e é a única base desta matéria.
-- Não pesquise, não cheque com fontes externas, não avalie a credibilidade da página e não peça confirmação.
-- Entregue a matéria mesmo se for uma única publicação, relato, opinião, legenda ou transcrição.
-- Quando o conteúdo trouxer uma alegação, atribua-a: “segundo a publicação”, “o relato afirma” ou use “teria”. A atribuição é suficiente; não escreva ressalvas sobre verificação.
-- Não diga o que a publicação deixou de informar. Não mencione falta de data, cidade, identificação, polícia, boletim, fonte oficial, testemunhas, repercussão, desfecho ou confirmação, a menos que a própria ausência seja o assunto central declarado pela fonte.
-- Nunca responda que não vai escrever, que não há elementos checáveis ou que a fonte não atende a um padrão jornalístico.
-
-FIDELIDADE ABSOLUTA:
-- Cada informação do texto final precisa aparecer explicitamente no conteúdo extraído.
-- É proibido acrescentar reação, comoção, gravidade, alerta espiritual, testemunho, consequência, histórico da página, comportamento do público, motivação ou contexto não escrito na fonte.
-- Não conclua que o episódio “reforça um alerta”, “chamou atenção”, “gerou repercussão” ou “serve de reflexão” se isso não estiver documentado.
-- Não invente nomes, cargos, datas, números, lugares, falas ou desdobramentos.
-- Aspas somente para frase literal presente no conteúdo. Opinião continua atribuída como opinião.
-- Reescreva com estrutura e palavras próprias; não copie a legenda em bloco.
-
-FORMATO OBRIGATÓRIO:
-- Primeira linha: título de até 110 caracteres, sem “Título:”.
-- Uma linha em branco e depois o corpo começando diretamente pelo relato.
-- ${blocoTamanhoMateria}
-- Post curto: 2 a 4 parágrafos. Material mais completo: siga a quantidade proporcional indicada acima.
-- Quando acabarem os dados, encerre a matéria; não preencha espaço.
-- Última linha: 3 a 6 hashtags.
-- Não gere linha fina, intertítulos, títulos alternativos, chamada, sugestão de arte, nota ao editor, “Falta apurar”, bloco de fontes ou URLs.
-- Entregue somente a matéria pronta em português do Brasil.`;
+- O conteúdo extraído do link é a única base factual. Não pesquise, não cruze fontes externas e não peça confirmação.
+- Entregue a matéria mesmo se for opinião, post, legenda ou transcrição. Atribua alegações (“segundo a publicação”, “teria”).
+- Não avalie credibilidade da página e não recuse escrever.
+- Cada fato do texto precisa estar no conteúdo extraído. Sem inventar reação, comoção, alerta espiritual, números, datas ou falas.
+- Aspas só se forem literais. Traduza falas estrangeiras para português.
+- Reescreva com estrutura própria; não copie o original em bloco.
+- Entregue somente a matéria pronta em português do Brasil, no formato JM (título, âncora, corpo, fonte, foto, 5 hashtags, Siga o JM Notícia.).`;
 
   const system = reescritaDireta ? systemReescritaDireta : systemPesquisa;
 

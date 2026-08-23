@@ -452,23 +452,52 @@
     let paragrafo = [];
     let proximoParagrafoEhTitulo = false;
 
+    const preencherComNegrito = (el, texto) => {
+      const partes = String(texto || '').split(/(\*\*[^*]+\*\*)/g);
+      for (const parte of partes) {
+        const negrito = parte.match(/^\*\*([^*]+)\*\*$/);
+        if (negrito) {
+          const strong = document.createElement('strong');
+          strong.textContent = negrito[1];
+          el.appendChild(strong);
+        } else if (parte) {
+          el.appendChild(document.createTextNode(parte));
+        }
+      }
+    };
+
     const fecharParagrafo = () => {
       if (!paragrafo.length) return;
       const texto = paragrafo.join('\n');
       paragrafo = [];
       const p = document.createElement('p');
-      const ehHashtags = /^#[^\s#]+(\s+#[^\s#]+)*$/.test(texto.trim());
+      const visivel = texto.replace(/\*\*/g, '').trim();
+      const ehHashtags = /^#[^\s#]+(\s+#[^\s#]+)*$/.test(visivel);
+      const ehFonteFoto = /^\*{0,2}(Fonte|Foto):/i.test(texto.trim());
+      const ehChamada = /Siga o JM Not[ií]cia/i.test(visivel);
+      const letras = visivel.replace(/[^\p{L}]/gu, '');
+      const ehAncora =
+        podeTerTitulo &&
+        container.childElementCount === 1 &&
+        visivel.length >= 20 &&
+        visivel.length <= 260 &&
+        letras.length >= 16 &&
+        letras === letras.toLocaleUpperCase('pt-BR');
       const ehTitulo =
         podeTerTitulo &&
         (proximoParagrafoEhTitulo || container.childElementCount === 0) &&
-        texto.length <= 200 &&
+        visivel.length <= 200 &&
         !texto.includes('\n');
       p.className = ehHashtags
         ? 'mia-msg-ai-tags'
-        : ehTitulo
-          ? 'mia-msg-ai-title'
-          : 'mia-msg-ai-text';
-      p.textContent = texto.replace(/\*\*(.+?)\*\*/g, '$1');
+        : ehFonteFoto || ehChamada
+          ? 'mia-msg-ai-meta'
+          : ehAncora
+            ? 'mia-msg-ai-anchor'
+            : ehTitulo
+              ? 'mia-msg-ai-title'
+              : 'mia-msg-ai-text';
+      preencherComNegrito(p, texto);
       container.appendChild(p);
       proximoParagrafoEhTitulo = false;
     };
