@@ -36,3 +36,9 @@ NODE_ENV=production npm run migrate
 pm2 reload viralizeai --update-env
 pm2 save
 pm2 logs viralizeai --lines 200 
+
+Abre Powershell
+ssh -N -L 6080:127.0.0.1:6080 viralizeai@www.viralizeai.online
+
+Entra no link
+http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=remote
