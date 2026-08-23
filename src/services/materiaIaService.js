@@ -17,6 +17,10 @@ const db = require('../config/db');
 const { titulosParecidos, mesmoAssuntoNoticia, formatFacebookCaption, montarFonteCredito, estiloCreditoDaPagina } = require('./editorialGuidelinesFb');
 const { applyBrandArtworkToResult } = require('./matterArtworkService');
 
+/** Espaço mínimo entre matérias agendadas (Matérias IA e Minhas matérias). */
+const INTERVALO_AGENDAMENTO_MINUTOS = 30;
+const INTERVALO_AGENDAMENTO_MS = INTERVALO_AGENDAMENTO_MINUTOS * 60 * 1000;
+
 async function resolvePage(userId, facebookPageId) {
   const { resolvePageForUser, defaultPageForUser } = require('./facebookPageResolver');
   const page = await resolvePageForUser(userId, facebookPageId);
@@ -1186,7 +1190,7 @@ async function proximoHorarioLivreAgendamento({ userId, matterId, desiredAt }) {
       .where('scheduled_at', candidate)
       .first('id');
     if (!ocupada) return candidate;
-    candidate = new Date(candidate.getTime() + 10 * 60 * 1000);
+    candidate = new Date(candidate.getTime() + INTERVALO_AGENDAMENTO_MS);
   }
   return candidate;
 }
@@ -1241,7 +1245,7 @@ async function agendarMateria({ userId, matterId, runAt }) {
   return { jobId, matterId: matter.id, runAt: slotLivre };
 }
 
-async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = 10 } = {}) {
+async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = INTERVALO_AGENDAMENTO_MINUTOS } = {}) {
   const agora = new Date();
 
   // A Agenda da Biblioteca é a fonte da verdade. A compactação pode alterar
@@ -1290,7 +1294,7 @@ async function repararAgendamentosSobrepostos(userId, { intervaloMinutos = 10 } 
 
   let cursor = null;
   let ajustados = 0;
-  const intervaloMs = Math.max(5, Number(intervaloMinutos) || 10) * 60 * 1000;
+  const intervaloMs = Math.max(5, Number(intervaloMinutos) || INTERVALO_AGENDAMENTO_MINUTOS) * 60 * 1000;
 
   for (const row of rows || []) {
     const atual = row.scheduled_at instanceof Date ? row.scheduled_at : new Date(row.scheduled_at);
@@ -1362,7 +1366,7 @@ function formatarHorarioAgendamento(scheduledAt) {
 /**
  * Último horário entre matérias AGENDADAS (Minhas matérias).
  * Não usa Agenda da Biblioteca — evita misturar filas diferentes.
- * Retorna também o próximo slot sugerido (+10 min), nunca no passado.
+ * Retorna também o próximo slot sugerido (+30 min), nunca no passado.
  */
 async function obterUltimoAgendamento(userId, { excludeMatterId = null } = {}) {
   let matterQuery = db('ai_matters')
@@ -1381,8 +1385,8 @@ async function obterUltimoAgendamento(userId, { excludeMatterId = null } = {}) {
   }
 
   const at = new Date(matterRow.scheduled_at);
-  let proximo = new Date(at.getTime() + 10 * 60 * 1000);
-  const minFuture = new Date(Date.now() + 10 * 60 * 1000);
+  let proximo = new Date(at.getTime() + INTERVALO_AGENDAMENTO_MS);
+  const minFuture = new Date(Date.now() + INTERVALO_AGENDAMENTO_MS);
   if (proximo.getTime() < minFuture.getTime()) proximo = minFuture;
 
   return {

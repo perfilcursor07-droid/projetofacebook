@@ -903,7 +903,7 @@ async function listMinhasMaterias(req, res, next) {
         const agendaService = require('../services/bibliotecaAgendaService');
         await agendaService.cancelarAgendamentosPendentesDaBiblioteca(req.session.userId);
         await materiaIaService.repararAgendamentosSobrepostos(req.session.userId, {
-          intervaloMinutos: 10,
+          intervaloMinutos: 30,
         });
       } catch (err) {
         console.warn('[minhas-materias] reparar agendados:', err.message);

@@ -1984,9 +1984,15 @@
     }
   });
 
+  function fecharMenuMais() {
+    const menu = document.getElementById('chat-ferramentas');
+    if (menu) menu.open = false;
+  }
+
   el.variosLinks?.forEach((botao) => {
     botao.addEventListener('click', () => {
       definirModo('escrever');
+      fecharMenuMais();
       if (!String(el.input.value || '').trim()) {
         el.input.value = 'Crie uma matéria separada para cada link:\n';
       }
@@ -2003,6 +2009,8 @@
       const textoEl = btn.querySelector('.mia-chat-prompt-text');
       const texto = (textoEl?.textContent || btn.textContent || '').trim();
       if (btn.dataset.modoExemplo === 'pautas') definirModo('pautas');
+      else definirModo('escrever');
+      fecharMenuMais();
       el.input.value = texto;
       autoGrowInput();
       el.input.focus();

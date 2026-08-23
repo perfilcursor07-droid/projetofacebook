@@ -1219,9 +1219,9 @@
     document.body.style.overflow = '';
   }
 
-  /** datetime-local: agora em Araguaína + 10 min (YYYY-MM-DDTHH:mm) */
-  function defaultScheduleAraguainaPlus10() {
-    const target = new Date(Date.now() + 10 * 60 * 1000);
+  /** datetime-local: agora em Araguaína + 30 min (YYYY-MM-DDTHH:mm) */
+  function defaultScheduleAraguainaPlus30() {
+    const target = new Date(Date.now() + 30 * 60 * 1000);
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Araguaina',
       year: 'numeric',
@@ -1239,7 +1239,7 @@
 
   const scheduleInput = document.getElementById('matter-schedule');
   if (scheduleInput) {
-    // Prioridade: horário já agendado / pré-agenda da Biblioteca → +10 → agora+10.
+    // Prioridade: horário já agendado / pré-agenda da Biblioteca → +30 → agora+30.
     if (!scheduleInput.value) {
       if (cfg.horarioAtualAgendado?.local) {
         scheduleInput.value = cfg.horarioAtualAgendado.local;
@@ -1248,20 +1248,20 @@
       } else if (cfg.agendaBiblioteca?.proposed_at_local) {
         scheduleInput.value = String(cfg.agendaBiblioteca.proposed_at_local).slice(0, 16);
       } else {
-        scheduleInput.value = cfg.proximoSlotLocal || defaultScheduleAraguainaPlus10();
+        scheduleInput.value = cfg.proximoSlotLocal || defaultScheduleAraguainaPlus30();
       }
     }
   }
 
-  document.getElementById('btn-agendar-mais-10')?.addEventListener('click', () => {
-    const btn = document.getElementById('btn-agendar-mais-10');
+  document.getElementById('btn-agendar-mais-30')?.addEventListener('click', () => {
+    const btn = document.getElementById('btn-agendar-mais-30');
     const slot = btn?.dataset?.slot || cfg.proximoSlotLocal;
     if (!slot || !scheduleInput) {
-      setStatus('Não há matéria agendada para calcular +10 min.', true);
+      setStatus('Não há matéria agendada para calcular +30 min.', true);
       return;
     }
     scheduleInput.value = slot;
-    setStatus('Horário preenchido: 10 min após a última matéria agendada');
+    setStatus('Horário preenchido: 30 min após a última matéria agendada');
     scheduleInput.focus();
   });
 

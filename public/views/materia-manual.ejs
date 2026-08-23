@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260823jm1" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260823menu1" />
 
   <main class="mia-chat" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -72,36 +72,6 @@
           </div>
         </header>
 
-        <!-- Fora de #chat-mensagens (única área com scroll): fica sempre visível no topo. -->
-        <div class="mia-chat-shortcuts-bar">
-          <div class="mia-chat-prompts" role="toolbar" aria-label="Atalhos de matéria">
-            <button type="button" id="chat-criar-manual" class="mia-chat-prompt" title="Escrever minha própria matéria e abrir no editor">
-              <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></span>
-              <span><span class="mia-chat-prompt-label">Manual</span><span class="mia-chat-prompt-text">Escrever minha própria matéria e abrir no editor</span></span>
-            </button>
-            <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria deste link:">
-              <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg></span>
-              <span><span class="mia-chat-prompt-label">Link</span><span class="mia-chat-prompt-text">Faça uma matéria deste link</span></span>
-            </button>
-            <button type="button" id="chat-varios-links" class="chat-varios-links mia-chat-prompt" title="Cole até 12 links, um por linha">
-              <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/><path d="M5 4h4M7 2v4"/></svg></span>
-              <span><span class="mia-chat-prompt-label">Vários links</span><span class="mia-chat-prompt-text">Criar uma matéria por link</span></span>
-            </button>
-            <button type="button" class="chat-exemplo mia-chat-prompt" data-modo-exemplo="pautas" title="Pesquise pautas sobre polêmicas gospel desta semana">
-              <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>
-              <span><span class="mia-chat-prompt-label">Pautas</span><span class="mia-chat-prompt-text">Pesquise pautas sobre polêmicas gospel desta semana</span></span>
-            </button>
-            <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria sobre católicos e evangélicos juntos na política em 2026">
-              <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg></span>
-              <span><span class="mia-chat-prompt-label">Escrever</span><span class="mia-chat-prompt-text">Faça uma matéria sobre católicos e evangélicos juntos na política em 2026</span></span>
-            </button>
-            <button type="button" class="chat-exemplo mia-chat-prompt" title="Faça uma matéria sobre o crescimento das igrejas evangélicas no Brasil">
-              <span class="mia-chat-prompt-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg></span>
-              <span><span class="mia-chat-prompt-label">Escrever</span><span class="mia-chat-prompt-text">Faça uma matéria sobre o crescimento das igrejas evangélicas no Brasil</span></span>
-            </button>
-          </div>
-        </div>
-
         <div id="chat-mensagens" class="mia-chat-messages">
           <div id="chat-vazio" class="mia-chat-empty">
             <div class="mia-chat-empty-copy">
@@ -128,6 +98,48 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
                   </summary>
                   <div class="mia-chat-more-menu">
+                    <section class="mia-chat-menu-sec">
+                      <p class="mia-chat-menu-label">Criar</p>
+                      <div class="mia-chat-menu-list">
+                        <button type="button" id="chat-criar-manual" class="mia-chat-menu-item" title="Escrever minha própria matéria e abrir no editor">
+                          <span class="mia-chat-menu-item-title">Manual</span>
+                          <span class="mia-chat-prompt-text">Escrever minha própria matéria e abrir no editor</span>
+                        </button>
+                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Faça uma matéria deste link">
+                          <span class="mia-chat-menu-item-title">Link</span>
+                          <span class="mia-chat-prompt-text">Faça uma matéria deste link</span>
+                        </button>
+                        <button type="button" id="chat-varios-links" class="chat-varios-links mia-chat-menu-item" title="Cole até 12 links, um por linha">
+                          <span class="mia-chat-menu-item-title">Vários links</span>
+                          <span class="mia-chat-prompt-text">Criar uma matéria por link</span>
+                        </button>
+                      </div>
+                    </section>
+
+                    <section class="mia-chat-menu-sec">
+                      <p class="mia-chat-menu-label">Pautas</p>
+                      <div class="mia-chat-menu-list">
+                        <button type="button" class="chat-exemplo mia-chat-menu-item" data-modo-exemplo="pautas" title="Pesquise pautas sobre polêmicas gospel desta semana">
+                          <span class="mia-chat-menu-item-title">Pautas</span>
+                          <span class="mia-chat-prompt-text">Pesquise pautas sobre polêmicas gospel desta semana</span>
+                        </button>
+                      </div>
+                    </section>
+
+                    <section class="mia-chat-menu-sec">
+                      <p class="mia-chat-menu-label">Exemplos</p>
+                      <div class="mia-chat-menu-list">
+                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Faça uma matéria sobre católicos e evangélicos juntos na política em 2026">
+                          <span class="mia-chat-menu-item-title">Escrever</span>
+                          <span class="mia-chat-prompt-text">Faça uma matéria sobre católicos e evangélicos juntos na política em 2026</span>
+                        </button>
+                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Faça uma matéria sobre o crescimento das igrejas">
+                          <span class="mia-chat-menu-item-title">Escrever</span>
+                          <span class="mia-chat-prompt-text">Faça uma matéria sobre o crescimento das igrejas</span>
+                        </button>
+                      </div>
+                    </section>
+
                     <!-- Anexos e atalhos de pauta entram por materia-chat-extras.js.
                          A seção some sozinha quando o script não preenche nada. -->
                     <section class="mia-chat-menu-sec">
@@ -181,14 +193,6 @@
                     </section>
                   </div>
                 </details>
-
-                <button type="button" class="chat-varios-links mia-chat-chip mia-chat-multi-link" title="Cole até 12 links e gere uma matéria separada para cada um">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/>
-                    <path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/>
-                  </svg>
-                  Links
-                </button>
 
                 <div class="mia-chat-seg" role="group" aria-label="O que a IA deve fazer">
                   <button type="button" data-chat-modo="escrever" aria-pressed="true"
@@ -296,6 +300,7 @@
         if (!open) setManualStatus('');
       }
       openBtn?.addEventListener('click', () => {
+        if (ferramentas) ferramentas.open = false;
         setManualOpen(true);
         tituloEl?.focus();
       });
@@ -449,6 +454,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260823jm1"></script>
+  <script src="/js/materia-chat.js?v=20260823menu1"></script>
   <script src="/js/materia-chat-extras.js?v=20260820facebookextract3"></script>
 <%- include('partials/app-end') %>
