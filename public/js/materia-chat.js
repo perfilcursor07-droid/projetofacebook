@@ -586,21 +586,46 @@
     return box;
   }
 
-  function areaSalvar(mensagem, container) {
+  function tituloRascunhoLivre(mensagem) {
+    const conteudo = String(mensagem?.content || '');
+    const heading = conteudo.match(/^\s*\\?#{1,6}\s+(.{10,200})\s*$/m);
+    if (heading?.[1]) return heading[1].replace(/\*+/g, '').trim().slice(0, 180);
+    const titulo = String(mensagem?.titulo || '').replace(/^\\?#{1,6}\s*/, '').trim();
+    if (titulo && !/^(achei|encontrei|aqui est[aá]|claro|vamos)\b/i.test(titulo)) {
+      return titulo.slice(0, 180);
+    }
+    return 'Matéria criada no Claude livre';
+  }
+
+  function areaSalvar(mensagem, container, { livre = false } = {}) {
     const box = document.createElement('div');
     box.className = 'mia-msg-panel mt-1';
 
     const info = document.createElement('p');
     info.className = 'text-xs text-slate-400';
-    info.textContent = 'Gostou? Salve como rascunho — ou peça um ajuste no campo abaixo do chat.';
+    info.textContent = livre
+      ? 'Quer transformar esta resposta em matéria? Revise o título e salve como rascunho.'
+      : 'Gostou? Salve como rascunho — ou peça um ajuste no campo abaixo do chat.';
     box.appendChild(info);
+
+    let tituloLivre = null;
+    if (livre) {
+      tituloLivre = document.createElement('input');
+      tituloLivre.type = 'text';
+      tituloLivre.maxLength = 180;
+      tituloLivre.value = tituloRascunhoLivre(mensagem);
+      tituloLivre.placeholder = 'Título da matéria';
+      tituloLivre.className =
+        'mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none';
+      box.appendChild(tituloLivre);
+    }
 
     // 3 títulos alternativos ao principal: o escolhido vai junto no rascunho.
     let tituloEscolhido = null;
     const alternativos = Array.isArray(mensagem.titulosAlternativos)
       ? mensagem.titulosAlternativos.filter(Boolean).slice(0, 3)
       : [];
-    if (alternativos.length) {
+    if (!livre && alternativos.length) {
       const tituloPrincipal = mensagem.titulo || (mensagem.content || '').split('\n')[0].trim();
       const wrap = document.createElement('div');
       wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
@@ -690,7 +715,7 @@
           body: JSON.stringify({
             imagemUrl: imagem.value.trim() || null,
             creditoImagem: credito.value.trim() || null,
-            titulo: tituloEscolhido,
+            titulo: livre ? tituloLivre?.value.trim() || null : tituloEscolhido,
           }),
         });
         aviso.replaceChildren();
@@ -801,10 +826,10 @@
     acoes.appendChild(salvar);
     acoes.appendChild(copiar);
     acoes.appendChild(ajustar);
-    acoes.appendChild(ensinar);
+    if (!livre) acoes.appendChild(ensinar);
     acoes.appendChild(aviso);
     box.appendChild(acoes);
-    box.appendChild(painelEnsinar);
+    if (!livre) box.appendChild(painelEnsinar);
 
     if (mensagem.matterId) {
       salvar.disabled = true;
@@ -1527,8 +1552,10 @@
       return wrap;
     }
 
-    if (mensagem.ehMateria && state.tipoConversa !== 'livre') {
-      areaSalvar(mensagem, wrap);
+    const respostaLivreSalvavel =
+      state.tipoConversa === 'livre' && String(mensagem.content || '').trim().length >= 120;
+    if ((mensagem.ehMateria && state.tipoConversa !== 'livre') || respostaLivreSalvavel) {
+      areaSalvar(mensagem, wrap, { livre: state.tipoConversa === 'livre' });
       // Atalhos só na última matéria, para não repetir a cada mensagem antiga
       if (ultima) {
         const continuar = blocoContinuar();

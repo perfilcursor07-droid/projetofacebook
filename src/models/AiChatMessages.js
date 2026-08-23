@@ -16,7 +16,8 @@ const AiChatMessages = {
         'm.*',
         'c.user_id as chat_user_id',
         'c.facebook_page_id as chat_page_id',
-        'c.titulo as chat_titulo'
+        'c.titulo as chat_titulo',
+        'c.modo as chat_modo'
       );
   },
 

@@ -3137,6 +3137,7 @@ async function salvarMateriaDoChat({
     throw erro('Mensagem não encontrada', 404);
   }
   if (row.role !== 'assistant') throw erro('Só é possível salvar a resposta da IA', 400);
+  const conversaLivre = row.chat_modo === 'livre';
 
   // Resposta com várias matérias: cada índice salva um rascunho separado.
   const multiplas = separarMaterias(row.content);
@@ -3168,7 +3169,7 @@ async function salvarMateriaDoChat({
     }
   }
 
-  const info = escolhida
+  let info = escolhida
     ? {
         titulo: escolhida.titulo,
         corpo: escolhida.corpo,
@@ -3176,6 +3177,26 @@ async function salvarMateriaDoChat({
         ehMateria: true,
       }
     : interpretarResposta(row.content);
+  if (conversaLivre && !escolhida) {
+    const conteudoLivre = String(row.content || '').replace(/\r\n/g, '\n').trim();
+    const heading = conteudoLivre.match(/^\s*\\?#{1,6}\s+(.{10,200})\s*$/m);
+    if (heading?.index != null) {
+      const inicioCorpo = heading.index + heading[0].length;
+      const corpoLivre = conteudoLivre
+        .slice(inicioCorpo)
+        .trim()
+        .replace(/\n+(?:Se quiser|Se você quiser),?\s+posso\b[\s\S]*$/i, '')
+        .trim();
+      if (corpoLivre.length >= 120) {
+        info = {
+          ...info,
+          ehMateria: true,
+          titulo: String(heading[1] || '').replace(/\*+/g, '').trim().slice(0, 180),
+          corpo: corpoLivre,
+        };
+      }
+    }
+  }
   const corpo = String(info.corpo || (escolhida ? escolhida.conteudo : row.content) || '').trim();
   if (corpo.length < 120) throw erro('Essa resposta é curta demais para virar matéria', 400);
 
@@ -3214,7 +3235,9 @@ async function salvarMateriaDoChat({
   const tituloOriginal = info.titulo || row.titulo || 'Matéria do chat';
   const titulo = escolhida
     ? tituloOriginal
-    : tituloDaEscolha && alternativas.includes(tituloDaEscolha)
+    : conversaLivre && tituloDaEscolha
+      ? tituloDaEscolha
+      : tituloDaEscolha && alternativas.includes(tituloDaEscolha)
       ? tituloDaEscolha
       : tituloOriginal;
   const fontePrincipal = fontesDaMateria[0] || null;
