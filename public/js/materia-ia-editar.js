@@ -1763,6 +1763,8 @@
               ? 'Google'
               : img.origem === 'brave'
                 ? 'Brave'
+                : img.origem === 'google-news'
+                  ? 'Notícia'
                 : img.origem === 'google'
                   ? 'Serper'
                   : img.origem || '';

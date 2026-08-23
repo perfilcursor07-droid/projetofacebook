@@ -170,6 +170,93 @@ async function buscarBraveImagens(consulta, { count = 10 } = {}) {
   }
 }
 
+/**
+ * Fallback sem chave: busca reportagens no Google News e usa a imagem de capa
+ * publicada pelo próprio veículo. É mais aderente à matéria que uma foto de
+ * stock e continua funcionando quando SerpApi/Serper/Brave ficam sem cota.
+ */
+async function buscarGoogleNewsImagens(consulta, { count = 10 } = {}) {
+  try {
+    const { buscarGoogleNewsRss } = require('./newsResearch');
+    const { extrairMetadadosImagemArtigo } = require('./articleSource');
+    const noticias = await buscarGoogleNewsRss(consulta, {
+      when: '365d',
+      resolverDiretas: true,
+      incluirWebGeral: true,
+    });
+
+    const tokens = (valor) =>
+      new Set(
+        String(valor || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .filter((palavra) => palavra.length >= 4)
+      );
+    const esperados = tokens(consulta);
+    const relacionada = (noticia) => {
+      if (!esperados.size) return true;
+      const tituloTokens = tokens(noticia?.titulo);
+      let comuns = 0;
+      for (const token of esperados) if (tituloTokens.has(token)) comuns += 1;
+      return esperados.size <= 2 ? comuns >= 1 : comuns >= 2;
+    };
+    const noticiasRelacionadas = (noticias || []).filter(relacionada);
+
+    // Algumas páginas bloqueiam robôs. Consultar mais candidatas que o total
+    // pedido mantém boa chance de obter capas sem sobrecarregar os veículos.
+    // Se o título veio muito diferente do texto pesquisado, ainda confiamos no
+    // ranking do Google em vez de zerar a busca inteira.
+    const candidatas = (noticiasRelacionadas.length ? noticiasRelacionadas : noticias || []).slice(
+      0,
+      Math.min(10, Math.max(6, count))
+    );
+    const metas = await Promise.all(
+      candidatas.map((noticia) =>
+        extrairMetadadosImagemArtigo(noticia.link)
+          .then((meta) => ({ noticia, meta }))
+          .catch(() => ({ noticia, meta: null }))
+      )
+    );
+
+    const vistos = new Set();
+    const imagens = [];
+    for (let idx = 0; idx < metas.length && imagens.length < count; idx += 1) {
+      const { noticia, meta } = metas[idx];
+      const imageUrl = meta?.imagem;
+      if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) continue;
+      // O título no RSS pode divergir do <title>/og:title da página final.
+      // Valida novamente depois do redirect para não oferecer capa de outra
+      // notícia (comum em portais que redirecionam páginas antigas).
+      if (noticiasRelacionadas.length && !relacionada({ titulo: meta.titulo || noticia.titulo })) {
+        continue;
+      }
+      const key = imageUrl.split('?')[0].toLowerCase();
+      if (vistos.has(key)) continue;
+      vistos.add(key);
+      imagens.push({
+        id: `google-news:${idx}:${String(imageUrl).slice(-36)}`,
+        url: imageUrl,
+        thumbnail: imageUrl,
+        titulo: meta.titulo || noticia.titulo || consulta,
+        fonte: meta.veiculo || noticia.veiculo || 'Google News',
+        link: meta.url || noticia.link || null,
+        largura: null,
+        altura: null,
+        origem: 'google-news',
+        consulta,
+      });
+    }
+    return imagens.filter((item) => !imagemPareceRuim(item));
+  } catch (err) {
+    console.warn('[sugerirImagens] google-news:', err.message);
+    falhasProvedor.registrar('Google News', err.message);
+    return [];
+  }
+}
+
 async function buscarPexelsImagens(consulta, { perPage = 6 } = {}) {
   if (!env.pexelsApiKey) return [];
   try {
@@ -292,6 +379,10 @@ async function buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef, m
     juntar(await buscarBraveImagens(consulta, { count: 12 }));
   }
 
+  if (encontradas.length < minimo) {
+    juntar(await buscarGoogleNewsImagens(consulta, { count: 10 }));
+  }
+
   // Pexels é banco de stock: não serve para pessoa nomeada, mas resolve
   // assunto genérico. A consulta vai traduzida quando dá.
   if (encontradas.length < minimo && !temPessoa) {
@@ -334,7 +425,8 @@ function planoDeConsultasSemIa({ titulo, fonteTitulo }) {
 }
 
 /**
- * IA analisa a matéria → busca fotos reais (SerpApi → Serper → Brave → Pexels).
+ * IA analisa a matéria → busca fotos reais
+ * (SerpApi → Serper → Brave → capas do Google News → Pexels).
  */
 async function sugerirImagensParaMateria({
   titulo,
@@ -411,8 +503,8 @@ async function sugerirImagensParaMateria({
     if (imagens.length <= (imagemAtual ? 1 : 0)) {
       const err = new Error(
         temPessoa
-          ? `Não encontramos fotos de “${plano.pessoa}” no SerpApi nem no Brave Images. Confira SERPAPI_API_KEY e BRAVE_SEARCH_API_KEY no .env.`
-          : 'Nenhuma imagem sugerida. Confira SERPAPI_API_KEY e BRAVE_SEARCH_API_KEY no .env.'
+          ? `Não encontramos fotos de “${plano.pessoa}” nos buscadores nem nas reportagens relacionadas.`
+          : 'Nenhuma imagem sugerida nos buscadores nem nas reportagens relacionadas.'
       );
       err.status = 422;
       throw err;
@@ -423,6 +515,7 @@ async function sugerirImagensParaMateria({
   if (fonteUsada === 'serpapi') avisoParts.push('Fotos via SerpApi (Google Images)');
   else if (fonteUsada === 'brave') avisoParts.push('Fotos via Brave Images');
   else if (fonteUsada === 'google') avisoParts.push('Fotos via Serper');
+  else if (fonteUsada === 'google-news') avisoParts.push('Fotos editoriais via Google News');
   if (serperEsgotadoRef.value) avisoParts.push('Serper.dev sem créditos');
 
   return {
@@ -437,7 +530,7 @@ async function sugerirImagensParaMateria({
 
 /**
  * Busca fotos por palavra-chave digitada (sem IA).
- * Mesma cadeia: SerpApi → Serper → Brave → Pexels.
+ * Mesma cadeia: SerpApi → Serper → Brave → Google News → Pexels.
  */
 async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
   const consulta = String(consultaRaw || '')
@@ -498,6 +591,7 @@ async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
     serpapi: 'SerpApi (Google Images)',
     google: 'Serper',
     brave: 'Brave Images',
+    'google-news': 'Google News (capa dos veículos)',
     pexels: 'Pexels',
   };
   const avisoParts = [];
@@ -524,4 +618,5 @@ module.exports = {
   buscarSerpApiImagens,
   buscarSerperImagens,
   buscarBraveImagens,
+  buscarGoogleNewsImagens,
 };

@@ -982,6 +982,67 @@ async function extrairMetadadosArtigo(url) {
   }
 }
 
+/**
+ * Leitura curta usada pela busca de imagens.
+ *
+ * Diferente de extrairMetadadosArtigo(), não aciona Jina/Chrome/Translate nem
+ * tenta extrair todo o texto da reportagem. Assim podemos consultar algumas
+ * fontes do Google News em paralelo sem transformar o botão "Trocar imagem"
+ * em uma operação demorada.
+ */
+async function extrairMetadadosImagemArtigo(url) {
+  const urlReal = await resolverUrlNoticia(url);
+  if (!urlPublicaParaChrome(urlReal)) return null;
+
+  try {
+    const res = await axios.get(urlReal, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      },
+      timeout: 12000,
+      maxRedirects: 4,
+      maxContentLength: 4_000_000,
+      beforeRedirect: (options) => {
+        const destino = `${options.protocol || 'https:'}//${options.hostname || ''}${options.path || '/'}`;
+        if (!urlPublicaParaChrome(destino)) throw new Error('redirecionamento para URL não pública');
+      },
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+    const contentType = String(res.headers?.['content-type'] || '').toLowerCase();
+    if (contentType && !/html|xhtml/.test(contentType)) return null;
+
+    const html = String(res.data || '');
+    const finalUrl = res.request?.res?.responseUrl || res.config?.url || urlReal;
+    if (!urlPublicaParaChrome(finalUrl)) return null;
+
+    const imagem = extrairImagemCapa(html, finalUrl);
+    if (!imagem || !urlPublicaParaChrome(imagem)) return null;
+
+    return {
+      url: finalUrl,
+      titulo:
+        extrairMeta(html, 'og:title') ||
+        decodificarHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '') ||
+        null,
+      imagem,
+      veiculo:
+        extrairMeta(html, 'og:site_name') ||
+        (() => {
+          try {
+            return new URL(finalUrl).hostname.replace(/^www\./i, '');
+          } catch {
+            return null;
+          }
+        })(),
+    };
+  } catch (err) {
+    console.warn('[imagem-editorial]', err.response?.status || err.message);
+    return null;
+  }
+}
+
 function tokensTitulo(value) {
   return String(value || '')
     .toLowerCase()
@@ -1443,6 +1504,7 @@ module.exports = {
   decodificarHtml,
   apurarTopico,
   extrairMetadadosArtigo,
+  extrairMetadadosImagemArtigo,
   extrairMetadadosViaJina,
   extrairMetadadosViaGoogleTranslate,
   extrairMetadadosViaChrome,
