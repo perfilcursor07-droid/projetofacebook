@@ -1985,8 +1985,9 @@
   });
 
   function fecharMenuMais() {
-    const menu = document.getElementById('chat-ferramentas');
-    if (menu) menu.open = false;
+    document.querySelectorAll('.mia-chat-more').forEach((menu) => {
+      menu.open = false;
+    });
   }
 
   el.variosLinks?.forEach((botao) => {

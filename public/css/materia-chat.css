@@ -1270,6 +1270,13 @@ body.mia-chat-drawer-open {
   padding: 0.4rem;
 }
 
+.mia-chat-more--criar .mia-chat-more-menu {
+  left: auto;
+  right: 0;
+  width: min(18.5rem, calc(100vw - 1.5rem));
+  max-height: min(22rem, calc(100vh - 8rem));
+}
+
 /* —— Seções do menu "+" —— */
 .mia-chat-menu-sec + .mia-chat-menu-sec {
   margin-top: 0.3rem;

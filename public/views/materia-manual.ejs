@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260823menu1" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260823criar1" />
 
   <main class="mia-chat" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -99,24 +99,6 @@
                   </summary>
                   <div class="mia-chat-more-menu">
                     <section class="mia-chat-menu-sec">
-                      <p class="mia-chat-menu-label">Criar</p>
-                      <div class="mia-chat-menu-list">
-                        <button type="button" id="chat-criar-manual" class="mia-chat-menu-item" title="Escrever minha própria matéria e abrir no editor">
-                          <span class="mia-chat-menu-item-title">Manual</span>
-                          <span class="mia-chat-prompt-text">Escrever minha própria matéria e abrir no editor</span>
-                        </button>
-                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Faça uma matéria deste link">
-                          <span class="mia-chat-menu-item-title">Link</span>
-                          <span class="mia-chat-prompt-text">Faça uma matéria deste link</span>
-                        </button>
-                        <button type="button" id="chat-varios-links" class="chat-varios-links mia-chat-menu-item" title="Cole até 12 links, um por linha">
-                          <span class="mia-chat-menu-item-title">Vários links</span>
-                          <span class="mia-chat-prompt-text">Criar uma matéria por link</span>
-                        </button>
-                      </div>
-                    </section>
-
-                    <section class="mia-chat-menu-sec">
                       <p class="mia-chat-menu-label">Pautas</p>
                       <div class="mia-chat-menu-list">
                         <button type="button" class="chat-exemplo mia-chat-menu-item" data-modo-exemplo="pautas" title="Pesquise pautas sobre polêmicas gospel desta semana">
@@ -214,6 +196,30 @@
 
               <div class="mia-chat-send-row">
                 <button type="button" id="chat-parar" class="mia-chat-stop hidden">Parar</button>
+                <details class="mia-chat-more mia-chat-more--criar" id="chat-criar">
+                  <summary title="Criar" aria-label="Criar matéria">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  </summary>
+                  <div class="mia-chat-more-menu">
+                    <section class="mia-chat-menu-sec">
+                      <p class="mia-chat-menu-label">Criar</p>
+                      <div class="mia-chat-menu-list">
+                        <button type="button" id="chat-criar-manual" class="mia-chat-menu-item" title="Escrever minha própria matéria e abrir no editor">
+                          <span class="mia-chat-menu-item-title">Manual</span>
+                          <span class="mia-chat-prompt-text">Escrever minha própria matéria e abrir no editor</span>
+                        </button>
+                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Faça uma matéria deste link">
+                          <span class="mia-chat-menu-item-title">Link</span>
+                          <span class="mia-chat-prompt-text">Faça uma matéria deste link</span>
+                        </button>
+                        <button type="button" id="chat-varios-links" class="chat-varios-links mia-chat-menu-item" title="Cole até 12 links, um por linha">
+                          <span class="mia-chat-menu-item-title">Vários links</span>
+                          <span class="mia-chat-prompt-text">Criar uma matéria por link</span>
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </details>
                 <button type="button" id="chat-voz" class="mia-chat-voice" title="Gravar áudio para escrever" aria-label="Gravar áudio para escrever" aria-pressed="false">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
@@ -286,7 +292,11 @@
       const tipoEl = document.getElementById('chat-manual-tipo');
       const creditoEl = document.getElementById('chat-manual-credito');
       const chatMain = document.querySelector('.mia-chat-main');
-      const ferramentas = document.getElementById('chat-ferramentas');
+      function fecharMenusMais() {
+        document.querySelectorAll('.mia-chat-more').forEach((menu) => {
+          menu.open = false;
+        });
+      }
       function setManualStatus(text, erro) {
         if (!statusEl) return;
         statusEl.textContent = text || '';
@@ -300,21 +310,27 @@
         if (!open) setManualStatus('');
       }
       openBtn?.addEventListener('click', () => {
-        if (ferramentas) ferramentas.open = false;
+        fecharMenusMais();
         setManualOpen(true);
         tituloEl?.focus();
       });
       closeBtn?.addEventListener('click', () => setManualOpen(false));
       backdrop?.addEventListener('click', () => setManualOpen(false));
+      document.querySelectorAll('.mia-chat-more').forEach((menu) => {
+        menu.addEventListener('toggle', () => {
+          if (!menu.open) return;
+          document.querySelectorAll('.mia-chat-more').forEach((outro) => {
+            if (outro !== menu) outro.open = false;
+          });
+        });
+      });
       document.addEventListener('pointerdown', (e) => {
-        if (ferramentas?.open && !ferramentas.contains(e.target)) {
-          ferramentas.removeAttribute('open');
-        }
+        document.querySelectorAll('.mia-chat-more[open]').forEach((menu) => {
+          if (!menu.contains(e.target)) menu.removeAttribute('open');
+        });
       });
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && ferramentas?.open) {
-          ferramentas.removeAttribute('open');
-        }
+        if (e.key === 'Escape') fecharMenusMais();
         if (e.key === 'Escape' && form && !form.classList.contains('hidden')) {
           setManualOpen(false);
         }
@@ -454,6 +470,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260823menu1"></script>
+  <script src="/js/materia-chat.js?v=20260823criar1"></script>
   <script src="/js/materia-chat-extras.js?v=20260820facebookextract3"></script>
 <%- include('partials/app-end') %>
