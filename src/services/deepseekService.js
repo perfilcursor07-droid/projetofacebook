@@ -3218,7 +3218,7 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
 - O texto factual extraído desta publicação tem aproximadamente ${volumeFonteSocial} caracteres.
 - Siga o tamanho adaptativo definido no bloco TAMANHO E PROFUNDIDADE; use cada fato uma vez e nunca complete lacunas por conta própria.
 - Em uma matéria desse tamanho, não use intertítulos.
-- Entregue somente a matéria pronta no padrão JM. NÃO gere títulos alternativos (o sistema gera 3 à parte), sugestão de arte nem notas ao editor.`;
+- Entregue somente a matéria pronta no padrão JM. NÃO gere títulos alternativos (o sistema gera 3 à parte), sugestão de arte nem notas ao editor.`
     : '';
 
   const blocoReescritaDireta = reescritaDireta
