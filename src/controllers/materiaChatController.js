@@ -14,6 +14,7 @@ async function criar(req, res, next) {
     const chat = await chatService.criarConversa({
       userId: req.session.userId,
       titulo: req.body?.titulo || null,
+      modo: req.body?.modo === 'livre' ? 'livre' : 'materia',
     });
     return res.status(201).json({ ok: true, chat });
   } catch (err) {
@@ -125,6 +126,9 @@ async function enviar(req, res, next) {
       periodo: body.periodo || undefined,
       palavrasChave: body.palavrasChave || null,
       modo: body.modo === 'pautas' ? 'pautas' : 'escrever',
+      tipoConversa: body.tipoConversa === 'livre' || body.tipo_conversa === 'livre'
+        ? 'livre'
+        : 'materia',
       transcreverVideo:
         body.transcreverVideo == null
           ? true

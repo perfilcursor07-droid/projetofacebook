@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260823criar1" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260823livre1" />
 
   <main class="mia-chat" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -176,7 +176,15 @@
                   </div>
                 </details>
 
-                <div class="mia-chat-seg" role="group" aria-label="O que a IA deve fazer">
+                <div class="mia-chat-seg" id="chat-tipo-seg" role="group" aria-label="Tipo de conversa">
+                  <button type="button" data-chat-tipo="materia" aria-pressed="true"
+                    title="Cria matérias usando as regras editoriais do sistema"
+                    class="chat-tipo-btn mia-chat-seg-btn is-active">Matéria</button>
+                  <button type="button" data-chat-tipo="livre" aria-pressed="false"
+                    title="Conversa normal com o Claude, sem critérios editoriais"
+                    class="chat-tipo-btn mia-chat-seg-btn">Claude livre</button>
+                </div>
+                <div class="mia-chat-seg" id="chat-modo-seg" role="group" aria-label="O que a IA deve fazer">
                   <button type="button" data-chat-modo="escrever" aria-pressed="true"
                     title="A IA já escreve a matéria com o que você pedir"
                     class="chat-modo-btn mia-chat-seg-btn is-active">Escrever</button>
@@ -470,6 +478,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260823criar1"></script>
+  <script src="/js/materia-chat.js?v=20260823livre1"></script>
   <script src="/js/materia-chat-extras.js?v=20260820facebookextract3"></script>
 <%- include('partials/app-end') %>

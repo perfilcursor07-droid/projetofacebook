@@ -11,6 +11,7 @@
     busca: document.getElementById('chat-busca'),
     nova: document.getElementById('chat-nova'),
     novaTop: document.getElementById('chat-nova-top'),
+    ensinar: document.getElementById('chat-ensinar'),
     titulo: document.getElementById('chat-titulo'),
     renomear: document.getElementById('chat-renomear'),
     mensagens: document.getElementById('chat-mensagens'),
@@ -27,6 +28,8 @@
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
     modoBtns: document.querySelectorAll('.chat-modo-btn'),
+    tipoBtns: document.querySelectorAll('.chat-tipo-btn'),
+    modoSeg: document.getElementById('chat-modo-seg'),
     sidebar: document.getElementById('chat-sidebar'),
     drawerOpen: document.getElementById('chat-drawer-open'),
     drawerClose: document.getElementById('chat-drawer-close'),
@@ -49,6 +52,7 @@
     vozFinal: '',
     recognition: null,
     modo: 'escrever',
+    tipoConversa: 'materia',
     salvandoPautas: false,
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
     ultimasPautas: [],
@@ -1513,7 +1517,7 @@
       return wrap;
     }
 
-    if (mensagem.ehMateria) {
+    if (mensagem.ehMateria && state.tipoConversa !== 'livre') {
       areaSalvar(mensagem, wrap);
       // Atalhos só na última matéria, para não repetir a cada mensagem antiga
       if (ultima) {
@@ -1551,7 +1555,7 @@
     } catch {
       /* ignore */
     }
-    el.titulo.textContent = 'Nova conversa';
+    el.titulo.textContent = state.tipoConversa === 'livre' ? 'Nova conversa com Claude' : 'Nova conversa';
     el.renomear?.classList.add('hidden');
     state.pesquisarWeb = false;
     aplicarToggleWeb();
@@ -1574,6 +1578,8 @@
       }
       el.titulo.textContent = chat.titulo || 'Nova conversa';
       el.renomear?.classList.remove('hidden');
+      state.tipoConversa = chat.modo === 'livre' ? 'livre' : 'materia';
+      aplicarTipoConversa();
       state.pesquisarWeb = chat.pesquisarWeb === true;
       aplicarToggleWeb();
       if (el.tom) el.tom.value = chat.tom || 'natural';
@@ -1601,6 +1607,43 @@
     // Período só faz sentido com a busca ligada
     el.periodo?.classList.toggle('hidden', !on);
     el.periodo?.closest('.mia-chat-tool-field')?.classList.toggle('hidden', !on);
+  }
+
+  function aplicarTipoConversa() {
+    const livre = state.tipoConversa === 'livre';
+    el.tipoBtns?.forEach((btn) => {
+      const ativo = btn.dataset.chatTipo === state.tipoConversa;
+      btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+      btn.className = ativo
+        ? 'chat-tipo-btn mia-chat-seg-btn is-active'
+        : 'chat-tipo-btn mia-chat-seg-btn';
+    });
+    el.modoSeg?.classList.toggle('hidden', livre);
+    el.ensinar?.classList.toggle('hidden', livre);
+    el.tom?.closest('.mia-chat-tool-field')?.classList.toggle('hidden', livre);
+    el.toggleTranscricao?.classList.toggle('hidden', livre);
+    if (el.input) {
+      el.input.placeholder = livre
+        ? 'Converse normalmente com o Claude…'
+        : state.modo === 'pautas'
+          ? 'Digite o tema para pesquisar. Ex.: Polêmica Silas Malafaia'
+          : 'Descreva o assunto, cole um link ou peça um ajuste…';
+    }
+  }
+
+  function definirTipoConversa(novo) {
+    const tipo = novo === 'livre' ? 'livre' : 'materia';
+    if (tipo === state.tipoConversa) return;
+    const tinhaConversa = Boolean(state.chatId);
+    state.tipoConversa = tipo;
+    if (tinhaConversa) novaConversa();
+    aplicarTipoConversa();
+    setStatus(
+      tipo === 'livre'
+        ? 'Conversa livre: nenhuma regra editorial será enviada ao Claude.'
+        : 'Modo Matéria: regras editoriais e ferramentas de publicação ativas.'
+    );
+    el.input?.focus();
   }
 
   function aplicarToggleTranscricao() {
@@ -1631,7 +1674,7 @@
       state.pesquisarWeb = true;
       aplicarToggleWeb();
     }
-    if (el.input) {
+    if (el.input && state.tipoConversa !== 'livre') {
       el.input.placeholder =
         state.modo === 'pautas'
           ? 'Digite o tema para pesquisar. Ex.: Polêmica Silas Malafaia'
@@ -1767,7 +1810,11 @@
     setEnviando(true);
     const janela = el.periodo?.selectedOptions?.[0]?.textContent?.trim() || '';
     setStatus(
-      state.modo === 'pautas'
+      state.tipoConversa === 'livre'
+        ? state.pesquisarWeb
+          ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''} para o Claude…`
+          : 'Claude está respondendo…'
+        : state.modo === 'pautas'
         ? `Procurando matérias sobre o tema${janela ? ` — ${janela.toLowerCase()}` : ''}…`
         : state.pesquisarWeb
         ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''}…`
@@ -1811,6 +1858,7 @@
           tom: el.tom?.value || 'natural',
           periodo: el.periodo?.value || '30d',
           modo: state.modo,
+          tipoConversa: state.tipoConversa,
         }),
       });
 
@@ -1947,6 +1995,9 @@
   el.modoBtns?.forEach((btn) => {
     btn.addEventListener('click', () => definirModo(btn.dataset.chatModo));
   });
+  el.tipoBtns?.forEach((btn) => {
+    btn.addEventListener('click', () => definirTipoConversa(btn.dataset.chatTipo));
+  });
 
   el.input.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && !ev.shiftKey) {
@@ -2025,6 +2076,7 @@
     aplicarToggleWeb();
     aplicarToggleTranscricao();
     definirModo(state.modo);
+    aplicarTipoConversa();
     await carregarConversas();
     let salvo = null;
     try {

@@ -4,6 +4,7 @@ const { after, before, test } = require('node:test');
 
 let server;
 let gateway;
+let lastRequestBody;
 
 before(async () => {
   server = http.createServer((req, res) => {
@@ -24,6 +25,7 @@ before(async () => {
     });
     req.on('end', () => {
       const body = JSON.parse(raw || '{}');
+      lastRequestBody = body;
       if (body.stream) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'Ola ' } }] })}\n\n`);
@@ -76,6 +78,8 @@ test('le resposta OpenAI-compatible e remove cerca de JSON', async () => {
     { json: true, tarefa: 'conversa' }
   );
   assert.equal(resposta, '{"ok":true}');
+  assert.equal(lastRequestBody.conversation_id, 'viralizeai:internal:conversa');
+  assert.equal(lastRequestBody.conversation_name, 'ViralizeAI — tarefas internas');
 });
 
 test('entrega streaming SSE ao chat', async () => {

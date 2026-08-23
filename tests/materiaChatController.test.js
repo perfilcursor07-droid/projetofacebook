@@ -86,3 +86,17 @@ test('para de escrever quando a requisicao e realmente abortada', async () => {
   assert.doesNotMatch(res.output, /NAO DEVE SAIR/);
 });
 
+test('encaminha o modo Claude livre sem confundir com o modo editorial', async () => {
+  const req = fakeRequest();
+  req.body.tipoConversa = 'livre';
+  const res = new FakeResponse();
+  let tipoRecebido = null;
+  const controller = carregarController(async ({ tipoConversa }) => {
+    tipoRecebido = tipoConversa;
+  });
+
+  await controller.enviar(req, res, () => {});
+
+  assert.equal(tipoRecebido, 'livre');
+  assert.equal(res.writableEnded, true);
+});

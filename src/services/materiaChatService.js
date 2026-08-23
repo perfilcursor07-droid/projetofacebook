@@ -1344,6 +1344,7 @@ async function listarConversas(userId) {
   return rows.map((c) => ({
     id: c.id,
     titulo: c.titulo || 'Nova conversa',
+    modo: c.modo === 'livre' ? 'livre' : 'materia',
     pesquisarWeb: Boolean(c.pesquisar_web),
     tom: c.tom || 'natural',
     periodo: c.periodo || PERIODO_PADRAO,
@@ -1352,14 +1353,25 @@ async function listarConversas(userId) {
   }));
 }
 
-async function criarConversa({ userId, titulo = null, facebookPageId = null }) {
+async function criarConversa({
+  userId,
+  titulo = null,
+  facebookPageId = null,
+  modo = 'materia',
+}) {
   const id = await AiChats.create({
     user_id: userId,
     facebook_page_id: facebookPageId || null,
     titulo: titulo ? tituloDaConversa(titulo) : null,
+    modo: modo === 'livre' ? 'livre' : 'materia',
   });
   const chat = await AiChats.findById(id);
-  return { id: chat.id, titulo: chat.titulo || 'Nova conversa', mensagens: [] };
+  return {
+    id: chat.id,
+    titulo: chat.titulo || 'Nova conversa',
+    modo: chat.modo === 'livre' ? 'livre' : 'materia',
+    mensagens: [],
+  };
 }
 
 async function obterConversa({ userId, chatId }) {
@@ -1369,6 +1381,7 @@ async function obterConversa({ userId, chatId }) {
   return {
     id: chat.id,
     titulo: chat.titulo || 'Nova conversa',
+    modo: chat.modo === 'livre' ? 'livre' : 'materia',
     pesquisarWeb: Boolean(chat.pesquisar_web),
     tom: chat.tom || 'natural',
     periodo: chat.periodo || PERIODO_PADRAO,
@@ -1422,6 +1435,7 @@ async function responder({
   periodo = PERIODO_PADRAO,
   palavrasChave = null,
   modo = 'escrever',
+  tipoConversa = 'materia',
   transcreverVideo = true,
   onEvent = () => {},
 }) {
@@ -1431,23 +1445,16 @@ async function responder({
   // Quem escreve "quero 5 pautas sobre X" está pedindo a lista, mesmo sem ter
   // clicado no chip "Pautas". Antes esse pedido caía no modo de escrever, que
   // exige fonte, e a resposta virava "me mande os links".
+  const tipoSolicitado = tipoConversa === 'livre' ? 'livre' : 'materia';
   const pedeListaDePautas =
     /\b(pautas?|sugest(ão|ões)\s+de\s+mat[ée]rias?)\b/i.test(String(texto || '')) &&
     !/https?:\/\//i.test(String(texto || ''));
-  const modoPautas = String(modo) === 'pautas' || (String(modo) !== 'manual' && pedeListaDePautas);
+  const modoPautas =
+    tipoSolicitado !== 'livre' &&
+    (String(modo) === 'pautas' || (String(modo) !== 'manual' && pedeListaDePautas));
   const deepseekService = require('./deepseekService');
   const materiaIaService = require('./materiaIaService');
   deepseekService.assertDeepseek('conversa');
-
-  let contextoAprendizado = null;
-  let politicasEditor = { omitirVeiculoNoCorpo: false };
-  try {
-    const learning = require('./editorialLearningService');
-    contextoAprendizado = await learning.obterContextoAprendizado(userId);
-    politicasEditor = learning.analisarOrientacoesEditor(contextoAprendizado);
-  } catch (err) {
-    console.warn('[materia-chat] carregar memória editorial:', err.message);
-  }
 
   const pedido = String(texto || '').replace(/\s+$/g, '').trim();
   if (pedido.length < 3) throw erro('Escreva o que você quer que a IA faça', 400);
@@ -1460,6 +1467,7 @@ async function responder({
     const novoId = await AiChats.create({
       user_id: userId,
       titulo: tituloDaConversa(pedido),
+      modo: tipoSolicitado,
       pesquisar_web: pesquisarWeb ? 1 : 0,
       tom,
       periodo: periodoFinal,
@@ -1467,11 +1475,28 @@ async function responder({
     chat = await AiChats.findById(novoId);
     onEvent({ tipo: 'conversa', chat: { id: chat.id, titulo: chat.titulo, nova: true } });
   } else {
+    const tipoExistente = chat.modo === 'livre' ? 'livre' : 'materia';
+    if (tipoExistente !== tipoSolicitado) {
+      throw erro('Inicie uma nova conversa para trocar entre Matéria e Claude livre.', 409);
+    }
     const patch = { pesquisar_web: pesquisarWeb ? 1 : 0, tom, periodo: periodoFinal };
     if (!chat.titulo) patch.titulo = tituloDaConversa(pedido);
     await AiChats.update(chat.id, patch);
     if (patch.titulo) {
       onEvent({ tipo: 'conversa', chat: { id: chat.id, titulo: patch.titulo, nova: false } });
+    }
+  }
+
+  const conversaLivre = (chat.modo === 'livre' ? 'livre' : tipoSolicitado) === 'livre';
+  let contextoAprendizado = null;
+  let politicasEditor = { omitirVeiculoNoCorpo: false };
+  if (!conversaLivre) {
+    try {
+      const learning = require('./editorialLearningService');
+      contextoAprendizado = await learning.obterContextoAprendizado(userId);
+      politicasEditor = learning.analisarOrientacoesEditor(contextoAprendizado);
+    } catch (err) {
+      console.warn('[materia-chat] carregar memória editorial:', err.message);
     }
   }
 
@@ -1498,6 +1523,89 @@ async function responder({
     passos.push(passo);
     onEvent({ tipo: 'passo', passo });
   };
+
+  /** Chat comum: salva texto e fontes sem interpretar como matéria editorial. */
+  const finalizarLivre = async (resposta, { fontesUsadas = [], usouWeb = false } = {}) => {
+    const passosSalvos = passos.slice(-20).map((passo) => ({
+      kind: passo.kind,
+      texto: limparParaBanco(passo.texto, 300),
+      ...(passo.url ? { url: limparParaBanco(passo.url, 500) } : {}),
+    }));
+    const fontesSalvas = (fontesUsadas || []).slice(0, 8).map((fonte) => ({
+      veiculo: limparParaBanco(fonte.veiculo, 120),
+      titulo: limparParaBanco(fonte.titulo, 300),
+      url: limparParaBanco(fonte.url, 500),
+      ...(fonte.resumo ? { resumo: limparParaBanco(fonte.resumo, 1000) } : {}),
+    }));
+    const assistantId = await AiChatMessages.create({
+      chat_id: chat.id,
+      role: 'assistant',
+      content: resposta,
+      titulo: null,
+      hashtags: '[]',
+      passos: JSON.stringify(passosSalvos),
+      fontes: JSON.stringify(fontesSalvas),
+      pesquisou_web: usouWeb ? 1 : 0,
+    });
+    await AiChats.touch(chat.id);
+    const salva = await AiChatMessages.findById(assistantId);
+    const mensagem = {
+      ...serializarMensagem(salva),
+      ehMateria: false,
+      materias: [],
+      titulosAlternativos: [],
+    };
+    onEvent({ tipo: 'fim', chatId: chat.id, mensagem });
+    return { chatId: chat.id, mensagem };
+  };
+
+  if (conversaLivre) {
+    let fontesWeb = [];
+    if (pesquisarWeb) {
+      registrarPasso({ kind: 'pesquisa', texto: 'Pesquisando na internet…' });
+      try {
+        const consultaLivre = pedido
+          .replace(/https?:\/\/\S+/gi, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 180) || pedido.slice(0, 180);
+        fontesWeb = await materiaIaService.coletarFatosNaWeb({
+          consultas: [consultaLivre],
+          periodo: periodoFinal,
+          resumoContexto: pedido.slice(0, 180),
+          max: 6,
+          logPrefix: '[claude-livre]',
+        });
+      } catch (err) {
+        console.warn('[claude-livre] pesquisa:', err.message);
+      }
+      registrarPasso({
+        kind: fontesWeb.length ? 'fontes' : 'aviso',
+        texto: fontesWeb.length
+          ? `${fontesWeb.length} fonte(s) encontrada(s) para o Claude consultar`
+          : 'A pesquisa não encontrou fontes; o Claude responderá sem resultados novos da web.',
+      });
+    }
+
+    registrarPasso({ kind: 'pensando', texto: 'Claude está respondendo…' });
+    onEvent({ tipo: 'inicio-resposta' });
+    const historicoLivre = anteriores.map((mensagem) => ({
+      role: mensagem.role,
+      content: mensagem.content,
+    }));
+    const respostaLivre = await deepseekService.conversarLivre({
+      pedido,
+      historico: historicoLivre,
+      fontesWeb,
+      onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
+      conversationId: `viralizeai:user:${userId}:chat:${chat.id}`,
+      conversationName: chat.titulo || tituloDaConversa(pedido),
+    });
+    return finalizarLivre(respostaLivre, {
+      fontesUsadas: fontesWeb,
+      usouWeb: Boolean(pesquisarWeb && fontesWeb.length),
+    });
+  }
 
   /** Salva a resposta na conversa e avisa o front (usado no fluxo normal e na checagem). */
   const finalizar = async (resposta, { fontesUsadas = [], usouWeb = false, pautas = null } = {}) => {
@@ -2771,6 +2879,8 @@ async function responder({
         reescritaDireta: temFonteDoLink && !usarPesquisa,
         contextoAprendizado,
         politicasEditor,
+        conversationId: `viralizeai:user:${userId}:chat:${chat.id}`,
+        conversationName: chat.titulo || tituloDaConversa(pedido),
         periodoPesquisa: periodoFinal,
         pesquisaAmpliada: pesquisaFoiAmpliada,
         periodoPesquisaAmpliada: periodoResgateUsado,

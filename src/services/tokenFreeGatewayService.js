@@ -139,12 +139,22 @@ function assertConfigured(tarefa = 'conversa') {
   }
 }
 
-function bodyDaChamada(messages, { temperature, json, stream }) {
+function bodyDaChamada(
+  messages,
+  { temperature, json, stream, tarefa, conversationId, conversationName }
+) {
+  const conversa = String(
+    conversationId || `viralizeai:internal:${String(tarefa || 'conversa')}`
+  ).slice(0, 240);
   return {
     model: MODELO,
     messages: prepararMensagens(messages, json),
     temperature,
     stream: Boolean(stream),
+    conversation_id: conversa,
+    conversation_name: String(
+      conversationName || (conversationId ? 'ViralizeAI' : 'ViralizeAI — tarefas internas')
+    ).slice(0, 100),
     ...(json ? { response_format: { type: 'json_object' } } : {}),
   };
 }
@@ -157,7 +167,14 @@ function logar(inicio, tipo, usage = null) {
 
 async function chatCompletion(
   messages,
-  { temperature = 0.7, json = true, timeout = TIMEOUT_MS, tarefa = 'conversa' } = {}
+  {
+    temperature = 0.7,
+    json = true,
+    timeout = TIMEOUT_MS,
+    tarefa = 'conversa',
+    conversationId = null,
+    conversationName = null,
+  } = {}
 ) {
   assertConfigured(tarefa);
   const inicio = Date.now();
@@ -165,7 +182,14 @@ async function chatCompletion(
   try {
     const { data } = await axios.post(
       `${BASE_URL}/chat/completions`,
-      bodyDaChamada(messages, { temperature, json, stream: false }),
+      bodyDaChamada(messages, {
+        temperature,
+        json,
+        stream: false,
+        tarefa,
+        conversationId,
+        conversationName,
+      }),
       { headers: headers(false), timeout }
     );
     const texto = String(data?.choices?.[0]?.message?.content || '').trim();
@@ -189,6 +213,8 @@ async function chatCompletionStream(
     onDelta = null,
     timeout = TIMEOUT_MS,
     tarefa = 'conversa',
+    conversationId = null,
+    conversationName = null,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -198,7 +224,14 @@ async function chatCompletionStream(
   try {
     const response = await axios.post(
       `${BASE_URL}/chat/completions`,
-      bodyDaChamada(messages, { temperature, json: false, stream: true }),
+      bodyDaChamada(messages, {
+        temperature,
+        json: false,
+        stream: true,
+        tarefa,
+        conversationId,
+        conversationName,
+      }),
       {
         headers: headers(true),
         responseType: 'stream',
@@ -257,6 +290,8 @@ async function chatCompletionStream(
       json: false,
       timeout,
       tarefa,
+      conversationId,
+      conversationName,
     });
     if (typeof onDelta === 'function') onDelta(texto);
     return texto;

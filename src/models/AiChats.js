@@ -20,6 +20,7 @@ const AiChats = {
       .select(
         'c.id',
         'c.titulo',
+        'c.modo',
         'c.pesquisar_web',
         'c.tom',
         'c.periodo',
