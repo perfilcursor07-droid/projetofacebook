@@ -1587,7 +1587,16 @@ async function responder({
       });
     }
 
-    registrarPasso({ kind: 'pensando', texto: 'Claude está respondendo…' });
+    const pediuPesquisaClaude =
+      /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
+        pedido
+      );
+    registrarPasso({
+      kind: pediuPesquisaClaude ? 'pesquisa' : 'pensando',
+      texto: pediuPesquisaClaude
+        ? 'Claude está pesquisando na web…'
+        : 'Claude está respondendo…',
+    });
     onEvent({ tipo: 'inicio-resposta' });
     const historicoLivre = anteriores.map((mensagem) => ({
       role: mensagem.role,
@@ -1601,9 +1610,32 @@ async function responder({
       conversationId: `viralizeai:user:${userId}:chat:${chat.id}`,
       conversationName: chat.titulo || tituloDaConversa(pedido),
     });
-    return finalizarLivre(respostaLivre, {
-      fontesUsadas: fontesWeb,
-      usouWeb: Boolean(pesquisarWeb && fontesWeb.length),
+    let respostaLivreFinal = String(respostaLivre || '').trim();
+    const fontesClaude = [];
+    const urlsClaude = new Set();
+    for (const match of String(respostaLivre || '').matchAll(/\[([^\]]{1,240})\]\((https?:\/\/[^\s)]+)\)/gi)) {
+      const url = match[2];
+      if (!url || urlsClaude.has(url)) continue;
+      urlsClaude.add(url);
+      fontesClaude.push({ titulo: match[1], url, veiculo: '' });
+      if (fontesClaude.length >= 10) break;
+    }
+    if (fontesClaude.length) {
+      const inicioFontes = respostaLivreFinal.lastIndexOf('\n\nFontes consultadas:\n');
+      if (inicioFontes >= 0) {
+        respostaLivreFinal = respostaLivreFinal
+          .slice(0, inicioFontes)
+          .replace(/\n+\*{0,2}Fontes:\*{0,2}\s*$/i, '')
+          .trim();
+      }
+      registrarPasso({
+        kind: 'fontes',
+        texto: `Claude pesquisou na web e consultou ${fontesClaude.length} fonte(s)`,
+      });
+    }
+    return finalizarLivre(respostaLivreFinal, {
+      fontesUsadas: fontesClaude.length ? fontesClaude : fontesWeb,
+      usouWeb: Boolean(fontesClaude.length || (pesquisarWeb && fontesWeb.length)),
     });
   }
 

@@ -80,16 +80,18 @@ test('le resposta OpenAI-compatible e remove cerca de JSON', async () => {
   assert.equal(resposta, '{"ok":true}');
   assert.equal(lastRequestBody.conversation_id, 'viralizeai:internal:conversa');
   assert.equal(lastRequestBody.conversation_name, 'ViralizeAI — tarefas internas');
+  assert.equal(lastRequestBody.web_search, false);
 });
 
 test('entrega streaming SSE ao chat', async () => {
   const deltas = [];
   const resposta = await gateway.chatCompletionStream(
     [{ role: 'user', content: 'teste' }],
-    { tarefa: 'conversa', onDelta: (delta) => deltas.push(delta) }
+    { tarefa: 'conversa', webSearch: true, onDelta: (delta) => deltas.push(delta) }
   );
   assert.equal(resposta, 'Ola mundo');
   assert.deepEqual(deltas, ['Ola ', 'mundo']);
+  assert.equal(lastRequestBody.web_search, true);
 });
 
 test('consulta saude e modelos', async () => {

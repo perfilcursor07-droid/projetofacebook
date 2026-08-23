@@ -24,6 +24,7 @@
     parar: document.getElementById('chat-parar'),
     status: document.getElementById('chat-status'),
     toggleWeb: document.getElementById('chat-toggle-web'),
+    toggleWebLabel: document.getElementById('chat-toggle-web-label'),
     toggleTranscricao: document.getElementById('chat-toggle-transcricao'),
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
@@ -384,10 +385,19 @@
       const total = lista.childElementCount;
       const kinds = [...lista.querySelectorAll('[data-passo-kind]')].map((el) => el.dataset.passoKind);
       // "lendo" também aparece ao abrir o link colado — pesquisa web = busca/resultados.
-      const temPesquisaWeb = kinds.some((k) => ['busca', 'encontrados'].includes(k));
+      const temPesquisaWeb = kinds.some((k) =>
+        ['busca', 'pesquisa', 'fontes', 'encontrados'].includes(k)
+      );
       const audioTranscrito = kinds.includes('transcricao');
       const audioFalhou = kinds.includes('transcricao-falhou');
-      const rotulo = temPesquisaWeb ? 'Pesquisa e apuração' : 'Leitura e reescrita';
+      const rotulo =
+        state.tipoConversa === 'livre'
+          ? temPesquisaWeb
+            ? 'Pesquisa do Claude'
+            : 'Conversa com Claude'
+          : temPesquisaWeb
+            ? 'Pesquisa e apuração'
+            : 'Leitura e reescrita';
       if (ativo) {
         resumoTexto.textContent = ultimoPasso?.texto || `${rotulo}…`;
         resumoMeta.textContent = total ? String(total) : '';
@@ -1622,6 +1632,22 @@
     el.ensinar?.classList.toggle('hidden', livre);
     el.tom?.closest('.mia-chat-tool-field')?.classList.toggle('hidden', livre);
     el.toggleTranscricao?.classList.toggle('hidden', livre);
+    if (el.toggleWeb) {
+      el.toggleWeb.disabled = livre;
+      el.toggleWeb.title = livre
+        ? 'A pesquisa nativa da sua conta Claude fica disponível automaticamente.'
+        : 'Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa.';
+    }
+    if (el.toggleWebLabel) {
+      el.toggleWebLabel.textContent = livre ? 'Pesquisa do Claude: automática' : 'Pesquisar na web';
+    }
+    if (livre) {
+      el.toggleWeb?.setAttribute('aria-pressed', 'true');
+      el.toggleWeb?.classList.add('is-on');
+      el.periodo?.closest('.mia-chat-tool-field')?.classList.add('hidden');
+    } else {
+      aplicarToggleWeb();
+    }
     if (el.input) {
       el.input.placeholder = livre
         ? 'Converse normalmente com o Claude…'
@@ -1797,6 +1823,9 @@
   async function enviar() {
     if (state.enviando) return;
     const texto = String(el.input.value || '').trim();
+    const pedePesquisaLivre =
+      state.tipoConversa === 'livre' &&
+      /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(texto);
     const linksPedido = urlsDoTexto(texto);
     if (texto.length < 3) {
       setStatus('Escreva o que você quer que a IA faça');
@@ -1811,7 +1840,9 @@
     const janela = el.periodo?.selectedOptions?.[0]?.textContent?.trim() || '';
     setStatus(
       state.tipoConversa === 'livre'
-        ? state.pesquisarWeb
+        ? pedePesquisaLivre
+          ? 'Claude está pesquisando na web…'
+          : state.pesquisarWeb
           ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''} para o Claude…`
           : 'Claude está respondendo…'
         : state.modo === 'pautas'
@@ -1982,6 +2013,7 @@
   });
   el.busca?.addEventListener('input', renderConversas);
   el.toggleWeb?.addEventListener('click', () => {
+    if (state.tipoConversa === 'livre') return;
     state.pesquisarWeb = !state.pesquisarWeb;
     aplicarToggleWeb();
     // Sem busca não há como listar pautas

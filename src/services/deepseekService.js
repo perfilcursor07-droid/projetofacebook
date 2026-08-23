@@ -3198,6 +3198,9 @@ async function conversarLivre({
     tarefa: 'conversa',
     conversationId,
     conversationName,
+    // No modo livre, deixa as ferramentas da própria conta Claude disponíveis.
+    // O Claude decide quando pesquisar, como acontece em claude.ai.
+    webSearch: true,
   };
 
   // O modo se chama "Claude livre": quando o gateway/Claude está configurado,

@@ -141,7 +141,7 @@ function assertConfigured(tarefa = 'conversa') {
 
 function bodyDaChamada(
   messages,
-  { temperature, json, stream, tarefa, conversationId, conversationName }
+  { temperature, json, stream, tarefa, conversationId, conversationName, webSearch }
 ) {
   const conversa = String(
     conversationId || `viralizeai:internal:${String(tarefa || 'conversa')}`
@@ -155,6 +155,7 @@ function bodyDaChamada(
     conversation_name: String(
       conversationName || (conversationId ? 'ViralizeAI' : 'ViralizeAI — tarefas internas')
     ).slice(0, 100),
+    web_search: Boolean(webSearch),
     ...(json ? { response_format: { type: 'json_object' } } : {}),
   };
 }
@@ -174,6 +175,7 @@ async function chatCompletion(
     tarefa = 'conversa',
     conversationId = null,
     conversationName = null,
+    webSearch = false,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -189,6 +191,7 @@ async function chatCompletion(
         tarefa,
         conversationId,
         conversationName,
+        webSearch,
       }),
       { headers: headers(false), timeout }
     );
@@ -215,6 +218,7 @@ async function chatCompletionStream(
     tarefa = 'conversa',
     conversationId = null,
     conversationName = null,
+    webSearch = false,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -231,6 +235,7 @@ async function chatCompletionStream(
         tarefa,
         conversationId,
         conversationName,
+        webSearch,
       }),
       {
         headers: headers(true),
@@ -292,6 +297,7 @@ async function chatCompletionStream(
       tarefa,
       conversationId,
       conversationName,
+      webSearch,
     });
     if (typeof onDelta === 'function') onDelta(texto);
     return texto;
