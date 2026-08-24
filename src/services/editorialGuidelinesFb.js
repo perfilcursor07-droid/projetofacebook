@@ -403,10 +403,16 @@ function normalizeHashtagToken(raw) {
 
 function formatHashtagsLine(tags) {
   const list = Array.isArray(tags) ? tags : [];
-  const cleaned = list
-    .map((t) => normalizeHashtagToken(t))
-    .filter((t) => t.length >= 2)
-    .slice(0, 5);
+  const vistos = new Set();
+  const cleaned = [];
+  for (const item of list) {
+    const tag = normalizeHashtagToken(item);
+    const chave = tag.toLocaleLowerCase('pt-BR');
+    if (tag.length < 2 || vistos.has(chave)) continue;
+    vistos.add(chave);
+    cleaned.push(tag);
+    if (cleaned.length >= 5) break;
+  }
   return cleaned.map((t) => `#${t}`).join(' ');
 }
 
@@ -428,17 +434,62 @@ function anexarHashtagsAoFinal(materia, hashtags) {
 /** Extrai hashtags do final do texto e devolve { body, tags }. */
 function extrairHashtagsDoTexto(texto) {
   const raw = String(texto || '').replace(/\r\n/g, '\n').trim();
-  const match =
+  const rxAntesDoSiga =
+    /((?:#[\p{L}\p{M}\p{N}_]+[ \t]*)+)(?=(?:\s|\n)+Siga\s+o\s+JM\s+Not[ií]cia\.?\s*$)/iu;
+  let match =
     raw.match(/\n\n((?:#[\wÀ-ÿ]+(?:\s+|$))+)$/u) ||
     raw.match(/\n((?:#[\wÀ-ÿ]+(?:\s+|$))+)$/u);
+  let inicio = match?.index ?? -1;
+  let tamanho = match?.[0]?.length || 0;
+
+  // O Claude costuma pôr "Siga o JM Notícia" depois das hashtags. Nesse caso
+  // elas não são literalmente o último bloco, mas continuam sendo o rodapé.
+  if (!match) {
+    const antesDoSiga = raw.match(rxAntesDoSiga);
+    if (antesDoSiga) {
+      match = antesDoSiga;
+      inicio = antesDoSiga.index;
+      tamanho = antesDoSiga[0].length;
+    }
+  }
   if (!match) return { body: raw, tags: [] };
   const tags = match[1]
     .trim()
     .split(/\s+/)
     .map((t) => t.replace(/^#/, ''))
     .filter(Boolean);
-  const body = raw.slice(0, match.index).trim();
-  return { body, tags };
+  let bodySemTags = `${raw.slice(0, inicio)}${raw.slice(inicio + tamanho)}`;
+
+  // Rascunhos que já foram abertos com a regra antiga podem conter as duas
+  // linhas: uma antes de "Siga" e outra no fim. Remove também a anterior.
+  const repetidaAntesDoSiga = bodySemTags.match(rxAntesDoSiga);
+  if (repetidaAntesDoSiga) {
+    tags.push(
+      ...repetidaAntesDoSiga[1]
+        .trim()
+        .split(/\s+/)
+        .map((t) => t.replace(/^#/, ''))
+        .filter(Boolean)
+    );
+    bodySemTags = `${bodySemTags.slice(0, repetidaAntesDoSiga.index)}${bodySemTags.slice(
+      repetidaAntesDoSiga.index + repetidaAntesDoSiga[0].length
+    )}`;
+  }
+  const tagsUnicas = [];
+  const tagsVistas = new Set();
+  for (const tag of tags) {
+    const chave = normalizeHashtagToken(tag).toLocaleLowerCase('pt-BR');
+    if (!chave || tagsVistas.has(chave)) continue;
+    tagsVistas.add(chave);
+    tagsUnicas.push(tag);
+  }
+
+  const body = bodySemTags
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}(?=Siga\s+o\s+JM\s+Not[ií]cia)/gi, ' ')
+    .trim();
+  return { body, tags: tagsUnicas };
 }
 
 /**

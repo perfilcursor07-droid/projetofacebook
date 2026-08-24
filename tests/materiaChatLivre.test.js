@@ -8,7 +8,11 @@ const {
   consultasParaResolverFontesLivres,
   consultasGoogleNewsParaResolverFontesLivres,
 } = require('../src/services/materiaChatService');
-const { montarRodapeMateriaComFontes } = require('../src/services/editorialGuidelinesFb');
+const {
+  montarRodapeMateriaComFontes,
+  anexarHashtagsAoFinal,
+  extrairHashtagsDoTexto,
+} = require('../src/services/editorialGuidelinesFb');
 
 test('Claude livre salva somente a matéria após preâmbulo e título em negrito', () => {
   const resposta = String.raw`I encontrei um bom ângulo real e polêmico. Segue a matéria:
@@ -246,4 +250,36 @@ test('salvamento do chat não corta silenciosamente os últimos parágrafos', ()
   assert.match(resultado.materia, new RegExp(ultimo.replace('.', '\\.')));
   assert.doesNotMatch(resultado.fonteCredito, /Gazeta|Folha/);
   assert.match(resultado.fonteCredito, /UOL/);
+});
+
+test('hashtags antes de Siga o JM Notícia são consolidadas sem repetição', () => {
+  const materia =
+    'Fonte: Portas Abertas — https://portasabertas.org.br/noticia\n\n' +
+    'Foto: Reprodução\n\n' +
+    '#PortasAbertas #PerseguiçãoReligiosa #RDC #JMNotícia\n\n' +
+    'Siga o JM Notícia.';
+  const extraido = extrairHashtagsDoTexto(materia);
+
+  assert.deepEqual(extraido.tags, [
+    'PortasAbertas',
+    'PerseguiçãoReligiosa',
+    'RDC',
+    'JMNotícia',
+  ]);
+  assert.doesNotMatch(extraido.body, /#PortasAbertas/);
+  assert.match(extraido.body, /Siga o JM Notícia\.$/);
+
+  const materiaJaDuplicada = `${materia}\n\n#PortasAbertas #PerseguicaoReligiosa #RDC #JMNoticia`;
+  const final = anexarHashtagsAoFinal(materiaJaDuplicada, [
+    'PortasAbertas',
+    'PerseguicaoReligiosa',
+    'RDC',
+    'JMNoticia',
+    'PortasAbertas',
+  ]);
+  assert.equal((final.match(/#PortasAbertas/g) || []).length, 1);
+  assert.equal((final.match(/#PerseguicaoReligiosa/g) || []).length, 1);
+  assert.equal((final.match(/#RDC/g) || []).length, 1);
+  assert.equal((final.match(/#JMNoticia/g) || []).length, 1);
+  assert.doesNotMatch(final, /#PerseguiçãoReligiosa/);
 });
