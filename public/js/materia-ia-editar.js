@@ -736,7 +736,11 @@
       altLista.appendChild(btn);
     }
     altDica?.classList.toggle('hidden', !(titulos || []).length);
-    if (altBtn) altBtn.textContent = (titulos || []).length ? 'Gerar outros 3' : 'Gerar 3 opções';
+    if (altBtn) {
+      altBtn.textContent = (titulos || []).length
+        ? 'Gerar outros 3 com Claude'
+        : 'Gerar 3 com Claude';
+    }
   }
 
   altLista?.addEventListener('click', (e) => {
@@ -749,7 +753,7 @@
     altBtn.disabled = true;
     const rotulo = altBtn.textContent;
     altBtn.textContent = 'Gerando…';
-    setStatus('Gerando 3 títulos alternativos…');
+    setStatus('Claude está gerando 3 títulos alternativos…');
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/titulos-alternativos', {
         method: 'POST',
@@ -767,7 +771,7 @@
       setStatus(err.message, true);
     } finally {
       altBtn.disabled = false;
-      altBtn.textContent = rotulo || 'Gerar outros 3';
+      altBtn.textContent = rotulo || 'Gerar outros 3 com Claude';
     }
   });
 

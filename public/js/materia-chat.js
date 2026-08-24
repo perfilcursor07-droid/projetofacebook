@@ -734,7 +734,7 @@
         wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
         const label = document.createElement('p');
         label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-        label.textContent = 'Títulos sugeridos';
+        label.textContent = 'Títulos sugeridos pelo Claude';
         wrap.appendChild(label);
         listaTitulos = document.createElement('div');
         listaTitulos.className = 'mt-1.5 grid gap-1.5';
@@ -799,7 +799,7 @@
     );
     const sugerirTitulos = livre
       ? criarBotao(
-          alternativos.length ? 'Gerar outros 3 títulos' : 'Sugerir 3 títulos',
+          alternativos.length ? 'Gerar outros 3 com Claude' : 'Sugerir 3 com Claude',
           'rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20'
         )
       : null;
@@ -818,7 +818,7 @@
       sugerirTitulos.disabled = true;
       const rotulo = sugerirTitulos.textContent;
       sugerirTitulos.textContent = 'Sugerindo…';
-      aviso.textContent = 'Gerando 3 títulos…';
+      aviso.textContent = 'Claude está gerando 3 títulos…';
       try {
         const data = await api(`${API}/mensagens/${mensagem.id}/titulos-alternativos`, {
           method: 'POST',
@@ -830,7 +830,7 @@
         aviso.textContent = err.message;
       } finally {
         sugerirTitulos.disabled = false;
-        sugerirTitulos.textContent = rotulo || 'Gerar outros 3 títulos';
+        sugerirTitulos.textContent = rotulo || 'Gerar outros 3 com Claude';
       }
     });
 

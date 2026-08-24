@@ -1238,7 +1238,7 @@ async function sugerirTitulo(req, res, next) {
     }
 
     const deepseekService = require('../services/deepseekService');
-    deepseekService.assertDeepseek();
+    deepseekService.assertDeepseek('conversa');
 
     const tom = String(req.body?.tom || 'natural').trim().toLowerCase();
     const evitar = Array.isArray(req.body?.evitar) ? req.body.evitar : [];
@@ -1257,6 +1257,7 @@ async function sugerirTitulo(req, res, next) {
       evitar: [...evitar, matter.titulo, tituloAtual].filter(Boolean),
       marcaModeloArte: user?.marca_modelo_arte || null,
       rascunhoManual,
+      tarefa: 'conversa',
     });
 
     const patch = {

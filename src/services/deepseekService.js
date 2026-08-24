@@ -80,8 +80,9 @@ async function postDeepseekComRetry(body, opcoes, tentativas = 2) {
 }
 
 /**
- * Quais tarefas vao para o Claude. O resto (sugerir imagem, titulo, hashtags,
- * radar, resumo) continua na DeepSeek, que ja resolvia bem e sai mais barato.
+ * Quais tarefas vão para o Claude. Títulos exibidos no /materia-manual são
+ * chamados explicitamente como "conversa"; imagem, hashtags, radar e resumo
+ * continuam como auxiliares e podem usar DeepSeek/free tier.
  * Ajustavel sem editar codigo: CLAUDE_TAREFAS=redacao,conversa,auxiliar
  */
 const TAREFAS_NO_CLAUDE = new Set(
@@ -2011,8 +2012,9 @@ async function sugerirTituloMateria({
   evitar = [],
   marcaModeloArte = null,
   rascunhoManual = '',
+  tarefa = 'auxiliar',
 }) {
-  assertDeepseek();
+  assertDeepseek(tarefa);
   const tomKey = TITULO_TOMES[tom] ? tom : 'natural';
   const tomDesc = TITULO_TOMES[tomKey];
   const rascunho = String(rascunhoManual || '').trim();
@@ -2136,6 +2138,7 @@ ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastan
     const raw = await chatCompletion(baseMessages(attempt), {
       temperature: Math.min(temp, 1.3),
       json: true,
+      tarefa,
     });
     const titulo = finalizarTituloComMarca(parseTituloFromAi(raw), marcaModeloArte);
     ultimoTitulo = titulo;
@@ -2170,6 +2173,53 @@ ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastan
  * é gerada. Não substitui o título: é opção para o editor escolher.
  * @returns {Promise<string[]>} até 3 manchetes, sem repetir o título atual
  */
+function extrairAncorasTituloPrincipal(titulo) {
+  const ignorar = new Set([
+    'a',
+    'apos',
+    'as',
+    'bispo',
+    'como',
+    'deputado',
+    'entenda',
+    'governo',
+    'igreja',
+    'justica',
+    'o',
+    'os',
+    'pastor',
+    'pastora',
+    'por',
+    'presidente',
+    'quando',
+    'senador',
+    'uma',
+    'volta',
+  ]);
+  const vistas = new Set();
+  const ancoras = [];
+  const texto = String(titulo || '').replace(/\[\[|\]\]|\(\(|\)\)/g, ' ');
+  for (const match of texto.matchAll(/\b[\p{Lu}][\p{L}\p{M}\d.-]{2,}\b/gu)) {
+    const valor = String(match[0] || '').replace(/[.,:;!?]+$/g, '').trim();
+    const chave = normalizeTituloCmp(valor);
+    if (!chave || ignorar.has(chave) || vistas.has(chave)) continue;
+    vistas.add(chave);
+    ancoras.push(valor);
+    if (ancoras.length >= 4) break;
+  }
+  return ancoras;
+}
+
+function tituloPreservaNucleoPrincipal(titulo, ancoras) {
+  const lista = Array.isArray(ancoras) ? ancoras.filter(Boolean) : [];
+  if (!lista.length) return true;
+  const normalizado = ` ${normalizeTituloCmp(titulo)} `;
+  const presentes = lista.filter((ancora) =>
+    normalizado.includes(` ${normalizeTituloCmp(ancora)} `)
+  ).length;
+  return presentes >= Math.min(2, lista.length);
+}
+
 async function gerarTitulosAlternativos({
   titulo,
   materia,
@@ -2191,70 +2241,92 @@ async function gerarTitulosAlternativos({
     .map((t) => String(t || '').trim())
     .filter(Boolean)
     .slice(0, 10);
+  const ancoras = extrairAncorasTituloPrincipal(tituloAtual);
+  const usados = evitarList.map((t) => normalizeTituloCmp(t));
+  const saida = [];
 
-  const messages = [
-    {
-      role: 'system',
-      content: `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
+  for (let tentativa = 1; tentativa <= 2 && saida.length < total; tentativa += 1) {
+    const messages = [
+      {
+        role: 'system',
+        content: `Você é editor de manchetes para Páginas do Facebook (gospel/notícias).
 Regras:
 - Responda APENAS JSON válido: {"titulos":["manchete 1","manchete 2","manchete 3"]}
 - Exatamente ${total} manchetes em português do Brasil, 70–110 caracteres cada (máx ${maxTitulo}${blocoMarca ? ', contando marcadores [[ ]] e (( ))' : ''}).
-- Cada uma com ÂNGULO DIFERENTE do título atual e das outras: uma mais direta/factual, uma de curiosidade (o porquê, o detalhe) e uma mais incisiva/polêmica.
-- Estilo JM Notícia: título forte, jornalístico, com potencial de clique, sem inventar nem distorcer. Sem emoji e sem Caps Lock no título inteiro.
+- As três manchetes devem tratar do MESMO NÚCLEO do título principal, preservando os protagonistas, instituições, conflito e fato central.
+- Varie a REDAÇÃO, não o assunto: 1) ação/contraste; 2) dimensão ou consequência; 3) disputa ou contexto.
+- PROIBIDO transformar dado, pesquisa, número, declaração, personagem ou episódio secundário de um parágrafo em assunto principal.
+- Se o título principal confronta duas pessoas ou grupos, TODAS as alternativas devem manter os dois lados.
+${ancoras.length ? `- Âncoras do assunto: ${ancoras.join(', ')}. Cada manchete deve conservar pelo menos ${Math.min(2, ancoras.length)} dessas âncoras.` : ''}
+- Modelos de ESTRUTURA: "Disputa por [tema]: [lado A] tenta avançar enquanto [lado B] aposta em [estratégia]"; "[dimensão documentada] em jogo: [lado A] e [lado B] entram na batalha por [tema]"; "[grupo/tema] vira peça-chave e coloca [lado A] e [lado B] em lados opostos".
+- Substitua todos os colchetes pelos fatos da matéria atual; nunca copie nomes, números ou fatos de outro caso.
+- Estilo JM Notícia: título forte, jornalístico e com potencial de clique, sem inventar nem distorcer.
 - Fidelidade total ao texto: NÃO invente fato, número, data, nome ou fala que não esteja na matéria.
-- Sem clickbait mentiroso, sem Caps Lock excessivo, sem pontos de exclamação em série.
-- Não repita o título atual nem reescreva só trocando uma palavra.${blocoMarca ? `\n\n${blocoMarca}` : ''}`,
-    },
-    {
-      role: 'user',
-      content: [
-        tituloAtual ? `Título principal já escolhido (NÃO repetir):\n${tituloAtual}` : null,
-        evitarList.length > 1 ? `Também NÃO use estes:\n- ${evitarList.slice(1).join('\n- ')}` : null,
-        fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
-        corpo ? `Texto da matéria:\n${corpo.slice(0, 2500)}` : null,
-        `Gere ${total} manchetes alternativas ao título principal.`,
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
-    },
-  ];
+- Sem emoji, Caps Lock excessivo, clickbait mentiroso ou pontos de exclamação em série.
+- Não repita o título atual nem faça três versões quase idênticas.${
+          tentativa > 1
+            ? '\n- A tentativa anterior fugiu do núcleo. Desta vez mantenha rigorosamente o mesmo assunto e todas as âncoras principais.'
+            : ''
+        }${blocoMarca ? `\n\n${blocoMarca}` : ''}`,
+      },
+      {
+        role: 'user',
+        content: [
+          tituloAtual ? `Título principal já escolhido (NÃO repetir):\n${tituloAtual}` : null,
+          [...evitarList.slice(1), ...saida].length
+            ? `Também NÃO use estes:\n- ${[...evitarList.slice(1), ...saida].join('\n- ')}`
+            : null,
+          fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
+          corpo ? `Texto da matéria:\n${corpo.slice(0, 2500)}` : null,
+          `Gere ${total} manchetes alternativas, todas sobre o mesmo núcleo do título principal.`,
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ];
 
-  let raw = '';
-  try {
-    raw = await chatCompletion(messages, { temperature: 0.95, json: true, tarefa });
-  } catch (err) {
-    // Alternativas são um extra: nunca podem derrubar a geração da matéria.
-    console.warn('[titulos-alternativos]', err.message);
-    return [];
-  }
+    let raw = '';
+    try {
+      // Temperatura menor ajuda a variar a formulação sem trocar o assunto.
+      // eslint-disable-next-line no-await-in-loop
+      raw = await chatCompletion(messages, {
+        temperature: tentativa === 1 ? 0.72 : 0.6,
+        json: true,
+        tarefa,
+      });
+    } catch (err) {
+      // Alternativas são um extra: nunca podem derrubar a geração da matéria.
+      console.warn('[titulos-alternativos]', err.message);
+      break;
+    }
 
-  let lista = [];
-  try {
-    let texto = String(raw || '').trim();
-    const fence = texto.match(/```(?:json)?\s*([\s\S]*?)```/i);
-    if (fence) texto = fence[1].trim();
-    const parsed = JSON.parse(texto);
-    lista = Array.isArray(parsed) ? parsed : parsed?.titulos || parsed?.titles || [];
-  } catch {
-    lista = [];
-  }
+    let lista = [];
+    try {
+      let texto = String(raw || '').trim();
+      const fence = texto.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fence) texto = fence[1].trim();
+      const parsed = JSON.parse(texto);
+      lista = Array.isArray(parsed) ? parsed : parsed?.titulos || parsed?.titles || [];
+    } catch {
+      lista = [];
+    }
 
-  const usados = evitarList.map((t) => normalizeTituloCmp(t));
-  const saida = [];
-  for (const item of Array.isArray(lista) ? lista : []) {
-    const limpo = finalizarTituloComMarca(
-      String(typeof item === 'string' ? item : item?.titulo || '')
-        .replace(/^\s*\d+[).:-]\s*/, '')
-        .replace(/^["“”']+|["“”']+$/g, ''),
-      marcaModeloArte
-    );
-    if (limpo.length < 25) continue;
-    if (!tituloEstruturalmenteValido(limpo)) continue;
-    const norm = normalizeTituloCmp(limpo);
-    if (!norm || usados.includes(norm)) continue;
-    usados.push(norm);
-    saida.push(limpo);
-    if (saida.length >= total) break;
+    for (const item of Array.isArray(lista) ? lista : []) {
+      const limpo = finalizarTituloComMarca(
+        String(typeof item === 'string' ? item : item?.titulo || '')
+          .replace(/^\s*\d+[).:-]\s*/, '')
+          .replace(/^["“”']+|["“”']+$/g, ''),
+        marcaModeloArte
+      );
+      if (limpo.length < 25) continue;
+      if (!tituloEstruturalmenteValido(limpo)) continue;
+      if (!tituloPreservaNucleoPrincipal(limpo, ancoras)) continue;
+      const norm = normalizeTituloCmp(limpo);
+      if (!norm || usados.includes(norm)) continue;
+      usados.push(norm);
+      saida.push(limpo);
+      if (saida.length >= total) break;
+    }
   }
   return saida;
 }
@@ -4075,6 +4147,8 @@ module.exports = {
   ranquearPostsViralFacebook,
   sugerirTituloMateria,
   gerarTitulosAlternativos,
+  extrairAncorasTituloPrincipal,
+  tituloPreservaNucleoPrincipal,
   sugerirTextoSplitVideo,
   reescreverMateriaComInfo,
   revisarMateriaManual,

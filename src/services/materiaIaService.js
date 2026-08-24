@@ -57,6 +57,9 @@ async function gerarESalvarTitulosAlternativos({
   marcaModeloArte = null,
   userId = null,
   evitar = [],
+  // Títulos visíveis no /materia-manual fazem parte da experiência editorial
+  // do Claude, não do conjunto de tarefas mecânicas entregue ao DeepSeek.
+  tarefa = 'conversa',
 }) {
   try {
     const { gerarTitulosAlternativos } = require('./deepseekService');
@@ -72,6 +75,7 @@ async function gerarESalvarTitulosAlternativos({
       fonteTitulo,
       marcaModeloArte: modeloArte,
       evitar,
+      tarefa,
     });
     if (!titulos.length) return [];
     if (matterId) {
