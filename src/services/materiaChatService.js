@@ -1576,6 +1576,352 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
   };
 }
 
+function normalizarNomeFonteLivre(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Nomes que o próprio Claude declarou na linha "Fonte:" da matéria. */
+function extrairFontesDeclaradasRespostaLivre(conteudo) {
+  const texto = String(conteudo || '')
+    .replace(/\\([#*_<>])/g, '$1')
+    .replace(/\r\n/g, '\n');
+  const linha = texto.match(/^\s*\*{0,2}Fonte(?:s)?\s*:\*{0,2}\s*(.+?)\s*$/im)?.[1];
+  if (!linha) return [];
+
+  const valor = linha
+    .replace(/\*+/g, '')
+    .replace(/\s+e\s+(?=[^,;/]+$)/i, ', ')
+    .trim();
+  const vistos = new Set();
+  return valor
+    .split(/\s*[,;/]\s*/)
+    .map((nome) => nome.replace(/\s*[—–-]\s*https?:\/\/\S+.*$/i, '').trim())
+    .filter((nome) => nome.length >= 2 && nome.length <= 100)
+    .filter((nome) => {
+      const chave = normalizarNomeFonteLivre(nome);
+      if (!chave || vistos.has(chave)) return false;
+      vistos.add(chave);
+      return true;
+    })
+    .slice(0, 8);
+}
+
+function veiculoDaUrlLivre(url) {
+  const host = hostDoLink(url);
+  if (!host) return 'Web';
+  const mapa = [
+    [/cnn(?:brasil)?\./, 'CNN Brasil'],
+    [/folha\.uol\./, 'Folha de S.Paulo'],
+    [/diariodocentrodomundo|dcm\./, 'Diário do Centro do Mundo'],
+    [/comunhao\./, 'Comunhão'],
+  ];
+  for (const [regra, nome] of mapa) if (regra.test(host)) return nome;
+  const base = host.split('.').filter(Boolean);
+  const slug = base.length >= 2 ? base[base.length - 2] : base[0];
+  return String(slug || 'Web')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (letra) => letra.toUpperCase())
+    .slice(0, 80);
+}
+
+function fonteCombinaComNomeLivre(fonte, nome) {
+  const alvo = normalizarNomeFonteLivre(nome);
+  if (!alvo) return 0;
+  const url = String(fonte?.url || fonte?.urlOriginal || '');
+  const host = normalizarNomeFonteLivre(hostDoLink(url) || '');
+  const material = normalizarNomeFonteLivre(
+    [fonte?.veiculo, fonte?.titulo, host].filter(Boolean).join(' ')
+  );
+  const aliases = {
+    'cnn brasil': ['cnn brasil', 'cnnbrasil'],
+    'folha de s paulo': ['folha de s paulo', 'folha uol', 'folha'],
+    'diario do centro do mundo': ['diario do centro do mundo', 'diariodocentrodomundo', 'dcm'],
+    comunhao: ['comunhao'],
+  };
+  const termos = aliases[alvo] || [alvo, ...alvo.split(' ').filter((t) => t.length >= 4)];
+  let pontos = 0;
+  for (const termo of termos) if (material.includes(termo)) pontos += termo === alvo ? 12 : 4;
+  return pontos;
+}
+
+function relevanciaFonteNaRespostaLivre(fonte, conteudo) {
+  const genericos = new Set([
+    'brasil',
+    'debate',
+    'evento',
+    'evangelico',
+    'evangelicos',
+    'fonte',
+    'gospel',
+    'igreja',
+    'materia',
+    'noticia',
+    'pastor',
+    'religioso',
+    'religiosos',
+  ]);
+  const url = String(fonte?.url || fonte?.urlOriginal || '');
+  let caminhoUrl = '';
+  try {
+    caminhoUrl = new URL(url).pathname;
+  } catch {
+    caminhoUrl = url;
+  }
+  // O domínio só prova qual é o veículo; a relevância vem do título/slug.
+  // Caso contrário, "Comunhão" na linha Fonte faria qualquer URL do portal passar.
+  const material = normalizarNomeFonteLivre(
+    [fonte?.titulo, caminhoUrl].filter(Boolean).join(' ')
+  );
+  const texto = new Set(
+    normalizarNomeFonteLivre(conteudo)
+      .split(' ')
+      .filter((token) => token.length >= 5 && !genericos.has(token))
+  );
+  return material
+    .split(' ')
+    .filter((token) => token.length >= 5 && !genericos.has(token) && texto.has(token)).length;
+}
+
+/**
+ * Fontes do rascunho livre seguem o que o Claude efetivamente citou, não a
+ * lista bruta de resultados que foi oferecida antes da resposta.
+ */
+function selecionarFontesRespostaLivre(
+  conteudo,
+  { fontesClaude = [], fontesWeb = [], fontesSalvas = [] } = {}
+) {
+  const declaradas = extrairFontesDeclaradasRespostaLivre(conteudo);
+  const candidatos = [
+    ...(fontesClaude || []).map((fonte) => ({ ...fonte, _origemClaude: true })),
+    ...(fontesSalvas || []),
+    ...(fontesWeb || []),
+  ].filter(Boolean);
+
+  if (declaradas.length) {
+    return declaradas.map((nome) => {
+      const correspondentes = candidatos
+        .map((fonte) => {
+          const combina = fonteCombinaComNomeLivre(fonte, nome);
+          const relevancia = relevanciaFonteNaRespostaLivre(fonte, conteudo);
+          return {
+            fonte,
+            combina,
+            relevancia,
+            pontos: combina * 100 + (fonte._origemClaude ? 40 : 0) + relevancia,
+          };
+        })
+        // Um domínio com o nome certo, mas página sobre outro tema, é pior que
+        // deixar a fonte sem link. Até links devolvidos pelo Claude precisam
+        // compartilhar termos concretos com a matéria.
+        .filter(
+          (item) =>
+            item.combina > 0 &&
+            (item.relevancia >= 2 || item.fonte.fonteColada || item.fonte.ehRedeSocial)
+        )
+        .sort((a, b) => b.pontos - a.pontos);
+      const encontrada = correspondentes[0]?.fonte || {};
+      const url = String(encontrada.url || encontrada.urlOriginal || '').trim();
+      return {
+        ...encontrada,
+        veiculo: nome,
+        titulo: encontrada.titulo || nome,
+        url,
+      };
+    });
+  }
+
+  const locais = candidatos.filter((f) => f.fonteColada || f.ehRedeSocial);
+  const base = fontesClaude.length ? [...locais, ...fontesClaude] : [...locais, ...fontesWeb];
+  const saida = [];
+  const vistos = new Set();
+  for (const fonte of base) {
+    const url = String(fonte?.url || fonte?.urlOriginal || '').trim();
+    const chave = normalizarUrlComparacao(url) || normalizarNomeFonteLivre(fonte?.titulo);
+    if (chave && vistos.has(chave)) continue;
+    if (chave) vistos.add(chave);
+    saida.push({
+      ...fonte,
+      veiculo: String(fonte?.veiculo || '').trim() || veiculoDaUrlLivre(url),
+      url,
+    });
+  }
+  return saida.slice(0, 12);
+}
+
+function dominioDaFonteDeclaradaLivre(nome) {
+  const chave = normalizarNomeFonteLivre(nome);
+  const conhecidos = {
+    'brasil 247': 'brasil247.com',
+    'cnn brasil': 'cnnbrasil.com.br',
+    'diario do centro do mundo': 'diariodocentrodomundo.com.br',
+    'folha de s paulo': 'folha.uol.com.br',
+    metropoles: 'metropoles.com',
+    comunhao: 'comunhao.com.br',
+  };
+  return conhecidos[chave] || null;
+}
+
+function consultasParaResolverFontesLivres(conteudo, nomes) {
+  const info = interpretarRespostaLivreParaRascunho(conteudo);
+  const titulo = String(info.titulo || '')
+    .replace(/["“”']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const nomesPessoas = [];
+  const vistos = new Set();
+  for (const match of String(info.corpo || '').matchAll(
+    /\b([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+(?:\s+(?:de|da|do|dos|das))?\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+)\b/g
+  )) {
+    const valor = String(match[1] || '').trim();
+    const chave = normalizarNomeFonteLivre(valor);
+    if (!chave || vistos.has(chave) || /^(Fonte|Foto|Brasil|Assembleia)\b/i.test(valor)) continue;
+    vistos.add(chave);
+    nomesPessoas.push(valor);
+    if (nomesPessoas.length >= 3) break;
+  }
+  const assunto = [titulo, ...nomesPessoas]
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 220);
+  return (Array.isArray(nomes) ? nomes : [])
+    .map((nome) => {
+      const dominio = dominioDaFonteDeclaradaLivre(nome);
+      return `${assunto} ${nome}${dominio ? ` site:${dominio}` : ''}`
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 300);
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+/**
+ * O Google News responde melhor a uma consulta curta do que ao título inteiro
+ * com site:. Mantém nomes próprios e poucas palavras distintivas do título.
+ */
+function consultasGoogleNewsParaResolverFontesLivres(conteudo, nomes) {
+  const info = interpretarRespostaLivreParaRascunho(conteudo);
+  const pessoas = [];
+  const vistosPessoas = new Set();
+  for (const match of String(info.corpo || '').matchAll(
+    /\b([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+(?:\s+(?:de|da|do|dos|das))?\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+)\b/g
+  )) {
+    const pessoa = String(match[1] || '').trim();
+    const chave = normalizarNomeFonteLivre(pessoa);
+    if (!chave || vistosPessoas.has(chave) || /^(Fonte|Foto|Brasil|Assembleia|Igreja)\b/i.test(pessoa)) {
+      continue;
+    }
+    vistosPessoas.add(chave);
+    pessoas.push(pessoa);
+    // Um segundo nome pode ser instituição capturada no meio da expressão
+    // (ex.: "Deus Missão") e piorar muito a precisão da consulta.
+    if (pessoas.length >= 1) break;
+  }
+
+  const descartaveis = new Set([
+    'acontece',
+    'agora',
+    'ainda',
+    'assunto',
+    'brasil',
+    'caso',
+    'descobre',
+    'entenda',
+    'escandalo',
+    'fonte',
+    'igreja',
+    'materia',
+    'noticia',
+    'pastor',
+    'proprios',
+    'recentemente',
+  ]);
+  const palavrasTitulo = normalizarNomeFonteLivre(info.titulo)
+    .split(' ')
+    .filter((termo) => termo.length >= 5 && !descartaveis.has(termo))
+    .slice(0, 4);
+  const identidade = pessoas[0] || palavrasTitulo.slice(0, 2).join(' ');
+  const consultas = [];
+  const vistas = new Set();
+  const adicionar = (valor) => {
+    const consulta = String(valor || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+    const chave = normalizarNomeFonteLivre(consulta);
+    if (!consulta || vistas.has(chave)) return;
+    vistas.add(chave);
+    consultas.push(consulta);
+  };
+
+  // Tenta uma palavra distintiva por vez. O Google News frequentemente zera
+  // quando recebe todos os termos do título juntos.
+  for (const palavra of palavrasTitulo) adicionar(`${identidade} ${palavra}`);
+  for (const nome of Array.isArray(nomes) ? nomes : []) {
+    adicionar(`${identidade} ${palavrasTitulo[0] || ''} ${nome}`);
+  }
+  return consultas.slice(0, 8);
+}
+
+/**
+ * Último fallback sem chave paga: o script Python lê o RSS do Google News e
+ * decodifica o redirecionamento para a URL real do veículo.
+ */
+async function resolverFontesDeclaradasGoogleNewsLivre(
+  conteudo,
+  fontesPendentes,
+  { periodo = PERIODO_PADRAO } = {}
+) {
+  const nomes = (fontesPendentes || [])
+    .map((fonte) => String(fonte?.veiculo || '').trim())
+    .filter(Boolean);
+  const consultas = consultasGoogleNewsParaResolverFontesLivres(conteudo, nomes);
+  if (!consultas.length) return [];
+
+  const { buscarGoogleNewsPython, whenParaGoogle } = require('./newsResearch');
+  const candidatos = [];
+  const urls = new Set();
+  const alvos = new Set(nomes.map(normalizarNomeFonteLivre));
+
+  for (const consulta of consultas) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const encontrados = await buscarGoogleNewsPython(consulta, {
+        when: whenParaGoogle(periodo),
+        limit: 12,
+        incluirWebGeral: true,
+      });
+      for (const item of encontrados || []) {
+        const url = String(item?.link || item?.url || '').trim();
+        if (!/^https?:\/\//i.test(url) || /news\.google\.com/i.test(url) || urls.has(url)) continue;
+        urls.add(url);
+        candidatos.push({
+          ...item,
+          url,
+          titulo: item.titulo || item.title || '',
+          veiculo: item.veiculo || veiculoDaUrlLivre(url),
+        });
+      }
+
+      const selecionadas = selecionarFontesRespostaLivre(conteudo, {
+        fontesWeb: candidatos,
+      });
+      const resolvidas = new Set(
+        selecionadas
+          .filter((fonte) => /^https?:\/\//i.test(String(fonte?.url || '')))
+          .map((fonte) => normalizarNomeFonteLivre(fonte.veiculo))
+      );
+      if ([...alvos].every((nome) => resolvidas.has(nome))) break;
+    } catch (err) {
+      console.warn('[claude-livre] Google News para fonte declarada:', err.message);
+    }
+  }
+  return candidatos;
+}
+
 async function obterConversa({ userId, chatId }) {
   const chat = await AiChats.findByIdForUser(chatId, userId);
   if (!chat) throw erro('Conversa não encontrada', 404);
@@ -1920,14 +2266,70 @@ async function responder({
         texto: `Claude pesquisou na web e consultou ${fontesClaude.length} fonte(s)`,
       });
     }
-    const fontesFinais = [];
-    const urlsFinais = new Set();
-    for (const fonte of [...fontesWeb, ...fontesClaude]) {
-      const chave = normalizarUrlComparacao(fonte?.url || fonte?.urlOriginal) ||
-        `${fonte?.veiculo || ''}:${fonte?.titulo || ''}`.toLowerCase();
-      if (chave && urlsFinais.has(chave)) continue;
-      if (chave) urlsFinais.add(chave);
-      fontesFinais.push(fonte);
+    let fontesFinais = selecionarFontesRespostaLivre(respostaLivreFinal, {
+      fontesClaude,
+      fontesWeb,
+    });
+    const fontesSemLink = fontesFinais.filter(
+      (fonte) => !/^https?:\/\//i.test(String(fonte?.url || ''))
+    );
+    if (fontesSemLink.length) {
+      let fontesDirecionadas = [];
+      const consultasFontes = consultasParaResolverFontesLivres(
+        respostaLivreFinal,
+        fontesSemLink.map((fonte) => fonte.veiculo)
+      );
+      if (consultasFontes.length) {
+        registrarPasso({
+          kind: 'busca',
+          texto: `Localizando a reportagem correta de ${fontesSemLink
+            .map((fonte) => fonte.veiculo)
+            .join(', ')}…`,
+        });
+        try {
+          fontesDirecionadas = await materiaIaService.coletarFatosNaWeb({
+            consultas: consultasFontes,
+            periodo: periodoFinal,
+            max: Math.min(10, Math.max(5, consultasFontes.length * 2)),
+            incluirRedes: false,
+            maxConsultasNoticias: Math.min(5, consultasFontes.length),
+            incluirWebGeral: true,
+            resumoContexto: String(respostaLivreFinal).slice(0, 500),
+            logPrefix: '[claude-livre:resolver-fontes]',
+          });
+          fontesFinais = selecionarFontesRespostaLivre(respostaLivreFinal, {
+            fontesClaude,
+            fontesWeb: [...fontesDirecionadas, ...fontesWeb],
+          });
+        } catch (err) {
+          console.warn('[claude-livre] resolver fontes declaradas:', err.message);
+        }
+      }
+
+      const aindaSemLink = fontesFinais.filter(
+        (fonte) => !/^https?:\/\//i.test(String(fonte?.url || ''))
+      );
+      if (aindaSemLink.length) {
+        const fontesGoogle = await resolverFontesDeclaradasGoogleNewsLivre(
+          respostaLivreFinal,
+          aindaSemLink,
+          { periodo: periodoFinal }
+        );
+        fontesFinais = selecionarFontesRespostaLivre(respostaLivreFinal, {
+          fontesClaude,
+          fontesWeb: [...fontesGoogle, ...fontesDirecionadas, ...fontesWeb],
+        });
+      }
+
+      const resolvidas = fontesFinais.filter((fonte) =>
+        /^https?:\/\//i.test(String(fonte?.url || ''))
+      ).length;
+      registrarPasso({
+        kind: resolvidas ? 'fontes' : 'aviso',
+        texto: resolvidas
+          ? `${resolvidas} link(s) correspondente(s) às fontes citadas foram confirmados`
+          : 'Não encontrei links correspondentes; mantive os nomes das fontes sem apontar páginas erradas.',
+      });
     }
     return finalizarLivre(respostaLivreFinal, {
       fontesUsadas: fontesFinais,
@@ -3482,7 +3884,11 @@ async function salvarMateriaDoChat({
   const fontes = parseJson(row.fontes, []);
   const fontesLista = Array.isArray(fontes) ? fontes : [];
   const fonteDoIndice = escolhida ? fontesLista[Number(escolhida.indice)] : null;
-  const fontesDaMateria = fonteDoIndice ? [fonteDoIndice] : fontesLista;
+  const fontesDaMateria = conversaLivre && !escolhida
+    ? selecionarFontesRespostaLivre(row.content, { fontesSalvas: fontesLista })
+    : fonteDoIndice
+      ? [fonteDoIndice]
+      : fontesLista;
   let pageId = facebookPageId || row.chat_page_id || null;
   if (pageId) {
     const page = await materiaIaService.resolvePage(userId, pageId);
@@ -3519,7 +3925,10 @@ async function salvarMateriaDoChat({
       : tituloDaEscolha && alternativas.includes(tituloDaEscolha)
       ? tituloDaEscolha
       : tituloOriginal;
-  const fontePrincipal = fontesDaMateria[0] || null;
+  const fontePrincipal =
+    fontesDaMateria.find((fonte) => /^https?:\/\//i.test(String(fonte?.url || ''))) ||
+    fontesDaMateria[0] ||
+    null;
   const imagemFonte =
     imagemUrl && /^https?:\/\//i.test(imagemUrl)
       ? imagemUrl
@@ -3842,6 +4251,11 @@ module.exports = {
   salvarPautasComoRascunhos,
   interpretarResposta,
   interpretarRespostaLivreParaRascunho,
+  extrairFontesDeclaradasRespostaLivre,
+  selecionarFontesRespostaLivre,
+  consultasParaResolverFontesLivres,
+  consultasGoogleNewsParaResolverFontesLivres,
+  resolverFontesDeclaradasGoogleNewsLivre,
   separarMaterias,
   extrairUrlsDoTexto,
   extrairFontesDeArtigos,
