@@ -587,9 +587,30 @@
   }
 
   function tituloRascunhoLivre(mensagem) {
-    const conteudo = String(mensagem?.content || '');
-    const heading = conteudo.match(/^\s*\\?#{1,6}\s+(.{10,200})\s*$/m);
-    if (heading?.[1]) return heading[1].replace(/\*+/g, '').trim().slice(0, 180);
+    const conteudo = String(mensagem?.content || '').replace(/\\([#*_<>])/g, '$1');
+    const explicitos = [
+      /^\s*#{1,6}\s+(.{10,200})\s*$/m,
+      /^\s*\*\*(.{10,200})\*\*\s*$/m,
+      /^\s*(?:t[ií]tulo|manchete)\s*:\s*(.{10,200})\s*$/im,
+    ];
+    for (const regra of explicitos) {
+      const achado = conteudo.match(regra);
+      if (achado?.[1]) return achado[1].replace(/\*+/g, '').trim().slice(0, 180);
+    }
+    const linhas = conteudo.split(/\r?\n/);
+    const preambulo = linhas.findIndex((linha) =>
+      /\b(?:segue|aqui est[aá]|esta [ée])\s+(?:a\s+)?mat[eé]ria\s*:?\s*$/i.test(linha.trim())
+    );
+    if (preambulo >= 0) {
+      for (let i = preambulo + 1; i < Math.min(linhas.length, preambulo + 5); i += 1) {
+        const candidato = linhas[i]
+          .trim()
+          .replace(/^#{1,6}\s+/, '')
+          .replace(/^\*{1,2}|\*{1,2}$/g, '')
+          .trim();
+        if (candidato.length >= 10 && candidato.length <= 200) return candidato.slice(0, 180);
+      }
+    }
     const titulo = String(mensagem?.titulo || '').replace(/^\\?#{1,6}\s*/, '').trim();
     if (titulo && !/^(achei|encontrei|aqui est[aá]|claro|vamos)\b/i.test(titulo)) {
       return titulo.slice(0, 180);

@@ -158,10 +158,98 @@ function classificarUrlFonte(url) {
     if (host.includes('youtube.com') || host === 'youtu.be' || host === 'm.youtube.com') {
       return 'youtube';
     }
+    if (host === 'x.com' || host.endsWith('.x.com') || host === 'twitter.com' || host.endsWith('.twitter.com')) {
+      return 'x';
+    }
   } catch {
     /* ignore */
   }
   return null;
+}
+
+function decodificarEntidadesHtmlBasicas(texto) {
+  const mapa = {
+    amp: '&',
+    quot: '"',
+    apos: "'",
+    lt: '<',
+    gt: '>',
+    nbsp: ' ',
+    ndash: '–',
+    mdash: '—',
+    hellip: '…',
+  };
+  return String(texto || '').replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (inteira, entidade) => {
+    const chave = String(entidade || '').toLowerCase();
+    if (chave[0] === '#') {
+      const hexadecimal = chave[1] === 'x';
+      const numero = Number.parseInt(chave.slice(hexadecimal ? 2 : 1), hexadecimal ? 16 : 10);
+      if (Number.isFinite(numero) && numero > 0 && numero <= 0x10ffff) {
+        try {
+          return String.fromCodePoint(numero);
+        } catch {
+          return inteira;
+        }
+      }
+    }
+    return Object.prototype.hasOwnProperty.call(mapa, chave) ? mapa[chave] : inteira;
+  });
+}
+
+function textoDoHtmlSimples(html) {
+  return decodificarEntidadesHtmlBasicas(
+    String(html || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p\s*>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+  )
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+/** Lê uma publicação pública do X pela API oEmbed oficial, sem token. */
+async function extrairXComoFonte(url) {
+  const original = String(url || '').trim();
+  let parsed;
+  try {
+    parsed = new URL(original);
+  } catch {
+    throw erro('Link do X inválido — confira o endereço.', 422);
+  }
+  const status = parsed.pathname.match(/\/status\/(\d+)/i);
+  if (!status?.[1]) {
+    throw erro('O link do X não parece ser uma publicação. Use o endereço que contém /status/.', 422);
+  }
+
+  const axios = require('axios');
+  const resposta = await axios.get('https://publish.x.com/oembed', {
+    timeout: 20000,
+    params: { url: original, omit_script: 1, dnt: true, lang: 'pt' },
+    headers: { Accept: 'application/json' },
+    validateStatus: (codigo) => codigo >= 200 && codigo < 400,
+  });
+  const data = resposta?.data || {};
+  const blocoPost = String(data.html || '').match(/<p\b[^>]*>([\s\S]*?)<\/p>/i)?.[1] || data.html;
+  const texto = textoDoHtmlSimples(blocoPost);
+  if (texto.length < 15) {
+    throw erro('Não consegui ler o texto desta publicação do X. Ela pode ter sido removida ou restringida.', 422);
+  }
+
+  const autor = String(data.author_name || '').trim();
+  return {
+    veiculo: autor ? `X — ${autor}` : 'X',
+    titulo: texto.replace(/\s+/g, ' ').slice(0, 160),
+    url: String(data.url || original),
+    urlOriginal: original,
+    resumo: texto.slice(0, 400),
+    trecho: texto.slice(0, 9000),
+    autor: autor || null,
+    ehRedeSocial: true,
+    plataforma: 'x',
+    fonteColada: true,
+  };
 }
 
 function normalizarUrlSocialParaComparacao(url) {
@@ -513,7 +601,7 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
 }
 
 /**
- * Extrai legenda/texto de FB, IG ou YT colados no chat.
+ * Extrai legenda/texto de FB, IG, YT ou X colados no chat.
  * Devolve fontes no formato do montarBlocoFatos.
  */
 async function extrairFontesDeLinks(
@@ -534,7 +622,13 @@ async function extrairFontesDeLinks(
     if (!tipo) continue;
 
     const rotulo =
-      tipo === 'facebook' ? 'Facebook' : tipo === 'instagram' ? 'Instagram' : 'YouTube';
+      tipo === 'facebook'
+        ? 'Facebook'
+        : tipo === 'instagram'
+          ? 'Instagram'
+          : tipo === 'youtube'
+            ? 'YouTube'
+            : 'X';
     if (typeof onPasso === 'function') {
       onPasso({ kind: 'lendo', texto: `Lendo ${rotulo}: ${raw}`, url: raw });
     }
@@ -542,6 +636,19 @@ async function extrairFontesDeLinks(
     try {
       if (tipo === 'youtube') {
         fontes.push(await extrairYoutubeComoFonte(raw, { onPasso, transcreverVideo }));
+        continue;
+      }
+
+      if (tipo === 'x') {
+        const fonteX = await extrairXComoFonte(raw);
+        fontes.push(fonteX);
+        if (typeof onPasso === 'function') {
+          onPasso({
+            kind: 'fontes',
+            texto: `Publicação do X extraída (${fonteX.veiculo})`,
+            url: fonteX.url,
+          });
+        }
         continue;
       }
 
@@ -1374,6 +1481,99 @@ async function criarConversa({
   };
 }
 
+/**
+ * Converte uma resposta comum do Claude em campos de rascunho.
+ * O chat continua livre; a limpeza só acontece quando o usuário decide salvar.
+ */
+function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) {
+  const { extrairHashtagsDoTexto } = require('./editorialGuidelinesFb');
+  let texto = decodificarEntidadesHtmlBasicas(String(conteudo || ''))
+    .replace(/\r\n/g, '\n')
+    // O gateway pode escapar Markdown/HTML na resposta exibida.
+    .replace(/\\([\\`*_[\]{}()#+\-.!<>])/g, '$1')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(?:a|span|strong|em|b|i)\b[^>]*>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .trim();
+
+  const linhas = texto.split('\n');
+  let indiceTitulo = -1;
+  let tituloDetectado = '';
+
+  // Formatos mais seguros primeiro: heading, negrito isolado ou "Título:".
+  for (let i = 0; i < linhas.length; i += 1) {
+    const linha = linhas[i].trim();
+    const candidato =
+      linha.match(/^#{1,6}\s+(.{10,220})$/)?.[1] ||
+      linha.match(/^\*\*(.{10,220})\*\*$/)?.[1] ||
+      linha.match(/^(?:t[ií]tulo|manchete)\s*:\s*(.{10,220})$/i)?.[1];
+    if (candidato) {
+      indiceTitulo = i;
+      tituloDetectado = candidato;
+      break;
+    }
+  }
+
+  // Claude costuma anunciar "Segue a matéria:" e pôr a manchete na linha seguinte.
+  if (indiceTitulo < 0) {
+    const indicePreambulo = linhas.findIndex((linha) =>
+      /\b(?:segue|aqui est[aá]|esta [ée])\s+(?:a\s+)?mat[eé]ria\s*:?\s*$/i.test(linha.trim())
+    );
+    if (indicePreambulo >= 0) {
+      for (let i = indicePreambulo + 1; i < Math.min(linhas.length, indicePreambulo + 5); i += 1) {
+        const candidato = linhas[i]
+          .trim()
+          .replace(/^#{1,6}\s+/, '')
+          .replace(/^\*{1,2}|\*{1,2}$/g, '')
+          .trim();
+        if (candidato.length >= 10 && candidato.length <= 220) {
+          indiceTitulo = i;
+          tituloDetectado = candidato;
+          break;
+        }
+      }
+    }
+  }
+
+  let corpo = indiceTitulo >= 0 ? linhas.slice(indiceTitulo + 1).join('\n') : texto;
+  corpo = corpo
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+    .replace(/^\s*#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    // Convites posteriores não pertencem à matéria.
+    .replace(
+      /\n+(?:Se quiser|Se voc[êe] quiser|Quer que eu|Posso tamb[ée]m|Caso queira)\b[\s\S]*$/i,
+      ''
+    )
+    .trim();
+
+  const extraida = extrairHashtagsDoTexto(corpo);
+  corpo = String(extraida.body || '')
+    // Fonte/foto escritos pelo Claude serão recriados pelo rodapé estruturado.
+    .replace(
+      /\n+(?:Fonte(?:s)?(?: da apura[cç][aã]o)?|Foto)\s*:\s*[\s\S]*$/i,
+      ''
+    )
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const tituloInformado = String(tituloEscolhido || '').replace(/\s+/g, ' ').trim();
+  const titulo = (tituloInformado || tituloDetectado || interpretarResposta(texto).titulo || 'Matéria do chat')
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^\*{1,2}|\*{1,2}$/g, '')
+    .replace(/^["“'](.+)["”']$/, '$1')
+    .trim()
+    .slice(0, 180);
+
+  return {
+    ehMateria: corpo.length >= 120,
+    titulo,
+    corpo,
+    hashtags: extraida.tags.slice(0, 6),
+  };
+}
+
 async function obterConversa({ userId, chatId }) {
   const chat = await AiChats.findByIdForUser(chatId, userId);
   if (!chat) throw erro('Conversa não encontrada', 404);
@@ -1531,11 +1731,18 @@ async function responder({
       texto: limparParaBanco(passo.texto, 300),
       ...(passo.url ? { url: limparParaBanco(passo.url, 500) } : {}),
     }));
-    const fontesSalvas = (fontesUsadas || []).slice(0, 8).map((fonte) => ({
+    const fontesSalvas = (fontesUsadas || []).slice(0, 12).map((fonte) => ({
       veiculo: limparParaBanco(fonte.veiculo, 120),
       titulo: limparParaBanco(fonte.titulo, 300),
       url: limparParaBanco(fonte.url, 500),
       ...(fonte.resumo ? { resumo: limparParaBanco(fonte.resumo, 1000) } : {}),
+      ...(fonte.trecho ? { trecho: limparParaBanco(fonte.trecho, 3500) } : {}),
+      ...(fonte.imagem ? { imagem: limparParaBanco(fonte.imagem, 1000) } : {}),
+      ...(fonte.urlOriginal ? { urlOriginal: limparParaBanco(fonte.urlOriginal, 500) } : {}),
+      ...(fonte.autor ? { autor: limparParaBanco(fonte.autor, 200) } : {}),
+      ...(fonte.plataforma ? { plataforma: limparParaBanco(fonte.plataforma, 30) } : {}),
+      ...(fonte.ehRedeSocial ? { ehRedeSocial: true } : {}),
+      ...(fonte.fonteColada ? { fonteColada: true } : {}),
     }));
     const assistantId = await AiChatMessages.create({
       chat_id: chat.id,
@@ -1561,6 +1768,59 @@ async function responder({
 
   if (conversaLivre) {
     let fontesWeb = [];
+    const urlsNoPedidoLivre = extrairUrlsDoTexto(pedido);
+    const urlsSociaisLivre = urlsNoPedidoLivre.filter((url) => classificarUrlFonte(url));
+    const urlsArtigosLivre = urlsNoPedidoLivre.filter(
+      (url) => !classificarUrlFonte(url) && hostDoLink(url)
+    );
+
+    // O Claude não consegue abrir vários links sociais autenticados. Extraímos
+    // com o mesmo pipeline do modo Escrever e entregamos o conteúdo já lido.
+    if (urlsSociaisLivre.length) {
+      registrarPasso({
+        kind: 'pensando',
+        texto: `Extraindo ${urlsSociaisLivre.length} publicação(ões) de rede social…`,
+      });
+      const textoSemLinks = urlsNoPedidoLivre
+        .reduce((atual, url) => atual.replace(url, ' '), pedido)
+        .replace(/\s+/g, ' ')
+        .trim();
+      const textoManualLivre = textoSemLinks
+        .replace(
+          /^\s*(?:fa[cç]a|crie|escreva|monte|analise|resuma)?\s*(?:uma\s+)?(?:mat[eé]ria|reportagem|texto|resumo)?\s*(?:deste|desse|do|sobre)?\s*(?:link|post|instagram|facebook|youtube|x)?\s*[:\-–—]*\s*/i,
+          ''
+        )
+        .trim();
+      const { fontes, falhas } = await extrairFontesDeLinks(urlsSociaisLivre, {
+        userId,
+        onPasso: registrarPasso,
+        textoManual: textoManualLivre.length >= 80 ? textoManualLivre : '',
+        transcreverVideo: Boolean(transcreverVideo),
+      });
+      fontesWeb.push(...fontes);
+      for (const falha of falhas) {
+        registrarPasso({
+          kind: 'aviso',
+          texto: `Não consegui extrair o link: ${falha.erro}`,
+          url: falha.url || null,
+        });
+      }
+    }
+
+    if (urlsArtigosLivre.length) {
+      const { fontes, falhas } = await extrairFontesDeArtigos(urlsArtigosLivre, {
+        onPasso: registrarPasso,
+      });
+      fontesWeb.push(...fontes);
+      for (const falha of falhas) {
+        registrarPasso({
+          kind: 'aviso',
+          texto: `Não consegui extrair o link: ${falha.erro}`,
+          url: falha.url || null,
+        });
+      }
+    }
+
     if (pesquisarWeb) {
       registrarPasso({ kind: 'pesquisa', texto: 'Pesquisando na internet…' });
       try {
@@ -1569,13 +1829,14 @@ async function responder({
           .replace(/\s+/g, ' ')
           .trim()
           .slice(0, 180) || pedido.slice(0, 180);
-        fontesWeb = await materiaIaService.coletarFatosNaWeb({
+        const fontesPesquisa = await materiaIaService.coletarFatosNaWeb({
           consultas: [consultaLivre],
           periodo: periodoFinal,
           resumoContexto: pedido.slice(0, 180),
           max: 6,
           logPrefix: '[claude-livre]',
         });
+        fontesWeb.push(...fontesPesquisa);
       } catch (err) {
         console.warn('[claude-livre] pesquisa:', err.message);
       }
@@ -1586,6 +1847,17 @@ async function responder({
           : 'A pesquisa não encontrou fontes; o Claude responderá sem resultados novos da web.',
       });
     }
+
+    const fontesUnicas = [];
+    const urlsFontes = new Set();
+    for (const fonte of fontesWeb) {
+      const chave = normalizarUrlComparacao(fonte?.url || fonte?.urlOriginal) ||
+        `${fonte?.veiculo || ''}:${fonte?.titulo || ''}`.toLowerCase();
+      if (chave && urlsFontes.has(chave)) continue;
+      if (chave) urlsFontes.add(chave);
+      fontesUnicas.push(fonte);
+    }
+    fontesWeb = fontesUnicas.slice(0, 12);
 
     const pediuPesquisaClaude =
       /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
@@ -1633,9 +1905,18 @@ async function responder({
         texto: `Claude pesquisou na web e consultou ${fontesClaude.length} fonte(s)`,
       });
     }
+    const fontesFinais = [];
+    const urlsFinais = new Set();
+    for (const fonte of [...fontesWeb, ...fontesClaude]) {
+      const chave = normalizarUrlComparacao(fonte?.url || fonte?.urlOriginal) ||
+        `${fonte?.veiculo || ''}:${fonte?.titulo || ''}`.toLowerCase();
+      if (chave && urlsFinais.has(chave)) continue;
+      if (chave) urlsFinais.add(chave);
+      fontesFinais.push(fonte);
+    }
     return finalizarLivre(respostaLivreFinal, {
-      fontesUsadas: fontesClaude.length ? fontesClaude : fontesWeb,
-      usouWeb: Boolean(fontesClaude.length || (pesquisarWeb && fontesWeb.length)),
+      fontesUsadas: fontesFinais,
+      usouWeb: Boolean(fontesFinais.length),
     });
   }
 
@@ -1982,14 +2263,14 @@ async function responder({
     });
   }
 
-  // 1) Links FB / IG / YT colados no chat → legenda, descrição ou legendas
+  // 1) Links FB / IG / YT / X colados no chat → legenda, descrição ou texto
   if (urlsSociais.length) {
     console.info(
       `[materia-chat] links sociais=${urlsSociais.length} transcreverVideo=${Boolean(transcreverVideo)}`
     );
     registrarPasso({
       kind: 'pensando',
-      texto: `Lendo ${urlsSociais.length} link(s) de Facebook/Instagram/YouTube…`,
+      texto: `Lendo ${urlsSociais.length} link(s) de Facebook/Instagram/YouTube/X…`,
     });
     const { fontes: fontesLink, falhas } = await extrairFontesDeLinks(urlsSociais, {
       userId,
@@ -2076,7 +2357,7 @@ async function responder({
     usarPesquisa = false;
     const detalhe = String(falhasLinksSociais[0]?.erro || '').trim();
     const resposta = [
-      'Não consegui confirmar o conteúdo deste link do Instagram/Facebook/YouTube, então não gerei a matéria para evitar usar outro conteúdo.',
+      'Não consegui confirmar o conteúdo deste link do Instagram/Facebook/YouTube/X, então não gerei a matéria para evitar usar outro conteúdo.',
       detalhe || null,
       'Cole a legenda do post junto com o link e envie novamente. Vou usar esse texto como a fonte principal.',
     ]
@@ -2445,7 +2726,7 @@ async function responder({
     } else if (!temFonteDoLink) {
       registrarPasso({
         kind: 'aviso',
-        texto: `Não achei fontes na web nesse período (${janela}). Aumente o período ou cole o link da fonte (matéria de site, Facebook, Instagram ou YouTube).`,
+        texto: `Não achei fontes na web nesse período (${janela}). Aumente o período ou cole o link da fonte (matéria de site, Facebook, Instagram, YouTube ou X).`,
       });
       usarPesquisa = false;
     } else {
@@ -3178,24 +3459,7 @@ async function salvarMateriaDoChat({
       }
     : interpretarResposta(row.content);
   if (conversaLivre && !escolhida) {
-    const conteudoLivre = String(row.content || '').replace(/\r\n/g, '\n').trim();
-    const heading = conteudoLivre.match(/^\s*\\?#{1,6}\s+(.{10,200})\s*$/m);
-    if (heading?.index != null) {
-      const inicioCorpo = heading.index + heading[0].length;
-      const corpoLivre = conteudoLivre
-        .slice(inicioCorpo)
-        .trim()
-        .replace(/\n+(?:Se quiser|Se você quiser),?\s+posso\b[\s\S]*$/i, '')
-        .trim();
-      if (corpoLivre.length >= 120) {
-        info = {
-          ...info,
-          ehMateria: true,
-          titulo: String(heading[1] || '').replace(/\*+/g, '').trim().slice(0, 180),
-          corpo: corpoLivre,
-        };
-      }
-    }
+    info = interpretarRespostaLivreParaRascunho(row.content, tituloEscolhido);
   }
   const corpo = String(info.corpo || (escolhida ? escolhida.conteudo : row.content) || '').trim();
   if (corpo.length < 120) throw erro('Essa resposta é curta demais para virar matéria', 400);
@@ -3561,9 +3825,11 @@ module.exports = {
   salvarTodasAsMateriasDoChat,
   salvarPautasComoRascunhos,
   interpretarResposta,
+  interpretarRespostaLivreParaRascunho,
   separarMaterias,
   extrairUrlsDoTexto,
   extrairFontesDeArtigos,
+  extrairXComoFonte,
   garantirCitacaoDoVeiculo,
   fonteEmOutroIdioma,
   pedidoEmOutroIdioma,
