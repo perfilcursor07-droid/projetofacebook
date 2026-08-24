@@ -1416,6 +1416,9 @@ function limparParaBanco(valor, max = 500) {
 function serializarMensagem(row) {
   const conteudo = String(row.content || '');
   const info = row.role === 'assistant' ? interpretarResposta(conteudo) : null;
+  const infoLivre = row.role === 'assistant' && row.chat_modo === 'livre'
+    ? interpretarRespostaLivreParaRascunho(conteudo)
+    : null;
   const guardadas = parseJson(row.fontes, []);
   const pautas = (Array.isArray(guardadas) ? guardadas : []).filter((f) => f && f.ehPauta);
   // Trechos completos ficam no banco para dar continuidade factual ao chat,
@@ -1457,6 +1460,10 @@ function serializarMensagem(row) {
     })),
     ehMateria:
       row.role === 'assistant' ? Boolean(info?.ehMateria) || multiplas.length >= 2 : false,
+    podeSalvarRascunho:
+      row.role === 'assistant' && row.chat_modo === 'livre'
+        ? respostaLivrePodeVirarMateria(infoLivre)
+        : true,
     createdAt: row.created_at,
   };
 }
@@ -1589,6 +1596,24 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
     corpo,
     hashtags: extraida.tags.slice(0, 6),
   };
+}
+
+/**
+ * Uma resposta de apuração negativa ("não encontrei") não é matéria. Sem
+ * este filtro, o tamanho do texto fazia o Claude Livre oferecer rascunho e
+ * manchetes para uma simples devolutiva de pesquisa.
+ */
+function respostaLivrePodeVirarMateria(info) {
+  if (!info?.ehMateria) return false;
+  const inicio = `${info.titulo || ''}\n${info.corpo || ''}`
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 900)
+    .toLowerCase();
+  if (/^(?:i\s+)?n[ãa]o\s+(?:encontrei|localizei|achei|identifiquei|há|ha)\b/.test(inicio)) {
+    return false;
+  }
+  return !/\b(?:posso seguir de duas formas|n[ãa]o encontrei(?:,| nas fontes| nenhuma)|só reação de fi[eé]is anônimos)\b/i.test(inicio);
 }
 
 function normalizarNomeFonteLivre(valor) {
@@ -1949,7 +1974,7 @@ async function obterConversa({ userId, chatId }) {
     pesquisarWeb: Boolean(chat.pesquisar_web),
     tom: chat.tom || 'natural',
     periodo: chat.periodo || PERIODO_PADRAO,
-    mensagens: rows.map(serializarMensagem),
+    mensagens: rows.map((row) => serializarMensagem({ ...row, chat_modo: chat.modo })),
   };
 }
 
@@ -2104,8 +2129,9 @@ async function responder({
   const finalizarLivre = async (resposta, { fontesUsadas = [], usouWeb = false } = {}) => {
     const respostaLimpa = limparArtefatosDeTextoLivre(resposta);
     const infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
+    const podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre);
     let titulosAlternativos = [];
-    if (infoLivre.ehMateria && infoLivre.titulo) {
+    if (podeSalvarRascunho && infoLivre.titulo) {
       registrarPasso({ kind: 'pensando', texto: 'Montando 3 títulos alternativos…' });
       try {
         const Users = require('../models/Users');
@@ -2174,6 +2200,7 @@ async function responder({
       ehMateria: false,
       materias: [],
       titulosAlternativos,
+      podeSalvarRascunho,
     };
     onEvent({ tipo: 'fim', chatId: chat.id, mensagem });
     return { chatId: chat.id, mensagem };
@@ -3930,6 +3957,9 @@ async function salvarMateriaDoChat({
   if (conversaLivre && !escolhida) {
     info = interpretarRespostaLivreParaRascunho(row.content, tituloEscolhido);
   }
+  if (conversaLivre && !escolhida && !respostaLivrePodeVirarMateria(info)) {
+    throw erro('Esta é uma devolutiva de apuração, não uma matéria pronta para salvar.', 400);
+  }
   const corpo = String(info.corpo || (escolhida ? escolhida.conteudo : row.content) || '').trim();
   if (corpo.length < 120) throw erro('Essa resposta é curta demais para virar matéria', 400);
 
@@ -4308,7 +4338,8 @@ async function gerarTitulosAlternativosDaMensagem({ userId, messageId, tituloAtu
   const info = conversaLivre
     ? interpretarRespostaLivreParaRascunho(row.content)
     : interpretarResposta(row.content);
-  if (!info.ehMateria || !String(info.corpo || '').trim()) {
+  if (!info.ehMateria || !String(info.corpo || '').trim() ||
+    (conversaLivre && !respostaLivrePodeVirarMateria(info))) {
     throw erro('Esta resposta não tem uma matéria pronta para sugerir títulos.', 400);
   }
 
@@ -4362,6 +4393,7 @@ module.exports = {
   gerarTitulosAlternativosDaMensagem,
   interpretarResposta,
   interpretarRespostaLivreParaRascunho,
+  respostaLivrePodeVirarMateria,
   extrairFontesDeclaradasRespostaLivre,
   selecionarFontesRespostaLivre,
   consultasParaResolverFontesLivres,

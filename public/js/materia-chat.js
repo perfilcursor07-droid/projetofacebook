@@ -1682,8 +1682,25 @@
       return wrap;
     }
 
+    // Segunda proteção no navegador: conversas antigas ou uma instância do
+    // servidor ainda em recarga podem não trazer o sinal do backend.
+    const inicioRespostaLivre = String(mensagem.content || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 900)
+      .toLowerCase();
+    const devolutivaDePesquisa =
+      /^(?:i\s+)?n[ãa]o\s+(?:encontrei|localizei|achei|identifiquei|há|ha)\b/.test(
+        inicioRespostaLivre
+      ) ||
+      /\b(?:posso seguir de duas formas|n[ãa]o encontrei(?:,| nas fontes| nenhum)|casos que já usei nesta conversa)\b/i.test(
+        inicioRespostaLivre
+      );
     const respostaLivreSalvavel =
-      state.tipoConversa === 'livre' && String(mensagem.content || '').trim().length >= 120;
+      state.tipoConversa === 'livre' &&
+      mensagem.podeSalvarRascunho !== false &&
+      !devolutivaDePesquisa &&
+      String(mensagem.content || '').trim().length >= 120;
     if ((mensagem.ehMateria && state.tipoConversa !== 'livre') || respostaLivreSalvavel) {
       areaSalvar(mensagem, wrap, { livre: state.tipoConversa === 'livre' });
       // Atalhos só na última matéria, para não repetir a cada mensagem antiga
