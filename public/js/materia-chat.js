@@ -154,6 +154,41 @@
 
   /* ------------------------------ sidebar ------------------------------ */
 
+  async function renomearConversaNaLista(conversa) {
+    if (!conversa?.id) return;
+    const atual = conversa.titulo || 'Nova conversa';
+    const novo = prompt('Novo nome da conversa:', atual);
+    if (!novo || !novo.trim() || novo.trim() === atual) return;
+    try {
+      const data = await api(`${API}/conversas/${conversa.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ titulo: novo.trim() }),
+      });
+      conversa.titulo = data.chat.titulo;
+      if (Number(state.chatId) === Number(conversa.id)) {
+        el.titulo.textContent = data.chat.titulo;
+      }
+      renderConversas();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function alternarConversaFixada(conversa) {
+    if (!conversa?.id) return;
+    const novoValor = !Boolean(conversa.fixada);
+    try {
+      const data = await api(`${API}/conversas/${conversa.id}/fixar`, {
+        method: 'PATCH',
+        body: JSON.stringify({ fixada: novoValor }),
+      });
+      conversa.fixada = Boolean(data.chat.fixada);
+      await carregarConversas();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   function renderConversas() {
     const filtro = String(el.busca?.value || '').trim().toLowerCase();
     el.lista.replaceChildren();
@@ -173,7 +208,7 @@
     for (const c of itens) {
       const linha = document.createElement('div');
       const ativo = Number(c.id) === Number(state.chatId);
-      linha.className = `mia-chat-conv${ativo ? ' is-active' : ''}`;
+      linha.className = `mia-chat-conv${ativo ? ' is-active' : ''}${c.fixada ? ' is-pinned' : ''}`;
 
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -182,9 +217,37 @@
       btn.title = c.titulo || 'Nova conversa';
       btn.addEventListener('click', () => abrirConversa(c.id));
 
+      const acoes = document.createElement('div');
+      acoes.className = 'mia-chat-conv-actions';
+
+      const fixar = document.createElement('button');
+      fixar.type = 'button';
+      fixar.className = `mia-chat-conv-action mia-chat-conv-pin${c.fixada ? ' is-active' : ''}`;
+      fixar.title = c.fixada ? 'Desafixar conversa' : 'Fixar conversa';
+      fixar.setAttribute('aria-label', fixar.title);
+      fixar.setAttribute('aria-pressed', c.fixada ? 'true' : 'false');
+      fixar.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m14 4 6 6-3 1-4 4-1 5-3-3-4 4-2-2 4-4-3-3 5-1 4-4 1-3Z"/></svg>';
+      fixar.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        alternarConversaFixada(c);
+      });
+
+      const editar = document.createElement('button');
+      editar.type = 'button';
+      editar.className = 'mia-chat-conv-action mia-chat-conv-edit';
+      editar.title = 'Editar nome da conversa';
+      editar.setAttribute('aria-label', editar.title);
+      editar.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>';
+      editar.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        renomearConversaNaLista(c);
+      });
+
       const excluir = document.createElement('button');
       excluir.type = 'button';
-      excluir.className = 'mia-chat-conv-del';
+      excluir.className = 'mia-chat-conv-action mia-chat-conv-del';
       excluir.textContent = '✕';
       excluir.title = 'Excluir conversa';
       excluir.addEventListener('click', async (ev) => {
@@ -200,7 +263,10 @@
       });
 
       linha.appendChild(btn);
-      linha.appendChild(excluir);
+      acoes.appendChild(fixar);
+      acoes.appendChild(editar);
+      acoes.appendChild(excluir);
+      linha.appendChild(acoes);
       el.lista.appendChild(linha);
     }
   }
@@ -2100,19 +2166,11 @@
 
   el.renomear?.addEventListener('click', async () => {
     if (!state.chatId) return;
-    const atual = el.titulo.textContent || '';
-    const novo = prompt('Novo nome da conversa:', atual);
-    if (!novo || !novo.trim()) return;
-    try {
-      const data = await api(`${API}/conversas/${state.chatId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ titulo: novo.trim() }),
-      });
-      el.titulo.textContent = data.chat.titulo;
-      await carregarConversas();
-    } catch (err) {
-      alert(err.message);
-    }
+    const conversa = state.conversas.find((c) => Number(c.id) === Number(state.chatId)) || {
+      id: state.chatId,
+      titulo: el.titulo.textContent || 'Nova conversa',
+    };
+    await renomearConversaNaLista(conversa);
   });
 
   function fecharMenuMais() {

@@ -447,21 +447,62 @@ body.mia-chat-drawer-open {
   padding: 0;
 }
 
-.mia-chat-conv-del {
+.mia-chat-conv-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0.05rem;
+}
+
+.mia-chat-conv-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
   flex-shrink: 0;
   border: 0;
-  background: none;
+  border-radius: 0.35rem;
+  padding: 0;
+  background: transparent;
   color: var(--mia-chat-muted);
   opacity: 0;
-  padding: 0.15rem 0.35rem;
-  border-radius: 0.35rem;
-  font-size: 0.75rem;
   cursor: pointer;
-  transition: opacity 0.12s, color 0.12s;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+
+.mia-chat-conv-action svg {
+  width: 0.82rem;
+  height: 0.82rem;
+}
+
+.mia-chat-conv-pin.is-active {
+  color: #fbbf24;
+  opacity: 0.9;
+}
+
+.mia-chat-conv:hover .mia-chat-conv-action,
+.mia-chat-conv:focus-within .mia-chat-conv-action {
+  opacity: 1;
+}
+
+.mia-chat-conv-action:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mia-chat-conv-pin:hover,
+.mia-chat-conv-pin.is-active:hover {
+  color: #fcd34d;
+}
+
+.mia-chat-conv-del {
+  font-size: 0.7rem;
+  line-height: 1;
 }
 
 @media (hover: none), (max-width: 1023px) {
-  .mia-chat-conv-del {
+  .mia-chat-conv-action {
     opacity: 0.65;
   }
 }

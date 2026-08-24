@@ -49,6 +49,20 @@ async function renomear(req, res, next) {
   }
 }
 
+async function fixar(req, res, next) {
+  try {
+    const chat = await chatService.fixarConversa({
+      userId: req.session.userId,
+      chatId: Number(req.params.id),
+      fixada: req.body?.fixada,
+    });
+    return res.json({ ok: true, chat });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 async function excluir(req, res, next) {
   try {
     await chatService.excluirConversa({
@@ -246,6 +260,7 @@ module.exports = {
   criar,
   obter,
   renomear,
+  fixar,
   excluir,
   apagarDaMensagem,
   enviar,

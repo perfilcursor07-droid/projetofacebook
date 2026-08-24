@@ -1452,6 +1452,7 @@ async function listarConversas(userId) {
     id: c.id,
     titulo: c.titulo || 'Nova conversa',
     modo: c.modo === 'livre' ? 'livre' : 'materia',
+    fixada: Boolean(c.fixado),
     pesquisarWeb: Boolean(c.pesquisar_web),
     tom: c.tom || 'natural',
     periodo: c.periodo || PERIODO_PADRAO,
@@ -1477,6 +1478,7 @@ async function criarConversa({
     id: chat.id,
     titulo: chat.titulo || 'Nova conversa',
     modo: chat.modo === 'livre' ? 'livre' : 'materia',
+    fixada: Boolean(chat.fixado),
     mensagens: [],
   };
 }
@@ -1582,6 +1584,7 @@ async function obterConversa({ userId, chatId }) {
     id: chat.id,
     titulo: chat.titulo || 'Nova conversa',
     modo: chat.modo === 'livre' ? 'livre' : 'materia',
+    fixada: Boolean(chat.fixado),
     pesquisarWeb: Boolean(chat.pesquisar_web),
     tom: chat.tom || 'natural',
     periodo: chat.periodo || PERIODO_PADRAO,
@@ -1595,6 +1598,18 @@ async function renomearConversa({ userId, chatId, titulo }) {
   const novo = tituloDaConversa(titulo);
   await AiChats.update(chat.id, { titulo: novo });
   return { id: chat.id, titulo: novo };
+}
+
+async function fixarConversa({ userId, chatId, fixada }) {
+  const chat = await AiChats.findByIdForUser(chatId, userId);
+  if (!chat) throw erro('Conversa não encontrada', 404);
+  const valor = fixada === true || fixada === 1 || fixada === '1';
+  await AiChats.update(chat.id, { fixado: valor ? 1 : 0 });
+  return {
+    id: chat.id,
+    titulo: chat.titulo || 'Nova conversa',
+    fixada: valor,
+  };
 }
 
 /**
@@ -3818,6 +3833,7 @@ module.exports = {
   criarConversa,
   obterConversa,
   renomearConversa,
+  fixarConversa,
   excluirConversa,
   apagarMensagemEmDiante,
   responder,

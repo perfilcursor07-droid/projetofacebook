@@ -10,6 +10,7 @@ router.get('/chat/conversas', chatController.listar);
 router.post('/chat/conversas', chatController.criar);
 router.get('/chat/conversas/:id', chatController.obter);
 router.patch('/chat/conversas/:id', chatController.renomear);
+router.patch('/chat/conversas/:id/fixar', chatController.fixar);
 router.delete('/chat/conversas/:id', chatController.excluir);
 router.post('/chat/conversas/:id/mensagens', chatController.enviar);
 router.delete('/chat/conversas/:id/mensagens/:messageId', chatController.apagarDaMensagem);

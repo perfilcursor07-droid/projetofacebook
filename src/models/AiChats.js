@@ -15,12 +15,14 @@ const AiChats = {
   async findByUser(userId, { limit = 60 } = {}) {
     const rows = await db(`${this.table} as c`)
       .where('c.user_id', userId)
+      .orderBy('c.fixado', 'desc')
       .orderByRaw('COALESCE(c.last_message_at, c.created_at) DESC')
       .limit(Math.min(200, Math.max(1, Number(limit) || 60)))
       .select(
         'c.id',
         'c.titulo',
         'c.modo',
+        'c.fixado',
         'c.pesquisar_web',
         'c.tom',
         'c.periodo',

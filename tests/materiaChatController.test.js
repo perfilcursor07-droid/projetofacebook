@@ -5,13 +5,13 @@ const test = require('node:test');
 const servicePath = require.resolve('../src/services/materiaChatService');
 const controllerPath = require.resolve('../src/controllers/materiaChatController');
 
-function carregarController(responder) {
+function carregarController(servico) {
   delete require.cache[controllerPath];
   require.cache[servicePath] = {
     id: servicePath,
     filename: servicePath,
     loaded: true,
-    exports: { responder },
+    exports: typeof servico === 'function' ? { responder: servico } : servico,
   };
   return require(controllerPath);
 }
@@ -45,6 +45,12 @@ class FakeResponse extends EventEmitter {
   end(chunk = '') {
     this.output += String(chunk);
     this.writableEnded = true;
+    return this;
+  }
+
+  json(data) {
+    this.setHeader('Content-Type', 'application/json');
+    this.end(JSON.stringify(data));
     return this;
   }
 }
@@ -99,4 +105,24 @@ test('encaminha o modo Claude livre sem confundir com o modo editorial', async (
 
   assert.equal(tipoRecebido, 'livre');
   assert.equal(res.writableEnded, true);
+});
+
+test('encaminha a opção de fixar conversa para o usuário autenticado', async () => {
+  const req = fakeRequest();
+  req.params.id = '17';
+  req.body = { fixada: true };
+  const res = new FakeResponse();
+  let payload = null;
+  const controller = carregarController({
+    fixarConversa: async (dados) => {
+      payload = dados;
+      return { id: dados.chatId, titulo: 'Conversa importante', fixada: true };
+    },
+  });
+
+  await controller.fixar(req, res, () => {});
+
+  assert.deepEqual(payload, { userId: 2, chatId: 17, fixada: true });
+  assert.equal(res.statusCode, 200);
+  assert.match(res.output, /"fixada":true/);
 });
