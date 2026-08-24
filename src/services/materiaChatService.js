@@ -196,6 +196,21 @@ function decodificarEntidadesHtmlBasicas(texto) {
   });
 }
 
+/** Remove resíduos de escape/HTML que não pertencem ao texto editorial. */
+function limparArtefatosDeTextoLivre(texto) {
+  return decodificarEntidadesHtmlBasicas(
+    String(texto || '')
+      // Alguns gateways devolvem uma barra antes de entidades de espaço.
+      .replace(/\\(?:&#x?[0-9a-f]+;|&nbsp;)+/gi, '')
+      // Linha isolada com "\\" é escape Markdown residual, não conteúdo.
+      .replace(/(^|\n)[ \t]*\\[ \t]*(?=\n|$)/g, '$1')
+  )
+    .replace(/\\(?=\s*(?:\n|$))/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function textoDoHtmlSimples(html) {
   return decodificarEntidadesHtmlBasicas(
     String(html || '')
@@ -2087,6 +2102,31 @@ async function responder({
 
   /** Chat comum: salva texto e fontes sem interpretar como matéria editorial. */
   const finalizarLivre = async (resposta, { fontesUsadas = [], usouWeb = false } = {}) => {
+    const respostaLimpa = limparArtefatosDeTextoLivre(resposta);
+    const infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
+    let titulosAlternativos = [];
+    if (infoLivre.ehMateria && infoLivre.titulo) {
+      registrarPasso({ kind: 'pensando', texto: 'Montando 3 títulos alternativos…' });
+      try {
+        const Users = require('../models/Users');
+        const deepseekService = require('./deepseekService');
+        const user = await Users.findById(userId);
+        titulosAlternativos = await deepseekService.gerarTitulosAlternativos({
+          titulo: infoLivre.titulo,
+          materia: infoLivre.corpo,
+          marcaModeloArte: user?.marca_modelo_arte || null,
+          tarefa: 'conversa',
+        });
+      } catch (err) {
+        console.warn('[claude-livre] títulos alternativos:', err.message);
+      }
+      if (titulosAlternativos.length) {
+        registrarPasso({
+          kind: 'fontes',
+          texto: `${titulosAlternativos.length} títulos alternativos prontos`,
+        });
+      }
+    }
     const passosSalvos = passos.slice(-20).map((passo) => ({
       kind: passo.kind,
       texto: limparParaBanco(passo.texto, 300),
@@ -2108,20 +2148,32 @@ async function responder({
     const assistantId = await AiChatMessages.create({
       chat_id: chat.id,
       role: 'assistant',
-      content: resposta,
-      titulo: null,
-      hashtags: '[]',
+      content: respostaLimpa,
+      titulo: infoLivre.titulo ? limparParaBanco(infoLivre.titulo, 180) : null,
+      hashtags: JSON.stringify(infoLivre.hashtags || []),
       passos: JSON.stringify(passosSalvos),
       fontes: JSON.stringify(fontesSalvas),
       pesquisou_web: usouWeb ? 1 : 0,
     });
+    if (titulosAlternativos.length) {
+      // Instalações antigas podem ainda não ter a coluna da migração.
+      try {
+        await AiChatMessages.update(assistantId, {
+          titulos_alternativos: JSON.stringify(
+            titulosAlternativos.map((titulo) => limparParaBanco(titulo, 180)).filter(Boolean)
+          ),
+        });
+      } catch (err) {
+        console.warn('[claude-livre] títulos alternativos não gravados:', err.code || err.message);
+      }
+    }
     await AiChats.touch(chat.id);
     const salva = await AiChatMessages.findById(assistantId);
     const mensagem = {
       ...serializarMensagem(salva),
       ehMateria: false,
       materias: [],
-      titulosAlternativos: [],
+      titulosAlternativos,
     };
     onEvent({ tipo: 'fim', chatId: chat.id, mensagem });
     return { chatId: chat.id, mensagem };
@@ -2243,7 +2295,7 @@ async function responder({
       conversationId: `viralizeai:user:${userId}:chat:${chat.id}`,
       conversationName: chat.titulo || tituloDaConversa(pedido),
     });
-    let respostaLivreFinal = String(respostaLivre || '').trim();
+    let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
     const fontesClaude = [];
     const urlsClaude = new Set();
     for (const match of String(respostaLivre || '').matchAll(/\[([^\]]{1,240})\]\((https?:\/\/[^\s)]+)\)/gi)) {
@@ -4273,7 +4325,7 @@ async function gerarTitulosAlternativosDaMensagem({ userId, messageId, tituloAtu
     titulo: tituloBase,
     materia: String(info.corpo || '').trim(),
     marcaModeloArte: user?.marca_modelo_arte || null,
-    tarefa: conversaLivre ? 'claude-livre' : 'conversa',
+    tarefa: 'conversa',
   });
   const limpos = [...new Set(
     (Array.isArray(titulos) ? titulos : [])

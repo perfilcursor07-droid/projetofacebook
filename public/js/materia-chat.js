@@ -799,7 +799,7 @@
     );
     const sugerirTitulos = livre
       ? criarBotao(
-          'Sugerir 3 títulos',
+          alternativos.length ? 'Gerar outros 3 títulos' : 'Sugerir 3 títulos',
           'rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20'
         )
       : null;
@@ -830,7 +830,7 @@
         aviso.textContent = err.message;
       } finally {
         sugerirTitulos.disabled = false;
-        sugerirTitulos.textContent = rotulo || 'Sugerir 3 títulos';
+        sugerirTitulos.textContent = rotulo || 'Gerar outros 3 títulos';
       }
     });
 
