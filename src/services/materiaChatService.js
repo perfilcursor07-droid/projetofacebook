@@ -4237,6 +4237,64 @@ async function salvarPautasComoRascunhos({
   };
 }
 
+/**
+ * Gera 3 alternativas diretamente de uma resposta do chat. No Claude Livre a
+ * matéria só vira uma estrutura editorial quando o usuário escolhe salvar;
+ * por isso as manchetes precisam poder ser pedidas neste momento, antes do
+ * rascunho existir.
+ */
+async function gerarTitulosAlternativosDaMensagem({ userId, messageId, tituloAtual = null } = {}) {
+  const row = await AiChatMessages.findByIdWithChat(messageId);
+  if (!row || Number(row.chat_user_id) !== Number(userId)) {
+    throw erro('Mensagem não encontrada', 404);
+  }
+  if (row.role !== 'assistant') {
+    throw erro('Só respostas do Claude podem receber sugestões de título.', 400);
+  }
+
+  const conversaLivre = row.chat_modo === 'livre';
+  const info = conversaLivre
+    ? interpretarRespostaLivreParaRascunho(row.content)
+    : interpretarResposta(row.content);
+  if (!info.ehMateria || !String(info.corpo || '').trim()) {
+    throw erro('Esta resposta não tem uma matéria pronta para sugerir títulos.', 400);
+  }
+
+  const tituloInformado = String(tituloAtual || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+  const tituloBase = tituloInformado || String(info.titulo || '').trim().slice(0, 180);
+  if (tituloBase.length < 8) {
+    throw erro('Informe ou revise o título da matéria antes de pedir sugestões.', 400);
+  }
+
+  const Users = require('../models/Users');
+  const deepseekService = require('./deepseekService');
+  const user = await Users.findById(userId);
+  const titulos = await deepseekService.gerarTitulosAlternativos({
+    titulo: tituloBase,
+    materia: String(info.corpo || '').trim(),
+    marcaModeloArte: user?.marca_modelo_arte || null,
+    tarefa: conversaLivre ? 'claude-livre' : 'conversa',
+  });
+  const limpos = [...new Set(
+    (Array.isArray(titulos) ? titulos : [])
+      .map((titulo) => String(titulo || '').replace(/\s+/g, ' ').trim())
+      .filter((titulo) => titulo && titulo !== tituloBase)
+  )].slice(0, 3);
+  if (!limpos.length) {
+    throw erro('A IA não devolveu títulos alternativos agora. Tente novamente.', 502);
+  }
+
+  // Mantém as sugestões se a migração já estiver no banco; se ainda não estiver,
+  // a resposta desta requisição continua útil e o rascunho não é bloqueado.
+  try {
+    await AiChatMessages.update(row.id, { titulos_alternativos: JSON.stringify(limpos) });
+  } catch (err) {
+    console.warn('[materia-chat] não salvou títulos da mensagem:', err.code || err.message);
+  }
+
+  return { titulo: tituloBase, titulos: limpos };
+}
+
 module.exports = {
   listarConversas,
   criarConversa,
@@ -4249,6 +4307,7 @@ module.exports = {
   salvarMateriaDoChat,
   salvarTodasAsMateriasDoChat,
   salvarPautasComoRascunhos,
+  gerarTitulosAlternativosDaMensagem,
   interpretarResposta,
   interpretarRespostaLivreParaRascunho,
   extrairFontesDeclaradasRespostaLivre,

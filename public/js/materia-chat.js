@@ -707,57 +707,73 @@
       box.appendChild(tituloLivre);
     }
 
-    // 3 títulos alternativos ao principal: o escolhido vai junto no rascunho.
+    // No Claude Livre, as sugestões são pedidas antes de a resposta virar um
+    // rascunho; no chat normal elas já podem vir gravadas na mensagem.
     let tituloEscolhido = null;
+    let opcoesTitulos = [];
+    let listaTitulos = null;
+    let tituloPrincipalAtual = '';
     const alternativos = Array.isArray(mensagem.titulosAlternativos)
       ? mensagem.titulosAlternativos.filter(Boolean).slice(0, 3)
       : [];
-    if (!livre && alternativos.length) {
-      const tituloPrincipal = mensagem.titulo || (mensagem.content || '').split('\n')[0].trim();
-      const wrap = document.createElement('div');
-      wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
 
-      const label = document.createElement('p');
-      label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-      label.textContent = 'Títulos alternativos';
-      wrap.appendChild(label);
+    function mostrarTitulosAlternativos(titulos) {
+      const tituloPrincipal = String(
+        livre
+          ? tituloLivre?.value || tituloRascunhoLivre(mensagem)
+          : mensagem.titulo || (mensagem.content || '').split('\n')[0].trim()
+      ).trim();
+      const sugestoes = [...new Set((titulos || []).map((t) => String(t || '').trim()))]
+        .filter((t) => t && t !== tituloPrincipal)
+        .slice(0, 3);
+      if (!tituloPrincipal || !sugestoes.length) return;
 
-      const lista = document.createElement('div');
-      lista.className = 'mt-1.5 grid gap-1.5';
+      tituloPrincipalAtual = tituloPrincipal;
+      if (!listaTitulos) {
+        const wrap = document.createElement('div');
+        wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
+        const label = document.createElement('p');
+        label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
+        label.textContent = 'Títulos sugeridos';
+        wrap.appendChild(label);
+        listaTitulos = document.createElement('div');
+        listaTitulos.className = 'mt-1.5 grid gap-1.5';
+        wrap.appendChild(listaTitulos);
+        const dica = document.createElement('p');
+        dica.className = 'mt-1.5 text-[11px] text-slate-500';
+        dica.textContent = 'Clique em um título para usá-lo no rascunho.';
+        wrap.appendChild(dica);
+        box.appendChild(wrap);
+      }
 
-      const opcoes = [];
+      listaTitulos.replaceChildren();
+      opcoesTitulos = [];
       const marcar = (btn) => {
-        tituloEscolhido = btn.dataset.titulo === tituloPrincipal ? null : btn.dataset.titulo;
-        opcoes.forEach((b) => {
-          const ativo = b === btn;
-          b.className =
+        const escolhido = btn.dataset.titulo || '';
+        if (livre && tituloLivre) tituloLivre.value = escolhido;
+        tituloEscolhido = livre || escolhido === tituloPrincipalAtual ? null : escolhido;
+        opcoesTitulos.forEach((opcao) => {
+          const ativo = opcao === btn;
+          opcao.className =
             'w-full rounded-md border px-2.5 py-1.5 text-left text-xs leading-snug transition ' +
             (ativo
               ? 'border-emerald-500 bg-emerald-500/10 text-emerald-200'
               : 'border-slate-700 text-slate-300 hover:border-emerald-500/60 hover:text-white');
         });
       };
-
-      for (const opcao of [tituloPrincipal, ...alternativos]) {
-        if (!opcao) continue;
+      for (const opcao of [tituloPrincipal, ...sugestoes]) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.dataset.titulo = opcao;
-        btn.textContent = opcao === tituloPrincipal ? `${opcao}  (principal)` : opcao;
+        btn.textContent = opcao === tituloPrincipal ? `${opcao}  (atual)` : opcao;
         btn.addEventListener('click', () => marcar(btn));
-        opcoes.push(btn);
-        lista.appendChild(btn);
+        opcoesTitulos.push(btn);
+        listaTitulos.appendChild(btn);
       }
-      wrap.appendChild(lista);
-
-      const dica = document.createElement('p');
-      dica.className = 'mt-1.5 text-[11px] text-slate-500';
-      dica.textContent = 'Clique em um título para usá-lo no rascunho. Sem clicar, vale o principal.';
-      wrap.appendChild(dica);
-
-      box.appendChild(wrap);
-      if (opcoes.length) marcar(opcoes[0]);
+      marcar(opcoesTitulos[0]);
     }
+
+    if (alternativos.length) mostrarTitulosAlternativos(alternativos);
 
     const grid = document.createElement('div');
     grid.className = 'mt-2 grid gap-2 md:grid-cols-2';
@@ -781,6 +797,12 @@
       'Salvar como rascunho',
       'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400'
     );
+    const sugerirTitulos = livre
+      ? criarBotao(
+          'Sugerir 3 títulos',
+          'rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20'
+        )
+      : null;
     const copiar = criarBotao(
       'Copiar texto',
       'rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-emerald-500 hover:text-white'
@@ -791,6 +813,26 @@
     );
     const aviso = document.createElement('span');
     aviso.className = 'text-xs text-slate-400';
+
+    sugerirTitulos?.addEventListener('click', async () => {
+      sugerirTitulos.disabled = true;
+      const rotulo = sugerirTitulos.textContent;
+      sugerirTitulos.textContent = 'Sugerindo…';
+      aviso.textContent = 'Gerando 3 títulos…';
+      try {
+        const data = await api(`${API}/mensagens/${mensagem.id}/titulos-alternativos`, {
+          method: 'POST',
+          body: JSON.stringify({ tituloAtual: tituloLivre?.value.trim() || null }),
+        });
+        mostrarTitulosAlternativos(data.titulos || []);
+        aviso.textContent = '3 títulos prontos — escolha um para usar no rascunho.';
+      } catch (err) {
+        aviso.textContent = err.message;
+      } finally {
+        sugerirTitulos.disabled = false;
+        sugerirTitulos.textContent = rotulo || 'Sugerir 3 títulos';
+      }
+    });
 
     salvar.addEventListener('click', async () => {
       salvar.disabled = true;
@@ -910,6 +952,7 @@
       }
     });
 
+    if (sugerirTitulos) acoes.appendChild(sugerirTitulos);
     acoes.appendChild(salvar);
     acoes.appendChild(copiar);
     acoes.appendChild(ajustar);

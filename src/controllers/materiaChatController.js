@@ -190,6 +190,21 @@ async function salvarMateria(req, res, next) {
   }
 }
 
+/** Gera 3 títulos para a resposta atual antes de ela virar rascunho. */
+async function gerarTitulosAlternativos(req, res, next) {
+  try {
+    const resultado = await chatService.gerarTitulosAlternativosDaMensagem({
+      userId: req.session.userId,
+      messageId: Number(req.params.messageId),
+      tituloAtual: req.body?.tituloAtual || req.body?.titulo || null,
+    });
+    return res.json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 /** Salva todas as matérias de uma resposta que trouxe várias. */
 async function salvarTodasAsMaterias(req, res, next) {
   try {
@@ -265,6 +280,7 @@ module.exports = {
   apagarDaMensagem,
   enviar,
   salvarMateria,
+  gerarTitulosAlternativos,
   salvarTodasAsMaterias,
   salvarPautasComoRascunhos,
   obterOrientacoes,
