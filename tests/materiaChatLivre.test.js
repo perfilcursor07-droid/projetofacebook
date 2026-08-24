@@ -3,10 +3,12 @@ const test = require('node:test');
 
 const {
   interpretarRespostaLivreParaRascunho,
+  extrairFontesDeclaradasRespostaLivre,
   selecionarFontesRespostaLivre,
   consultasParaResolverFontesLivres,
   consultasGoogleNewsParaResolverFontesLivres,
 } = require('../src/services/materiaChatService');
+const { montarRodapeMateriaComFontes } = require('../src/services/editorialGuidelinesFb');
 
 test('Claude livre salva somente a matéria após preâmbulo e título em negrito', () => {
   const resposta = String.raw`I encontrei um bom ângulo real e polêmico. Segue a matéria:
@@ -34,8 +36,10 @@ Foto: Reprodução/CGADB
   );
   assert.doesNotMatch(resultado.corpo, /encontrei um bom ângulo/i);
   assert.doesNotMatch(resultado.corpo, /Segue a matéria/i);
-  assert.doesNotMatch(resultado.corpo, /Fonte:|Foto:|<a>|\\/i);
+  assert.doesNotMatch(resultado.corpo, /<a>|\\/i);
   assert.match(resultado.corpo, /Questionado pelo JM Notícia/);
+  assert.match(resultado.corpo, /Fonte: JM Notícia/);
+  assert.match(resultado.corpo, /Foto: Reprodução\/CGADB/);
   assert.deepEqual(resultado.hashtags, ['CGADB', 'AssembleiaDeDeus', 'Polemica']);
 });
 
@@ -49,6 +53,45 @@ Este é o segundo parágrafo, também com conteúdo suficiente para que a respos
   const resultado = interpretarRespostaLivreParaRascunho(resposta, 'Título final do editor');
   assert.equal(resultado.titulo, 'Título final do editor');
   assert.doesNotMatch(resultado.corpo, /Título sugerido/);
+});
+
+test('Claude livre separa título sem Markdown e preserva integralmente a matéria pronta', () => {
+  const resposta = `Tarcísio de Freitas vai a culto evangélico e pede que "Deus abra os caminhos"
+
+O governador Tarcísio de Freitas participou de um culto na Assembleia de Deus Ministério do Belém, onde leu uma passagem bíblica e pediu orações para sua campanha. Este é o primeiro parágrafo completo da matéria.
+
+Ao lado de André do Prado e Guilherme Derrite, o governador afirmou que o grupo terá uma jornada pesada até outubro, mas disse confiar que Deus está no controle da situação.
+
+Durante o evento, Guilherme Derrite comentou que Paulo Freire seria libriano, referência a signos do zodíaco. A fala gerou risos entre os presentes no templo.
+
+Derrite não pediu votos diretamente aos fiéis e preferiu solicitar orações. Este último parágrafo precisa permanecer no rascunho sem ser cortado durante o salvamento.
+
+Fonte: UOL — [https://noticias.uol.com.br/eleicoes/2026/08/17/tarcisio-vai-a-culto.ghtml](https://noticias.uol.com.br/eleicoes/2026/08/17/tarcisio-vai-a-culto.ghtml)
+
+Foto: Reprodução
+
+#Tarcísio #Eleições2026 #VotoEvangélico #JMNotícia
+
+Siga o JM Notícia.`;
+
+  const resultado = interpretarRespostaLivreParaRascunho(resposta);
+
+  assert.equal(
+    resultado.titulo,
+    'Tarcísio de Freitas vai a culto evangélico e pede que "Deus abra os caminhos"'
+  );
+  assert.match(resultado.corpo, /^O governador Tarcísio/);
+  assert.doesNotMatch(resultado.corpo, /^Tarcísio de Freitas vai a culto/);
+  assert.match(resultado.corpo, /Este último parágrafo precisa permanecer/);
+  assert.match(resultado.corpo, /Fonte: UOL — https:\/\/noticias\.uol\.com\.br/);
+  assert.match(resultado.corpo, /#Tarcísio #Eleições2026/);
+  assert.match(resultado.corpo, /Siga o JM Notícia\.$/);
+  assert.deepEqual(resultado.hashtags, [
+    'Tarcísio',
+    'Eleições2026',
+    'VotoEvangélico',
+    'JMNotícia',
+  ]);
 });
 
 test('rascunho usa as fontes declaradas pelo Claude e descarta resultados auxiliares', () => {
@@ -176,4 +219,31 @@ Fonte: Brasil 247 e Metrópoles
     diretas.find((fonte) => fonte.veiculo === 'Metrópoles')?.url || '',
     /metropoles\.com\/viralizou\/pastor-que-traiu/
   );
+});
+
+test('linha Fonte com link Markdown declara somente o veículo', () => {
+  const resposta = `Título editorial suficientemente completo para uma matéria
+
+Texto jornalístico com contexto suficiente para representar o conteúdo principal e permitir a seleção correta da fonte utilizada pelo Claude na resposta.
+
+Fonte: UOL — [https://noticias.uol.com.br/exemplo.ghtml](https://noticias.uol.com.br/exemplo.ghtml)`;
+
+  assert.deepEqual(extrairFontesDeclaradasRespostaLivre(resposta), ['UOL']);
+});
+
+test('salvamento do chat não corta silenciosamente os últimos parágrafos', () => {
+  const ultimo = 'ÚLTIMO PARÁGRAFO PRESERVADO NO RASCUNHO.';
+  const corpo = `${'Parágrafo jornalístico completo. '.repeat(90)}\n\n${ultimo}`;
+  const resultado = montarRodapeMateriaComFontes({
+    materia: corpo,
+    fontes: [{ veiculo: 'UOL', url: 'https://noticias.uol.com.br/materia.ghtml' }],
+    creditoImagem: 'Reprodução',
+    hashtags: ['JMNotícia'],
+    limitarLegenda: false,
+  });
+
+  assert.ok(resultado.materia.length > 2200);
+  assert.match(resultado.materia, new RegExp(ultimo.replace('.', '\\.')));
+  assert.doesNotMatch(resultado.fonteCredito, /Gazeta|Folha/);
+  assert.match(resultado.fonteCredito, /UOL/);
 });

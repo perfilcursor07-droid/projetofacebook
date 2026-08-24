@@ -988,7 +988,10 @@ function interpretarResposta(conteudo) {
   const tituloLimpo = primeira
     .replace(/^#{1,6}\s*/, '')
     .replace(/^\*{1,2}|\*{1,2}$/g, '')
-    .replace(/^["“”']+|["“”']+$/g, '')
+    // Remove aspas somente quando envolvem o título inteiro. Uma manchete
+    // terminada por uma fala, como pede que "Deus abra os caminhos", precisa
+    // conservar a aspas final.
+    .replace(/^["“'](.+)["”']$/, '$1')
     .trim();
 
   // Recado da checagem nunca é matéria (não pode virar rascunho nem seguir
@@ -1510,7 +1513,6 @@ async function criarConversa({
  * O chat continua livre; a limpeza só acontece quando o usuário decide salvar.
  */
 function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) {
-  const { extrairHashtagsDoTexto } = require('./editorialGuidelinesFb');
   let texto = decodificarEntidadesHtmlBasicas(String(conteudo || ''))
     .replace(/\r\n/g, '\n')
     // O gateway pode escapar Markdown/HTML na resposta exibida.
@@ -1559,12 +1561,35 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
     }
   }
 
+  // No Claude livre a manchete também pode vir como a primeira linha, sem
+  // Markdown. O interpretador editorial já sabe reconhecê-la; reaproveitamos
+  // essa detecção para não salvar a manchete novamente dentro do conteúdo.
+  if (indiceTitulo < 0) {
+    const editorial = interpretarResposta(texto);
+    if (editorial.ehMateria && editorial.titulo) {
+      tituloDetectado = editorial.titulo;
+      const tituloNormalizado = normalizarTexto(editorial.titulo);
+      const indiceLinha = linhas.findIndex((linha) => {
+        const candidata = String(linha || '')
+          .trim()
+          .replace(/^#{1,6}\s+/, '')
+          .replace(/^\*{1,2}|\*{1,2}$/g, '')
+          .replace(/^["“”']+|["“”']+$/g, '')
+          .trim();
+        return candidata && normalizarTexto(candidata) === tituloNormalizado;
+      });
+      if (indiceLinha >= 0) indiceTitulo = indiceLinha;
+    }
+  }
+
   let corpo = indiceTitulo >= 0 ? linhas.slice(indiceTitulo + 1).join('\n') : texto;
   corpo = corpo
     .replace(/^\s*[-*_]{3,}\s*$/gm, '')
     .replace(/^\s*#{1,6}\s+/gm, '')
     .replace(/\*\*([^*\n]+)\*\*/g, '$1')
     .replace(/__([^_\n]+)__/g, '$1')
+    // Markdown de link não é útil dentro do textarea do rascunho.
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi, '$1')
     // Convites posteriores não pertencem à matéria.
     .replace(
       /\n+(?:Se quiser|Se voc[êe] quiser|Quer que eu|Posso tamb[ée]m|Caso queira)\b[\s\S]*$/i,
@@ -1572,15 +1597,20 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
     )
     .trim();
 
-  const extraida = extrairHashtagsDoTexto(corpo);
-  corpo = String(extraida.body || '')
-    // Fonte/foto escritos pelo Claude serão recriados pelo rodapé estruturado.
-    .replace(
-      /\n+(?:Fonte(?:s)?(?: da apura[cç][aã]o)?|Foto)\s*:\s*[\s\S]*$/i,
-      ''
-    )
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  // Algumas respostas põem "Siga o JM Notícia" depois das hashtags; nesse
+  // formato o extrator tradicional não as vê porque elas não estão no fim.
+  // Coleta em qualquer linha e preserva o texto exatamente como o Claude criou.
+  const tags = [];
+  const tagsVistas = new Set();
+  for (const match of corpo.matchAll(/(?:^|\s)#([\p{L}\p{M}\p{N}_]+)/gu)) {
+    const tag = String(match[1] || '').trim();
+    const chave = tag.toLocaleLowerCase('pt-BR');
+    if (!tag || tagsVistas.has(chave)) continue;
+    tagsVistas.add(chave);
+    tags.push(tag);
+    if (tags.length >= 6) break;
+  }
+  corpo = corpo.replace(/\n{3,}/g, '\n\n').trim();
 
   const tituloInformado = String(tituloEscolhido || '').replace(/\s+/g, ' ').trim();
   const titulo = (tituloInformado || tituloDetectado || interpretarResposta(texto).titulo || 'Matéria do chat')
@@ -1594,7 +1624,7 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
     ehMateria: corpo.length >= 120,
     titulo,
     corpo,
-    hashtags: extraida.tags.slice(0, 6),
+    hashtags: tags,
   };
 }
 
@@ -1636,6 +1666,10 @@ function extrairFontesDeclaradasRespostaLivre(conteudo) {
 
   const valor = linha
     .replace(/\*+/g, '')
+    .replace(
+      /\s*[—–-]\s*(?:\[[^\]]*\]\(https?:\/\/[^)]+\)|https?:\/\/\S+).*$/i,
+      ''
+    )
     .replace(/\s+e\s+(?=[^,;/]+$)/i, ', ')
     .trim();
   const vistos = new Set();
@@ -3982,14 +4016,24 @@ async function salvarMateriaDoChat({
     pageId = page?.id || null;
   }
 
-  const rodape = pareceFormatoJmNoticia(corpo)
-    ? { materia: corpo, fonteCredito: null }
-    : montarRodapeMateriaComFontes({
-        materia: corpo,
-        fontes: fontesDaMateria,
-        creditoImagem: creditoImagem || 'Reprodução',
-        hashtags: info.hashtags || parseJson(row.hashtags, []),
-      });
+  const opcoesRodape = {
+    materia: corpo,
+    fontes: fontesDaMateria,
+    creditoImagem: creditoImagem || 'Reprodução',
+    hashtags: info.hashtags || parseJson(row.hashtags, []),
+    // Salvar deve preservar os parágrafos vistos no chat. O limite pode ser
+    // tratado pelo editor ao publicar, nunca com corte silencioso aqui.
+    limitarLegenda: false,
+  };
+  let rodape;
+  if (pareceFormatoJmNoticia(corpo)) {
+    // O conteúdo já está pronto: não o reescreve. Ainda monta somente o campo
+    // estruturado de crédito para a tela mostrar o link correto da fonte.
+    const estruturado = montarRodapeMateriaComFontes(opcoesRodape);
+    rodape = { materia: corpo, fonteCredito: estruturado.fonteCredito };
+  } else {
+    rodape = montarRodapeMateriaComFontes(opcoesRodape);
+  }
   const materia = rodape.materia;
 
   // Alternativas geradas junto com a matéria: o editor pode ter escolhido uma

@@ -969,6 +969,7 @@ function montarRodapeMateriaComFontes({
   fontes = [],
   creditoImagem = null,
   hashtags = [],
+  limitarLegenda = true,
 } = {}) {
   const { body, tags } = extrairHashtagsDoTexto(materia);
   let cleanBody = removerBlocoCreditosDoCorpo(body);
@@ -1023,7 +1024,10 @@ function montarRodapeMateriaComFontes({
     Array.isArray(hashtags) && hashtags.length ? hashtags : tags
   );
   if (tagLine) parts.push(tagLine);
-  const materiaFinal = limitarLegendaInstagram(parts.join('\n\n').trim());
+  const textoCompleto = parts.join('\n\n').trim();
+  const materiaFinal = limitarLegenda === false
+    ? textoCompleto.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+    : limitarLegendaInstagram(textoCompleto);
 
   const fonteCreditoParts = [];
   if (linhasCredito.length) {
