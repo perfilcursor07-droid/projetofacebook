@@ -70,7 +70,7 @@ const PERFIL_PUBLICO = Object.freeze({
 
 const POLITICA = ['lula', 'bolsonaro', 'stf', 'eleicao', 'eleição', 'deputado', 'senador', 'partido', 'governo', 'presidente', 'presidenciavel', 'presidenciável', 'candidato', 'comunismo', 'comunista'];
 const RELIGIAO = ['pastor', 'pastora', 'igreja', 'evangel', 'gospel', 'crist', 'assembleia de deus', 'bispo', 'culto'];
-const CONFLITO = ['conflito', 'disputa', 'rompe', 'critica', 'crítica', 'proibe', 'proíbe', 'decide', 'decisão', 'polemica', 'polêmica', 'reage', 'denuncia', 'denúncia', 'circular', 'regra'];
+const CONFLITO = ['conflito', 'disputa', 'rompe', 'critica', 'crítica', 'proibe', 'proíbe', 'proibiu', 'decide', 'decisão', 'polemica', 'polêmica', 'reage', 'denuncia', 'denúncia', 'investiga', 'investigação', 'investigacao', 'acusação', 'acusacao', 'representação', 'representacao', 'inelegibilidade', 'uso irregular', 'circular', 'regra'];
 const ESPERANCA = ['cura', 'curado', 'sobrevive', 'supera', 'recupera', 'recuperação', 'recuperacao', 'volta a andar', 'vitória', 'vitoria', 'superação', 'superacao', 'conversão', 'conversao', 'coragem', 'milagre'];
 const SOMBRIO = ['morre', 'morte', 'assassin', 'aborto', 'tragédia', 'tragedia', 'martírio', 'martirio'];
 const LOCAL_TOCANTINS = ['tocantins', 'palmas (to)', 'araguaína', 'araguaina', 'gurupi'];
@@ -126,7 +126,10 @@ function contemAlguma(texto, palavras) {
 }
 
 function eixoPorId(id) {
-  return EIXOS.find((eixo) => eixo.id === String(id || '')) || null;
+  const limpo = String(id || '')
+    .trim()
+    .replace(/\\([_*\-])/g, '$1');
+  return EIXOS.find((eixo) => eixo.id === limpo) || null;
 }
 
 function encaixaNoEixo(pauta, eixo) {
@@ -339,6 +342,9 @@ function normalizarPautasClaude(raw) {
       const fim = limpo.lastIndexOf('}');
       if (inicio >= 0 && fim > inicio) limpo = limpo.slice(inicio, fim + 1);
     }
+    // Markdown do Claude pode escapar `_` e `*` dentro de um bloco que ele
+    // apresenta como JSON. Esses escapes não existem na sintaxe JSON.
+    limpo = limpo.replace(/\\([_*])/g, '$1');
     try {
       parsed = JSON.parse(limpo);
     } catch {
@@ -347,7 +353,12 @@ function normalizarPautasClaude(raw) {
   }
   return (Array.isArray(parsed?.pautas) ? parsed.pautas : [])
     .map((pauta, index) => {
-      const url = String(pauta?.url || pauta?.link || '').trim();
+      const urlRecebida = String(pauta?.url || pauta?.link || '').trim();
+      const urlMarkdown = urlRecebida.match(/\]\((https?:\/\/[^\s)]+)\)/i)?.[1];
+      const urlSolta = urlRecebida.match(/https?:\/\/[^\s)\]]+/i)?.[0];
+      const url = String(urlMarkdown || urlSolta || '')
+        .replace(/[.,;:]+$/, '')
+        .trim();
       const eixo = eixoPorId(pauta?.eixo);
       const data = String(pauta?.data || '').trim().slice(0, 40) || null;
       const dataTimestamp = data ? Date.parse(data) : NaN;
@@ -386,6 +397,7 @@ async function pesquisarComClaude({ userId, facebookPageId, eixo, termo, periodo
       {
         temperature: 0.15,
         json: true,
+        timeout: 150_000,
         tarefa: 'conversa',
         webSearch: true,
         conversationId: `viralizeai:user:${Number(userId) || 0}:page:${Number(facebookPageId) || 0}:virais`,

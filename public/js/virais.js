@@ -37,6 +37,24 @@
     return data;
   }
 
+  async function consultarPesquisa(jobId) {
+    const inicio = Date.now();
+    while (Date.now() - inicio < 5 * 60 * 1000) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+      const res = await fetch(`/api/virais/pesquisar/${encodeURIComponent(jobId)}`, {
+        headers: { Accept: 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 202) {
+        throw new Error(data.error || `Falha ao acompanhar a pesquisa (${res.status})`);
+      }
+      if (res.status === 200 && data.status === 'concluido') return data;
+      const segundos = Math.max(1, Math.round((Number(data.decorridoMs) || Date.now() - inicio) / 1000));
+      setStatus(`Claude está pesquisando na web e avaliando as fontes… ${segundos}s`);
+    }
+    throw new Error('A pesquisa do Claude excedeu 5 minutos. Tente novamente.');
+  }
+
   function formatarData(topico) {
     const ts = Number(topico?.dataTimestamp) || Date.parse(String(topico?.data || ''));
     if (!Number.isFinite(ts) || ts <= 0) return '';
@@ -156,12 +174,14 @@
     renderLoading();
     setStatus('Claude está pesquisando e selecionando fatos recentes para o público da JM Notícia…');
     try {
-      const data = await api('/api/virais/pesquisar', {
+      const inicio = await api('/api/virais/pesquisar/iniciar', {
         eixo: el.eixo.value,
         periodo: el.periodo.value,
         termo: el.termo.value,
         limite: el.eixo.value === 'all' ? 10 : 20,
       });
+      if (!inicio.jobId) throw new Error('O servidor não iniciou a pesquisa do Claude.');
+      const data = await consultarPesquisa(inicio.jobId);
       renderTopicos(data);
       setStatus(
         `${(data.topicos || []).length} pauta(s) nova(s) prontas para avaliação${data.doCache ? ' · resultado recente reutilizado' : ''}.` +

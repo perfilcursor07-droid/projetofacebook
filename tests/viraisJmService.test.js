@@ -191,6 +191,19 @@ test('normalização do resultado do Claude mantém apenas pauta com fonte e eix
   assert.equal(pautas[0].dataTimestamp, Date.parse('2026-08-24'));
 });
 
+test('importa o formato real com link Markdown e eixo escapado devolvido pelo Claude', () => {
+  const respostaClaude = `Mensagem recolhida\nPesquisou na web\njson
+{"pautas":[{"titulo":"Movimento Brasil Laico pede investigação de Tarcísio por comício em templo da Assembleia de Deus","resumo":"Entidade protocolou representação eleitoral contra Tarcísio por comício realizado dentro de templo da Assembleia de Deus. O pedido aponta uso irregular do espaço religioso.","url":"[https://revistaforum.com.br/politica/tarcisio-inelegivel-comicio-assembleia-de-deus/](https://revistaforum.com.br/politica/tarcisio-inelegivel-comicio-assembleia-de-deus/)","veiculo":"Revista Fórum","data":"2026-08-21","eixo":"denominacional","potencial":7,"motivo":"envolve AD, eleição e acusação de uso político do templo"},{"titulo":"Polêmica com bispo da Assembleia de Deus leva música Reacende a Chama a 70 milhões de visualizações","resumo":"Bispo Samuel Ferreira chamou a música de lixo e proibiu sua execução na mocidade da igreja. A repercussão impulsionou a canção nas redes.","url":"[https://tribunapopular.com.br/polemica-samuel-ferreira-sued-silva/](https://tribunapopular.com.br/polemica-samuel-ferreira-sued-silva/)","veiculo":"Tribuna Popular","data":"2026-08-17","eixo":"polemica\\_gospel","potencial":8,"motivo":"líder AD x cantora gospel, viralização comprovada"}]}`;
+
+  const pautas = service.normalizarPautasClaude(respostaClaude);
+  const avaliadas = pautas.map((pauta) => service.avaliarPauta(pauta, pauta.eixoPesquisa));
+
+  assert.equal(pautas.length, 2);
+  assert.equal(pautas[0].link, 'https://revistaforum.com.br/politica/tarcisio-inelegivel-comicio-assembleia-de-deus/');
+  assert.equal(pautas[1].eixoPesquisa, 'polemica_gospel');
+  assert.ok(avaliadas.every((pauta) => pauta.descarte === null));
+});
+
 test('lista geral reserva sete pautas principais e três secundárias', () => {
   const principais = Array.from({ length: 12 }, (_, index) => ({
     id: `p${index}`,
