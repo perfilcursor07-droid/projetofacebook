@@ -1,6 +1,8 @@
 <%- include('partials/app-start') %>
 <%
   const listaEixos = Array.isArray(eixos) ? eixos : [];
+  const eixosPrincipais = listaEixos.filter((eixo) => eixo.grupo === 'principal');
+  const eixosSecundarios = listaEixos.filter((eixo) => eixo.grupo === 'secundario');
   const pagina = paginaPadrao || null;
 %>
 
@@ -17,14 +19,14 @@
       <label class="text-xs font-medium text-slate-400">
         Segmento da pauta
         <select id="virais-eixo" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500">
-          <option value="all">Todos — 7 principais + 3 secundários</option>
+          <option value="all">Todos — <%= eixosPrincipais.length %> principais + <%= eixosSecundarios.length %> secundários</option>
           <optgroup label="Eixo principal">
-            <% listaEixos.filter((e) => e.grupo === 'principal').forEach((eixo) => { %>
+            <% eixosPrincipais.forEach((eixo) => { %>
               <option value="<%= eixo.id %>"><%= eixo.nome %></option>
             <% }) %>
           </optgroup>
           <optgroup label="Eixo secundário">
-            <% listaEixos.filter((e) => e.grupo === 'secundario').forEach((eixo) => { %>
+            <% eixosSecundarios.forEach((eixo) => { %>
               <option value="<%= eixo.id %>"><%= eixo.nome %></option>
             <% }) %>
           </optgroup>
@@ -84,5 +86,5 @@
   </section>
 </main>
 
-<script src="/js/virais.js?v=20260825rapido6"></script>
+<script src="/js/virais.js?v=20260825rapido7"></script>
 <%- include('partials/app-end') %>

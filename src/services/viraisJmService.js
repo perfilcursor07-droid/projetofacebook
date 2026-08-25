@@ -72,6 +72,97 @@ const EIXOS = Object.freeze([
     consultaReforco: 'cura conversão Jesus testemunho sobrevivente',
     palavras: ['cura', 'curado', 'sobrevive', 'sobrevivencia', 'sobrevivência', 'conversao', 'conversão', 'milagre', 'remissao', 'remissão'],
   }),
+  Object.freeze({
+    id: 'liderancas',
+    nome: 'Lideranças evangélicas',
+    grupo: 'principal',
+    consulta: 'pastor evangélico declaração reação',
+    palavras: ['pastor', 'pastora', 'bispo', 'bispa', 'líder evangélico', 'lider evangelico', 'declara', 'reage', 'afirma'],
+  }),
+  Object.freeze({
+    id: 'doutrina',
+    nome: 'Doutrina e debates bíblicos',
+    grupo: 'principal',
+    consulta: 'pastor doutrina bíblica polêmica',
+    palavras: ['doutrina', 'bíblia', 'biblia', 'santidade', 'teologia', 'pregação', 'pregacao'],
+  }),
+  Object.freeze({
+    id: 'igrejas',
+    nome: 'Igrejas e decisões locais',
+    grupo: 'principal',
+    consulta: 'igreja evangélica decisão membros pastor',
+    palavras: ['igreja evangélica', 'igreja evangelica', 'membros da igreja', 'templo', 'congregação', 'congregacao'],
+  }),
+  Object.freeze({
+    id: 'liberdade_religiosa',
+    nome: 'Liberdade religiosa',
+    grupo: 'principal',
+    consulta: 'evangélicos liberdade religiosa decisão Brasil',
+    palavras: ['liberdade religiosa', 'evangélicos', 'evangelicos', 'cristãos', 'cristaos', 'direito de culto'],
+  }),
+  Object.freeze({
+    id: 'israel_profecia',
+    nome: 'Israel e profecias',
+    grupo: 'principal',
+    consulta: 'Israel profecia pastor evangélico',
+    palavras: ['israel', 'profecia', 'profético', 'profetico', 'apocalipse', 'fim dos tempos'],
+  }),
+  Object.freeze({
+    id: 'mulheres_fe',
+    nome: 'Pastoras e mulheres de fé',
+    grupo: 'principal',
+    consulta: 'pastora bispa evangélica polêmica testemunho',
+    palavras: ['pastora', 'bispa', 'mulher cristã', 'mulher crista', 'líder religiosa', 'lider religiosa'],
+  }),
+  Object.freeze({
+    id: 'musica_gospel',
+    nome: 'Música gospel e louvor',
+    grupo: 'principal',
+    consulta: 'cantor gospel louvor polêmica reação',
+    palavras: ['cantor gospel', 'cantora gospel', 'música gospel', 'musica gospel', 'louvor', 'hino'],
+  }),
+  Object.freeze({
+    id: 'missoes',
+    nome: 'Missões e evangelismo',
+    grupo: 'secundario',
+    consulta: 'missionário cristão evangelismo conversão testemunho',
+    palavras: ['missionário', 'missionario', 'missões', 'missoes', 'evangelismo', 'missionária', 'missionaria'],
+  }),
+  Object.freeze({
+    id: 'familia_fe',
+    nome: 'Família e fé',
+    grupo: 'secundario',
+    consulta: 'família cristã testemunho superação fé',
+    palavras: ['família cristã', 'familia crista', 'casal cristão', 'casal cristao', 'pais cristãos', 'pais cristaos'],
+  }),
+  Object.freeze({
+    id: 'juventude_fe',
+    nome: 'Juventude cristã',
+    grupo: 'secundario',
+    consulta: 'jovem evangélico testemunho fé conversão',
+    palavras: ['jovem evangélico', 'jovem evangelico', 'adolescente cristão', 'adolescente cristao', 'juventude cristã', 'juventude crista'],
+  }),
+  Object.freeze({
+    id: 'celebridades_fe',
+    nome: 'Celebridades e conversão',
+    grupo: 'secundario',
+    consulta: 'celebridade conversão fé Jesus testemunho',
+    palavras: ['celebridade', 'ator', 'atriz', 'influenciador', 'influenciadora', 'conversão', 'conversao'],
+  }),
+  Object.freeze({
+    id: 'saude_emocional',
+    nome: 'Fé e saúde emocional',
+    grupo: 'secundario',
+    consulta: 'fé oração saúde mental estudo cristão',
+    palavras: ['saúde mental', 'saude mental', 'ansiedade', 'depressão', 'depressao', 'oração', 'oracao'],
+  }),
+  Object.freeze({
+    id: 'memoria_igrejas',
+    nome: 'História das igrejas',
+    grupo: 'secundario',
+    consulta: 'história igreja evangélica memória pioneiros',
+    palavras: ['história da igreja', 'historia da igreja', 'pioneiros', 'memória da igreja', 'memoria da igreja', 'acervo'],
+  }),
 ]);
 
 const PERFIL_PUBLICO = Object.freeze({
@@ -79,7 +170,7 @@ const PERFIL_PUBLICO = Object.freeze({
   descricao: 'Público brasileiro adulto, pentecostal, com forte interesse em Assembleia de Deus.',
   periodoPadrao: '7d',
   quantidadePadrao: 10,
-  distribuicao: Object.freeze({ principal: 7, secundario: 3 }),
+  distribuicao: Object.freeze({ principal: 11, secundario: 9 }),
 });
 
 const POLITICA = ['lula', 'bolsonaro', 'stf', 'eleicao', 'eleição', 'deputado', 'senador', 'partido', 'governo', 'presidente', 'presidenciavel', 'presidenciável', 'candidato', 'comunismo', 'comunista'];
@@ -196,7 +287,7 @@ function encaixaNoEixo(pauta, eixo) {
     case 'cura_conversao':
       return contemAlguma(texto, ESPERANCA) && contemAlguma(texto, [...PROTAGONISTA, ...RELIGIAO]);
     default:
-      return false;
+      return contemAlguma(texto, eixo?.palavras || []) && temAfinidadeEditorial(pauta);
   }
 }
 
@@ -349,10 +440,14 @@ function consultasDaPesquisa({ eixo = 'all', termo = '' } = {}) {
     const complemento = selecionado ? selecionado.consulta.split(/\s+/).slice(0, 3).join(' ') : 'evangélico';
     return [{ eixo: selecionado?.id || null, consulta: `${buscaManual} ${complemento}`.slice(0, 280) }];
   }
-  const eixos = selecionado ? [selecionado] : EIXOS;
-  return eixos.flatMap((item) => [item.consulta, item.consultaReforco]
-    .filter(Boolean)
-    .map((consulta) => ({ eixo: item.id, consulta })));
+  if (selecionado) {
+    return [selecionado.consulta, selecionado.consultaReforco]
+      .filter(Boolean)
+      .map((consulta) => ({ eixo: selecionado.id, consulta }));
+  }
+  // No modo "Todos", uma consulta precisa por eixo mantém a busca rápida e
+  // cobre os 20 segmentos; a consulta de reforço fica para o eixo escolhido.
+  return EIXOS.map((item) => ({ eixo: item.id, consulta: item.consulta }));
 }
 
 function montarPromptPesquisaClaude({ eixo = 'all', termo = '', periodo = '7d', limite = 10 } = {}) {
