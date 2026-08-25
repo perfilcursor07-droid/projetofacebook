@@ -3245,9 +3245,11 @@ async function conversarLivre({
   const ultimaRespostaLivre = [...(Array.isArray(historico) ? historico : [])]
     .reverse()
     .find((mensagem) => mensagem?.role === 'assistant');
-  const respostaTinhaOpcoes = /(?:escolha|selecione|digite|responda\s+com)[\s\S]{0,160}(?:op[cç][aã]o|n[uú]mero)/i.test(
-    String(ultimaRespostaLivre?.content || '')
-  ) && /(?:^|\n)\s*\d{1,2}[.)]\s+\S/m.test(String(ultimaRespostaLivre?.content || ''));
+  const textoUltimaResposta = String(ultimaRespostaLivre?.content || '');
+  const respostaTinhaOpcoes = (
+    /(?:escolha|selecione|digite|responda\s+com)[\s\S]{0,160}(?:op[cç][aã]o|n[uú]mero)/i.test(textoUltimaResposta) ||
+    /\bquer\s+que\s+eu\s+(?:explore|aprofunde|siga|desenvolva)\b/i.test(textoUltimaResposta)
+  ) && /(?:^|\n)\s*\d{1,2}\s*(?:\\?[.)])\s+\S/m.test(textoUltimaResposta);
   const escolhaNumerada = texto.match(/^\s*(\d{1,2})\s*[.)]?\s*$/)?.[1] || null;
   let conteudoAtual = escolhaNumerada && respostaTinhaOpcoes
     ? `O editor escolheu a opção ${escolhaNumerada} da sua resposta anterior. Continue exatamente a partir dessa opção, sem repetir a lista.`
@@ -3270,7 +3272,7 @@ async function conversarLivre({
       )
       .join('\n\n');
     conteudoAtual = [
-      texto,
+      conteudoAtual,
       '<resultados_da_web>',
       referencias,
       '</resultados_da_web>',

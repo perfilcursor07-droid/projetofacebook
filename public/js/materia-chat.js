@@ -664,14 +664,33 @@
     );
   }
 
-  function blocoEscolhaNumerada(conteudo) {
-    const texto = String(conteudo || '');
-    const pedeEscolha = /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto);
-    const opcoes = [...texto.matchAll(/^\s*(\d{1,2})[.)]\s+\S/gm)]
+  function opcoesNumeradasNoTexto(conteudo) {
+    return [...String(conteudo || '').matchAll(/^\s*(\d{1,2})\s*(?:\\?[.)])\s+\S/gm)]
       .map((match) => Number(match[1]))
       .filter((numero, indice, lista) => Number.isFinite(numero) && lista.indexOf(numero) === indice)
       .slice(0, 8);
-    if (!pedeEscolha || opcoes.length < 2) return null;
+  }
+
+  function respostaPedeEscolhaNumerada(conteudo) {
+    const texto = String(conteudo || '');
+    const opcoes = opcoesNumeradasNoTexto(texto);
+    const convite =
+      /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto) ||
+      /\bquer\s+que\s+eu\s+(?:explore|aprofunde|siga|desenvolva)\b/i.test(texto);
+    return convite && opcoes.length >= 2 ? opcoes : [];
+  }
+
+  function entradaEhEscolhaNumerada(texto) {
+    const numero = String(texto || '').trim().match(/^(\d{1,2})\s*[.)]?$/)?.[1];
+    if (!numero) return false;
+    const corpos = [...el.mensagens.querySelectorAll('.mia-msg-ai-body')];
+    const ultimaResposta = corpos[corpos.length - 1]?.textContent || '';
+    return respostaPedeEscolhaNumerada(ultimaResposta).includes(Number(numero));
+  }
+
+  function blocoEscolhaNumerada(conteudo) {
+    const opcoes = respostaPedeEscolhaNumerada(conteudo);
+    if (!opcoes.length) return null;
 
     const box = document.createElement('div');
     box.className = 'mia-msg-panel mt-2 border-emerald-500/30 bg-emerald-500/5';
@@ -2043,11 +2062,12 @@
   async function enviar() {
     if (state.enviando) return;
     const texto = String(el.input.value || '').trim();
+    const escolhaNumerada = entradaEhEscolhaNumerada(texto);
     const pedePesquisaLivre =
       state.tipoConversa === 'livre' &&
       /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(texto);
     const linksPedido = urlsDoTexto(texto);
-    if (texto.length < 3) {
+    if (texto.length < 3 && !escolhaNumerada) {
       setStatus('Escreva o que você quer que a IA faça');
       return;
     }
