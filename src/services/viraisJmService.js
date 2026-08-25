@@ -1,7 +1,10 @@
 const { pesquisarNichos, titulosSimilares } = require('./newsResearch');
 
 const CACHE_PESQUISA_MS = 5 * 60 * 1000;
-const PESQUISA_CLAUDE_TIMEOUT_MS = 35 * 1000;
+// A pesquisa nativa abre e confere diversas fontes. Em 35 segundos ela até
+// inicia a busca, mas frequentemente entrega o JSON logo depois. Noventa
+// segundos preservam a qualidade sem voltar às esperas de vários minutos.
+const PESQUISA_CLAUDE_TIMEOUT_MS = 90 * 1000;
 const cachePesquisas = new Map();
 const PERIODOS_LABEL = Object.freeze({
   '24h': 'nas últimas 24 horas',
@@ -460,7 +463,7 @@ async function pesquisarComClaude({ userId, facebookPageId, eixo, termo, periodo
     const raw = await comLimiteDeTempo(
       pesquisaClaude,
       PESQUISA_CLAUDE_TIMEOUT_MS,
-      'a pesquisa do Claude não respondeu em 35 segundos'
+      'a pesquisa do Claude não respondeu em 90 segundos'
     );
     const toleranciaDias = {
       '24h': 2,

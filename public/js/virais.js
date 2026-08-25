@@ -39,7 +39,7 @@
 
   async function consultarPesquisa(jobId) {
     const inicio = Date.now();
-    while (Date.now() - inicio < 90 * 1000) {
+    while (Date.now() - inicio < 110 * 1000) {
       await new Promise((resolve) => window.setTimeout(resolve, 2500));
       const res = await fetch(`/api/virais/pesquisar/${encodeURIComponent(jobId)}`, {
         headers: { Accept: 'application/json' },
@@ -52,7 +52,7 @@
       const segundos = Math.max(1, Math.round((Number(data.decorridoMs) || Date.now() - inicio) / 1000));
       setStatus(`Pesquisando fontes recentes e avaliando as pautas… ${segundos}s`);
     }
-    throw new Error('A pesquisa não concluiu em 90 segundos. Tente novamente.');
+    throw new Error('A pesquisa não concluiu em 110 segundos. Tente novamente.');
   }
 
   function formatarData(topico) {
