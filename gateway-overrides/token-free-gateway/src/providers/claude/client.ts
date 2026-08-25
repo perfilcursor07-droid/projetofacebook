@@ -31,7 +31,9 @@ async function conversationUuidForKey(key?: string): Promise<string> {
 	const digest = new Uint8Array(
 		await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
 	);
-	digest[6] = ((digest[6] ?? 0) & 0x0f) | 0x50;
+	// O endpoint web do Claude valida UUID v4 ao criar conversas. Mantemos os
+	// bytes determinísticos, mas marcamos o identificador no formato aceito.
+	digest[6] = ((digest[6] ?? 0) & 0x0f) | 0x40;
 	digest[8] = ((digest[8] ?? 0) & 0x3f) | 0x80;
 	const hex = [...digest.slice(0, 16)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
@@ -204,12 +206,14 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 				const createUrl = org
 					? `${apiBase}/organizations/${org}/chat_conversations`
 					: `${apiBase}/chat_conversations`;
-				const createRes = await fetch(createUrl, {
+				const createConversation = (uuid: string) => fetch(createUrl, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					credentials: "include",
-					body: JSON.stringify({ name: convName, uuid: convUuid }),
+					body: JSON.stringify({ name: convName, uuid }),
 				});
+				const createRes = await createConversation(convUuid);
+				let conv: { uuid: string } = { uuid: convUuid };
 				if (!createRes.ok) {
 					const text = await createRes.text();
 					// UUID estável já existe: reutiliza a conversa em vez de criar outra.
@@ -217,16 +221,25 @@ export class ClaudeWebClient extends BaseApiClient<ClaudeWebAuth> {
 						credentials: "include",
 					});
 					if (!existingRes.ok) {
-						return {
-							ok: false as const,
-							status: createRes.status,
-							error: `[create_conversation] ${createRes.status} ${text.slice(0, 500)}`,
-						};
+						// Conversas apagadas ou UUIDs antigos podem ficar inválidos na API.
+						// Recupera a chamada com um UUID v4 novo em vez de falhar a pesquisa.
+						const replacementUuid = crypto.randomUUID();
+						const replacementRes = await createConversation(replacementUuid);
+						if (!replacementRes.ok) {
+							const replacementText = await replacementRes.text();
+							return {
+								ok: false as const,
+								status: replacementRes.status,
+								error: `[create_conversation_retry] ${replacementRes.status} ${replacementText.slice(0, 500)}; original=${createRes.status} ${text.slice(0, 240)}`,
+							};
+						}
+						const replacement = (await replacementRes.json()) as { uuid?: string };
+						conv = { uuid: replacement.uuid || replacementUuid };
 					}
+				} else {
+					const created = (await createRes.json()) as { uuid?: string };
+					conv = { uuid: created.uuid || convUuid };
 				}
-				const conv = createRes.ok
-					? ((await createRes.json()) as { uuid: string })
-					: { uuid: convUuid };
 				const completionUrl = org
 					? `${apiBase}/organizations/${org}/chat_conversations/${conv.uuid}/completion`
 					: `${apiBase}/chat_conversations/${conv.uuid}/completion`;
