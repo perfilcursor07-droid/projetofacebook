@@ -21,14 +21,31 @@ function prepare(data) {
  * Antes só entrava o nível "alto" (muito restrito) e posts sem engajamento
  * sincronizado no banco ficavam de fora.
  */
-function applyViralizouFilter(query) {
-  return query.where(function viralWhere() {
-    this.whereRaw(
-      `(COALESCE(publications.fb_likes, 0) + COALESCE(publications.fb_comments, 0) * 3 + COALESCE(publications.fb_shares, 0) * 5 + LEAST(COALESCE(publications.fb_views, 0), 5000) / 50) >= 80`
-    )
-      .orWhere('publications.fb_likes', '>=', 40)
-      .orWhere('publications.fb_comments', '>=', 10);
-  });
+const VIRAL_SCORE_SQL =
+  '(COALESCE(publications.fb_likes, 0) + COALESCE(publications.fb_comments, 0) * 3 + COALESCE(publications.fb_shares, 0) * 5 + LEAST(COALESCE(publications.fb_views, 0), 5000) / 50)';
+
+function whereViralMinimo() {
+  this.whereRaw(`${VIRAL_SCORE_SQL} >= 80`)
+    .orWhere('publications.fb_likes', '>=', 40)
+    .orWhere('publications.fb_comments', '>=', 10);
+}
+
+function whereViralAlto() {
+  this.whereRaw(`${VIRAL_SCORE_SQL} >= 180`)
+    .orWhere('publications.fb_likes', '>=', 80)
+    .orWhere('publications.fb_comments', '>=', 25);
+}
+
+function applyViralizouFilter(query, nivel = 'all') {
+  const filtro = ['alto', 'medio'].includes(String(nivel || '').toLowerCase())
+    ? String(nivel).toLowerCase()
+    : 'all';
+
+  if (filtro === 'alto') return query.where(whereViralAlto);
+
+  query = query.where(whereViralMinimo);
+  if (filtro === 'medio') query = query.whereNot(whereViralAlto);
+  return query;
 }
 
 /**
@@ -115,9 +132,10 @@ function applySearchFilter(query, q) {
  * Ordenação da lista Minhas matérias:
  * - Aba Agendadas: horário de agendamento (mais cedo → mais tarde)
  * - Aba Todas: Agendadas (por horário) → Rascunhos → Prontas → Erros → Publicadas
+ * - Aba Viralizou: maior pontuação de engajamento → menor (com outras opções)
  * - Demais abas: mais recentes primeiro
  */
-function applyListOrder(query, status) {
+function applyListOrder(query, status, viralOrder = 'viral') {
   const st = String(status || '').trim().toLowerCase();
 
   if (st === 'agendado') {
@@ -130,7 +148,22 @@ function applyListOrder(query, status) {
     return query.orderBy('ai_matters.created_at', 'desc');
   }
 
-  if (st === 'publicado' || st === 'viralizou') {
+  if (st === 'viralizou') {
+    const recentSql =
+      'COALESCE(ai_matters.published_at, publications.published_at, ai_matters.created_at) DESC, ai_matters.id DESC';
+    const orders = {
+      viral: `${VIRAL_SCORE_SQL} DESC, ${recentSql}`,
+      curtidas: `COALESCE(publications.fb_likes, 0) DESC, ${VIRAL_SCORE_SQL} DESC, ${recentSql}`,
+      comentarios: `COALESCE(publications.fb_comments, 0) DESC, ${VIRAL_SCORE_SQL} DESC, ${recentSql}`,
+      compartilhamentos: `COALESCE(publications.fb_shares, 0) DESC, ${VIRAL_SCORE_SQL} DESC, ${recentSql}`,
+      visualizacoes: `COALESCE(publications.fb_views, 0) DESC, ${VIRAL_SCORE_SQL} DESC, ${recentSql}`,
+      recente: recentSql,
+    };
+    const key = String(viralOrder || '').trim().toLowerCase();
+    return query.orderByRaw(orders[key] || orders.viral);
+  }
+
+  if (st === 'publicado') {
     return query.orderByRaw(
       'COALESCE(ai_matters.published_at, publications.published_at, ai_matters.created_at) DESC'
     );
@@ -176,7 +209,10 @@ const AiMatters = {
    * @param {object} opts
    * @param {string|null} [opts.status] status da matéria, ou 'viralizou'
    */
-  findByUserWithPub(userId, { limit = 100, offset = 0, q = '', status = null } = {}) {
+  findByUserWithPub(
+    userId,
+    { limit = 100, offset = 0, q = '', status = null, viralLevel = 'all', viralOrder = 'viral' } = {}
+  ) {
     const st = String(status || '').trim().toLowerCase();
     const viralFilter = st === 'viralizou';
 
@@ -202,17 +238,17 @@ const AiMatters = {
       .offset(Math.max(0, Number(offset) || 0));
 
     if (viralFilter) {
-      query = applyViralizouFilter(query);
+      query = applyViralizouFilter(query, viralLevel);
     } else if (st && st !== 'all') {
       query = query.andWhere('ai_matters.status', st);
     }
 
     query = applySearchFilter(query, q);
-    query = applyListOrder(query, viralFilter ? 'viralizou' : st || 'all');
+    query = applyListOrder(query, viralFilter ? 'viralizou' : st || 'all', viralOrder);
     return query;
   },
 
-  async countByUserWithPub(userId, { q = '', status = null } = {}) {
+  async countByUserWithPub(userId, { q = '', status = null, viralLevel = 'all' } = {}) {
     const st = String(status || '').trim().toLowerCase();
     const viralFilter = st === 'viralizou';
 
@@ -222,7 +258,7 @@ const AiMatters = {
 
     if (viralFilter) {
       query = query.leftJoin('publications', 'ai_matters.publication_id', 'publications.id');
-      query = applyViralizouFilter(query);
+      query = applyViralizouFilter(query, viralLevel);
     } else if (st && st !== 'all') {
       query = query.andWhere('ai_matters.status', st);
     }

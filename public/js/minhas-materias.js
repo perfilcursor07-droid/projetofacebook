@@ -14,29 +14,32 @@
     return String(Math.round(v));
   }
 
-  function viralInfo(likes, comments, views) {
+  function viralInfo(likes, comments, shares, views) {
     const l = Number(likes) || 0;
     const c = Number(comments) || 0;
+    const s = Number(shares) || 0;
     const v = Number(views) || 0;
-    const score = l + c * 3 + Math.min(v, 5000) / 50;
+    const score = l + c * 3 + s * 5 + Math.min(v, 5000) / 50;
     if (score >= 180 || l >= 80 || c >= 25) {
-      return { label: 'Viralizou', cls: 'bg-rose-500/20 text-rose-200 ring-rose-500/30' };
+      return { label: 'Viralizou', score, cls: 'bg-rose-500/20 text-rose-200 ring-rose-500/30' };
     }
     if (score >= 80 || l >= 40 || c >= 10) {
-      return { label: 'Bom', cls: 'bg-amber-500/15 text-amber-200 ring-amber-500/25' };
+      return { label: 'Bom', score, cls: 'bg-amber-500/15 text-amber-200 ring-amber-500/25' };
     }
-    if (l > 0 || c > 0 || v > 0) {
-      return { label: 'Baixo', cls: 'bg-slate-700/40 text-slate-400 ring-slate-600/40' };
+    if (l > 0 || c > 0 || s > 0 || v > 0) {
+      return { label: 'Baixo', score, cls: 'bg-slate-700/40 text-slate-400 ring-slate-600/40' };
     }
     return null;
   }
 
-  function atualizarBadgeViral(row, likes, comments, views) {
+  function atualizarBadgeViral(row, likes, comments, shares, views) {
     if (!row) return;
     let badge = row.querySelector('.mia-viral-badge');
-    const info = viralInfo(likes, comments, views);
+    const scoreEl = row.querySelector('.mia-viral-score');
+    const info = viralInfo(likes, comments, shares, views);
     if (!info) {
       if (badge) badge.remove();
+      if (scoreEl) scoreEl.remove();
       return;
     }
     if (!badge) {
@@ -54,6 +57,7 @@
       'mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 ' +
       info.cls;
     badge.textContent = info.label;
+    if (scoreEl) scoreEl.textContent = 'score ' + Math.round(info.score);
   }
 
   /**
@@ -67,15 +71,18 @@
 
     const likesEl = viewsBtn.querySelector('.mia-likes-label');
     const commentsEl = viewsBtn.querySelector('.mia-comments-label');
+    const sharesEl = viewsBtn.querySelector('.mia-shares-label');
     const viewsEl = viewsBtn.querySelector('.mia-views-label');
     const prev = {
       likes: likesEl?.textContent,
       comments: commentsEl?.textContent,
+      shares: sharesEl?.textContent,
       views: viewsEl?.textContent,
     };
 
     if (likesEl) likesEl.textContent = '…';
     if (commentsEl) commentsEl.textContent = '…';
+    if (sharesEl) sharesEl.textContent = '…';
     if (viewsEl) viewsEl.textContent = '…';
     viewsBtn.disabled = true;
 
@@ -89,7 +96,7 @@
       if (!res.ok) throw new Error(data.error || 'Falha ao buscar engajamento');
 
       const semDado =
-        data.likes == null && data.comments == null && data.views == null;
+        data.likes == null && data.comments == null && data.shares == null && data.views == null;
 
       if (likesEl) {
         likesEl.textContent =
@@ -107,6 +114,14 @@
               ? '— coment.'
               : prev.comments || 'coment.';
       }
+      if (sharesEl) {
+        sharesEl.textContent =
+          data.shares != null
+            ? formatNum(data.shares) + ' compart.'
+            : semDado
+              ? '— compart.'
+              : prev.shares || 'compart.';
+      }
       if (viewsEl) {
         viewsEl.textContent =
           data.views != null
@@ -117,7 +132,7 @@
       }
 
       const row = viewsBtn.closest('.mia-matter-row');
-      atualizarBadgeViral(row, data.likes, data.comments, data.views);
+      atualizarBadgeViral(row, data.likes, data.comments, data.shares, data.views);
 
       const aviso = Array.isArray(data.avisos) && data.avisos.length ? data.avisos[0] : '';
       if (data.viral?.label) {
@@ -137,6 +152,7 @@
     } catch (err) {
       if (likesEl) likesEl.textContent = prev.likes || 'curtidas';
       if (commentsEl) commentsEl.textContent = prev.comments || 'coment.';
+      if (sharesEl) sharesEl.textContent = prev.shares || 'compart.';
       if (viewsEl) viewsEl.textContent = prev.views || 'views';
       if (!silent) alert(err.message || 'Erro ao buscar engajamento');
       return null;

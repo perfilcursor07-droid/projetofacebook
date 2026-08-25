@@ -884,6 +884,19 @@ async function listMinhasMaterias(req, res, next) {
     const allowed = new Set(['all', 'rascunho', 'pronto', 'agendado', 'publicado', 'erro', 'viralizou']);
     const rawStatus = String(req.query.status || 'all').trim().toLowerCase();
     const statusFilter = allowed.has(rawStatus) ? rawStatus : 'all';
+    const allowedViralLevels = new Set(['all', 'alto', 'medio']);
+    const rawViralLevel = String(req.query.nivel || 'all').trim().toLowerCase();
+    const viralLevel = allowedViralLevels.has(rawViralLevel) ? rawViralLevel : 'all';
+    const allowedViralOrders = new Set([
+      'viral',
+      'curtidas',
+      'comentarios',
+      'compartilhamentos',
+      'visualizacoes',
+      'recente',
+    ]);
+    const rawViralOrder = String(req.query.ordem || 'viral').trim().toLowerCase();
+    const viralOrder = allowedViralOrders.has(rawViralOrder) ? rawViralOrder : 'viral';
     const perPage = 10;
     const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
 
@@ -918,6 +931,7 @@ async function listMinhasMaterias(req, res, next) {
       AiMatters.countByUserWithPub(req.session.userId, {
         q,
         status: statusFilter === 'all' ? null : statusFilter,
+        viralLevel,
       }),
     ]);
 
@@ -930,6 +944,8 @@ async function listMinhasMaterias(req, res, next) {
       offset,
       q,
       status: statusFilter === 'all' ? null : statusFilter,
+      viralLevel,
+      viralOrder,
     });
 
     return res.render('minhas-materias', {
@@ -937,6 +953,8 @@ async function listMinhasMaterias(req, res, next) {
       matters,
       searchQuery: q,
       statusFilter,
+      viralLevel,
+      viralOrder,
       statusCounts,
       engajamentoSync,
       pagination: {

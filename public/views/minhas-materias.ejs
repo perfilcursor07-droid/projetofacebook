@@ -3,6 +3,8 @@
   const mattersList = typeof matters !== 'undefined' && Array.isArray(matters) ? matters : [];
   const q = typeof searchQuery !== 'undefined' ? String(searchQuery || '') : '';
   const activeStatus = typeof statusFilter !== 'undefined' ? String(statusFilter || 'all') : 'all';
+  const activeViralLevel = typeof viralLevel !== 'undefined' ? String(viralLevel || 'all') : 'all';
+  const activeViralOrder = typeof viralOrder !== 'undefined' ? String(viralOrder || 'viral') : 'viral';
   const counts = typeof statusCounts !== 'undefined' && statusCounts ? statusCounts : { all: 0 };
   const pag = typeof pagination !== 'undefined' && pagination ? pagination : {
     page: 1, perPage: 10, total: mattersList.length, totalPages: 1,
@@ -39,19 +41,20 @@
     if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + ' mil';
     return String(Math.round(v));
   }
-  function viralBadge(likes, comments, views) {
+  function viralBadge(likes, comments, shares, views) {
     const l = Number(likes) || 0;
     const c = Number(comments) || 0;
+    const s = Number(shares) || 0;
     const v = Number(views) || 0;
-    const score = l + c * 3 + Math.min(v, 5000) / 50;
+    const score = l + c * 3 + s * 5 + Math.min(v, 5000) / 50;
     if (score >= 180 || l >= 80 || c >= 25) {
-      return { nivel: 'alto', label: 'Viralizou', cls: 'bg-rose-500/20 text-rose-200 ring-rose-500/30' };
+      return { nivel: 'alto', label: 'Viralizou', score, cls: 'bg-rose-500/20 text-rose-200 ring-rose-500/30' };
     }
     if (score >= 80 || l >= 40 || c >= 10) {
-      return { nivel: 'medio', label: 'Bom', cls: 'bg-amber-500/15 text-amber-200 ring-amber-500/25' };
+      return { nivel: 'medio', label: 'Bom', score, cls: 'bg-amber-500/15 text-amber-200 ring-amber-500/25' };
     }
-    if (l > 0 || c > 0 || v > 0) {
-      return { nivel: 'baixo', label: 'Baixo', cls: 'bg-slate-700/40 text-slate-400 ring-slate-600/40' };
+    if (l > 0 || c > 0 || s > 0 || v > 0) {
+      return { nivel: 'baixo', label: 'Baixo', score, cls: 'bg-slate-700/40 text-slate-400 ring-slate-600/40' };
     }
     return null;
   }
@@ -69,11 +72,17 @@
       return '';
     }
   }
-  function listHref({ status, page, keepQuery } = {}) {
+  function listHref({ status, page, keepQuery, nivel, ordem } = {}) {
     const params = new URLSearchParams();
     if (keepQuery !== false && q) params.set('q', q);
     const st = status != null ? status : activeStatus;
     if (st && st !== 'all') params.set('status', st);
+    if (st === 'viralizou') {
+      const selectedLevel = nivel != null ? nivel : activeViralLevel;
+      const selectedOrder = ordem != null ? ordem : activeViralOrder;
+      if (selectedLevel && selectedLevel !== 'all') params.set('nivel', selectedLevel);
+      if (selectedOrder && selectedOrder !== 'viral') params.set('ordem', selectedOrder);
+    }
     const p = page != null ? page : pag.page;
     if (p && p > 1) params.set('page', String(p));
     const qs = params.toString();
@@ -122,6 +131,12 @@
       <% if (activeStatus && activeStatus !== 'all') { %>
         <input type="hidden" name="status" value="<%= activeStatus %>" />
       <% } %>
+      <% if (activeStatus === 'viralizou' && activeViralLevel !== 'all') { %>
+        <input type="hidden" name="nivel" value="<%= activeViralLevel %>" />
+      <% } %>
+      <% if (activeStatus === 'viralizou' && activeViralOrder !== 'viral') { %>
+        <input type="hidden" name="ordem" value="<%= activeViralOrder %>" />
+      <% } %>
       <label class="relative min-w-[180px] flex-1">
         <span class="sr-only">Buscar matérias</span>
         <input type="search" name="q" value="<%= q %>" placeholder="Buscar título, texto, fonte…"
@@ -168,11 +183,47 @@
     <% if (activeStatus === 'viralizou') { %>
       <p class="mt-2 text-[11px] text-slate-500">
         Mostra posts com engajamento <span class="text-rose-300">Viralizou</span> ou <span class="text-amber-300">Bom</span>
-        (a partir de ~10 comentários ou ~40 curtidas). Ao abrir esta aba, o sistema atualiza as publicações recentes no Facebook.
+        (a partir de ~10 comentários ou ~40 curtidas). Por padrão, aparecem do maior para o menor potencial de viralização.
+        Ao abrir esta aba, o sistema atualiza as publicações recentes no Facebook.
         <% if (typeof engajamentoSync !== 'undefined' && engajamentoSync) { %>
           <span class="text-slate-400">· Sync: <%= engajamentoSync.checked || 0 %> posts · <%= engajamentoSync.destaques || 0 %> em destaque</span>
         <% } %>
       </p>
+
+      <form method="get" action="/minhas-materias"
+        class="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-slate-800 bg-slate-900/50 p-2.5">
+        <input type="hidden" name="status" value="viralizou" />
+        <% if (q) { %><input type="hidden" name="q" value="<%= q %>" /><% } %>
+        <label class="min-w-[150px] flex-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+          Desempenho
+          <select name="nivel"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs font-normal normal-case tracking-normal text-slate-200 focus:border-rose-500 focus:outline-none">
+            <option value="all" <%= activeViralLevel === 'all' ? 'selected' : '' %>>Todos: Viralizou + Bom</option>
+            <option value="alto" <%= activeViralLevel === 'alto' ? 'selected' : '' %>>Somente Viralizou</option>
+            <option value="medio" <%= activeViralLevel === 'medio' ? 'selected' : '' %>>Somente Bom</option>
+          </select>
+        </label>
+        <label class="min-w-[190px] flex-[1.35] text-[10px] font-medium uppercase tracking-wide text-slate-500">
+          Ordenar por
+          <select name="ordem"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs font-normal normal-case tracking-normal text-slate-200 focus:border-rose-500 focus:outline-none">
+            <option value="viral" <%= activeViralOrder === 'viral' ? 'selected' : '' %>>Mais viralizou → menos viralizou</option>
+            <option value="curtidas" <%= activeViralOrder === 'curtidas' ? 'selected' : '' %>>Mais curtidas</option>
+            <option value="comentarios" <%= activeViralOrder === 'comentarios' ? 'selected' : '' %>>Mais comentários</option>
+            <option value="compartilhamentos" <%= activeViralOrder === 'compartilhamentos' ? 'selected' : '' %>>Mais compartilhamentos</option>
+            <option value="visualizacoes" <%= activeViralOrder === 'visualizacoes' ? 'selected' : '' %>>Mais visualizações</option>
+            <option value="recente" <%= activeViralOrder === 'recente' ? 'selected' : '' %>>Mais recentes</option>
+          </select>
+        </label>
+        <button type="submit"
+          class="rounded-lg bg-rose-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-rose-400">
+          Aplicar filtro
+        </button>
+        <% if (activeViralLevel !== 'all' || activeViralOrder !== 'viral') { %>
+          <a href="<%= listHref({ status: 'viralizou', page: 1, nivel: 'all', ordem: 'viral' }) %>"
+            class="rounded-lg px-2 py-2 text-xs text-slate-500 hover:text-slate-300">Limpar</a>
+        <% } %>
+      </form>
     <% } %>
 
     <% if (!mattersList.length) { %>
@@ -222,8 +273,11 @@
           const viewsLabel = formatViews(item.pub_fb_views);
           const likesLabel = formatViews(item.pub_fb_likes);
           const commentsLabel = formatViews(item.pub_fb_comments);
+          const sharesLabel = formatViews(item.pub_fb_shares);
           const isPub = st === 'publicado' || item.publication_id;
-          const viral = isPub ? viralBadge(item.pub_fb_likes, item.pub_fb_comments, item.pub_fb_views) : null;
+          const viral = isPub
+            ? viralBadge(item.pub_fb_likes, item.pub_fb_comments, item.pub_fb_shares, item.pub_fb_views)
+            : null;
         %>
           <li class="mia-matter-row group flex items-center gap-2 px-2.5 py-1.5 transition hover:bg-slate-900/70 sm:px-3 sm:py-2"
             data-id="<%= item.id %>"
@@ -253,6 +307,9 @@
                 <% if (viral) { %>
                   <span class="mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 <%= viral.cls %>"><%= viral.label %></span>
                 <% } %>
+                <% if (activeStatus === 'viralizou' && viral) { %>
+                  <span class="mia-viral-score shrink-0 text-[9px] tabular-nums text-slate-500" title="Pontuação ponderada de engajamento">score <%= Math.round(viral.score) %></span>
+                <% } %>
                 <a href="/materias-ia/<%= item.id %>" class="min-w-0 truncate text-sm font-medium text-white hover:text-emerald-200">
                   <%= item.titulo || 'Sem título' %>
                 </a>
@@ -276,6 +333,8 @@
                     <span class="mia-likes-label"><%= likesLabel != null ? likesLabel + ' curtidas' : 'curtidas' %></span>
                     <span class="text-slate-600">·</span>
                     <span class="mia-comments-label"><%= commentsLabel != null ? commentsLabel + ' coment.' : 'coment.' %></span>
+                    <span class="text-slate-600">·</span>
+                    <span class="mia-shares-label"><%= sharesLabel != null ? sharesLabel + ' compart.' : 'compart.' %></span>
                     <span class="text-slate-600">·</span>
                     <span class="mia-views-label"><%= viewsLabel != null ? viewsLabel + ' views' : 'views' %></span>
                     <span class="text-[9px] text-sky-400/80">↻</span>
@@ -358,5 +417,5 @@
     <% } %>
   </main>
 
-  <script src="/js/minhas-materias.js?v=20260814engajamento"></script>
+  <script src="/js/minhas-materias.js?v=20260824viralfilter"></script>
 <%- include('partials/app-end') %>
