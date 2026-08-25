@@ -21,6 +21,7 @@ const EIXOS = Object.freeze([
     nome: 'Conflitos denominacionais',
     grupo: 'principal',
     consulta: 'Assembleia de Deus',
+    consultaReforco: 'Assembleia de Deus pastor protesto posse convenção',
     palavras: ['assembleia de deus', 'cgadb', 'madureira', 'convencao', 'convenção', 'ministerio', 'ministério', 'usos e costumes', 'diacono', 'diácono', 'presbitero', 'presbítero'],
   }),
   Object.freeze({
@@ -28,6 +29,7 @@ const EIXOS = Object.freeze([
     nome: 'Memória pentecostal',
     grupo: 'principal',
     consulta: 'história Assembleia de Deus',
+    consultaReforco: 'memória pentecostal Assembleia de Deus acervo pioneiros',
     palavras: ['pioneir', 'memoria pentecostal', 'memória pentecostal', 'centenario', 'centenário', 'acervo', 'arquivo historico', 'arquivo histórico', 'primeiro culto', 'frida vingren', 'daniel berg', 'gunnar vingren'],
   }),
   Object.freeze({
@@ -35,6 +37,7 @@ const EIXOS = Object.freeze([
     nome: 'Escatologia e profecia',
     grupo: 'principal',
     consulta: 'arrebatamento pastor',
+    consultaReforco: 'pastor profecia arrebatamento apocalipse polêmica',
     palavras: ['profecia', 'arrebatamento', 'escatolog', 'terceiro templo', 'israel', 'apocalipse', 'fim dos tempos'],
   }),
   Object.freeze({
@@ -42,6 +45,7 @@ const EIXOS = Object.freeze([
     nome: 'Polêmicas do meio gospel',
     grupo: 'principal',
     consulta: 'polêmica gospel',
+    consultaReforco: 'pastor cantor gospel polêmica crítica reação',
     palavras: ['polemica gospel', 'polêmica gospel', 'critica', 'crítica', 'rompe', 'acusacao', 'acusação', 'denuncia', 'denúncia', 'repercussao', 'repercussão'],
   }),
   Object.freeze({
@@ -49,6 +53,7 @@ const EIXOS = Object.freeze([
     nome: 'Histórias de fé e superação',
     grupo: 'secundario',
     consulta: 'jovem testemunho cristão',
+    consultaReforco: 'testemunho cristão sobreviveu acidente conversão',
     palavras: ['jovem', 'adolescente', 'testemunho', 'superacao', 'superação', 'coragem', 'venceu', 'vitoria', 'vitória'],
   }),
   Object.freeze({
@@ -56,6 +61,7 @@ const EIXOS = Object.freeze([
     nome: 'Fé, ciência e saúde',
     grupo: 'secundario',
     consulta: 'oração cérebro estudo',
+    consultaReforco: 'oração estudo científico saúde ansiedade',
     palavras: ['estudo', 'cientista', 'ciencia', 'ciência', 'cerebro', 'cérebro', 'saude mental', 'saúde mental', 'oracao', 'oração', 'jejum'],
   }),
   Object.freeze({
@@ -63,6 +69,7 @@ const EIXOS = Object.freeze([
     nome: 'Cura, sobrevivência e conversão',
     grupo: 'secundario',
     consulta: 'testemunho cura cristão',
+    consultaReforco: 'cura conversão Jesus testemunho sobrevivente',
     palavras: ['cura', 'curado', 'sobrevive', 'sobrevivencia', 'sobrevivência', 'conversao', 'conversão', 'milagre', 'remissao', 'remissão'],
   }),
 ]);
@@ -343,7 +350,9 @@ function consultasDaPesquisa({ eixo = 'all', termo = '' } = {}) {
     return [{ eixo: selecionado?.id || null, consulta: `${buscaManual} ${complemento}`.slice(0, 280) }];
   }
   const eixos = selecionado ? [selecionado] : EIXOS;
-  return eixos.map((item) => ({ eixo: item.id, consulta: item.consulta }));
+  return eixos.flatMap((item) => [item.consulta, item.consultaReforco]
+    .filter(Boolean)
+    .map((consulta) => ({ eixo: item.id, consulta })));
 }
 
 function montarPromptPesquisaClaude({ eixo = 'all', termo = '', periodo = '7d', limite = 10 } = {}) {
@@ -538,11 +547,36 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
   // na classificação de matérias já publicadas, sem bloquear o editor.
 
   const materiaIaService = require('./materiaIaService');
-  const marcadas = await materiaIaService.marcarJaPublicados(userId, facebookPageId, candidatas, {
-    todasPaginas: true,
+  let marcadas = await materiaIaService.marcarJaPublicados(userId, facebookPageId, candidatas, {
+    // Uma pauta usada em outra página do mesmo usuário continua disponível para
+    // a JM Notícia; o bloqueio deve considerar apenas a página selecionada.
+    todasPaginas: false,
     limiteHistorico: 5000,
   });
-  const novas = marcadas.filter((pauta) => !pauta.jaPublicado);
+  let novas = marcadas.filter((pauta) => !pauta.jaPublicado);
+
+  // Os buscadores por vezes trazem uma reportagem relevante sem as palavras
+  // exatas do eixo. Se a rodada rígida não render nenhuma pauta nova, ela pode
+  // aparecer como reserva para o editor conferir a fonte antes de criar.
+  if (!novas.length) {
+    const reservas = avaliadas
+      .filter((pauta) => pauta.descarte === 'Sem fato concreto compatível com o segmento')
+      .filter((pauta) => /^https?:\/\//i.test(String(pauta.link || pauta.url || '')))
+      .map((pauta) => ({
+        ...pauta,
+        descarte: null,
+        reservaEditorial: true,
+        scoreEditorial: Math.max(1, pauta.scoreEditorial - 16),
+        motivo: `${pauta.eixoNome} · pauta relacionada para revisão`,
+      }));
+    if (reservas.length) {
+      marcadas = await materiaIaService.marcarJaPublicados(userId, facebookPageId, reservas, {
+        todasPaginas: false,
+        limiteHistorico: 5000,
+      });
+      novas = marcadas.filter((pauta) => !pauta.jaPublicado);
+    }
+  }
   const selecionado = eixoPorId(eixo);
   const escolhidas = selecionado
     ? [...novas]
@@ -567,6 +601,7 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
       : pauta.potencialCompartilhamento,
     motivo: pauta.motivoClaude || pauta.motivo,
     origemPesquisa: pauta.origemPesquisa || 'buscadores',
+    reservaEditorial: Boolean(pauta.reservaEditorial),
   }));
 
   const resposta = {

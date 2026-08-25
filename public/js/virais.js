@@ -113,6 +113,9 @@
       const eixo = criarElemento('span', `rounded px-1.5 py-0.5 font-semibold ${topico.grupo === 'principal' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-sky-500/10 text-sky-300'}`, topico.eixoNome || 'Pauta');
       const score = criarElemento('span', `rounded px-1.5 py-0.5 font-semibold ${Number(topico.potencialCompartilhamento) >= 8 ? 'bg-orange-500/15 text-orange-300' : 'bg-slate-800 text-slate-400'}`, `${topico.potencialCompartilhamento || 0}/10 compartilhamento`);
       meta.append(eixo, score);
+      if (topico.reservaEditorial) {
+        meta.appendChild(criarElemento('span', 'rounded bg-amber-500/10 px-1.5 py-0.5 font-semibold text-amber-300', 'Revisar fonte'));
+      }
       if (topico.origemPesquisa === 'claude') {
         meta.appendChild(criarElemento('span', 'rounded bg-violet-500/10 px-1.5 py-0.5 font-semibold text-violet-300', 'Pesquisa Claude'));
       }
