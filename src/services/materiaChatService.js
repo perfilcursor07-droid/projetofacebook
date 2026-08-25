@@ -1542,6 +1542,9 @@ function respostaLivreEhDePesquisaOuEscolha(conteudo) {
     /^(?:n[ãa]o|nao)\s+(?:tenho\s+acesso|consigo\s+acessar|posso\s+acessar|sou\s+capaz\s+de\s+acessar)\b/i.test(texto) ||
     /\b(?:post(?:s)?\s+do\s+x|link\s+do\s+x|linha\s+do\s+tempo|aqui\s+v[aã]o\s+os\s+posts|fontes\s+da\s+apura[cç][aã]o)\b/i.test(texto) ||
     /\b(?:minha\s+ferramenta\s+de\s+busca|p[aá]ginas\s+indexadas|n[ãa]o\s+os\s+posts\s+originais|n[ãa]o\s+o\s+feed)\b/i.test(texto) ||
+    /\b(?:essa|isso)\s+n[ãa]o\s+vai\s+virar\s+mat[eé]ria\b/i.test(texto) ||
+    /\bbriefing\s+(?:do|da)\s+jm\b/i.test(texto) ||
+    /\bsem\s+(?:qualquer\s+)?[aâ]ngulo\s+religioso\b/i.test(texto) ||
     /\bposso\s+(?:seguir|pesquisar|buscar)\b/i.test(texto) ||
     /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto)
   );
@@ -2421,7 +2424,11 @@ async function responder({
       historico: historicoLivre,
       fontesWeb,
       onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
-      conversationId: `viralizeai:user:${userId}:chat:${chat.id}`,
+      // O histórico da conversa já é enviado acima. Cada pergunta recebe uma
+      // sessão remota nova para que instruções persistidas acidentalmente no
+      // provedor (por exemplo, o briefing do modo JM) não contaminem o Claude
+      // Livre nas mensagens seguintes.
+      conversationId: `viralizeai:livre:user:${userId}:chat:${chat.id}:msg:${userMessageId}`,
       conversationName: chat.titulo || tituloDaConversa(pedido),
     });
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
