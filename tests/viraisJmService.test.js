@@ -72,7 +72,7 @@ test('pauta denominacional recebe prioridade alta para compartilhamento', () => 
   assert.ok(pauta.potencialCompartilhamento >= 8);
 });
 
-test('resultado de uma busca editorial conhecida não é descartado por título curto', () => {
+test('consulta editorial sozinha não faz uma pauta pertencer ao segmento', () => {
   const pauta = service.avaliarPauta({
     titulo: 'Nova decisão provoca reação entre os membros',
     resumo: 'A circular foi divulgada nesta segunda-feira.',
@@ -80,8 +80,66 @@ test('resultado de uma busca editorial conhecida não é descartado por título 
     eixoPesquisa: 'denominacional',
   }, 'denominacional');
 
-  assert.equal(pauta.descarte, null);
+  assert.match(pauta.descarte, /Sem fato concreto/);
   assert.equal(pauta.eixo, 'denominacional');
+});
+
+test('filtro bloqueia as cinco sugestões fracas vistas na tela de Virais', () => {
+  const exemplos = [
+    {
+      titulo: 'Idosa de 99 anos aceita Jesus minutos antes de falecer: “Partiu para a eternidade”',
+      resumo: 'A igreja divulgou o testemunho de conversão.',
+      eixoPesquisa: 'denominacional',
+    },
+    {
+      titulo: 'Thalles Roberto: biografia, idade, esposa, filhos e músicas',
+      resumo: 'Conheça a carreira do cantor gospel.',
+      eixoPesquisa: 'polemica_gospel',
+    },
+    {
+      titulo: 'Ensinar o comunismo para não repetir a história',
+      resumo: 'Artigo sobre política e história.',
+      eixoPesquisa: 'memoria',
+    },
+    {
+      titulo: 'Que fragrância você deixa por onde passa?',
+      resumo: 'Reflexão cristã para o dia.',
+      eixoPesquisa: 'historia_universal',
+    },
+    {
+      titulo: 'Líderes da Igreja na Palestina virão ao Brasil',
+      resumo: 'Representantes participarão de uma agenda institucional.',
+      eixoPesquisa: 'historia_universal',
+    },
+  ].map((pauta, index) => service.avaliarPauta({
+    ...pauta,
+    link: `https://exemplo.com/ruim-${index}`,
+  }, pauta.eixoPesquisa));
+
+  assert.ok(exemplos.every((pauta) => pauta.descarte));
+  assert.match(exemplos[0].descarte, /Morte ou tragédia/);
+  assert.match(exemplos[1].descarte, /Biografia ou lista/);
+  assert.match(exemplos[2].descarte, /opinião/);
+  assert.match(exemplos[3].descarte, /Reflexão genérica/);
+  assert.match(exemplos[4].descarte, /Agenda institucional/);
+});
+
+test('filtro mantém fato denominacional recente e história concreta de superação', () => {
+  const denominacional = service.avaliarPauta({
+    titulo: 'CGADB publica circular e muda regra para ordenação de presbíteros',
+    resumo: 'A decisão da convenção provocou reação entre pastores da Assembleia de Deus.',
+    link: 'https://exemplo.com/circular-cgadb',
+  });
+  const superacao = service.avaliarPauta({
+    titulo: 'Jovem volta a andar após tratamento e relata apoio da igreja',
+    resumo: 'A família celebrou a recuperação depois de meses de tratamento e oração.',
+    link: 'https://exemplo.com/superacao',
+  });
+
+  assert.equal(denominacional.descarte, null);
+  assert.equal(denominacional.eixo, 'denominacional');
+  assert.equal(superacao.descarte, null);
+  assert.equal(superacao.eixo, 'historia_universal');
 });
 
 test('consultas padrão são curtas para não zerar o Google News', () => {

@@ -2802,6 +2802,10 @@ Regras:
 - potencial (0-100): chance editorial de gerar clique, comentário e compartilhamento neste público.
 - Dê nota baixa a agenda institucional, nota devocional genérica, lançamento rotineiro, evento estrangeiro sem impacto no Brasil e texto sem fato novo.
 - Dê nota alta somente quando houver fato recente e um gatilho claro: figura conhecida, polêmica, conflito, declaração forte, surpresa, testemunho extraordinário, política e religião, escatologia ou repercussão pública.
+- Não transforme o assunto da consulta em acontecimento. "Thalles Roberto: biografia, idade, esposa, filhos e músicas" é biografia, NÃO polêmica gospel.
+- Rejeite com notas abaixo de 20: biografias/listas, reflexão metafórica, artigo de opinião, agenda de evento/visita institucional e morte sem superação em vida.
+- Exemplos que devem receber nota muito baixa: "Que fragrância você deixa por onde passa?", "Ensinar o comunismo para não repetir a história" e "Líderes da Igreja na Palestina virão ao Brasil".
+- A palavra "história" isolada não significa memória pentecostal; "gospel", "cantor" ou "música" isolados não significam polêmica.
 - Uma pauta pode ter potencial alto e afinidade baixa; nesse caso ela deve continuar com afinidade baixa.
 - Não invente fatos e não altere os títulos.
 - motivo: no máximo 12 palavras, explicando a ligação ou a falta dela.`,

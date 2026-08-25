@@ -16,7 +16,7 @@ const EIXOS = Object.freeze([
     nome: 'Memória pentecostal',
     grupo: 'principal',
     consulta: 'história Assembleia de Deus',
-    palavras: ['historia', 'história', 'pioneir', 'memoria', 'memória', 'fundador', 'documento antigo', 'frida vingren', 'daniel berg', 'gunnar vingren'],
+    palavras: ['pioneir', 'memoria pentecostal', 'memória pentecostal', 'centenario', 'centenário', 'acervo', 'arquivo historico', 'arquivo histórico', 'primeiro culto', 'frida vingren', 'daniel berg', 'gunnar vingren'],
   }),
   Object.freeze({
     id: 'escatologia',
@@ -30,7 +30,7 @@ const EIXOS = Object.freeze([
     nome: 'Polêmicas do meio gospel',
     grupo: 'principal',
     consulta: 'polêmica gospel',
-    palavras: ['gospel', 'cantor', 'cantora', 'musica', 'música', 'polemica', 'polêmica', 'declaracao', 'declaração', 'repercussao', 'repercussão'],
+    palavras: ['polemica gospel', 'polêmica gospel', 'critica', 'crítica', 'rompe', 'acusacao', 'acusação', 'denuncia', 'denúncia', 'repercussao', 'repercussão'],
   }),
   Object.freeze({
     id: 'historia_universal',
@@ -63,10 +63,10 @@ const PERFIL_PUBLICO = Object.freeze({
   distribuicao: Object.freeze({ principal: 7, secundario: 3 }),
 });
 
-const POLITICA = ['lula', 'bolsonaro', 'stf', 'eleicao', 'eleição', 'deputado', 'senador', 'partido', 'governo', 'presidente', 'presidenciavel', 'presidenciável', 'candidato'];
+const POLITICA = ['lula', 'bolsonaro', 'stf', 'eleicao', 'eleição', 'deputado', 'senador', 'partido', 'governo', 'presidente', 'presidenciavel', 'presidenciável', 'candidato', 'comunismo', 'comunista'];
 const RELIGIAO = ['pastor', 'pastora', 'igreja', 'evangel', 'gospel', 'crist', 'assembleia de deus', 'bispo', 'culto'];
 const CONFLITO = ['conflito', 'disputa', 'rompe', 'critica', 'crítica', 'proibe', 'proíbe', 'decide', 'decisão', 'polemica', 'polêmica', 'reage', 'denuncia', 'denúncia', 'circular', 'regra'];
-const ESPERANCA = ['cura', 'curado', 'sobrevive', 'vitória', 'vitoria', 'superação', 'superacao', 'conversão', 'conversao', 'coragem', 'milagre'];
+const ESPERANCA = ['cura', 'curado', 'sobrevive', 'supera', 'recupera', 'recuperação', 'recuperacao', 'volta a andar', 'vitória', 'vitoria', 'superação', 'superacao', 'conversão', 'conversao', 'coragem', 'milagre'];
 const SOMBRIO = ['morre', 'morte', 'assassin', 'aborto', 'tragédia', 'tragedia', 'martírio', 'martirio'];
 const LOCAL_TOCANTINS = ['tocantins', 'palmas (to)', 'araguaína', 'araguaina', 'gurupi'];
 const CATOLICO = ['papa', 'vaticano', 'igreja católica', 'igreja catolica', 'padre'];
@@ -84,7 +84,19 @@ const INSTITUICAO_ESTRANGEIRA = [
 ];
 const PAIS_ESTRANGEIRO = ['estados unidos', 'eua', 'japão', 'japao', 'inglaterra', 'frança', 'franca', 'alemanha', 'itália', 'italia', 'canadá', 'canada', 'austrália', 'australia'];
 const MARCADOR_INSTITUCIONAL = ['tribunal', 'governo', 'parlamento', 'diretoria', 'convenção', 'convencao', 'liga', 'partido', 'revista', 'departamento', 'comadeja'];
-const CONTEUDO_GENERICO = ['reflexão bíblica', 'reflexao biblica', 'devocional', 'versículo do dia', 'versiculo do dia', 'mensagem bíblica do dia', 'mensagem biblica do dia'];
+const CONTEUDO_GENERICO = ['reflexão bíblica', 'reflexao biblica', 'devocional', 'versículo do dia', 'versiculo do dia', 'mensagem bíblica do dia', 'mensagem biblica do dia', 'que fragrância você deixa', 'que fragrancia voce deixa'];
+const BIOGRAFIA_LISTA = ['biografia', 'idade, esposa', 'esposa, filhos', 'filhos e músicas', 'filhos e musicas', 'discografia', 'quem é ', 'quem e ', 'saiba tudo sobre'];
+const OPINIAO_SEM_FATO = ['artigo de opinião', 'artigo de opiniao', 'opinião:', 'opiniao:', 'ensinar o comunismo', 'reflexões sobre', 'reflexoes sobre'];
+const MORTE_NO_TITULO = ['antes de falecer', 'minutos antes de morrer', 'morre após', 'morre apos', 'morreu após', 'morreu apos', 'partiu para a eternidade', 'últimos minutos de vida', 'ultimos minutos de vida'];
+const AGENDA_ROTINEIRA = ['virão ao brasil', 'virao ao brasil', 'visita o brasil', 'agenda no brasil', 'realiza conferência', 'realiza conferencia', 'promove evento', 'programação do evento', 'programacao do evento'];
+const DENOMINACAO = ['assembleia de deus', 'cgadb', 'cieb', 'comade', 'madureira', 'ipda', 'deus é amor', 'deus e amor', 'lagoinha', 'universal', 'iurd', 'convenção', 'convencao', 'ministério do belém', 'ministerio do belem'];
+const DECISAO_DENOMINACIONAL = [...CONFLITO, 'afasta', 'afastado', 'expulsa', 'renuncia', 'eleito', 'eleita', 'posse', 'estatuto', 'regimento', 'ordena', 'consagra', 'proibição', 'proibicao'];
+const MEMORIA_PENTECOSTAL = ['pioneir', 'centenário', 'centenario', 'acervo', 'arquivo histórico', 'arquivo historico', 'primeiro culto', 'fundação da assembleia', 'fundacao da assembleia', 'frida vingren', 'daniel berg', 'gunnar vingren'];
+const ESCATOLOGIA = ['profecia', 'arrebatamento', 'escatolog', 'terceiro templo', 'apocalipse', 'fim dos tempos', 'volta de jesus'];
+const ARTISTA_OU_LIDER_GOSPEL = ['pastor', 'pastora', 'bispo', 'apóstolo', 'apostolo', 'cantor gospel', 'cantora gospel', 'artista gospel', 'música gospel', 'musica gospel', 'líder evangélico', 'lider evangelico'];
+const CIENCIA = ['estudo científico', 'estudo cientifico', 'pesquisa científica', 'pesquisa cientifica', 'cientista', 'universidade', 'pesquisadores', 'neurociência', 'neurociencia'];
+const PRATICA_DE_FE = ['oração', 'oracao', 'jejum', 'fé', 'fe', 'religião', 'religiao', 'culto'];
+const PROTAGONISTA = ['jovem', 'adolescente', 'menino', 'menina', 'mulher', 'homem', 'família', 'familia', 'mãe', 'mae', 'pai', 'criança', 'crianca', 'atleta', 'cantor', 'cantora', 'pastor', 'pastora'];
 
 function normalizar(value) {
   return String(value || '')
@@ -96,7 +108,9 @@ function normalizar(value) {
 }
 
 function textoPauta(pauta) {
-  return [pauta?.titulo, pauta?.resumo, pauta?.trecho, pauta?.nicho, pauta?.veiculo]
+  // Consulta, nicho e nome do veículo não provam que o fato pertence ao eixo.
+  // Só o conteúdo real retornado pela fonte entra na classificação.
+  return [pauta?.titulo, pauta?.resumo, pauta?.trecho]
     .filter(Boolean)
     .join(' ');
 }
@@ -110,27 +124,55 @@ function eixoPorId(id) {
   return EIXOS.find((eixo) => eixo.id === String(id || '')) || null;
 }
 
+function encaixaNoEixo(pauta, eixo) {
+  const texto = textoPauta(pauta);
+  switch (eixo?.id) {
+    case 'denominacional':
+      return contemAlguma(texto, DENOMINACAO) && contemAlguma(texto, DECISAO_DENOMINACIONAL);
+    case 'memoria':
+      return contemAlguma(texto, DENOMINACAO) && contemAlguma(texto, MEMORIA_PENTECOSTAL);
+    case 'escatologia':
+      return contemAlguma(texto, ESCATOLOGIA) && contemAlguma(texto, RELIGIAO);
+    case 'polemica_gospel':
+      return contemAlguma(texto, ARTISTA_OU_LIDER_GOSPEL) && contemAlguma(texto, CONFLITO);
+    case 'historia_universal':
+      return contemAlguma(texto, PROTAGONISTA) && contemAlguma(texto, ESPERANCA);
+    case 'fe_ciencia':
+      return contemAlguma(texto, CIENCIA) && contemAlguma(texto, PRATICA_DE_FE);
+    case 'cura_conversao':
+      return contemAlguma(texto, PROTAGONISTA) && contemAlguma(texto, ESPERANCA);
+    default:
+      return false;
+  }
+}
+
 function detectarEixo(pauta, fallback = null) {
   const texto = textoPauta(pauta);
+  const preferido = eixoPorId(fallback);
+  if (preferido && encaixaNoEixo(pauta, preferido)) return preferido;
   const pontuados = EIXOS.map((eixo) => ({
     eixo,
     pontos: eixo.palavras.reduce(
       (total, palavra) => total + (normalizar(texto).includes(normalizar(palavra)) ? 1 : 0),
       0
     ),
-  })).sort((a, b) => b.pontos - a.pontos);
-  if (pontuados[0]?.pontos > 0) return pontuados[0].eixo;
-  return eixoPorId(fallback) || EIXOS[0];
+  }))
+    .filter(({ eixo }) => encaixaNoEixo(pauta, eixo))
+    .sort((a, b) => b.pontos - a.pontos);
+  if (pontuados[0]) return pontuados[0].eixo;
+  return preferido || EIXOS[0];
 }
 
 function deveDescartar(pauta, eixo) {
   const texto = textoPauta(pauta);
-  const temSinalDoEixo = Array.isArray(eixo?.palavras) && contemAlguma(texto, eixo.palavras);
-  // O Google pode devolver um título curto que não repete as palavras da
-  // consulta. Quando o item veio de uma busca de eixo conhecida, esse contexto
-  // também é um sinal válido; os bloqueios explícitos abaixo continuam ativos.
-  const temReligiao = contemAlguma(texto, RELIGIAO) || temSinalDoEixo || Boolean(pauta?.eixoPesquisa);
+  const titulo = String(pauta?.titulo || '');
   if (contemAlguma(texto, LOCAL_TOCANTINS)) return 'Notícia local de Tocantins';
+  if (contemAlguma(titulo, BIOGRAFIA_LISTA)) return 'Biografia ou lista sem fato novo';
+  if (contemAlguma(titulo, MORTE_NO_TITULO)) return 'Morte ou tragédia como fato central';
+  if (contemAlguma(titulo, OPINIAO_SEM_FATO)) return 'Artigo de opinião sem fato novo';
+  if (contemAlguma(titulo, AGENDA_ROTINEIRA) && !contemAlguma(texto, CONFLITO)) {
+    return 'Agenda institucional sem conflito ou decisão relevante';
+  }
   if (contemAlguma(texto, INSTITUICAO_ESTRANGEIRA)) return 'Instituição estrangeira sem vínculo direto com o público';
   if (contemAlguma(texto, PAIS_ESTRANGEIRO) && contemAlguma(texto, MARCADOR_INSTITUCIONAL)) {
     return 'Notícia institucional estrangeira sem gancho brasileiro';
@@ -142,7 +184,7 @@ function deveDescartar(pauta, eixo) {
   if (contemAlguma(texto, CATOLICO) && !/evangel|protest|conflito|critica|pol[eê]mica/i.test(texto)) {
     return 'Catolicismo sem ligação explícita com o público evangélico';
   }
-  if (!temReligiao && !contemAlguma(texto, ESPERANCA)) return 'Fora do perfil do público';
+  if (!encaixaNoEixo(pauta, eixo)) return 'Sem fato concreto compatível com o segmento';
   if (contemAlguma(texto, SOMBRIO) && !contemAlguma(texto, ESPERANCA)) {
     return 'Desfecho sombrio sem arco de esperança';
   }
@@ -153,10 +195,11 @@ function deveDescartar(pauta, eixo) {
 function avaliarPauta(pauta, eixoInformado = null) {
   const eixo = detectarEixo(pauta, eixoInformado?.id || eixoInformado);
   const texto = textoPauta(pauta);
-  let pontos = eixo.grupo === 'principal' ? 66 : 58;
+  let pontos = eixo.grupo === 'principal' ? 44 : 38;
   const motivos = [eixo.nome];
 
-  if (eixo.id === 'denominacional') pontos += 12;
+  if (encaixaNoEixo(pauta, eixo)) pontos += 24;
+  if (eixo.id === 'denominacional') pontos += 8;
   if (contemAlguma(texto, CONFLITO)) {
     pontos += 11;
     motivos.push('conflito ou decisão');
@@ -169,7 +212,7 @@ function avaliarPauta(pauta, eixoInformado = null) {
     pontos += 10;
     motivos.push('fé ligada à ciência');
   }
-  if (/\b(Silas|Malafaia|CGADB|Madureira|IURD|Lagoinha|Assembleia|David Miranda)\b/i.test(texto)) {
+  if (/\b(Silas|Malafaia|CGADB|Madureira|IURD|Lagoinha|David Miranda)\b/i.test(texto)) {
     pontos += 8;
     motivos.push('nome reconhecido');
   }

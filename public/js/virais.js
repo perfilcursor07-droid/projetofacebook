@@ -69,7 +69,8 @@
     el.resumo.textContent = `${state.topicos.length} pauta(s) selecionadas entre ${data.totalColetado || data.totalAnalisado || 0} coletadas` +
       (data.totalDescartado ? ` · ${data.totalDescartado} fora do perfil` : '') +
       (data.totalJaUsado ? ` · ${data.totalJaUsado} já usada(s)` : '') +
-      (data.complementoPublico ? ` · ${data.complementoPublico} a partir do histórico da Página` : '');
+      (data.complementoPublico ? ` · ${data.complementoPublico} a partir do histórico da Página` : '') +
+      (state.topicos.length > 0 && state.topicos.length < 10 ? ' · a lista não foi completada com pautas fracas' : '');
 
     if (!state.topicos.length) {
       const vazio = criarElemento('div', 'rounded-xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400', 'Nenhuma pauta nova desse segmento foi encontrada no período. Tente outro eixo ou aumente o período.');
