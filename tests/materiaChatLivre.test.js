@@ -12,6 +12,7 @@ const {
   montarRodapeMateriaComFontes,
   anexarHashtagsAoFinal,
   extrairHashtagsDoTexto,
+  removerComentariosEditoriaisIa,
 } = require('../src/services/editorialGuidelinesFb');
 
 test('Claude livre salva somente a matéria após preâmbulo e título em negrito', () => {
@@ -282,4 +283,25 @@ test('hashtags antes de Siga o JM Notícia são consolidadas sem repetição', (
   assert.equal((final.match(/#RDC/g) || []).length, 1);
   assert.equal((final.match(/#JMNoticia/g) || []).length, 1);
   assert.doesNotMatch(final, /#PerseguiçãoReligiosa/);
+});
+
+test('comentário opinativo ou ressalva editorial da IA não entra na matéria', () => {
+  const materia = `O ministério divulgou o testemunho durante um encontro religioso realizado no fim de semana.
+
+*É importante destacar que se trata de um testemunho pessoal divulgado pelo próprio ministério religioso, sem confirmação médica independente disponível publicamente sobre o diagnóstico ou a remissão.
+
+Fonte: Ankit Sajwan Ministries`;
+  const limpa = removerComentariosEditoriaisIa(materia);
+
+  assert.match(limpa, /^O ministério divulgou/);
+  assert.match(limpa, /Fonte: Ankit Sajwan Ministries$/);
+  assert.doesNotMatch(limpa, /importante destacar|sem confirmação médica|disponível publicamente/i);
+});
+
+test('marcador opinativo é retirado sem apagar um fato objetivo', () => {
+  const limpa = removerComentariosEditoriaisIa(
+    'Vale lembrar que o encontro reuniu 300 participantes segundo a organização.'
+  );
+
+  assert.equal(limpa, 'O encontro reuniu 300 participantes segundo a organização.');
 });

@@ -671,6 +671,7 @@ async function showMatter(req, res, next) {
       garantirFonteNoConteudo,
       atualizarFonteCreditoDaImagem,
       removerFechamentoOracao,
+      removerComentariosEditoriaisIa,
       fundirParagrafosIncompletos,
       extrairHashtagsDoTexto,
     } = require('../services/editorialGuidelinesFb');
@@ -680,7 +681,9 @@ async function showMatter(req, res, next) {
 
     // Crédito só no Conteúdo: limpa campo Fonte/crédito se já estiver no corpo
     const patchShow = {};
-    let materiaLimpa = removerFechamentoOracao(matter.materia || '');
+    let materiaLimpa = removerComentariosEditoriaisIa(
+      removerFechamentoOracao(matter.materia || '')
+    );
     // Corrige lead truncado ("A apresentadora X, conhecida") deixado por limpeza antiga de créditos
     {
       const { body, tags } = extrairHashtagsDoTexto(materiaLimpa);

@@ -19,7 +19,7 @@ const FONTE_CURTA_CHARS = 700;
 const FONTE_LONGA_CHARS = 1800;
 
 const FRASES_PROIBIDAS_IA = [
-  'é importante ressaltar', 'vale ressaltar', 'vale destacar', 'vale lembrar',
+  'é importante destacar', 'é importante ressaltar', 'vale ressaltar', 'vale destacar', 'vale lembrar',
   'nesse sentido', 'diante disso', 'em suma', 'em resumo', 'por fim',
   'além disso', 'no entanto, é', 'cabe destacar', 'é fundamental',
   'desempenha um papel', 'cenário atual', 'nos dias de hoje',
@@ -36,6 +36,32 @@ const FRASES_PROIBIDAS_IA = [
   'não perca', 'assista até o final', 'compartilhe com quem precisa',
   'curta e compartilhe', 'deixe seu like', 'comente aqui embaixo',
 ];
+
+/**
+ * Remove comentários editoriais típicos da IA sem mexer nos fatos narrados.
+ * Ressalvas de checagem não pertencem à matéria publicada: a apuração deve
+ * decidir antes se o conteúdo pode ser escrito.
+ */
+function removerComentariosEditoriaisIa(texto) {
+  const marcador = /^(?:[*_]+\s*)?(?:[ée]\s+importante\s+(?:destacar|ressaltar|lembrar|observar)|vale\s+(?:destacar|ressaltar|lembrar|observar)|cabe\s+(?:destacar|ressaltar|lembrar|observar)|[ée]\s+fundamental\s+(?:destacar|ressaltar|lembrar|observar)|n[aã]o\s+podemos\s+esquecer)(?:\s+que)?\s*[:,;—–-]?\s*/i;
+  const ressalvaDeChecagem = /\b(?:sem\s+confirma[cç][aã]o|n[aã]o\s+(?:foi|foram|h[aá]|havia|existe|existia)\s+(?:poss[ií]vel\s+)?(?:confirmar|confirma[cç][aã]o|verificar|verifica[cç][aã]o)|confirma[cç][aã]o\s+(?:m[eé]dica|oficial|independente)|verifica[cç][aã]o\s+independente|laudo\s+m[eé]dico|dispon[ií]vel\s+publicamente)\b/i;
+
+  return String(texto || '')
+    .replace(/\r\n/g, '\n')
+    .split(/\n\s*\n/)
+    .map((paragrafo) => {
+      const original = String(paragrafo || '').trim();
+      if (!original || !marcador.test(original)) return original;
+      const factual = original.replace(marcador, '').trim();
+      if (!factual || ressalvaDeChecagem.test(factual)) return '';
+      const neutro = factual.replace(/^se\s+trata\s+de\b/i, 'Trata-se de');
+      return neutro.replace(/^([\p{Ll}])/u, (letra) => letra.toLocaleUpperCase('pt-BR'));
+    })
+    .filter(Boolean)
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 function sortearFaixaChars() {
   // Sempre o mesmo alvo: tamanho máximo útil para Face/Insta.
@@ -134,6 +160,13 @@ OBJETIVO:
 - Títulos fortes, sem sensacionalismo falso, sem inventar fatos, sem ficar superficial.
 - Aproveite AO MÁXIMO o espaço útil do Instagram (legenda até ~2.200 caracteres no total). Não entregue resumo pobre.
 - Se precisar cortar: primeiro repetição, floreio e informação secundária. PRESERVE fato, contexto, nomes, cargos, datas, números, locais, antecedentes, declarações fortes e contrapontos.
+
+NEUTRALIDADE JORNALÍSTICA — OBRIGATÓRIA:
+- A IA não dá opinião, conselho, julgamento, lição, alerta ao leitor nem avaliação moral dentro da matéria.
+- PROIBIDO usar “é importante destacar/ressaltar”, “vale lembrar/destacar”, “cabe observar”, “é fundamental” ou frases equivalentes.
+- Não acrescente nota de checagem, aviso ao editor ou parágrafo dizendo que faltou confirmação independente. A decisão de publicar é feita antes da redação.
+- Quando uma limitação estiver documentada na própria fonte e for indispensável, escreva apenas o fato com atribuição neutra, sem comentar sua importância.
+- Encerre no último fato relevante; não conclua com interpretação da IA sobre o que o caso “mostra”, “ensina”, “representa” ou “reforça”.
 
 FORMATO EXATO — entregue SOMENTE a matéria pronta, começando pelo título. Sem “Claro”, “Segue a matéria”, “Analisei o link”. Sem emojis em NENHUMA parte.
 
@@ -1386,6 +1419,7 @@ module.exports = {
   limitarLegendaInstagram,
   avaliarComprimentoFb,
   detectarMuletasIa,
+  removerComentariosEditoriaisIa,
   detectarCitacoesInventadas,
   titulosParecidos,
   mesmoAssuntoNoticia,

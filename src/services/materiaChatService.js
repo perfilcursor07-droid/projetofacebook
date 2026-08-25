@@ -931,8 +931,11 @@ async function extrairFontesDeArtigos(urls, { onPasso } = {}) {
  * Quando é matéria, separa título, corpo e hashtags para virar rascunho.
  */
 function interpretarResposta(conteudo) {
-  const { extrairHashtagsDoTexto } = require('./editorialGuidelinesFb');
-  const bruto = String(conteudo || '').trim();
+  const {
+    extrairHashtagsDoTexto,
+    removerComentariosEditoriaisIa,
+  } = require('./editorialGuidelinesFb');
+  const bruto = removerComentariosEditoriaisIa(String(conteudo || '')).trim();
   if (!bruto) return { ehMateria: false, titulo: null, corpo: '', hashtags: [] };
 
   const { body, tags } = extrairHashtagsDoTexto(bruto);
@@ -1513,6 +1516,7 @@ async function criarConversa({
  * O chat continua livre; a limpeza só acontece quando o usuário decide salvar.
  */
 function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) {
+  const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
   let texto = decodificarEntidadesHtmlBasicas(String(conteudo || ''))
     .replace(/\r\n/g, '\n')
     // O gateway pode escapar Markdown/HTML na resposta exibida.
@@ -1521,6 +1525,7 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
     .replace(/<\/?(?:a|span|strong|em|b|i)\b[^>]*>/gi, '')
     .replace(/<[^>]+>/g, '')
     .trim();
+  texto = removerComentariosEditoriaisIa(texto);
 
   const linhas = texto.split('\n');
   let indiceTitulo = -1;
@@ -2161,9 +2166,15 @@ async function responder({
 
   /** Chat comum: salva texto e fontes sem interpretar como matéria editorial. */
   const finalizarLivre = async (resposta, { fontesUsadas = [], usouWeb = false } = {}) => {
-    const respostaLimpa = limparArtefatosDeTextoLivre(resposta);
-    const infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
-    const podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre);
+    let respostaLimpa = limparArtefatosDeTextoLivre(resposta);
+    let infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
+    let podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre);
+    if (podeSalvarRascunho) {
+      const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
+      respostaLimpa = removerComentariosEditoriaisIa(respostaLimpa);
+      infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
+      podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre);
+    }
     let titulosAlternativos = [];
     if (podeSalvarRascunho && infoLivre.titulo) {
       registrarPasso({ kind: 'pensando', texto: 'Montando 3 títulos alternativos…' });
@@ -2452,7 +2463,13 @@ async function responder({
 
   /** Salva a resposta na conversa e avisa o front (usado no fluxo normal e na checagem). */
   const finalizar = async (resposta, { fontesUsadas = [], usouWeb = false, pautas = null } = {}) => {
-    const info = interpretarResposta(resposta);
+    let respostaFinal = String(resposta || '');
+    let info = interpretarResposta(respostaFinal);
+    if (info.ehMateria) {
+      const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
+      respostaFinal = removerComentariosEditoriaisIa(respostaFinal);
+      info = interpretarResposta(respostaFinal);
+    }
 
     // Toda matéria que chega no chat vem com 3 opções de manchete para o editor
     // escolher antes de salvar o rascunho.
@@ -2516,7 +2533,7 @@ async function responder({
     const registro = {
       chat_id: chat.id,
       role: 'assistant',
-      content: resposta,
+      content: respostaFinal,
       titulo: info.titulo ? limparParaBanco(info.titulo, 180) : null,
       hashtags: JSON.stringify(info.hashtags || []),
       passos: JSON.stringify(passosSalvos),
