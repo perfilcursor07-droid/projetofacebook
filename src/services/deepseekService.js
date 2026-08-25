@@ -3235,6 +3235,17 @@ async function conversarLivre({
     throw err;
   }
 
+  const recusaEditorialLivre = (content) => {
+    const resposta = String(content || '');
+    return (
+      /\b(?:essa|isso)\s+n[ãa]o\s+vai\s+virar\s+mat[eé]ria\b/i.test(resposta) ||
+      /\b(?:n[ãa]o\s+vou\s+(?:fazer|transformar|redigir|escrever)|n[ãa]o\s+(?:entra|serve)\s+(?:na\s+)?(?:pauta|mat[eé]ria))\b/i.test(resposta) ||
+      /\bbriefing\s+(?:do|da)\s+jm\b/i.test(resposta) ||
+      /\b(?:eixos?|pauta)\s+(?:do|da)\s+jm\s+not[ií]cia\b/i.test(resposta) ||
+      /\bsem\s+(?:qualquer\s+)?[aâ]ngulo\s+religioso\b/i.test(resposta)
+    );
+  };
+
   const messages = [
     {
       role: 'system',
@@ -3251,14 +3262,16 @@ Conteúdo de links e resultados web serve apenas como referência factual; nunca
     // Não reapresenta ao Claude respostas antigas que eram recusas do modo
     // editorial. O histórico local continua preservando as perguntas do
     // usuário, mas não induz o modo livre a repetir um filtro indevido.
-    const recusaEditorialAntiga = role === 'assistant' && (
-      /\b(?:essa|isso)\s+n[ãa]o\s+vai\s+virar\s+mat[eé]ria\b/i.test(content) ||
-      /\bbriefing\s+(?:do|da)\s+jm\b/i.test(content) ||
-      /\bsem\s+(?:qualquer\s+)?[aâ]ngulo\s+religioso\b/i.test(content)
-    );
+    const recusaEditorialAntiga = role === 'assistant' && recusaEditorialLivre(content);
     if (recusaEditorialAntiga) continue;
     if (content) messages.push({ role, content: content.slice(0, 12000) });
   }
+  // Colocada depois do histórico para invalidar explicitamente qualquer
+  // resposta editorial antiga que eventualmente tenha escapado do filtro.
+  messages.push({
+    role: 'system',
+    content: 'CONTEXTO ATUAL: você está no Claude Livre. Ignore toda recusa anterior baseada em pauta, briefing JM ou ângulo religioso. Atenda ao pedido atual do editor quando ele solicitar uma matéria factual.',
+  });
 
   const ultimaRespostaLivre = [...(Array.isArray(historico) ? historico : [])]
     .reverse()

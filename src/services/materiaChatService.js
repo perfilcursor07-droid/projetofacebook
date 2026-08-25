@@ -1543,7 +1543,9 @@ function respostaLivreEhDePesquisaOuEscolha(conteudo) {
     /\b(?:post(?:s)?\s+do\s+x|link\s+do\s+x|linha\s+do\s+tempo|aqui\s+v[aã]o\s+os\s+posts|fontes\s+da\s+apura[cç][aã]o)\b/i.test(texto) ||
     /\b(?:minha\s+ferramenta\s+de\s+busca|p[aá]ginas\s+indexadas|n[ãa]o\s+os\s+posts\s+originais|n[ãa]o\s+o\s+feed)\b/i.test(texto) ||
     /\b(?:essa|isso)\s+n[ãa]o\s+vai\s+virar\s+mat[eé]ria\b/i.test(texto) ||
+    /\b(?:n[ãa]o\s+vou\s+(?:fazer|transformar|redigir|escrever)|n[ãa]o\s+(?:entra|serve)\s+(?:na\s+)?(?:pauta|mat[eé]ria))\b/i.test(texto) ||
     /\bbriefing\s+(?:do|da)\s+jm\b/i.test(texto) ||
+    /\b(?:eixos?|pauta)\s+(?:do|da)\s+jm\s+not[ií]cia\b/i.test(texto) ||
     /\bsem\s+(?:qualquer\s+)?[aâ]ngulo\s+religioso\b/i.test(texto) ||
     /\bposso\s+(?:seguir|pesquisar|buscar)\b/i.test(texto) ||
     /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto)

@@ -388,35 +388,44 @@
     });
   }
 
-  function confirmarEdicao(wrapElement, novoTexto) {
-    // Remove todas as mensagens depois desta (user + assistant)
-    let proximo = wrapElement.nextElementSibling;
-    while (proximo) {
-      const aRemover = proximo;
-      proximo = proximo.nextElementSibling;
-      aRemover.remove();
+  async function confirmarEdicao(wrapElement, novoTexto) {
+    if (state.enviando) return;
+    const messageId = Number(wrapElement.dataset.msgId || 0);
+    if (!state.chatId || !messageId) {
+      setStatus('Aguarde a mensagem terminar de salvar antes de editá-la.');
+      return;
     }
 
-    // Restaura a bolha com o novo texto
-    wrapElement.innerHTML = '';
-    wrapElement.classList.remove('mia-msg-user--editing');
-    const novaBolha = document.createElement('div');
-    novaBolha.className = 'mia-msg-user-bubble';
-    novaBolha.textContent = novoTexto;
-    wrapElement.appendChild(novaBolha);
+    const salvarBtn = wrapElement.querySelector('.mia-msg-edit-save');
+    if (salvarBtn) {
+      salvarBtn.disabled = true;
+      salvarBtn.textContent = 'Atualizando…';
+    }
 
-    const editarBtn = document.createElement('button');
-    editarBtn.type = 'button';
-    editarBtn.className = 'mia-msg-edit-btn';
-    editarBtn.title = 'Editar e regenerar';
-    editarBtn.setAttribute('aria-label', 'Editar mensagem');
-    editarBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
-    editarBtn.addEventListener('click', () => iniciarEdicao(wrapElement, novoTexto));
-    wrapElement.appendChild(editarBtn);
+    try {
+      // A versão antiga e sua resposta deixam de existir também no banco.
+      // Depois disso enviar() cria UMA única bolha com o texto revisado.
+      await api(`${API}/conversas/${state.chatId}/mensagens/${messageId}`, {
+        method: 'DELETE',
+      });
 
-    // Reenvia a mensagem editada à IA
-    el.input.value = novoTexto;
-    enviar();
+      let proximo = wrapElement.nextElementSibling;
+      while (proximo) {
+        const aRemover = proximo;
+        proximo = proximo.nextElementSibling;
+        aRemover.remove();
+      }
+      wrapElement.remove();
+
+      el.input.value = novoTexto;
+      await enviar();
+    } catch (err) {
+      setStatus(err.message || 'Não foi possível atualizar a mensagem.');
+      if (salvarBtn) {
+        salvarBtn.disabled = false;
+        salvarBtn.textContent = 'Enviar editado';
+      }
+    }
   }
 
   /** Bloco "raciocínio" recolhível, como o do DeepSeek. */
@@ -663,7 +672,9 @@
       /\b(?:post(?:s)?\s+do\s+x|link\s+do\s+x|linha\s+do\s+tempo|aqui\s+v[aã]o\s+os\s+posts|fontes\s+da\s+apura[cç][aã]o)\b/i.test(texto) ||
       /\b(?:minha\s+ferramenta\s+de\s+busca|p[aá]ginas\s+indexadas|n[ãa]o\s+os\s+posts\s+originais|n[ãa]o\s+o\s+feed)\b/i.test(texto) ||
       /\b(?:essa|isso)\s+n[ãa]o\s+vai\s+virar\s+mat[eé]ria\b/i.test(texto) ||
+      /\b(?:n[ãa]o\s+vou\s+(?:fazer|transformar|redigir|escrever)|n[ãa]o\s+(?:entra|serve)\s+(?:na\s+)?(?:pauta|mat[eé]ria))\b/i.test(texto) ||
       /\bbriefing\s+(?:do|da)\s+jm\b/i.test(texto) ||
+      /\b(?:eixos?|pauta)\s+(?:do|da)\s+jm\s+not[ií]cia\b/i.test(texto) ||
       /\bsem\s+(?:qualquer\s+)?[aâ]ngulo\s+religioso\b/i.test(texto) ||
       /\bposso\s+(?:seguir|pesquisar|buscar)\b/i.test(texto) ||
       /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto)
@@ -2100,7 +2111,8 @@
         : 'Escrevendo…'
     );
 
-    el.mensagens.appendChild(blocoUsuario({ content: texto }));
+    const bolhaUsuario = blocoUsuario({ content: texto });
+    el.mensagens.appendChild(bolhaUsuario);
     scrollFim();
 
     const wrap = document.createElement('div');
@@ -2165,6 +2177,8 @@
             /* ignore */
           }
           carregarConversas();
+        } else if (evento.tipo === 'mensagem-usuario') {
+          if (evento.mensagem?.id) bolhaUsuario.dataset.msgId = String(evento.mensagem.id);
         } else if (evento.tipo === 'passo') {
           passos.addPasso(evento.passo);
           if (evento.passo?.texto) setStatus(evento.passo.texto);
