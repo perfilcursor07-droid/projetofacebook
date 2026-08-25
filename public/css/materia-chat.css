@@ -2381,3 +2381,22 @@ body.mia-chat-drawer-open {
   border-top-left-radius: 0.35rem;
   border-top-right-radius: 0.35rem;
 }
+
+/* Tipografia editorial inspirada na leitura do Claude: serifada, 18px e
+   entrelinha confortável. Aplica-se só ao conteúdo da resposta; controles,
+   progresso e botões continuam usando a fonte da interface. */
+.mia-msg-ai-body .mia-msg-ai-title,
+.mia-msg-ai-body .mia-msg-ai-text,
+.mia-msg-ai-body .mia-msg-ai-anchor,
+.mia-msg-ai-body .mia-msg-ai-meta,
+.mia-msg-ai-body .mia-msg-ai-tags {
+  font-family: Georgia, "Times New Roman", Times, ui-serif, serif;
+  font-size: 1.125rem;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+.mia-msg-ai-body .mia-msg-ai-title,
+.mia-msg-ai-body .mia-msg-ai-anchor {
+  font-weight: 700;
+}
