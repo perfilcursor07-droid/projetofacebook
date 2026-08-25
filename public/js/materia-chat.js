@@ -654,6 +654,9 @@
 
   function respostaLivreEhDePesquisaOuEscolha(conteudo) {
     const texto = String(conteudo || '').replace(/\s+/g, ' ').trim().slice(0, 5000);
+    const temMateriaCompleta = /^\s*fontes?\s*:\s*\S/im.test(String(conteudo || '')) &&
+      /(?:^|\n)\s*#[\p{L}\p{M}\p{N}_]+/u.test(String(conteudo || ''));
+    if (temMateriaCompleta) return false;
     return (
       /^(?:vou|deixa eu|permit[aá]-me)\s+(?:pesquisar|buscar|procurar)\b/i.test(texto) ||
       /^(?:n[ãa]o|nao)\s+(?:tenho\s+acesso|consigo\s+acessar|posso\s+acessar|sou\s+capaz\s+de\s+acessar)\b/i.test(texto) ||

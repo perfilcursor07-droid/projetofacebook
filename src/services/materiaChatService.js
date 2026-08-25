@@ -1511,13 +1511,32 @@ async function criarConversa({
   };
 }
 
+/** Localiza uma matéria completa mesmo quando o Claude deixa notas antes dela. */
+function localizarBlocoDeMateriaLivre(conteudo) {
+  const linhas = String(conteudo || '').replace(/\r\n/g, '\n').split('\n');
+  const indiceFonte = linhas.findIndex((linha) => /^\s*fontes?\s*:\s*\S/i.test(linha));
+  if (indiceFonte < 3) return null;
+
+  for (let i = 0; i < indiceFonte - 2; i += 1) {
+    const titulo = linhas[i].trim().replace(/^#{1,6}\s+/, '').replace(/^\*{1,2}|\*{1,2}$/g, '').trim();
+    const proximaEhVazia = !String(linhas[i + 1] || '').trim();
+    // Título jornalístico costuma ser uma linha isolada, sem ponto final;
+    // isso evita confundir os parágrafos de contexto com a manchete.
+    if (!proximaEhVazia || titulo.length < 15 || titulo.length > 220 || /[.!?]$/.test(titulo)) continue;
+    const corpo = linhas.slice(i + 2, indiceFonte).join('\n').trim();
+    const paragrafos = corpo.split(/\n\s*\n/).filter((p) => p.trim().length >= 40);
+    if (corpo.length >= 180 && paragrafos.length >= 2) return { titulo, corpo };
+  }
+  return null;
+}
+
 /** Resposta de pesquisa, lista ou orientação não deve virar matéria por tamanho. */
 function respostaLivreEhDePesquisaOuEscolha(conteudo) {
-  const texto = decodificarEntidadesHtmlBasicas(String(conteudo || ''))
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 5000);
-  if (!texto) return false;
+  const bruto = decodificarEntidadesHtmlBasicas(String(conteudo || '')).trim();
+  if (!bruto) return false;
+  // Notas de busca antes de uma matéria não anulam a matéria final.
+  if (localizarBlocoDeMateriaLivre(bruto)) return false;
+  const texto = bruto.replace(/\s+/g, ' ').slice(0, 5000);
   return (
     /^(?:vou|deixa eu|permit[aá]-me)\s+(?:pesquisar|buscar|procurar)\b/i.test(texto) ||
     /^(?:n[ãa]o|nao)\s+(?:tenho\s+acesso|consigo\s+acessar|posso\s+acessar|sou\s+capaz\s+de\s+acessar)\b/i.test(texto) ||
@@ -1544,6 +1563,25 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
     .trim();
   texto = removerComentariosEditoriaisIa(texto);
   const devolutivaDePesquisa = respostaLivreEhDePesquisaOuEscolha(texto);
+  const blocoMateria = localizarBlocoDeMateriaLivre(texto);
+
+  if (blocoMateria && !devolutivaDePesquisa) {
+    const tags = [];
+    const vistas = new Set();
+    for (const match of texto.matchAll(/(?:^|\s)#([\p{L}\p{M}\p{N}_]+)/gu)) {
+      const tag = String(match[1] || '').trim();
+      const chave = tag.toLocaleLowerCase('pt-BR');
+      if (!tag || vistas.has(chave)) continue;
+      vistas.add(chave);
+      tags.push(tag);
+      if (tags.length >= 6) break;
+    }
+    const titulo = String(tituloEscolhido || blocoMateria.titulo)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 180);
+    return { ehMateria: true, titulo, corpo: blocoMateria.corpo, hashtags: tags, devolutivaDePesquisa: false };
+  }
 
   const linhas = texto.split('\n');
   let indiceTitulo = -1;
