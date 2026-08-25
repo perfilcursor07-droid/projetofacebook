@@ -86,6 +86,7 @@
     el.results.classList.remove('hidden');
     el.resumo.textContent = `${state.topicos.length} pauta(s) selecionadas entre ${data.totalColetado || data.totalAnalisado || 0} coletadas` +
       (data.totalDescartado ? ` · ${data.totalDescartado} fora do perfil` : '') +
+      (data.totalEmRevisao ? ` · ${data.totalEmRevisao} para revisão` : '') +
       (data.totalJaUsado ? ` · ${data.totalJaUsado} já usada(s)` : '') +
       (data.totalClaude ? ` · ${data.totalClaude} encontrada(s) pelo Claude` : '') +
       (data.complementoPublico ? ` · ${data.complementoPublico} a partir do histórico da Página` : '') +

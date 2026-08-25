@@ -547,18 +547,20 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
   // na classificação de matérias já publicadas, sem bloquear o editor.
 
   const materiaIaService = require('./materiaIaService');
-  let marcadas = await materiaIaService.marcarJaPublicados(userId, facebookPageId, candidatas, {
+  const marcadas = await materiaIaService.marcarJaPublicados(userId, facebookPageId, candidatas, {
     // Uma pauta usada em outra página do mesmo usuário continua disponível para
     // a JM Notícia; o bloqueio deve considerar apenas a página selecionada.
     todasPaginas: false,
     limiteHistorico: 5000,
   });
   let novas = marcadas.filter((pauta) => !pauta.jaPublicado);
+  let totalJaUsado = marcadas.filter((pauta) => pauta.jaPublicado).length;
+  const limiteDesejado = Math.max(1, Math.min(30, Number(limite) || 10));
 
   // Os buscadores por vezes trazem uma reportagem relevante sem as palavras
-  // exatas do eixo. Se a rodada rígida não render nenhuma pauta nova, ela pode
-  // aparecer como reserva para o editor conferir a fonte antes de criar.
-  if (!novas.length) {
+  // exatas do eixo. Elas completam a rodada quando houver poucas pautas fortes,
+  // sempre sinalizadas para o editor conferir a fonte antes de criar.
+  if (novas.length < limiteDesejado) {
     const reservas = avaliadas
       .filter((pauta) => pauta.descarte === 'Sem fato concreto compatível com o segmento')
       .filter((pauta) => /^https?:\/\//i.test(String(pauta.link || pauta.url || '')))
@@ -570,11 +572,12 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
         motivo: `${pauta.eixoNome} · pauta relacionada para revisão`,
       }));
     if (reservas.length) {
-      marcadas = await materiaIaService.marcarJaPublicados(userId, facebookPageId, reservas, {
+      const reservasMarcadas = await materiaIaService.marcarJaPublicados(userId, facebookPageId, reservas, {
         todasPaginas: false,
         limiteHistorico: 5000,
       });
-      novas = marcadas.filter((pauta) => !pauta.jaPublicado);
+      totalJaUsado += reservasMarcadas.filter((pauta) => pauta.jaPublicado).length;
+      novas = deduplicar([...novas, ...reservasMarcadas.filter((pauta) => !pauta.jaPublicado)]);
     }
   }
   const selecionado = eixoPorId(eixo);
@@ -608,11 +611,14 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
     topicos,
     totalAnalisado: candidatas.length,
     totalColetado: brutas.length,
-    totalDescartado: avaliadas.filter((pauta) => pauta.descarte).length,
+    totalDescartado: avaliadas.filter(
+      (pauta) => pauta.descarte && pauta.descarte !== 'Sem fato concreto compatível com o segmento'
+    ).length,
+    totalEmRevisao: novas.filter((pauta) => pauta.reservaEditorial).length,
     complementoPublico,
     totalClaude: brutas.filter((pauta) => pauta.origemPesquisa === 'claude').length,
     avisoClaude: resultadoClaude.aviso,
-    totalJaUsado: marcadas.filter((pauta) => pauta.jaPublicado).length,
+    totalJaUsado,
     periodo: periodoSeguro,
     eixo: selecionado?.id || 'all',
     perfil: PERFIL_PUBLICO,
