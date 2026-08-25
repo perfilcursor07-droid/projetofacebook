@@ -83,8 +83,9 @@ app.post('/login', async (req, res, next) => {
 
 app.get('/conteudo', requireAuth, require('./controllers/materiasIaController').listPage);
 app.get('/materia-manual', requireAuth, (_req, res) => renderPage(res, 'materia-manual', 'Matéria manual'));
+app.get('/virais', requireAuth, require('./controllers/viraisController').showPage);
 app.get('/conteudo/lote', requireAuth, require('./controllers/materiasIaController').showLotePage);
-app.get('/viralizar', requireAuth, (_req, res) => res.redirect('/conteudo'));
+app.get('/viralizar', requireAuth, (_req, res) => res.redirect('/virais'));
 app.get('/busca', requireAuth, (_req, res) => renderPage(res, 'busca', 'Vídeos'));
 app.get('/materias-ia', requireAuth, require('./controllers/materiasIaController').listPage);
 app.get('/biblioteca', requireAuth, require('./controllers/bibliotecaController').listPage);
@@ -112,6 +113,7 @@ app.use('/api/clips', requireAuth, require('./routes/clips'));
 app.use('/api/publications', requireAuth, require('./routes/publications'));
 app.use('/api/materias-ia/chat-extras', requireAuth, require('./routes/materiaChatExtras'));
 app.use('/api/materias-ia', requireAuth, require('./routes/materiasIa'));
+app.use('/api/virais', requireAuth, require('./routes/virais'));
 app.use('/api/biblioteca', requireAuth, require('./routes/biblioteca'));
 app.use('/api/youtube-cookies', requireAuth, require('./routes/ytCookies'));
 app.use('/api/midias', require('./routes/midias'));
