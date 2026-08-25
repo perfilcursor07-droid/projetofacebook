@@ -69,6 +69,7 @@
     el.resumo.textContent = `${state.topicos.length} pauta(s) selecionadas entre ${data.totalColetado || data.totalAnalisado || 0} coletadas` +
       (data.totalDescartado ? ` · ${data.totalDescartado} fora do perfil` : '') +
       (data.totalJaUsado ? ` · ${data.totalJaUsado} já usada(s)` : '') +
+      (data.totalClaude ? ` · ${data.totalClaude} encontrada(s) pelo Claude` : '') +
       (data.complementoPublico ? ` · ${data.complementoPublico} a partir do histórico da Página` : '') +
       (state.topicos.length > 0 && state.topicos.length < 10 ? ' · a lista não foi completada com pautas fracas' : '');
 
@@ -94,6 +95,9 @@
       const eixo = criarElemento('span', `rounded px-1.5 py-0.5 font-semibold ${topico.grupo === 'principal' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-sky-500/10 text-sky-300'}`, topico.eixoNome || 'Pauta');
       const score = criarElemento('span', `rounded px-1.5 py-0.5 font-semibold ${Number(topico.potencialCompartilhamento) >= 8 ? 'bg-orange-500/15 text-orange-300' : 'bg-slate-800 text-slate-400'}`, `${topico.potencialCompartilhamento || 0}/10 compartilhamento`);
       meta.append(eixo, score);
+      if (topico.origemPesquisa === 'claude') {
+        meta.appendChild(criarElemento('span', 'rounded bg-violet-500/10 px-1.5 py-0.5 font-semibold text-violet-300', 'Pesquisa Claude'));
+      }
       const dataLabel = formatarData(topico);
       if (dataLabel) meta.appendChild(criarElemento('span', 'text-slate-600', dataLabel));
       body.appendChild(meta);
@@ -136,7 +140,7 @@
 
   function renderLoading() {
     el.results.classList.remove('hidden');
-    el.resumo.textContent = 'Google News, Brave e fontes disponíveis estão sendo consultados…';
+    el.resumo.textContent = 'Claude está pesquisando na web; Google News e Brave serão usados como apoio…';
     el.list.replaceChildren();
     for (let i = 0; i < 5; i += 1) {
       el.list.appendChild(criarElemento('div', 'h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/60'));
@@ -150,7 +154,7 @@
     const submit = el.form.querySelector('button[type="submit"]');
     submit.disabled = true;
     renderLoading();
-    setStatus('Pesquisando fatos recentes dentro do perfil da JM Notícia…');
+    setStatus('Claude está pesquisando e selecionando fatos recentes para o público da JM Notícia…');
     try {
       const data = await api('/api/virais/pesquisar', {
         eixo: el.eixo.value,
@@ -159,7 +163,11 @@
         limite: el.eixo.value === 'all' ? 10 : 20,
       });
       renderTopicos(data);
-      setStatus(`${(data.topicos || []).length} pauta(s) nova(s) prontas para avaliação${data.doCache ? ' · resultado recente reutilizado' : ''}.`);
+      setStatus(
+        `${(data.topicos || []).length} pauta(s) nova(s) prontas para avaliação${data.doCache ? ' · resultado recente reutilizado' : ''}.` +
+        (data.avisoClaude ? ` Pesquisa nativa indisponível (${data.avisoClaude}); usei os buscadores de apoio.` : ''),
+        false
+      );
     } catch (err) {
       el.results.classList.add('hidden');
       setStatus(err.message || 'Não foi possível pesquisar as pautas.', true);

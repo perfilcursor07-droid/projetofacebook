@@ -2,6 +2,11 @@ const { pesquisarNichos, titulosSimilares } = require('./newsResearch');
 
 const CACHE_PESQUISA_MS = 5 * 60 * 1000;
 const cachePesquisas = new Map();
+const PERIODOS_LABEL = Object.freeze({
+  '24h': 'nas últimas 24 horas',
+  '3d': 'nos últimos 3 dias',
+  '7d': 'nos últimos 7 dias',
+});
 
 const EIXOS = Object.freeze([
   Object.freeze({
@@ -282,6 +287,123 @@ function consultasDaPesquisa({ eixo = 'all', termo = '' } = {}) {
   return eixos.map((item) => ({ eixo: item.id, consulta: item.consulta }));
 }
 
+function montarPromptPesquisaClaude({ eixo = 'all', termo = '', periodo = '7d', limite = 10 } = {}) {
+  const selecionado = eixoPorId(eixo);
+  const quantidade = Math.max(3, Math.min(15, Number(limite) || 10));
+  const assunto = String(termo || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+  return [
+    'Use obrigatoriamente a pesquisa na web da sua conta Claude para encontrar pautas jornalísticas reais e recentes.',
+    `Pesquise ${PERIODOS_LABEL[periodo] || PERIODOS_LABEL['7d']} e selecione no máximo ${quantidade} pautas realmente fortes para a página JM Notícia.`,
+    assunto ? `ASSUNTO PEDIDO PELO EDITOR: ${assunto}` : null,
+    selecionado ? `SEGMENTO ESCOLHIDO: ${selecionado.nome}.` : null,
+    '',
+    'PÚBLICO COMPROVADO:',
+    '- Brasileiro adulto, pentecostal, com forte interesse em Assembleia de Deus.',
+    '- Prioridade: conflito ou decisão denominacional, memória pentecostal com descoberta/fato novo, escatologia e polêmica gospel concreta.',
+    '- Apostas secundárias: história humana extraordinária de fé e superação em vida, pesquisa científica ligada à fé e cura/sobrevivência/conversão com desfecho positivo.',
+    '',
+    'REJEITE, MESMO QUE PRECISE DEVOLVER POUCAS PAUTAS:',
+    '- biografia, perfil, lista de músicas, idade, esposa, filhos ou curiosidades de celebridade;',
+    '- devocional, reflexão, metáfora, opinião ou artigo sem acontecimento novo;',
+    '- agenda, conferência, visita, lançamento ou comunicado institucional rotineiro;',
+    '- política sem um conflito religioso central e explícito;',
+    '- morte, tragédia ou perseguição sem superação em vida;',
+    '- fato local de Tocantins, pauta antiga, fonte sem reportagem direta ou assunto já repetido;',
+    '- resultado que só contém palavras da busca, mas não pertence de verdade ao segmento.',
+    '',
+    'REGRAS DE APURAÇÃO:',
+    '- Faça buscas diferentes até encontrar fatos concretos; não complete a quantidade com pautas fracas.',
+    '- Abra os resultados e use apenas reportagens que realmente sustentem o título e o resumo.',
+    '- Cada pauta precisa ter URL direta da reportagem, veículo e data de publicação.',
+    '- Não invente título, fato, data, veículo ou URL. Não escreva a matéria agora.',
+    '- potencial deve ser de 1 a 10 e só pode ser 8 ou mais quando houver gatilho de compartilhamento claro.',
+    '',
+    'Retorne SOMENTE JSON válido neste formato:',
+    '{"pautas":[{"titulo":"...","resumo":"fato central em 2 frases","url":"https://...","veiculo":"...","data":"AAAA-MM-DD","eixo":"denominacional|memoria|escatologia|polemica_gospel|historia_universal|fe_ciencia|cura_conversao","potencial":8,"motivo":"por que interessa ao público em até 12 palavras"}]}',
+  ]
+    .filter((linha) => linha !== null)
+    .join('\n');
+}
+
+function normalizarPautasClaude(raw) {
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    let limpo = raw
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '');
+    // A pesquisa nativa às vezes acrescenta uma frase antes ou depois do JSON.
+    // Aproveita o objeto completo sem aceitar uma resposta que não seja parseável.
+    if (!limpo.startsWith('{') || !limpo.endsWith('}')) {
+      const inicio = limpo.indexOf('{');
+      const fim = limpo.lastIndexOf('}');
+      if (inicio >= 0 && fim > inicio) limpo = limpo.slice(inicio, fim + 1);
+    }
+    try {
+      parsed = JSON.parse(limpo);
+    } catch {
+      parsed = {};
+    }
+  }
+  return (Array.isArray(parsed?.pautas) ? parsed.pautas : [])
+    .map((pauta, index) => {
+      const url = String(pauta?.url || pauta?.link || '').trim();
+      const eixo = eixoPorId(pauta?.eixo);
+      const data = String(pauta?.data || '').trim().slice(0, 40) || null;
+      const dataTimestamp = data ? Date.parse(data) : NaN;
+      return {
+        id: `claude-${index + 1}`,
+        titulo: String(pauta?.titulo || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+        resumo: String(pauta?.resumo || '').replace(/\s+/g, ' ').trim().slice(0, 900),
+        link: /^https?:\/\//i.test(url) ? url.slice(0, 1000) : '',
+        veiculo: String(pauta?.veiculo || 'Web').replace(/\s+/g, ' ').trim().slice(0, 120),
+        data,
+        dataTimestamp: Number.isFinite(dataTimestamp) ? dataTimestamp : null,
+        eixoPesquisa: eixo?.id || null,
+        potencialClaude: Math.max(1, Math.min(10, Number(pauta?.potencial) || 1)),
+        motivoClaude: String(pauta?.motivo || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+        origemPesquisa: 'claude',
+      };
+    })
+    .filter((pauta) => pauta.titulo && pauta.resumo && pauta.link && pauta.eixoPesquisa);
+}
+
+async function pesquisarComClaude({ userId, facebookPageId, eixo, termo, periodo, limite } = {}) {
+  const deepseekService = require('./deepseekService');
+  if (!deepseekService.usarTokenFree('conversa')) {
+    return { pautas: [], aviso: 'A pesquisa nativa do Claude não está habilitada no Token-Free Gateway.' };
+  }
+  const prompt = montarPromptPesquisaClaude({ eixo, termo, periodo, limite });
+  try {
+    const raw = await require('./tokenFreeGatewayService').chatCompletion(
+      [
+        {
+          role: 'system',
+          content: 'Você é o pesquisador editorial da JM Notícia. Pesquise antes de responder e seja extremamente seletivo.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      {
+        temperature: 0.15,
+        json: true,
+        tarefa: 'conversa',
+        webSearch: true,
+        conversationId: `viralizeai:user:${Number(userId) || 0}:page:${Number(facebookPageId) || 0}:virais`,
+        conversationName: 'ViralizeAI — Virais JM',
+      }
+    );
+    const toleranciaDias = periodo === '24h' ? 2 : periodo === '3d' ? 4 : 8;
+    const limiteData = Date.now() - toleranciaDias * 24 * 60 * 60 * 1000;
+    const pautas = normalizarPautasClaude(raw).filter(
+      (pauta) => pauta.dataTimestamp && pauta.dataTimestamp >= limiteData
+    );
+    return { pautas, aviso: null };
+  } catch (err) {
+    console.warn('[virais-jm] pesquisa nativa do Claude:', err.message);
+    return { pautas: [], aviso: `Claude: ${err.message}` };
+  }
+}
+
 async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '', periodo = '7d', limite = 10 } = {}) {
   const periodoSeguro = ['24h', '3d', '7d'].includes(String(periodo)) ? String(periodo) : '7d';
   const chaveCache = [
@@ -297,8 +419,16 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
     return { ...cached.resultado, doCache: true };
   }
   const consultas = consultasDaPesquisa({ eixo, termo });
-  const resultados = await Promise.all(
-    consultas.map(async (item) => {
+  const [resultadoClaude, resultados] = await Promise.all([
+    pesquisarComClaude({
+      userId,
+      facebookPageId,
+      eixo,
+      termo,
+      periodo: periodoSeguro,
+      limite: Math.max(10, Number(limite) || 10),
+    }),
+    Promise.all(consultas.map(async (item) => {
       try {
         const lista = await pesquisarNichos(item.consulta, eixo === 'all' && !termo ? 4 : 12, {
           periodo: periodoSeguro,
@@ -310,10 +440,12 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
         console.warn(`[virais-jm] pesquisa ${item.eixo || 'manual'}:`, err.message);
         return [];
       }
-    })
-  );
+    })),
+  ]);
 
-  let brutas = deduplicar(resultados.flat());
+  // Claude é o pesquisador principal. Google News/Brave entram como apoio e
+  // podem preencher lacunas, mas todos passam pelo mesmo filtro factual.
+  let brutas = deduplicar([...resultadoClaude.pautas, ...resultados.flat()]);
   let avaliadas = brutas.map((pauta) => avaliarPauta(pauta, pauta.eixoPesquisa));
   let candidatas = avaliadas.filter((pauta) => !pauta.descarte);
   let complementoPublico = 0;
@@ -367,8 +499,11 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
     eixo: pauta.eixo,
     eixoNome: pauta.eixoNome,
     grupo: pauta.grupo,
-    potencialCompartilhamento: pauta.potencialCompartilhamento,
-    motivo: pauta.motivo,
+    potencialCompartilhamento: pauta.origemPesquisa === 'claude'
+      ? Math.max(pauta.potencialCompartilhamento, pauta.potencialClaude || 1)
+      : pauta.potencialCompartilhamento,
+    motivo: pauta.motivoClaude || pauta.motivo,
+    origemPesquisa: pauta.origemPesquisa || 'buscadores',
   }));
 
   const resposta = {
@@ -377,6 +512,8 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
     totalColetado: brutas.length,
     totalDescartado: avaliadas.filter((pauta) => pauta.descarte).length,
     complementoPublico,
+    totalClaude: brutas.filter((pauta) => pauta.origemPesquisa === 'claude').length,
+    avisoClaude: resultadoClaude.aviso,
     totalJaUsado: marcadas.filter((pauta) => pauta.jaPublicado).length,
     periodo: periodoSeguro,
     eixo: selecionado?.id || 'all',
@@ -388,7 +525,11 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
   }
   // Resultado vazio não entra no cache: o editor pode tentar novamente logo
   // após uma oscilação do Google/Brave sem ficar preso por cinco minutos.
-  if (topicos.length) cachePesquisas.set(chaveCache, { em: Date.now(), resultado: resposta });
+  // Se a pesquisa nativa caiu, não prende o editor por cinco minutos ao
+  // resultado dos buscadores auxiliares: a próxima tentativa consulta Claude.
+  if (topicos.length && !resultadoClaude.aviso) {
+    cachePesquisas.set(chaveCache, { em: Date.now(), resultado: resposta });
+  }
   return resposta;
 }
 
@@ -522,5 +663,8 @@ module.exports = {
   pesquisarPautas,
   invalidarCacheDoUsuario,
   montarPromptDeRedacao,
+  montarPromptPesquisaClaude,
+  normalizarPautasClaude,
+  pesquisarComClaude,
   gerarRascunhos,
 };

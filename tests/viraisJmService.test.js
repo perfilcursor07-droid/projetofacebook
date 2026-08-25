@@ -149,6 +149,48 @@ test('consultas padrão são curtas para não zerar o Google News', () => {
   assert.ok(consultas.every((item) => item.consulta.split(/\s+/).length <= 4));
 });
 
+test('prompt pede pesquisa nativa seletiva e permite retornar poucas pautas', () => {
+  const prompt = service.montarPromptPesquisaClaude({ periodo: '7d', limite: 10 });
+
+  assert.match(prompt, /Use obrigatoriamente a pesquisa na web/);
+  assert.match(prompt, /não complete a quantidade com pautas fracas/i);
+  assert.match(prompt, /biografia, perfil, lista de músicas/i);
+  assert.match(prompt, /Retorne SOMENTE JSON válido/i);
+});
+
+test('normalização do resultado do Claude mantém apenas pauta com fonte e eixo válidos', () => {
+  const pautas = service.normalizarPautasClaude(`Pesquisa concluída.\n${JSON.stringify({
+    pautas: [
+      {
+        titulo: 'CGADB publica decisão que muda regra interna',
+        resumo: 'A convenção publicou uma circular e dirigentes reagiram à mudança.',
+        url: 'https://exemplo.com/cgadb-regra',
+        veiculo: 'Fonte Teste',
+        data: '2026-08-24',
+        eixo: 'denominacional',
+        potencial: 9,
+        motivo: 'Decisão concreta com repercussão assembleiana',
+      },
+      {
+        titulo: 'Pauta inventada sem fonte',
+        resumo: 'Não possui URL.',
+        eixo: 'polemica_gospel',
+      },
+      {
+        titulo: 'Pauta com eixo inexistente',
+        resumo: 'Tem URL, mas não pertence ao perfil.',
+        url: 'https://exemplo.com/invalida',
+        eixo: 'celebridades',
+      },
+    ],
+  })}\nUsei somente fontes diretas.`);
+
+  assert.equal(pautas.length, 1);
+  assert.equal(pautas[0].origemPesquisa, 'claude');
+  assert.equal(pautas[0].potencialClaude, 9);
+  assert.equal(pautas[0].dataTimestamp, Date.parse('2026-08-24'));
+});
+
 test('lista geral reserva sete pautas principais e três secundárias', () => {
   const principais = Array.from({ length: 12 }, (_, index) => ({
     id: `p${index}`,
