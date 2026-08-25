@@ -676,6 +676,7 @@
       /\bbriefing\s+(?:do|da)\s+jm\b/i.test(texto) ||
       /\b(?:eixos?|pauta)\s+(?:do|da)\s+jm\s+not[ií]cia\b/i.test(texto) ||
       /\bsem\s+(?:qualquer\s+)?[aâ]ngulo\s+religioso\b/i.test(texto) ||
+      /\b(?:n[ãa]o\s+tenho\s+como\s+(?:gravar|salvar|memorizar)|(?:orienta[cç][oõ]es?|prefer[eê]ncias?|regras?)[\s\S]{0,45}(?:gravadas?|salvas?|memorizadas?)|mem[oó]ria\s+atualizada)\b/i.test(texto) ||
       /\bposso\s+(?:seguir|pesquisar|buscar)\b/i.test(texto) ||
       /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto)
     );
@@ -1033,10 +1034,10 @@
     acoes.appendChild(salvar);
     acoes.appendChild(copiar);
     acoes.appendChild(ajustar);
-    if (!livre) acoes.appendChild(ensinar);
+    acoes.appendChild(ensinar);
     acoes.appendChild(aviso);
     box.appendChild(acoes);
-    if (!livre) box.appendChild(painelEnsinar);
+    box.appendChild(painelEnsinar);
 
     if (mensagem.matterId) {
       salvar.disabled = true;

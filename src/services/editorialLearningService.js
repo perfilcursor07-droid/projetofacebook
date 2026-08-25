@@ -83,6 +83,16 @@ function sliceSafe(s, max = MAX_TRECHO) {
   return `${t.slice(0, max - 1).trim()}…`;
 }
 
+/** Preserva começo e fim; a regra mais recente costuma vir no fim do prompt. */
+function recortarPedidoParaMemoria(s, max = 7000) {
+  const t = normText(s);
+  if (t.length <= max) return t;
+  const metade = Math.floor((max - 80) / 2);
+  return `${t.slice(0, metade).trim()}\n\n[...trecho intermediário omitido...]\n\n${t
+    .slice(-metade)
+    .trim()}`;
+}
+
 function diffSignificativo(antes, depois) {
   const a = normText(antes);
   const b = normText(depois);
@@ -307,7 +317,7 @@ Não memorize:
 - conteúdo inventado pela resposta anterior;
 - senhas, chaves, dados pessoais ou URLs.
 
-Escreva cada memória como instrução curta, objetiva e reutilizável. Remova duplicatas. Se a nova preferência contrariar uma antiga, mantenha somente a mais recente. Máximo de ${MAX_MEMORIAS_CHAT} memórias.`,
+Escreva cada memória como instrução curta, objetiva e reutilizável. Remova duplicatas. Se a nova preferência contrariar uma antiga, mantenha somente a mais recente. Dentro da própria mensagem nova, uma correção escrita no final também substitui a regra conflitante que apareceu antes. Máximo de ${MAX_MEMORIAS_CHAT} memórias.`,
       },
       {
         role: 'user',
@@ -316,7 +326,7 @@ Escreva cada memória como instrução curta, objetiva e reutilizável. Remova d
           respostaAnterior
             ? `RESPOSTA ANTERIOR DA IA (somente para entender a correção; não memorize fatos):\n${sliceSafe(respostaAnterior, 2500)}`
             : null,
-          `NOVA MENSAGEM DO USUÁRIO:\n${texto.slice(0, 2500)}`,
+          `NOVA MENSAGEM DO USUÁRIO:\n${recortarPedidoParaMemoria(texto)}`,
           'Atualize a memória apenas se houver preferência duradoura.',
         ]
           .filter(Boolean)

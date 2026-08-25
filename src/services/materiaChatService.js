@@ -1547,6 +1547,7 @@ function respostaLivreEhDePesquisaOuEscolha(conteudo) {
     /\bbriefing\s+(?:do|da)\s+jm\b/i.test(texto) ||
     /\b(?:eixos?|pauta)\s+(?:do|da)\s+jm\s+not[ií]cia\b/i.test(texto) ||
     /\bsem\s+(?:qualquer\s+)?[aâ]ngulo\s+religioso\b/i.test(texto) ||
+    /\b(?:n[ãa]o\s+tenho\s+como\s+(?:gravar|salvar|memorizar)|(?:orienta[cç][oõ]es?|prefer[eê]ncias?|regras?)[\s\S]{0,45}(?:gravadas?|salvas?|memorizadas?)|mem[oó]ria\s+atualizada)\b/i.test(texto) ||
     /\bposso\s+(?:seguir|pesquisar|buscar)\b/i.test(texto) ||
     /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto)
   );
@@ -2190,19 +2191,42 @@ async function responder({
   }
 
   const conversaLivre = (chat.modo === 'livre' ? 'livre' : tipoSolicitado) === 'livre';
-  let contextoAprendizado = null;
-  let politicasEditor = { omitirVeiculoNoCorpo: false };
-  if (!conversaLivre) {
-    try {
-      const learning = require('./editorialLearningService');
-      contextoAprendizado = await learning.obterContextoAprendizado(userId);
-      politicasEditor = learning.analisarOrientacoesEditor(contextoAprendizado);
-    } catch (err) {
-      console.warn('[materia-chat] carregar memória editorial:', err.message);
-    }
-  }
-
   const anteriores = await AiChatMessages.findByChat(chat.id);
+  const pedidoMemoriaEditorial = conversaLivre && (
+    /\b(?:grave|gravar|salve|salvar|memorize|guarde|aprenda)\b[\s\S]{0,180}\b(?:pr[oó]xim|futur|conte[uú]do|mat[eé]ria|conversa|sempre)\b/i.test(pedido) ||
+    /\b(?:para|pras?)\s+(?:os\s+)?pr[oó]ximos?\s+(?:conte[uú]dos?|mat[eé]rias?|pedidos?)\b/i.test(pedido)
+  );
+  let contextoAprendizado = null;
+  let memoriaEditorialLivre = null;
+  let memoriaLivreGravada = null;
+  let politicasEditor = { omitirVeiculoNoCorpo: false };
+  try {
+    const learning = require('./editorialLearningService');
+    if (pedidoMemoriaEditorial) {
+      const ultimaResposta = [...anteriores]
+        .reverse()
+        .find((mensagem) => mensagem?.role === 'assistant');
+      memoriaLivreGravada = await learning.registrarFeedbackDoChat({
+        userId,
+        pedido,
+        respostaAnterior: ultimaResposta?.content || null,
+      });
+      if (memoriaLivreGravada?.registered) {
+        console.info(
+          `[claude-livre] memória editorial gravada para user #${userId}: ${memoriaLivreGravada.memorias.length} regra(s)`
+        );
+      }
+    }
+    contextoAprendizado = await learning.obterContextoAprendizado(userId);
+    memoriaEditorialLivre = learning.formatarContextoAprendizadoParaPrompt(
+      contextoAprendizado
+    );
+    if (!conversaLivre) {
+      politicasEditor = learning.analisarOrientacoesEditor(contextoAprendizado);
+    }
+  } catch (err) {
+    console.warn('[materia-chat] carregar/gravar memória editorial:', err.message);
+  }
 
   const userMessageId = await AiChatMessages.create({
     chat_id: chat.id,
@@ -2225,6 +2249,12 @@ async function responder({
     passos.push(passo);
     onEvent({ tipo: 'passo', passo });
   };
+  if (memoriaLivreGravada?.registered) {
+    registrarPasso({
+      kind: 'checagem',
+      texto: 'Preferências gravadas para as próximas matérias e conversas.',
+    });
+  }
 
   /** Chat comum: salva texto e fontes sem interpretar como matéria editorial. */
   const finalizarLivre = async (resposta, { fontesUsadas = [], usouWeb = false } = {}) => {
@@ -2368,7 +2398,7 @@ async function responder({
       }
     }
 
-    if (pesquisarWeb) {
+    if (pesquisarWeb && !pedidoMemoriaEditorial) {
       registrarPasso({ kind: 'pesquisa', texto: 'Pesquisando na internet…' });
       try {
         const consultaLivre = pedido
@@ -2406,7 +2436,7 @@ async function responder({
     }
     fontesWeb = fontesUnicas.slice(0, 12);
 
-    const pediuPesquisaClaude =
+    const pediuPesquisaClaude = !pedidoMemoriaEditorial &&
       /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
         pedido
       );
@@ -2425,6 +2455,8 @@ async function responder({
       pedido,
       historico: historicoLivre,
       fontesWeb,
+      memoriaEditorial: memoriaEditorialLivre,
+      memoriaAcabouDeGravar: Boolean(memoriaLivreGravada?.registered),
       onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
       // O histórico da conversa já é enviado acima. Cada pergunta recebe uma
       // sessão remota nova para que instruções persistidas acidentalmente no
