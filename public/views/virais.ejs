@@ -5,59 +5,14 @@
 %>
 
 <main class="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-8" id="virais-page" data-pagina-id="<%= pagina?.id || '' %>">
-  <div class="flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <div class="flex items-center gap-2">
-        <h1 class="text-xl font-semibold text-white sm:text-2xl">Virais</h1>
-        <span class="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-300">Claude editorial</span>
-      </div>
-      <p class="mt-1 max-w-3xl text-sm text-slate-400">
-        Pesquisa pautas recentes para o público da JM Notícia e transforma as escolhidas em matérias completas, com fontes, hashtags e títulos alternativos.
-      </p>
-    </div>
-    <a href="/minhas-materias?status=rascunho" class="rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-emerald-500 hover:text-emerald-300">
-      Abrir rascunhos
-    </a>
-  </div>
-
   <% if (!pagina) { %>
-    <div class="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+    <div class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
       Defina uma página padrão antes de usar este módulo.
       <a href="/paginas" class="font-semibold text-amber-300 underline underline-offset-2">Configurar em Páginas</a>
     </div>
-  <% } else { %>
-    <div class="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs text-slate-400">
-      <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
-      Página analisada: <strong class="font-medium text-slate-200"><%= pagina.nome %></strong>
-    </div>
   <% } %>
 
-  <section class="mt-5 grid gap-3 lg:grid-cols-[1.25fr_.75fr]">
-    <div class="rounded-xl border border-slate-800 bg-slate-900/45 p-4">
-      <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Perfil comprovado do público</p>
-      <h2 class="mt-1 text-base font-semibold text-white">Pentecostal brasileiro, com forte interesse em Assembleia de Deus</h2>
-      <p class="mt-2 text-sm leading-6 text-slate-400">
-        A seleção prioriza conflito e decisão denominacional, memória pentecostal, escatologia e polêmicas gospel. Histórias universais, fé e ciência e testemunhos com esperança entram como apostas de alto retorno.
-      </p>
-      <div class="mt-3 flex flex-wrap gap-2 text-[11px]">
-        <span class="rounded-md bg-emerald-500/10 px-2 py-1 text-emerald-300">7 pautas do eixo principal</span>
-        <span class="rounded-md bg-sky-500/10 px-2 py-1 text-sky-300">3 apostas do eixo secundário</span>
-        <span class="rounded-md bg-violet-500/10 px-2 py-1 text-violet-300">Foco em compartilhamento</span>
-      </div>
-    </div>
-    <div class="rounded-xl border border-slate-800 bg-slate-900/45 p-4">
-      <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">O sistema evita</p>
-      <ul class="mt-2 space-y-1.5 text-xs leading-5 text-slate-400">
-        <li>• Política sem ângulo religioso central</li>
-        <li>• Notícia local de Tocantins</li>
-        <li>• Reflexão genérica sem fato novo</li>
-        <li>• Tragédia sem superação ou esperança</li>
-        <li>• Pauta já usada ou sem fonte verificável</li>
-      </ul>
-    </div>
-  </section>
-
-  <section class="mt-4 rounded-xl border border-slate-800 bg-slate-900/45 p-4">
+  <section class="<%= pagina ? '' : 'mt-4' %> rounded-xl border border-slate-800 bg-slate-900/45 p-4 sm:p-5">
     <form id="virais-search-form" class="grid gap-3 md:grid-cols-[1.2fr_.55fr_.55fr_auto] md:items-end">
       <label class="text-xs font-medium text-slate-400">
         Segmento da pauta
@@ -81,6 +36,9 @@
           <option value="24h">Últimas 24 horas</option>
           <option value="3d">Últimos 3 dias</option>
           <option value="7d" selected>Últimos 7 dias</option>
+          <option value="30d">Últimos 30 dias</option>
+          <option value="60d">Últimos 60 dias</option>
+          <option value="90d">Últimos 90 dias</option>
         </select>
       </label>
       <label class="text-xs font-medium text-slate-400">
@@ -126,5 +84,5 @@
   </section>
 </main>
 
-<script src="/js/virais.js?v=20260825rapido1"></script>
+<script src="/js/virais.js?v=20260825rapido2"></script>
 <%- include('partials/app-end') %>

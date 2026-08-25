@@ -8,13 +8,19 @@ const USER_AGENT = 'Mozilla/5.0 (compatible; ViralizeAI/1.0)';
 const MS_DIA = 24 * 60 * 60 * 1000;
 const GOOGLE_PYTHON_CACHE = new Map();
 
-function limparResumo(texto, max = 400) {
+function limparResumo(texto, max = 400, titulo = '') {
   let t = decodificarHtml(texto || '')
     .replace(/news\.google\.com[^\s]*/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
-  // Google News costuma repetir o título no resumo — corta ruído típico
+  // Google News costuma repetir o título no resumo — corta ruído típico.
+  const tituloLimpo = decodificarHtml(titulo || '').replace(/\s+/g, ' ').trim();
+  if (tituloLimpo && t.toLocaleLowerCase('pt-BR').startsWith(tituloLimpo.toLocaleLowerCase('pt-BR'))) {
+    t = t.slice(tituloLimpo.length).replace(/^[\s:—–\-]+/, '').trim();
+  }
   t = t.replace(/^Exibir\s+/i, '').trim();
+  // Alguns feeds deixam o nome do portal no final como se fosse conteúdo.
+  t = t.replace(/\s+(?:Exibir|Veja|Leia)\s+[\p{L}\d][\p{L}\d .'-]{1,80}$/iu, '').trim();
   return t.slice(0, max);
 }
 
@@ -140,7 +146,7 @@ function extrairItensRss(xml) {
       itens.push({
         titulo: limparTitulo(titulo),
         link: link.trim(),
-        resumo: limparResumo(descricao),
+        resumo: limparResumo(descricao, 400, titulo),
         data,
         dataTimestamp: parsearDataPub(data),
         veiculo: veiculoRss || undefined,

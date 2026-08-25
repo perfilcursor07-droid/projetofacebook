@@ -7,6 +7,9 @@ const PERIODOS_LABEL = Object.freeze({
   '24h': 'nas últimas 24 horas',
   '3d': 'nos últimos 3 dias',
   '7d': 'nos últimos 7 dias',
+  '30d': 'nos últimos 30 dias',
+  '60d': 'nos últimos 60 dias',
+  '90d': 'nos últimos 90 dias',
 });
 
 const EIXOS = Object.freeze([
@@ -420,7 +423,14 @@ async function pesquisarComClaude({ userId, facebookPageId, eixo, termo, periodo
       PESQUISA_CLAUDE_TIMEOUT_MS,
       'a pesquisa do Claude não respondeu em 35 segundos'
     );
-    const toleranciaDias = periodo === '24h' ? 2 : periodo === '3d' ? 4 : 8;
+    const toleranciaDias = {
+      '24h': 2,
+      '3d': 4,
+      '7d': 8,
+      '30d': 32,
+      '60d': 63,
+      '90d': 94,
+    }[periodo] || 8;
     const limiteData = Date.now() - toleranciaDias * 24 * 60 * 60 * 1000;
     const pautas = normalizarPautasClaude(raw).filter(
       (pauta) => pauta.dataTimestamp && pauta.dataTimestamp >= limiteData
@@ -433,7 +443,9 @@ async function pesquisarComClaude({ userId, facebookPageId, eixo, termo, periodo
 }
 
 async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '', periodo = '7d', limite = 10 } = {}) {
-  const periodoSeguro = ['24h', '3d', '7d'].includes(String(periodo)) ? String(periodo) : '7d';
+  const periodoSeguro = ['24h', '3d', '7d', '30d', '60d', '90d'].includes(String(periodo))
+    ? String(periodo)
+    : '7d';
   const chaveCache = [
     Number(userId) || 0,
     Number(facebookPageId) || 0,
@@ -614,7 +626,9 @@ async function gerarRascunhos({ userId, facebookPageId, pautas = [], tom = 'natu
         tom,
         pesquisarWeb: true,
         palavrasChave: [pauta.titulo, pauta.veiculo].filter(Boolean).join(' '),
-        periodo: ['24h', '3d', '7d'].includes(String(periodo)) ? String(periodo) : '7d',
+        periodo: ['24h', '3d', '7d', '30d', '60d', '90d'].includes(String(periodo))
+          ? String(periodo)
+          : '7d',
         imagemUrl: /^https?:\/\//i.test(String(pauta.imagemUrl || '')) ? pauta.imagemUrl : null,
         creditoImagem: pauta.veiculo ? `Reprodução/${pauta.veiculo}` : 'Reprodução',
         fonteBase: {
