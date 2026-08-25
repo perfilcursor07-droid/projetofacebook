@@ -688,6 +688,9 @@ async function pesquisarNichos(palavrasChave, quantidadePorNicho = 8, opcoes = {
   const filtrarPeriodo = opcoes.somenteRecentes !== false && opcoes.filtrarPeriodo !== false;
   const incluirRedes = Boolean(opcoes.incluirRedesSociais);
   const somenteRedes = Boolean(opcoes.somenteRedesSociais);
+  // A listagem de pautas precisa ser rápida. A leitura completa de cada link é
+  // útil somente quando a pauta for escolhida para virar matéria.
+  const apurar = opcoes.apurar !== false;
   const when = whenParaGoogle(periodo);
 
   const lotes = [];
@@ -713,6 +716,8 @@ async function pesquisarNichos(palavrasChave, quantidadePorNicho = 8, opcoes = {
 
   const limite = Math.min(termos.length * qtd, 80);
   const selecionados = lista.slice(0, limite);
+
+  if (!apurar) return selecionados;
 
   const apurados = [];
   for (const item of selecionados.slice(0, Math.min(limite, 40))) {

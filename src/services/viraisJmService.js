@@ -1,6 +1,7 @@
 const { pesquisarNichos, titulosSimilares } = require('./newsResearch');
 
 const CACHE_PESQUISA_MS = 5 * 60 * 1000;
+const PESQUISA_CLAUDE_TIMEOUT_MS = 35 * 1000;
 const cachePesquisas = new Map();
 const PERIODOS_LABEL = Object.freeze({
   '24h': 'nas últimas 24 horas',
@@ -125,6 +126,14 @@ function contemAlguma(texto, palavras) {
   return palavras.some((palavra) => alvo.includes(normalizar(palavra)));
 }
 
+function comLimiteDeTempo(promessa, ms, mensagem) {
+  let timer = null;
+  const limite = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(mensagem)), ms);
+  });
+  return Promise.race([promessa, limite]).finally(() => clearTimeout(timer));
+}
+
 function eixoPorId(id) {
   const limpo = String(id || '')
     .trim()
@@ -138,17 +147,19 @@ function encaixaNoEixo(pauta, eixo) {
     case 'denominacional':
       return contemAlguma(texto, DENOMINACAO) && contemAlguma(texto, DECISAO_DENOMINACIONAL);
     case 'memoria':
-      return contemAlguma(texto, DENOMINACAO) && contemAlguma(texto, MEMORIA_PENTECOSTAL);
+      // Uma descoberta sobre a memória pentecostal pode citar a igreja ou os
+      // pioneiros, sem repetir literalmente o nome da denominação no título.
+      return contemAlguma(texto, MEMORIA_PENTECOSTAL) && contemAlguma(texto, [...DENOMINACAO, ...RELIGIAO]);
     case 'escatologia':
       return contemAlguma(texto, ESCATOLOGIA) && contemAlguma(texto, RELIGIAO);
     case 'polemica_gospel':
       return contemAlguma(texto, ARTISTA_OU_LIDER_GOSPEL) && contemAlguma(texto, CONFLITO);
     case 'historia_universal':
-      return contemAlguma(texto, PROTAGONISTA) && contemAlguma(texto, ESPERANCA);
+      return contemAlguma(texto, ESPERANCA) && contemAlguma(texto, [...PROTAGONISTA, ...RELIGIAO]);
     case 'fe_ciencia':
       return contemAlguma(texto, CIENCIA) && contemAlguma(texto, PRATICA_DE_FE);
     case 'cura_conversao':
-      return contemAlguma(texto, PROTAGONISTA) && contemAlguma(texto, ESPERANCA);
+      return contemAlguma(texto, ESPERANCA) && contemAlguma(texto, [...PROTAGONISTA, ...RELIGIAO]);
     default:
       return false;
   }
@@ -386,7 +397,7 @@ async function pesquisarComClaude({ userId, facebookPageId, eixo, termo, periodo
   }
   const prompt = montarPromptPesquisaClaude({ eixo, termo, periodo, limite });
   try {
-    const raw = await require('./tokenFreeGatewayService').chatCompletion(
+    const pesquisaClaude = require('./tokenFreeGatewayService').chatCompletion(
       [
         {
           role: 'system',
@@ -397,12 +408,17 @@ async function pesquisarComClaude({ userId, facebookPageId, eixo, termo, periodo
       {
         temperature: 0.15,
         json: true,
-        timeout: 150_000,
+        timeout: PESQUISA_CLAUDE_TIMEOUT_MS,
         tarefa: 'conversa',
         webSearch: true,
         conversationId: `viralizeai:user:${Number(userId) || 0}:page:${Number(facebookPageId) || 0}:virais`,
         conversationName: 'ViralizeAI — Virais JM',
       }
+    );
+    const raw = await comLimiteDeTempo(
+      pesquisaClaude,
+      PESQUISA_CLAUDE_TIMEOUT_MS,
+      'a pesquisa do Claude não respondeu em 35 segundos'
     );
     const toleranciaDias = periodo === '24h' ? 2 : periodo === '3d' ? 4 : 8;
     const limiteData = Date.now() - toleranciaDias * 24 * 60 * 60 * 1000;
@@ -446,6 +462,7 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
           periodo: periodoSeguro,
           filtrarPeriodo: true,
           incluirRedesSociais: false,
+          apurar: false,
         });
         return (lista || []).map((pauta) => ({ ...pauta, eixoPesquisa: item.eixo }));
       } catch (err) {
@@ -462,29 +479,9 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
   let candidatas = avaliadas.filter((pauta) => !pauta.descarte);
   let complementoPublico = 0;
 
-  // O perfil fixo define a linha editorial; o histórico real da Página ajuda
-  // a completar a rodada quando os índices de notícia trazem pouca coisa.
-  if (!eixoPorId(eixo) && !String(termo || '').trim() && candidatas.length < Number(limite || 10)) {
-    try {
-      const viralizarService = require('./viralizarService');
-      const complemento = await viralizarService.curarPautasDoPublico({
-        userId,
-        facebookPageId,
-        limit: Math.max(20, Number(limite) || 10),
-      });
-      const extras = (complemento.topicos || []).map((pauta) => ({
-        ...pauta,
-        link: pauta.link || pauta.url || null,
-        resumo: pauta.resumo || pauta.trecho || '',
-      }));
-      complementoPublico = extras.length;
-      brutas = deduplicar([...brutas, ...extras]);
-      avaliadas = brutas.map((pauta) => avaliarPauta(pauta, pauta.eixoPesquisa));
-      candidatas = avaliadas.filter((pauta) => !pauta.descarte);
-    } catch (err) {
-      console.warn('[virais-jm] complemento pelo histórico:', err.message);
-    }
-  }
+  // A pesquisa do histórico abre dezenas de fontes e atrasava a tela inteira.
+  // A seleção inicial usa as fontes recentes; o histórico continua sendo usado
+  // na classificação de matérias já publicadas, sem bloquear o editor.
 
   const materiaIaService = require('./materiaIaService');
   const marcadas = await materiaIaService.marcarJaPublicados(userId, facebookPageId, candidatas, {

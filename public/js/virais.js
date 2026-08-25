@@ -39,7 +39,7 @@
 
   async function consultarPesquisa(jobId) {
     const inicio = Date.now();
-    while (Date.now() - inicio < 5 * 60 * 1000) {
+    while (Date.now() - inicio < 90 * 1000) {
       await new Promise((resolve) => window.setTimeout(resolve, 2500));
       const res = await fetch(`/api/virais/pesquisar/${encodeURIComponent(jobId)}`, {
         headers: { Accept: 'application/json' },
@@ -50,9 +50,9 @@
       }
       if (res.status === 200 && data.status === 'concluido') return data;
       const segundos = Math.max(1, Math.round((Number(data.decorridoMs) || Date.now() - inicio) / 1000));
-      setStatus(`Claude está pesquisando na web e avaliando as fontes… ${segundos}s`);
+      setStatus(`Pesquisando fontes recentes e avaliando as pautas… ${segundos}s`);
     }
-    throw new Error('A pesquisa do Claude excedeu 5 minutos. Tente novamente.');
+    throw new Error('A pesquisa não concluiu em 90 segundos. Tente novamente.');
   }
 
   function formatarData(topico) {
@@ -158,7 +158,7 @@
 
   function renderLoading() {
     el.results.classList.remove('hidden');
-    el.resumo.textContent = 'Claude está pesquisando na web; Google News e Brave serão usados como apoio…';
+    el.resumo.textContent = 'Pesquisando fontes recentes e separando as pautas do perfil…';
     el.list.replaceChildren();
     for (let i = 0; i < 5; i += 1) {
       el.list.appendChild(criarElemento('div', 'h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/60'));
@@ -172,7 +172,7 @@
     const submit = el.form.querySelector('button[type="submit"]');
     submit.disabled = true;
     renderLoading();
-    setStatus('Claude está pesquisando e selecionando fatos recentes para o público da JM Notícia…');
+    setStatus('Pesquisando e selecionando fatos recentes para o público da JM Notícia…');
     try {
       const inicio = await api('/api/virais/pesquisar/iniciar', {
         eixo: el.eixo.value,
