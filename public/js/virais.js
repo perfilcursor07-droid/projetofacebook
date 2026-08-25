@@ -185,7 +185,7 @@
       renderTopicos(data);
       setStatus(
         `${(data.topicos || []).length} pauta(s) nova(s) prontas para avaliação${data.doCache ? ' · resultado recente reutilizado' : ''}.` +
-        (data.avisoClaude ? ` Pesquisa nativa indisponível (${data.avisoClaude}); usei os buscadores de apoio.` : ''),
+        (data.avisoClaude ? ' As fontes recentes foram usadas enquanto o Claude não retornou a tempo.' : ''),
         false
       );
     } catch (err) {

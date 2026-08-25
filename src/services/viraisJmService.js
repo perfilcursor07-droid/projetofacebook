@@ -106,6 +106,28 @@ const ARTISTA_OU_LIDER_GOSPEL = ['pastor', 'pastora', 'bispo', 'apóstolo', 'apo
 const CIENCIA = ['estudo científico', 'estudo cientifico', 'pesquisa científica', 'pesquisa cientifica', 'cientista', 'universidade', 'pesquisadores', 'neurociência', 'neurociencia'];
 const PRATICA_DE_FE = ['oração', 'oracao', 'jejum', 'fé', 'fe', 'religião', 'religiao', 'culto'];
 const PROTAGONISTA = ['jovem', 'adolescente', 'menino', 'menina', 'mulher', 'homem', 'família', 'familia', 'mãe', 'mae', 'pai', 'criança', 'crianca', 'atleta', 'cantor', 'cantora', 'pastor', 'pastora'];
+const SINAL_FATO_NOVO = [
+  ...CONFLITO,
+  ...ESPERANCA,
+  ...MEMORIA_PENTECOSTAL,
+  ...ESCATOLOGIA,
+  ...CIENCIA,
+  'anuncia',
+  'anunciou',
+  'aprova',
+  'aprovou',
+  'declara',
+  'declarou',
+  'afirma',
+  'revela',
+  'revelou',
+  'lança',
+  'lanca',
+  'lançou',
+  'lancou',
+  'após',
+  'apos',
+];
 
 function normalizar(value) {
   return String(value || '')
@@ -168,6 +190,21 @@ function encaixaNoEixo(pauta, eixo) {
   }
 }
 
+// Os títulos dos portais raramente repetem todas as palavras do eixo. Esta
+// margem controlada aproveita fatos reais ligados ao público, sem deixar passar
+// devocional ou curiosidade: estes continuam barrados nos filtros acima.
+function temAfinidadeEditorial(pauta) {
+  const texto = textoPauta(pauta);
+  const temTema = contemAlguma(texto, [
+    ...RELIGIAO,
+    ...DENOMINACAO,
+    ...MEMORIA_PENTECOSTAL,
+    ...ESCATOLOGIA,
+    ...PRATICA_DE_FE,
+  ]);
+  return temTema && contemAlguma(texto, SINAL_FATO_NOVO);
+}
+
 function detectarEixo(pauta, fallback = null) {
   const texto = textoPauta(pauta);
   const preferido = eixoPorId(fallback);
@@ -178,10 +215,10 @@ function detectarEixo(pauta, fallback = null) {
       (total, palavra) => total + (normalizar(texto).includes(normalizar(palavra)) ? 1 : 0),
       0
     ),
-  }))
-    .filter(({ eixo }) => encaixaNoEixo(pauta, eixo))
-    .sort((a, b) => b.pontos - a.pontos);
-  if (pontuados[0]) return pontuados[0].eixo;
+  })).sort((a, b) => b.pontos - a.pontos);
+  const compativel = pontuados.find(({ eixo }) => encaixaNoEixo(pauta, eixo));
+  if (compativel) return compativel.eixo;
+  if (pontuados[0]?.pontos > 0) return pontuados[0].eixo;
   return preferido || EIXOS[0];
 }
 
@@ -206,7 +243,9 @@ function deveDescartar(pauta, eixo) {
   if (contemAlguma(texto, CATOLICO) && !/evangel|protest|conflito|critica|pol[eê]mica/i.test(texto)) {
     return 'Catolicismo sem ligação explícita com o público evangélico';
   }
-  if (!encaixaNoEixo(pauta, eixo)) return 'Sem fato concreto compatível com o segmento';
+  if (!encaixaNoEixo(pauta, eixo) && !temAfinidadeEditorial(pauta)) {
+    return 'Sem fato concreto compatível com o segmento';
+  }
   if (contemAlguma(texto, SOMBRIO) && !contemAlguma(texto, ESPERANCA)) {
     return 'Desfecho sombrio sem arco de esperança';
   }
