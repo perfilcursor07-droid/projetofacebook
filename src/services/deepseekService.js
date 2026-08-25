@@ -3242,7 +3242,16 @@ async function conversarLivre({
     if (content) messages.push({ role, content: content.slice(0, 12000) });
   }
 
-  let conteudoAtual = texto;
+  const ultimaRespostaLivre = [...(Array.isArray(historico) ? historico : [])]
+    .reverse()
+    .find((mensagem) => mensagem?.role === 'assistant');
+  const respostaTinhaOpcoes = /(?:escolha|selecione|digite|responda\s+com)[\s\S]{0,160}(?:op[cç][aã]o|n[uú]mero)/i.test(
+    String(ultimaRespostaLivre?.content || '')
+  ) && /(?:^|\n)\s*\d{1,2}[.)]\s+\S/m.test(String(ultimaRespostaLivre?.content || ''));
+  const escolhaNumerada = texto.match(/^\s*(\d{1,2})\s*[.)]?\s*$/)?.[1] || null;
+  let conteudoAtual = escolhaNumerada && respostaTinhaOpcoes
+    ? `O editor escolheu a opção ${escolhaNumerada} da sua resposta anterior. Continue exatamente a partir dessa opção, sem repetir a lista.`
+    : texto;
   if (Array.isArray(fontesWeb) && fontesWeb.length) {
     const referencias = fontesWeb
       .slice(0, 8)

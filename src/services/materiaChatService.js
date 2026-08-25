@@ -1511,6 +1511,21 @@ async function criarConversa({
   };
 }
 
+/** Resposta de pesquisa, lista ou orientação não deve virar matéria por tamanho. */
+function respostaLivreEhDePesquisaOuEscolha(conteudo) {
+  const texto = decodificarEntidadesHtmlBasicas(String(conteudo || ''))
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 5000);
+  if (!texto) return false;
+  return (
+    /^(?:vou|deixa eu|permit[aá]-me)s+(?:pesquisar|buscar|procurar)\b/i.test(texto) ||
+    /\b(?:post(?:s)?\s+do\s+x|link\s+do\s+x|linha\s+do\s+tempo|aqui\s+v[aã]o\s+os\s+posts|fontes\s+da\s+apura[cç][aã]o)\b/i.test(texto) ||
+    /\bposso\s+(?:seguir|pesquisar|buscar)\b/i.test(texto) ||
+    /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto)
+  );
+}
+
 /**
  * Converte uma resposta comum do Claude em campos de rascunho.
  * O chat continua livre; a limpeza só acontece quando o usuário decide salvar.
@@ -1526,6 +1541,7 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
     .replace(/<[^>]+>/g, '')
     .trim();
   texto = removerComentariosEditoriaisIa(texto);
+  const devolutivaDePesquisa = respostaLivreEhDePesquisaOuEscolha(texto);
 
   const linhas = texto.split('\n');
   let indiceTitulo = -1;
@@ -1626,10 +1642,11 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
     .slice(0, 180);
 
   return {
-    ehMateria: corpo.length >= 120,
+    ehMateria: corpo.length >= 120 && !devolutivaDePesquisa,
     titulo,
     corpo,
     hashtags: tags,
+    devolutivaDePesquisa,
   };
 }
 
@@ -1639,7 +1656,7 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
  * manchetes para uma simples devolutiva de pesquisa.
  */
 function respostaLivrePodeVirarMateria(info) {
-  if (!info?.ehMateria) return false;
+  if (!info?.ehMateria || info.devolutivaDePesquisa) return false;
   const inicio = `${info.titulo || ''}\n${info.corpo || ''}`
     .replace(/\s+/g, ' ')
     .trim()

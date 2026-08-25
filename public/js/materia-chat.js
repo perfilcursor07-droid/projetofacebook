@@ -652,6 +652,45 @@
     return box;
   }
 
+  function respostaLivreEhDePesquisaOuEscolha(conteudo) {
+    const texto = String(conteudo || '').replace(/\s+/g, ' ').trim().slice(0, 5000);
+    return (
+      /^(?:vou|deixa eu|permit[aá]-me)\s+(?:pesquisar|buscar|procurar)\b/i.test(texto) ||
+      /\b(?:post(?:s)?\s+do\s+x|link\s+do\s+x|linha\s+do\s+tempo|aqui\s+v[aã]o\s+os\s+posts|fontes\s+da\s+apura[cç][aã]o)\b/i.test(texto) ||
+      /\bposso\s+(?:seguir|pesquisar|buscar)\b/i.test(texto) ||
+      /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto)
+    );
+  }
+
+  function blocoEscolhaNumerada(conteudo) {
+    const texto = String(conteudo || '');
+    const pedeEscolha = /\b(?:escolha|selecione|digite|responda\s+com)\s+(?:a\s+)?(?:op[cç][aã]o|n[uú]mero)\b/i.test(texto);
+    const opcoes = [...texto.matchAll(/^\s*(\d{1,2})[.)]\s+\S/gm)]
+      .map((match) => Number(match[1]))
+      .filter((numero, indice, lista) => Number.isFinite(numero) && lista.indexOf(numero) === indice)
+      .slice(0, 8);
+    if (!pedeEscolha || opcoes.length < 2) return null;
+
+    const box = document.createElement('div');
+    box.className = 'mia-msg-panel mt-2 border-emerald-500/30 bg-emerald-500/5';
+    const titulo = document.createElement('p');
+    titulo.className = 'text-xs font-semibold text-emerald-200';
+    titulo.textContent = 'Escolha uma opção';
+    const ajuda = document.createElement('p');
+    ajuda.className = 'mt-1 text-xs leading-5 text-slate-400';
+    ajuda.textContent = `Digite no campo abaixo apenas um número: ${opcoes.join(', ')}.`;
+    const usar = criarBotao(
+      'Digitar uma opção',
+      'mt-2 rounded-lg border border-emerald-500/50 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/10'
+    );
+    usar.addEventListener('click', () => {
+      el.input.placeholder = `Digite uma opção: ${opcoes.join(', ')}`;
+      el.input.focus();
+    });
+    box.append(titulo, ajuda, usar);
+    return box;
+  }
+
   function tituloRascunhoLivre(mensagem) {
     const conteudo = String(mensagem?.content || '').replace(/\\([#*_<>])/g, '$1');
     const explicitos = [
@@ -1690,12 +1729,17 @@
       .slice(0, 900)
       .toLowerCase();
     const devolutivaDePesquisa =
+      respostaLivreEhDePesquisaOuEscolha(mensagem.content) ||
       /^(?:i\s+)?n[ãa]o\s+(?:encontrei|localizei|achei|identifiquei|há|ha)\b/.test(
         inicioRespostaLivre
       ) ||
       /\b(?:posso seguir de duas formas|n[ãa]o encontrei(?:,| nas fontes| nenhum)|casos que já usei nesta conversa)\b/i.test(
         inicioRespostaLivre
       );
+    if (state.tipoConversa === 'livre') {
+      const escolha = blocoEscolhaNumerada(mensagem.content);
+      if (escolha) wrap.appendChild(escolha);
+    }
     const respostaLivreSalvavel =
       state.tipoConversa === 'livre' &&
       mensagem.podeSalvarRascunho !== false &&
