@@ -41,6 +41,24 @@ test('filtro rejeita instituição estrangeira e reflexão genérica', () => {
   assert.match(devocional.descarte, /Reflexão genérica/);
 });
 
+test('filtro separa história universal de agenda institucional estrangeira', () => {
+  const institucional = service.avaliarPauta({
+    titulo: 'Convenção das Assembleias de Deus no Japão elege nova diretoria',
+    resumo: 'A COMADEJA realizou sua assembleia anual.',
+    link: 'https://exemplo.com/japao',
+    eixoPesquisa: 'denominacional',
+  }, 'denominacional');
+  const humana = service.avaliarPauta({
+    titulo: 'Jovem supera diagnóstico após meses de tratamento e oração',
+    resumo: 'O testemunho termina com recuperação e esperança.',
+    link: 'https://exemplo.com/historia',
+    eixoPesquisa: 'historia_universal',
+  }, 'historia_universal');
+
+  assert.match(institucional.descarte, /institucional estrangeira/);
+  assert.equal(humana.descarte, null);
+});
+
 test('pauta denominacional recebe prioridade alta para compartilhamento', () => {
   const pauta = service.avaliarPauta({
     titulo: 'CGADB decide nova regra para pastores da Assembleia de Deus',
@@ -52,6 +70,25 @@ test('pauta denominacional recebe prioridade alta para compartilhamento', () => 
   assert.equal(pauta.eixo, 'denominacional');
   assert.equal(pauta.descarte, null);
   assert.ok(pauta.potencialCompartilhamento >= 8);
+});
+
+test('resultado de uma busca editorial conhecida não é descartado por título curto', () => {
+  const pauta = service.avaliarPauta({
+    titulo: 'Nova decisão provoca reação entre os membros',
+    resumo: 'A circular foi divulgada nesta segunda-feira.',
+    link: 'https://exemplo.com/decisao',
+    eixoPesquisa: 'denominacional',
+  }, 'denominacional');
+
+  assert.equal(pauta.descarte, null);
+  assert.equal(pauta.eixo, 'denominacional');
+});
+
+test('consultas padrão são curtas para não zerar o Google News', () => {
+  const consultas = service.consultasDaPesquisa({ eixo: 'all' });
+
+  assert.equal(consultas.length, 7);
+  assert.ok(consultas.every((item) => item.consulta.split(/\s+/).length <= 4));
 });
 
 test('lista geral reserva sete pautas principais e três secundárias', () => {

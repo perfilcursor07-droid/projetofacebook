@@ -8,49 +8,49 @@ const EIXOS = Object.freeze([
     id: 'denominacional',
     nome: 'Conflitos denominacionais',
     grupo: 'principal',
-    consulta: 'Assembleia de Deus CGADB convenção pastor usos costumes decisão conflito',
+    consulta: 'Assembleia de Deus',
     palavras: ['assembleia de deus', 'cgadb', 'madureira', 'convencao', 'convenção', 'ministerio', 'ministério', 'usos e costumes', 'diacono', 'diácono', 'presbitero', 'presbítero'],
   }),
   Object.freeze({
     id: 'memoria',
     nome: 'Memória pentecostal',
     grupo: 'principal',
-    consulta: 'história Assembleia de Deus pioneiro pentecostal documento antigo Brasil',
+    consulta: 'história Assembleia de Deus',
     palavras: ['historia', 'história', 'pioneir', 'memoria', 'memória', 'fundador', 'documento antigo', 'frida vingren', 'daniel berg', 'gunnar vingren'],
   }),
   Object.freeze({
     id: 'escatologia',
     nome: 'Escatologia e profecia',
     grupo: 'principal',
-    consulta: 'pastor profecia arrebatamento Israel terceiro templo escatologia',
+    consulta: 'arrebatamento pastor',
     palavras: ['profecia', 'arrebatamento', 'escatolog', 'terceiro templo', 'israel', 'apocalipse', 'fim dos tempos'],
   }),
   Object.freeze({
     id: 'polemica_gospel',
     nome: 'Polêmicas do meio gospel',
     grupo: 'principal',
-    consulta: 'cantor gospel polêmica pastor música igreja declaração repercussão',
+    consulta: 'polêmica gospel',
     palavras: ['gospel', 'cantor', 'cantora', 'musica', 'música', 'polemica', 'polêmica', 'declaracao', 'declaração', 'repercussao', 'repercussão'],
   }),
   Object.freeze({
     id: 'historia_universal',
     nome: 'Histórias de fé e superação',
     grupo: 'secundario',
-    consulta: 'jovem testemunho cristão superação coragem fé vitória Jesus',
-    palavras: ['jovem', 'adolescente', 'testemunho', 'superacao', 'superação', 'coragem', 'venceu', 'vitoria', 'vitória', 'fé', 'fe '],
+    consulta: 'jovem testemunho cristão',
+    palavras: ['jovem', 'adolescente', 'testemunho', 'superacao', 'superação', 'coragem', 'venceu', 'vitoria', 'vitória'],
   }),
   Object.freeze({
     id: 'fe_ciencia',
     nome: 'Fé, ciência e saúde',
     grupo: 'secundario',
-    consulta: 'estudo científico oração jejum cérebro saúde mental fé',
+    consulta: 'oração cérebro estudo',
     palavras: ['estudo', 'cientista', 'ciencia', 'ciência', 'cerebro', 'cérebro', 'saude mental', 'saúde mental', 'oracao', 'oração', 'jejum'],
   }),
   Object.freeze({
     id: 'cura_conversao',
     nome: 'Cura, sobrevivência e conversão',
     grupo: 'secundario',
-    consulta: 'cura sobrevivência conversão testemunho cristão esperança milagre',
+    consulta: 'testemunho cura cristão',
     palavras: ['cura', 'curado', 'sobrevive', 'sobrevivencia', 'sobrevivência', 'conversao', 'conversão', 'milagre', 'remissao', 'remissão'],
   }),
 ]);
@@ -63,7 +63,7 @@ const PERFIL_PUBLICO = Object.freeze({
   distribuicao: Object.freeze({ principal: 7, secundario: 3 }),
 });
 
-const POLITICA = ['lula', 'bolsonaro', 'stf', 'eleicao', 'eleição', 'deputado', 'senador', 'partido', 'governo'];
+const POLITICA = ['lula', 'bolsonaro', 'stf', 'eleicao', 'eleição', 'deputado', 'senador', 'partido', 'governo', 'presidente', 'presidenciavel', 'presidenciável', 'candidato'];
 const RELIGIAO = ['pastor', 'pastora', 'igreja', 'evangel', 'gospel', 'crist', 'assembleia de deus', 'bispo', 'culto'];
 const CONFLITO = ['conflito', 'disputa', 'rompe', 'critica', 'crítica', 'proibe', 'proíbe', 'decide', 'decisão', 'polemica', 'polêmica', 'reage', 'denuncia', 'denúncia', 'circular', 'regra'];
 const ESPERANCA = ['cura', 'curado', 'sobrevive', 'vitória', 'vitoria', 'superação', 'superacao', 'conversão', 'conversao', 'coragem', 'milagre'];
@@ -82,6 +82,8 @@ const INSTITUICAO_ESTRANGEIRA = [
   'nfl',
   'nba',
 ];
+const PAIS_ESTRANGEIRO = ['estados unidos', 'eua', 'japão', 'japao', 'inglaterra', 'frança', 'franca', 'alemanha', 'itália', 'italia', 'canadá', 'canada', 'austrália', 'australia'];
+const MARCADOR_INSTITUCIONAL = ['tribunal', 'governo', 'parlamento', 'diretoria', 'convenção', 'convencao', 'liga', 'partido', 'revista', 'departamento', 'comadeja'];
 const CONTEUDO_GENERICO = ['reflexão bíblica', 'reflexao biblica', 'devocional', 'versículo do dia', 'versiculo do dia', 'mensagem bíblica do dia', 'mensagem biblica do dia'];
 
 function normalizar(value) {
@@ -124,9 +126,15 @@ function detectarEixo(pauta, fallback = null) {
 function deveDescartar(pauta, eixo) {
   const texto = textoPauta(pauta);
   const temSinalDoEixo = Array.isArray(eixo?.palavras) && contemAlguma(texto, eixo.palavras);
-  const temReligiao = contemAlguma(texto, RELIGIAO) || temSinalDoEixo;
+  // O Google pode devolver um título curto que não repete as palavras da
+  // consulta. Quando o item veio de uma busca de eixo conhecida, esse contexto
+  // também é um sinal válido; os bloqueios explícitos abaixo continuam ativos.
+  const temReligiao = contemAlguma(texto, RELIGIAO) || temSinalDoEixo || Boolean(pauta?.eixoPesquisa);
   if (contemAlguma(texto, LOCAL_TOCANTINS)) return 'Notícia local de Tocantins';
   if (contemAlguma(texto, INSTITUICAO_ESTRANGEIRA)) return 'Instituição estrangeira sem vínculo direto com o público';
+  if (contemAlguma(texto, PAIS_ESTRANGEIRO) && contemAlguma(texto, MARCADOR_INSTITUCIONAL)) {
+    return 'Notícia institucional estrangeira sem gancho brasileiro';
+  }
   if (contemAlguma(texto, CONTEUDO_GENERICO)) return 'Reflexão genérica sem fato novo';
   if (contemAlguma(texto, POLITICA) && !contemAlguma(texto, RELIGIAO)) {
     return 'Política partidária sem ângulo religioso';
@@ -224,7 +232,7 @@ function consultasDaPesquisa({ eixo = 'all', termo = '' } = {}) {
   const selecionado = eixoPorId(eixo);
   const buscaManual = String(termo || '').replace(/[,;]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
   if (buscaManual) {
-    const complemento = selecionado ? selecionado.consulta : 'evangélico gospel igreja pastor';
+    const complemento = selecionado ? selecionado.consulta.split(/\s+/).slice(0, 3).join(' ') : 'evangélico';
     return [{ eixo: selecionado?.id || null, consulta: `${buscaManual} ${complemento}`.slice(0, 280) }];
   }
   const eixos = selecionado ? [selecionado] : EIXOS;
@@ -262,9 +270,34 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
     })
   );
 
-  const candidatas = deduplicar(resultados.flat())
-    .map((pauta) => avaliarPauta(pauta, pauta.eixoPesquisa))
-    .filter((pauta) => !pauta.descarte);
+  let brutas = deduplicar(resultados.flat());
+  let avaliadas = brutas.map((pauta) => avaliarPauta(pauta, pauta.eixoPesquisa));
+  let candidatas = avaliadas.filter((pauta) => !pauta.descarte);
+  let complementoPublico = 0;
+
+  // O perfil fixo define a linha editorial; o histórico real da Página ajuda
+  // a completar a rodada quando os índices de notícia trazem pouca coisa.
+  if (!eixoPorId(eixo) && !String(termo || '').trim() && candidatas.length < Number(limite || 10)) {
+    try {
+      const viralizarService = require('./viralizarService');
+      const complemento = await viralizarService.curarPautasDoPublico({
+        userId,
+        facebookPageId,
+        limit: Math.max(20, Number(limite) || 10),
+      });
+      const extras = (complemento.topicos || []).map((pauta) => ({
+        ...pauta,
+        link: pauta.link || pauta.url || null,
+        resumo: pauta.resumo || pauta.trecho || '',
+      }));
+      complementoPublico = extras.length;
+      brutas = deduplicar([...brutas, ...extras]);
+      avaliadas = brutas.map((pauta) => avaliarPauta(pauta, pauta.eixoPesquisa));
+      candidatas = avaliadas.filter((pauta) => !pauta.descarte);
+    } catch (err) {
+      console.warn('[virais-jm] complemento pelo histórico:', err.message);
+    }
+  }
 
   const materiaIaService = require('./materiaIaService');
   const marcadas = await materiaIaService.marcarJaPublicados(userId, facebookPageId, candidatas, {
@@ -298,6 +331,9 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
   const resposta = {
     topicos,
     totalAnalisado: candidatas.length,
+    totalColetado: brutas.length,
+    totalDescartado: avaliadas.filter((pauta) => pauta.descarte).length,
+    complementoPublico,
     totalJaUsado: marcadas.filter((pauta) => pauta.jaPublicado).length,
     periodo: periodoSeguro,
     eixo: selecionado?.id || 'all',
@@ -307,7 +343,9 @@ async function pesquisarPautas({ userId, facebookPageId, eixo = 'all', termo = '
   for (const [chave, item] of cachePesquisas.entries()) {
     if (Date.now() - item.em >= CACHE_PESQUISA_MS) cachePesquisas.delete(chave);
   }
-  cachePesquisas.set(chaveCache, { em: Date.now(), resultado: resposta });
+  // Resultado vazio não entra no cache: o editor pode tentar novamente logo
+  // após uma oscilação do Google/Brave sem ficar preso por cinco minutos.
+  if (topicos.length) cachePesquisas.set(chaveCache, { em: Date.now(), resultado: resposta });
   return resposta;
 }
 

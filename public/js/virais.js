@@ -66,8 +66,10 @@
     state.selecionados.clear();
     el.list.replaceChildren();
     el.results.classList.remove('hidden');
-    el.resumo.textContent = `${state.topicos.length} pauta(s) selecionadas entre ${data.totalAnalisado || 0} analisadas` +
-      (data.totalJaUsado ? ` · ${data.totalJaUsado} já usada(s) foram ocultadas` : '');
+    el.resumo.textContent = `${state.topicos.length} pauta(s) selecionadas entre ${data.totalColetado || data.totalAnalisado || 0} coletadas` +
+      (data.totalDescartado ? ` · ${data.totalDescartado} fora do perfil` : '') +
+      (data.totalJaUsado ? ` · ${data.totalJaUsado} já usada(s)` : '') +
+      (data.complementoPublico ? ` · ${data.complementoPublico} a partir do histórico da Página` : '');
 
     if (!state.topicos.length) {
       const vazio = criarElemento('div', 'rounded-xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400', 'Nenhuma pauta nova desse segmento foi encontrada no período. Tente outro eixo ou aumente o período.');
