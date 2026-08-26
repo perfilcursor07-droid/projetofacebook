@@ -17,13 +17,18 @@ function resolveIgCookiesPath() {
  * Parseia linha Netscape (tabs) ou fallback com espaços (File Manager às vezes troca tab).
  */
 function parseNetscapeLine(line) {
-  if (!line || line.startsWith('#')) return null;
+  if (!line) return null;
+  // No formato Netscape, #HttpOnly_ identifica um cookie real; não é comentário.
+  const normalizedLine = line.startsWith('#HttpOnly_')
+    ? line.slice('#HttpOnly_'.length)
+    : line;
+  if (normalizedLine.startsWith('#')) return null;
   let cols;
-  if (line.includes('\t')) {
-    cols = line.split('\t');
+  if (normalizedLine.includes('\t')) {
+    cols = normalizedLine.split('\t');
   } else {
     // domain flag path secure expiry name value...
-    const m = line.match(
+    const m = normalizedLine.match(
       /^(\S+)\s+(TRUE|FALSE)\s+(\S+)\s+(TRUE|FALSE)\s+(\d+)\s+(\S+)\s+(.+)$/i
     );
     if (!m) return null;
@@ -373,4 +378,5 @@ module.exports = {
   bootstrapInstagramSession,
   instagramFailureReason,
   validateInstagramSession,
+  parseNetscapeLine,
 };

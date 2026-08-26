@@ -369,6 +369,73 @@ function captionTrackFromInfo(info) {
   return null;
 }
 
+function parseDirectSubtitlePayload(payload) {
+  const raw = typeof payload === 'string' ? payload : JSON.stringify(payload || '');
+  const timed = parseVtt(raw);
+  if (timed.text && timed.text.length >= 20) return timed;
+
+  const candidates = [];
+  const visit = (value, depth = 0) => {
+    if (!value || depth > 6) return;
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    const text = cleanVttText(value.text || value.caption || value.utf8 || value.content || '');
+    if (text) {
+      const start = Number(value.start ?? value.start_time ?? value.startTime ?? value.tStartMs ?? 0);
+      const end = Number(value.end ?? value.end_time ?? value.endTime ?? value.dDurationMs ?? start + 1);
+      candidates.push({ start, end, text });
+    }
+    for (const child of Object.values(value)) visit(child, depth + 1);
+  };
+  try {
+    visit(typeof payload === 'string' ? JSON.parse(payload) : payload);
+  } catch {
+    return { text: '', segments: [] };
+  }
+  const text = mergeCaptionSegments(candidates);
+  return { text, segments: candidates };
+}
+
+async function tryDirectPlatformSubtitles(subtitleUrl, platform = '') {
+  if (!/^https?:\/\//i.test(String(subtitleUrl || ''))) return null;
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(subtitleUrl);
+  } catch {
+    return null;
+  }
+  const host = parsedUrl.hostname.toLowerCase();
+  if (
+    platform === 'instagram' &&
+    !/(?:instagram\.com|cdninstagram\.com|fbcdn\.net|fbsbx\.com|facebook\.com)$/i.test(host)
+  ) {
+    return null;
+  }
+  try {
+    const response = await axios.get(parsedUrl.toString(), {
+      timeout: Math.min(LIMITES.legendasMs, 25_000),
+      responseType: 'text',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36',
+        Accept: 'text/vtt,text/plain,application/json,application/xml;q=0.9,*/*;q=0.5',
+      },
+    });
+    const parsed = parseDirectSubtitlePayload(response.data);
+    if (!parsed.text || parsed.text.length < 20) return null;
+    return { ...parsed, source: `${platform || 'social'}-platform-subtitles` };
+  } catch (error) {
+    console.warn(
+      `[transcricao] legenda direta do ${platform || 'vídeo'} falhou:`,
+      error.response?.status || error.message
+    );
+    return null;
+  }
+}
+
 /**
  * Lê `captionTracks` do ytInitialPlayerResponse presente no HTML da página.
  * É mais rápido que executar yt-dlp e funciona como uma terceira rota para
@@ -791,10 +858,13 @@ function assertUrlMediaLimits(info) {
 async function transcribeUrl({
   sourceUrl,
   mediaUrl = null,
+  subtitleUrl = null,
   preferSubtitles = true,
   mediaInfo = null,
   allowAudioFallback = true,
   onFallbackToAudio = null,
+  contextText = '',
+  preferAccuracy = false,
 } = {}) {
   const original = String(sourceUrl || '').trim();
   const directMedia = String(mediaUrl || '').trim();
@@ -805,6 +875,12 @@ async function transcribeUrl({
   }
 
   if (preferSubtitles) {
+    const platform = detectPlatformFromUrl(original);
+    const directSubtitles = await tryDirectPlatformSubtitles(subtitleUrl, platform);
+    if (directSubtitles?.text) {
+      console.info(`[transcricao] legenda da plataforma encontrada: ${original}`);
+      return directSubtitles;
+    }
     if (mediaInfo && /(?:youtube\.com|youtu\.be)/i.test(original)) {
       const captions = await tryYouTubeCaptionsFromInfo(mediaInfo);
       if (captions?.text) {
@@ -894,7 +970,10 @@ async function transcribeUrl({
       const inicio = Date.now();
       // faster-whisper/PyAV decodifica m4a/webm diretamente. Evita criar um WAV
       // enorme antes da transcrição e economiza dezenas de segundos por vídeo.
-      return runPythonTranscribe(downloaded).then((r) => {
+      return runPythonTranscribe(downloaded, {
+        initialPrompt: contextText,
+        preferAccuracy,
+      }).then((r) => {
         console.info(
           `[transcricao] Whisper terminou em ${Math.round((Date.now() - inicio) / 1000)}s: ${original}`
         );
@@ -916,6 +995,8 @@ async function transcribeUrl({
         preferSubtitles: false,
         allowAudioFallback,
         onFallbackToAudio,
+        contextText,
+        preferAccuracy,
       });
     }
     throw err;
@@ -987,7 +1068,7 @@ function resolvePythonCommand() {
   return null;
 }
 
-function runPythonTranscribe(mediaPath) {
+function runPythonTranscribe(mediaPath, { initialPrompt = '', preferAccuracy = false } = {}) {
   const python = resolvePythonCommand();
   if (!python) {
     return Promise.reject(
@@ -997,19 +1078,26 @@ function runPythonTranscribe(mediaPath) {
     );
   }
 
-  const model = /^(?:tiny|base|small|medium|large-v3|turbo)$/i.test(LIMITES.whisperModel)
-    ? LIMITES.whisperModel
+  const selectedModel = preferAccuracy
+    ? LIMITES.whisperAccurateModel
+    : LIMITES.whisperModel;
+  const model = /^(?:tiny|base|small|medium|large-v3|turbo)$/i.test(selectedModel)
+    ? selectedModel
     : 'base';
+  const beamSize = preferAccuracy
+    ? LIMITES.whisperAccurateBeamSize
+    : LIMITES.whisperBeamSize;
   const args = [
     ...python.prefixArgs,
     SCRIPT_PATH,
     mediaPath,
     model,
-    String(LIMITES.whisperBeamSize || 1),
+    String(beamSize || 1),
   ];
 
   return new Promise((resolve, reject) => {
     const child = spawn(python.cmd, args, { windowsHide: true, env: process.env });
+    child.stdin.end(String(initialPrompt || '').slice(0, 1200));
 
     let stdout = '';
     let stderr = '';
@@ -1170,6 +1258,8 @@ module.exports = {
   buildYouTubeCaptionUrl,
   tryYouTubeCaptionsFromPage,
   tryYouTubeCaptionsFromInnerTube,
+  parseDirectSubtitlePayload,
+  tryDirectPlatformSubtitles,
   trySubtitlesFromUrl,
   resolvePythonCommand,
   parseVtt,

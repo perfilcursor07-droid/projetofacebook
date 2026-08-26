@@ -438,7 +438,9 @@ async function transcreverVideoComoFonte(
   url,
   {
     mediaUrl = null,
+    subtitleUrl = null,
     mediaInfo = null,
+    contextText = '',
     onPasso,
     rotulo = 'vídeo',
     permitirAudio = true,
@@ -470,7 +472,10 @@ async function transcreverVideoComoFonte(
       transcribeUrl({
         sourceUrl: url,
         mediaUrl,
+        subtitleUrl,
         mediaInfo,
+        contextText,
+        preferAccuracy: /Instagram|Facebook/i.test(rotulo),
         preferSubtitles: true,
         allowAudioFallback: permitirFallbackDeAudio,
         onFallbackToAudio: () => {
@@ -728,6 +733,8 @@ async function extrairFontesDeLinks(
             if (transcreverVideo && (fonteSalva.isVideo || tipo === 'instagram')) {
               const transcricao = await transcreverVideoComoFonte(link, {
                 mediaUrl: fonteSalva.mediaUrl || null,
+                subtitleUrl: fonteSalva.subtitleUrl || null,
+                contextText: fonteSalva.trecho || fonteSalva.titulo || '',
                 onPasso,
                 rotulo,
               });
@@ -772,7 +779,7 @@ async function extrairFontesDeLinks(
       }
 
       // Com a opcao ativa, transcreve o audio; sem ela, tenta apenas legendas.
-      let trecho = texto;
+      let trecho = `LEGENDA ORIGINAL DA PUBLICAÇÃO:\n${texto}`;
       const ehVideo =
         social.isVideo === true ||
         Boolean(social.videoUrl) ||
@@ -781,18 +788,20 @@ async function extrairFontesDeLinks(
       if (transcreverVideo && ehVideo) {
         const transcricao = await transcreverVideoComoFonte(link, {
           mediaUrl: social.videoUrl || null,
+          subtitleUrl: social.subtitleUrl || null,
+          contextText: [social.titulo, texto].filter(Boolean).join('\n'),
           onPasso,
           rotulo,
         });
         if (transcricao) {
-          trecho = `${texto}\n\nTRANSCRIÇÃO DO ÁUDIO DO VÍDEO:\n${recortarTranscricao(transcricao)}`;
+          trecho = `LEGENDA ORIGINAL DA PUBLICAÇÃO:\n${texto}\n\nTRANSCRIÇÃO DO ÁUDIO DO VÍDEO:\n${recortarTranscricao(transcricao)}`;
         }
       } else if (texto.length < 220 && ehVideo) {
         try {
           const { trySubtitlesFromUrl } = require('./transcriptionService');
           const subs = await trySubtitlesFromUrl(link);
           if (subs?.text && String(subs.text).trim().length >= 40) {
-            trecho = `${texto}\n\nTranscrição do vídeo:\n${recortarTranscricao(String(subs.text).trim(), 8000)}`;
+            trecho = `LEGENDA ORIGINAL DA PUBLICAÇÃO:\n${texto}\n\nTRANSCRIÇÃO DO VÍDEO:\n${recortarTranscricao(String(subs.text).trim(), 8000)}`;
           }
         } catch {
           /* opcional */

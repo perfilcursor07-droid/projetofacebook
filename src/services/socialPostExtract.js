@@ -804,32 +804,56 @@ async function extrairViaInstagramApi(url) {
           media.display_resources?.slice?.(-1)?.[0]?.src ||
           media.carousel_media?.[0]?.image_versions2?.candidates?.[0]?.url ||
           null;
+        const videoUrl =
+          media.video_versions?.[0]?.url ||
+          media.video_url ||
+          null;
+        const subtitleUrl = (() => {
+          const fila = [{ value: media, depth: 0, path: '' }];
+          const vistos = new Set();
+          while (fila.length) {
+            const { value, depth, path } = fila.shift();
+            if (!value || typeof value !== 'object' || vistos.has(value) || depth > 6) continue;
+            vistos.add(value);
+            for (const [key, child] of Object.entries(value)) {
+              const keyPath = `${path}.${key}`;
+              if (
+                typeof child === 'string' &&
+                /^https?:\/\//i.test(child) &&
+                /subtitle|closed[_-]?caption/i.test(keyPath)
+              ) {
+                return child;
+              }
+              if (child && typeof child === 'object') {
+                fila.push({ value: child, depth: depth + 1, path: keyPath });
+              }
+            }
+          }
+          return null;
+        })();
+
+        const result = {
+          url,
+          titulo: texto ? texto.slice(0, 140) : veiculo || 'Reel do Instagram',
+          texto: texto || null,
+          imagem: imagem || null,
+          veiculo,
+          metodo: 'ig-api',
+          postId: shortcodeRetornado || code,
+          comentarios: extrairComentariosDoMedia(media),
+          videoUrl,
+          subtitleUrl,
+          isVideo: Boolean(videoUrl || subtitleUrl),
+        };
 
         if (texto && texto.length >= 40) {
           console.warn(`[socialPost] ig-api: ok (${texto.length} chars) via ${endpoint.slice(0, 60)}`);
-          return {
-            url,
-            titulo: texto.slice(0, 140),
-            texto,
-            imagem: imagem || null,
-            veiculo,
-            metodo: 'ig-api',
-            postId: shortcodeRetornado || code,
-            comentarios: extrairComentariosDoMedia(media),
-          };
+          return result;
         }
         if (imagem && texto && texto.length >= 20) {
-          return {
-            url,
-            titulo: texto.slice(0, 140),
-            texto,
-            imagem,
-            veiculo,
-            metodo: 'ig-api',
-            postId: shortcodeRetornado || code,
-            comentarios: extrairComentariosDoMedia(media),
-          };
+          return result;
         }
+        if (subtitleUrl || videoUrl) return result;
       } catch (err) {
         console.warn('[socialPost] ig-api:', err.response?.status || err.message);
       }
@@ -1282,6 +1306,7 @@ function mesclarExtracao(melhor, extra) {
   if (!out.titulo && extra.titulo) out.titulo = extra.titulo;
   if (!out.veiculo && extra.veiculo) out.veiculo = extra.veiculo;
   if (!out.videoUrl && extra.videoUrl) out.videoUrl = extra.videoUrl;
+  if (!out.subtitleUrl && extra.subtitleUrl) out.subtitleUrl = extra.subtitleUrl;
   if (out.isVideo == null && extra.isVideo != null) out.isVideo = extra.isVideo;
   if (!out.publicadoEm && extra.publicadoEm) out.publicadoEm = extra.publicadoEm;
   if (!out.autorUrl && extra.autorUrl) out.autorUrl = extra.autorUrl;
@@ -1330,6 +1355,7 @@ async function extrairPostSocial(url, opts = {}) {
     plataforma,
     isVideo: null,
     videoUrl: null,
+    subtitleUrl: null,
     publicadoEm: null,
     autorUrl: null,
     postId: null,
@@ -1438,6 +1464,7 @@ async function extrairPostSocial(url, opts = {}) {
       !['scrapecreators', 'brightdata', 'apify-ig', 'manual', 'ig-api', 'ig-cookie-html', 'ig-embed', 'ig-mirror', 'fb-html'].includes(
         melhor.textoMetodo
       ));
+  const igEhVideo = /instagram\.com\/(reel|reels|tv)\//i.test(link);
 
   // 2) Open Graph e métodos legados complementam somente campos ausentes/incompletos.
   if (precisaTexto() || !melhor.imagem) {
@@ -1448,7 +1475,10 @@ async function extrairPostSocial(url, opts = {}) {
     }
   }
 
-  if (plataforma === 'instagram' && (precisaTexto() || !melhor.imagem)) {
+  if (
+    plataforma === 'instagram' &&
+    (precisaTexto() || !melhor.imagem || (igEhVideo && !melhor.subtitleUrl))
+  ) {
     incorporar(await extrairViaInstagramApi(link));
   }
   if (plataforma === 'instagram' && precisaTexto()) {
@@ -1488,7 +1518,6 @@ async function extrairPostSocial(url, opts = {}) {
   }
 
   // yt-dlp — Instagram /p/ (foto) costuma HTTP 400; só tenta reel/tv.
-  const igEhVideo = /instagram\.com\/(reel|reels|tv)\//i.test(link);
   if ((precisaTexto() || !melhor.imagem) && (plataforma !== 'instagram' || igEhVideo)) {
     incorporar(await extrairViaYtDlp(link));
   } else if (plataforma === 'instagram' && !igEhVideo && precisaTexto()) {

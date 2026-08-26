@@ -6,6 +6,7 @@ const {
   chooseCaptionTrack,
   captionUrlNeedsPoToken,
   buildYouTubeCaptionUrl,
+  parseDirectSubtitlePayload,
 } = require('../src/services/transcriptionService');
 
 test('extrai faixas de legenda diretamente do HTML do player do YouTube', () => {
@@ -59,4 +60,31 @@ test('monta URL de legenda com todos os parâmetros exigidos pelo YouTube', () =
   assert.equal(result.searchParams.get('potc'), '1');
   assert.equal(result.searchParams.get('c'), 'WEB');
   assert.equal(result.searchParams.has('xosf'), false);
+});
+
+test('lê legenda SRT/VTT fornecida diretamente pela plataforma social', () => {
+  const result = parseDirectSubtitlePayload(`1
+00:00:00,000 --> 00:00:02,000
+O presidente comentou o assunto.
+
+2
+00:00:02,100 --> 00:00:04,000
+A declaração ocorreu durante o evento.`);
+
+  assert.equal(
+    result.text,
+    'O presidente comentou o assunto. A declaração ocorreu durante o evento.'
+  );
+  assert.equal(result.segments.length, 2);
+});
+
+test('lê legenda JSON fornecida pelo Instagram', () => {
+  const result = parseDirectSubtitlePayload({
+    subtitles: [
+      { start_time: 0, end_time: 1, text: 'Primeiro trecho da fala.' },
+      { start_time: 1, end_time: 2, text: 'Segundo trecho da fala.' },
+    ],
+  });
+
+  assert.equal(result.text, 'Primeiro trecho da fala. Segundo trecho da fala.');
 });

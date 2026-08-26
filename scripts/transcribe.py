@@ -18,6 +18,9 @@ def main() -> int:
     audio_path = sys.argv[1]
     model_size = sys.argv[2] if len(sys.argv) > 2 else "base"
     beam_size = max(1, min(5, int(sys.argv[3]))) if len(sys.argv) > 3 else 1
+    # A legenda escrita do post chega pelo stdin. Ela ajuda o Whisper a grafar
+    # nomes próprios e termos do assunto, sem aparecer na linha de processos.
+    initial_prompt = sys.stdin.read().strip()[:1200] or None
 
     try:
         from faster_whisper import WhisperModel
@@ -41,7 +44,8 @@ def main() -> int:
                 best_of=1,
                 vad_filter=vad,
                 language=language,
-                condition_on_previous_text=False,
+                initial_prompt=initial_prompt,
+                condition_on_previous_text=beam_size > 1,
             )
             segments = []
             texts = []

@@ -99,6 +99,30 @@ function encontrarMediaInstagram(payload, shortcodeEsperado) {
   return fallback;
 }
 
+function encontrarLegendaVideoInstagram(media) {
+  const fila = [{ value: media, depth: 0, path: '' }];
+  const vistos = new Set();
+  while (fila.length) {
+    const { value, depth, path } = fila.shift();
+    if (!value || typeof value !== 'object' || vistos.has(value) || depth > 6) continue;
+    vistos.add(value);
+    for (const [key, child] of Object.entries(value)) {
+      const keyPath = `${path}.${key}`;
+      if (
+        typeof child === 'string' &&
+        /^https?:\/\//i.test(child) &&
+        /subtitle|closed[_-]?caption/i.test(keyPath)
+      ) {
+        return child;
+      }
+      if (child && typeof child === 'object') {
+        fila.push({ value: child, depth: depth + 1, path: keyPath });
+      }
+    }
+  }
+  return null;
+}
+
 function normalizarInstagram(payload, url) {
   const solicitado = shortcodeInstagram(url);
   const media = encontrarMediaInstagram(payload, solicitado);
@@ -127,6 +151,7 @@ function normalizarInstagram(payload, url) {
     textoLimpo(sidecarImage) ||
     null;
   const videoUrl = textoLimpo(media.video_url || media.video_versions?.[0]?.url) || null;
+  const subtitleUrl = encontrarLegendaVideoInstagram(media);
   const isVideo = Boolean(media.is_video || videoUrl || /clips|video/i.test(String(media.product_type || '')));
   const canonicalUrl = shortcode
     ? `https://www.instagram.com/${isVideo ? 'reel' : 'p'}/${shortcode}/`
@@ -143,6 +168,7 @@ function normalizarInstagram(payload, url) {
     plataforma: 'instagram',
     isVideo,
     videoUrl,
+    subtitleUrl,
     publicadoEm: normalizarData(media.taken_at_timestamp),
     autorUrl: username ? `https://www.instagram.com/${username}/` : null,
     postId: shortcode || null,
@@ -278,4 +304,5 @@ async function extrairPost(url, plataformaInformada = null) {
 module.exports = {
   isConfigured,
   extrairPost,
+  normalizarInstagram,
 };
