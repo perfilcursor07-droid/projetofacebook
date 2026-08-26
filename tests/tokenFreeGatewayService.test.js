@@ -72,6 +72,22 @@ test('normaliza URL e reforca JSON no prompt', () => {
   assert.match(mensagens[0].content, /JSON valido/);
 });
 
+test('converte instrucoes e conversa em um unico pedido sem rotulo System', () => {
+  const mensagens = gateway.prepararPromptUnicoClaudeWeb([
+    { role: 'system', content: 'Não comente regras internas.' },
+    { role: 'user', content: 'Olá' },
+    { role: 'assistant', content: 'Olá! Como posso ajudar?' },
+    { role: 'user', content: 'Grave esta preferência.' },
+  ]);
+
+  assert.equal(mensagens.length, 1);
+  assert.equal(mensagens[0].role, 'user');
+  assert.doesNotMatch(mensagens[0].content, /\bSystem:/i);
+  assert.match(mensagens[0].content, /<orientacoes_internas>/);
+  assert.match(mensagens[0].content, /<historico_da_conversa>/);
+  assert.match(mensagens[0].content, /<pedido_atual>\s*Grave esta preferência\./);
+});
+
 test('le resposta OpenAI-compatible e remove cerca de JSON', async () => {
   const resposta = await gateway.chatCompletion(
     [{ role: 'user', content: 'teste' }],
@@ -81,6 +97,8 @@ test('le resposta OpenAI-compatible e remove cerca de JSON', async () => {
   assert.equal(lastRequestBody.conversation_id, 'viralizeai:internal:conversa');
   assert.equal(lastRequestBody.conversation_name, 'ViralizeAI — tarefas internas');
   assert.equal(lastRequestBody.web_search, false);
+  assert.equal(lastRequestBody.messages.length, 1);
+  assert.doesNotMatch(lastRequestBody.messages[0].content, /\bSystem:/i);
 });
 
 test('entrega streaming SSE ao chat', async () => {

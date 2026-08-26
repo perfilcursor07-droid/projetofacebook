@@ -1923,8 +1923,8 @@
     aplicarTipoConversa();
     setStatus(
       tipo === 'livre'
-        ? 'Conversa livre: nenhuma regra editorial será enviada ao Claude.'
-        : 'Modo Matéria: regras editoriais e ferramentas de publicação ativas.'
+        ? 'Claude livre ativo · conversa sem regras editoriais.'
+        : 'Modo Matéria ativo · ferramentas editoriais disponíveis.'
     );
     el.input?.focus();
   }

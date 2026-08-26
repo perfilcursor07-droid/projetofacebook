@@ -211,6 +211,30 @@ function limparArtefatosDeTextoLivre(texto) {
     .trim();
 }
 
+function respostaLivreComMetaComentario(texto) {
+  const resposta = String(texto || '');
+  return (
+    /(?:blocos?|mensagens?)\s+(?:de\s+)?["“']?system\b/i.test(resposta) ||
+    /instru[cç][oõ]es?\s+(?:leg[ií]timas?|reais?)\s+(?:do|de)\s+sistema/i.test(resposta) ||
+    /n[aã]o\s+tenho\s+como\s+(?:gravar|guardar|memorizar).{0,100}(?:prefer[eê]ncias?|instru[cç][oõ]es?)/is.test(resposta) ||
+    /cada\s+conversa\s+come[cç]a\s+do\s+zero/i.test(resposta) ||
+    /(?:vai|precisa(?:r[aá])?)\s+(?:ter\s+que\s+)?colar.{0,100}(?:novamente|de\s+novo)/is.test(resposta)
+  );
+}
+
+function confirmacaoMemoriaEditorial(memorias = []) {
+  const regras = (Array.isArray(memorias) ? memorias : [])
+    .map((regra) => String(regra || '').replace(/^\s*[-•*]\s*/, '').trim())
+    .filter(Boolean);
+  if (!regras.length) {
+    return 'Preferências gravadas no ViralizeAI para as próximas matérias e conversas.';
+  }
+  return [
+    'Preferências gravadas no ViralizeAI para as próximas matérias e conversas:',
+    ...regras.map((regra) => `- ${regra}`),
+  ].join('\n');
+}
+
 function textoDoHtmlSimples(html) {
   return decodificarEntidadesHtmlBasicas(
     String(html || '')
@@ -2481,7 +2505,12 @@ async function responder({
       fontesWeb,
       memoriaEditorial: memoriaEditorialLivre,
       memoriaAcabouDeGravar: Boolean(memoriaLivreGravada?.registered),
-      onDelta: (delta) => onEvent({ tipo: 'delta', texto: delta }),
+      // Quando uma preferência acabou de ser gravada, espera a resposta
+      // completa para impedir que uma eventual negativa incorreta apareça no
+      // streaming antes da proteção abaixo conseguir corrigi-la.
+      onDelta: memoriaLivreGravada?.registered
+        ? null
+        : (delta) => onEvent({ tipo: 'delta', texto: delta }),
       // O histórico da conversa já é enviado acima. Cada pergunta recebe uma
       // sessão remota nova para que instruções persistidas acidentalmente no
       // provedor (por exemplo, o briefing do modo JM) não contaminem o Claude
@@ -2490,6 +2519,15 @@ async function responder({
       conversationName: chat.titulo || tituloDaConversa(pedido),
     });
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
+    // A memória é persistida pelo ViralizeAI antes da chamada ao Claude. Se o
+    // provedor web confundir o contexto e negar essa capacidade, não mostramos
+    // ao editor uma afirmação falsa sobre o próprio sistema.
+    if (memoriaLivreGravada?.registered && respostaLivreComMetaComentario(respostaLivreFinal)) {
+      respostaLivreFinal = confirmacaoMemoriaEditorial(memoriaLivreGravada.memorias);
+    }
+    if (memoriaLivreGravada?.registered) {
+      onEvent({ tipo: 'delta', texto: respostaLivreFinal });
+    }
     const fontesClaude = [];
     const urlsClaude = new Set();
     for (const match of String(respostaLivre || '').matchAll(/\[([^\]]{1,240})\]\((https?:\/\/[^\s)]+)\)/gi)) {
@@ -4590,4 +4628,6 @@ module.exports = {
   fonteEmOutroIdioma,
   pedidoEmOutroIdioma,
   textoEmOutroIdioma,
+  respostaLivreComMetaComentario,
+  confirmacaoMemoriaEditorial,
 };

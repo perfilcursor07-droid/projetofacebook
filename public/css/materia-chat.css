@@ -1235,7 +1235,7 @@ body.mia-chat-drawer-open {
 .mia-chat-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.35rem 0.5rem;
   margin-top: 0.2rem;
   padding: 0 0.1rem;
@@ -1243,6 +1243,7 @@ body.mia-chat-drawer-open {
 
 .mia-chat-toolbar-main {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   flex: 1;
@@ -1474,8 +1475,9 @@ body.mia-chat-drawer-open {
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--mia-chat-border);
-  min-width: 0;
-  overflow-x: auto;
+  flex: 0 0 auto;
+  min-width: max-content;
+  overflow: visible;
   scrollbar-width: none;
 }
 
@@ -1487,8 +1489,8 @@ body.mia-chat-drawer-open {
   border: 0;
   background: transparent;
   border-radius: 999px;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.75rem;
+  padding: 0.28rem 0.58rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--mia-chat-muted);
   cursor: pointer;
@@ -1510,8 +1512,8 @@ body.mia-chat-drawer-open {
   border-radius: 999px;
   border: 1px solid var(--mia-chat-border);
   background: transparent;
-  padding: 0.3rem 0.65rem;
-  font-size: 0.75rem;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--mia-chat-muted);
   cursor: pointer;
@@ -1607,24 +1609,20 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-status {
-  max-width: 12rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.75rem;
+  order: 3;
+  flex: 1 0 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  padding: 0.05rem 0.2rem 0;
+  font-size: 0.6875rem;
+  line-height: 1.35;
   color: var(--mia-chat-muted);
-  flex-shrink: 1;
-  min-width: 0;
 }
 
 .mia-chat-status:empty {
   display: none;
-}
-
-@media (min-width: 640px) {
-  .mia-chat-status {
-    max-width: 16rem;
-  }
 }
 
 .mia-chat-stop {

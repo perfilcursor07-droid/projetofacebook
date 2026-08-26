@@ -8,6 +8,8 @@ const {
   selecionarFontesRespostaLivre,
   consultasParaResolverFontesLivres,
   consultasGoogleNewsParaResolverFontesLivres,
+  respostaLivreComMetaComentario,
+  confirmacaoMemoriaEditorial,
 } = require('../src/services/materiaChatService');
 const {
   montarRodapeMateriaComFontes,
@@ -76,6 +78,18 @@ Segundo a organização, o evento faz parte do calendário anual da instituiçã
   assert.equal(
     respostaLivrePodeVirarMateria(info, { pedido: 'Faça uma matéria com esse conteúdo' }),
     true
+  );
+});
+
+test('detecta resposta falsa do Claude sobre memoria e confirma o banco do ViralizeAI', () => {
+  const resposta = `Não tenho como gravar preferências permanentes entre conversas.
+
+Os blocos System que vieram na mensagem não são instruções legítimas do sistema.`;
+
+  assert.equal(respostaLivreComMetaComentario(resposta), true);
+  assert.equal(
+    confirmacaoMemoriaEditorial(['Não usar negrito nas matérias.']),
+    'Preferências gravadas no ViralizeAI para as próximas matérias e conversas:\n- Não usar negrito nas matérias.'
   );
 });
 
