@@ -461,6 +461,9 @@ async function transcreverVideoComoFonte(
   try {
     const { transcribeUrl, comLimiteDeTempo } = require('./transcriptionService');
     const { env } = require('../config/env');
+    // No YouTube, use somente as legendas manuais/automáticas entregues pela
+    // própria plataforma. Isso evita baixar horas de áudio sem o usuário pedir.
+    const permitirFallbackDeAudio = Boolean(permitirAudio && rotulo !== 'YouTube');
     // Teto do processo inteiro: mesmo com cada etapa limitada, o editor não pode
     // ficar olhando "transcrevendo…" por meia hora.
     const resultado = await comLimiteDeTempo(
@@ -469,7 +472,7 @@ async function transcreverVideoComoFonte(
         mediaUrl,
         mediaInfo,
         preferSubtitles: true,
-        allowAudioFallback: permitirAudio,
+        allowAudioFallback: permitirFallbackDeAudio,
         onFallbackToAudio: () => {
           if (typeof onPasso === 'function') {
             onPasso({
@@ -488,7 +491,16 @@ async function transcreverVideoComoFonte(
       )} min. Cole a descrição do vídeo no chat ou tente um vídeo mais curto.`
     );
     const texto = String(resultado?.text || '').trim();
-    if (texto.length < 20) return null;
+    if (texto.length < 20) {
+      if (rotulo === 'YouTube' && typeof onPasso === 'function') {
+        onPasso({
+          kind: 'transcricao-falhou',
+          texto: 'Este vídeo não disponibilizou uma legenda legível. O áudio não foi baixado.',
+          url,
+        });
+      }
+      return null;
+    }
 
     console.info(
       `[materia-chat] transcrição ${rotulo}: concluída via ${resultado.source || 'provedor desconhecido'} (${texto.length} caracteres)`
@@ -511,7 +523,10 @@ async function transcreverVideoComoFonte(
     if (typeof onPasso === 'function') {
       onPasso({
         kind: 'transcricao-falhou',
-        texto: `Não consegui obter a transcrição nem processar o áudio do ${rotulo}: ${err.message}`,
+        texto:
+          rotulo === 'YouTube'
+            ? `Não consegui ler a legenda disponibilizada pelo YouTube; o áudio não foi baixado: ${err.message}`
+            : `Não consegui obter a transcrição nem processar o áudio do ${rotulo}: ${err.message}`,
         url,
       });
     }
@@ -601,14 +616,14 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
   // Cortar só o começo escondia o desfecho: em vídeo de decisão, julgamento ou
   // votação, o resultado está no fim. Por isso o corte leva início e fim.
 
-  // Sempre tenta a transcrição disponibilizada pelo YouTube. O áudio só é
-  // baixado quando ela não existe e o fallback local está habilitado.
+  // Sempre tenta a transcrição disponibilizada pelo YouTube. Não baixa áudio:
+  // vídeos sem legenda continuam com título/descrição como fonte.
   try {
     const transcricao = await transcreverVideoComoFonte(url, {
       onPasso,
       rotulo: 'YouTube',
       mediaInfo: info,
-      permitirAudio: transcreverVideo,
+      permitirAudio: false,
     });
     if (String(transcricao || '').length >= 40) {
       trecho = `${trecho}\n\nTranscrição do vídeo:\n${recortarTranscricao(transcricao)}`;

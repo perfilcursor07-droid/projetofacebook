@@ -9,9 +9,15 @@ const { extractAudioWav } = require('./ffmpegService');
 const { storageAbsolutePath } = require('./downloadService');
 
 const SCRIPT_PATH = path.resolve(__dirname, '../../scripts/transcribe.py');
+const YOUTUBE_PO_TOKEN_SCRIPT = path.resolve(
+  __dirname,
+  '../../scripts/youtube-po-token.mjs'
+);
 const MAX_URL_AUDIO_BYTES = 300 * 1024 * 1024;
 const MAX_URL_DURATION_SECONDS = 45 * 60;
 const LIMITES = env.transcricao;
+const youtubePoTokenCache = new Map();
+const youtubePoTokenPending = new Map();
 
 function erroDeTempo(mensagem) {
   const err = new Error(mensagem);
@@ -412,6 +418,153 @@ function chooseCaptionTrack(tracks) {
   return lista[0] || null;
 }
 
+function captionUrlNeedsPoToken(value) {
+  try {
+    const parsed = value instanceof URL ? value : new URL(value);
+    return parsed.searchParams
+      .getAll('exp')
+      .some((entry) => /(?:^|,)(?:xpe|xpv)(?:,|$)/i.test(String(entry)));
+  } catch {
+    return false;
+  }
+}
+
+function buildYouTubeCaptionUrl(baseUrl, { poToken = null, client = 'WEB' } = {}) {
+  const parsed = baseUrl instanceof URL ? new URL(baseUrl.toString()) : new URL(baseUrl);
+  if (!/(^|\.)youtube\.com$/i.test(parsed.hostname)) {
+    throw new Error('A URL da legenda não pertence ao YouTube');
+  }
+  parsed.searchParams.set('fmt', 'vtt');
+  parsed.searchParams.delete('xosf');
+  if (poToken) {
+    // Desde 2026 as faixas com exp=xpe/xpv exigem os três parâmetros.
+    // Enviar apenas `pot` responde HTTP 200 com corpo vazio.
+    parsed.searchParams.set('pot', poToken);
+    parsed.searchParams.set('potc', '1');
+    parsed.searchParams.set('c', client);
+  }
+  return parsed.toString();
+}
+
+function childProcessNetworkEnv() {
+  const allowed = [
+    'PATH',
+    'Path',
+    'SystemRoot',
+    'WINDIR',
+    'TEMP',
+    'TMP',
+    'NODE_EXTRA_CA_CERTS',
+  ];
+  const clean = { NODE_ENV: 'production' };
+  for (const key of allowed) {
+    if (process.env[key]) clean[key] = process.env[key];
+  }
+  return clean;
+}
+
+function generateYouTubePoToken(videoId) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [YOUTUBE_PO_TOKEN_SCRIPT, videoId], {
+      windowsHide: true,
+      env: childProcessNetworkEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let finished = false;
+    const done = (fn, value) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+      done(reject, erroDeTempo('O YouTube demorou para autorizar a leitura da legenda.'));
+    }, Math.min(Math.max(Number(LIMITES.legendasMs) || 20_000, 15_000), 30_000));
+
+    child.stdout.on('data', (chunk) => {
+      if (stdout.length < 100_000) stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      if (stderr.length < 4_000) stderr += chunk.toString();
+    });
+    child.on('error', (error) => done(reject, error));
+    child.on('close', (code) => {
+      if (finished) return;
+      try {
+        const parsed = JSON.parse(stdout.trim() || '{}');
+        if (code !== 0 || !parsed.poToken) {
+          throw new Error(stderr.trim() || `Gerador de PO Token terminou com código ${code}`);
+        }
+        done(resolve, parsed);
+      } catch (error) {
+        done(reject, error);
+      }
+    });
+  });
+}
+
+async function getYouTubePoToken(videoId) {
+  const id = String(videoId || '').trim();
+  if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) {
+    throw new Error('Não foi possível identificar o vídeo para autorizar a legenda.');
+  }
+  const cached = youtubePoTokenCache.get(id);
+  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.poToken;
+  if (youtubePoTokenPending.has(id)) return youtubePoTokenPending.get(id);
+
+  const pending = generateYouTubePoToken(id)
+    .then((result) => {
+      // Tokens de legenda são vinculados ao ID do vídeo. Mantemos um cache
+      // curto para pedidos repetidos da mesma conversa.
+      const ttlMs = Math.min(
+        Math.max(Number(result.expiresIn) || 3600, 300) * 1000,
+        6 * 60 * 60 * 1000
+      );
+      youtubePoTokenCache.set(id, {
+        poToken: result.poToken,
+        expiresAt: Date.now() + ttlMs,
+      });
+      return result.poToken;
+    })
+    .finally(() => youtubePoTokenPending.delete(id));
+  youtubePoTokenPending.set(id, pending);
+  return pending;
+}
+
+async function downloadYouTubeCaption(baseUrl, videoId) {
+  const needsToken = captionUrlNeedsPoToken(baseUrl);
+  let poToken = null;
+  if (needsToken) poToken = await getYouTubePoToken(videoId);
+
+  const request = async () => {
+    const response = await axios.get(buildYouTubeCaptionUrl(baseUrl, { poToken }), {
+      responseType: 'text',
+      timeout: Math.min(LIMITES.legendasMs, 25_000),
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.7',
+      },
+    });
+    return parseVtt(response.data);
+  };
+
+  let parsed = await request();
+  // Algumas contas recebem a exigência antes de `exp=xpe` aparecer na URL.
+  if ((!parsed.text || parsed.text.length < 20) && !poToken) {
+    poToken = await getYouTubePoToken(videoId);
+    parsed = await request();
+  }
+  return parsed;
+}
+
 async function tryYouTubeCaptionsFromPage(url) {
   let videoId = null;
   try {
@@ -438,13 +591,7 @@ async function tryYouTubeCaptionsFromPage(url) {
     if (!track) return null;
     const captionUrl = new URL(track.baseUrl);
     if (!/(^|\.)youtube\.com$/i.test(captionUrl.hostname)) return null;
-    captionUrl.searchParams.set('fmt', 'vtt');
-    const captions = await axios.get(captionUrl.toString(), {
-      responseType: 'text',
-      timeout: Math.min(LIMITES.legendasMs, 20_000),
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    });
-    const parsed = parseVtt(captions.data);
+    const parsed = await downloadYouTubeCaption(captionUrl, videoId);
     if (!parsed.text || parsed.text.length < 20) return null;
     return {
       ...parsed,
@@ -474,12 +621,8 @@ async function tryYouTubeCaptionsFromInfo(info) {
   if (!/(^|\.)youtube\.com$/i.test(parsedUrl.hostname)) return null;
 
   try {
-    const response = await axios.get(track.url, {
-      responseType: 'text',
-      timeout: Math.min(LIMITES.legendasMs, 30_000),
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    });
-    const parsed = parseVtt(response.data);
+    const videoId = String(info?.id || parsedUrl.searchParams.get('v') || '').trim();
+    const parsed = await downloadYouTubeCaption(parsedUrl, videoId);
     if (!parsed.text || parsed.text.length < 20) return null;
     return {
       ...parsed,
@@ -632,7 +775,13 @@ async function transcribeUrl({
     // yt-dlp resolver novamente a mídia a partir do permalink original.
     // Repetir depois de um estouro de tempo só dobraria a espera do editor.
     if (usingDirectMedia && !err?.timedOut) {
-      return transcribeUrl({ sourceUrl: original, mediaUrl: null, preferSubtitles: false });
+      return transcribeUrl({
+        sourceUrl: original,
+        mediaUrl: null,
+        preferSubtitles: false,
+        allowAudioFallback,
+        onFallbackToAudio,
+      });
     }
     throw err;
   } finally {
@@ -882,6 +1031,9 @@ module.exports = {
   transcribeUrl,
   extractCaptionTracksFromWatchHtml,
   chooseCaptionTrack,
+  captionUrlNeedsPoToken,
+  buildYouTubeCaptionUrl,
+  tryYouTubeCaptionsFromPage,
   trySubtitlesFromUrl,
   resolvePythonCommand,
   parseVtt,
