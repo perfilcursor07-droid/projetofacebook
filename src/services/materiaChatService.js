@@ -4238,12 +4238,33 @@ async function salvarMateriaDoChat({
     fontesDaMateria.find((fonte) => /^https?:\/\//i.test(String(fonte?.url || ''))) ||
     fontesDaMateria[0] ||
     null;
-  const imagemFonte =
+  let imagemFonte =
     imagemUrl && /^https?:\/\//i.test(imagemUrl)
       ? imagemUrl
       : /^https?:\/\//i.test(String(fontePrincipal?.imagem || ''))
         ? String(fontePrincipal.imagem)
         : null;
+
+  // A pesquisa nativa do Claude normalmente devolve a URL da reportagem, mas
+  // nem sempre inclui a capa nos metadados salvos da mensagem. Antes de criar
+  // o rascunho, reabre somente a fonte principal e captura og:image,
+  // twitter:image ou a imagem destacada. O fluxo abaixo já baixa essa foto e
+  // compõe a arte 4:5 da marca.
+  if (!imagemFonte && /^https?:\/\//i.test(String(fontePrincipal?.url || ''))) {
+    try {
+      const { extrairMetadadosImagemArtigo } = require('./articleSource');
+      const metaImagem = await extrairMetadadosImagemArtigo(fontePrincipal.url);
+      if (/^https?:\/\//i.test(String(metaImagem?.imagem || ''))) {
+        imagemFonte = String(metaImagem.imagem).slice(0, 1000);
+        console.info(
+          `[materia-chat] imagem da fonte recuperada para o rascunho: ${metaImagem.veiculo || fontePrincipal.veiculo || 'Web'}`
+        );
+      }
+    } catch (err) {
+      // Falhar ao localizar a foto não pode impedir o editor de salvar o texto.
+      console.warn('[materia-chat] localizar imagem da fonte:', err.message);
+    }
+  }
 
   const [matterId] = await AiMatters.create({
     user_id: userId,
@@ -4285,6 +4306,7 @@ async function salvarMateriaDoChat({
     status: 'rascunho',
     tipo_publicacao: 'foto',
     imagem_url: imagemFonte,
+    imagem_fonte_url: imagemFonte,
     error_message: null,
   });
 
