@@ -22,8 +22,14 @@ function filterYoutubeCookies(rawText) {
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const parts = line.split('\t');
+    if (!trimmed) continue;
+    // Cookies HttpOnly no formato Netscape começam com #HttpOnly_, mas são
+    // cookies reais (SID/__Secure-3PSID), não comentários.
+    const cookieLine = trimmed.startsWith('#HttpOnly_')
+      ? line.replace(/^#HttpOnly_/, '')
+      : line;
+    if (cookieLine.trim().startsWith('#')) continue;
+    const parts = cookieLine.split('\t');
     if (parts.length < 7) continue;
     const domain = parts[0].toLowerCase();
     if (!domain.includes('youtube.com')) continue;
@@ -119,4 +125,4 @@ async function test(_req, res) {
   }
 }
 
-module.exports = { getStatus, upload, test };
+module.exports = { getStatus, upload, test, filterYoutubeCookies };

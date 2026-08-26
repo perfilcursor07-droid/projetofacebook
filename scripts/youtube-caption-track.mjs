@@ -1,4 +1,5 @@
 import { Innertube } from 'youtubei.js';
+import fs from 'node:fs';
 
 function fail(message) {
   process.stderr.write(`${String(message || 'Faixa de legenda não encontrada')}\n`);
@@ -20,8 +21,20 @@ const videoId = String(process.argv[2] || '').trim();
 if (!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) fail('ID de vídeo inválido');
 
 try {
-  const youtube = await Innertube.create({ retrieve_player: false });
-  for (const client of ['ANDROID', 'ANDROID_VR']) {
+  // O cabeçalho chega pelo stdin para nunca aparecer em argumentos, ps ou logs.
+  const cookie = String(fs.readFileSync(0, 'utf8') || '').trim();
+  const youtube = await Innertube.create({
+    retrieve_player: false,
+    cookie: cookie || undefined,
+  });
+  // Android costuma entregar as legendas sem PO Token. Com uma sessão salva,
+  // WEB/MWEB também entram como alternativas para IPs de datacenter.
+  const clients = [
+    'ANDROID',
+    'ANDROID_VR',
+    ...(cookie ? ['WEB', 'MWEB'] : []),
+  ];
+  for (const client of clients) {
     const response = await youtube.actions.execute('/player', {
       videoId,
       racyCheckOk: true,

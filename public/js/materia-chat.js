@@ -481,7 +481,7 @@
         const audioStatus = audioTranscrito
           ? 'áudio transcrito'
           : audioFalhou
-            ? 'áudio não transcrito'
+            ? 'legenda não encontrada'
             : null;
         resumoMeta.textContent = total
           ? `${total} etapas${audioStatus ? ` · ${audioStatus}` : ''} · ver detalhes`

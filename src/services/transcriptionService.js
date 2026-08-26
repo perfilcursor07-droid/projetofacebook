@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 const youtubedlExec = require('youtube-dl-exec');
 const { runYtDlp, detectPlatformFromUrl } = require('./ytDlpAuth');
@@ -467,13 +468,42 @@ function childProcessNetworkEnv() {
   return clean;
 }
 
-function generateYouTubePoToken(videoId) {
+function getYouTubeCookieHeader() {
+  try {
+    const { getYtDlpAuthFlags } = require('./ytDlpAuth');
+    const file = getYtDlpAuthFlags({ platform: 'youtube' })?.cookies;
+    if (!file || !fs.existsSync(file)) return '';
+    const now = Math.floor(Date.now() / 1000);
+    const values = new Map();
+    for (const rawLine of fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+      let line = rawLine;
+      if (line.startsWith('#HttpOnly_')) line = line.slice('#HttpOnly_'.length);
+      else if (!line.trim() || line.trimStart().startsWith('#')) continue;
+      const parts = line.split('\t');
+      if (parts.length < 7) continue;
+      const domain = String(parts[0] || '').toLowerCase();
+      const expires = Number(parts[4]) || 0;
+      const name = String(parts[5] || '').trim();
+      const value = String(parts.slice(6).join('\t') || '').trim();
+      if (!domain.includes('youtube.com') || !name || !value) continue;
+      if (expires > 0 && expires < now) continue;
+      values.set(name, value);
+    }
+    return [...values].map(([name, value]) => `${name}=${value}`).join('; ');
+  } catch (error) {
+    console.warn('[transcricao] cookies do YouTube indisponíveis:', error.message);
+    return '';
+  }
+}
+
+function generateYouTubePoToken(videoId, cookieHeader = '') {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [YOUTUBE_PO_TOKEN_SCRIPT, videoId], {
       windowsHide: true,
       env: childProcessNetworkEnv(),
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
+    child.stdin.end(String(cookieHeader || ''));
     let stdout = '';
     let stderr = '';
     let finished = false;
@@ -514,16 +544,20 @@ function generateYouTubePoToken(videoId) {
   });
 }
 
-async function getYouTubePoToken(videoId) {
+async function getYouTubePoToken(videoId, cookieHeader = '') {
   const id = String(videoId || '').trim();
   if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) {
     throw new Error('Não foi possível identificar o vídeo para autorizar a legenda.');
   }
-  const cached = youtubePoTokenCache.get(id);
+  const sessionKey = cookieHeader
+    ? crypto.createHash('sha256').update(cookieHeader).digest('hex').slice(0, 16)
+    : 'anon';
+  const cacheKey = `${id}:${sessionKey}`;
+  const cached = youtubePoTokenCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.poToken;
-  if (youtubePoTokenPending.has(id)) return youtubePoTokenPending.get(id);
+  if (youtubePoTokenPending.has(cacheKey)) return youtubePoTokenPending.get(cacheKey);
 
-  const pending = generateYouTubePoToken(id)
+  const pending = generateYouTubePoToken(id, cookieHeader)
     .then((result) => {
       // Tokens de legenda são vinculados ao ID do vídeo. Mantemos um cache
       // curto para pedidos repetidos da mesma conversa.
@@ -531,24 +565,25 @@ async function getYouTubePoToken(videoId) {
         Math.max(Number(result.expiresIn) || 3600, 300) * 1000,
         6 * 60 * 60 * 1000
       );
-      youtubePoTokenCache.set(id, {
+      youtubePoTokenCache.set(cacheKey, {
         poToken: result.poToken,
         expiresAt: Date.now() + ttlMs,
       });
       return result.poToken;
     })
-    .finally(() => youtubePoTokenPending.delete(id));
-  youtubePoTokenPending.set(id, pending);
+    .finally(() => youtubePoTokenPending.delete(cacheKey));
+  youtubePoTokenPending.set(cacheKey, pending);
   return pending;
 }
 
-function getYouTubeCaptionTrackFromInnerTube(videoId) {
+function getYouTubeCaptionTrackFromInnerTube(videoId, cookieHeader = '') {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [YOUTUBE_CAPTION_TRACK_SCRIPT, videoId], {
       windowsHide: true,
       env: childProcessNetworkEnv(),
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
+    child.stdin.end(String(cookieHeader || ''));
     let stdout = '';
     let stderr = '';
     let finished = false;
@@ -589,10 +624,10 @@ function getYouTubeCaptionTrackFromInnerTube(videoId) {
   });
 }
 
-async function downloadYouTubeCaption(baseUrl, videoId) {
+async function downloadYouTubeCaption(baseUrl, videoId, cookieHeader = '') {
   const needsToken = captionUrlNeedsPoToken(baseUrl);
   let poToken = null;
-  if (needsToken) poToken = await getYouTubePoToken(videoId);
+  if (needsToken) poToken = await getYouTubePoToken(videoId, cookieHeader);
 
   const request = async () => {
     const response = await axios.get(buildYouTubeCaptionUrl(baseUrl, { poToken }), {
@@ -602,6 +637,7 @@ async function downloadYouTubeCaption(baseUrl, videoId) {
         'User-Agent':
           'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
         'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.7',
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       },
     });
     return parseVtt(response.data);
@@ -637,8 +673,9 @@ async function tryYouTubeCaptionsFromInnerTube(url) {
   if (!videoId) return null;
 
   try {
-    const track = await getYouTubeCaptionTrackFromInnerTube(videoId);
-    const parsed = await downloadYouTubeCaption(track.baseUrl, videoId);
+    const cookieHeader = getYouTubeCookieHeader();
+    const track = await getYouTubeCaptionTrackFromInnerTube(videoId, cookieHeader);
+    const parsed = await downloadYouTubeCaption(track.baseUrl, videoId, cookieHeader);
     if (!parsed.text || parsed.text.length < 20) return null;
     return {
       ...parsed,
@@ -662,6 +699,7 @@ async function tryYouTubeCaptionsFromPage(url) {
   if (!videoId) return null;
 
   try {
+    const cookieHeader = getYouTubeCookieHeader();
     const response = await axios.get('https://www.youtube.com/watch', {
       params: { v: videoId, hl: 'pt-BR', persist_hl: 1 },
       responseType: 'text',
@@ -669,6 +707,7 @@ async function tryYouTubeCaptionsFromPage(url) {
       headers: {
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
         'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.7',
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       },
     });
     const track = chooseCaptionTrack(extractCaptionTracksFromWatchHtml(response.data));
@@ -678,7 +717,7 @@ async function tryYouTubeCaptionsFromPage(url) {
     }
     const captionUrl = new URL(track.baseUrl);
     if (!/(^|\.)youtube\.com$/i.test(captionUrl.hostname)) return null;
-    const parsed = await downloadYouTubeCaption(captionUrl, videoId);
+    const parsed = await downloadYouTubeCaption(captionUrl, videoId, cookieHeader);
     if (!parsed.text || parsed.text.length < 20) return null;
     return {
       ...parsed,
@@ -709,7 +748,11 @@ async function tryYouTubeCaptionsFromInfo(info) {
 
   try {
     const videoId = String(info?.id || parsedUrl.searchParams.get('v') || '').trim();
-    const parsed = await downloadYouTubeCaption(parsedUrl, videoId);
+    const parsed = await downloadYouTubeCaption(
+      parsedUrl,
+      videoId,
+      getYouTubeCookieHeader()
+    );
     if (!parsed.text || parsed.text.length < 20) return null;
     return {
       ...parsed,

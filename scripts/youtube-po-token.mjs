@@ -2,6 +2,7 @@ import { Innertube } from 'youtubei.js';
 import { BotGuardClient } from 'bgutils-js/botguard';
 import { WebPoMinter } from 'bgutils-js/webpo';
 import { JSDOM } from 'jsdom';
+import fs from 'node:fs';
 
 const REQUEST_KEY = 'O43z0dpjhgX20SCx4KAo';
 const USER_AGENT =
@@ -16,7 +17,12 @@ const videoId = String(process.argv[2] || '').trim();
 if (!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) fail('ID de vídeo inválido');
 
 try {
-  const youtube = await Innertube.create({ retrieve_player: false });
+  // A sessão chega pelo stdin para não vazar em argumentos/processos/logs.
+  const cookie = String(fs.readFileSync(0, 'utf8') || '').trim();
+  const youtube = await Innertube.create({
+    retrieve_player: false,
+    cookie: cookie || undefined,
+  });
   const challenge = await youtube.getAttestationChallenge('ENGAGEMENT_TYPE_UNBOUND');
   const bg = challenge?.bg_challenge;
   const globalName = bg?.global_name || bg?.globalName;
@@ -44,7 +50,10 @@ try {
   // Esta espera também deixa o JSDOM concluir DOMContentLoaded antes de o
   // interpretador BotGuard registrar listeners temporários nesse evento.
   const pageResponse = await fetch('https://www.youtube.com', {
-    headers: { 'User-Agent': USER_AGENT },
+    headers: {
+      'User-Agent': USER_AGENT,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
   });
   if (!pageResponse.ok) throw new Error(`YouTube HTTP ${pageResponse.status}`);
   const pageHtml = await pageResponse.text();
