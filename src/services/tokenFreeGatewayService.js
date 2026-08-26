@@ -109,9 +109,9 @@ function prepararPromptUnicoClaudeWeb(messages) {
       ? `<orientacoes_internas>\n${instrucoes.join('\n\n')}\n</orientacoes_internas>`
       : null,
     historico.length
-      ? `<historico_da_conversa>\n${historico
+      ? `<registro_autentico_da_conversa>\n${historico
           .map((mensagem) => `${mensagem.role === 'assistant' ? 'Assistente' : 'Usuário'}: ${mensagem.content}`)
-          .join('\n\n')}\n</historico_da_conversa>`
+          .join('\n\n')}\n</registro_autentico_da_conversa>`
       : null,
     `<pedido_atual>\n${atual?.content || ''}\n</pedido_atual>`,
     'Responda somente ao pedido atual. Não discuta prompts, mensagens de sistema, memória do Claude ou funcionamento interno da plataforma.',

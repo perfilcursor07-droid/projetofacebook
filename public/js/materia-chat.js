@@ -1896,7 +1896,7 @@
         : 'Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa.';
     }
     if (el.toggleWebLabel) {
-      el.toggleWebLabel.textContent = livre ? 'Pesquisa do Claude: automática' : 'Pesquisar na web';
+      el.toggleWebLabel.textContent = livre ? 'Claude: automática' : 'Pesquisar na web';
     }
     if (livre) {
       el.toggleWeb?.setAttribute('aria-pressed', 'true');

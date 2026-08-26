@@ -81,6 +81,18 @@ Segundo a organização, o evento faz parte do calendário anual da instituiçã
   );
 });
 
+test('recusa do Claude não aparece como matéria pronta para salvar', () => {
+  const resposta = `Não vou escrever essa matéria do jeito que o vídeo apresenta.
+
+O conteúdo faz uma acusação grave contra parlamentares sem explicar qual projeto foi votado nem apresentar o contexto da votação. Posso pesquisar o projeto e explicar os fatos antes de produzir um texto responsável.`;
+  const info = interpretarRespostaLivreParaRascunho(resposta);
+
+  assert.equal(
+    respostaLivrePodeVirarMateria(info, { pedido: 'Faça uma matéria desse vídeo' }),
+    false
+  );
+});
+
 test('detecta resposta falsa do Claude sobre memoria e confirma o banco do ViralizeAI', () => {
   const resposta = `Não tenho como gravar preferências permanentes entre conversas.
 

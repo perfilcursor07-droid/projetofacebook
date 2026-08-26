@@ -1741,6 +1741,12 @@ function respostaLivrePodeVirarMateria(info, { pedido = '' } = {}) {
   if (/\b(?:posso seguir de duas formas|n[ãa]o encontrei(?:,| nas fontes| nenhuma)|só reação de fi[eé]is anônimos)\b/i.test(inicio)) {
     return false;
   }
+  if (
+    /^(?:isso\s+)?n[ãa]o\s+(?:vou|posso|consigo)\s+(?:escrever|fazer|transformar|redigir|publicar)\b/i.test(inicio) ||
+    /^n[ãa]o\s+vou\s+escrever\s+(?:essa|esta)\s+mat[eé]ria\b/i.test(inicio)
+  ) {
+    return false;
+  }
 
   const pedidoEditorial =
     /\b(?:mat[eé]ria|reportagem|artigo|not[ií]cia|rascunho)\b/i.test(String(pedido || '')) ||

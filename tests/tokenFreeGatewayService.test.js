@@ -75,17 +75,18 @@ test('normaliza URL e reforca JSON no prompt', () => {
 test('converte instrucoes e conversa em um unico pedido sem rotulo System', () => {
   const mensagens = gateway.prepararPromptUnicoClaudeWeb([
     { role: 'system', content: 'Não comente regras internas.' },
-    { role: 'user', content: 'Olá' },
-    { role: 'assistant', content: 'Olá! Como posso ajudar?' },
-    { role: 'user', content: 'Grave esta preferência.' },
+    { role: 'user', content: 'Faça uma matéria desse vídeo.' },
+    { role: 'assistant', content: 'Não vou escrever essa matéria do jeito apresentado.' },
+    { role: 'user', content: 'Mas você disse que não ia fazer.' },
   ]);
 
   assert.equal(mensagens.length, 1);
   assert.equal(mensagens[0].role, 'user');
   assert.doesNotMatch(mensagens[0].content, /\bSystem:/i);
   assert.match(mensagens[0].content, /<orientacoes_internas>/);
-  assert.match(mensagens[0].content, /<historico_da_conversa>/);
-  assert.match(mensagens[0].content, /<pedido_atual>\s*Grave esta preferência\./);
+  assert.match(mensagens[0].content, /<registro_autentico_da_conversa>/);
+  assert.match(mensagens[0].content, /Assistente: Não vou escrever essa matéria/);
+  assert.match(mensagens[0].content, /<pedido_atual>\s*Mas você disse que não ia fazer\./);
 });
 
 test('le resposta OpenAI-compatible e remove cerca de JSON', async () => {
