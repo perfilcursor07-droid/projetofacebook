@@ -72,7 +72,7 @@ test('normaliza URL e reforca JSON no prompt', () => {
   assert.match(mensagens[0].content, /JSON valido/);
 });
 
-test('converte instrucoes e conversa em um unico pedido sem rotulo System', () => {
+test('apresenta briefing como preferências do editor, sem fingir bloco de sistema', () => {
   const mensagens = gateway.prepararPromptUnicoClaudeWeb([
     { role: 'system', content: 'Não comente regras internas.' },
     { role: 'user', content: 'Faça uma matéria desse vídeo.' },
@@ -83,10 +83,11 @@ test('converte instrucoes e conversa em um unico pedido sem rotulo System', () =
   assert.equal(mensagens.length, 1);
   assert.equal(mensagens[0].role, 'user');
   assert.doesNotMatch(mensagens[0].content, /\bSystem:/i);
-  assert.match(mensagens[0].content, /<orientacoes_internas>/);
-  assert.match(mensagens[0].content, /<registro_autentico_da_conversa>/);
+  assert.doesNotMatch(mensagens[0].content, /orienta[cç][oõ]es_internas|orienta[cç][oõ]es internas/i);
+  assert.match(mensagens[0].content, /Preferências fornecidas pelo editor/);
+  assert.match(mensagens[0].content, /Contexto anterior da conversa/);
   assert.match(mensagens[0].content, /Assistente: Não vou escrever essa matéria/);
-  assert.match(mensagens[0].content, /<pedido_atual>\s*Mas você disse que não ia fazer\./);
+  assert.match(mensagens[0].content, /Pedido atual do editor:\s*Mas você disse que não ia fazer\./);
 });
 
 test('le resposta OpenAI-compatible e remove cerca de JSON', async () => {

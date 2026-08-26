@@ -863,6 +863,8 @@ async function transcribeUrl({
   mediaInfo = null,
   allowAudioFallback = true,
   onFallbackToAudio = null,
+  onRecognitionStart = null,
+  onRecognitionProgress = null,
   contextText = '',
   preferAccuracy = false,
 } = {}) {
@@ -966,8 +968,37 @@ async function transcribeUrl({
     }
 
     const result = await comVagaNoWhisper(() => {
-      console.info(`[transcricao] Whisper iniciado: ${original}`);
+      const model = preferAccuracy
+        ? LIMITES.whisperAccurateModel
+        : LIMITES.whisperModel;
+      const beamSize = preferAccuracy
+        ? LIMITES.whisperAccurateBeamSize
+        : LIMITES.whisperBeamSize;
+      const durationSeconds = Number(info?.duration) || null;
+      console.info(
+        `[transcricao] Whisper iniciado model=${model} beam=${beamSize}${durationSeconds ? ` duração=${Math.round(durationSeconds)}s` : ''}: ${original}`
+      );
       const inicio = Date.now();
+      if (typeof onRecognitionStart === 'function') {
+        try {
+          onRecognitionStart({ model, beamSize, durationSeconds });
+        } catch {
+          // Atualização visual não pode interromper a transcrição.
+        }
+      }
+      const progressTimer = typeof onRecognitionProgress === 'function'
+        ? setInterval(() => {
+            try {
+              onRecognitionProgress({
+                model,
+                durationSeconds,
+                elapsedSeconds: Math.max(1, Math.round((Date.now() - inicio) / 1000)),
+              });
+            } catch {
+              // ignore
+            }
+          }, 30_000)
+        : null;
       // faster-whisper/PyAV decodifica m4a/webm diretamente. Evita criar um WAV
       // enorme antes da transcrição e economiza dezenas de segundos por vídeo.
       return runPythonTranscribe(downloaded, {
@@ -978,6 +1009,8 @@ async function transcribeUrl({
           `[transcricao] Whisper terminou em ${Math.round((Date.now() - inicio) / 1000)}s: ${original}`
         );
         return r;
+      }).finally(() => {
+        if (progressTimer) clearInterval(progressTimer);
       });
     });
     if (!result?.text || String(result.text).trim().length < 20) {
@@ -995,6 +1028,8 @@ async function transcribeUrl({
         preferSubtitles: false,
         allowAudioFallback,
         onFallbackToAudio,
+        onRecognitionStart,
+        onRecognitionProgress,
         contextText,
         preferAccuracy,
       });

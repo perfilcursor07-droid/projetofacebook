@@ -480,14 +480,40 @@ async function transcreverVideoComoFonte(
         allowAudioFallback: permitirFallbackDeAudio,
         onFallbackToAudio: () => {
           if (typeof onPasso === 'function') {
+            const temLegendaDaPublicacao = String(contextText || '').trim().length >= 40;
             onPasso({
               kind: 'transcricao',
               texto: rotulo === 'YouTube'
                 ? 'Não consegui obter a transcrição pública nesta tentativa; baixando somente o áudio (não o vídeo) para reconhecer a fala…'
-                : `Nenhuma transcrição disponibilizada; processando somente o áudio do ${rotulo}…`,
+                : temLegendaDaPublicacao
+                  ? `Legenda escrita da publicação encontrada, mas o ${rotulo} não forneceu a transcrição sincronizada da fala. Processando somente o áudio…`
+                  : `Nenhuma transcrição disponibilizada; processando somente o áudio do ${rotulo}…`,
               url,
             });
           }
+        },
+        onRecognitionStart: ({ model, durationSeconds }) => {
+          if (typeof onPasso !== 'function') return;
+          const duracao = Number(durationSeconds) > 0
+            ? ` (${Math.max(1, Math.round(Number(durationSeconds) / 60))} min de vídeo)`
+            : '';
+          onPasso({
+            kind: 'transcricao',
+            texto: `Áudio pronto. Reconhecendo a fala com precisão${duracao}${model ? ` · modelo ${model}` : ''}…`,
+            url,
+          });
+        },
+        onRecognitionProgress: ({ elapsedSeconds }) => {
+          if (typeof onPasso !== 'function') return;
+          const segundos = Math.max(1, Math.round(Number(elapsedSeconds) || 0));
+          const tempo = segundos < 60
+            ? `${segundos}s`
+            : `${Math.floor(segundos / 60)}min ${String(segundos % 60).padStart(2, '0')}s`;
+          onPasso({
+            kind: 'transcricao',
+            texto: `Transcrição do ${rotulo} em andamento há ${tempo}…`,
+            url,
+          });
         },
       }),
       env.transcricao.totalChatMs,
@@ -728,6 +754,13 @@ async function extrairFontesDeLinks(
           const postSalvo = await buscarPostSocialNaBiblioteca(userId, link, tipo);
           const fonteSalva = fonteDoPostSalvo(postSalvo, link, tipo);
           if (fonteSalva) {
+            if (typeof onPasso === 'function') {
+              onPasso({
+                kind: 'fontes',
+                texto: `Legenda da publicação encontrada (${String(fonteSalva.trecho || '').length} caracteres)`,
+                url: fonteSalva.url,
+              });
+            }
             // O Instagram também publica vídeos em /p/, não apenas /reel/.
             // Registros coletados por fallback podem chegar como "post" genérico.
             if (transcreverVideo && (fonteSalva.isVideo || tipo === 'instagram')) {
@@ -776,6 +809,14 @@ async function extrairFontesDeLinks(
           erro: `Legenda de ${rotulo} vazia ou curta demais. Cole o texto do post no chat.`,
         });
         continue;
+      }
+
+      if (typeof onPasso === 'function') {
+        onPasso({
+          kind: 'fontes',
+          texto: `Legenda da publicação encontrada (${texto.length} caracteres)`,
+          url: social.url || link,
+        });
       }
 
       // Com a opcao ativa, transcreve o audio; sem ela, tenta apenas legendas.
