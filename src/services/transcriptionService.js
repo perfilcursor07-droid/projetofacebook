@@ -253,7 +253,10 @@ async function trySubtitlesFromUrl(url) {
           flags: {
             ...commonFlags,
             writeSub: false,
-            subLangs: 'pt-orig,pt-BR,pt,pt-PT,en-orig,en',
+            // Primeiro peça somente a faixa original. Misturar pt-orig com
+            // traduções faz o YouTube abortar a operação inteira em alguns
+            // vídeos, apesar de a transcrição original estar disponível.
+            subLangs: 'pt-orig',
             extractorArgs: 'youtube:player_client=android_vr;skip=translated_subs',
           },
           auth: {

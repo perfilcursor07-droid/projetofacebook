@@ -451,7 +451,7 @@ async function transcreverVideoComoFonte(
             onPasso({
               kind: 'transcricao',
               texto: rotulo === 'YouTube'
-                ? 'Este vídeo não possui transcrição pública; baixando somente o áudio (não o vídeo) para reconhecer a fala…'
+                ? 'Não consegui obter a transcrição pública nesta tentativa; baixando somente o áudio (não o vídeo) para reconhecer a fala…'
                 : `Nenhuma transcrição disponibilizada; processando somente o áudio do ${rotulo}…`,
               url,
             });

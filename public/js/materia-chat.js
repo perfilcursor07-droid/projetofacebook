@@ -2122,6 +2122,7 @@
     wrap.appendChild(passos);
     const corpo = document.createElement('div');
     corpo.className = 'mia-msg-ai-body';
+    corpo.hidden = true;
     wrap.appendChild(corpo);
     el.mensagens.appendChild(wrap);
 
@@ -2185,6 +2186,7 @@
           if (evento.passo?.texto) setStatus(evento.passo.texto);
         } else if (evento.tipo === 'delta') {
           parcial += evento.texto || '';
+          if (parcial.trim()) corpo.hidden = false;
           renderTexto(corpo, parcial);
           if (!ancorado) scrollFim();
         } else if (evento.tipo === 'pautas') {
@@ -2247,6 +2249,7 @@
         p.style.borderColor = 'rgba(244, 63, 94, 0.35)';
         p.style.color = '#fecdd3';
         p.textContent = curta;
+        corpo.hidden = false;
         corpo.appendChild(p);
       }
     } finally {
