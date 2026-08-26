@@ -144,6 +144,9 @@ const env = {
     downloadMs: Number(process.env.TRANSCRICAO_DOWNLOAD_TIMEOUT_MS) || 300_000,
     audioMs: Number(process.env.TRANSCRICAO_AUDIO_TIMEOUT_MS) || 180_000,
     whisperMs: Number(process.env.TRANSCRICAO_WHISPER_TIMEOUT_MS) || 600_000,
+    /** `base` + beam 1 é várias vezes mais rápido na CPU e suficiente para apuração. */
+    whisperModel: String(process.env.TRANSCRICAO_WHISPER_MODEL || 'base').trim(),
+    whisperBeamSize: Math.max(1, Math.min(5, Number(process.env.TRANSCRICAO_WHISPER_BEAM_SIZE) || 1)),
     /** Whisper "small" na CPU: rodar vários ao mesmo tempo trava o servidor. */
     concorrencia: Math.max(1, Number(process.env.TRANSCRICAO_CONCORRENCIA) || 1),
     /** Espera máxima na fila antes de desistir. */

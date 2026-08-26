@@ -356,6 +356,105 @@ function captionTrackFromInfo(info) {
 }
 
 /**
+ * Lê `captionTracks` do ytInitialPlayerResponse presente no HTML da página.
+ * É mais rápido que executar yt-dlp e funciona como uma terceira rota para
+ * vídeos cuja transcrição aparece no player, mas não nos metadados do servidor.
+ */
+function extractCaptionTracksFromWatchHtml(html) {
+  const source = String(html || '');
+  const marker = '"captionTracks":';
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) return [];
+  const start = source.indexOf('[', markerIndex + marker.length);
+  if (start < 0) return [];
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '[') depth += 1;
+    if (char !== ']') continue;
+    depth -= 1;
+    if (depth !== 0) continue;
+    try {
+      const tracks = JSON.parse(source.slice(start, index + 1));
+      return Array.isArray(tracks) ? tracks : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function chooseCaptionTrack(tracks) {
+  const lista = (Array.isArray(tracks) ? tracks : []).filter(
+    (track) => track?.baseUrl && track?.languageCode
+  );
+  const prioridades = ['pt-BR', 'pt', 'pt-PT', 'en-US', 'en'];
+  for (const language of prioridades) {
+    const track = lista.find((item) => String(item.languageCode) === language);
+    if (track) return track;
+  }
+  return lista[0] || null;
+}
+
+async function tryYouTubeCaptionsFromPage(url) {
+  let videoId = null;
+  try {
+    const parsed = new URL(url);
+    videoId = /youtu\.be$/i.test(parsed.hostname)
+      ? parsed.pathname.split('/').filter(Boolean)[0]
+      : parsed.searchParams.get('v') || parsed.pathname.match(/\/(?:shorts|embed|live)\/([^/?#]+)/i)?.[1];
+  } catch {
+    return null;
+  }
+  if (!videoId) return null;
+
+  try {
+    const response = await axios.get('https://www.youtube.com/watch', {
+      params: { v: videoId, hl: 'pt-BR', persist_hl: 1 },
+      responseType: 'text',
+      timeout: Math.min(LIMITES.legendasMs, 20_000),
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.7',
+      },
+    });
+    const track = chooseCaptionTrack(extractCaptionTracksFromWatchHtml(response.data));
+    if (!track) return null;
+    const captionUrl = new URL(track.baseUrl);
+    if (!/(^|\.)youtube\.com$/i.test(captionUrl.hostname)) return null;
+    captionUrl.searchParams.set('fmt', 'vtt');
+    const captions = await axios.get(captionUrl.toString(), {
+      responseType: 'text',
+      timeout: Math.min(LIMITES.legendasMs, 20_000),
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    const parsed = parseVtt(captions.data);
+    if (!parsed.text || parsed.text.length < 20) return null;
+    return {
+      ...parsed,
+      source: track.kind === 'asr' ? 'youtube-page-auto-captions' : 'youtube-page-subtitles',
+      language: track.languageCode,
+    };
+  } catch (err) {
+    console.warn('[transcricao] leitura da transcrição na página falhou:', err.response?.status || err.message);
+    return null;
+  }
+}
+
+/**
  * Fallback para quando `--write-auto-subs` falha silenciosamente. O JSON do
  * próprio yt-dlp já traz a URL temporária da transcrição pública do YouTube.
  */
@@ -437,6 +536,13 @@ async function transcribeUrl({
         return captions;
       }
     }
+    if (/(?:youtube\.com|youtu\.be)/i.test(original)) {
+      const pageCaptions = await tryYouTubeCaptionsFromPage(original);
+      if (pageCaptions?.text) {
+        console.info(`[transcricao] transcrição obtida diretamente da página: ${original}`);
+        return pageCaptions;
+      }
+    }
     const subtitles = await trySubtitlesFromUrl(original);
     if (subtitles?.text && String(subtitles.text).trim().length >= 20) {
       console.info(`[transcricao] transcrição disponibilizada encontrada: ${original}`);
@@ -473,7 +579,6 @@ async function transcribeUrl({
   fs.mkdirSync(tmpRoot, { recursive: true });
   const tmpDir = fs.mkdtempSync(path.join(tmpRoot, 'url_audio_'));
   const output = path.join(tmpDir, 'source.%(ext)s');
-  const wavPath = path.join(tmpDir, 'audio.wav');
 
   try {
     console.info(`[transcricao] baixando áudio: ${downloadUrl}`);
@@ -497,18 +602,18 @@ async function transcribeUrl({
     const downloaded = fs
       .readdirSync(tmpDir)
       .map((name) => path.join(tmpDir, name))
-      .find((file) => file !== wavPath && !/\.(?:part|ytdl)$/i.test(file) && fs.statSync(file).isFile());
+      .find((file) => !/\.(?:part|ytdl)$/i.test(file) && fs.statSync(file).isFile());
     if (!downloaded) throw new Error('Não foi possível baixar o áudio deste vídeo.');
     if (fs.statSync(downloaded).size > MAX_URL_AUDIO_BYTES) {
       throw new Error('O áudio deste vídeo é grande demais para transcrição automática.');
     }
 
-    await extractAudioWav(downloaded, wavPath, { timeoutMs: LIMITES.audioMs });
-
     const result = await comVagaNoWhisper(() => {
       console.info(`[transcricao] Whisper iniciado: ${original}`);
       const inicio = Date.now();
-      return runPythonTranscribe(wavPath).then((r) => {
+      // faster-whisper/PyAV decodifica m4a/webm diretamente. Evita criar um WAV
+      // enorme antes da transcrição e economiza dezenas de segundos por vídeo.
+      return runPythonTranscribe(downloaded).then((r) => {
         console.info(
           `[transcricao] Whisper terminou em ${Math.round((Date.now() - inicio) / 1000)}s: ${original}`
         );
@@ -595,7 +700,7 @@ function resolvePythonCommand() {
   return null;
 }
 
-function runPythonTranscribe(wavPath) {
+function runPythonTranscribe(mediaPath) {
   const python = resolvePythonCommand();
   if (!python) {
     return Promise.reject(
@@ -605,7 +710,16 @@ function runPythonTranscribe(wavPath) {
     );
   }
 
-  const args = [...python.prefixArgs, SCRIPT_PATH, wavPath, 'small'];
+  const model = /^(?:tiny|base|small|medium|large-v3|turbo)$/i.test(LIMITES.whisperModel)
+    ? LIMITES.whisperModel
+    : 'base';
+  const args = [
+    ...python.prefixArgs,
+    SCRIPT_PATH,
+    mediaPath,
+    model,
+    String(LIMITES.whisperBeamSize || 1),
+  ];
 
   return new Promise((resolve, reject) => {
     const child = spawn(python.cmd, args, { windowsHide: true, env: process.env });
@@ -763,6 +877,8 @@ async function transcribeClip({ clipPath, sourceUrl }) {
 module.exports = {
   transcribeClip,
   transcribeUrl,
+  extractCaptionTracksFromWatchHtml,
+  chooseCaptionTrack,
   trySubtitlesFromUrl,
   resolvePythonCommand,
   parseVtt,

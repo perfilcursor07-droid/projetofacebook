@@ -16,7 +16,8 @@ def main() -> int:
         return 1
 
     audio_path = sys.argv[1]
-    model_size = sys.argv[2] if len(sys.argv) > 2 else "small"
+    model_size = sys.argv[2] if len(sys.argv) > 2 else "base"
+    beam_size = max(1, min(5, int(sys.argv[3]))) if len(sys.argv) > 3 else 1
 
     try:
         from faster_whisper import WhisperModel
@@ -36,9 +37,11 @@ def main() -> int:
         def run_transcribe(vad: bool, language: str | None):
             segments_iter, info = model.transcribe(
                 audio_path,
-                beam_size=5,
+                beam_size=beam_size,
+                best_of=1,
                 vad_filter=vad,
                 language=language,
+                condition_on_previous_text=False,
             )
             segments = []
             texts = []

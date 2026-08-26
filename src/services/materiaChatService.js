@@ -450,7 +450,9 @@ async function transcreverVideoComoFonte(
           if (typeof onPasso === 'function') {
             onPasso({
               kind: 'transcricao',
-              texto: `Nenhuma transcrição disponibilizada; processando somente o áudio do ${rotulo}…`,
+              texto: rotulo === 'YouTube'
+                ? 'Este vídeo não possui transcrição pública; baixando somente o áudio (não o vídeo) para reconhecer a fala…'
+                : `Nenhuma transcrição disponibilizada; processando somente o áudio do ${rotulo}…`,
               url,
             });
           }
