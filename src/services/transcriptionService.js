@@ -13,6 +13,10 @@ const YOUTUBE_PO_TOKEN_SCRIPT = path.resolve(
   __dirname,
   '../../scripts/youtube-po-token.mjs'
 );
+const YOUTUBE_CAPTION_TRACK_SCRIPT = path.resolve(
+  __dirname,
+  '../../scripts/youtube-caption-track.mjs'
+);
 const MAX_URL_AUDIO_BYTES = 300 * 1024 * 1024;
 const MAX_URL_DURATION_SECONDS = 45 * 60;
 const LIMITES = env.transcricao;
@@ -538,6 +542,53 @@ async function getYouTubePoToken(videoId) {
   return pending;
 }
 
+function getYouTubeCaptionTrackFromInnerTube(videoId) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [YOUTUBE_CAPTION_TRACK_SCRIPT, videoId], {
+      windowsHide: true,
+      env: childProcessNetworkEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let finished = false;
+    const done = (fn, value) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+      done(reject, erroDeTempo('O InnerTube demorou para localizar a legenda.'));
+    }, Math.min(Math.max(Number(LIMITES.legendasMs) || 20_000, 12_000), 25_000));
+
+    child.stdout.on('data', (chunk) => {
+      if (stdout.length < 100_000) stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      if (stderr.length < 4_000) stderr += chunk.toString();
+    });
+    child.on('error', (error) => done(reject, error));
+    child.on('close', (code) => {
+      if (finished) return;
+      try {
+        const parsed = JSON.parse(stdout.trim() || '{}');
+        if (code !== 0 || !parsed.baseUrl) {
+          throw new Error(stderr.trim() || `InnerTube terminou com código ${code}`);
+        }
+        done(resolve, parsed);
+      } catch (error) {
+        done(reject, error);
+      }
+    });
+  });
+}
+
 async function downloadYouTubeCaption(baseUrl, videoId) {
   const needsToken = captionUrlNeedsPoToken(baseUrl);
   let poToken = null;
@@ -565,16 +616,49 @@ async function downloadYouTubeCaption(baseUrl, videoId) {
   return parsed;
 }
 
-async function tryYouTubeCaptionsFromPage(url) {
-  let videoId = null;
+function extractYouTubeVideoId(value) {
   try {
-    const parsed = new URL(url);
-    videoId = /youtu\.be$/i.test(parsed.hostname)
-      ? parsed.pathname.split('/').filter(Boolean)[0]
-      : parsed.searchParams.get('v') || parsed.pathname.match(/\/(?:shorts|embed|live)\/([^/?#]+)/i)?.[1];
+    const parsed = new URL(value);
+    if (/youtu\.be$/i.test(parsed.hostname)) {
+      return parsed.pathname.split('/').filter(Boolean)[0] || null;
+    }
+    return (
+      parsed.searchParams.get('v') ||
+      parsed.pathname.match(/\/(?:shorts|embed|live)\/([^/?#]+)/i)?.[1] ||
+      null
+    );
   } catch {
     return null;
   }
+}
+
+async function tryYouTubeCaptionsFromInnerTube(url) {
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) return null;
+
+  try {
+    const track = await getYouTubeCaptionTrackFromInnerTube(videoId);
+    const parsed = await downloadYouTubeCaption(track.baseUrl, videoId);
+    if (!parsed.text || parsed.text.length < 20) return null;
+    return {
+      ...parsed,
+      source:
+        track.kind === 'asr'
+          ? 'youtube-innertube-auto-captions'
+          : 'youtube-innertube-subtitles',
+      language: track.languageCode,
+    };
+  } catch (error) {
+    console.warn(
+      '[transcricao] fallback InnerTube da legenda falhou:',
+      error.response?.status || error.message
+    );
+    return null;
+  }
+}
+
+async function tryYouTubeCaptionsFromPage(url) {
+  const videoId = extractYouTubeVideoId(url);
   if (!videoId) return null;
 
   try {
@@ -588,7 +672,10 @@ async function tryYouTubeCaptionsFromPage(url) {
       },
     });
     const track = chooseCaptionTrack(extractCaptionTracksFromWatchHtml(response.data));
-    if (!track) return null;
+    if (!track) {
+      console.info(`[transcricao] página web sem captionTracks: ${videoId}`);
+      return null;
+    }
     const captionUrl = new URL(track.baseUrl);
     if (!/(^|\.)youtube\.com$/i.test(captionUrl.hostname)) return null;
     const parsed = await downloadYouTubeCaption(captionUrl, videoId);
@@ -687,6 +774,11 @@ async function transcribeUrl({
       if (pageCaptions?.text) {
         console.info(`[transcricao] transcrição obtida diretamente da página: ${original}`);
         return pageCaptions;
+      }
+      const innerTubeCaptions = await tryYouTubeCaptionsFromInnerTube(original);
+      if (innerTubeCaptions?.text) {
+        console.info(`[transcricao] transcrição obtida pelo InnerTube: ${original}`);
+        return innerTubeCaptions;
       }
     }
     const subtitles = await trySubtitlesFromUrl(original);
@@ -1034,6 +1126,7 @@ module.exports = {
   captionUrlNeedsPoToken,
   buildYouTubeCaptionUrl,
   tryYouTubeCaptionsFromPage,
+  tryYouTubeCaptionsFromInnerTube,
   trySubtitlesFromUrl,
   resolvePythonCommand,
   parseVtt,
