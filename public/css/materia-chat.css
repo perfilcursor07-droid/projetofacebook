@@ -2364,6 +2364,12 @@ body.mia-chat-drawer-open {
   padding: 1.15rem 1.2rem;
 }
 
+/* A regra display:flex acima anulava o atributo hidden em alguns navegadores,
+   deixando a moldura vazia visível enquanto o Claude ainda respondia. */
+.mia-msg-ai-body[hidden] {
+  display: none;
+}
+
 @media (min-width: 640px) {
   .mia-msg-ai-body {
     padding: 1.4rem 1.6rem;

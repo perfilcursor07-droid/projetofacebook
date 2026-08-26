@@ -1703,9 +1703,10 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
  * este filtro, o tamanho do texto fazia o Claude Livre oferecer rascunho e
  * manchetes para uma simples devolutiva de pesquisa.
  */
-function respostaLivrePodeVirarMateria(info) {
+function respostaLivrePodeVirarMateria(info, { pedido = '' } = {}) {
   if (!info?.ehMateria || info.devolutivaDePesquisa) return false;
-  const inicio = `${info.titulo || ''}\n${info.corpo || ''}`
+  const conteudo = `${info.titulo || ''}\n${info.corpo || ''}`;
+  const inicio = conteudo
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 900)
@@ -1713,7 +1714,28 @@ function respostaLivrePodeVirarMateria(info) {
   if (/^(?:i\s+)?n[ãa]o\s+(?:encontrei|localizei|achei|identifiquei|há|ha)\b/.test(inicio)) {
     return false;
   }
-  return !/\b(?:posso seguir de duas formas|n[ãa]o encontrei(?:,| nas fontes| nenhuma)|só reação de fi[eé]is anônimos)\b/i.test(inicio);
+  if (/\b(?:posso seguir de duas formas|n[ãa]o encontrei(?:,| nas fontes| nenhuma)|só reação de fi[eé]is anônimos)\b/i.test(inicio)) {
+    return false;
+  }
+
+  const pedidoEditorial =
+    /\b(?:mat[eé]ria|reportagem|artigo|not[ií]cia|rascunho)\b/i.test(String(pedido || '')) ||
+    /\b(?:escrev\w*|fa[çc]a|crie|monte|redija|transforme|gere|prepare)\b[\s\S]{0,120}\b(?:texto|conte[uú]do|post)\b/i.test(
+      String(pedido || '')
+    );
+  const paragrafos = String(info.corpo || '').split(/\n\s*\n/).filter((p) => p.trim().length >= 60);
+  const estruturaEditorial =
+    /(?:^|\n)\s*(?:Fonte|Foto)\s*:/im.test(String(info.corpo || '')) ||
+    (Array.isArray(info.hashtags) && info.hashtags.length >= 2) ||
+    (String(info.corpo || '').length >= 700 && paragrafos.length >= 4);
+
+  // Uma frase em negrito numa conversa comum não é manchete. Só oferecemos
+  // rascunho/títulos quando o pedido foi editorial ou a própria resposta tem
+  // estrutura inequívoca de matéria.
+  if (!pedidoEditorial && !estruturaEditorial) return false;
+
+  return !/^(?:e\s+a[ií]|ol[aá]|oi|boa\s+(?:noite|tarde|dia)|tudo\s+certo)\b/i.test(inicio) &&
+    !/\b(?:s[oó]\s+bater\s+papo|como\s+posso\s+ajudar|quer\s+fazer\s+outra\s+mat[eé]ria)\b/i.test(inicio);
 }
 
 function normalizarNomeFonteLivre(valor) {
@@ -2262,12 +2284,12 @@ async function responder({
   const finalizarLivre = async (resposta, { fontesUsadas = [], usouWeb = false } = {}) => {
     let respostaLimpa = limparArtefatosDeTextoLivre(resposta);
     let infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
-    let podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre);
+    let podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido });
     if (podeSalvarRascunho) {
       const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
       respostaLimpa = removerComentariosEditoriaisIa(respostaLimpa);
       infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
-      podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre);
+      podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido });
     }
     let titulosAlternativos = [];
     if (podeSalvarRascunho && infoLivre.titulo) {
@@ -2314,8 +2336,8 @@ async function responder({
       chat_id: chat.id,
       role: 'assistant',
       content: respostaLimpa,
-      titulo: infoLivre.titulo ? limparParaBanco(infoLivre.titulo, 180) : null,
-      hashtags: JSON.stringify(infoLivre.hashtags || []),
+      titulo: podeSalvarRascunho && infoLivre.titulo ? limparParaBanco(infoLivre.titulo, 180) : null,
+      hashtags: JSON.stringify(podeSalvarRascunho ? infoLivre.hashtags || [] : []),
       passos: JSON.stringify(passosSalvos),
       fontes: JSON.stringify(fontesSalvas),
       pesquisou_web: usouWeb ? 1 : 0,

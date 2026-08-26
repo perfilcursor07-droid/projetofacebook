@@ -3,6 +3,7 @@ const test = require('node:test');
 
 const {
   interpretarRespostaLivreParaRascunho,
+  respostaLivrePodeVirarMateria,
   extrairFontesDeclaradasRespostaLivre,
   selecionarFontesRespostaLivre,
   consultasParaResolverFontesLivres,
@@ -46,6 +47,36 @@ Foto: Reprodução/CGADB
   assert.match(resultado.corpo, /Fonte: JM Notícia/);
   assert.match(resultado.corpo, /Foto: Reprodução\/CGADB/);
   assert.deepEqual(resultado.hashtags, ['CGADB', 'AssembleiaDeDeus', 'Polemica']);
+});
+
+test('saudação com primeira linha em negrito não vira matéria nem recebe títulos', () => {
+  const resposta = `**E aí! Tudo certo?**
+
+Estou por aqui para ajudar. Você pode me passar um tema, um link ou simplesmente conversar comigo sobre qualquer assunto.
+
+Quer fazer outra matéria agora, seguir com algum tema específico ou só bater papo mesmo?`;
+  const info = interpretarRespostaLivreParaRascunho(resposta);
+
+  assert.equal(info.ehMateria, true, 'o parser tolerante ainda reconhece texto longo');
+  assert.equal(
+    respostaLivrePodeVirarMateria(info, { pedido: 'Fala cara' }),
+    false,
+    'a intenção do pedido deve impedir rascunho e títulos em conversa casual'
+  );
+});
+
+test('pedido explícito de matéria continua habilitando rascunho e títulos', () => {
+  const resposta = `**Igreja realiza encontro e reúne famílias durante programação especial**
+
+A igreja realizou um encontro no fim de semana e reuniu famílias de diferentes bairros. A programação contou com apresentações, momentos de oração e atividades voltadas aos participantes.
+
+Segundo a organização, o evento faz parte do calendário anual da instituição e deverá ganhar uma nova edição no próximo ano, depois da participação registrada nesta edição.`;
+  const info = interpretarRespostaLivreParaRascunho(resposta);
+
+  assert.equal(
+    respostaLivrePodeVirarMateria(info, { pedido: 'Faça uma matéria com esse conteúdo' }),
+    true
+  );
 });
 
 test('título revisado pelo usuário prevalece no rascunho do Claude livre', () => {
