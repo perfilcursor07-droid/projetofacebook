@@ -948,12 +948,13 @@ body.mia-chat-drawer-open {
   border: 1px solid #4f46e5;
   background: #0f172a;
   padding: 0.65rem 0.9rem;
-  font-size: 0.9375rem;
-  line-height: 1.55;
-  color: #f4f4f5;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, ui-serif, serif;
+  font-size: 1rem;
+  line-height: 1.62;
+  letter-spacing: -0.006em;
+  color: #eeeae2;
   resize: vertical;
   outline: none;
-  font-family: inherit;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -1008,17 +1009,19 @@ body.mia-chat-drawer-open {
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: pre-wrap;
-  border-radius: 1.25rem 1.25rem 0.35rem 1.25rem;
+  border-radius: 1rem;
   background: var(--mia-chat-user-bg);
-  padding: 0.65rem 0.9rem;
-  font-size: 0.9375rem;
-  line-height: 1.55;
-  color: #f4f4f5;
+  padding: 0.65rem 0.85rem;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, ui-serif, serif;
+  font-size: 1rem;
+  line-height: 1.62;
+  letter-spacing: -0.006em;
+  color: #eeeae2;
 }
 
 @media (min-width: 640px) {
   .mia-msg-user-bubble {
-    padding: 0.7rem 1rem;
+    padding: 0.7rem 0.95rem;
   }
 }
 
@@ -2036,11 +2039,6 @@ body.mia-chat-drawer-open {
 /* Bolha do usuário: cantos iguais, sem "rabinho", como no Claude */
 .mia-msg-user-bubble {
   border-radius: 1.15rem;
-  padding: 0.8rem 1.05rem;
-  font-size: 0.975rem;
-  line-height: 1.65;
-  background: var(--mia-chat-user-bg);
-  color: #f4f2ec;
 }
 
 /* Resposta da IA: texto solto na página, sem caixa, com leitura mais folgada */
@@ -2419,14 +2417,17 @@ body.mia-chat-drawer-open {
 }
 
 .mia-msg-user-bubble {
-  width: fit-content;
   max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-wrap: anywhere;
   word-break: break-word;
-  border-radius: 1rem;
-  padding: 0.75rem 1rem;
-  font-size: 0.9375rem;
-  line-height: 1.5;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, ui-serif, serif;
+  font-size: 1rem;
+  line-height: 1.62;
+  letter-spacing: -0.006em;
+  color: #eeeae2;
+  padding: 0.65rem 0.85rem;
 }
 
 .mia-chat-composer {
