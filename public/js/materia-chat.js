@@ -1844,8 +1844,12 @@
 
   /* ------------------------------ conversas ------------------------------ */
 
-  function novaConversa() {
+  function novaConversa({ preservarTipo = false } = {}) {
     state.chatId = null;
+    // Esta é a tela de criação de matérias. Uma conversa nova iniciada pelo
+    // botão "+ Nova conversa" deve voltar ao fluxo editorial; Claude livre
+    // continua disponível quando o editor o selecionar explicitamente.
+    if (!preservarTipo) state.tipoConversa = 'materia';
     try {
       sessionStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -1854,6 +1858,7 @@
     el.titulo.textContent = state.tipoConversa === 'livre' ? 'Nova conversa com Claude' : 'Nova conversa';
     el.renomear?.classList.add('hidden');
     state.pesquisarWeb = false;
+    aplicarTipoConversa();
     aplicarToggleWeb();
     limparMensagens();
     renderConversas();
@@ -1948,7 +1953,7 @@
     if (tipo === state.tipoConversa) return;
     const tinhaConversa = Boolean(state.chatId);
     state.tipoConversa = tipo;
-    if (tinhaConversa) novaConversa();
+    if (tinhaConversa) novaConversa({ preservarTipo: true });
     aplicarTipoConversa();
     setStatus(
       tipo === 'livre'
