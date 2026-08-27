@@ -897,9 +897,15 @@ body.mia-chat-drawer-open {
   position: relative;
   align-items: flex-start;
   gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .mia-msg-edit-btn {
+  position: absolute;
+  right: 100%;
+  top: 0.25rem;
+  margin-right: 0.25rem;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -913,7 +919,6 @@ body.mia-chat-drawer-open {
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
-  margin-top: 0.25rem;
 }
 .mia-msg-edit-btn svg {
   width: 0.875rem;
@@ -935,7 +940,8 @@ body.mia-chat-drawer-open {
   gap: 0.5rem;
 }
 .mia-msg-edit-textarea {
-  width: min(88%, 36rem);
+  width: 100%;
+  max-width: 100%;
   min-height: 3.5rem;
   max-height: 14rem;
   border-radius: 0.75rem;
@@ -948,6 +954,8 @@ body.mia-chat-drawer-open {
   resize: vertical;
   outline: none;
   font-family: inherit;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .mia-msg-edit-textarea:focus {
   border-color: #818cf8;
@@ -988,13 +996,17 @@ body.mia-chat-drawer-open {
 }
 @media (min-width: 640px) {
   .mia-msg-edit-textarea {
-    width: min(75%, 36rem);
     padding: 0.7rem 1rem;
   }
 }
 
 .mia-msg-user-bubble {
-  max-width: min(88%, 36rem);
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   white-space: pre-wrap;
   border-radius: 1.25rem 1.25rem 0.35rem 1.25rem;
   background: var(--mia-chat-user-bg);
@@ -1006,7 +1018,6 @@ body.mia-chat-drawer-open {
 
 @media (min-width: 640px) {
   .mia-msg-user-bubble {
-    max-width: min(75%, 36rem);
     padding: 0.7rem 1rem;
   }
 }
@@ -2030,13 +2041,6 @@ body.mia-chat-drawer-open {
   line-height: 1.65;
   background: var(--mia-chat-user-bg);
   color: #f4f2ec;
-  max-width: min(85%, 34rem);
-}
-
-@media (min-width: 640px) {
-  .mia-msg-user-bubble {
-    max-width: min(72%, 34rem);
-  }
 }
 
 /* Resposta da IA: texto solto na página, sem caixa, com leitura mais folgada */
@@ -2291,16 +2295,7 @@ body.mia-chat-drawer-open {
   }
 }
 
-/* A bolha do usuário cresce junto, senão fica desproporcional na coluna larga */
-.mia-msg-user-bubble {
-  max-width: min(88%, 40rem);
-}
-
-@media (min-width: 640px) {
-  .mia-msg-user-bubble {
-    max-width: min(75%, 40rem);
-  }
-}
+/* Bolha do usuário usa a largura da coluna do chat */
 
 /* Menos margem lateral: em telas grandes a sobra já vem da própria coluna */
 @media (min-width: 1024px) {
@@ -2342,15 +2337,6 @@ body.mia-chat-drawer-open {
 }
 
 /* Bolha do usuário proporcional à coluna nova */
-.mia-msg-user-bubble {
-  max-width: min(85%, 32rem);
-}
-
-@media (min-width: 640px) {
-  .mia-msg-user-bubble {
-    max-width: min(72%, 32rem);
-  }
-}
 
 /* No Claude a resposta fica solta sobre o fundo da conversa. Cartões ficam
    reservados para ferramentas, fontes e ações, não para o texto principal. */
@@ -2433,17 +2419,14 @@ body.mia-chat-drawer-open {
 }
 
 .mia-msg-user-bubble {
-  max-width: min(78%, 30rem);
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   border-radius: 1rem;
-  padding: 0.625rem 0.875rem;
+  padding: 0.75rem 1rem;
   font-size: 0.9375rem;
   line-height: 1.5;
-}
-
-@media (min-width: 640px) {
-  .mia-msg-user-bubble {
-    max-width: min(68%, 30rem);
-  }
 }
 
 .mia-chat-composer {
