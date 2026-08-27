@@ -650,7 +650,7 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-messages > * {
-  width: 100%;
+  width: 47%;
   max-width: var(--mia-chat-stream);
   margin-left: auto;
   margin-right: auto;
