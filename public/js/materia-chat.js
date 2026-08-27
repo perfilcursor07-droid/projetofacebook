@@ -189,6 +189,22 @@
     }
   }
 
+  async function duplicarConversa(conversa) {
+    if (!conversa?.id) return;
+    try {
+      setStatus('Duplicando conversa…');
+      const data = await api(`${API}/conversas/${conversa.id}/duplicar`, {
+        method: 'POST',
+      });
+      await carregarConversas();
+      await abrirConversa(data.chat.id);
+      setStatus('Conversa duplicada');
+    } catch (err) {
+      setStatus('');
+      alert(err.message);
+    }
+  }
+
   function renderConversas() {
     const filtro = String(el.busca?.value || '').trim().toLowerCase();
     el.lista.replaceChildren();
@@ -245,6 +261,18 @@
         renomearConversaNaLista(c);
       });
 
+      const duplicar = document.createElement('button');
+      duplicar.type = 'button';
+      duplicar.className = 'mia-chat-conv-action mia-chat-conv-duplicate';
+      duplicar.title = 'Duplicar conversa';
+      duplicar.setAttribute('aria-label', duplicar.title);
+      duplicar.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
+      duplicar.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        duplicarConversa(c);
+      });
+
       const excluir = document.createElement('button');
       excluir.type = 'button';
       excluir.className = 'mia-chat-conv-action mia-chat-conv-del';
@@ -264,6 +292,7 @@
 
       linha.appendChild(btn);
       acoes.appendChild(fixar);
+      acoes.appendChild(duplicar);
       acoes.appendChild(editar);
       acoes.appendChild(excluir);
       linha.appendChild(acoes);

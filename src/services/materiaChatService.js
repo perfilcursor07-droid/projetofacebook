@@ -1,6 +1,7 @@
 const AiChats = require('../models/AiChats');
 const AiChatMessages = require('../models/AiChatMessages');
 const AiMatters = require('../models/AiMatters');
+const db = require('../config/db');
 const facebookPageMatterService = require('./facebookPageMatterService');
 
 const PERIODOS = ['24h', '3d', '7d', '15d', '30d', '60d', '90d', '180d'];
@@ -1600,6 +1601,63 @@ async function criarConversa({
     fixada: Boolean(chat.fixado),
     mensagens: [],
   };
+}
+
+/**
+ * Cria uma conversa independente com uma copia completa do historico.
+ * Associacoes com rascunhos salvos nao sao herdadas: na copia, as respostas
+ * podem ser reutilizadas e salvas novamente sem apontar para a materia original.
+ */
+async function duplicarConversa({ userId, chatId }) {
+  const original = await AiChats.findByIdForUser(chatId, userId);
+  if (!original) throw erro('Conversa não encontrada', 404);
+
+  const tituloOriginal = original.titulo || 'Nova conversa';
+  const sufixo = ' (cópia)';
+  const titulo = `${tituloOriginal.slice(0, 180 - sufixo.length).trim()}${sufixo}`;
+
+  const novoId = await db.transaction(async (trx) => {
+    const [id] = await trx('ai_chats').insert({
+      user_id: original.user_id,
+      facebook_page_id: original.facebook_page_id || null,
+      titulo,
+      modo: original.modo === 'livre' ? 'livre' : 'materia',
+      fixado: false,
+      pesquisar_web: Boolean(original.pesquisar_web),
+      tom: original.tom || 'natural',
+      periodo: original.periodo || PERIODO_PADRAO,
+      last_message_at: trx.fn.now(),
+    });
+
+    const mensagens = await trx('ai_chat_messages')
+      .where({ chat_id: original.id })
+      .orderBy('id', 'asc');
+
+    if (mensagens.length) {
+      const copias = mensagens.map((mensagem) => {
+        const {
+          id: _id,
+          chat_id: _chatId,
+          matter_id: _matterId,
+          matter_ids: _matterIds,
+          created_at: _createdAt,
+          ...conteudo
+        } = mensagem;
+        return {
+          ...conteudo,
+          chat_id: id,
+          matter_id: null,
+          matter_ids: null,
+          created_at: trx.fn.now(),
+        };
+      });
+      await trx('ai_chat_messages').insert(copias);
+    }
+
+    return id;
+  });
+
+  return obterConversa({ userId, chatId: novoId });
 }
 
 /** Localiza uma matéria completa mesmo quando o Claude deixa notas antes dela. */
@@ -4695,6 +4753,7 @@ async function gerarTitulosAlternativosDaMensagem({ userId, messageId, tituloAtu
 module.exports = {
   listarConversas,
   criarConversa,
+  duplicarConversa,
   obterConversa,
   renomearConversa,
   fixarConversa,

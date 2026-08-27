@@ -126,3 +126,23 @@ test('encaminha a opção de fixar conversa para o usuário autenticado', async 
   assert.equal(res.statusCode, 200);
   assert.match(res.output, /"fixada":true/);
 });
+
+test('duplica a conversa do usuário autenticado e retorna a cópia criada', async () => {
+  const req = fakeRequest();
+  req.params.id = '17';
+  const res = new FakeResponse();
+  let payload = null;
+  const controller = carregarController({
+    duplicarConversa: async (dados) => {
+      payload = dados;
+      return { id: 31, titulo: 'Conversa importante (cópia)', mensagens: [] };
+    },
+  });
+
+  await controller.duplicar(req, res, () => {});
+
+  assert.deepEqual(payload, { userId: 2, chatId: 17 });
+  assert.equal(res.statusCode, 201);
+  assert.match(res.output, /"id":31/);
+  assert.match(res.output, /\(cópia\)/);
+});

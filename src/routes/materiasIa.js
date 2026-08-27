@@ -9,6 +9,7 @@ const router = express.Router();
 router.get('/chat/conversas', chatController.listar);
 router.post('/chat/conversas', chatController.criar);
 router.get('/chat/conversas/:id', chatController.obter);
+router.post('/chat/conversas/:id/duplicar', chatController.duplicar);
 router.patch('/chat/conversas/:id', chatController.renomear);
 router.patch('/chat/conversas/:id/fixar', chatController.fixar);
 router.delete('/chat/conversas/:id', chatController.excluir);

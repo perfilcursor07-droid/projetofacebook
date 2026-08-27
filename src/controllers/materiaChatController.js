@@ -35,6 +35,19 @@ async function obter(req, res, next) {
   }
 }
 
+async function duplicar(req, res, next) {
+  try {
+    const chat = await chatService.duplicarConversa({
+      userId: req.session.userId,
+      chatId: Number(req.params.id),
+    });
+    return res.status(201).json({ ok: true, chat });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 async function renomear(req, res, next) {
   try {
     const chat = await chatService.renomearConversa({
@@ -274,6 +287,7 @@ module.exports = {
   listar,
   criar,
   obter,
+  duplicar,
   renomear,
   fixar,
   excluir,
