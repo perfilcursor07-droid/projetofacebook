@@ -48,6 +48,18 @@ function authHeaders(extra = {}, profileKey = null) {
   return headers;
 }
 
+function isTwitterByoConfigured() {
+  return Boolean(env.ayrshare?.twitterApiKey && env.ayrshare?.twitterApiSecret);
+}
+
+function twitterByoHeaders() {
+  if (!isTwitterByoConfigured()) return {};
+  return {
+    'X-Twitter-OAuth1-Api-Key': env.ayrshare.twitterApiKey,
+    'X-Twitter-OAuth1-Api-Secret': env.ayrshare.twitterApiSecret,
+  };
+}
+
 function collectAyrshareErrorParts(body) {
   const parts = [];
   const push = (item) => {
@@ -316,6 +328,7 @@ async function fetchProfileByKey(profileKey, { permitirPrimary = false } = {}) {
   const instagram = displayNames.find(
     (d) => String(d?.platform || '').toLowerCase() === 'instagram'
   );
+  const x = displayNames.find((d) => ['twitter', 'x'].includes(String(d?.platform || '').toLowerCase()));
 
   return {
     refId: data?.refId || null,
@@ -328,6 +341,8 @@ async function fetchProfileByKey(profileKey, { permitirPrimary = false } = {}) {
     instagramConnected: active.some((p) => String(p).toLowerCase() === 'instagram'),
     instagramUsername:
       instagram?.username || instagram?.displayName || instagram?.pageName || null,
+    xConnected: active.some((p) => ['twitter', 'x'].includes(String(p).toLowerCase())),
+    xUsername: x?.username || x?.displayName || x?.pageName || null,
     raw: data,
   };
 }
@@ -346,11 +361,14 @@ async function publishToFacebook({
   publicarFacebook = true,
   // Mesma chamada publica no Instagram do mesmo User Profile da Ayrshare.
   publicarInstagram = false,
+  // A API chama a plataforma de "twitter", mas a interface usa a marca X.com.
+  publicarX = false,
 }) {
   assertConfigured();
 
   // FB: mesma @menção só 1×/dia — troca @handle por #handle antes do envio.
-  let content = String(post || '').replace(
+  const originalContent = String(post || '');
+  let content = originalContent.replace(
     /(^|[^A-Za-z0-9._])@([A-Za-z0-9._]{2,50})\b/g,
     '$1#$2'
   );
@@ -369,8 +387,10 @@ async function publishToFacebook({
   // Instagram exige mídia: post só de texto é recusado pela API.
   const vaiNoInstagram = Boolean(publicarInstagram) && Boolean(mediaUrl);
   if (vaiNoInstagram) plataformas.push('instagram');
+  const vaiNoX = Boolean(publicarX);
+  if (vaiNoX) plataformas.push('twitter');
   if (!plataformas.length) {
-    const err = new Error('Selecione Facebook, Instagram ou os dois para publicar.');
+    const err = new Error('Selecione Facebook, Instagram, X.com ou mais de uma rede para publicar.');
     err.status = 400;
     throw err;
   }
@@ -378,13 +398,22 @@ async function publishToFacebook({
   const instagramContent = vaiNoInstagram
     ? limitarLegendaInstagram(limitHashtags(content, INSTAGRAM_HASHTAG_LIMIT))
     : content;
+  // O limite do X é 280 caracteres. Mantemos o começo da legenda, que contém
+  // a manchete, em vez de deixar a Ayrshare recusar toda a publicação.
+  // Não reutilize a versão do Facebook (que troca @menções por hashtags): no X,
+  // as menções são válidas e devem ser preservadas.
+  const xContent =
+    originalContent.length > 280
+      ? `${originalContent.slice(0, 279).trimEnd()}…`
+      : originalContent;
+  const postsPorPlataforma = {};
+  if (publicarFacebook) postsPorPlataforma.facebook = content;
+  if (vaiNoInstagram) postsPorPlataforma.instagram = instagramContent;
+  if (vaiNoX) postsPorPlataforma.twitter = xContent;
   const body = {
-    // Ayrshare aceita conteúdo específico por plataforma. Assim o Facebook
-    // conserva a legenda completa e apenas o Instagram recebe o limite exigido.
-    post:
-      vaiNoInstagram && publicarFacebook
-        ? { facebook: content, instagram: instagramContent }
-        : instagramContent,
+    // Ayrshare aceita conteúdo específico por plataforma. Facebook conserva a
+    // legenda completa; Instagram e X recebem seus respectivos limites.
+    post: plataformas.length > 1 ? postsPorPlataforma : postsPorPlataforma[plataformas[0]],
     platforms: plataformas,
   };
 
@@ -413,6 +442,7 @@ async function publishToFacebook({
       vaiNoInstagram && (instagramContent.match(/(?<![\p{L}\p{N}_/])#[\p{L}\p{N}_]+/gu) || []).length,
     caracteresFacebook: publicarFacebook ? content.length : 0,
     caracteresInstagram: vaiNoInstagram ? instagramContent.length : 0,
+    caracteresX: vaiNoX ? xContent.length : 0,
     hasProfileKey: Boolean(pk),
     mediaHost: mediaUrl ? (() => {
       try {
@@ -425,7 +455,10 @@ async function publishToFacebook({
 
   try {
     let { data } = await axios.post(`${API}/post`, body, {
-      headers: authHeaders({ 'Content-Type': 'application/json' }, pk || null),
+      headers: authHeaders(
+        { 'Content-Type': 'application/json', ...(vaiNoX ? twitterByoHeaders() : {}) },
+        pk || null
+      ),
       timeout: 120000,
     });
     // O POST pode devolver somente o ID da submissão enquanto as plataformas
@@ -450,10 +483,10 @@ async function publishToFacebook({
     // Às vezes o POST retorna o ID superior antes de preencher postIds. O GET
     // oficial pelo ID reconcilia o resultado sem disparar uma publicação nova.
     if (
-      vaiNoInstagram &&
+      (vaiNoInstagram || vaiNoX) &&
       data?.id &&
-      !platformOutcome(data, 'instagram') &&
-      !platformFailure(data, 'instagram')
+      ((vaiNoInstagram && !platformOutcome(data, 'instagram') && !platformFailure(data, 'instagram')) ||
+        (vaiNoX && !platformOutcome(data, 'twitter') && !platformFailure(data, 'twitter')))
     ) {
       console.warn('[ayrshare] instagram sem resultado imediato; consultando post', {
         id: String(data.id),
@@ -462,7 +495,7 @@ async function publishToFacebook({
       });
       try {
         const checked = await axios.get(`${API}/post/${encodeURIComponent(String(data.id))}`, {
-          headers: authHeaders({}, pk || null),
+          headers: authHeaders(vaiNoX ? twitterByoHeaders() : {}, pk || null),
           timeout: 30000,
         });
         if (checked?.data && typeof checked.data === 'object') {
@@ -506,6 +539,8 @@ async function publishToFacebook({
     // Em falhas de validação a Ayrshare pode devolver postIds: [] e colocar o
     // erro somente no array superior `errors` (por exemplo, código 151).
     const igTopLevelError = platformFailure(data, 'instagram');
+    const x = platformOutcome(data, 'twitter');
+    const xTopLevelError = platformFailure(data, 'twitter');
 
     // Falha só no Instagram não invalida o post do Facebook: o editor é avisado.
     const igStatus = String(ig?.status || '').toLowerCase();
@@ -519,22 +554,47 @@ async function publishToFacebook({
     if (!igErro && !ig && String(data?.status || '').toLowerCase() === 'error') {
       igErro = apiErrorMessage({ response: { data } });
     }
+    const xStatus = String(x?.status || '').toLowerCase();
+    let xErro =
+      x && (xStatus === 'error' || xStatus === 'failed')
+        ? String(x.message || x.error || 'X.com recusou a publicação')
+        : null;
+    if (!xErro && xTopLevelError) {
+      xErro = apiErrorMessage({ response: { data: { errors: [xTopLevelError] } } });
+    }
+    if (!xErro && !x && vaiNoX && String(data?.status || '').toLowerCase() === 'error') {
+      xErro = apiErrorMessage({ response: { data } });
+    }
     const ayrshareId = data?.id ? String(data.id) : submissionId;
     const overallStatus = String(data?.status || '').toLowerCase();
     const igAcceptedWithoutDetails =
       !igErro &&
       !ig &&
+      vaiNoInstagram &&
+      Boolean(ayrshareId) &&
+      !['error', 'failed'].includes(overallStatus);
+    const xAcceptedWithoutDetails =
+      !xErro &&
+      !x &&
+      vaiNoX &&
       Boolean(ayrshareId) &&
       !['error', 'failed'].includes(overallStatus);
     if (igErro) console.warn('[ayrshare] instagram falhou:', igErro);
+    if (xErro) console.warn('[ayrshare] x.com falhou:', xErro);
     if (igAcceptedWithoutDetails) {
       console.warn('[ayrshare] instagram aceito sem detalhes da plataforma', {
         id: ayrshareId,
         status: overallStatus,
       });
     }
-    if (!publicarFacebook && (!ig && !igAcceptedWithoutDetails || igErro)) {
-      const err = new Error(igErro || 'A Ayrshare não confirmou o post no Instagram. Verifique a conta em Social Accounts.');
+    if (
+      !publicarFacebook &&
+      ((!ig && !igAcceptedWithoutDetails) || igErro) &&
+      ((!x && !xAcceptedWithoutDetails) || xErro)
+    ) {
+      const err = new Error(
+        xErro || igErro || 'A Ayrshare não confirmou a publicação. Verifique as contas em Social Accounts.'
+      );
       err.status = 502;
       throw err;
     }
@@ -567,6 +627,18 @@ async function publishToFacebook({
           : publicarInstagram && !ig && !igAcceptedWithoutDetails
             ? 'A Ayrshare não confirmou o post no Instagram. Verifique a conta em Social Accounts.'
             : null),
+      x_pedido: Boolean(publicarX),
+      x_publicado: Boolean(
+        vaiNoX && !xErro && (x || xAcceptedWithoutDetails || overallStatus === 'success')
+      ),
+      x_pendente: Boolean(xAcceptedWithoutDetails && overallStatus !== 'success'),
+      x_post_id: x && !xErro && x.id ? String(x.id) : null,
+      x_post_url: (x && !xErro && x.postUrl) || null,
+      x_erro:
+        xErro ||
+        (publicarX && !x && !xAcceptedWithoutDetails
+          ? 'A Ayrshare não confirmou o post no X.com. Verifique a conta em Social Accounts.'
+          : null),
       raw: data,
     };
   } catch (err) {
@@ -945,6 +1017,7 @@ module.exports = {
   uploadMediaFile,
   publicMediaUrlFromLocal,
   looksLikeRefId,
+  isTwitterByoConfigured,
   looksLikeAyrshareId,
   fetchProfileByKey,
   fetchFacebookPostAnalytics,

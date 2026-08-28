@@ -708,8 +708,10 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     overrides.publicar_instagram != null
       ? Boolean(overrides.publicar_instagram)
       : Boolean(matter.publicar_instagram);
-  if (!pedidoFacebook && !pedidoInstagram) {
-    const err = new Error('Selecione Facebook, Instagram ou os dois para publicar.');
+  const pedidoX =
+    overrides.publicar_x != null ? Boolean(overrides.publicar_x) : Boolean(matter.publicar_x);
+  if (!pedidoFacebook && !pedidoInstagram && !pedidoX) {
+    const err = new Error('Selecione Facebook, Instagram, X.com ou mais de uma rede para publicar.');
     err.status = 400;
     throw err;
   }
@@ -721,6 +723,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     page: page.page_name,
     pedido: pedidoInstagram,
     facebook: pedidoFacebook,
+    x: pedidoX,
     origem: overrides.publicar_instagram != null ? 'requisicao' : 'materia',
     paginaAtiva: Boolean(page.instagram_ativo),
   });
@@ -743,6 +746,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     titulo: overrides.titulo || matter.titulo,
     materia: overrides.materia || matter.materia,
     publicar_instagram: pedidoInstagram,
+    publicar_x: pedidoX,
   });
 
   const executarPublicacao = async () => {
@@ -828,6 +832,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       titulo: null,
       publicarFacebook: pedidoFacebook,
       publicarInstagram: pedidoInstagram,
+      publicarX: pedidoX,
     });
 
     const postId = result.post_id || result.id;
@@ -884,9 +889,17 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     if (nativeId) pubPatch.fb_native_post_id = nativeId;
     if (result.instagram_post_id) pubPatch.ig_post_id = String(result.instagram_post_id);
     if (result.instagram_post_url) pubPatch.ig_post_url = String(result.instagram_post_url);
+    if (result.x_post_id) pubPatch.x_post_id = String(result.x_post_id);
+    if (result.x_post_url) pubPatch.x_post_url = String(result.x_post_url);
     // Instagram recusado não derruba a publicação: fica registrado como aviso.
     if (result.instagram_erro) {
       pubPatch.erro_mensagem = String(result.instagram_erro).slice(0, 500);
+    }
+    if (result.x_erro) {
+      pubPatch.erro_mensagem = [pubPatch.erro_mensagem, String(result.x_erro).slice(0, 500)]
+        .filter(Boolean)
+        .join(' | ')
+        .slice(0, 500);
     }
     await Publications.update(pubId, pubPatch);
     await AiMatters.update(matter.id, {
@@ -901,6 +914,9 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       instagramPublicado: Boolean(result.instagram_publicado),
       instagramPostUrl: result.instagram_post_url || null,
       instagramErro: result.instagram_erro || null,
+      xPublicado: Boolean(result.x_publicado),
+      xPostUrl: result.x_post_url || null,
+      xErro: result.x_erro || null,
     };
   };
 
@@ -918,6 +934,10 @@ async function publicarMateria(userId, matterId, overrides = {}) {
         instagramPublicado: published.instagramPublicado,
         instagramPostUrl: published.instagramPostUrl,
         instagramErro: published.instagramErro,
+        xPedido: pedidoX,
+        xPublicado: published.xPublicado,
+        xPostUrl: published.xPostUrl,
+        xErro: published.xErro,
       };
     } catch (err) {
       const publishDispatch = require('./publishDispatch');

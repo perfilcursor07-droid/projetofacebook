@@ -658,10 +658,11 @@
       .replace(/"/g, '&quot;');
   }
 
-  // Instagram: a caixa só existe quando a Página está ativada em /paginas.
+  // Redes extras: a caixa só existe quando a Página está ativada em /paginas.
   // Sem a caixa na tela devolve null para o servidor manter a preferência já
   // salva na matéria — mandar "false" desligaria o Instagram sem o editor pedir.
   const instagramEl = document.getElementById('matter-publicar-instagram');
+  const xEl = document.getElementById('matter-publicar-x');
   const facebookEl = document.getElementById('matter-publicar-facebook');
   function facebookMarcado() {
     // Facebook segue como destino padrão, inclusive em matérias criadas antes
@@ -671,6 +672,10 @@
   function instagramMarcado() {
     if (!cfg.instagramAtivo || !instagramEl) return null;
     return Boolean(instagramEl.checked);
+  }
+  function xMarcado() {
+    if (!cfg.xAtivo || !xEl) return null;
+    return Boolean(xEl.checked);
   }
 
   async function salvar() {
@@ -683,6 +688,7 @@
         fonteCredito: fonteCreditoEl ? fonteCreditoEl.value : undefined,
         tipoPublicacao: tipoEl.value,
         publicarInstagram: instagramMarcado(),
+        publicarX: xMarcado(),
       }),
     });
     const data = await res.json();
@@ -1104,8 +1110,8 @@
       if (!ok) return;
     }
 
-    if (!facebookMarcado() && !instagramMarcado()) {
-      setStatus('Selecione Facebook, Instagram ou os dois para publicar.', true);
+    if (!facebookMarcado() && !instagramMarcado() && !xMarcado()) {
+      setStatus('Selecione Facebook, Instagram, X.com ou mais de uma rede para publicar.', true);
       return;
     }
 
@@ -1131,6 +1137,7 @@
           materia: materiaEl.value,
           publicarFacebook: facebookMarcado(),
           publicarInstagram: instagramMarcado(),
+          publicarX: xMarcado(),
           sync: true,
           forcar: true,
           republicar: isRepublish,
@@ -1147,22 +1154,31 @@
       showPublishModal('success', data.link || null);
       const publicouFacebook = data.facebookPublicado !== false;
       const publicouInstagram = Boolean(data.instagramPublicado);
-      if (data.instagramErro) {
+      const publicouX = Boolean(data.xPublicado);
+      const avisos = [
+        data.instagramErro ? 'Instagram: ' + data.instagramErro : null,
+        data.xErro ? 'X.com: ' + data.xErro : null,
+      ].filter(Boolean);
+      const redes = [
+        publicouFacebook ? 'Facebook' : null,
+        publicouInstagram ? 'Instagram' : null,
+        publicouX ? 'X.com' : null,
+      ].filter(Boolean);
+      if (avisos.length) {
         setStatus(
-          (publicouFacebook ? 'Publicado no Facebook ✓ — ' : '') + 'Instagram: ' + data.instagramErro,
+          (redes.length ? 'Publicado no ' + redes.join(', ') + ' ✓ — ' : '') + avisos.join(' · '),
           true
         );
-      } else if (publicouFacebook && publicouInstagram) {
-        setStatus((isRepublish ? 'Republicada' : 'Publicado') + ' no Facebook e no Instagram ✓');
-      } else if (publicouInstagram) {
-        setStatus((isRepublish ? 'Republicada' : 'Publicado') + ' somente no Instagram ✓');
       } else {
-        setStatus(isRepublish ? 'Republicada no Facebook ✓' : 'Publicado no Facebook ✓');
+        setStatus(
+          (isRepublish ? 'Republicada' : 'Publicado') +
+            (redes.length ? ' no ' + redes.join(', ') + ' ✓' : ' ✓')
+        );
       }
       // A requisição terminou com sucesso e pelo menos um destino aceitou a
       // publicação. Avisos parciais do Instagram não podem prender o editor
       // neste modal; damos apenas mais tempo para ele ler a mensagem.
-      const redirectDelay = data.instagramErro ? 4200 : 1800;
+      const redirectDelay = avisos.length ? 4200 : 1800;
       setTimeout(() => {
         window.location.assign(cfg.listUrl || '/minhas-materias');
       }, redirectDelay);

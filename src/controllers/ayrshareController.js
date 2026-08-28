@@ -209,4 +209,94 @@ async function setInstagram(req, res, next) {
   }
 }
 
-module.exports = { setProfileKey, setInstagram };
+/**
+ * Liga/desliga a publicação no X.com de uma Página.
+ * A conexão acontece na Ayrshare; aqui vinculamos a escolha ao User Profile
+ * correto, como já é feito com Instagram.
+ */
+async function setX(req, res, next) {
+  try {
+    ayrshareService.assertConfigured();
+    const pageId = Number(req.body?.facebook_page_id || req.body?.facebookPageId || 0);
+    if (!pageId) {
+      const err = new Error('Informe facebook_page_id');
+      err.status = 400;
+      throw err;
+    }
+
+    const page = await resolvePageForUser(req.session.userId, pageId);
+    if (!page) {
+      const err = new Error('Página não encontrada na sua conta');
+      err.status = 404;
+      throw err;
+    }
+
+    const bruto = req.body?.ativo ?? req.body?.x_ativo ?? true;
+    const ativo = bruto === true || bruto === 1 || bruto === '1' || bruto === 'true';
+    if (!ativo) {
+      await FacebookPages.setX(page.id, { ativo: false });
+      return res.json({
+        ok: true,
+        page: { id: page.id, page_name: page.page_name, x_ativo: false },
+        aviso: 'X.com desligado para esta Página.',
+      });
+    }
+
+    if (!ayrshareService.isTwitterByoConfigured()) {
+      const err = new Error(
+        'Para ativar o X.com, configure AYRSHARE_X_API_KEY e AYRSHARE_X_API_SECRET no .env e reinicie o app.'
+      );
+      err.status = 422;
+      throw err;
+    }
+
+    const profileKey = String(page.ayrshare_profile_key || '').trim();
+    let detalhes = null;
+    try {
+      detalhes = await ayrshareService.fetchProfileByKey(profileKey || null, {
+        permitirPrimary: true,
+      });
+    } catch (validationErr) {
+      const err = new Error(
+        profileKey
+          ? `A Ayrshare recusou o Profile Key desta Página: ${ayrshareService.apiErrorMessage(validationErr)}`
+          : 'Cole primeiro o Profile Key desta Página para verificar o X.com conectado.'
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    if (!detalhes.xConnected) {
+      const err = new Error(
+        'Este profile da Ayrshare não tem uma conta X.com conectada. ' +
+          'Vincule a conta em app.ayrshare.com → Social Accounts e tente de novo.'
+      );
+      err.status = 422;
+      err.code = 'AYRSHARE_X_NOT_CONNECTED';
+      throw err;
+    }
+
+    await FacebookPages.setX(page.id, { ativo: true, username: detalhes.xUsername });
+    return res.json({
+      ok: true,
+      page: {
+        id: page.id,
+        page_name: page.page_name,
+        x_ativo: true,
+        x_username: detalhes.xUsername || null,
+      },
+      profile: {
+        x_connected: true,
+        x_username: detalhes.xUsername || null,
+        active_social_accounts: detalhes.activeSocialAccounts,
+      },
+      aviso: detalhes.xUsername
+        ? `X.com @${String(detalhes.xUsername).replace(/^@/, '')} ligado a esta Página.`
+        : 'X.com ligado a esta Página.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { setProfileKey, setInstagram, setX };

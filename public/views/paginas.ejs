@@ -140,6 +140,15 @@
                 class="ay-ig-btn rounded-lg border border-pink-500/40 px-2.5 py-1 text-xs text-pink-200 hover:bg-pink-500/15">
                 ${igOn ? 'Desligar Instagram' : 'Ativar Instagram'}
               </button>`;
+            const xOn = Boolean(p.x_ativo);
+            const xUser = p.x_username ? '@' + p.x_username : '';
+            const xBadge = xOn
+              ? `<span class="rounded-full bg-slate-100/10 px-2.5 py-0.5 text-xs text-slate-100">X.com ${escapeHtml(xUser) || 'ligado'}</span>`
+              : `<span class="rounded-full bg-slate-700/40 px-2.5 py-0.5 text-xs text-slate-400">X.com desligado</span>`;
+            const xBtn = `<button type="button" data-ay-x="${p.id}" data-x-on="${xOn ? '1' : '0'}"
+                class="ay-x-btn rounded-lg border border-slate-300/35 px-2.5 py-1 text-xs text-slate-100 hover:bg-slate-100/10">
+                ${xOn ? 'Desligar X.com' : 'Ativar X.com'}
+              </button>`;
             return `
           <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 ${isDefault ? 'ring-1 ring-violet-500/40' : ''}">
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -147,7 +156,7 @@
                 <p class="text-white">${escapeHtml(p.page_name)}</p>
                 <p class="text-xs text-slate-500">Alvo de publicação no ViralizeAI</p>
               </div>
-              <div class="flex flex-wrap items-center gap-2">${keyBadge}${igBadge}${defaultBtn}</div>
+              <div class="flex flex-wrap items-center gap-2">${keyBadge}${igBadge}${xBadge}${defaultBtn}</div>
             </div>
             <div class="mt-2 flex flex-wrap items-center gap-2">
               ${igBtn}
@@ -156,6 +165,13 @@
               </span>
             </div>
             <p data-ay-ig-msg="${p.id}" class="mt-1 text-[11px] text-slate-400"></p>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              ${xBtn}
+              <span class="text-[11px] text-slate-500">
+                Ligado, a matéria pode ser publicada também no X.com do mesmo profile Ayrshare.
+              </span>
+            </div>
+            <p data-ay-x-msg="${p.id}" class="mt-1 text-[11px] text-slate-400"></p>
             <label class="mt-3 block text-[11px] text-slate-500">
               Profile Key Ayrshare
               <div class="mt-1 flex flex-wrap gap-2">
@@ -220,6 +236,40 @@
               const j = await r.json();
               if (!r.ok) throw new Error(j.error || 'Falha ao configurar o Instagram');
               showAlert(j.aviso || 'Instagram atualizado');
+              loadAyrshare();
+            } catch (err) {
+              if (msgEl) {
+                msgEl.textContent = err.message;
+                msgEl.className = 'mt-1 text-[11px] text-rose-300';
+              }
+              showAlert(err.message, true);
+              btn.disabled = false;
+              btn.textContent = rotulo;
+            }
+          });
+        });
+
+        contentEl.querySelectorAll('.ay-x-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = Number(btn.dataset.ayX);
+            const ligando = btn.dataset.xOn !== '1';
+            const msgEl = contentEl.querySelector('[data-ay-x-msg="' + id + '"]');
+            const rotulo = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = ligando ? 'Verificando na Ayrshare…' : 'Desligando…';
+            if (msgEl) {
+              msgEl.textContent = '';
+              msgEl.className = 'mt-1 text-[11px] text-slate-400';
+            }
+            try {
+              const r = await fetch('/api/facebook/ayrshare/x', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ facebook_page_id: id, ativo: ligando }),
+              });
+              const j = await r.json();
+              if (!r.ok) throw new Error(j.error || 'Falha ao configurar o X.com');
+              showAlert(j.aviso || 'X.com atualizado');
               loadAyrshare();
             } catch (err) {
               if (msgEl) {

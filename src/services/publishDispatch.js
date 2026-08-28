@@ -125,9 +125,10 @@ async function publishContent({
   imagemPath,
   publicarFacebook = true,
   publicarInstagram = false,
+  publicarX = false,
 }) {
-  if (!publicarFacebook && !publicarInstagram) {
-    const err = new Error('Selecione Facebook, Instagram ou os dois para publicar.');
+  if (!publicarFacebook && !publicarInstagram && !publicarX) {
+    const err = new Error('Selecione Facebook, Instagram, X.com ou mais de uma rede para publicar.');
     err.status = 400;
     throw err;
   }
@@ -219,6 +220,7 @@ async function publishContent({
 
     // Instagram só sai com mídia e só quando a Página está marcada em /paginas.
     const querInstagram = Boolean(publicarInstagram) && Boolean(freshPage.instagram_ativo);
+    const querX = Boolean(publicarX) && Boolean(freshPage.x_ativo);
     if (publicarInstagram && !freshPage.instagram_ativo) {
       console.warn(
         '[publish] instagram pedido mas a Página não está marcada em /paginas:',
@@ -232,8 +234,18 @@ async function publishContent({
       err.status = 422;
       throw err;
     }
-    if (!publicarFacebook && !querInstagram) {
-      const err = new Error('Instagram não está ativo para esta Página. Ative-o em /paginas antes de publicar somente no Instagram.');
+    if (publicarX && !freshPage.x_ativo) {
+      console.warn('[publish] x.com pedido mas a Página não está marcada em /paginas:', freshPage.page_name);
+    }
+    if (querX && !ayrshareService.isTwitterByoConfigured()) {
+      const err = new Error(
+        'Para publicar no X.com, configure AYRSHARE_X_API_KEY e AYRSHARE_X_API_SECRET no .env e reinicie o app.'
+      );
+      err.status = 422;
+      throw err;
+    }
+    if (!publicarFacebook && !querInstagram && !querX) {
+      const err = new Error('Instagram e X.com não estão ativos para esta Página. Ative a rede desejada em /paginas.');
       err.status = 422;
       throw err;
     }
@@ -247,6 +259,7 @@ async function publishContent({
       profileKey: profileKey || null,
       publicarFacebook,
       publicarInstagram: querInstagram,
+      publicarX: querX,
     });
 
     const postId = result.post_id || result.id;
@@ -269,15 +282,24 @@ async function publishContent({
         (publicarInstagram && !freshPage.instagram_ativo
           ? 'Esta Página não tem Instagram ativado em /paginas — publicou só no Facebook.'
           : null),
+      x_pedido: Boolean(publicarX),
+      x_publicado: Boolean(result.x_publicado),
+      x_post_id: result.x_post_id || null,
+      x_post_url: result.x_post_url || null,
+      x_erro:
+        result.x_erro ||
+        (publicarX && !freshPage.x_ativo
+          ? 'Esta Página não tem X.com ativado em /paginas — publicou só nas outras redes.'
+          : null),
     };
   }
 
-  // Só o Ayrshare integra o Instagram hoje; nos outros provedores o pedido
+  // Só o Ayrshare integra Instagram e X.com hoje; nos outros provedores o pedido
   // seria silenciosamente ignorado.
-  if (publicarInstagram || !publicarFacebook) {
+  if (publicarInstagram || publicarX || !publicarFacebook) {
     const err = new Error(
-      `Instagram só está disponível pela Ayrshare (provedor atual: ${provider}). ` +
-        'Ajuste PUBLISH_PROVIDER ou desmarque a opção de Instagram.'
+      `Instagram e X.com só estão disponíveis pela Ayrshare (provedor atual: ${provider}). ` +
+        'Ajuste PUBLISH_PROVIDER ou desmarque a opção da outra rede.'
     );
     err.status = 422;
     throw err;

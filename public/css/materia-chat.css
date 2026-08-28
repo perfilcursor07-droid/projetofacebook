@@ -650,7 +650,7 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-messages > * {
-  width: 47%;
+  width: 100%;
   max-width: var(--mia-chat-stream);
   margin-left: auto;
   margin-right: auto;
@@ -2440,4 +2440,45 @@ body.mia-chat-drawer-open {
   font-size: 0.9375rem;
   line-height: 1.5;
   padding: 0.3rem 0.45rem;
+}
+
+/* Mobile: usa toda a largura disponível e mantém o texto confortável para
+   leitura e revisão sem zoom. No desktop permanecem os tamanhos compactos. */
+@media (max-width: 639px) {
+  .mia-chat-messages {
+    padding-left: 0.8rem;
+    padding-right: 0.8rem;
+  }
+
+  .mia-chat-messages > *,
+  .mia-msg-ai,
+  .mia-msg-ai-body {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .mia-msg-ai-body .mia-msg-ai-text,
+  .mia-msg-ai-body .mia-msg-ai-anchor {
+    font-size: 1.125rem;
+    line-height: 1.58;
+  }
+
+  .mia-msg-ai-body .mia-msg-ai-title {
+    font-size: 1.22rem;
+    line-height: 1.42;
+  }
+
+  .mia-msg-ai-body .mia-msg-ai-meta,
+  .mia-msg-ai-body .mia-msg-ai-tags {
+    font-size: 0.9375rem;
+    line-height: 1.55;
+  }
+
+  .mia-msg-user-bubble,
+  .mia-msg-edit-textarea {
+    max-width: 94%;
+    font-size: 1.0625rem;
+    line-height: 1.58;
+  }
 }

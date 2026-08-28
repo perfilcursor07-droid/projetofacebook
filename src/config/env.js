@@ -82,6 +82,9 @@ const env = {
   /** Ayrshare — publicação social (Primary Profile API Key) */
   ayrshare: {
     apiKey: process.env.AYRSHARE_API_KEY || '',
+    // A Ayrshare exige as credenciais próprias do app X para toda operação no X/Twitter.
+    twitterApiKey: process.env.AYRSHARE_X_API_KEY || '',
+    twitterApiSecret: process.env.AYRSHARE_X_API_SECRET || '',
   },
   /** URL pública do app (opcional; útil para mídia https) */
   appPublicUrl: String(process.env.APP_PUBLIC_URL || '').replace(/\/$/, ''),

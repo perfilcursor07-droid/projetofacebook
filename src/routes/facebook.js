@@ -11,6 +11,7 @@ router.put('/pages/default', facebookController.setDefaultPage);
 router.post('/pages/default', facebookController.setDefaultPage);
 router.post('/ayrshare/profile-key', ayrshareController.setProfileKey);
 router.post('/ayrshare/instagram', ayrshareController.setInstagram);
+router.post('/ayrshare/x', ayrshareController.setX);
 router.get('/postpulse/status', postpulseController.statusHandler);
 router.post('/postpulse/sync', postpulseController.syncHandler);
 router.post('/postpulse/link', postpulseController.linkHandler);

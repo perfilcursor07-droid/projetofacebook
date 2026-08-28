@@ -182,6 +182,8 @@ async function listPages(req, res, next) {
           has_ayrshare_profile_key: Boolean(p.ayrshare_profile_key),
           instagram_ativo: Boolean(p.instagram_ativo),
           instagram_username: p.instagram_username || null,
+          x_ativo: Boolean(p.x_ativo),
+          x_username: p.x_username || null,
           publica_via,
           is_default: Number(p.id) === Number(defaultPageId),
         };

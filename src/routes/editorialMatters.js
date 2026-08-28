@@ -433,6 +433,7 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
     // null = editor nao mandou opiniao; vale a preferencia salva na materia.
     const pedidoInstagram =
       req.body.publicarInstagram ?? req.body.publicar_instagram ?? req.body.instagram ?? null;
+    const pedidoX = req.body.publicarX ?? req.body.publicar_x ?? req.body.x ?? null;
     // null preserva o comportamento anterior: Facebook marcado por padrão.
     const pedidoFacebook =
       req.body.publicarFacebook ?? req.body.publicar_facebook ?? req.body.facebook ?? null;
@@ -466,11 +467,12 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
         body: req.body.materia || matter.materia,
         publicarFacebook: pedidoFacebook,
         publicarInstagram: pedidoInstagram,
+        publicarX: pedidoX,
       });
       return res.json({
         ok: true,
         ...published,
-        link: published.fbPostUrl || published.instagramPostUrl || null,
+        link: published.fbPostUrl || published.instagramPostUrl || published.xPostUrl || null,
         imagemUrl,
       });
     }
@@ -484,11 +486,12 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
       forcar: Boolean(req.body.forcar || req.body.republicar),
       publicar_facebook: pedidoFacebook,
       publicar_instagram: pedidoInstagram,
+      publicar_x: pedidoX,
     });
     return res.status(published.queued ? 202 : 200).json({
       ok: true,
       ...published,
-      link: published.fbPostUrl || published.instagramPostUrl || null,
+      link: published.fbPostUrl || published.instagramPostUrl || published.xPostUrl || null,
     });
   } catch (err) {
     return next(err);

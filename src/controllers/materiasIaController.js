@@ -203,7 +203,7 @@ async function reescreverLink(req, res, next) {
       ok: true,
       ...result,
       preview: result.artigo,
-      link: result.fbPostUrl || null,
+      link: result.fbPostUrl || result.instagramPostUrl || result.xPostUrl || null,
     });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -376,6 +376,7 @@ async function publicar(req, res, next) {
         body.publicarFacebook ?? body.publicar_facebook ?? body.facebook ?? null,
       publicar_instagram:
         body.publicarInstagram ?? body.publicar_instagram ?? body.instagram ?? null,
+      publicar_x: body.publicarX ?? body.publicar_x ?? body.x ?? null,
     });
     res.status(result.queued ? 202 : 200).json({
       ok: true,
@@ -577,6 +578,10 @@ async function atualizarMateria(req, res, next) {
     if (body.publicarInstagram != null || body.publicar_instagram != null) {
       const raw = body.publicarInstagram != null ? body.publicarInstagram : body.publicar_instagram;
       patch.publicar_instagram = raw === true || raw === 1 || raw === '1' || raw === 'true';
+    }
+    if (body.publicarX != null || body.publicar_x != null) {
+      const raw = body.publicarX != null ? body.publicarX : body.publicar_x;
+      patch.publicar_x = raw === true || raw === 1 || raw === '1' || raw === 'true';
     }
     if (matter.status === 'publicado') {
       return res.status(400).json({ error: 'Matéria já publicada. Gere uma nova se precisar alterar.' });
@@ -815,8 +820,9 @@ async function showMatter(req, res, next) {
       matter.titulos_alternativos
     );
 
-    // Instagram só aparece na tela quando a Página de destino foi ativada em /paginas.
+    // Redes adicionais só aparecem quando foram ativadas na Página de destino em /paginas.
     let instagramPagina = { ativo: false, username: null, pageName: null };
+    let xPagina = { ativo: false, username: null, pageName: null };
     try {
       const { resolvePageForUser, defaultPageForUser } = require('../services/facebookPageResolver');
       const pageDestino = matter.facebook_page_id
@@ -828,9 +834,14 @@ async function showMatter(req, res, next) {
           username: pageDestino.instagram_username || null,
           pageName: pageDestino.page_name || null,
         };
+        xPagina = {
+          ativo: Boolean(pageDestino.x_ativo),
+          username: pageDestino.x_username || null,
+          pageName: pageDestino.page_name || null,
+        };
       }
     } catch (err) {
-      console.warn('[showMatter] instagram da página:', err.message);
+      console.warn('[showMatter] redes da página:', err.message);
     }
 
     return res.render('materia-ia-editar', {
@@ -838,6 +849,7 @@ async function showMatter(req, res, next) {
       matter,
       titulosAlternativos,
       instagramPagina,
+      xPagina,
       hashtags: Array.isArray(hashtags) ? hashtags : [],
       ultimoAgendamento,
       proximoSlotLocal,
