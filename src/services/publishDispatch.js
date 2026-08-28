@@ -126,6 +126,8 @@ async function publishContent({
   publicarFacebook = true,
   publicarInstagram = false,
   publicarX = false,
+  textoX = null,
+  imagemXUrl = null,
 }) {
   if (!publicarFacebook && !publicarInstagram && !publicarX) {
     const err = new Error('Selecione Facebook, Instagram, X.com ou mais de uma rede para publicar.');
@@ -148,7 +150,18 @@ async function publishContent({
     let content = texto || '';
     if (link) content = content ? `${content}\n\n${link}` : link;
 
-    if (tipo === 'foto' && !localFile && !remoteUrl) {
+    const imagemXInformada = String(imagemXUrl || '').trim();
+    const imagemXValida = Boolean(
+      resolveLocalImageFile({ imagemPath: null, imageUrl: imagemXInformada }) ||
+        /^https?:\/\//i.test(imagemXInformada)
+    );
+    const metaPrecisaDaArte = Boolean(publicarFacebook || publicarInstagram);
+    if (
+      tipo === 'foto' &&
+      !localFile &&
+      !remoteUrl &&
+      (metaPrecisaDaArte || !publicarX || !imagemXValida)
+    ) {
       const err = new Error(
         'Imagem da arte não encontrada no servidor. Gere a arte novamente antes de publicar.'
       );
@@ -237,30 +250,88 @@ async function publishContent({
     if (publicarX && !freshPage.x_ativo) {
       console.warn('[publish] x.com pedido mas a Página não está marcada em /paginas:', freshPage.page_name);
     }
-    if (querX && !ayrshareService.isTwitterByoConfigured()) {
-      const err = new Error(
-        'Para publicar no X.com, configure AYRSHARE_X_API_KEY e AYRSHARE_X_API_SECRET no .env e reinicie o app.'
-      );
-      err.status = 422;
-      throw err;
-    }
+    const erroConfiguracaoX =
+      querX && !ayrshareService.isTwitterByoConfigured()
+        ? 'Para publicar no X.com, configure AYRSHARE_X_API_KEY e AYRSHARE_X_API_SECRET no .env e reinicie o app.'
+        : null;
     if (!publicarFacebook && !querInstagram && !querX) {
       const err = new Error('Instagram e X.com não estão ativos para esta Página. Ative a rede desejada em /paginas.');
       err.status = 422;
       throw err;
     }
 
-    const result = await ayrshareService.publishToFacebook({
-      post: content,
-      filePath: localFile || null,
-      imageUrl: localFile ? null : remoteUrl || imageUrl || null,
-      isReel: tipo === 'reel',
-      title: titulo || null,
-      profileKey: profileKey || null,
-      publicarFacebook,
-      publicarInstagram: querInstagram,
-      publicarX: querX,
-    });
+    // Facebook/Instagram e X são chamadas independentes. Assim o texto curto
+    // e o JPEG preparado para o X nunca substituem a legenda ou a arte que já
+    // funcionam nas redes Meta; uma falha do X também vira apenas um aviso.
+    let resultMeta = null;
+    if (publicarFacebook || querInstagram) {
+      resultMeta = await ayrshareService.publishToFacebook({
+        post: content,
+        filePath: localFile || null,
+        imageUrl: localFile ? null : remoteUrl || imageUrl || null,
+        isReel: tipo === 'reel',
+        title: titulo || null,
+        profileKey: profileKey || null,
+        publicarFacebook,
+        publicarInstagram: querInstagram,
+        publicarX: false,
+      });
+    }
+
+    let resultX = null;
+    let erroXSeparado = null;
+    if (querX) {
+      try {
+        if (erroConfiguracaoX) {
+          const err = new Error(erroConfiguracaoX);
+          err.status = 422;
+          throw err;
+        }
+        const imagemX = String(imagemXUrl || '').trim();
+        let localFileX = localFile || null;
+        let remoteUrlX = localFile ? null : remoteUrl || imageUrl || null;
+        if (imagemX && tipo !== 'reel') {
+          localFileX = resolveLocalImageFile({ imagemPath: null, imageUrl: imagemX });
+          remoteUrlX = !localFileX && /^https?:\/\//i.test(imagemX) ? imagemX : null;
+          if (!localFileX && !remoteUrlX) {
+            const err = new Error('A imagem escolhida para o X.com não é uma URL válida.');
+            err.status = 422;
+            throw err;
+          }
+        }
+        resultX = await ayrshareService.publishToFacebook({
+          post: String(textoX || content),
+          filePath: localFileX,
+          imageUrl: localFileX ? null : remoteUrlX,
+          isReel: tipo === 'reel',
+          title: null,
+          profileKey: profileKey || null,
+          publicarFacebook: false,
+          publicarInstagram: false,
+          publicarX: true,
+        });
+      } catch (err) {
+        if (!resultMeta) throw err;
+        erroXSeparado = err.message || 'X.com recusou a publicação';
+        console.warn('[publish] X.com falhou sem afetar Meta:', erroXSeparado);
+      }
+    }
+
+    const result = resultMeta || resultX || {};
+    if (resultX) {
+      result.x_pedido = true;
+      result.x_publicado = Boolean(resultX.x_publicado);
+      result.x_pendente = Boolean(resultX.x_pendente);
+      result.x_post_id = resultX.x_post_id || null;
+      result.x_post_url = resultX.x_post_url || null;
+      result.x_erro = resultX.x_erro || null;
+    } else if (querX) {
+      result.x_pedido = true;
+      result.x_publicado = false;
+      result.x_post_id = null;
+      result.x_post_url = null;
+      result.x_erro = erroXSeparado;
+    }
 
     const postId = result.post_id || result.id;
     const nativeId = result.fb_native_post_id || null;

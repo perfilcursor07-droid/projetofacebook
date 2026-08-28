@@ -43,6 +43,42 @@ function parseTitulosAlternativos(raw) {
   return [];
 }
 
+function textoXDeterministico({ titulo, materia }) {
+  const primeiraFrase = String(materia || '')
+    .replace(/\r\n/g, '\n')
+    .split(/\n\s*\n|(?<=[.!?])\s+/)
+    .map((trecho) => trecho.replace(/\s+/g, ' ').trim())
+    .find((trecho) => trecho.length >= 30) || '';
+  return [String(titulo || '').replace(/\s+/g, ' ').trim(), primeiraFrase]
+    .filter(Boolean)
+    .join(' — ');
+}
+
+async function gerarTextoXDaMateria({ userId, matterId, titulo = null, materia = null }) {
+  const matter = await AiMatters.findById(matterId);
+  if (!matter || Number(matter.user_id) !== Number(userId)) {
+    const err = new Error('Matéria não encontrada');
+    err.status = 404;
+    throw err;
+  }
+
+  const tituloBase = String(titulo ?? matter.titulo ?? '').trim();
+  const materiaBase = String(materia ?? matter.materia ?? '').trim();
+  const { truncateForTwitter, twitterWeightedLength } = require('./ayrshareService');
+  let textoGerado = '';
+  try {
+    const { gerarTextoX } = require('./deepseekService');
+    textoGerado = await gerarTextoX({ titulo: tituloBase, materia: materiaBase });
+  } catch (err) {
+    console.warn('[x.com] Claude não gerou o resumo; usando versão local:', err.message);
+  }
+  const texto = truncateForTwitter(
+    textoGerado || textoXDeterministico({ titulo: tituloBase, materia: materiaBase })
+  );
+  await AiMatters.update(matter.id, { texto_x: texto });
+  return { texto, peso: twitterWeightedLength(texto), limite: 280 };
+}
+
 /**
  * Gera 3 títulos alternativos ao principal e guarda na matéria.
  * É um extra do editor: qualquer falha aqui não pode quebrar a geração, por
@@ -715,6 +751,19 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     err.status = 400;
     throw err;
   }
+  const { truncateForTwitter } = require('./ayrshareService');
+  let textoX = String(overrides.texto_x ?? matter.texto_x ?? '').trim();
+  if (pedidoX && !textoX) {
+    const gerado = await gerarTextoXDaMateria({
+      userId,
+      matterId: matter.id,
+      titulo: overrides.titulo || matter.titulo,
+      materia: overrides.materia || matter.materia,
+    });
+    textoX = gerado.texto;
+  }
+  textoX = pedidoX ? truncateForTwitter(textoX) : '';
+  const imagemXUrl = String(overrides.imagem_x_url ?? matter.imagem_x_url ?? '').trim() || null;
   // O filtro por instagram_ativo fica no publishDispatch: lá o editor recebe
   // o aviso do porquê o post saiu só no Facebook, em vez de silêncio.
   console.log('[publicar] instagram', {
@@ -747,6 +796,8 @@ async function publicarMateria(userId, matterId, overrides = {}) {
     materia: overrides.materia || matter.materia,
     publicar_instagram: pedidoInstagram,
     publicar_x: pedidoX,
+    texto_x: textoX || null,
+    imagem_x_url: imagemXUrl,
   });
 
   const executarPublicacao = async () => {
@@ -833,6 +884,8 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       publicarFacebook: pedidoFacebook,
       publicarInstagram: pedidoInstagram,
       publicarX: pedidoX,
+      textoX: textoX || null,
+      imagemXUrl,
     });
 
     const postId = result.post_id || result.id;
@@ -3961,6 +4014,7 @@ module.exports = {
   gerarCompleto,
   gerarESalvarTitulosAlternativos,
   parseTitulosAlternativos,
+  gerarTextoXDaMateria,
   gerarDeLink,
   gerarVariacaoDeMateria,
   gerarMateriaManual,

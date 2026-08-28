@@ -664,6 +664,137 @@
   const instagramEl = document.getElementById('matter-publicar-instagram');
   const xEl = document.getElementById('matter-publicar-x');
   const facebookEl = document.getElementById('matter-publicar-facebook');
+  const xEditorModal = document.getElementById('x-editor-modal');
+  const xEditorBtn = document.getElementById('btn-editar-x');
+  const xTextoEl = document.getElementById('matter-texto-x');
+  const xTextoCount = document.getElementById('matter-texto-x-count');
+  const xTextoStatus = document.getElementById('matter-texto-x-status');
+  const xImagemUrlEl = document.getElementById('matter-imagem-x-url');
+  const xImagemPreview = document.getElementById('matter-imagem-x-preview');
+  const xImagemVazia = document.getElementById('matter-imagem-x-vazia');
+
+  function xCodePointWeight(char) {
+    const cp = char.codePointAt(0);
+    return (
+      (cp >= 0x0000 && cp <= 0x10ff) ||
+      (cp >= 0x2000 && cp <= 0x200d) ||
+      (cp >= 0x2010 && cp <= 0x201f) ||
+      (cp >= 0x2032 && cp <= 0x2037)
+    ) ? 1 : 2;
+  }
+
+  function pesoTextoX(value) {
+    const texto = String(value || '');
+    const urlRegex = /https?:\/\/[^\s]+/giu;
+    let total = 0;
+    let cursor = 0;
+    let match;
+    const somar = (trecho) => {
+      for (const char of trecho) total += xCodePointWeight(char);
+    };
+    while ((match = urlRegex.exec(texto)) !== null) {
+      somar(texto.slice(cursor, match.index));
+      total += 23;
+      cursor = match.index + match[0].length;
+    }
+    somar(texto.slice(cursor));
+    return total;
+  }
+
+  function atualizarContadorX() {
+    if (!xTextoCount) return 0;
+    const peso = pesoTextoX(xTextoEl?.value);
+    xTextoCount.textContent = peso + ' / 280';
+    xTextoCount.classList.toggle('text-rose-300', peso > 280);
+    xTextoCount.classList.toggle('text-emerald-300', peso <= 280);
+    return peso;
+  }
+
+  function imagemAtualDoEditor() {
+    return String(imgEl?.src || cfg.imagemAtual || '').trim();
+  }
+
+  function atualizarPreviewX() {
+    if (!xImagemPreview) return;
+    const url = String(xImagemUrlEl?.value || '').trim() || imagemAtualDoEditor();
+    if (url) {
+      xImagemPreview.src = url;
+      xImagemPreview.classList.remove('hidden');
+      xImagemVazia?.classList.add('hidden');
+    } else {
+      xImagemPreview.removeAttribute('src');
+      xImagemPreview.classList.add('hidden');
+      xImagemVazia?.classList.remove('hidden');
+    }
+  }
+
+  async function gerarTextoParaX() {
+    if (!xTextoEl) return false;
+    const btn = document.getElementById('btn-gerar-texto-x');
+    if (btn) btn.disabled = true;
+    if (xTextoStatus) xTextoStatus.textContent = 'Claude está resumindo a matéria…';
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/texto-x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo: tituloEl.value, materia: materiaEl.value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Não foi possível gerar o texto do X.');
+      xTextoEl.value = data.texto || '';
+      atualizarContadorX();
+      if (xTextoStatus) xTextoStatus.textContent = 'Versão criada com Claude. Você pode editar antes de publicar.';
+      return true;
+    } catch (err) {
+      if (xTextoStatus) xTextoStatus.textContent = err.message;
+      return false;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function abrirEditorX({ gerarSeVazio = false } = {}) {
+    if (!xEditorModal) return;
+    xEditorModal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    atualizarContadorX();
+    atualizarPreviewX();
+    if (gerarSeVazio && !String(xTextoEl?.value || '').trim()) gerarTextoParaX();
+  }
+
+  function fecharEditorX() {
+    xEditorModal?.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  async function salvarVersaoX({ fechar = true } = {}) {
+    const texto = String(xTextoEl?.value || '').trim();
+    if (!texto) {
+      if (xTextoStatus) xTextoStatus.textContent = 'Gere ou escreva o texto do X.';
+      return false;
+    }
+    if (atualizarContadorX() > 280) {
+      if (xTextoStatus) xTextoStatus.textContent = 'Reduza o texto até o contador ficar em 280 ou menos.';
+      return false;
+    }
+    const res = await fetch('/api/materias-ia/matters/' + cfg.id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicarX: true,
+        textoX: texto,
+        imagemXUrl: String(xImagemUrlEl?.value || '').trim(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (xTextoStatus) xTextoStatus.textContent = data.error || 'Falha ao salvar a versão do X.';
+      return false;
+    }
+    if (xTextoStatus) xTextoStatus.textContent = 'Versão exclusiva do X salva ✓';
+    if (fechar) fecharEditorX();
+    return true;
+  }
   function facebookMarcado() {
     // Facebook segue como destino padrão, inclusive em matérias criadas antes
     // deste seletor.
@@ -689,6 +820,8 @@
         tipoPublicacao: tipoEl.value,
         publicarInstagram: instagramMarcado(),
         publicarX: xMarcado(),
+        textoX: xTextoEl ? xTextoEl.value : undefined,
+        imagemXUrl: xImagemUrlEl ? xImagemUrlEl.value : undefined,
       }),
     });
     const data = await res.json();
@@ -710,6 +843,28 @@
       setStatus(err.message, true);
     }
   });
+
+  xTextoEl?.addEventListener('input', atualizarContadorX);
+  xImagemUrlEl?.addEventListener('input', atualizarPreviewX);
+  document.getElementById('btn-gerar-texto-x')?.addEventListener('click', gerarTextoParaX);
+  document.getElementById('btn-x-usar-imagem-atual')?.addEventListener('click', () => {
+    if (xImagemUrlEl) xImagemUrlEl.value = '';
+    atualizarPreviewX();
+  });
+  xEditorBtn?.addEventListener('click', () => abrirEditorX());
+  document.getElementById('x-editor-fechar')?.addEventListener('click', fecharEditorX);
+  document.getElementById('x-editor-cancelar')?.addEventListener('click', fecharEditorX);
+  document.getElementById('x-editor-salvar')?.addEventListener('click', () => salvarVersaoX());
+  xEditorModal?.addEventListener('click', (event) => {
+    if (event.target === xEditorModal) fecharEditorX();
+  });
+  xEl?.addEventListener('change', () => {
+    xEditorBtn?.classList.toggle('hidden', !xEl.checked);
+    if (xEl.checked) abrirEditorX({ gerarSeVazio: true });
+  });
+  xEditorBtn?.classList.toggle('hidden', !xEl?.checked);
+  atualizarContadorX();
+  atualizarPreviewX();
 
   // 3 títulos alternativos ao principal: gerados com a matéria e trocáveis aqui.
   const altLista = document.getElementById('matter-titulos-alt');
@@ -1115,6 +1270,26 @@
       return;
     }
 
+    if (xMarcado()) {
+      if (!String(xTextoEl?.value || '').trim()) {
+        setStatus('Preparando a versão curta para o X.com…');
+        const gerado = await gerarTextoParaX();
+        if (!gerado) {
+          abrirEditorX();
+          setStatus('Revise a versão do X.com antes de publicar.', true);
+          return;
+        }
+      }
+      if (atualizarContadorX() > 280) {
+        abrirEditorX();
+        if (xTextoStatus) {
+          xTextoStatus.textContent = 'O texto ultrapassa o limite ponderado de 280. Reduza-o antes de publicar.';
+        }
+        setStatus('O texto exclusivo do X.com precisa ter no máximo 280.', true);
+        return;
+      }
+    }
+
     if (publishBtn) publishBtn.disabled = true;
 
     showPublishModal('publishing');
@@ -1138,6 +1313,8 @@
           publicarFacebook: facebookMarcado(),
           publicarInstagram: instagramMarcado(),
           publicarX: xMarcado(),
+          textoX: xMarcado() ? String(xTextoEl?.value || '').trim() : null,
+          imagemXUrl: xMarcado() ? String(xImagemUrlEl?.value || '').trim() : null,
           sync: true,
           forcar: true,
           republicar: isRepublish,
@@ -1208,8 +1385,8 @@
       if (title) title.textContent = cfg.canRepublish ? 'Republicada com sucesso' : 'Publicado com sucesso';
       if (text) {
         text.textContent = cfg.canRepublish
-          ? 'Um novo post foi enviado para a Página. Voltando para a lista…'
-          : 'A matéria foi enviada para a Página. Voltando para a lista…';
+          ? 'Uma nova publicação foi enviada para as redes selecionadas. Voltando para a lista…'
+          : 'A matéria foi enviada para as redes selecionadas. Voltando para a lista…';
       }
       if (linkEl && link) {
         linkEl.href = link;
@@ -1227,7 +1404,7 @@
     if (text) {
       text.textContent = cfg.isReel
         ? 'Enviando o vídeo + capa e aguardando confirmação do Facebook. Pode levar até 3–4 minutos — não feche a página.'
-        : 'Enviando a matéria para a Página do Facebook.';
+        : 'Enviando a matéria para as redes selecionadas.';
     }
     if (linkEl) linkEl.classList.add('hidden');
   }

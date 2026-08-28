@@ -377,14 +377,31 @@ async function publicar(req, res, next) {
       publicar_instagram:
         body.publicarInstagram ?? body.publicar_instagram ?? body.instagram ?? null,
       publicar_x: body.publicarX ?? body.publicar_x ?? body.x ?? null,
+      texto_x: body.textoX ?? body.texto_x ?? null,
+      imagem_x_url: body.imagemXUrl ?? body.imagem_x_url ?? null,
     });
     res.status(result.queued ? 202 : 200).json({
       ok: true,
       ...result,
-      link: result.fbPostUrl || null,
+      link: result.fbPostUrl || result.instagramPostUrl || result.xPostUrl || null,
     });
   } catch (err) {
     next(err);
+  }
+}
+
+async function gerarTextoX(req, res, next) {
+  try {
+    const resultado = await materiaIaService.gerarTextoXDaMateria({
+      userId: req.session.userId,
+      matterId: Number(req.params.id),
+      titulo: req.body?.titulo ?? null,
+      materia: req.body?.materia ?? null,
+    });
+    return res.json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
   }
 }
 
@@ -583,8 +600,22 @@ async function atualizarMateria(req, res, next) {
       const raw = body.publicarX != null ? body.publicarX : body.publicar_x;
       patch.publicar_x = raw === true || raw === 1 || raw === '1' || raw === 'true';
     }
+    if (body.textoX != null || body.texto_x != null) {
+      const raw = body.textoX != null ? body.textoX : body.texto_x;
+      const { truncateForTwitter } = require('../services/ayrshareService');
+      patch.texto_x = truncateForTwitter(String(raw || '').trim()) || null;
+    }
+    if (body.imagemXUrl != null || body.imagem_x_url != null) {
+      const raw = body.imagemXUrl != null ? body.imagemXUrl : body.imagem_x_url;
+      patch.imagem_x_url = String(raw || '').trim().slice(0, 2000) || null;
+    }
     if (matter.status === 'publicado') {
-      return res.status(400).json({ error: 'Matéria já publicada. Gere uma nova se precisar alterar.' });
+      const camposPermitidos = new Set(['publicar_x', 'texto_x', 'imagem_x_url']);
+      const somenteVersaoX =
+        Object.keys(patch).length > 0 && Object.keys(patch).every((campo) => camposPermitidos.has(campo));
+      if (!somenteVersaoX) {
+        return res.status(400).json({ error: 'Matéria já publicada. Gere uma nova se precisar alterar.' });
+      }
     }
     if (!Object.keys(patch).length) {
       return res.status(400).json({ error: 'Nada para atualizar' });
@@ -1839,6 +1870,7 @@ module.exports = {
   criarManual,
   gerarLote,
   publicar,
+  gerarTextoX,
   listarMaterias,
   obterMateria,
   removerMateria,

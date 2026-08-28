@@ -232,6 +232,17 @@ function apiErrorMessage(err) {
   }
 
   if (
+    lower.includes('upload error') ||
+    (lower.includes('media file size') && lower.includes('content-type')) ||
+    (lower.includes('media') && lower.includes('dimensions') && lower.includes('content'))
+  ) {
+    return (
+      'X.com recusou a imagem enviada. Use a versão exclusiva do X; ela será convertida para JPEG, ' +
+      'limitada a 1200 px e enviada com Content-Type correto.'
+    );
+  }
+
+  if (
     lower.includes('media') &&
     (lower.includes('could not') ||
       lower.includes('unable') ||
@@ -403,8 +414,10 @@ async function resolveMediaUrl({
  * (qualidade 95), então criamos uma cópia 1200 px JPEG para a Ayrshare enviar
  * com content-type confiável. A arte original no storage não é modificada.
  */
-async function prepareTwitterImage(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) return null;
+async function prepareTwitterImage(filePath, { imageUrl = null } = {}) {
+  const localValido = filePath && fs.existsSync(filePath) ? filePath : null;
+  const remote = String(imageUrl || '').trim();
+  if (!localValido && !/^https?:\/\//i.test(remote)) return null;
 
   const output = path.join(
     os.tmpdir(),
@@ -419,9 +432,14 @@ async function prepareTwitterImage(filePath) {
   };
 
   try {
+    let input = localValido;
+    if (!input && remote) {
+      const { fetchImage } = require('./editorialCardService');
+      input = await fetchImage(remote);
+    }
     // A 1200 px e qualidade 82 fica bem abaixo do limite de 5 MB do X, mesmo
     // em fotos detalhadas, e preserva boa nitidez para um post de notícia.
-    await sharp(filePath, { failOn: 'error', limitInputPixels: 40_000_000 })
+    await sharp(input, { failOn: 'error', limitInputPixels: 40_000_000 })
       .rotate()
       .flatten({ background: '#ffffff' })
       .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
@@ -441,8 +459,14 @@ async function prepareTwitterImage(filePath) {
   } catch (err) {
     remove();
     if (err.status) throw err;
-    // Não é uma imagem legível pelo Sharp (por exemplo, vídeo): deixa o fluxo
-    // normal da Ayrshare lidar com a mídia específica daquela plataforma.
+    if (remote && !localValido) {
+      const out = new Error(
+        `Não consegui preparar a imagem exclusiva do X.com: ${err.message || 'arquivo inválido'}`
+      );
+      out.status = 422;
+      throw out;
+    }
+    // Vídeo/Reel continua no fluxo normal da Ayrshare.
     return null;
   }
 }
@@ -533,7 +557,9 @@ async function publishToFacebook({
   // Para foto + X, use uma cópia menor hospedada pela própria Ayrshare. Assim
   // o X recebe JPEG <5 MB, com extensão e Content-Type corretos, em vez de
   // baixar diretamente a arte grande servida por /media.
-  const xImage = vaiNoX && !isReel ? await prepareTwitterImage(filePath) : null;
+  const xImage = vaiNoX && !isReel
+    ? await prepareTwitterImage(filePath, { imageUrl })
+    : null;
   let mediaUrl = null;
   try {
     mediaUrl = await resolveMediaUrl({

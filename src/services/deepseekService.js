@@ -3233,6 +3233,47 @@ function respostaDiscuteBriefingInterno(value) {
   );
 }
 
+/** Gera a versão curta e autônoma de uma matéria para o X.com. */
+async function gerarTextoX({ titulo, materia }) {
+  assertDeepseek('conversa');
+  const raw = await chatCompletion(
+    [
+      {
+        role: 'system',
+        content: `Você cria posts jornalísticos para o X.com em português do Brasil.
+Responda SOMENTE JSON válido: {"texto":"..."}.
+O texto deve ter no máximo 250 caracteres comuns para deixar margem ao cálculo ponderado do X.
+Resuma o fato central com clareza, sem inventar dados, sem link e sem repetição.
+Use no máximo 2 hashtags pertinentes. Não use título separado, introdução, markdown ou emojis decorativos.`,
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          titulo: String(titulo || '').trim().slice(0, 300),
+          materia: String(materia || '').trim().slice(0, 8000),
+        }),
+      },
+    ],
+    {
+      temperature: 0.5,
+      json: true,
+      thinking: false,
+      tarefa: 'conversa',
+      conversationName: 'ViralizeAI — texto para X.com',
+    }
+  );
+  let parsed = null;
+  try {
+    parsed = JSON.parse(String(raw || ''));
+  } catch {
+    const bloco = String(raw || '').match(/\{[\s\S]*\}/);
+    if (bloco) {
+      try { parsed = JSON.parse(bloco[0]); } catch { parsed = null; }
+    }
+  }
+  return String(parsed?.texto || raw || '').replace(/```(?:json)?|```/gi, '').trim();
+}
+
 function respostaRecusaMateria(value) {
   return /\b(?:n[ãa]o\s+(?:vou|posso|consigo|d[áa]\s+para)\s+(?:escrever|produzir|fazer|transformar|publicar)(?:\s+(?:essa|esta|uma))?\s*(?:mat[eé]ria|reportagem|texto)?|recus[oa]\s+(?:a\s+)?(?:escrever|produzir|fazer)|pe[cç]a\s+(?:a|outra)\s+transcri[cç][ãa]o|confirmar\s+ou\s+corrigir\s+a\s+transcri[cç][ãa]o|transcri[cç][ãa]o[^.]{0,100}(?:incoerente|fragmentada|defeituosa))\b/i.test(
     String(value || '')
@@ -4347,6 +4388,7 @@ module.exports = {
   montarFrases,
   normalizeCortesList,
   resumirAlertaBiblioteca,
+  gerarTextoX,
   ranquearPostsViralFacebook,
   sugerirTituloMateria,
   gerarTitulosAlternativos,

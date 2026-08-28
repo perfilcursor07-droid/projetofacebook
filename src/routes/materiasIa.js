@@ -53,6 +53,7 @@ router.put('/matters/:id', controller.atualizarMateria);
 router.patch('/matters/:id', controller.atualizarMateria);
 router.delete('/matters/:id', controller.removerMateria);
 router.post('/matters/:id/publicar', controller.publicar);
+router.post('/matters/:id/texto-x', controller.gerarTextoX);
 router.post('/matters/:id/agendar', controller.agendar);
 router.post('/matters/:id/variacao', controller.gerarVariacao);
 router.post('/matters/:id/gerar-reel', controller.gerarReel);

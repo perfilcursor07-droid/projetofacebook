@@ -1,7 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const sharp = require('sharp');
 
 const {
+  prepareTwitterImage,
   truncateForTwitter,
   twitterWeightedLength,
 } = require('../src/services/ayrshareService');
@@ -36,4 +41,32 @@ test('corte nao parte URL', () => {
 
   assert.equal(output.includes('https://'), false);
   assert.ok(twitterWeightedLength(output) <= 280);
+});
+
+test('imagem exclusiva do X vira JPEG de ate 1200 px e menos de 5 MB', async () => {
+  const source = path.join(os.tmpdir(), `viralizeai-x-source-${process.pid}-${Date.now()}.png`);
+  let prepared = null;
+  try {
+    await sharp({
+      create: {
+        width: 2200,
+        height: 1600,
+        channels: 4,
+        background: { r: 24, g: 84, b: 160, alpha: 0.7 },
+      },
+    })
+      .png()
+      .toFile(source);
+
+    prepared = await prepareTwitterImage(source);
+    assert.ok(prepared?.filePath);
+    const metadata = await sharp(prepared.filePath).metadata();
+    assert.equal(metadata.format, 'jpeg');
+    assert.ok(metadata.width <= 1200);
+    assert.ok(metadata.height <= 1200);
+    assert.ok(prepared.bytes < 5 * 1024 * 1024);
+  } finally {
+    prepared?.remove();
+    if (fs.existsSync(source)) fs.unlinkSync(source);
+  }
 });
