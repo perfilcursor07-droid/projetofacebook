@@ -949,7 +949,7 @@ body.mia-chat-drawer-open {
   background: #0f172a;
   padding: 0.65rem 0.9rem;
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, ui-serif, serif;
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1.62;
   letter-spacing: -0.006em;
   color: #eeeae2;
@@ -1013,7 +1013,7 @@ body.mia-chat-drawer-open {
   background: var(--mia-chat-user-bg);
   padding: 0.65rem 0.85rem;
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, ui-serif, serif;
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1.62;
   letter-spacing: -0.006em;
   color: #eeeae2;
@@ -2047,7 +2047,7 @@ body.mia-chat-drawer-open {
 }
 
 .mia-msg-ai-text {
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1.78;
   color: #e8e4dc;
 }
@@ -2105,7 +2105,7 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-input {
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1.5;
   padding: 0.25rem 0.4rem;
   max-height: 12rem;
@@ -2376,7 +2376,7 @@ body.mia-chat-drawer-open {
 .mia-msg-ai-body .mia-msg-ai-text,
 .mia-msg-ai-body .mia-msg-ai-anchor {
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, ui-serif, serif;
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1.62;
   letter-spacing: -0.006em;
   color: #eeeae2;
@@ -2423,7 +2423,7 @@ body.mia-chat-drawer-open {
   overflow-wrap: anywhere;
   word-break: break-word;
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, ui-serif, serif;
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1.62;
   letter-spacing: -0.006em;
   color: #eeeae2;
