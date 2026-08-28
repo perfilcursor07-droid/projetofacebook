@@ -205,6 +205,28 @@ function apiErrorMessage(err) {
     );
   }
 
+  if (code === 417 || (lower.includes('oauth1') && lower.includes('permission'))) {
+    return (
+      'X.com: o aplicativo está sem permissão de escrita. No X Developer, altere para Read and write ' +
+      'e depois reconecte a conta X no Social Accounts da Ayrshare.'
+    );
+  }
+
+  if (code === 419 || lower.includes('x_credentials_required')) {
+    return (
+      'X.com: as credenciais BYO OAuth 1.0a estão ausentes ou inválidas. Confira ' +
+      'AYRSHARE_X_API_KEY e AYRSHARE_X_API_SECRET e reconecte a conta na Ayrshare.'
+    );
+  }
+
+  if (
+    lower.includes('api credits') ||
+    lower.includes('purchase credits') ||
+    (lower.includes('credit') && lower.includes('x developer'))
+  ) {
+    return 'X.com: a conta do X Developer está sem créditos de API. Adicione créditos no console.x.com.';
+  }
+
   if (
     code === 429
     || lower.includes('quota')
@@ -237,8 +259,9 @@ function apiErrorMessage(err) {
     (lower.includes('media') && lower.includes('dimensions') && lower.includes('content'))
   ) {
     return (
-      'X.com recusou a imagem enviada. Use a versão exclusiva do X; ela será convertida para JPEG, ' +
-      'limitada a 1200 px e enviada com Content-Type correto.'
+      'X.com/Ayrshare recusou o upload da imagem mesmo ela estando dentro dos limites. ' +
+      'Confira no X Developer se o aplicativo tem permissão Read and write, se a conta foi ' +
+      'reconectada após alterar a permissão e se há créditos de API.'
     );
   }
 
@@ -441,9 +464,12 @@ async function prepareTwitterImage(filePath, { imageUrl = null } = {}) {
     // em fotos detalhadas, e preserva boa nitidez para um post de notícia.
     await sharp(input, { failOn: 'error', limitInputPixels: 40_000_000 })
       .rotate()
+      .toColourspace('srgb')
       .flatten({ background: '#ffffff' })
       .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 82, chromaSubsampling: '4:2:0', mozjpeg: true })
+      // JPEG baseline sRGB é a variante mais conservadora para o endpoint de
+      // mídia do X. `mozjpeg: true` gerava JPEG progressivo.
+      .jpeg({ quality: 82, chromaSubsampling: '4:2:0', progressive: false })
       .toFile(output);
 
     const bytes = fs.statSync(output).size;
@@ -469,6 +495,25 @@ async function prepareTwitterImage(filePath, { imageUrl = null } = {}) {
     // Vídeo/Reel continua no fluxo normal da Ayrshare.
     return null;
   }
+}
+
+function isTwitterMediaUploadError(err) {
+  let raw = '';
+  try {
+    raw = JSON.stringify(err?.response?.data || '');
+  } catch {
+    raw = '';
+  }
+  const text = `${err?.message || ''} ${raw}`.toLowerCase();
+  return (
+    text.includes('upload error') ||
+    (text.includes('media') &&
+      (text.includes('file size') ||
+        text.includes('dimension') ||
+        text.includes('content-type') ||
+        text.includes('content type') ||
+        text.includes('media upload')))
+  );
 }
 
 /**
@@ -846,6 +891,18 @@ async function publishToFacebook({
     } else if (!err.message || err.message === 'Request failed with status code 400') {
       err.message = friendly || err.message;
     }
+    // O corpo não contém os headers de autenticação. Registrá-lo permite
+    // diferenciar mídia, permissão, créditos e conta X desconectada.
+    if (err.response?.data) {
+      try {
+        console.error(
+          '[ayrshare] publish response:',
+          JSON.stringify(err.response.data).slice(0, 2000)
+        );
+      } catch {
+        /* resposta não serializável */
+      }
+    }
     // Evita dump enorme do axios no pm2
     console.error('[ayrshare] publish failed:', err.message, err.response?.data?.status || err.status);
     throw err;
@@ -1208,6 +1265,7 @@ module.exports = {
   isConfigured,
   assertConfigured,
   apiErrorMessage,
+  isTwitterMediaUploadError,
   limitHashtags,
   publishToFacebook,
   resolveMediaUrl,

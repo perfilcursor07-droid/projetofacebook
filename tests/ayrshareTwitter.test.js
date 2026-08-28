@@ -6,10 +6,22 @@ const path = require('node:path');
 const sharp = require('sharp');
 
 const {
+  apiErrorMessage,
   prepareTwitterImage,
   truncateForTwitter,
   twitterWeightedLength,
 } = require('../src/services/ayrshareService');
+
+test('erros BYO do X explicam permissao e credenciais', () => {
+  assert.match(
+    apiErrorMessage({ response: { data: { code: 417, message: 'oauth1 app permissions' } } }),
+    /Read and write/
+  );
+  assert.match(
+    apiErrorMessage({ response: { data: { code: 419, action: 'x_credentials_required' } } }),
+    /AYRSHARE_X_API_KEY/
+  );
+});
 
 test('legenda do X nunca ultrapassa o peso 280', () => {
   const input = 'A'.repeat(400);
@@ -62,6 +74,8 @@ test('imagem exclusiva do X vira JPEG de ate 1200 px e menos de 5 MB', async () 
     assert.ok(prepared?.filePath);
     const metadata = await sharp(prepared.filePath).metadata();
     assert.equal(metadata.format, 'jpeg');
+    assert.equal(metadata.isProgressive, false);
+    assert.equal(metadata.space, 'srgb');
     assert.ok(metadata.width <= 1200);
     assert.ok(metadata.height <= 1200);
     assert.ok(prepared.bytes < 5 * 1024 * 1024);

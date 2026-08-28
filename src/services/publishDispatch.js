@@ -299,7 +299,7 @@ async function publishContent({
             throw err;
           }
         }
-        resultX = await ayrshareService.publishToFacebook({
+        const xPayload = {
           post: String(textoX || content),
           filePath: localFileX,
           imageUrl: localFileX ? null : remoteUrlX,
@@ -309,7 +309,34 @@ async function publishContent({
           publicarFacebook: false,
           publicarInstagram: false,
           publicarX: true,
-        });
+        };
+        try {
+          resultX = await ayrshareService.publishToFacebook(xPayload);
+        } catch (mediaErr) {
+          const temImagemX = Boolean(xPayload.filePath || xPayload.imageUrl);
+          if (
+            !temImagemX ||
+            tipo === 'reel' ||
+            !ayrshareService.isTwitterMediaUploadError(mediaErr)
+          ) {
+            throw mediaErr;
+          }
+          console.warn(
+            '[publish] X.com recusou a imagem; tentando uma única vez somente com o texto.'
+          );
+          try {
+            resultX = await ayrshareService.publishToFacebook({
+              ...xPayload,
+              filePath: null,
+              imageUrl: null,
+            });
+            resultX.x_erro =
+              'X.com publicou somente o texto porque a API recusou a imagem preparada.';
+          } catch (textErr) {
+            textErr.message = `${mediaErr.message} Tentativa somente com texto: ${textErr.message}`;
+            throw textErr;
+          }
+        }
       } catch (err) {
         if (!resultMeta) throw err;
         erroXSeparado = err.message || 'X.com recusou a publicação';

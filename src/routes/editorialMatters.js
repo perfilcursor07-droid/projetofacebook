@@ -468,6 +468,8 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
         publicarFacebook: pedidoFacebook,
         publicarInstagram: pedidoInstagram,
         publicarX: pedidoX,
+        textoX: req.body.textoX ?? req.body.texto_x ?? null,
+        imagemXUrl: req.body.imagemXUrl ?? req.body.imagem_x_url ?? null,
       });
       return res.json({
         ok: true,
@@ -487,6 +489,8 @@ router.post('/matters/:id/publicar', async (req, res, next) => {
       publicar_facebook: pedidoFacebook,
       publicar_instagram: pedidoInstagram,
       publicar_x: pedidoX,
+      texto_x: req.body.textoX ?? req.body.texto_x ?? null,
+      imagem_x_url: req.body.imagemXUrl ?? req.body.imagem_x_url ?? null,
     });
     return res.status(published.queued ? 202 : 200).json({
       ok: true,

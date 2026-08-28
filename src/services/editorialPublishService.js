@@ -24,6 +24,8 @@ async function publishEditorialPhoto({
   publicarFacebook = null,
   publicarInstagram = null,
   publicarX = null,
+  textoX = null,
+  imagemXUrl = null,
 }) {
   const matter = await AiMatters.findById(matterId);
   if (!matter || Number(matter.user_id) !== Number(userId)) {
@@ -75,6 +77,19 @@ async function publishEditorialPhoto({
     err.status = 400;
     throw err;
   }
+  const { truncateForTwitter } = require('./ayrshareService');
+  let textoExclusivoX = String(textoX ?? matter.texto_x ?? '').trim();
+  if (pedidoX && !textoExclusivoX) {
+    const gerado = await materiaIaService.gerarTextoXDaMateria({
+      userId,
+      matterId: matter.id,
+      titulo: finalTitle,
+      materia: finalBody,
+    });
+    textoExclusivoX = gerado.texto;
+  }
+  textoExclusivoX = pedidoX ? truncateForTwitter(textoExclusivoX) : '';
+  const imagemExclusivaX = String(imagemXUrl ?? matter.imagem_x_url ?? '').trim() || null;
   // Quem filtra pelo instagram_ativo da Pagina e o publishDispatch, que tambem
   // devolve o motivo quando o post sai so no Facebook.
   console.log('[publicar] instagram', {
@@ -106,6 +121,8 @@ async function publishEditorialPhoto({
     materia: finalBody,
     publicar_instagram: pedidoInstagram,
     publicar_x: pedidoX,
+    texto_x: textoExclusivoX || null,
+    imagem_x_url: imagemExclusivaX,
   });
 
   try {
@@ -119,6 +136,8 @@ async function publishEditorialPhoto({
       publicarFacebook: pedidoFacebook,
       publicarInstagram: pedidoInstagram,
       publicarX: pedidoX,
+      textoX: textoExclusivoX || null,
+      imagemXUrl: imagemExclusivaX,
     });
     const postId = result.post_id || result.id;
     const fbPostUrl = pedidoFacebook
