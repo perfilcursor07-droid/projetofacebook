@@ -2477,8 +2477,25 @@ body.mia-chat-drawer-open {
 
   .mia-msg-user-bubble,
   .mia-msg-edit-textarea {
-    max-width: 94%;
-    font-size: 1.0625rem;
+    max-width: 100%;
+    font-size: 1.125rem;
     line-height: 1.58;
   }
+}
+
+/* Usuário e Claude pertencem à mesma coluna de leitura. A especificidade é
+   intencional: impede que o max-width genérico de .mia-msg-user faça a bolha
+   escapar e ocupar a tela inteira no desktop. */
+.mia-chat-messages > .mia-msg-user,
+.mia-chat-messages > .mia-msg-ai {
+  width: 100%;
+  max-width: var(--mia-chat-stream);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* O cartão do pedido acompanha exatamente a largura da resposta da IA. */
+.mia-chat-messages > .mia-msg-user .mia-msg-user-bubble {
+  width: 100%;
+  max-width: 100%;
 }
