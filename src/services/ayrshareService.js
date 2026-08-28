@@ -335,11 +335,21 @@ async function resolveMediaUrl({
   contentType = null,
 }) {
   const remote = String(imageUrl || '').trim();
-  if (remote && /^https?:\/\//i.test(remote) && !remote.includes('/media/')) {
+  if (
+    !forceAyrshareUpload &&
+    remote &&
+    /^https?:\/\//i.test(remote) &&
+    !remote.includes('/media/')
+  ) {
     return remote;
   }
 
-  if (remote && /^https?:\/\//i.test(remote) && remote.includes('/media/')) {
+  if (
+    !forceAyrshareUpload &&
+    remote &&
+    /^https?:\/\//i.test(remote) &&
+    remote.includes('/media/')
+  ) {
     try {
       const parsed = new URL(remote);
       if (parsed.protocol === 'https:' || env.appPublicUrl) {
