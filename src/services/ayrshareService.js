@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
 const axios = require('axios');
 const FormData = require('form-data');
+const sharp = require('sharp');
 const { env } = require('../config/env');
 const { storageAbsolutePath } = require('./downloadService');
 const { limitarLegendaInstagram } = require('./editorialGuidelinesFb');
@@ -236,7 +239,7 @@ async function uploadMediaFile(filePath) {
 /**
  * Resolve URL pública para o post: remote URL, APP_PUBLIC_URL+/media, ou upload Ayrshare.
  */
-async function resolveMediaUrl({ filePath, imageUrl }) {
+async function resolveMediaUrl({ filePath, imageUrl, forceAyrshareUpload = false }) {
   const remote = String(imageUrl || '').trim();
   if (remote && /^https?:\/\//i.test(remote) && !remote.includes('/media/')) {
     return remote;
@@ -277,7 +280,7 @@ async function resolveMediaUrl({ filePath, imageUrl }) {
 
   if (local) {
     const publicUrl = publicMediaUrlFromLocal(local);
-    if (publicUrl && !/localhost|127\.0\.0\.1/i.test(publicUrl)) {
+    if (!forceAyrshareUpload && publicUrl && !/localhost|127\.0\.0\.1/i.test(publicUrl)) {
       return publicUrl;
     }
     // Localhost / sem APP_PUBLIC_URL: sobe para a Ayrshare
@@ -289,6 +292,55 @@ async function resolveMediaUrl({ filePath, imageUrl }) {
   }
 
   return null;
+}
+
+/**
+ * X aceita imagens de no máximo 5 MB. As artes editoriais podem ser JPGs grandes
+ * (qualidade 95), então criamos uma cópia 1200 px JPEG para a Ayrshare enviar
+ * com content-type confiável. A arte original no storage não é modificada.
+ */
+async function prepareTwitterImage(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+
+  const output = path.join(
+    os.tmpdir(),
+    `viralizeai-x-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`
+  );
+  const remove = () => {
+    try {
+      if (fs.existsSync(output)) fs.unlinkSync(output);
+    } catch {
+      /* arquivo temporário é descartável */
+    }
+  };
+
+  try {
+    // A 1200 px e qualidade 82 fica bem abaixo do limite de 5 MB do X, mesmo
+    // em fotos detalhadas, e preserva boa nitidez para um post de notícia.
+    await sharp(filePath, { failOn: 'error', limitInputPixels: 40_000_000 })
+      .rotate()
+      .flatten({ background: '#ffffff' })
+      .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 82, chromaSubsampling: '4:2:0', mozjpeg: true })
+      .toFile(output);
+
+    const bytes = fs.statSync(output).size;
+    if (bytes > 5 * 1024 * 1024) {
+      remove();
+      const err = new Error(
+        'A imagem preparada para o X.com ainda ultrapassa 5 MB. Escolha outra imagem ou reduza a arte antes de publicar.'
+      );
+      err.status = 422;
+      throw err;
+    }
+    return { filePath: output, bytes, remove };
+  } catch (err) {
+    remove();
+    if (err.status) throw err;
+    // Não é uma imagem legível pelo Sharp (por exemplo, vídeo): deixa o fluxo
+    // normal da Ayrshare lidar com a mídia específica daquela plataforma.
+    return null;
+  }
 }
 
 /**
@@ -372,16 +424,6 @@ async function publishToFacebook({
     /(^|[^A-Za-z0-9._])@([A-Za-z0-9._]{2,50})\b/g,
     '$1#$2'
   );
-  const mediaUrl = await resolveMediaUrl({ filePath, imageUrl });
-
-  if ((isReel || filePath || imageUrl) && !mediaUrl && isReel) {
-    const err = new Error(
-      'Vídeo do Reel não encontrado. Aguarde o processamento ou importe o link de novo.'
-    );
-    err.status = 422;
-    throw err;
-  }
-
   const plataformas = [];
   if (publicarFacebook) plataformas.push('facebook');
   // Instagram exige mídia: post só de texto é recusado pela API.
@@ -392,6 +434,29 @@ async function publishToFacebook({
   if (!plataformas.length) {
     const err = new Error('Selecione Facebook, Instagram, X.com ou mais de uma rede para publicar.');
     err.status = 400;
+    throw err;
+  }
+
+  // Para foto + X, use uma cópia menor hospedada pela própria Ayrshare. Assim
+  // o X recebe JPEG <5 MB, com extensão e Content-Type corretos, em vez de
+  // baixar diretamente a arte grande servida por /media.
+  const xImage = vaiNoX && !isReel ? await prepareTwitterImage(filePath) : null;
+  let mediaUrl = null;
+  try {
+    mediaUrl = await resolveMediaUrl({
+      filePath: xImage?.filePath || filePath,
+      imageUrl,
+      forceAyrshareUpload: Boolean(xImage),
+    });
+  } finally {
+    xImage?.remove();
+  }
+
+  if ((isReel || filePath || imageUrl) && !mediaUrl && isReel) {
+    const err = new Error(
+      'Vídeo do Reel não encontrado. Aguarde o processamento ou importe o link de novo.'
+    );
+    err.status = 422;
     throw err;
   }
 
@@ -443,6 +508,7 @@ async function publishToFacebook({
     caracteresFacebook: publicarFacebook ? content.length : 0,
     caracteresInstagram: vaiNoInstagram ? instagramContent.length : 0,
     caracteresX: vaiNoX ? xContent.length : 0,
+    xMediaOtimizadaBytes: xImage?.bytes || null,
     hasProfileKey: Boolean(pk),
     mediaHost: mediaUrl ? (() => {
       try {
@@ -1015,6 +1081,7 @@ module.exports = {
   publishToFacebook,
   resolveMediaUrl,
   uploadMediaFile,
+  prepareTwitterImage,
   publicMediaUrlFromLocal,
   looksLikeRefId,
   isTwitterByoConfigured,
