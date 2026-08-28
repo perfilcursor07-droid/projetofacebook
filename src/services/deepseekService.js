@@ -330,6 +330,50 @@ async function chatCompletion(
 }
 
 /**
+ * Chamadas exibidas na interface como "Claude" não podem cair silenciosamente
+ * no DeepSeek. Tenta o Claude Web pelo Token-Free Gateway e depois a API
+ * oficial do Claude; se nenhum estiver disponível, falha de forma clara.
+ */
+async function chatCompletionClaudeObrigatorio(messages, options = {}) {
+  const tarefa = 'conversa';
+  const tokenFree = require('./tokenFreeGatewayService');
+  let erroTokenFree = null;
+
+  if (tokenFree.cobreTarefa(tarefa)) {
+    try {
+      console.log('[titulos-claude] provider=token-free');
+      return await tokenFree.chatCompletion(messages, {
+        ...options,
+        tarefa,
+        conversationName:
+          options.conversationName || 'ViralizeAI — títulos sugeridos pelo Claude',
+      });
+    } catch (err) {
+      erroTokenFree = err;
+      console.warn('[titulos-claude] token-free falhou; verificando API Claude:', err.message);
+    }
+  }
+
+  const claude = require('./claudeService');
+  if (claude.isConfigured()) {
+    console.log('[titulos-claude] provider=anthropic');
+    return claude.chatCompletion(messages, {
+      ...options,
+      tarefa,
+    });
+  }
+
+  const err = new Error(
+    erroTokenFree
+      ? `Claude não está disponível para gerar os títulos: ${erroTokenFree.message}`
+      : 'Claude não está configurado para gerar os títulos. Ative o Token-Free Gateway ou configure ANTHROPIC_API_KEY.'
+  );
+  err.status = erroTokenFree?.status || 503;
+  err.code = 'CLAUDE_TITULOS_INDISPONIVEL';
+  throw err;
+}
+
+/**
  * Igual ao chatCompletion, mas em streaming (SSE da DeepSeek).
  * Chama onDelta(pedaco) a cada token e devolve o texto completo.
  * Em qualquer falha de stream, cai para a chamada normal.
@@ -2021,7 +2065,8 @@ async function sugerirTituloMateria({
   rascunhoManual = '',
   tarefa = 'auxiliar',
 }) {
-  assertDeepseek(tarefa);
+  const somenteClaude = String(tarefa || '').toLowerCase() === 'conversa';
+  if (!somenteClaude) assertDeepseek(tarefa);
   const tomKey = TITULO_TOMES[tom] ? tom : 'natural';
   const tomDesc = TITULO_TOMES[tomKey];
   const rascunho = String(rascunhoManual || '').trim();
@@ -2142,10 +2187,12 @@ ${attempt > 1 ? '- Tentativa anterior falhou por repetir o título. Varie bastan
         : tomKey === 'polemico'
           ? 1.2
           : 1.05;
-    const raw = await chatCompletion(baseMessages(attempt), {
+    const completarTitulo = somenteClaude ? chatCompletionClaudeObrigatorio : chatCompletion;
+    const raw = await completarTitulo(baseMessages(attempt), {
       temperature: Math.min(temp, 1.3),
       json: true,
       tarefa,
+      conversationName: 'ViralizeAI — título sugerido pelo Claude',
     });
     const titulo = finalizarTituloComMarca(parseTituloFromAi(raw), marcaModeloArte);
     ultimoTitulo = titulo;
@@ -2236,7 +2283,8 @@ async function gerarTitulosAlternativos({
   evitar = [],
   tarefa = 'auxiliar',
 }) {
-  assertDeepseek(tarefa);
+  const somenteClaude = String(tarefa || '').toLowerCase() === 'conversa';
+  if (!somenteClaude) assertDeepseek(tarefa);
   const tituloAtual = String(titulo || '').trim();
   const corpo = String(materia || '').trim();
   if (corpo.length < 80 && !tituloAtual) return [];
@@ -2296,10 +2344,12 @@ ${ancoras.length ? `- Âncoras do assunto: ${ancoras.join(', ')}. Cada manchete 
     try {
       // Temperatura menor ajuda a variar a formulação sem trocar o assunto.
       // eslint-disable-next-line no-await-in-loop
-      raw = await chatCompletion(messages, {
+      const completarTitulos = somenteClaude ? chatCompletionClaudeObrigatorio : chatCompletion;
+      raw = await completarTitulos(messages, {
         temperature: tentativa === 1 ? 0.72 : 0.6,
         json: true,
         tarefa,
+        conversationName: 'ViralizeAI — títulos sugeridos pelo Claude',
       });
     } catch (err) {
       // Alternativas são um extra: nunca podem derrubar a geração da matéria.
@@ -4410,6 +4460,7 @@ module.exports = {
   checarPedidoNasFontes,
   revisarMateriaContraFontes,
   chatCompletionStream,
+  chatCompletionClaudeObrigatorio,
   traduzirPostsParaPortugues,
   sugerirConsultasImagem,
   identificarAutorImagem,
