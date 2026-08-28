@@ -62,10 +62,6 @@
                 <path d="M12 5v14M5 12h14"/>
               </svg>
             </button>
-            <button type="button" id="chat-ensinar" class="mia-chat-icon-btn mia-chat-icon-btn--rotulo" title="Ensinar a IA (regras fixas para as próximas matérias)" aria-label="Ensinar a IA">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M6 10.5V16c0 1.7 2.7 3 6 3s6-1.3 6-3v-5.5"/></svg>
-              <span class="mia-chat-btn-rotulo">Ensinar IA</span>
-            </button>
             <button type="button" id="chat-renomear" class="mia-chat-icon-btn hidden" title="Renomear conversa" aria-label="Renomear conversa">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
             </button>
@@ -247,23 +243,6 @@
           <p class="mia-chat-hint">Enter envia · Shift+Enter quebra linha</p>
         </div>
 
-        <div id="chat-ensinar-backdrop" class="mia-manual-backdrop hidden" hidden></div>
-        <form id="chat-ensinar-form" class="mia-manual-draft hidden" aria-modal="true" role="dialog" aria-labelledby="chat-ensinar-titulo-label">
-          <div class="mia-manual-draft-head">
-            <p id="chat-ensinar-titulo-label">Ensinar a IA</p>
-            <button type="button" id="chat-ensinar-fechar" aria-label="Fechar">×</button>
-          </div>
-          <p class="mia-ensinar-ajuda">
-            Uma orientação por linha. A IA passa a seguir isso em <strong>todas</strong> as próximas
-            matérias — aqui no chat e no agendamento da biblioteca.<br>
-            Se duas regras se contradisserem, <strong>a última linha vence</strong>.
-          </p>
-          <textarea id="chat-ensinar-texto" rows="8"
-            placeholder="Ex.: Crédito da fonte só no fim do texto&#10;Nunca começar o título com pergunta&#10;Sempre traduzir material em inglês"></textarea>
-          <button type="submit">Salvar orientações</button>
-          <p id="chat-ensinar-status"></p>
-        </form>
-
         <div id="chat-manual-backdrop" class="mia-manual-backdrop hidden" hidden></div>
         <form id="chat-manual-form" class="mia-manual-draft hidden" aria-modal="true" role="dialog" aria-labelledby="chat-manual-titulo-label">
           <div class="mia-manual-draft-head">
@@ -341,93 +320,6 @@
         if (e.key === 'Escape') fecharMenusMais();
         if (e.key === 'Escape' && form && !form.classList.contains('hidden')) {
           setManualOpen(false);
-        }
-        if (e.key === 'Escape' && ensinarForm && !ensinarForm.classList.contains('hidden')) {
-          setEnsinarOpen(false);
-        }
-      });
-      // "Ensinar a IA": grava regras fixas que valem para as próximas matérias.
-      const ensinarBtn = document.getElementById('chat-ensinar');
-      const ensinarForm = document.getElementById('chat-ensinar-form');
-      const ensinarBackdrop = document.getElementById('chat-ensinar-backdrop');
-      const ensinarFechar = document.getElementById('chat-ensinar-fechar');
-      const ensinarTexto = document.getElementById('chat-ensinar-texto');
-      const ensinarStatus = document.getElementById('chat-ensinar-status');
-      const QUEBRA = String.fromCharCode(10);
-      let ensinarCarregado = false;
-
-      function setEnsinarStatus(text, erro) {
-        if (!ensinarStatus) return;
-        ensinarStatus.textContent = text || '';
-        ensinarStatus.style.color = erro ? '#fda4af' : '#94a3b8';
-      }
-      function linhasDeOrientacoes(texto) {
-        return String(texto || '')
-          .split(/\r?\n/)
-          .map((l) => l.replace(/^[ \t]*[-•*][ \t]*/, '').trim())
-          .filter(Boolean);
-      }
-      function setEnsinarOpen(open) {
-        ensinarForm?.classList.toggle('hidden', !open);
-        ensinarBackdrop?.classList.toggle('hidden', !open);
-        if (ensinarBackdrop) ensinarBackdrop.hidden = !open;
-        chatMain?.classList.toggle('is-manual-open', open);
-        if (!open) setEnsinarStatus('');
-      }
-      ensinarBtn?.addEventListener('click', async () => {
-        setEnsinarOpen(true);
-        ensinarTexto?.focus();
-        if (ensinarCarregado) return;
-        setEnsinarStatus('Carregando o que a IA já aprendeu…');
-        try {
-          const res = await fetch('/api/materias-ia/chat/orientacoes', {
-            headers: { Accept: 'application/json' },
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || 'Não foi possível carregar as orientações.');
-          const linhas = linhasDeOrientacoes(data.orientacoes);
-          if (ensinarTexto) ensinarTexto.value = linhas.join(QUEBRA);
-          ensinarCarregado = true;
-          setEnsinarStatus(
-            linhas.length ? linhas.length + ' orientação(ões) em uso.' : 'Nenhuma orientação ainda.'
-          );
-        } catch (err) {
-          setEnsinarStatus(err.message, true);
-        }
-      });
-      ensinarFechar?.addEventListener('click', () => setEnsinarOpen(false));
-      ensinarBackdrop?.addEventListener('click', () => setEnsinarOpen(false));
-      ensinarForm?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = ensinarForm.querySelector('button[type="submit"]');
-        const original = btn?.textContent;
-        if (btn) {
-          btn.disabled = true;
-          btn.textContent = 'Salvando…';
-        }
-        setEnsinarStatus('Gravando na memória da IA…');
-        try {
-          const res = await fetch('/api/materias-ia/chat/orientacoes', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ orientacoes: String(ensinarTexto?.value || '') }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || 'Não foi possível salvar.');
-          const linhas = linhasDeOrientacoes(data.orientacoes);
-          if (ensinarTexto) ensinarTexto.value = linhas.join(QUEBRA);
-          setEnsinarStatus(
-            linhas.length
-              ? 'Guardado ✓ a IA vai seguir isso nas próximas matérias.'
-              : 'Orientações apagadas.'
-          );
-        } catch (err) {
-          setEnsinarStatus(err.message, true);
-        } finally {
-          if (btn) {
-            btn.disabled = false;
-            btn.textContent = original || 'Salvar orientações';
-          }
         }
       });
 
