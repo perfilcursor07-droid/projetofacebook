@@ -52,7 +52,7 @@
       return;
     }
     feedback.textContent = message;
-    feedback.className = 'mt-5 rounded-xl border px-4 py-3 text-sm';
+    feedback.className = 'mt-4 rounded-lg border px-3 py-2 text-xs';
     feedback.classList.add(...(toneClasses[tone] || toneClasses.neutral));
   }
 
