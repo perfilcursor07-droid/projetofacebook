@@ -11,6 +11,78 @@ const { limitarLegendaInstagram } = require('./editorialGuidelinesFb');
 
 const API = 'https://api.ayrshare.com/api';
 const INSTAGRAM_HASHTAG_LIMIT = 5;
+const X_MAX_WEIGHTED_LENGTH = 280;
+const X_SHORT_URL_LENGTH = 23;
+
+function twitterCodePointWeight(char) {
+  const cp = char.codePointAt(0);
+  // Mesmas faixas leves usadas pelo X: caracteres latinos, pontuacao comum e
+  // acentos contam 1. Emoji e a maior parte dos demais simbolos contam 2.
+  return (
+    (cp >= 0x0000 && cp <= 0x10ff) ||
+    (cp >= 0x2000 && cp <= 0x200d) ||
+    (cp >= 0x2010 && cp <= 0x201f) ||
+    (cp >= 0x2032 && cp <= 0x2037)
+  )
+    ? 1
+    : 2;
+}
+
+function twitterTextTokens(value) {
+  const text = String(value || '');
+  const tokens = [];
+  const urlRegex = /https?:\/\/[^\s]+/giu;
+  let cursor = 0;
+  let match;
+
+  const addText = (chunk) => {
+    for (const char of chunk) {
+      tokens.push({ value: char, weight: twitterCodePointWeight(char), url: false });
+    }
+  };
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    addText(text.slice(cursor, match.index));
+    tokens.push({ value: match[0], weight: X_SHORT_URL_LENGTH, url: true });
+    cursor = match.index + match[0].length;
+  }
+  addText(text.slice(cursor));
+  return tokens;
+}
+
+function twitterWeightedLength(value) {
+  return twitterTextTokens(value).reduce((total, token) => total + token.weight, 0);
+}
+
+/**
+ * Encurta a legenda segundo o peso real do X, sem partir URL ou caractere
+ * Unicode. O sufixo usa tres pontos ASCII porque o caractere unico "…" pesa 2
+ * no X e era justamente o responsavel pelo "Overage: 1".
+ */
+function truncateForTwitter(value, maxWeight = X_MAX_WEIGHTED_LENGTH) {
+  const text = String(value || '').trim();
+  const limit = Math.max(1, Number(maxWeight) || X_MAX_WEIGHTED_LENGTH);
+  if (twitterWeightedLength(text) <= limit) return text;
+
+  const suffix = '...';
+  const budget = Math.max(0, limit - twitterWeightedLength(suffix));
+  let output = '';
+  let used = 0;
+  for (const token of twitterTextTokens(text)) {
+    if (used + token.weight > budget) break;
+    output += token.value;
+    used += token.weight;
+  }
+
+  output = output.trimEnd();
+  // Evita terminar no meio de uma palavra quando existe espaco razoavelmente
+  // perto do corte. Para manchetes muito longas, preserva o maximo possivel.
+  const lastSpace = output.lastIndexOf(' ');
+  if (lastSpace >= Math.floor(output.length * 0.72)) {
+    output = output.slice(0, lastSpace).trimEnd();
+  }
+  return `${output}${suffix}`;
+}
 
 function limitHashtags(text, max = INSTAGRAM_HASHTAG_LIMIT) {
   let count = 0;
@@ -200,7 +272,7 @@ function publicMediaUrlFromLocal(filePath) {
 /**
  * Upload local → Ayrshare media gallery. Retorna URL hospedada.
  */
-async function uploadMediaFile(filePath) {
+async function uploadMediaFile(filePath, { profileKey = null, contentType = null } = {}) {
   assertConfigured();
   if (!filePath || !fs.existsSync(filePath)) {
     const err = new Error('Arquivo de mídia não encontrado para upload Ayrshare.');
@@ -210,13 +282,29 @@ async function uploadMediaFile(filePath) {
 
   const form = new FormData();
   const fileName = path.basename(filePath);
-  form.append('file', fs.createReadStream(filePath));
+  const extension = path.extname(fileName).toLowerCase();
+  const detectedContentType =
+    contentType ||
+    ({
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.mp4': 'video/mp4',
+      '.mov': 'video/quicktime',
+    }[extension] || 'application/octet-stream');
+  form.append('file', fs.createReadStream(filePath), {
+    filename: fileName,
+    contentType: detectedContentType,
+    knownLength: fs.statSync(filePath).size,
+  });
   form.append('fileName', fileName);
   form.append('description', 'viralizeai');
 
   const { data } = await axios.post(`${API}/media/upload`, form, {
     headers: {
-      ...authHeaders(),
+      ...authHeaders({}, profileKey),
       ...form.getHeaders(),
     },
     maxContentLength: Infinity,
@@ -239,7 +327,13 @@ async function uploadMediaFile(filePath) {
 /**
  * Resolve URL pública para o post: remote URL, APP_PUBLIC_URL+/media, ou upload Ayrshare.
  */
-async function resolveMediaUrl({ filePath, imageUrl, forceAyrshareUpload = false }) {
+async function resolveMediaUrl({
+  filePath,
+  imageUrl,
+  forceAyrshareUpload = false,
+  profileKey = null,
+  contentType = null,
+}) {
   const remote = String(imageUrl || '').trim();
   if (remote && /^https?:\/\//i.test(remote) && !remote.includes('/media/')) {
     return remote;
@@ -284,7 +378,7 @@ async function resolveMediaUrl({ filePath, imageUrl, forceAyrshareUpload = false
       return publicUrl;
     }
     // Localhost / sem APP_PUBLIC_URL: sobe para a Ayrshare
-    return uploadMediaFile(local);
+    return uploadMediaFile(local, { profileKey, contentType });
   }
 
   if (remote && /^https?:\/\//i.test(remote)) {
@@ -424,18 +518,7 @@ async function publishToFacebook({
     /(^|[^A-Za-z0-9._])@([A-Za-z0-9._]{2,50})\b/g,
     '$1#$2'
   );
-  const plataformas = [];
-  if (publicarFacebook) plataformas.push('facebook');
-  // Instagram exige mídia: post só de texto é recusado pela API.
-  const vaiNoInstagram = Boolean(publicarInstagram) && Boolean(mediaUrl);
-  if (vaiNoInstagram) plataformas.push('instagram');
   const vaiNoX = Boolean(publicarX);
-  if (vaiNoX) plataformas.push('twitter');
-  if (!plataformas.length) {
-    const err = new Error('Selecione Facebook, Instagram, X.com ou mais de uma rede para publicar.');
-    err.status = 400;
-    throw err;
-  }
 
   // Para foto + X, use uma cópia menor hospedada pela própria Ayrshare. Assim
   // o X recebe JPEG <5 MB, com extensão e Content-Type corretos, em vez de
@@ -447,6 +530,8 @@ async function publishToFacebook({
       filePath: xImage?.filePath || filePath,
       imageUrl,
       forceAyrshareUpload: Boolean(xImage),
+      profileKey,
+      contentType: xImage ? 'image/jpeg' : null,
     });
   } finally {
     xImage?.remove();
@@ -460,6 +545,18 @@ async function publishToFacebook({
     throw err;
   }
 
+  const plataformas = [];
+  if (publicarFacebook) plataformas.push('facebook');
+  // Instagram exige mídia: post só de texto é recusado pela API.
+  const vaiNoInstagram = Boolean(publicarInstagram) && Boolean(mediaUrl);
+  if (vaiNoInstagram) plataformas.push('instagram');
+  if (vaiNoX) plataformas.push('twitter');
+  if (!plataformas.length) {
+    const err = new Error('Selecione Facebook, Instagram, X.com ou mais de uma rede para publicar.');
+    err.status = 400;
+    throw err;
+  }
+
   const instagramContent = vaiNoInstagram
     ? limitarLegendaInstagram(limitHashtags(content, INSTAGRAM_HASHTAG_LIMIT))
     : content;
@@ -467,10 +564,7 @@ async function publishToFacebook({
   // a manchete, em vez de deixar a Ayrshare recusar toda a publicação.
   // Não reutilize a versão do Facebook (que troca @menções por hashtags): no X,
   // as menções são válidas e devem ser preservadas.
-  const xContent =
-    originalContent.length > 280
-      ? `${originalContent.slice(0, 279).trimEnd()}…`
-      : originalContent;
+  const xContent = truncateForTwitter(originalContent);
   const postsPorPlataforma = {};
   if (publicarFacebook) postsPorPlataforma.facebook = content;
   if (vaiNoInstagram) postsPorPlataforma.instagram = instagramContent;
@@ -508,6 +602,7 @@ async function publishToFacebook({
     caracteresFacebook: publicarFacebook ? content.length : 0,
     caracteresInstagram: vaiNoInstagram ? instagramContent.length : 0,
     caracteresX: vaiNoX ? xContent.length : 0,
+    pesoX: vaiNoX ? twitterWeightedLength(xContent) : 0,
     xMediaOtimizadaBytes: xImage?.bytes || null,
     hasProfileKey: Boolean(pk),
     mediaHost: mediaUrl ? (() => {
@@ -1082,6 +1177,8 @@ module.exports = {
   resolveMediaUrl,
   uploadMediaFile,
   prepareTwitterImage,
+  truncateForTwitter,
+  twitterWeightedLength,
   publicMediaUrlFromLocal,
   looksLikeRefId,
   isTwitterByoConfigured,
