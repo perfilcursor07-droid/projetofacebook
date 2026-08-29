@@ -104,6 +104,11 @@ app.get('/paginas', requireAuth, (_req, res) =>
 );
 app.get('/dashboard', requireAuth, require('./controllers/dashboardController').show);
 app.get('/cookies', requireAuth, (_req, res) => renderPage(res, 'cookies', 'Cookies do YouTube'));
+app.get(
+  '/configuracoes/descobrir-pautas',
+  requireAuth,
+  require('./controllers/pautaFontesController').show
+);
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/videos', requireAuth, require('./routes/videos'));
@@ -116,6 +121,7 @@ app.use('/api/materias-ia', requireAuth, require('./routes/materiasIa'));
 app.use('/api/virais', requireAuth, require('./routes/virais'));
 app.use('/api/biblioteca', requireAuth, require('./routes/biblioteca'));
 app.use('/api/youtube-cookies', requireAuth, require('./routes/ytCookies'));
+app.use('/api/pauta-fontes', requireAuth, require('./routes/pautaFontes'));
 app.use('/api/midias', require('./routes/midias'));
 
 app.use((req, res) => {

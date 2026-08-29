@@ -53,12 +53,14 @@
   let carregandoPublico = false;
   let paginaFacebookAtiva = false;
   let carregandoPaginaFacebook = false;
+  let maisLidasAtiva = false;
+  let carregandoMaisLidas = false;
 
   /* ------------------------------ estilos ------------------------------ */
 
   const estilos = document.createElement('style');
   estilos.textContent = `
-    .mia-x-anexo-btn, .mia-x-imagem-btn, .mia-x-alta-btn, .mia-x-publico-btn, .mia-x-facebook-btn { cursor: pointer; }
+    .mia-x-anexo-btn, .mia-x-imagem-btn, .mia-x-alta-btn, .mia-x-publico-btn, .mia-x-facebook-btn, .mia-x-mais-lidas-btn { cursor: pointer; }
     .mia-x-chip {
       display: inline-flex; align-items: center; gap: .4rem;
       max-width: 100%; margin: .5rem 0 0; padding: .35rem .5rem .35rem .6rem;
@@ -261,6 +263,8 @@
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>';
   const ICONE_FACEBOOK =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>';
+  const ICONE_MAIS_LIDAS =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M9 7h7M9 11h7"/><path d="m14 15 2 2 4-4"/></svg>';
 
   function criarBotaoDescobrir(classe, rotulo, dica, icone) {
     const b = document.createElement('button');
@@ -272,6 +276,13 @@
     alvoDescobrir.appendChild(b);
     return b;
   }
+
+  const btnMaisLidas = criarBotaoDescobrir(
+    'mia-x-mais-lidas-btn',
+    'Mais lidas',
+    'Extrai os rankings dos sites cadastrados nas configurações',
+    ICONE_MAIS_LIDAS
+  );
 
   const btnAlta = criarBotaoDescobrir(
     'mia-x-alta-btn',
@@ -300,11 +311,36 @@
     btnPaginaFacebook.classList.remove('is-active');
   }
 
+  function desativarMaisLidas() {
+    maisLidasAtiva = false;
+    btnMaisLidas.setAttribute('aria-pressed', 'false');
+    btnMaisLidas.classList.remove('is-active');
+  }
+
+  function marcarMaisLidas(ativa) {
+    maisLidasAtiva = ativa;
+    btnMaisLidas.setAttribute('aria-pressed', ativa ? 'true' : 'false');
+    btnMaisLidas.classList.toggle('is-active', ativa);
+    if (!ativa) return;
+    desativarPaginaFacebook();
+    altaAtiva = false;
+    publicoAtivo = false;
+    btnAlta.setAttribute('aria-pressed', 'false');
+    btnAlta.classList.remove('is-active');
+    btnPublico.setAttribute('aria-pressed', 'false');
+    btnPublico.classList.remove('is-active');
+    document.querySelectorAll('.chat-modo-btn').forEach((b) => {
+      b.classList.remove('is-active');
+      b.setAttribute('aria-pressed', 'false');
+    });
+  }
+
   function marcarPublico(ativa) {
     publicoAtivo = ativa;
     btnPublico.setAttribute('aria-pressed', ativa ? 'true' : 'false');
     btnPublico.classList.toggle('is-active', ativa);
     if (!ativa) return;
+    desativarMaisLidas();
     desativarPaginaFacebook();
     altaAtiva = false;
     btnAlta.setAttribute('aria-pressed', 'false');
@@ -320,6 +356,7 @@
     btnAlta.setAttribute('aria-pressed', ativa ? 'true' : 'false');
     btnAlta.classList.toggle('is-active', ativa);
     if (!ativa) return;
+    desativarMaisLidas();
     desativarPaginaFacebook();
     publicoAtivo = false;
     btnPublico.setAttribute('aria-pressed', 'false');
@@ -337,6 +374,7 @@
       marcarAlta(false);
       marcarPublico(false);
       desativarPaginaFacebook();
+      desativarMaisLidas();
     });
   });
 
@@ -385,6 +423,7 @@
     const lista = (Array.isArray(topicos) ? topicos : []).filter(Boolean);
     if (!lista.length) return;
     marcarAlta(false);
+    desativarMaisLidas();
     desativarPaginaFacebook();
     botaoModo('escrever')?.click();
     el.input.value = textoPedidoTopicosSelecionados(lista);
@@ -444,6 +483,7 @@
     btnPaginaFacebook.setAttribute('aria-pressed', ativa ? 'true' : 'false');
     btnPaginaFacebook.classList.toggle('is-active', ativa);
     if (!ativa) return;
+    desativarMaisLidas();
     altaAtiva = false;
     publicoAtivo = false;
     btnAlta.setAttribute('aria-pressed', 'false');
@@ -460,7 +500,7 @@
    * Aviso de carregando com esqueletos. Entra na hora do clique para o usuário
    * não olhar uma área vazia achando que nada aconteceu.
    */
-  function renderCarregando(termo, paraPublico = false, paginaFacebook = false) {
+  function renderCarregando(termo, paraPublico = false, paginaFacebook = false, maisLidas = false) {
     limparBlocosAlta();
     el.vazio?.classList.add('hidden');
 
@@ -476,7 +516,9 @@
     spin.className = 'mia-x-spin';
     linha.appendChild(spin);
     const txt = document.createElement('span');
-    txt.textContent = paginaFacebook
+    txt.textContent = maisLidas
+      ? 'Extraindo as listas de mais lidas dos sites cadastrados e removendo pautas repetidas...'
+      : paginaFacebook
       ? 'Abrindo a página do Facebook e extraindo os posts...'
       : paraPublico
         ? 'Analisando o que viralizou e procurando pautas novas para o seu público...'
@@ -502,7 +544,7 @@
     mostrarBloco(wrap);
   }
 
-  function renderErro(mensagem, termo, paraPublico = false) {
+  function renderErro(mensagem, termo, paraPublico = false, maisLidas = false) {
     limparBlocosAlta();
     const wrap = novoBlocoAlta();
 
@@ -520,10 +562,18 @@
     tentar.type = 'button';
     tentar.textContent = 'Tentar de novo';
     tentar.addEventListener('click', () => {
-      if (paraPublico) carregarParaPublico();
+      if (maisLidas) carregarMaisLidas();
+      else if (paraPublico) carregarParaPublico();
       else carregarAlta(termo || '');
     });
     acoes.appendChild(tentar);
+    if (maisLidas) {
+      const configurar = document.createElement('a');
+      configurar.href = '/configuracoes/descobrir-pautas';
+      configurar.className = 'mia-chat-ghost-btn';
+      configurar.textContent = 'Configurar sites';
+      acoes.appendChild(configurar);
+    }
     box.appendChild(acoes);
 
     wrap.appendChild(box);
@@ -589,7 +639,8 @@
     const horas = data.horas || 24;
     const paraPublico = data.origem === 'viralizadas';
     const paginaFacebook = data.origem === 'pagina-facebook';
-    const podeSalvarRascunho = paraPublico || paginaFacebook;
+    const maisLidas = data.origem === 'mais-lidas';
+    const podeSalvarRascunho = paraPublico || paginaFacebook || maisLidas;
     const basesVirais = Array.isArray(data.basesVirais) ? data.basesVirais : [];
     const avisosPagina = Array.isArray(data.avisos) ? data.avisos.filter(Boolean) : [];
 
@@ -601,7 +652,11 @@
     const corpo = document.createElement('div');
     corpo.className = 'mia-msg-ai-body';
     const p = document.createElement('p');
-    p.textContent = paginaFacebook
+    p.textContent = maisLidas
+      ? topicos.length
+        ? `${topicos.length} pauta(s) disponível(is) nos rankings dos sites cadastrados. As que já existem no sistema foram ocultadas.`
+        : 'Nenhuma pauta nova nos rankings agora. As matérias encontradas já existem no sistema ou os portais ainda não atualizaram suas listas.'
+      : paginaFacebook
       ? `${topicos.length} post(s) encontrados em ${data.pagina || 'Facebook'}. Selecione um ou mais para criar as matérias como rascunho.`
       : paraPublico
         ? `${topicos.length} pauta(s) nova(s) encontradas a partir do que mais engajou na sua página. Selecione uma ou mais para salvar como rascunho.`
@@ -621,6 +676,18 @@
       ocultadas.textContent = `${Number(data.totalOcultado)} pauta(s) que já existem no sistema ou na Página foram ocultadas.`;
       corpo.appendChild(ocultadas);
     }
+    if (maisLidas && Number(data.totalOcultado) > 0) {
+      const ocultadas = document.createElement('p');
+      ocultadas.className = 'mia-x-result-note';
+      ocultadas.textContent = `${Number(data.totalOcultado)} pauta(s) já transformada(s) em matéria foram ocultadas para evitar repetição.`;
+      corpo.appendChild(ocultadas);
+    }
+    if (maisLidas && Array.isArray(data.erros) && data.erros.length) {
+      const falhas = document.createElement('p');
+      falhas.className = 'mia-x-result-note is-warning';
+      falhas.textContent = data.erros.slice(0, 3).map((item) => `${item.fonte}: ${item.error}`).join(' · ');
+      corpo.appendChild(falhas);
+    }
     if (paraPublico && topicos.length < 20) {
       const limite = document.createElement('p');
       limite.className = 'mia-x-result-note is-warning';
@@ -636,7 +703,9 @@
     head.className = 'mia-x-alta-head';
     const titulo = document.createElement('p');
     titulo.className = 'mia-x-alta-title';
-    titulo.textContent = paginaFacebook
+    titulo.textContent = maisLidas
+      ? 'Mais lidas nos seus sites'
+      : paginaFacebook
       ? `Posts de ${data.pagina || 'Facebook'}`
       : paraPublico
         ? 'Sugestões para o seu público'
@@ -649,7 +718,8 @@
     recarregar.className = 'mia-chat-ghost-btn';
     recarregar.textContent = 'Atualizar';
     recarregar.addEventListener('click', () => {
-      if (paginaFacebook) carregarPaginaFacebook(data.paginaUrl);
+      if (maisLidas) carregarMaisLidas();
+      else if (paginaFacebook) carregarPaginaFacebook(data.paginaUrl);
       else if (paraPublico) carregarParaPublico();
       else carregarAlta(data.padrao ? '' : temas.join(', '));
     });
@@ -676,7 +746,19 @@
       box.appendChild(bases);
     }
 
-    if (!paraPublico && !paginaFacebook && temas.length) {
+    if (maisLidas && Array.isArray(data.fontes) && data.fontes.length) {
+      const chips = document.createElement('div');
+      chips.className = 'mia-x-temas';
+      data.fontes.forEach((fonte) => {
+        const chip = document.createElement('span');
+        chip.className = 'mia-x-tema';
+        chip.textContent = fonte.nome;
+        chips.appendChild(chip);
+      });
+      box.appendChild(chips);
+    }
+
+    if (!maisLidas && !paraPublico && !paginaFacebook && temas.length) {
       const chips = document.createElement('div');
       chips.className = 'mia-x-temas';
       temas.forEach((t) => {
@@ -712,7 +794,7 @@
     });
     busca.appendChild(campo);
     busca.appendChild(botao);
-    if (!paraPublico) box.appendChild(busca);
+    if (!paraPublico && !maisLidas) box.appendChild(busca);
 
     if (topicos.length) {
       const selecionados = new Map();
@@ -808,7 +890,15 @@
         if (!alvos.length || salvando) return;
         salvando = true;
         atualizarLote();
-        setStatus(`Criando ${alvos.length} rascunho(s)${paginaFacebook ? ' dos posts selecionados' : ' para o seu público'}...`);
+        setStatus(
+          `Criando ${alvos.length} rascunho(s)${
+            paginaFacebook
+              ? ' dos posts selecionados'
+              : maisLidas
+                ? ' das matérias mais lidas'
+                : ' para o seu público'
+          }...`
+        );
         try {
           const result = await salvarTopicosComoRascunhos(alvos);
           resultadoLote.classList.remove('hidden');
@@ -873,6 +963,7 @@
         meta.className = 'mia-x-card-meta';
         meta.textContent = [
           t.tema ? t.tema : '',
+          maisLidas && t.posicao ? `#${t.posicao} nas mais lidas` : '',
           paraPublico && t.afinidadePublico ? `${t.afinidadePublico}% de afinidade` : '',
           paraPublico && t.potencialPublico ? `${t.potencialPublico}% potencial` : '',
           paginaFacebook && t.pagina ? t.pagina : '',
@@ -961,6 +1052,36 @@
     wrap.appendChild(box);
     mostrarBloco(wrap);
   }
+
+  async function carregarMaisLidas() {
+    if (carregandoMaisLidas) return;
+    carregandoMaisLidas = true;
+    btnMaisLidas.disabled = true;
+    setStatus('Extraindo as matérias mais lidas dos sites cadastrados...');
+    renderCarregando('', false, false, true);
+
+    try {
+      const data = await apiJson(`${API}/mais-lidas`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      renderAlta(data);
+      setStatus(`${(data.topicos || []).length} pauta(s) nova(s) nas listas mais lidas`);
+    } catch (err) {
+      const mensagem = err.message || 'Falha ao extrair as listas mais lidas';
+      setStatus(mensagem);
+      renderErro(mensagem, '', false, true);
+    } finally {
+      carregandoMaisLidas = false;
+      btnMaisLidas.disabled = false;
+    }
+  }
+
+  btnMaisLidas.addEventListener('click', () => {
+    fecharFerramentas();
+    marcarMaisLidas(true);
+    carregarMaisLidas();
+  });
 
   async function carregarAlta(busca = '') {
     if (carregandoAlta) return;

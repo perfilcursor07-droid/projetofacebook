@@ -1,0 +1,382 @@
+<%- include('partials/app-start') %>
+
+<main class="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-8">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Configurações</p>
+      <h1 class="mt-1 text-2xl font-semibold text-white">Descobrir pautas</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-slate-400">
+        Cadastre as páginas de <strong class="font-medium text-slate-200">Mais lidas</strong> dos portais que você acompanha.
+        As pautas aparecerão em <strong class="font-medium text-slate-200">Matéria manual → Descobrir → Mais lidas</strong>.
+        Links e assuntos que já viraram matéria no sistema serão ocultados automaticamente.
+      </p>
+    </div>
+    <a href="/materia-manual" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-emerald-500 hover:text-emerald-300">Abrir Matéria manual</a>
+  </div>
+
+  <div id="pauta-alerta" class="mt-5 hidden rounded-xl border px-4 py-3 text-sm"></div>
+
+  <section class="mt-6 grid gap-5 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h2 id="fonte-form-titulo" class="text-base font-semibold text-white">Adicionar site</h2>
+          <p class="mt-1 text-xs text-slate-500">A detecção é automática; não é necessário alterar o código.</p>
+        </div>
+        <button id="fonte-cancelar" type="button" class="hidden text-xs text-slate-400 hover:text-white">Cancelar edição</button>
+      </div>
+
+      <form id="fonte-form" class="mt-5 space-y-4">
+        <input id="fonte-id" type="hidden" />
+        <label class="block">
+          <span class="text-xs font-medium text-slate-300">Nome do portal</span>
+          <input id="fonte-nome" maxlength="160" placeholder="Ex.: Estadão" required
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500" />
+        </label>
+        <label class="block">
+          <span class="text-xs font-medium text-slate-300">URL da lista ou da página inicial</span>
+          <input id="fonte-url" type="url" maxlength="1000" placeholder="https://www.estadao.com.br/mais-lidas/" required
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500" />
+        </label>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="block">
+            <span class="text-xs font-medium text-slate-300">Onde fica a lista?</span>
+            <select id="fonte-localizacao" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500">
+              <option value="pagina">Página própria</option>
+              <option value="home">Na página inicial</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="text-xs font-medium text-slate-300">Quantidade máxima</span>
+            <input id="fonte-limite" type="number" min="3" max="30" value="10"
+              class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500" />
+          </label>
+        </div>
+        <label class="block">
+          <span class="text-xs font-medium text-slate-300">Título da seção <span class="font-normal text-slate-500">(opcional)</span></span>
+          <input id="fonte-marcador" maxlength="120" placeholder="Ex.: Mais lidas, Top Globo"
+            class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500" />
+          <span class="mt-1 block text-[11px] text-slate-500">Use quando a lista estiver misturada com outras notícias na página inicial.</span>
+        </label>
+
+        <details class="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2">
+          <summary class="cursor-pointer text-xs text-slate-400">Ajuste avançado</summary>
+          <label class="mt-3 block">
+            <span class="text-xs text-slate-400">Seletor CSS da lista <span class="text-slate-600">(opcional)</span></span>
+            <input id="fonte-seletor" maxlength="300" placeholder="Ex.: section.mais-lidas"
+              class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500" />
+          </label>
+        </details>
+
+        <label class="flex items-center gap-2 text-xs text-slate-300">
+          <input id="fonte-ativa" type="checkbox" checked class="h-4 w-4 accent-emerald-500" />
+          Usar esta fonte no botão Mais lidas
+        </label>
+
+        <div class="flex flex-wrap gap-2 pt-1">
+          <button id="fonte-testar" type="button" class="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:border-emerald-500 hover:text-emerald-300">Testar extração</button>
+          <button id="fonte-salvar" type="submit" class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Adicionar site</button>
+        </div>
+      </form>
+
+      <div class="mt-5 border-t border-slate-800 pt-4">
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-600">Exemplos rápidos</p>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button type="button" class="fonte-exemplo rounded-md border border-slate-800 px-2.5 py-1.5 text-xs text-slate-400 hover:border-slate-600 hover:text-white" data-nome="Estadão" data-url="https://www.estadao.com.br/mais-lidas/" data-localizacao="pagina" data-marcador="Mais lidas">Estadão</button>
+          <button type="button" class="fonte-exemplo rounded-md border border-slate-800 px-2.5 py-1.5 text-xs text-slate-400 hover:border-slate-600 hover:text-white" data-nome="Folha de S.Paulo" data-url="https://www1.folha.uol.com.br/maispopulares/" data-localizacao="pagina" data-marcador="Mais lidas">Folha</button>
+          <button type="button" class="fonte-exemplo rounded-md border border-slate-800 px-2.5 py-1.5 text-xs text-slate-400 hover:border-slate-600 hover:text-white" data-nome="Globo" data-url="https://www.globo.com/" data-localizacao="home" data-marcador="Top Globo">Globo</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base font-semibold text-white">Sites cadastrados</h2>
+          <p class="mt-1 text-xs text-slate-500"><span id="fontes-total"><%= fontes.length %></span> fonte(s)</p>
+        </div>
+      </div>
+
+      <div id="fontes-vazio" class="<%= fontes.length ? 'hidden' : '' %> mt-4 rounded-xl border border-dashed border-slate-700 px-5 py-10 text-center text-sm text-slate-500">
+        Nenhum site cadastrado. Use o formulário ao lado ou escolha um exemplo rápido.
+      </div>
+      <div id="fontes-lista" class="mt-4 space-y-3"></div>
+    </div>
+  </section>
+
+  <div id="teste-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+    <div class="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        <div>
+          <h3 class="font-semibold text-white">Resultado da extração</h3>
+          <p id="teste-meta" class="mt-1 text-xs text-slate-500"></p>
+        </div>
+        <button id="teste-fechar" type="button" class="rounded-md px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-white">Fechar</button>
+      </div>
+      <div id="teste-lista" class="max-h-[65vh] space-y-2 overflow-y-auto p-5"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+  (() => {
+    const API = '/api/pauta-fontes';
+    let fontes = <%- JSON.stringify(fontes || []).replace(/</g, '\\u003c') %>;
+    const $ = (id) => document.getElementById(id);
+    const form = $('fonte-form');
+    const lista = $('fontes-lista');
+    const alerta = $('pauta-alerta');
+
+    function avisar(texto, erro = false) {
+      alerta.textContent = texto || '';
+      alerta.classList.toggle('hidden', !texto);
+      alerta.className = `mt-5 rounded-xl border px-4 py-3 text-sm ${erro ? 'border-rose-500/30 bg-rose-500/10 text-rose-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`;
+    }
+
+    async function api(url, options = {}) {
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Falha na requisição (${res.status})`);
+      return data;
+    }
+
+    function payload() {
+      return {
+        nome: $('fonte-nome').value,
+        url: $('fonte-url').value,
+        localizacao: $('fonte-localizacao').value,
+        marcador: $('fonte-marcador').value,
+        seletorCss: $('fonte-seletor').value,
+        limite: $('fonte-limite').value,
+        ativa: $('fonte-ativa').checked,
+      };
+    }
+
+    function resetar() {
+      form.reset();
+      $('fonte-id').value = '';
+      $('fonte-limite').value = '10';
+      $('fonte-ativa').checked = true;
+      $('fonte-form-titulo').textContent = 'Adicionar site';
+      $('fonte-salvar').textContent = 'Adicionar site';
+      $('fonte-cancelar').classList.add('hidden');
+    }
+
+    function dataScan(value) {
+      if (!value) return 'Ainda não testado';
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? 'Testado recentemente' : `Último teste: ${d.toLocaleString('pt-BR')}`;
+    }
+
+    function render() {
+      lista.innerHTML = '';
+      $('fontes-total').textContent = String(fontes.length);
+      $('fontes-vazio').classList.toggle('hidden', fontes.length > 0);
+      fontes.forEach((fonte) => {
+        const card = document.createElement('article');
+        card.className = 'rounded-xl border border-slate-800 bg-slate-900/60 p-4';
+
+        const topo = document.createElement('div');
+        topo.className = 'flex flex-wrap items-start justify-between gap-3';
+        const info = document.createElement('div');
+        info.className = 'min-w-0 flex-1';
+        const nome = document.createElement('h3');
+        nome.className = 'truncate text-sm font-semibold text-white';
+        nome.textContent = fonte.nome;
+        const url = document.createElement('a');
+        url.href = fonte.url;
+        url.target = '_blank';
+        url.rel = 'noopener';
+        url.className = 'mt-1 block truncate text-xs text-slate-500 hover:text-emerald-300';
+        url.textContent = fonte.url;
+        info.append(nome, url);
+
+        const toggle = document.createElement('label');
+        toggle.className = 'flex items-center gap-2 text-xs text-slate-400';
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.checked = Boolean(fonte.ativa);
+        check.className = 'h-4 w-4 accent-emerald-500';
+        toggle.append(check, document.createTextNode('Ativa'));
+        topo.append(info, toggle);
+        card.appendChild(topo);
+
+        const meta = document.createElement('p');
+        meta.className = `mt-3 text-xs ${fonte.ultimo_erro ? 'text-rose-300' : 'text-slate-500'}`;
+        meta.textContent = fonte.ultimo_erro
+          ? `Falha no último teste: ${fonte.ultimo_erro}`
+          : `${dataScan(fonte.ultimo_scan)}${fonte.ultimo_scan ? ` · ${fonte.ultimo_total || 0} matéria(s)` : ''}`;
+        card.appendChild(meta);
+
+        const detalhes = document.createElement('p');
+        detalhes.className = 'mt-1 text-[11px] text-slate-600';
+        detalhes.textContent = [
+          fonte.localizacao === 'home' ? 'Página inicial' : 'Página própria',
+          fonte.marcador ? `seção “${fonte.marcador}”` : 'detecção automática',
+          `até ${fonte.limite} links`,
+        ].join(' · ');
+        card.appendChild(detalhes);
+
+        const acoes = document.createElement('div');
+        acoes.className = 'mt-4 flex flex-wrap gap-2';
+        const testar = document.createElement('button');
+        testar.type = 'button';
+        testar.className = 'rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-emerald-500 hover:text-emerald-300';
+        testar.textContent = 'Testar agora';
+        const editar = testar.cloneNode();
+        editar.textContent = 'Editar';
+        const remover = testar.cloneNode();
+        remover.className = 'rounded-md border border-slate-800 px-3 py-1.5 text-xs text-slate-500 hover:border-rose-500 hover:text-rose-300';
+        remover.textContent = 'Remover';
+        acoes.append(testar, editar, remover);
+        card.appendChild(acoes);
+
+        check.addEventListener('change', async () => {
+          try {
+            const data = await api(`${API}/${fonte.id}`, { method: 'PATCH', body: JSON.stringify({ ativa: check.checked }) });
+            fonte = data.fonte;
+            fontes = fontes.map((item) => Number(item.id) === Number(fonte.id) ? fonte : item);
+            avisar(check.checked ? 'Fonte ativada.' : 'Fonte pausada.');
+          } catch (err) {
+            check.checked = !check.checked;
+            avisar(err.message, true);
+          }
+        });
+
+        testar.addEventListener('click', async () => {
+          testar.disabled = true;
+          testar.textContent = 'Extraindo...';
+          try {
+            const data = await api(`${API}/${fonte.id}/escanear`, { method: 'POST' });
+            mostrarTeste(data);
+            await recarregar();
+          } catch (err) {
+            avisar(err.message, true);
+            await recarregar();
+          } finally {
+            testar.disabled = false;
+            testar.textContent = 'Testar agora';
+          }
+        });
+
+        editar.addEventListener('click', () => {
+          $('fonte-id').value = fonte.id;
+          $('fonte-nome').value = fonte.nome || '';
+          $('fonte-url').value = fonte.url || '';
+          $('fonte-localizacao').value = fonte.localizacao || 'pagina';
+          $('fonte-marcador').value = fonte.marcador || '';
+          $('fonte-seletor').value = fonte.seletor_css || '';
+          $('fonte-limite').value = fonte.limite || 10;
+          $('fonte-ativa').checked = Boolean(fonte.ativa);
+          $('fonte-form-titulo').textContent = `Editar ${fonte.nome}`;
+          $('fonte-salvar').textContent = 'Salvar alterações';
+          $('fonte-cancelar').classList.remove('hidden');
+          form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        remover.addEventListener('click', async () => {
+          if (!window.confirm(`Remover ${fonte.nome} de Descobrir pautas?`)) return;
+          try {
+            await api(`${API}/${fonte.id}`, { method: 'DELETE' });
+            fontes = fontes.filter((item) => Number(item.id) !== Number(fonte.id));
+            render();
+            avisar('Fonte removida.');
+          } catch (err) {
+            avisar(err.message, true);
+          }
+        });
+
+        lista.appendChild(card);
+      });
+    }
+
+    async function recarregar() {
+      const data = await api(API);
+      fontes = data.fontes || [];
+      render();
+    }
+
+    function mostrarTeste(data) {
+      $('teste-meta').textContent = `${data.total || 0} matéria(s) · leitura ${data.leitor || 'automática'}`;
+      $('teste-lista').innerHTML = '';
+      (data.itens || []).forEach((item, indice) => {
+        const linha = document.createElement('a');
+        linha.href = item.url;
+        linha.target = '_blank';
+        linha.rel = 'noopener';
+        linha.className = 'block rounded-lg border border-slate-800 bg-slate-950/50 p-3 hover:border-emerald-500/50';
+        const titulo = document.createElement('span');
+        titulo.className = 'block text-sm font-medium text-slate-200';
+        titulo.textContent = `${indice + 1}. ${item.titulo}`;
+        const url = document.createElement('span');
+        url.className = 'mt-1 block truncate text-[11px] text-slate-600';
+        url.textContent = item.url;
+        linha.append(titulo, url);
+        $('teste-lista').appendChild(linha);
+      });
+      $('teste-modal').classList.remove('hidden');
+      $('teste-modal').classList.add('flex');
+    }
+
+    $('fonte-testar').addEventListener('click', async () => {
+      const botao = $('fonte-testar');
+      botao.disabled = true;
+      botao.textContent = 'Extraindo...';
+      try {
+        const data = await api(`${API}/testar`, { method: 'POST', body: JSON.stringify(payload()) });
+        mostrarTeste(data);
+      } catch (err) {
+        avisar(err.message, true);
+      } finally {
+        botao.disabled = false;
+        botao.textContent = 'Testar extração';
+      }
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const id = $('fonte-id').value;
+      const botao = $('fonte-salvar');
+      botao.disabled = true;
+      try {
+        await api(id ? `${API}/${id}` : API, {
+          method: id ? 'PATCH' : 'POST',
+          body: JSON.stringify(payload()),
+        });
+        await recarregar();
+        resetar();
+        avisar(id ? 'Fonte atualizada.' : 'Site adicionado a Descobrir pautas.');
+      } catch (err) {
+        avisar(err.message, true);
+      } finally {
+        botao.disabled = false;
+      }
+    });
+
+    document.querySelectorAll('.fonte-exemplo').forEach((botao) => {
+      botao.addEventListener('click', () => {
+        resetar();
+        $('fonte-nome').value = botao.dataset.nome || '';
+        $('fonte-url').value = botao.dataset.url || '';
+        $('fonte-localizacao').value = botao.dataset.localizacao || 'pagina';
+        $('fonte-marcador').value = botao.dataset.marcador || '';
+        $('fonte-url').focus();
+      });
+    });
+    $('fonte-cancelar').addEventListener('click', resetar);
+    $('teste-fechar').addEventListener('click', () => {
+      $('teste-modal').classList.add('hidden');
+      $('teste-modal').classList.remove('flex');
+    });
+    $('teste-modal').addEventListener('click', (event) => {
+      if (event.target === $('teste-modal')) $('teste-fechar').click();
+    });
+
+    render();
+  })();
+</script>
+
+<%- include('partials/app-end') %>

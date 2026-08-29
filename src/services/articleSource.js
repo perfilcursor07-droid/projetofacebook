@@ -824,6 +824,67 @@ async function extrairMetadadosViaChrome(urlReal) {
   }
 }
 
+/**
+ * Carrega uma página editorial completa no Chrome compartilhado. É usado por
+ * rankings "Mais lidas" montados por JavaScript, que chegam vazios no Axios.
+ * A aba é sempre temporária e bloqueia navegação para hosts locais/privados.
+ */
+async function carregarHtmlViaChrome(urlReal, { marcador = '', timeoutMs = 30_000 } = {}) {
+  if (!urlPublicaParaChrome(urlReal)) return null;
+
+  let page = null;
+  let contextoCriado = null;
+  try {
+    const browser = await conectarChromeLeitor();
+    let context = browser.contexts()[0];
+    if (!context) {
+      context = await browser.newContext({ locale: 'pt-BR' });
+      contextoCriado = context;
+    }
+    page = await context.newPage();
+    await page.setExtraHTTPHeaders({ 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8' });
+    await page.route('**/*', async (route) => {
+      try {
+        const requisicao = new URL(route.request().url());
+        if (/^https?:$/.test(requisicao.protocol) && hostLiteralPrivado(requisicao.hostname)) {
+          await route.abort('blockedbyclient');
+          return;
+        }
+      } catch {
+        // data:, blob: e recursos internos do navegador.
+      }
+      await route.continue();
+    });
+
+    const timeout = Math.max(8_000, Math.min(45_000, Number(timeoutMs) || 30_000));
+    await page.goto(urlReal, { waitUntil: 'domcontentloaded', timeout });
+    await page
+      .waitForFunction(
+        ({ texto }) => {
+          const normalizar = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const corpo = normalizar(document.body?.innerText || '');
+          const marcadorOk = !texto || corpo.includes(normalizar(texto));
+          const links = [...document.querySelectorAll('main a[href], article a[href], section a[href]')]
+            .filter((a) => (a.innerText || a.getAttribute('aria-label') || '').trim().length >= 20);
+          return marcadorOk && links.length >= 3;
+        },
+        { texto: String(marcador || '').trim() },
+        { timeout: Math.min(12_000, timeout) }
+      )
+      .catch(() => {});
+
+    const finalUrl = page.url() || urlReal;
+    if (!urlPublicaParaChrome(finalUrl)) return null;
+    return { html: await page.content(), finalUrl, leitor: 'chrome' };
+  } catch (err) {
+    console.warn('[mais-lidas] Chrome:', err.message);
+    return null;
+  } finally {
+    if (page) await page.close().catch(() => {});
+    if (contextoCriado) await contextoCriado.close().catch(() => {});
+  }
+}
+
 async function extrairMetadadosViaClaudeWebFetch(urlReal) {
   try {
     const claudeService = require('./claudeService');
@@ -1509,6 +1570,7 @@ module.exports = {
   extrairMetadadosViaGoogleTranslate,
   extrairMetadadosViaChrome,
   extrairMetadadosViaClaudeWebFetch,
+  carregarHtmlViaChrome,
   urlProxyGoogleTranslate,
   extrairImagemCapa,
   resolverUrlNoticia,

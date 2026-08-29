@@ -3645,27 +3645,21 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
   const fonteSocialCurta = fonteSocial && volumeFonteSocial < 900;
   const volumeApuracao = blocoFatos.length;
   const perfilTamanho = reescritaDireta && fonteSocialCurta
-    ? { alvo: '600 a 1.200', paragrafos: '2 a 4', minimo: 500 }
-    : fonteSocial
-      ? fonteSocialCurta
-      ? { alvo: '1.750 a 1.950', paragrafos: '5 a 7', minimo: 1500 }
-      : { alvo: '1.750 a 2.050', paragrafos: '5 a 7', minimo: 1600 }
-    : volumeApuracao < 1800
-      ? { alvo: '1.750 a 1.950', paragrafos: '5 a 7', minimo: 1500 }
-        : { alvo: '1.850 a 2.050', paragrafos: '6 a 8', minimo: 1700 };
+    ? { alvo: 'nota proporcional, sem ultrapassar 2.200 caracteres no total', paragrafos: '3 a 4', minimo: 420 }
+    : { alvo: 'até 2.200 caracteres no total', paragrafos: '3 a 6', minimo: 550 };
   const blocoTamanhoMateria = `TAMANHO E PROFUNDIDADE DESTA RESPOSTA (padrão JM Notícia):
-- Corpo em cerca de 4 parágrafos substanciais (não telegráficos). Alvo de informação: ${perfilTamanho.alvo} caracteres no corpo quando o material permitir.
-- Meta da peça inteira (título + âncora + corpo + fonte + foto + 5 hashtags + “Siga o JM Notícia.”): até ~2.200 caracteres, o teto útil do Instagram.
-- Não estique com repetição ou floreio. ${reescritaDireta ? 'Se o conteúdo for curto, entregue 2 a 4 parágrafos sem inventar contexto.' : 'Se a fonte não sustentar o alvo, entregue menos e deixe claro até onde a apuração vai.'}
-- Se houver material abundante, aprofunde contexto, números, declarações e contraponto; não entregue resumo pobre.`;
+  - Escreva de ${perfilTamanho.paragrafos} parágrafos, variando de acordo com a densidade do fato.
+  - A peça inteira — título, âncora, corpo, fonte, foto, 5 hashtags e “Siga o JM Notícia.” — deve ter ${perfilTamanho.alvo}.
+  - Não estique para atingir uma metragem. Cada parágrafo precisa acrescentar fato, contexto, número, declaração ou contraponto documentado.
+  - Se o material for curto, entregue uma nota proporcional sem inventar contexto; se for abundante, selecione os elementos mais relevantes.`;
   const blocoMateriaDePost = fonteSocial
     ? `MATÉRIA BASEADA EM POST OU VÍDEO DE REDE SOCIAL:
-- Com material factual suficiente, reconstrua a história com lead, cronologia, fala central, circunstâncias, contexto documentado e fechamento. Com fonte curta, faça uma matéria proporcional sem criar contexto.
+  - Reconstrua a história com lead, cronologia, fala central, circunstâncias e contexto documentado. Com fonte curta, faça uma nota proporcional sem criar contexto.
 - Formato obrigatório JM: 1ª linha **título**; depois **âncora em CAIXA ALTA**; depois o corpo.
 - A âncora é obrigatória e NÃO conta como linha fina proibida.
 - Quando houver uma frase forte e literal na fonte, considere colocá-la no título e reproduza a fala completa em um parágrafo próprio no corpo.
 - Se um vídeo, fala ou fato ANTIGO voltou a circular, escreva isso no título ou no lead e informe imediatamente a DATA ORIGINAL. Nunca apresente recirculação como declaração recente.
-- Explique a sequência documentada: o que voltou a circular → quando e onde aconteceu originalmente → o que foi dito/feito → em qual circunstância → antecedentes presentes na fonte → por que a data é relevante agora.
+  - Quando houver recirculação, explique somente a sequência documentada: o que voltou a circular, quando e onde aconteceu originalmente, o que foi dito ou feito e em qual circunstância.
 - O texto factual extraído desta publicação tem aproximadamente ${volumeFonteSocial} caracteres.
 - Siga o tamanho adaptativo definido no bloco TAMANHO E PROFUNDIDADE; use cada fato uma vez e nunca complete lacunas por conta própria.
 - Em uma matéria desse tamanho, não use intertítulos.
@@ -3700,16 +3694,18 @@ ${pesquisaAmpliada ? `- A primeira janela não confirmou o fato; o sistema ampli
 - Não catalogue o que a publicação deixou de informar. Escreva somente as afirmações positivas disponíveis e encerre a nota quando os dados acabarem.
 - Não avalie a qualidade, a credibilidade ou o “padrão jornalístico” da fonte dentro da matéria; apenas reescreva o que ela traz.
 - Nunca responda “não vou escrever”, “isso não atende ao padrão mínimo”, “não há elemento checável” ou peça outra fonte. O conteúdo extraído é a pauta autorizada pelo editor para esta reescrita.`
-    : `- Se as fontes NÃO confirmarem o fato central do pedido: NÃO escreva a matéria. Responda em 2 ou 3 frases dizendo o que as fontes realmente trazem, o que não foi confirmado, e ofereça o ângulo que dá para sustentar. Aguarde o editor decidir.
-- Preferir matéria curta e 100% checada a matéria completa com achismo.`;
+    : `- Se houver material original aproveitável, a ausência de cobertura adicional NÃO autoriza recusar: escreva a matéria atribuindo corretamente a origem e sem alegar confirmação de outros veículos.
+- Se o editor enviar apenas uma hipótese e nenhuma fonte trouxer fato aproveitável, explique de forma breve que a busca não encontrou base factual; nunca complete a lacuna com memória.
+- Prefira matéria curta sustentada pela apuração a texto completo com achismo.`;
   const blocoAtribuicaoFontes = omitirVeiculoNoCorpo
     ? `ATRIBUIÇÃO DAS FONTES NO CORPO (orientação fixa do editor):
 - NÃO escreva o nome de site, portal ou veículo no título nem no corpo da matéria.
 - Quando for necessário atribuir, use somente a expressão genérica definida nas orientações do editor.
 - Os nomes e links reais ficam preservados no campo/rodapé de fontes montado pelo sistema.`
     : `ATRIBUIÇÃO DAS FONTES NO CORPO:
-- Quando houver duas ou mais fontes aproveitáveis, cite naturalmente no corpo pelo menos dois veículos diferentes. Não coloque URL no corpo.
-- Matéria de outro site como base (link que o editor colou): aproveite TODO o factual dela — quem, o que, quando, onde, números, datas e falas entre aspas que estão no texto — e reescreva com suas palavras. CITE o veículo no corpo pelo menos uma vez, do jeito jornalístico ("segundo a BBC News", "de acordo com o g1"), usando o nome que aparece no cabeçalho da fonte. Nunca troque o nome do veículo nem atribua a informação a quem não está nas fontes.`;
+  - Escreva como reportagem do JM Notícia, não como resenha dos sites consultados.
+  - Cite um veículo no corpo somente quando a atribuição for necessária para distinguir alegação, opinião, informação exclusiva ou versão de uma das partes. Não coloque URL no corpo.
+  - Preserve no rodapé os nomes e URLs reais das fontes usadas. Nunca troque o nome do veículo nem atribua informação a quem não está na apuração.`;
 
   const systemPesquisa = `Você é repórter e redator de uma Página de notícias no Facebook/Instagram, conversando com o editor num chat.
 
@@ -3730,9 +3726,9 @@ ${blocoPlanejamentoDaResposta}
 - Nunca transforme uma instrução de estilo em pauta nova. Exemplo: "quero mais polêmica" significa dar tom mais incisivo à mesma matéria, não pesquisar polêmicas aleatórias.
 - Se o editor pedir uma MATÉRIA (ou pedir para ajustar/refazer a matéria anterior): entregue a matéria pronta no PADRÃO JM NOTÍCIA.
   · 1ª linha = **TÍTULO FORTE** (máx. 110 caracteres visíveis, sem a palavra Título).
-  · 2ª linha (depois de uma linha em branco) = **ÂNCORA EM CAIXA ALTA** (frase ou pergunta; não repetir o título).
-  · Depois, cerca de 4 parágrafos do corpo, com **negrito** pontual.
-  · Quando apropriado, uma **pergunta final** para comentários.
+  · 2ª linha (depois de uma linha em branco) = **ÂNCORA EM CAIXA ALTA** (frase factual; não repetir o título).
+  · Depois, 3 a 6 parágrafos conforme a densidade do fato. Não repita mecanicamente a mesma quantidade.
+  · Encerre no último fato relevante; não inclua pergunta artificial para comentários nem conclusão opinativa.
   · **Fonte:** nome — URL real. Depois **Foto:** em outra linha.
   · EXATAMENTE 5 hashtags, a última #JMNotícia. Depois **Siga o JM Notícia.**
   · É UMA matéria só: comece direto pelo título. NUNCA escreva "### MATERIA 1".
@@ -3746,12 +3742,11 @@ ${blocoTamanhoMateria}
 APROVEITAMENTO DA APURAÇÃO:
 - Aspas: no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto.
 - Não pare no resumo do fato: selecione o que as fontes trazem de mais relevante — quem é a pessoa/instituição, o que foi dito, quando e onde, números e datas, reação, contraponto e desdobramentos documentados.
-- Em pedido sobre um TEMA amplo, faça apuração cruzada: apresente o fato central, o contexto, os posicionamentos documentados, a relação com 2026 quando estiver nas fontes, os possíveis impactos objetivos e o que ainda merece acompanhamento.
-- Em tema institucional/político amplo, organize a matéria nesta lógica, usando apenas os blocos sustentados: contexto da instituição → estrutura política → iniciativas e documentos → falas de lideranças → apoios/articulações → controvérsia/contraponto → próximos movimentos.
-- Use subtítulos curtos quando ajudarem a separar pelo menos três desses blocos. Não use emojis como substitutos de informação.
+- Em pedido sobre um TEMA amplo, faça apuração cruzada e selecione somente os blocos sustentados: fato central, contexto verificável, posicionamentos documentados, números e contraponto.
+- Não use intertítulos numa matéria curta de feed e não acrescente “possíveis impactos” ou “pontos a acompanhar” por interpretação própria.
 ${blocoAtribuicaoFontes}
 - Post de rede social como base: aproveite TODOS os dados da legenda (nome completo, idade, falas entre aspas, números de família, igreja e desde quando, conselhos e mensagens) e organize em parágrafos com lead, desenvolvimento e fechamento. Se houver reportagens apuradas, some o contexto delas; se não houver, construa a matéria com o conteúdo do post — sem repetir a legenda em bloco e sem inventar.
-- Se a fonte trouxer "REPERCUSSÃO NOS COMENTÁRIOS PÚBLICOS", use 2 a 4 comentários relevantes para criar um bloco de repercussão e ampliar a matéria. Deixe explícito que são opiniões de internautas, atribua cada fala ao perfil indicado e nunca apresente comentário como fato comprovado nem generalize como opinião de todos.
+- Se a fonte trouxer "REPERCUSSÃO NOS COMENTÁRIOS PÚBLICOS", só use um comentário quando o pedido for especificamente sobre repercussão; atribua a fala ao perfil e nunca a apresente como fato nem como opinião geral.
 - Se houver "CONTEÚDO VISÍVEL NAS IMAGENS DO POST", aproveite os detalhes legíveis dos cards ou prints como parte do relato, sempre atribuindo-os à publicação.
 ${blocoMaterialCurto}
 
@@ -3777,7 +3772,7 @@ PROIBIDO INVENTAR SITUAÇÃO (erro mais comum):
 ANTI-PLÁGIO:
 - Não copie frases nem a estrutura das fontes; extraia os fatos e reescreva 100% com suas palavras.
 
-FORMATO: texto puro, sem JSON, sem markdown de asteriscos, sem emoji no título.`;
+  FORMATO: texto corrido, sem JSON e sem emoji. Use markdown apenas no título, na âncora e nos rótulos finais previstos no padrão JM.`;
 
   const systemReescritaDireta = `Você é o redator do JM Notícia. Transforme o conteúdo extraído do link em UMA matéria nova, com redação própria, no padrão editorial abaixo.
 
@@ -3873,12 +3868,10 @@ MODO SEM PESQUISA NA WEB:
           'ORIENTAÇÃO FIXA: não cite esses nomes no título nem no corpo. Use a forma genérica salva pelo editor quando precisar atribuir; os nomes e URLs serão mantidos somente no crédito de fontes.',
         ].join('\n')
       : [
-        `FONTE QUE O EDITOR COLOU: ${nomesColados.join(', ')}.`,
-        `OBRIGATÓRIO: cite ${nomesColados.length > 1 ? 'pelo menos um desses nomes' : `"${nomesColados[0]}"`} no corpo da matéria, com esse nome exato, do jeito jornalístico — "Segundo o ${nomesColados[0]}, …" / "Ainda de acordo com o ${nomesColados[0]}, …" / "em reportagem do ${nomesColados[0]}".`,
-        // A matéria é nossa: o crédito é atribuição de apuração, não resenha do
-        // texto do outro site. Fora do lead, o leitor lê a notícia, não a fonte.
-        'O crédito NUNCA vai no título nem na primeira frase do lead: entra depois do lead (a partir do 2º parágrafo) ou no fecho da matéria.',
-        'No máximo 2 menções ao veículo em toda a matéria, sempre nessa forma padrão.',
+          `FONTE QUE O EDITOR COLOU: ${nomesColados.join(', ')}.`,
+          `Preserve ${nomesColados.length > 1 ? 'esses nomes e URLs' : `o nome exato "${nomesColados[0]}" e sua URL`} no rodapé de fontes.`,
+          'A matéria é nossa: não narre o artigo nem transforme o texto em resenha do portal.',
+          'Se uma alegação ou versão precisar de atribuição no corpo, faça isso depois do lead e no máximo uma vez.',
           'Não troque o nome do veículo, não abrevie e não atribua a informação a outro veículo.',
         ].join('\n')
     : null;
@@ -3925,7 +3918,7 @@ MODO SEM PESQUISA NA WEB:
               .join('\n')
           : 'SEM PESQUISA NESTA RODADA (o editor não pediu apuração nova): use o que já está na conversa e o que ele informou.',
       permitirSemConfirmacao
-        ? 'O EDITOR ASSUME A RESPONSABILIDADE e pediu a matéria mesmo sem confirmação nas fontes: escreva, mas continua PROIBIDO inventar falas entre aspas, números, datas e atribuições a veículos. Deixe claro no texto que a informação é atribuída ao que o editor relatou e que não há confirmação oficial.'
+        ? 'O EDITOR forneceu o relato como material original: escreva atribuindo a informação ao relato do editor, sem inventar falas entre aspas, números, datas ou atribuições a veículos. Não acrescente comentário sobre ausência de confirmação.'
         : null,
     ]
       .filter(Boolean)
@@ -4016,23 +4009,23 @@ MODO SEM PESQUISA NA WEB:
     const instrucoesAprofundamento = fonteSocial
       ? [
           'A versão ficou parecendo um resumo, apesar de a publicação trazer material factual suficiente.',
-          `Reescreva a matéria COMPLETA com ${perfilTamanho.alvo} caracteres no corpo e ${perfilTamanho.paragrafos} parágrafos substanciais.`,
+          `Reescreva a matéria COMPLETA em ${perfilTamanho.paragrafos} parágrafos, sem ultrapassar 2.200 caracteres na peça inteira.`,
           'Use a fala literal mais forte no título quando ela estiver na fonte e reproduza a declaração completa em um parágrafo próprio.',
-          'Reconstrua a cronologia: recirculação atual, data e local originais, circunstância da fala, antecedentes documentados e relevância da data.',
+          'Reconstrua somente a cronologia documentada: recirculação atual, data e local originais, circunstância da fala e antecedentes presentes na fonte.',
           'Deixe inequívoco quando o vídeo ou a declaração são antigos. Não apresente o conteúdo que voltou a circular como fato novo.',
           'Não use intertítulos, títulos alternativos, chamada para redes sociais, notas ao editor nem sugestões após as hashtags.',
           'Preserve o anti-plágio e use somente fatos presentes na publicação. Não invente reação, motivo, bastidor ou consequência.',
-          'Formato final: primeira linha com o título; linha em branco; corpo iniciando diretamente pelo lead; última linha com 3 a 6 hashtags. Sem linha fina ou subtítulo.',
+          'Preserve o formato JM completo: título, âncora factual, corpo, fonte com URL, foto, exatamente 5 hashtags e “Siga o JM Notícia.”.',
         ]
       : [
           'A versão ficou curta apesar de haver apuração suficiente.',
-          `Reescreva a matéria COMPLETA, com ${perfilTamanho.alvo} caracteres no corpo e ${perfilTamanho.paragrafos} parágrafos substanciais.`,
-          'Aprofunde somente com fatos já presentes nas fontes: contexto institucional, cronologia, posições documentadas, repercussão, impacto e próximos pontos a acompanhar.',
+          `Reescreva a matéria COMPLETA em ${perfilTamanho.paragrafos} parágrafos, sem ultrapassar 2.200 caracteres na peça inteira.`,
+          'Aprofunde somente com fatos já presentes nas fontes: contexto factual, cronologia, posições documentadas, números e contraponto.',
           omitirVeiculoNoCorpo
             ? 'Cruze os fatos das fontes sem citar o nome dos veículos no corpo; mantenha-os somente no crédito de fontes.'
-            : 'Cruze as fontes e cite no corpo pelo menos dois veículos quando houver dois disponíveis.',
+            : 'Cruze as fontes sem transformar o texto em resenha; atribua no corpo somente alegações ou versões que precisem de identificação.',
           'Preserve o anti-plágio: nova estrutura e palavras próprias. Não invente bastidor, fala, número, consequência nem “furo”.',
-          'Formato final: primeira linha com o título; linha em branco; corpo iniciando diretamente pelo lead; última linha com 3 a 6 hashtags. Sem linha fina, subtítulo, introdução ou bloco de fontes.',
+          'Preserve o formato JM completo: título, âncora factual, corpo, fonte com URL, foto, exatamente 5 hashtags e “Siga o JM Notícia.”.',
         ];
     try {
       const aprofundado = await chatCompletion(
@@ -4058,7 +4051,7 @@ MODO SEM PESQUISA NA WEB:
         }
       );
       const corpoAprofundado = corpoSemTituloEHashtags(aprofundado);
-      const minimoAprofundado = Math.max(450, Math.round(perfilTamanho.minimo * 0.9));
+      const minimoAprofundado = Math.max(400, Math.round(perfilTamanho.minimo * 0.9));
       if (
         corpoAprofundado.length > corpoInicial.length &&
         corpoAprofundado.length >= minimoAprofundado
