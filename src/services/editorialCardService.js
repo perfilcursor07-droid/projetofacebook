@@ -1234,7 +1234,11 @@ function buildOverlay({
     const logoBadgeW = ww(350);
     const logoBadgeH = hh(118);
     const titleTop = y(lines.length >= 5 ? 935 : lines.length === 4 ? 955 : 980);
-    const footerText = safeFooter || escapeXml(brandName || 'NOTÍCIAS');
+    const footerText = /^(?:not[ií]cias?|sua marca)$/i.test(
+      String(footer || brandName || '').trim()
+    )
+      ? ''
+      : safeFooter;
 
     layout = `
       <defs>
@@ -1256,12 +1260,12 @@ function buildOverlay({
       <circle cx="${x(980)}" cy="${y(882)}" r="${ww(146)}" fill="none" stroke="${secondary}" stroke-width="${ww(34)}" opacity=".34"/>
       <circle cx="${x(906)}" cy="${y(1195)}" r="${ww(92)}" fill="${primary}" opacity=".18"/>
       <path d="M ${x(790)} ${y(1238)} L ${x(1032)} ${y(996)}" stroke="rgba(255,255,255,.22)" stroke-width="${ww(3)}"/>
-      <rect x="${logoBadgeX}" y="${logoBadgeY}" width="${logoBadgeW}" height="${logoBadgeH}" rx="${hh(58)}" fill="url(#accent)" stroke="rgba(255,255,255,.5)" stroke-width="${ww(2)}" filter="url(#premiumShadow)"/>
-      ${hasLogo ? '' : `<text x="${logoBadgeX + Math.round(logoBadgeW / 2)}" y="${logoBadgeY + Math.round(logoBadgeH * .67)}" text-anchor="middle" class="brand-premium">${escapeXml(brandName || 'SUA MARCA')}</text>`}
+      ${hasLogo ? `<rect x="${logoBadgeX}" y="${logoBadgeY}" width="${logoBadgeW}" height="${logoBadgeH}" rx="${hh(58)}" fill="url(#accent)" stroke="rgba(255,255,255,.5)" stroke-width="${ww(2)}" filter="url(#premiumShadow)"/>` : ''}
       <text x="${x(88)}" y="${y(855)}" text-anchor="start" class="category-premium">${safeCategory}</text>
       ${renderTitleLines(lines, { x: x(88), y: titleTop, lineHeight, anchor: 'start', className: 'title-premium' })}
-      <rect x="${x(88)}" y="${y(1230)}" width="${ww(92)}" height="${hh(7)}" rx="${hh(4)}" fill="url(#accent)"/>
-      <text x="${x(198)}" y="${y(1242)}" text-anchor="start" class="footer-premium">${footerText}</text>`;
+      ${footerText ? `
+        <rect x="${x(88)}" y="${y(1230)}" width="${ww(92)}" height="${hh(7)}" rx="${hh(4)}" fill="url(#accent)"/>
+        <text x="${x(198)}" y="${y(1242)}" text-anchor="start" class="footer-premium">${footerText}</text>` : ''}`;
   } else if (modelId === 'estilo_fatos') {
     const titleTop = y(fatosTitleTopBase(lines.length));
     layout = `
