@@ -25,6 +25,9 @@
     toggleWeb: document.getElementById('chat-toggle-web'),
     toggleWebLabel: document.getElementById('chat-toggle-web-label'),
     toggleTranscricao: document.getElementById('chat-toggle-transcricao'),
+    modeloIa: document.getElementById('chat-ai-model'),
+    modeloIaNome: document.getElementById('chat-ai-model-name'),
+    modeloIaNivel: document.getElementById('chat-ai-model-level'),
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
     modoBtns: document.querySelectorAll('.chat-modo-btn'),
@@ -52,7 +55,8 @@
     vozFinal: '',
     recognition: null,
     modo: 'escrever',
-    tipoConversa: 'materia',
+    tipoConversa: 'livre',
+    modelosIa: null,
     salvandoPautas: false,
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
     ultimasPautas: [],
@@ -118,6 +122,41 @@
 
   function setStatus(texto) {
     if (el.status) el.status.textContent = texto || '';
+  }
+
+  function modeloFallback(tipo) {
+    return tipo === 'livre'
+      ? { provider: 'claude', nome: 'Sonnet 5', nivel: 'Médio', origem: 'token-free-gateway' }
+      : { provider: 'claude', nome: 'Sonnet 5', nivel: 'Médio', origem: 'redação' };
+  }
+
+  function atualizarModeloIa() {
+    if (!el.modeloIa) return;
+    const tipo = state.tipoConversa === 'livre' ? 'livre' : 'materia';
+    const modelo = state.modelosIa?.[tipo] || modeloFallback(tipo);
+    const nome = modelo.nome || 'IA';
+    const nivel = modelo.nivel || '';
+    if (el.modeloIaNome) el.modeloIaNome.textContent = nome;
+    if (el.modeloIaNivel) el.modeloIaNivel.textContent = nivel;
+    el.modeloIa.dataset.provider = modelo.provider || '';
+    el.modeloIa.title = [
+      `Modelo em uso: ${nome}${nivel ? ` ${nivel}` : ''}`,
+      modelo.modelo ? `ID: ${modelo.modelo}` : null,
+      modelo.origem ? `Origem: ${modelo.origem}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  async function carregarModeloIa() {
+    atualizarModeloIa();
+    try {
+      const data = await api(`${API}/modelo`);
+      state.modelosIa = data?.modelos || null;
+    } catch {
+      state.modelosIa = null;
+    }
+    atualizarModeloIa();
   }
 
   function isMobileDrawer() {
@@ -787,7 +826,7 @@
     if (titulo && !/^(achei|encontrei|aqui est[aá]|claro|vamos)\b/i.test(titulo)) {
       return titulo.slice(0, 180);
     }
-    return 'Matéria criada no Claude livre';
+    return 'Matéria criada no Claude';
   }
 
   function areaSalvar(mensagem, container, { livre = false } = {}) {
@@ -1744,10 +1783,9 @@
 
   function novaConversa({ preservarTipo = false } = {}) {
     state.chatId = null;
-    // Esta é a tela de criação de matérias. Uma conversa nova iniciada pelo
-    // botão "+ Nova conversa" deve voltar ao fluxo editorial; Claude livre
-    // continua disponível quando o editor o selecionar explicitamente.
-    if (!preservarTipo) state.tipoConversa = 'materia';
+    // Conversa nova abre direto no Claude; o modo Matéria continua
+    // disponível quando o editor quiser aplicar o fluxo editorial completo.
+    if (!preservarTipo) state.tipoConversa = 'livre';
     try {
       sessionStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -1827,7 +1865,7 @@
         : 'Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa.';
     }
     if (el.toggleWebLabel) {
-      el.toggleWebLabel.textContent = livre ? 'Claude: automática' : 'Pesquisar na web';
+      el.toggleWebLabel.textContent = livre ? 'Auto' : 'Web';
     }
     if (livre) {
       el.toggleWeb?.setAttribute('aria-pressed', 'true');
@@ -1840,9 +1878,10 @@
       el.input.placeholder = livre
         ? 'Converse normalmente com o Claude…'
         : state.modo === 'pautas'
-          ? 'Digite o tema para pesquisar. Ex.: Polêmica Silas Malafaia'
+          ? 'Tema para pesquisar. Ex.: Polêmica Silas Malafaia'
           : 'Descreva o assunto, cole um link ou peça um ajuste…';
     }
+    atualizarModeloIa();
   }
 
   function definirTipoConversa(novo) {
@@ -1854,7 +1893,7 @@
     aplicarTipoConversa();
     setStatus(
       tipo === 'livre'
-        ? 'Claude livre ativo · conversa sem regras editoriais.'
+        ? 'Claude ativo · conversa sem regras editoriais.'
         : 'Modo Matéria ativo · ferramentas editoriais disponíveis.'
     );
     el.input?.focus();
@@ -2292,6 +2331,7 @@
     if (state.iniciado) return;
     state.iniciado = true;
     prepararVoz();
+    carregarModeloIa();
     aplicarToggleWeb();
     aplicarToggleTranscricao();
     definirModo(state.modo);

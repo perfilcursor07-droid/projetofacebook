@@ -6,6 +6,7 @@ const { uploadMatterImage } = require('../middleware/uploadMatterImage');
 const router = express.Router();
 
 // Chat de matérias (/conteudo → Matéria manual)
+router.get('/chat/modelo', chatController.modelo);
 router.get('/chat/conversas', chatController.listar);
 router.post('/chat/conversas', chatController.criar);
 router.get('/chat/conversas/:id', chatController.obter);

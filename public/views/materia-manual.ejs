@@ -75,7 +75,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z"/><path d="m18.5 15 .9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9Z"/></svg>
               </span>
               <h1 class="mia-chat-empty-title">Como posso ajudar?</h1>
-              <p class="mia-chat-empty-sub">Crie uma matéria, transforme um link em notícia ou encontre pautas recentes.</p>
+              <p class="mia-chat-empty-sub">Converse com o Claude, crie matérias ou encontre pautas recentes.</p>
             </div>
           </div>
         </div>
@@ -95,11 +95,11 @@
                   </summary>
                   <div class="mia-chat-more-menu">
                     <section class="mia-chat-menu-sec">
-                      <p class="mia-chat-menu-label">Pautas</p>
+                      <p class="mia-chat-menu-label">Pauta</p>
                       <div class="mia-chat-menu-list">
-                        <button type="button" class="chat-exemplo mia-chat-menu-item" data-modo-exemplo="pautas" title="Pesquise pautas sobre polêmicas gospel desta semana">
-                          <span class="mia-chat-menu-item-title">Pautas</span>
-                          <span class="mia-chat-prompt-text">Pesquise pautas sobre polêmicas gospel desta semana</span>
+                        <button type="button" class="chat-exemplo mia-chat-menu-item" data-modo-exemplo="pautas" title="Pautas gospel da semana">
+                          <span class="mia-chat-menu-item-title">Buscar</span>
+                          <span class="mia-chat-prompt-text">Pautas gospel da semana</span>
                         </button>
                       </div>
                     </section>
@@ -107,13 +107,13 @@
                     <section class="mia-chat-menu-sec">
                       <p class="mia-chat-menu-label">Exemplos</p>
                       <div class="mia-chat-menu-list">
-                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Faça uma matéria sobre católicos e evangélicos juntos na política em 2026">
-                          <span class="mia-chat-menu-item-title">Escrever</span>
-                          <span class="mia-chat-prompt-text">Faça uma matéria sobre católicos e evangélicos juntos na política em 2026</span>
+                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Católicos e evangélicos na política em 2026">
+                          <span class="mia-chat-menu-item-title">Texto</span>
+                          <span class="mia-chat-prompt-text">Católicos e evangélicos na política em 2026</span>
                         </button>
-                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Faça uma matéria sobre o crescimento das igrejas">
-                          <span class="mia-chat-menu-item-title">Escrever</span>
-                          <span class="mia-chat-prompt-text">Faça uma matéria sobre o crescimento das igrejas</span>
+                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Crescimento das igrejas">
+                          <span class="mia-chat-menu-item-title">Texto</span>
+                          <span class="mia-chat-prompt-text">Crescimento das igrejas</span>
                         </button>
                       </div>
                     </section>
@@ -121,12 +121,12 @@
                     <!-- Anexos e atalhos de pauta entram por materia-chat-extras.js.
                          A seção some sozinha quando o script não preenche nada. -->
                     <section class="mia-chat-menu-sec">
-                      <p class="mia-chat-menu-label">Anexar ao pedido</p>
+                      <p class="mia-chat-menu-label">Anexar</p>
                       <div class="mia-chat-menu-grid" id="chat-menu-anexos"></div>
                     </section>
 
                     <section class="mia-chat-menu-sec">
-                      <p class="mia-chat-menu-label">Descobrir pautas</p>
+                      <p class="mia-chat-menu-label">Descobrir</p>
                       <div class="mia-chat-menu-grid" id="chat-menu-descobrir"></div>
                     </section>
 
@@ -139,7 +139,7 @@
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 7v10"/><path d="M20 10v4"/>
                           </svg>
-                          Áudio se não houver transcrição
+                          Áudio auto
                         </button>
 
                         <label class="mia-chat-tool-field">
@@ -157,8 +157,8 @@
                         </label>
 
                         <label class="mia-chat-tool-field">
-                          <span>Tom da escrita</span>
-                          <select id="chat-tom" title="Tom da escrita" class="mia-chat-select">
+                          <span>Tom</span>
+                          <select id="chat-tom" title="Tom" class="mia-chat-select">
                             <option value="natural" selected>Natural</option>
                             <option value="polemico">Polêmico</option>
                             <option value="direto">Direto</option>
@@ -173,27 +173,34 @@
                 </details>
 
                 <div class="mia-chat-seg" id="chat-tipo-seg" role="group" aria-label="Tipo de conversa">
-                  <button type="button" data-chat-tipo="materia" aria-pressed="true"
-                    title="Cria matérias usando as regras editoriais do sistema"
-                    class="chat-tipo-btn mia-chat-seg-btn is-active">Matéria</button>
-                  <button type="button" data-chat-tipo="livre" aria-pressed="false"
+                  <button type="button" data-chat-tipo="livre" aria-pressed="true"
                     title="Conversa normal com o Claude, sem critérios editoriais"
-                    class="chat-tipo-btn mia-chat-seg-btn">Claude livre</button>
+                    class="chat-tipo-btn mia-chat-seg-btn is-active">Claude</button>
+                  <button type="button" data-chat-tipo="materia" aria-pressed="false"
+                    title="Cria matérias usando as regras editoriais do sistema"
+                    class="chat-tipo-btn mia-chat-seg-btn">Matéria</button>
                 </div>
                 <div class="mia-chat-seg" id="chat-modo-seg" role="group" aria-label="O que a IA deve fazer">
                   <button type="button" data-chat-modo="escrever" aria-pressed="true"
                     title="A IA já escreve a matéria com o que você pedir"
-                    class="chat-modo-btn mia-chat-seg-btn is-active">Escrever</button>
+                    class="chat-modo-btn mia-chat-seg-btn is-active">Texto</button>
                   <button type="button" data-chat-modo="pautas" aria-pressed="false"
                     title="A IA pesquisa o tema e lista as matérias publicadas para você escolher"
-                    class="chat-modo-btn mia-chat-seg-btn">Pautas</button>
+                    class="chat-modo-btn mia-chat-seg-btn">Pauta</button>
                 </div>
                 <button type="button" id="chat-toggle-web" aria-pressed="false"
                   title="Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa."
                   class="mia-chat-chip mia-chat-web-toggle">
                   <span class="mia-chat-chip-dot"></span>
-                  <span id="chat-toggle-web-label">Pesquisar na web</span>
+                  <span id="chat-toggle-web-label">Web</span>
                 </button>
+                <span id="chat-ai-model" class="mia-chat-model-pill" title="Modelo de IA em uso nesta conversa">
+                  <span id="chat-ai-model-name">IA</span>
+                  <span id="chat-ai-model-level">—</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <path d="m6 9 6 6 6-6"/>
+                  </svg>
+                </span>
               </div>
 
               <span id="chat-status" class="mia-chat-status" aria-live="polite"></span>
@@ -208,16 +215,16 @@
                     <section class="mia-chat-menu-sec">
                       <p class="mia-chat-menu-label">Criar</p>
                       <div class="mia-chat-menu-list">
-                        <button type="button" id="chat-criar-manual" class="mia-chat-menu-item" title="Escrever minha própria matéria e abrir no editor">
+                        <button type="button" id="chat-criar-manual" class="mia-chat-menu-item" title="Escrever minha própria matéria">
                           <span class="mia-chat-menu-item-title">Manual</span>
-                          <span class="mia-chat-prompt-text">Escrever minha própria matéria e abrir no editor</span>
+                          <span class="mia-chat-prompt-text">Escrever minha própria matéria</span>
                         </button>
-                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Faça uma matéria deste link">
+                        <button type="button" class="chat-exemplo mia-chat-menu-item" title="Matéria deste link">
                           <span class="mia-chat-menu-item-title">Link</span>
-                          <span class="mia-chat-prompt-text">Faça uma matéria deste link</span>
+                          <span class="mia-chat-prompt-text">Matéria deste link</span>
                         </button>
                         <button type="button" id="chat-varios-links" class="chat-varios-links mia-chat-menu-item" title="Cole até 12 links, um por linha">
-                          <span class="mia-chat-menu-item-title">Vários links</span>
+                          <span class="mia-chat-menu-item-title">Links</span>
                           <span class="mia-chat-prompt-text">Criar uma matéria por link</span>
                         </button>
                       </div>

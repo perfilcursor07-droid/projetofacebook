@@ -1,4 +1,82 @@
 const chatService = require('../services/materiaChatService');
+const { env } = require('../config/env');
+
+function nomeModeloHumano(modelo) {
+  const valor = String(modelo || '').trim();
+  const lower = valor.toLowerCase();
+  if (!valor) return 'Modelo IA';
+  if (lower.includes('claude-sonnet-5')) return 'Sonnet 5';
+  if (lower.includes('claude-sonnet')) return 'Sonnet';
+  if (lower.includes('claude-haiku')) return 'Haiku';
+  if (lower.includes('claude-opus')) return 'Opus';
+  if (lower.includes('deepseek-v4-flash')) return 'DeepSeek V4';
+  if (lower.includes('deepseek-v4-pro')) return 'DeepSeek V4';
+  if (lower.includes('deepseek')) return 'DeepSeek';
+  return valor
+    .replace(/^claude-/i, '')
+    .replace(/^deepseek-/i, 'DeepSeek ')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, (letra) => letra.toUpperCase());
+}
+
+function nivelModelo(modelo, provider) {
+  const valor = String(modelo || '').toLowerCase();
+  if (provider === 'claude') return 'Médio';
+  if (valor.includes('flash')) return 'Flash';
+  if (valor.includes('pro')) return 'Pro';
+  return '';
+}
+
+function montarModeloChat(tipo) {
+  const deepseek = require('../services/deepseekService');
+  // Os dois modos do /materia-manual usam a tarefa `conversa` no serviço de
+  // streaming. O modo Matéria muda o prompt e as ferramentas editoriais, não
+  // o provedor. Manter a mesma tarefa aqui evita mostrar DeepSeek enquanto a
+  // resposta está sendo gerada pelo gateway do Claude.
+  const tarefa = 'conversa';
+  if (deepseek.usarTokenFree(tarefa)) {
+    const modelo = env.tokenFreeGateway?.model || 'claude-sonnet-5';
+    return {
+      provider: 'claude',
+      modelo,
+      nome: nomeModeloHumano(modelo),
+      nivel: nivelModelo(modelo, 'claude'),
+      origem: 'token-free-gateway',
+    };
+  }
+  if (deepseek.usarClaude(tarefa)) {
+    const modelo = env.claudeWriterModel || 'claude-sonnet-5';
+    return {
+      provider: 'claude',
+      modelo,
+      nome: nomeModeloHumano(modelo),
+      nivel: nivelModelo(modelo, 'claude'),
+      origem: 'anthropic',
+    };
+  }
+  const modelo = env.deepseekWriterModel || env.deepseekModel || 'deepseek-v4-flash';
+  return {
+    provider: 'deepseek',
+    modelo,
+    nome: nomeModeloHumano(modelo),
+    nivel: nivelModelo(modelo, 'deepseek'),
+    origem: 'deepseek',
+  };
+}
+
+async function modelo(req, res, next) {
+  try {
+    return res.json({
+      ok: true,
+      modelos: {
+        materia: montarModeloChat('materia'),
+        livre: montarModeloChat('livre'),
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
 
 async function listar(req, res, next) {
   try {
@@ -284,6 +362,7 @@ async function salvarOrientacoes(req, res, next) {
 }
 
 module.exports = {
+  modelo,
   listar,
   criar,
   obter,

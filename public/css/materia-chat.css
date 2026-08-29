@@ -1341,9 +1341,9 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-menu-label {
-  margin: 0 0 0.2rem;
+  margin: 0 0 0.15rem;
   padding: 0 0.3rem;
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1352,19 +1352,19 @@ body.mia-chat-drawer-open {
 
 .mia-chat-menu-list {
   display: grid;
-  gap: 0.15rem;
+  gap: 0.1rem;
 }
 
 .mia-chat-menu-item {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.1rem;
+  gap: 0.05rem;
   width: 100%;
   border: 0;
   border-radius: 0.45rem;
   background: transparent;
-  padding: 0.45rem 0.5rem;
+  padding: 0.34rem 0.45rem;
   text-align: left;
   cursor: pointer;
   color: var(--mia-chat-text);
@@ -1375,14 +1375,18 @@ body.mia-chat-drawer-open {
 }
 
 .mia-chat-menu-item-title {
-  font-size: 0.8125rem;
+  font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.25;
   color: #f4f4f5;
 }
 
 .mia-chat-menu-item .mia-chat-prompt-text {
-  font-size: 0.72rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.66rem;
   line-height: 1.35;
   color: #9ca3af;
   font-weight: 400;
@@ -1403,12 +1407,12 @@ body.mia-chat-drawer-open {
 .mia-chat-more-menu .mia-x-imagem-btn {
   justify-content: flex-start;
   width: 100%;
-  min-height: 2.1rem;
+  min-height: 1.85rem;
   border: 0;
   border-radius: 0.4rem;
-  padding: 0.35rem 0.45rem;
+  padding: 0.28rem 0.42rem;
   color: var(--mia-chat-text);
-  font-size: 0.8125rem;
+  font-size: 0.72rem;
   text-align: left;
 }
 
@@ -1485,7 +1489,7 @@ body.mia-chat-drawer-open {
 .mia-chat-seg {
   display: inline-flex;
   align-items: center;
-  padding: 0.15rem;
+  padding: 0.12rem;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--mia-chat-border);
@@ -1503,8 +1507,8 @@ body.mia-chat-drawer-open {
   border: 0;
   background: transparent;
   border-radius: 999px;
-  padding: 0.28rem 0.58rem;
-  font-size: 0.6875rem;
+  padding: 0.22rem 0.48rem;
+  font-size: 0.64rem;
   font-weight: 500;
   color: var(--mia-chat-muted);
   cursor: pointer;
@@ -1522,12 +1526,12 @@ body.mia-chat-drawer-open {
 .mia-chat-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.28rem;
   border-radius: 999px;
   border: 1px solid var(--mia-chat-border);
   background: transparent;
-  padding: 0.28rem 0.55rem;
-  font-size: 0.6875rem;
+  padding: 0.22rem 0.48rem;
+  font-size: 0.64rem;
   font-weight: 500;
   color: var(--mia-chat-muted);
   cursor: pointer;
@@ -1572,6 +1576,55 @@ body.mia-chat-drawer-open {
 
 .mia-chat-chip.is-on .mia-chat-chip-dot {
   background: #34d399;
+}
+
+.mia-chat-model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-height: 1.65rem;
+  max-width: 13rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 0.32rem 0 0.52rem;
+  background: transparent;
+  color: #d4cdc1;
+  font-size: 0.64rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mia-chat-model-pill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mia-chat-model-pill span:first-child {
+  font-weight: 600;
+  color: #eee7db;
+}
+
+.mia-chat-model-pill span:nth-child(2) {
+  color: var(--mia-chat-muted);
+}
+
+.mia-chat-model-pill svg {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 auto;
+  color: var(--mia-chat-muted);
+}
+
+.mia-chat-model-pill[data-provider='deepseek'] span:first-child {
+  color: #bfdbfe;
+}
+
+@media (max-width: 520px) {
+  .mia-chat-model-pill {
+    max-width: 8.5rem;
+    padding-left: 0.5rem;
+  }
 }
 
 .mia-chat-select {
