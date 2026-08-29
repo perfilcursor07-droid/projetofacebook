@@ -255,6 +255,20 @@
                     <span class="mt-1 block text-[11px] text-slate-500">Diminua para aproximar a manchete do retângulo JM Notícia.</span>
                   </label>
 
+                  <label id="cfg-painel-largura-wrap" class="hidden block rounded-lg border border-sky-500/25 bg-sky-500/10 p-3">
+                    <span class="flex items-center justify-between text-xs text-sky-100">
+                      <span>Largura do painel</span>
+                      <span class="font-semibold text-white"><span id="cfg-painel-largura-valor"><%= typeof painelWidthDefault !== 'undefined' ? painelWidthDefault : 92 %></span>%</span>
+                    </span>
+                    <input id="cfg-painel-largura" type="range"
+                      min="<%= typeof painelWidthMin !== 'undefined' ? painelWidthMin : 80 %>"
+                      max="<%= typeof painelWidthMax !== 'undefined' ? painelWidthMax : 100 %>"
+                      step="1"
+                      value="<%= typeof painelWidthDefault !== 'undefined' ? painelWidthDefault : 92 %>"
+                      class="mt-1.5 w-full accent-sky-400" />
+                    <span class="mt-1 block text-[11px] text-slate-500">Ajusta somente a largura do bloco azul do Painel premium.</span>
+                  </label>
+
                   <label class="block">
                     <span class="flex items-center justify-between text-xs text-slate-400">
                       <span>Tamanho da foto (zoom)</span>
@@ -641,6 +655,7 @@
       fonte: <%- JSON.stringify(profile.marca_fonte || defaultBrandFont) %>,
       zoom: <%= Number(typeof zoomDefault !== 'undefined' ? zoomDefault : 100) %>,
       tituloEspaco: <%= Number(typeof jmTitleGapDefault !== 'undefined' ? jmTitleGapDefault : 18) %>,
+      painelLargura: <%= Number(typeof painelWidthDefault !== 'undefined' ? painelWidthDefault : 92) %>,
     };
 
     const cfgModal = document.getElementById('modelo-config-modal');
@@ -652,6 +667,9 @@
     const cfgTituloEspacoWrap = document.getElementById('cfg-titulo-espaco-wrap');
     const cfgTituloEspaco = document.getElementById('cfg-titulo-espaco');
     const cfgTituloEspacoValor = document.getElementById('cfg-titulo-espaco-valor');
+    const cfgPainelLarguraWrap = document.getElementById('cfg-painel-largura-wrap');
+    const cfgPainelLargura = document.getElementById('cfg-painel-largura');
+    const cfgPainelLarguraValor = document.getElementById('cfg-painel-largura-valor');
     const cfgZoom = document.getElementById('cfg-zoom');
     const cfgZoomValor = document.getElementById('cfg-zoom-valor');
     const cfgCor1 = document.getElementById('cfg-cor1');
@@ -685,6 +703,7 @@
       return {
         tamanho: Number(cfgTamanho && cfgTamanho.value) || marcaPadrao.tamanho,
         tituloEspaco: Number(cfgTituloEspaco && cfgTituloEspaco.value),
+        painelLargura: Number(cfgPainelLargura && cfgPainelLargura.value) || marcaPadrao.painelLargura,
         zoom: Number(cfgZoom && cfgZoom.value) || marcaPadrao.zoom,
         cor1: (cfgCor1 && cfgCor1.value) || marcaPadrao.cor1,
         cor2: (cfgCor2 && cfgCor2.value) || marcaPadrao.cor2,
@@ -701,6 +720,7 @@
       const q = new URLSearchParams({
         tamanho: String(v.tamanho),
         tituloEspaco: String(v.tituloEspaco),
+        painelLargura: String(v.painelLargura),
         zoom: String(v.zoom),
         cor1: v.cor1,
         cor2: v.cor2,
@@ -737,6 +757,8 @@
       if (cfgTamanho) cfgTamanho.value = salvo.tituloTamanho != null ? salvo.tituloTamanho : marcaPadrao.tamanho;
       if (cfgTituloEspaco) cfgTituloEspaco.value = salvo.tituloEspaco != null ? salvo.tituloEspaco : marcaPadrao.tituloEspaco;
       if (cfgTituloEspacoWrap) cfgTituloEspacoWrap.classList.toggle('hidden', modeloId !== 'jm');
+      if (cfgPainelLargura) cfgPainelLargura.value = salvo.painelLargura != null ? salvo.painelLargura : marcaPadrao.painelLargura;
+      if (cfgPainelLarguraWrap) cfgPainelLarguraWrap.classList.toggle('hidden', modeloId !== 'painel_premium');
       if (cfgZoom) cfgZoom.value = salvo.zoom != null ? salvo.zoom : marcaPadrao.zoom;
       if (cfgCor1) cfgCor1.value = salvo.corPrimaria || marcaPadrao.cor1;
       if (cfgCor2) cfgCor2.value = salvo.corSecundaria || marcaPadrao.cor2;
@@ -746,6 +768,7 @@
       cfgSombra = salvo.sombra || 'media';
       if (cfgTamanhoValor && cfgTamanho) cfgTamanhoValor.textContent = String(cfgTamanho.value);
       if (cfgTituloEspacoValor && cfgTituloEspaco) cfgTituloEspacoValor.textContent = String(cfgTituloEspaco.value);
+      if (cfgPainelLarguraValor && cfgPainelLargura) cfgPainelLarguraValor.textContent = String(cfgPainelLargura.value);
       if (cfgZoomValor && cfgZoom) cfgZoomValor.textContent = String(cfgZoom.value);
       cfgSyncSombra();
       cfgSetStatus('');
@@ -783,6 +806,12 @@
     if (cfgTituloEspaco) {
       cfgTituloEspaco.addEventListener('input', function () {
         if (cfgTituloEspacoValor) cfgTituloEspacoValor.textContent = cfgTituloEspaco.value;
+        cfgAgendarPreview();
+      });
+    }
+    if (cfgPainelLargura) {
+      cfgPainelLargura.addEventListener('input', function () {
+        if (cfgPainelLarguraValor) cfgPainelLarguraValor.textContent = cfgPainelLargura.value;
         cfgAgendarPreview();
       });
     }
@@ -841,6 +870,7 @@
             config: {
               tituloTamanho: v.tamanho,
               tituloEspaco: v.tituloEspaco,
+              painelLargura: v.painelLargura,
               zoom: v.zoom,
               corPrimaria: v.cor1,
               corSecundaria: v.cor2,

@@ -8,6 +8,10 @@ const {
   normalizeArtModel,
 } = require('../src/services/editorialCardModels');
 const { buildBrandModelPreviewPng } = require('../src/services/editorialCardService');
+const {
+  normalizeModelConfig,
+  applyModelConfig,
+} = require('../src/services/brandModelConfig');
 
 test('Painel premium está disponível como modelo de arte', () => {
   const model = ART_MODELS.find((item) => item.id === 'painel_premium');
@@ -39,4 +43,16 @@ test('Painel premium renderiza uma prévia PNG válida em 4:5', async () => {
   assert.equal(metadata.width, 432);
   assert.equal(metadata.height, 540);
   assert.ok(png.length > 20_000);
+});
+
+test('Largura do Painel premium é configurável e limitada entre 80% e 100%', () => {
+  assert.equal(normalizeModelConfig({ painelLargura: 76 }).painelLargura, 80);
+  assert.equal(normalizeModelConfig({ painelLargura: 95 }).painelLargura, 95);
+  assert.equal(normalizeModelConfig({ painelLargura: 120 }).painelLargura, 100);
+
+  const aplicado = applyModelConfig(
+    { marca_modelo_config: JSON.stringify({ painel_premium: { painelLargura: 84 } }) },
+    'painel_premium'
+  );
+  assert.equal(aplicado.painelLargura, 84);
 });

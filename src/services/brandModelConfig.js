@@ -25,6 +25,11 @@ const JM_TITLE_GAP_MIN = 0;
 const JM_TITLE_GAP_MAX = 140;
 const JM_TITLE_GAP_DEFAULT = 18;
 
+/** Largura do bloco editorial do modelo Painel premium (% do canvas). */
+const PAINEL_WIDTH_MIN = 80;
+const PAINEL_WIDTH_MAX = 100;
+const PAINEL_WIDTH_DEFAULT = 92;
+
 function normalizarCor(valor) {
   const cor = String(valor || '').trim().toLowerCase();
   return /^#[0-9a-f]{6}$/.test(cor) ? cor : null;
@@ -50,6 +55,12 @@ function normalizarEspacoTituloJm(valor) {
   const n = Number(valor);
   if (!Number.isFinite(n)) return JM_TITLE_GAP_DEFAULT;
   return Math.min(JM_TITLE_GAP_MAX, Math.max(JM_TITLE_GAP_MIN, Math.round(n)));
+}
+
+function normalizarPainelLargura(valor) {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return PAINEL_WIDTH_DEFAULT;
+  return Math.min(PAINEL_WIDTH_MAX, Math.max(PAINEL_WIDTH_MIN, Math.round(n)));
 }
 
 function normalizarBooleano(valor, padrao = true) {
@@ -78,6 +89,12 @@ function normalizeModelConfig(entrada = {}) {
     entrada.tituloEspaco ?? entrada.titulo_espaco ?? entrada.titleGap ?? entrada.title_gap;
   if (tituloEspaco != null && tituloEspaco !== '') {
     cfg.tituloEspaco = normalizarEspacoTituloJm(tituloEspaco);
+  }
+
+  const painelLargura =
+    entrada.painelLargura ?? entrada.painel_largura ?? entrada.panelWidth ?? entrada.panel_width;
+  if (painelLargura != null && painelLargura !== '') {
+    cfg.painelLargura = normalizarPainelLargura(painelLargura);
   }
 
   const corTitulo = String(entrada.tituloCor ?? entrada.titulo_cor ?? '').trim();
@@ -155,6 +172,10 @@ function applyModelConfig(user, modelId, extras = {}) {
       cfg.tituloEspaco != null
         ? normalizarEspacoTituloJm(cfg.tituloEspaco)
         : JM_TITLE_GAP_DEFAULT,
+    painelLargura:
+      cfg.painelLargura != null
+        ? normalizarPainelLargura(cfg.painelLargura)
+        : PAINEL_WIDTH_DEFAULT,
     config: cfg,
   };
 }
@@ -168,6 +189,9 @@ module.exports = {
   JM_TITLE_GAP_MIN,
   JM_TITLE_GAP_MAX,
   JM_TITLE_GAP_DEFAULT,
+  PAINEL_WIDTH_MIN,
+  PAINEL_WIDTH_MAX,
+  PAINEL_WIDTH_DEFAULT,
   normalizeModelConfig,
   parseModelConfigs,
   configForModel,

@@ -892,6 +892,7 @@ function buildOverlay({
   titleColorId,
   titleSizeId,
   titleGap,
+  painelLargura = 92,
   // Personalização do modelo (Minha marca → clicar no modelo).
   degrade = true,
   sombraFator = 1,
@@ -932,6 +933,7 @@ function buildOverlay({
   const isUrgente = modelId === 'urgente_alerta';
   const isJm = modelId === 'jm';
   const isPainelPremium = modelId === 'painel_premium';
+  const painelPct = Math.min(100, Math.max(80, Math.round(Number(painelLargura) || 92)));
   // tamanho escolhido em Minha marca (30–50, padrão 43), escalado ao canvas
   let fontSize = Math.round(
     (sizeMeta?.px || 43) * Math.min(sx, sy) * (isCitacao ? 1.12 : isPainelPremium ? 1.12 : 1)
@@ -941,13 +943,13 @@ function buildOverlay({
   const safeFooter = escapeXml(footer || brandName || '');
 
   // Quebra por largura real + reduz fonte se ainda passar (evita corte nas laterais).
-  const textMaxW = W - ww(
-    isPainelPremium
-      ? 330
-      : modelId === 'bloco_inferior' || modelId === 'barra_lateral' || modelId === 'canto_solido' || modelId === 'minimalista'
-        ? 160
-        : 120
-  );
+  const textMaxW = isPainelPremium
+    ? Math.max(ww(420), Math.round((W * painelPct) / 100) - ww(330))
+    : W - ww(
+        modelId === 'bloco_inferior' || modelId === 'barra_lateral' || modelId === 'canto_solido' || modelId === 'minimalista'
+          ? 160
+          : 120
+      );
   let lines = [];
   if (!isCitacao && !isUrgente && !isJm) {
     const titleUpper = String(title || '').replace(/\s+/g, ' ').trim();
@@ -1225,15 +1227,16 @@ function buildOverlay({
       })}
       <text x="${x(540)}" y="${y(g.footerY)}" text-anchor="middle" class="footer-jm">${safeFooter.toLocaleUpperCase('pt-BR')}</text>`;
   } else if (isPainelPremium) {
-    const panelX = x(42);
-    const panelY = y(880);
-    const panelW = W - ww(84);
-    const panelH = hh(390);
-    const logoBadgeX = x(70);
-    const logoBadgeY = y(820);
+    const panelW = Math.round((W * painelPct) / 100);
+    const panelX = Math.round((W - panelW) / 2);
+    const panelRight = panelX + panelW;
+    const panelY = y(910);
+    const panelH = hh(360);
+    const logoBadgeX = panelX + ww(28);
+    const logoBadgeY = y(850);
     const logoBadgeW = ww(350);
     const logoBadgeH = hh(110);
-    const titleTop = y(lines.length >= 5 ? 995 : lines.length === 4 ? 1010 : 1030);
+    const titleTop = y(lines.length >= 5 ? 1025 : lines.length === 4 ? 1040 : 1055);
     const footerText = /^(?:not[ií]cias?|sua marca)$/i.test(
       String(footer || brandName || '').trim()
     )
@@ -1256,16 +1259,16 @@ function buildOverlay({
         </filter>
       </defs>
       <path d="M ${panelX + ww(34)} ${panelY} H ${panelX + panelW - ww(170)} L ${panelX + panelW} ${panelY + hh(166)} V ${panelY + panelH - hh(34)} Q ${panelX + panelW} ${panelY + panelH} ${panelX + panelW - ww(34)} ${panelY + panelH} H ${panelX + ww(34)} Q ${panelX} ${panelY + panelH} ${panelX} ${panelY + panelH - hh(34)} V ${panelY + hh(34)} Q ${panelX} ${panelY} ${panelX + ww(34)} ${panelY} Z" fill="url(#premiumPanel)" filter="url(#premiumShadow)"/>
-      <path d="M ${x(770)} ${panelY} H ${x(910)} L ${W} ${panelY + hh(150)} V ${panelY + panelH} H ${x(820)} L ${x(690)} ${panelY + hh(330)} Z" fill="url(#premiumGlow)" opacity=".82"/>
-      <circle cx="${x(980)}" cy="${y(958)}" r="${ww(122)}" fill="none" stroke="${secondary}" stroke-width="${ww(30)}" opacity=".34"/>
-      <circle cx="${x(906)}" cy="${y(1195)}" r="${ww(78)}" fill="${primary}" opacity=".18"/>
-      <path d="M ${x(790)} ${y(1238)} L ${x(1032)} ${y(996)}" stroke="rgba(255,255,255,.22)" stroke-width="${ww(3)}"/>
+      <path d="M ${panelX + Math.round(panelW * .68)} ${panelY} H ${panelX + Math.round(panelW * .84)} L ${panelRight} ${panelY + hh(118)} V ${panelY + panelH} H ${panelX + Math.round(panelW * .76)} L ${panelX + Math.round(panelW * .64)} ${panelY + hh(250)} Z" fill="url(#premiumGlow)" opacity=".82"/>
+      <circle cx="${panelRight - ww(24)}" cy="${y(980)}" r="${ww(110)}" fill="none" stroke="${secondary}" stroke-width="${ww(28)}" opacity=".34"/>
+      <circle cx="${panelRight - ww(115)}" cy="${y(1200)}" r="${ww(70)}" fill="${primary}" opacity=".18"/>
+      <path d="M ${panelRight - ww(230)} ${y(1240)} L ${panelRight - ww(22)} ${y(1032)}" stroke="rgba(255,255,255,.22)" stroke-width="${ww(3)}"/>
       ${hasLogo ? `<rect x="${logoBadgeX}" y="${logoBadgeY}" width="${logoBadgeW}" height="${logoBadgeH}" rx="${hh(58)}" fill="url(#accent)" stroke="rgba(255,255,255,.5)" stroke-width="${ww(2)}" filter="url(#premiumShadow)"/>` : ''}
-      <text x="${x(88)}" y="${y(955)}" text-anchor="start" class="category-premium">${safeCategory}</text>
-      ${renderTitleLines(lines, { x: x(88), y: titleTop, lineHeight, anchor: 'start', className: 'title-premium' })}
+      <text x="${panelX + ww(46)}" y="${y(985)}" text-anchor="start" class="category-premium">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: panelX + ww(46), y: titleTop, lineHeight, anchor: 'start', className: 'title-premium' })}
       ${footerText ? `
-        <rect x="${x(88)}" y="${y(1230)}" width="${ww(92)}" height="${hh(7)}" rx="${hh(4)}" fill="url(#accent)"/>
-        <text x="${x(198)}" y="${y(1242)}" text-anchor="start" class="footer-premium">${footerText}</text>` : ''}`;
+        <rect x="${panelX + ww(46)}" y="${y(1240)}" width="${ww(82)}" height="${hh(7)}" rx="${hh(4)}" fill="url(#accent)"/>
+        <text x="${panelX + ww(146)}" y="${y(1252)}" text-anchor="start" class="footer-premium">${footerText}</text>` : ''}`;
   } else if (modelId === 'estilo_fatos') {
     const titleTop = y(fatosTitleTopBase(lines.length));
     layout = `
@@ -1470,6 +1473,7 @@ async function composeBrandOverlayOnImage({
     model: modelId,
     canvasHeight: h,
     titleLineCount: titleLines.length,
+    painelLargura: cfgModelo.painelLargura,
   });
   const overlay = buildOverlay({
     title,
@@ -1486,6 +1490,7 @@ async function composeBrandOverlayOnImage({
     titleColorId: user.marca_titulo_cor,
     titleSizeId: user.marca_titulo_tamanho,
     titleGap: cfgModelo.tituloEspaco,
+    painelLargura: cfgModelo.painelLargura,
     degrade: cfgModelo.degrade,
     sombraFator: cfgModelo.sombraFator,
   });
@@ -1546,15 +1551,21 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
     top = barTop + Math.round(barH / 2) - Math.round(input.info.height / 2);
   } else if (isPainelPremium) {
     const syPremium = ch / 1350;
-    const badgeTop = Math.round(820 * syPremium);
+    const badgeTop = Math.round(850 * syPremium);
     const badgeH = Math.round(110 * syPremium);
     top = badgeTop + Math.round((badgeH - input.info.height) / 2);
   }
 
+  const painelPct = Math.min(
+    100,
+    Math.max(80, Math.round(Number(options.painelLargura) || 92))
+  );
+  const painelW = Math.round((cw * painelPct) / 100);
+  const painelX = Math.round((cw - painelW) / 2);
   const left = isPainelPremium
     ? Math.max(
         20,
-        Math.round(cw * (70 / 1080)) +
+        painelX + Math.round(cw * (28 / 1080)) +
           Math.round((cw * (350 / 1080) - input.info.width) / 2)
       )
     : Math.max(20, Math.round((cw - input.info.width) / 2));
@@ -1790,6 +1801,7 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
     model: modelId,
     canvasHeight: HEIGHT,
     titleLineCount: titleLines.length,
+    painelLargura: cfgModelo.painelLargura,
   });
   const overlay = buildOverlay({
     title,
@@ -1804,6 +1816,7 @@ async function createEditorialCard({ sourceUrl, title, user, zoom, offsetX, offs
     titleColorId: user.marca_titulo_cor,
     titleSizeId: user.marca_titulo_tamanho,
     titleGap: cfgModelo.tituloEspaco,
+    painelLargura: cfgModelo.painelLargura,
     degrade: cfgModelo.degrade,
     sombraFator: cfgModelo.sombraFator,
   });
@@ -1899,6 +1912,7 @@ async function buildBrandModelPreviewPng({
     model: modelId,
     canvasHeight: h,
     titleLineCount: titleLines.length,
+    painelLargura: cfgModelo.painelLargura,
   });
   const overlay = buildOverlay({
     title: headline,
@@ -1915,6 +1929,7 @@ async function buildBrandModelPreviewPng({
     titleColorId: user?.marca_titulo_cor,
     titleSizeId: user?.marca_titulo_tamanho,
     titleGap: cfgModelo.tituloEspaco,
+    painelLargura: cfgModelo.painelLargura,
     degrade: cfgModelo.degrade,
     sombraFator: cfgModelo.sombraFator,
   });
@@ -1943,6 +1958,7 @@ async function buildBrandOverlayPng({ title, user } = {}) {
     model: modelId,
     canvasHeight: HEIGHT,
     titleLineCount: titleLines.length,
+    painelLargura: cfgModelo.painelLargura,
   });
   const overlay = buildOverlay({
     title,
@@ -1957,6 +1973,7 @@ async function buildBrandOverlayPng({ title, user } = {}) {
     titleColorId: user.marca_titulo_cor,
     titleSizeId: user.marca_titulo_tamanho,
     titleGap: cfgModelo.tituloEspaco,
+    painelLargura: cfgModelo.painelLargura,
     degrade: cfgModelo.degrade,
     sombraFator: cfgModelo.sombraFator,
   });

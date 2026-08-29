@@ -18,6 +18,9 @@ const {
   JM_TITLE_GAP_MIN,
   JM_TITLE_GAP_MAX,
   JM_TITLE_GAP_DEFAULT,
+  PAINEL_WIDTH_MIN,
+  PAINEL_WIDTH_MAX,
+  PAINEL_WIDTH_DEFAULT,
   parseModelConfigs,
   withModelConfig,
 } = require('../services/brandModelConfig');
@@ -94,6 +97,7 @@ async function artModelPreview(req, res, next) {
     const overrides = {
       tituloTamanho: req.query.tamanho,
       tituloEspaco: req.query.tituloEspaco,
+      painelLargura: req.query.painelLargura,
       tituloCor: req.query.tituloCor,
       fonte: req.query.fonte,
       corPrimaria: req.query.cor1,
@@ -168,6 +172,9 @@ async function show(req, res, next) {
       jmTitleGapMin: JM_TITLE_GAP_MIN,
       jmTitleGapMax: JM_TITLE_GAP_MAX,
       jmTitleGapDefault: JM_TITLE_GAP_DEFAULT,
+      painelWidthMin: PAINEL_WIDTH_MIN,
+      painelWidthMax: PAINEL_WIDTH_MAX,
+      painelWidthDefault: PAINEL_WIDTH_DEFAULT,
       videoBrandModels: VIDEO_BRAND_MODELS,
       defaultVideoBrandModel: DEFAULT_VIDEO_BRAND_MODEL,
       brandFonts: BRAND_FONTS,
