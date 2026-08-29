@@ -6,55 +6,60 @@
   <title><%= title %> — ViralizeAI</title>
   <link rel="stylesheet" href="/css/app.css" />
 </head>
-<body class="min-h-screen bg-slate-950 text-slate-100">
+<body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
   <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-    <div class="absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 rounded-full bg-emerald-500/15 blur-3xl"></div>
+    <div class="landing-dots absolute inset-0 opacity-60"></div>
+    <div class="landing-orb absolute left-1/2 top-0 h-64 w-64 -translate-x-1/2 rounded-full bg-emerald-500/16 blur-3xl"></div>
+    <div class="landing-orb landing-orb-delay absolute -right-16 bottom-10 h-52 w-52 rounded-full bg-sky-500/10 blur-3xl"></div>
   </div>
 
-  <header class="border-b border-slate-800/80">
-    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-      <a href="/" class="text-xl tracking-tight text-emerald-400"><strong>ViralizeAI</strong></a>
-      <a href="/" class="text-sm text-slate-400 hover:text-white">Voltar</a>
+  <header class="sticky top-0 z-30 border-b border-slate-800/60 bg-slate-950/75 backdrop-blur-md">
+    <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-2.5">
+      <a href="/" class="text-[13px] tracking-tight text-emerald-400"><strong>ViralizeAI</strong></a>
+      <a href="/" class="text-[12px] text-slate-500 transition hover:text-white">Voltar</a>
     </div>
   </header>
 
-  <main class="mx-auto flex min-h-[calc(100vh-73px)] max-w-md items-center px-4 py-12">
-    <div class="w-full rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl shadow-black/20 sm:p-8">
-      <h1 class="text-2xl font-semibold text-white">Entrar</h1>
-      <p class="mt-2 text-sm text-slate-400">Acesse o painel para buscar, cortar e publicar.</p>
+  <main class="mx-auto flex min-h-[calc(100vh-52px)] max-w-[22rem] items-center px-4 py-10">
+    <div class="landing-fade landing-preview w-full rounded-xl border border-slate-800/90 bg-slate-900/55 p-5 backdrop-blur-md sm:p-6">
+      <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-400/80">Painel</p>
+      <h1 class="mt-1.5 text-lg font-semibold tracking-tight text-white">Entrar</h1>
+      <p class="mt-1.5 text-[12px] leading-relaxed text-slate-500">
+        Matérias, biblioteca, virais e publicação no mesmo lugar.
+      </p>
 
       <% if (error) { %>
-        <div class="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+        <div class="mt-3 rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-[12px] text-rose-200">
           <%= error %>
         </div>
       <% } %>
 
-      <form method="POST" action="/login" class="mt-6 space-y-4">
-            <input type="hidden" name="next" value="<%= next || '/dashboard' %>" />
+      <form method="POST" action="/login" class="mt-5 space-y-3">
+        <input type="hidden" name="next" value="<%= next || '/dashboard' %>" />
         <input type="hidden" name="redirect" value="1" />
 
         <label class="block">
-          <span class="mb-1.5 block text-xs font-medium text-slate-400">Usuário</span>
+          <span class="mb-1 block text-[11px] font-medium text-slate-500">Usuário</span>
           <input type="text" name="login" required autocomplete="username" autofocus
             placeholder="admin"
-            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+            class="w-full rounded-md border border-slate-700 bg-slate-950/80 px-2.5 py-2 text-[13px] text-white placeholder:text-slate-600 transition focus:border-emerald-500 focus:outline-none" />
         </label>
 
         <label class="block">
-          <span class="mb-1.5 block text-xs font-medium text-slate-400">Senha</span>
+          <span class="mb-1 block text-[11px] font-medium text-slate-500">Senha</span>
           <input type="password" name="senha" required autocomplete="current-password"
             placeholder="••••••••"
-            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+            class="w-full rounded-md border border-slate-700 bg-slate-950/80 px-2.5 py-2 text-[13px] text-white placeholder:text-slate-600 transition focus:border-emerald-500 focus:outline-none" />
         </label>
 
         <button type="submit"
-          class="w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
+          class="w-full rounded-md bg-emerald-500 px-3 py-2 text-[12px] font-semibold text-slate-950 transition hover:bg-emerald-400">
           Entrar
         </button>
       </form>
 
-      <p class="mt-6 text-center text-[11px] leading-relaxed text-slate-600">
-        Desenvolvido por Erick Vinicius<br />Versão 1.0
+      <p class="mt-5 text-center text-[10px] leading-relaxed text-slate-600">
+        Desenvolvido por Erick Vinicius<br />Versão 2.0
       </p>
     </div>
   </main>

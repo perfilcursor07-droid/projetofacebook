@@ -3,106 +3,203 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title><%= title %> — ViralizeAI</title>
+  <title>ViralizeAI — redação e publicação para Páginas</title>
+  <meta name="description" content="Crie matérias com IA, descubra pautas, agende posts e publique nas Páginas do Facebook. Biblioteca, virais, Reels e marca no mesmo painel." />
   <link rel="stylesheet" href="/css/app.css" />
 </head>
-<body class="min-h-screen bg-slate-950 text-slate-100">
+<body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
   <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-    <div class="absolute -left-24 top-0 h-80 w-80 rounded-full bg-emerald-500/10 blur-3xl"></div>
-    <div class="absolute -right-16 bottom-10 h-96 w-96 rounded-full bg-sky-500/10 blur-3xl"></div>
-    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(15,23,42,0)_0%,_rgba(2,6,23,0.9)_70%)]"></div>
+    <div class="landing-dots absolute inset-0 opacity-60"></div>
+    <div class="landing-orb absolute -left-24 -top-10 h-[22rem] w-[22rem] rounded-full bg-emerald-500/14 blur-3xl"></div>
+    <div class="landing-orb landing-orb-delay absolute -right-16 top-36 h-[20rem] w-[20rem] rounded-full bg-sky-500/10 blur-3xl"></div>
+    <div class="absolute bottom-0 left-1/3 h-52 w-52 rounded-full bg-violet-500/8 blur-3xl"></div>
   </div>
 
-  <header class="border-b border-slate-800/80">
-    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-      <a href="/" class="text-xl tracking-tight text-emerald-400"><strong>ViralizeAI</strong></a>
+  <header class="sticky top-0 z-30 border-b border-slate-800/60 bg-slate-950/75 backdrop-blur-md">
+    <div class="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-2.5">
+      <a href="/" class="text-[13px] tracking-tight text-emerald-400"><strong>ViralizeAI</strong></a>
       <a href="/login"
-        class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
-        Entrar
+        class="rounded-md bg-emerald-500 px-3 py-1.5 text-[12px] font-semibold text-slate-950 transition hover:bg-emerald-400">
+        Entrar no painel
       </a>
     </div>
   </header>
 
   <main>
-    <section class="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:pt-24">
-      <p class="text-sm font-medium uppercase tracking-[0.2em] text-emerald-400/80">Plataforma de conteúdo</p>
-      <h1 class="mt-4 max-w-3xl text-4xl leading-tight text-white sm:text-5xl">
-        <strong>ViralizeAI</strong>
-      </h1>
-      <p class="mt-5 max-w-2xl text-lg leading-relaxed text-slate-300">
-        Busque vídeos e imagens, corte em Reels de até 90s, gere matérias com IA e publique
-        direto nas suas páginas do Facebook.
-      </p>
-      <div class="mt-8 flex flex-wrap gap-3">
-        <a href="/login"
-          class="rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
-          Fazer login
-        </a>
-        <a href="#como-funciona"
-          class="rounded-lg border border-slate-700 px-6 py-3 text-sm font-medium text-slate-200 hover:border-slate-500 hover:text-white">
-          Como funciona
-        </a>
+    <section class="mx-auto grid max-w-5xl items-center gap-10 px-4 pb-12 pt-10 sm:pt-14 lg:grid-cols-[1.08fr_0.92fr] lg:pb-16">
+      <div class="landing-fade">
+        <p class="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-300">
+          Painel de redação
+        </p>
+        <h1 class="mt-4 max-w-md text-[1.65rem] font-semibold leading-snug tracking-tight text-white sm:text-[1.85rem]">
+          Da pauta ao post, com os módulos do <span class="text-emerald-400">ViralizeAI</span>
+        </h1>
+        <p class="mt-3 max-w-md text-[13px] leading-relaxed text-slate-400">
+          Chat de matérias, biblioteca, virais, agenda e Reels — o mesmo sistema do painel, para Páginas do Facebook e Instagram.
+        </p>
+        <div class="mt-5 flex flex-wrap gap-2">
+          <a href="/login"
+            class="rounded-md bg-emerald-500 px-4 py-2 text-[12px] font-semibold text-slate-950 transition hover:bg-emerald-400">
+            Fazer login
+          </a>
+          <a href="#modulos"
+            class="rounded-md border border-slate-700 px-4 py-2 text-[12px] font-medium text-slate-300 transition hover:border-slate-500 hover:text-white">
+            Ver módulos
+          </a>
+        </div>
+        <ul class="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-slate-500">
+          <li class="flex items-center gap-1.5"><span class="h-1 w-1 rounded-full bg-emerald-400"></span>Criar matéria</li>
+          <li class="flex items-center gap-1.5"><span class="h-1 w-1 rounded-full bg-sky-400"></span>Biblioteca</li>
+          <li class="flex items-center gap-1.5"><span class="h-1 w-1 rounded-full bg-amber-400"></span>Virais</li>
+          <li class="flex items-center gap-1.5"><span class="h-1 w-1 rounded-full bg-violet-400"></span>Produção</li>
+        </ul>
+      </div>
+
+      <div class="relative landing-preview">
+        <div class="rounded-xl border border-slate-800/90 bg-slate-900/60 p-3.5 backdrop-blur-md">
+          <div class="mb-2.5 flex items-center justify-between text-[10px] text-slate-500">
+            <span class="font-medium text-slate-300">Criar matéria</span>
+            <span class="rounded-full bg-emerald-500/15 px-1.5 py-px text-emerald-300">chat</span>
+          </div>
+          <div class="space-y-2">
+            <div class="rounded-lg border border-slate-800 bg-slate-950/75 px-2.5 py-2 text-[12px] text-slate-400">
+              Faça uma matéria deste link e agende na Página.
+            </div>
+            <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-2 text-[12px] leading-relaxed text-slate-300">
+              <p class="font-medium text-slate-100">Título e arte prontos</p>
+              <p class="mt-0.5 text-[11px] text-slate-500">Fonte conferida · 3 títulos · agendar em 30 min</p>
+            </div>
+          </div>
+          <div class="mt-3 grid grid-cols-3 gap-1.5 text-center text-[9px] uppercase tracking-wider text-slate-500">
+            <div class="rounded-md border border-slate-800 bg-slate-950/70 px-1.5 py-1.5">Pautas</div>
+            <div class="rounded-md border border-slate-800 bg-slate-950/70 px-1.5 py-1.5">Link</div>
+            <div class="rounded-md border border-slate-800 bg-slate-950/70 px-1.5 py-1.5">Agenda</div>
+          </div>
+        </div>
+        <div class="landing-chip absolute -bottom-3.5 -left-2 hidden rounded-lg border border-slate-800 bg-slate-900/95 px-2.5 py-1 text-[11px] text-slate-400 shadow-lg sm:block">
+          <span class="text-amber-300">Agendada</span> · 12:30
+        </div>
+        <div class="landing-chip absolute -right-1.5 -top-3 hidden rounded-lg border border-slate-800 bg-slate-900/95 px-2.5 py-1 text-[11px] text-slate-400 shadow-lg sm:block">
+          <span class="text-sky-300">Biblioteca</span> · fontes
+        </div>
       </div>
     </section>
 
-    <section id="como-funciona" class="border-t border-slate-800/80 bg-slate-950/60">
-      <div class="mx-auto max-w-6xl px-4 py-16">
-        <h2 class="text-2xl font-semibold text-white">O que o <strong>ViralizeAI</strong> faz</h2>
-        <p class="mt-2 max-w-2xl text-slate-400">
-          Do conteúdo bruto ao post no Facebook, em um fluxo simples.
+    <section id="modulos" class="border-t border-slate-800/70 bg-slate-950/30">
+      <div class="landing-fade-slow mx-auto max-w-5xl px-4 py-12 sm:py-14">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400/80">No painel</p>
+        <h2 class="mt-1.5 text-lg font-semibold tracking-tight text-white">Módulos do sistema</h2>
+        <p class="mt-1.5 max-w-lg text-[12px] leading-relaxed text-slate-500">
+          A mesma navegação depois do login — cada card é uma área real do ViralizeAI.
         </p>
 
-        <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          <article class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400">01</div>
-            <h3 class="mt-3 text-lg font-medium text-white">Buscar</h3>
-            <p class="mt-2 text-sm leading-relaxed text-slate-400">
-              Pexels, YouTube, TikTok ou link direto — encontre o material e baixe.
-            </p>
+        <div class="mt-6 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
+            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-300">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Criar matéria</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Cole um link, peça uma pauta ou escreva do zero. Três títulos, arte e rascunho.</p>
           </article>
-          <article class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400">02</div>
-            <h3 class="mt-3 text-lg font-medium text-white">Cortar</h3>
-            <p class="mt-2 text-sm leading-relaxed text-slate-400">
-              Cortes manuais ou automáticos a cada 90s no formato 9:16 para Reels.
-            </p>
+
+          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
+            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-amber-500/15 text-amber-300">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c4 0 7-3 7-7 0-3-1.5-5.5-4-8-1 3-2.5 4-4 5 0-4-2-7-4-9 0 4-3 6-3 11 0 4.5 3.5 8 8 8Z"/></svg>
+            </div>
+            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Virais</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Assuntos em alta para o público da Página. A IA monta a matéria no tom da marca.</p>
           </article>
-          <article class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400">03</div>
-            <h3 class="mt-3 text-lg font-medium text-white">Matéria com IA</h3>
-            <p class="mt-2 text-sm leading-relaxed text-slate-400">
-              Extrai a fala do vídeo e gera legenda pronta para publicar.
-            </p>
+
+          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
+            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-sky-500/15 text-sky-300">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+            </div>
+            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Matérias salvas</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Edite, remarque e publique. Agenda a cada 30 minutos e variação de título.</p>
           </article>
-          <article class="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400">04</div>
-            <h3 class="mt-3 text-lg font-medium text-white">Publicar</h3>
-            <p class="mt-2 text-sm leading-relaxed text-slate-400">
-              Envie Reels, fotos ou posts de texto nas páginas conectadas.
-            </p>
+
+          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
+            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-violet-500/15 text-violet-300">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            </div>
+            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Biblioteca</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Fontes e posts de sites. Monte a fila do dia e pré-agende sem sair da redação.</p>
+          </article>
+
+          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
+            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-rose-500/15 text-rose-300">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m10 8 6 4-6 4V8Z"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
+            </div>
+            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Conteúdo e produção</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Vídeos, cortes em Reels 9:16 e fila. Do link ao vídeo pronto para a Página.</p>
+          </article>
+
+          <article class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/40 p-3.5">
+            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-300">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v14H4z"/><path d="m4 15 4-4 3 3 3-4 6 6"/></svg>
+            </div>
+            <h3 class="mt-2.5 text-[13px] font-semibold text-white">Páginas e marca</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Conecte a Página, publique e aplique a identidade visual da marca.</p>
           </article>
         </div>
       </div>
     </section>
 
-    <section class="border-t border-slate-800/80">
-      <div class="mx-auto flex max-w-6xl flex-col items-start justify-between gap-6 px-4 py-16 sm:flex-row sm:items-center">
+    <section id="fluxo" class="border-t border-slate-800/70">
+      <div class="mx-auto max-w-5xl px-4 py-12 sm:py-14">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400/80">Rotina</p>
+        <h2 class="mt-1.5 text-lg font-semibold tracking-tight text-white">Como o time usa no dia a dia</h2>
+        <ol class="mt-6 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+          <li class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/35 p-3.5">
+            <span class="text-[10px] font-semibold text-emerald-400">01</span>
+            <h3 class="mt-1.5 text-[13px] font-medium text-white">Pauta</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Biblioteca, virais ou um link colado no chat.</p>
+          </li>
+          <li class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/35 p-3.5">
+            <span class="text-[10px] font-semibold text-emerald-400">02</span>
+            <h3 class="mt-1.5 text-[13px] font-medium text-white">Escrever</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">A IA redige, sugere 3 títulos e monta a arte.</p>
+          </li>
+          <li class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/35 p-3.5">
+            <span class="text-[10px] font-semibold text-emerald-400">03</span>
+            <h3 class="mt-1.5 text-[13px] font-medium text-white">Revisar</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Texto, foto, crédito e tom em Matérias salvas.</p>
+          </li>
+          <li class="landing-card rounded-xl border border-slate-800/90 bg-slate-900/35 p-3.5">
+            <span class="text-[10px] font-semibold text-emerald-400">04</span>
+            <h3 class="mt-1.5 text-[13px] font-medium text-white">Publicar</h3>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-500">Agende a cada 30 min ou publique agora.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="border-t border-slate-800/70 bg-gradient-to-b from-emerald-500/5 to-transparent">
+      <div class="mx-auto flex max-w-5xl flex-col items-start justify-between gap-4 px-4 py-10 sm:flex-row sm:items-center">
         <div>
-          <h2 class="text-2xl font-semibold text-white">Pronto para começar?</h2>
-          <p class="mt-2 text-slate-400">Entre com sua conta e abra a fila de produção.</p>
+          <h2 class="text-base font-semibold text-white">Abra o painel e continue de onde parou</h2>
+          <p class="mt-1 max-w-md text-[12px] text-slate-500">Login leva ao dashboard — matérias, biblioteca, virais e fila no mesmo lugar.</p>
         </div>
         <a href="/login"
-          class="rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
-          Entrar no <strong>ViralizeAI</strong>
+          class="rounded-md bg-emerald-500 px-4 py-2 text-[12px] font-semibold text-slate-950 transition hover:bg-emerald-400">
+          Entrar no ViralizeAI
         </a>
       </div>
     </section>
   </main>
 
-  <footer class="border-t border-slate-800/80">
-    <div class="mx-auto max-w-6xl px-4 py-6 text-sm text-slate-500">
-      <p><strong class="text-emerald-400">ViralizeAI</strong> — busca, corte, matéria e publicação no Facebook.</p>
-      <p class="mt-1 text-xs text-slate-600">Desenvolvido por Erick Vinicius · Versão 1.0</p>
+  <footer class="border-t border-slate-800/70">
+    <div class="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p class="text-[12px]"><strong class="text-emerald-400">ViralizeAI</strong> <span class="text-slate-600">— matérias, biblioteca, virais e publicação.</span></p>
+        <p class="mt-0.5 text-[10px] text-slate-600">Desenvolvido por Erick Vinicius · Versão 2.0</p>
+      </div>
+      <div class="flex flex-wrap gap-x-3.5 gap-y-1 text-[11px] text-slate-600">
+        <a href="/privacidade" class="transition hover:text-slate-300">Privacidade</a>
+        <a href="/termos" class="transition hover:text-slate-300">Termos</a>
+        <a href="/exclusao-dados" class="transition hover:text-slate-300">Exclusão de dados</a>
+        <a href="/login" class="transition hover:text-slate-300">Entrar</a>
+      </div>
     </div>
   </footer>
 </body>
