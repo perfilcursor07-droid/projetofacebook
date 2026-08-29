@@ -146,6 +146,25 @@ function pareceFormatoJmNoticia(texto) {
   );
 }
 
+/** Núcleo factual compartilhado pelo chat e pelos geradores que retornam JSON. */
+function blocoCriteriosMateriaManual({ pesquisa = false } = {}) {
+  const regraFonte = pesquisa
+    ? `- Cruze no mínimo duas fontes independentes sobre o mesmo fato.
+- Acrescente ao menos um elemento factual que não esteja na fonte principal: dado, contexto anterior, decisão documentada, número comparativo ou outro lado.`
+    : `- Use somente o link, texto, legenda ou transcrição fornecidos.
+- Não acrescente contexto de memória. Atribua alegações à publicação quando não houver confirmação independente.`;
+
+  return `CRITÉRIOS EDITORIAIS OBRIGATÓRIOS:
+- Escreva somente com fatos presentes na apuração; nunca use a memória para completar lacunas.
+- Reescreva com estrutura e palavras próprias, sem copiar frases longas nem a organização das fontes.
+${regraFonte}
+- Produza de 3 a 6 parágrafos conforme a quantidade de fatos. Não aumente o texto com repetição ou enrolação.
+- Inclua contexto factual verificável somente quando ele estiver documentado na apuração.
+- Encerre no último fato relevante. Não use opinião, lição moral, oração ou pergunta de engajamento.
+- Não use muletas como “é importante destacar”, “vale ressaltar” ou “reacendeu o debate”.
+- O texto completo publicado deve respeitar o limite de 2.200 caracteres.`;
+}
+
 /**
  * Padrão editorial JM Notícia (Instagram + Facebook) para o chat /materia-manual.
  * pesquisa=true: pode cruzar fontes. pesquisa=false: só o conteúdo extraído.
@@ -227,11 +246,11 @@ function blocoEstiloNewsGospel() {
   return `
 ESTILO NEWS GOSPEL — MINIMATÉRIA (obrigatório):
 1) LEAD: apresente quem/o quê com contexto (nome, o que a pessoa é conhecida por, cidade, ministério, carreira). Uma ou duas frases fortes.
-2) DESENVOLVIMENTO: minimatéria do conteúdo original. Se a fonte for grande, condense preservando os dados principais; se for pequena, complete com contexto real da apuração — sempre no tamanho máximo Face/Insta.
+2) DESENVOLVIMENTO: minimatéria do conteúdo original. Se a fonte for grande, condense preservando os dados principais; se for pequena, use somente o contexto real disponível e entregue uma nota proporcional.
 3) Use no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto quando houver na fonte — introduza com "afirmou", "declarou", "contou", "disse".
 4) FECHAMENTO: encerre no fato / última informação jornalística. PROIBIDO terminar com oração, “Que Deus…”, “Seguimos em oração”, “Amém”, pedido de fé ou as 1–2 últimas linhas só de reflexão espiritual.
 5) TOM: jornalístico + evangélico caloroso. Sem clickbait.
-6) FORMATO: normalmente 5 a 7 parágrafos de 250–400 caracteres, separados por linha em branco (\\n\\n), desenvolvendo os fatos sem repetição. Texto puro. Sem HTML/markdown. Sem emoji obrigatório no final.
+6) FORMATO: de 3 a 6 parágrafos, conforme a densidade dos fatos, separados por linha em branco (\\n\\n). Texto puro, sem HTML/markdown, repetição ou emoji obrigatório no final.
 7) PROIBIDO: colar a fonte inteira; inventar citações; "não perca", "assista até o final", "compartilhe com quem precisa".
 8) NÃO coloque bloco de "Fontes:" / "Fonte:" / créditos no JSON — o sistema anexa créditos automaticamente (uma vez só).
 9) VOZ PRÓPRIA — NÃO COMENTE A FONTE: escreva a NOTÍCIA como reportagem nossa, nunca como resenha do que outro site publicou.
@@ -1350,7 +1369,7 @@ DIRETRIZES FACEBOOK + INSTAGRAM / MINIMATÉRIA:
 - NÃO invente fatos, números, datas, igrejas, pastores, locais, cargos nem declarações.
 - Se um detalhe NÃO estiver nas fontes documentadas: omita ou generalize (“segundo informações divulgadas”) — nunca preencha com “conhecimento geral” duvidoso.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
-- Formato: normalmente 5 a 7 parágrafos de 250–400 caracteres, separados por linha em branco (\\n\\n), sem repetição.
+- Formato: de 3 a 6 parágrafos conforme a densidade dos fatos, separados por linha em branco (\\n\\n), sem repetição ou preenchimento artificial.
 - Gancho forte nos primeiros ~120 caracteres (quem + fato).
 - 3 a 5 hashtags no campo hashtags, SEM espaços internos, sem # no valor.
 - Muletas PROIBIDAS: ${FRASES_PROIBIDAS_IA.slice(0, 22).map((f) => `"${f}"`).join(', ')}…
@@ -1414,6 +1433,7 @@ module.exports = {
   blocoRegrasFacebookBase,
   blocoRegrasFacebookVariavel,
   blocoEstiloNewsGospel,
+  blocoCriteriosMateriaManual,
   blocoEstiloJmNoticia,
   pareceFormatoJmNoticia,
   mensagemAvisoQualidade,

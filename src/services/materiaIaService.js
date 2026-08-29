@@ -2432,6 +2432,7 @@ async function gerarMateriaManual({
           return !urlBase || !url || url !== urlBase;
         }),
       ];
+      fontesPesquisa = priorizarFontesIndependentes(fontesPesquisa, 6);
     }
 
     if (!fontesPesquisa.length) {
@@ -3313,6 +3314,32 @@ function normalizarUrlFonte(url) {
   }
 }
 
+function dominioDaFonte(url) {
+  try {
+    return new URL(String(url || '').trim()).hostname.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/** Mantém a fonte principal primeiro e prioriza veículos independentes antes de repetir um domínio. */
+function priorizarFontesIndependentes(fontes, max = 6) {
+  const independentes = [];
+  const repetidas = [];
+  const dominios = new Set();
+  for (const fonte of Array.isArray(fontes) ? fontes : []) {
+    if (!fonte) continue;
+    const dominio = dominioDaFonte(fonte.url);
+    if (!dominio || !dominios.has(dominio)) {
+      independentes.push(fonte);
+      if (dominio) dominios.add(dominio);
+    } else {
+      repetidas.push(fonte);
+    }
+  }
+  return [...independentes, ...repetidas].slice(0, Math.max(1, Number(max) || 6));
+}
+
 /**
  * Pesquisa na web (Google News + Brave + leitura das páginas) e devolve fatos reais
  * com veículo, URL e trecho. Base do enriquecimento e da matéria manual pesquisada.
@@ -3493,6 +3520,10 @@ async function coletarFatosNaWeb({
       dataTimestamp: Number(f.dataTimestamp) || 0,
       ...(f.ehRedeSocial || f.redeSocial ? { ehRedeSocial: true } : {}),
     });
+  }
+
+  function totalDominiosIndependentes() {
+    return new Set(fontes.map((fonte) => dominioDaFonte(fonte.url)).filter(Boolean)).size;
   }
 
   // Reserva parte da cota para redes sociais: sem isso, as notícias enchem o
@@ -3734,7 +3765,7 @@ async function coletarFatosNaWeb({
   }
 
   // 2) Fallback: busca complementar (Brave/Serper + scrape)
-  if (fontes.length < 2) {
+  if (totalDominiosIndependentes() < 2) {
     for (const q of queries.slice(0, 2)) {
       try {
         emitir({ tipo: 'buscando', consulta: q, complementar: true, periodo: rotulo });
@@ -3763,7 +3794,7 @@ async function coletarFatosNaWeb({
   }
 
   // 3) Snippets brutos se ainda faltar volume
-  if (fontes.length < 2 && queries[0]) {
+  if (totalDominiosIndependentes() < 2 && queries[0]) {
     try {
       const when = whenParaGoogle(cfgPeriodo);
       const brutos = [
@@ -3811,7 +3842,7 @@ async function coletarFatosNaWeb({
     }
   }
 
-  const resultado = fontes.slice(0, limite);
+  const resultado = priorizarFontesIndependentes(fontes, limite);
   if (foraDoTema) emitir({ tipo: 'fora-do-tema', total: foraDoTema });
   emitir({
     tipo: 'fontes',
@@ -4007,6 +4038,7 @@ async function enriquecerMateriaComWeb({
 }
 
 module.exports = {
+  priorizarFontesIndependentes,
   pesquisarNichos,
   buscarEmAltaAgora,
   marcarJaPublicados,

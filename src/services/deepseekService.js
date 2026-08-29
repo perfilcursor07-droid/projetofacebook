@@ -18,6 +18,7 @@ const {
   mensagemAvisoQualidade,
   quebrarEmParagrafos,
   blocoEstiloNewsGospel,
+  blocoCriteriosMateriaManual,
   blocoEstiloJmNoticia,
 } = require('./editorialGuidelinesFb');
 
@@ -554,7 +555,7 @@ ${blocoEstiloNewsGospel()}
 Regras obrigatórias:
 - NÃO cole a transcrição/legenda inteira nem parafraseie frase a frase.
 - DEIXE no máximo 3 falas literais entre aspas ("…"), cada uma em parágrafo próprio de até 2 linhas (~90 caracteres), só as importantes para o contexto quando houver na fonte — exatamente como foram ditas.
-- FORMATO: normalmente 5 a 7 parágrafos de 250–400 caracteres, separados por linha em branco, sem repetição.
+- FORMATO: de 3 a 6 parágrafos conforme a densidade dos fatos, separados por linha em branco, sem repetição ou preenchimento artificial.
 - Não invente fatos, números, nomes ou falas que não estejam na fonte.
 - Sem clickbait, sem pedir like/compartilhar/"não perca"/"assista até o final".
 - Inclua 3 a 5 hashtags relevantes no campo hashtags (sem # no valor).
@@ -706,6 +707,7 @@ async function gerarMateriaImagem({
   const userContent = [
     'Crie uma matéria ORIGINAL estilo News Gospel para um post de FOTO no Facebook.',
     'O usuário forneceu as informações abaixo — use SOMENTE esses fatos (não invente nomes, números nem citações).',
+    blocoCriteriosMateriaManual({ pesquisa: false }),
     fatos
       ? `INFORMAÇÕES FORNECIDAS PELO USUÁRIO (base factual):\n${fatos.slice(0, 5000)}`
       : null,
@@ -715,10 +717,10 @@ async function gerarMateriaImagem({
     termo ? `Termo / contexto extra: ${termo}` : null,
     descricaoImagem ? `Descrição da imagem enviada: ${descricaoImagem}` : null,
     autor ? `Autor da foto (crédito se fizer sentido): ${autor}` : null,
-    'ESTRUTURA: lead com quem + fato → desenvolvimento com detalhes das infos → encerre no fato (sem oração final).',
+    'ESTRUTURA: lead com quem + fato → desenvolvimento factual em 3 a 6 parágrafos → encerre no último fato relevante.',
     'Título próprio, curto e chamativo (máx. 110 chars) — baseado nas infos, sem clickbait mentiroso.',
     blocoMarca,
-    'Parágrafos curtos com linha em branco. Alvo: 1750–1950 caracteres; nunca ultrapasse 2050 contando as hashtags.',
+    'Parágrafos curtos com linha em branco. Se houver poucos fatos, entregue uma nota proporcional em vez de preencher espaço.',
     'NÃO inclua bloco Fontes:/créditos no campo materia — o sistema anexa depois.',
     'Responda JSON: {"titulo":"...","materia":"...","hashtags":["..."]}',
   ]
@@ -3035,6 +3037,8 @@ async function gerarMateriaComPesquisa({
 
 ${blocoEstiloNewsGospel()}
 
+${blocoCriteriosMateriaManual({ pesquisa: true })}
+
 REGRA DE OURO — só fato real:
 - Use apenas o que estiver no pedido do usuário e nos TRECHOS DAS FONTES.
 - É PROIBIDO inventar números, pesquisas, datas, cargos ou falas.
@@ -3049,7 +3053,7 @@ ANTI-PLÁGIO:
 ESTRUTURA:
 - Título próprio, curto e chamativo (máx. 110 chars), sem clickbait mentiroso.
 - Lead com o fato central → desenvolvimento com os dados e falas apuradas → fechamento no fato (sem oração final).
-- Parágrafos curtos separados por linha em branco. Alvo: 1750–1950 caracteres; máximo de 2050 com hashtags.
+- Corpo com 3 a 6 parágrafos curtos separados por linha em branco. Não alongue uma apuração curta com repetição ou contexto sem fonte.
 - NÃO inclua bloco "Fontes:" nem URLs no campo materia — o sistema anexa "Fonte: Globo, UOL" depois.
 ${blocoMarca ? `\n${blocoMarca}\n` : ''}
 Responda APENAS JSON: {"titulo":"...","materia":"...","hashtags":["..."],"fatosUsados":["fato + veículo"],"aviso":""}`,

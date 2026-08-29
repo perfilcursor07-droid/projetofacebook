@@ -1,9 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
+  blocoCriteriosMateriaManual,
   blocoEstiloJmNoticia,
 } = require('../src/services/editorialGuidelinesFb');
+const { priorizarFontesIndependentes } = require('../src/services/materiaIaService');
 
 test('prompt da matéria manual exige redação original e fatos somente da apuração', () => {
   const prompt = blocoEstiloJmNoticia({ pesquisa: true });
@@ -32,3 +36,54 @@ test('prompt preserva rodapé, hashtags e chamada do JM sem fechamento opinativo
   assert.match(prompt, /não recuse escrever/i);
 });
 
+test('critérios compartilhados distinguem pesquisa ligada e desligada', () => {
+  const comPesquisa = blocoCriteriosMateriaManual({ pesquisa: true });
+  const semPesquisa = blocoCriteriosMateriaManual({ pesquisa: false });
+
+  assert.match(comPesquisa, /duas fontes independentes/i);
+  assert.match(comPesquisa, /elemento factual que não esteja na fonte principal/i);
+  assert.match(semPesquisa, /somente o link, texto, legenda ou transcrição/i);
+  assert.match(semPesquisa, /não acrescente contexto de memória/i);
+  for (const prompt of [comPesquisa, semPesquisa]) {
+    assert.match(prompt, /3 a 6 parágrafos/i);
+    assert.match(prompt, /2\.200 caracteres/i);
+    assert.match(prompt, /lição moral, oração ou pergunta de engajamento/i);
+    assert.match(prompt, /reacendeu o debate/i);
+  }
+});
+
+test('geradores direto e pesquisado recebem os critérios editoriais compartilhados', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'services', 'deepseekService.js'),
+    'utf8'
+  );
+
+  assert.match(source, /blocoCriteriosMateriaManual\(\{ pesquisa: false \}\)/);
+  assert.match(source, /blocoCriteriosMateriaManual\(\{ pesquisa: true \}\)/);
+});
+
+test('apuração prioriza fontes de domínios independentes', () => {
+  const fontes = priorizarFontesIndependentes([
+    { url: 'https://portal-a.test/noticia-principal', titulo: 'Principal' },
+    { url: 'https://portal-a.test/contexto', titulo: 'Mesmo portal' },
+    { url: 'https://portal-b.test/confirmacao', titulo: 'Fonte independente' },
+  ]);
+
+  assert.deepEqual(fontes.map((fonte) => fonte.titulo), [
+    'Principal',
+    'Fonte independente',
+    'Mesmo portal',
+  ]);
+});
+
+test('Mais lidas possui agrupamento e filtro por fonte', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'js', 'materia-chat-extras.js'),
+    'utf8'
+  );
+
+  assert.match(source, /Filtrar matérias mais lidas por fonte/);
+  assert.match(source, /mia-x-source-group/);
+  assert.match(source, /aplicarFiltroFonte/);
+  assert.match(source, /Todas as fontes/);
+});

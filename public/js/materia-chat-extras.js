@@ -86,6 +86,27 @@
       background: rgba(16,185,129,.12); color: #6ee7b7;
       font-size: .65rem; font-weight: 500;
     }
+    .mia-x-source-filter {
+      display: flex; flex-wrap: wrap; gap: .35rem; margin: .65rem 0 .55rem;
+      padding-bottom: .55rem; border-bottom: 1px solid #1e293b;
+    }
+    .mia-x-source-filter button {
+      display: inline-flex; align-items: center; gap: .35rem;
+      border: 1px solid #334155; border-radius: .5rem; background: rgba(15,23,42,.55);
+      padding: .3rem .55rem; color: #94a3b8; font-size: .68rem; font-weight: 600;
+      cursor: pointer; transition: border-color .15s, color .15s, background .15s;
+    }
+    .mia-x-source-filter button:hover { border-color: rgba(16,185,129,.55); color: #e2e8f0; }
+    .mia-x-source-filter button.is-active {
+      border-color: rgba(16,185,129,.75); background: rgba(16,185,129,.12); color: #a7f3d0;
+    }
+    .mia-x-source-filter-count {
+      min-width: 1.15rem; border-radius: 999px; background: rgba(100,116,139,.2);
+      padding: .05rem .3rem; text-align: center; color: #cbd5e1; font-size: .62rem;
+    }
+    .mia-x-source-filter button.is-active .mia-x-source-filter-count {
+      background: rgba(16,185,129,.22); color: #d1fae5;
+    }
     .mia-x-bases {
       margin: .55rem 0 .7rem; padding: .55rem .65rem;
       border-left: 2px solid rgba(244,63,94,.65); background: rgba(136,19,55,.08);
@@ -133,6 +154,15 @@
     .mia-x-lote-save:disabled { opacity: .55; cursor: default; }
 
     .mia-x-alta-list { display: flex; flex-direction: column; gap: .5rem; }
+    .mia-x-source-group { display: flex; flex-direction: column; gap: .5rem; }
+    .mia-x-source-group + .mia-x-source-group { margin-top: .55rem; }
+    .mia-x-source-group[hidden] { display: none; }
+    .mia-x-source-head {
+      display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+      margin: 0; padding: .55rem .1rem .25rem; color: #e2e8f0;
+      font-size: .75rem; font-weight: 700;
+    }
+    .mia-x-source-head-count { color: #64748b; font-size: .65rem; font-weight: 500; }
     .mia-x-card {
       display: flex; gap: .6rem; width: 100%; text-align: left;
       border: 1px solid #1e293b; border-radius: .75rem; background: rgba(15,23,42,.55);
@@ -384,14 +414,24 @@
 
   function textoPedidoTopicosSelecionados(topicos = []) {
     const lista = (Array.isArray(topicos) ? topicos : []).filter(Boolean);
+    const regras = [
+      'Use somente fatos presentes na apuração; nunca complete pela memória.',
+      'Reescreva com estrutura e palavras próprias, sem copiar a fonte.',
+      'Com a pesquisa ligada, cruze no mínimo duas fontes independentes e acrescente um elemento factual adicional.',
+      'Produza de 3 a 6 parágrafos, sem enrolação, e inclua contexto factual verificável.',
+      'Não encerre com opinião, lição moral, oração ou pergunta de engajamento.',
+      'Não use muletas como “é importante destacar” ou “reacendeu o debate”.',
+      'O texto completo deve respeitar o limite de 2.200 caracteres.',
+    ];
     if (lista.length <= 1) {
       const topico = lista[0] || {};
       return [
-        'Escreva uma matéria sobre este assunto que está em alta agora, com furo de reportagem, texto totalmente original e sem plagiar:',
+        'Escreva uma matéria jornalística sobre este assunto que está em alta agora:',
         `Título: ${topico.titulo || ''}`,
         `Veículo: ${topico.veiculo || ''}`,
         `Link: ${topico.url || ''}`,
-        'Pesquise também mais informações recentes sobre esse assunto para acrescentar contexto e dados novos.',
+        '',
+        ...regras,
       ].join('\n');
     }
 
@@ -408,14 +448,13 @@
     );
 
     return [
-      `Escreva ${lista.length} matérias, uma para cada assunto selecionado em alta agora, com furo de reportagem, texto totalmente original e sem plagiar.`,
+      `Escreva ${lista.length} matérias jornalísticas, uma para cada assunto selecionado em alta agora.`,
       `Limite obrigatório: escreva exatamente ${lista.length} matérias e pare na MATERIA ${lista.length}. Não crie assunto extra, variação, resumo adicional nem continuação.`,
       'Entregue tudo na mesma resposta. Separe cada texto com "### MATERIA n", seguido do título, corpo e hashtags daquela matéria.',
       'Não misture os fatos: cada matéria deve usar o assunto/link correspondente como base principal.',
+      ...regras,
       '',
       ...blocos,
-      '',
-      'Pesquise também mais informações recentes sobre cada assunto para acrescentar contexto e dados novos.',
     ].join('\n');
   }
 
@@ -746,18 +785,6 @@
       box.appendChild(bases);
     }
 
-    if (maisLidas && Array.isArray(data.fontes) && data.fontes.length) {
-      const chips = document.createElement('div');
-      chips.className = 'mia-x-temas';
-      data.fontes.forEach((fonte) => {
-        const chip = document.createElement('span');
-        chip.className = 'mia-x-tema';
-        chip.textContent = fonte.nome;
-        chips.appendChild(chip);
-      });
-      box.appendChild(chips);
-    }
-
     if (!maisLidas && !paraPublico && !paginaFacebook && temas.length) {
       const chips = document.createElement('div');
       chips.className = 'mia-x-temas';
@@ -800,6 +827,48 @@
       const selecionados = new Map();
       const itens = [];
       const limiteSelecao = paginaFacebook ? topicos.length : Math.min(MAX_TOPICOS_LOTE, topicos.length);
+      const nomeFonte = (topico) => String(topico?.veiculo || topico?.fonteNome || 'Web').trim() || 'Web';
+      const contagemPorFonte = new Map();
+      const gruposFonte = new Map();
+      let ordemFontes = [];
+      let fonteAtiva = '*';
+      const botoesFonte = [];
+
+      if (maisLidas) {
+        topicos.forEach((topico) => {
+          const nome = nomeFonte(topico);
+          contagemPorFonte.set(nome, (contagemPorFonte.get(nome) || 0) + 1);
+        });
+
+        const ordemConfigurada = (Array.isArray(data.fontes) ? data.fontes : [])
+          .map((fonte) => String(fonte?.nome || '').trim())
+          .filter((nome, indice, nomes) => nome && contagemPorFonte.has(nome) && nomes.indexOf(nome) === indice);
+        const ordemRestante = [...contagemPorFonte.keys()].filter((nome) => !ordemConfigurada.includes(nome));
+        ordemFontes = [...ordemConfigurada, ...ordemRestante];
+        const filtros = document.createElement('div');
+        filtros.className = 'mia-x-source-filter';
+        filtros.setAttribute('aria-label', 'Filtrar matérias mais lidas por fonte');
+
+        const criarFiltro = (valor, rotulo, total) => {
+          const botaoFonte = document.createElement('button');
+          botaoFonte.type = 'button';
+          botaoFonte.dataset.fonte = valor;
+          botaoFonte.setAttribute('aria-pressed', valor === '*' ? 'true' : 'false');
+          const texto = document.createElement('span');
+          texto.textContent = rotulo;
+          const contador = document.createElement('span');
+          contador.className = 'mia-x-source-filter-count';
+          contador.textContent = String(total);
+          botaoFonte.append(texto, contador);
+          botaoFonte.addEventListener('click', () => aplicarFiltroFonte(valor));
+          botoesFonte.push(botaoFonte);
+          filtros.appendChild(botaoFonte);
+        };
+
+        criarFiltro('*', 'Todas as fontes', topicos.length);
+        ordemFontes.forEach((nome) => criarFiltro(nome, nome, contagemPorFonte.get(nome) || 0));
+        box.appendChild(filtros);
+      }
 
       const lote = document.createElement('div');
       lote.className = 'mia-x-lote';
@@ -830,8 +899,39 @@
 
       let salvando = false;
 
+      function itensVisiveis() {
+        if (!maisLidas || fonteAtiva === '*') return itens;
+        return itens.filter((item) => item.fonte === fonteAtiva);
+      }
+
+      function limparSelecaoAtual() {
+        selecionados.clear();
+        itens.forEach((item) => {
+          item.input.checked = false;
+          item.card.classList.remove('is-selected');
+        });
+      }
+
+      function aplicarFiltroFonte(fonte) {
+        if (!maisLidas) return;
+        fonteAtiva = fonte || '*';
+        gruposFonte.forEach((grupo, nome) => {
+          grupo.hidden = fonteAtiva !== '*' && nome !== fonteAtiva;
+        });
+        botoesFonte.forEach((botaoFonte) => {
+          const ativo = botaoFonte.dataset.fonte === fonteAtiva;
+          botaoFonte.classList.toggle('is-active', ativo);
+          botaoFonte.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+        });
+        limparSelecaoAtual();
+        atualizarLote();
+      }
+
       function atualizarLote() {
         const total = selecionados.size;
+        const totalVisivel = itensVisiveis().length;
+        const limiteVisivel = paginaFacebook ? totalVisivel : Math.min(MAX_TOPICOS_LOTE, totalVisivel);
+        const complementoFonte = maisLidas && fonteAtiva !== '*' ? ` de ${fonteAtiva}` : '';
         salvar.disabled = total === 0 || salvando;
         salvar.textContent = salvando
           ? 'Criando rascunhos...'
@@ -850,7 +950,7 @@
           ? 'Limpar seleção'
           : paginaFacebook
             ? `Selecionar todos (${topicos.length})`
-            : `Selecionar até ${limiteSelecao}`;
+            : `Selecionar até ${limiteVisivel}${complementoFonte}`;
       }
 
       selecionar.addEventListener('click', () => {
@@ -864,13 +964,15 @@
           return;
         }
 
-        itens.forEach((item, indice) => {
-          const marcar = indice < limiteSelecao;
+        const visiveis = itensVisiveis();
+        const limiteVisivel = paginaFacebook ? visiveis.length : Math.min(MAX_TOPICOS_LOTE, visiveis.length);
+        visiveis.forEach((item, indice) => {
+          const marcar = indice < limiteVisivel;
           item.input.checked = marcar;
           item.card.classList.toggle('is-selected', marcar);
           if (marcar) selecionados.set(item.key, item.topico);
         });
-        if (!paginaFacebook && itens.length > limiteSelecao) {
+        if (!paginaFacebook && visiveis.length > limiteVisivel) {
           setStatus(`Selecionei os ${MAX_TOPICOS_LOTE} primeiros assuntos. Gere esse lote e depois escolha mais.`);
         }
         atualizarLote();
@@ -923,7 +1025,30 @@
       const lista = document.createElement('div');
       lista.className = 'mia-x-alta-list';
 
+      if (maisLidas) {
+        ordemFontes.forEach((nome) => {
+          const grupo = document.createElement('section');
+          grupo.className = 'mia-x-source-group';
+          grupo.dataset.fonte = nome;
+          const cabecalho = document.createElement('h3');
+          cabecalho.className = 'mia-x-source-head';
+          const rotulo = document.createElement('span');
+          rotulo.textContent = nome;
+          const contador = document.createElement('span');
+          contador.className = 'mia-x-source-head-count';
+          contador.textContent = `${contagemPorFonte.get(nome) || 0} pauta(s)`;
+          cabecalho.append(rotulo, contador);
+          const itensGrupo = document.createElement('div');
+          itensGrupo.className = 'mia-x-alta-list';
+          grupo.append(cabecalho, itensGrupo);
+          gruposFonte.set(nome, grupo);
+          grupo._itens = itensGrupo;
+          lista.appendChild(grupo);
+        });
+      }
+
       topicos.forEach((t, i) => {
+        const fonteDoTopico = nomeFonte(t);
         const key = t.url || `${i}:${t.titulo || ''}:${t.veiculo || ''}`;
         const card = document.createElement('article');
         card.className = 'mia-x-card';
@@ -938,7 +1063,7 @@
 
         const pos = document.createElement('span');
         pos.className = 'mia-x-card-pos';
-        pos.textContent = String(i + 1);
+        pos.textContent = String(maisLidas && t.posicao ? t.posicao : i + 1);
         card.appendChild(pos);
 
         if (t.imagem) {
@@ -1041,11 +1166,13 @@
           check.dispatchEvent(new Event('change', { bubbles: true }));
         });
 
-        itens.push({ input: check, card, key, topico: t });
-        lista.appendChild(card);
+        itens.push({ input: check, card, key, topico: t, fonte: fonteDoTopico });
+        const grupo = maisLidas ? gruposFonte.get(fonteDoTopico) : null;
+        (grupo?._itens || lista).appendChild(card);
       });
 
-      atualizarLote();
+      if (maisLidas) aplicarFiltroFonte('*');
+      else atualizarLote();
       box.appendChild(lista);
     }
 
