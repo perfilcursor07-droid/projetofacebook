@@ -923,6 +923,7 @@ function buildOverlay({
   const baseMaxChars = modelId === 'estilo_fatos' || modelId === 'citacao_marcador' ? 30
     : modelId === 'faixa_classica' || modelId === 'impacto_central' ? 27
     : modelId === 'minimalista' || modelId === 'faixa_topo' ? 25
+    : modelId === 'painel_premium' ? 24
     : modelId === 'urgente_alerta' ? 22
     : modelId === 'jm' ? 23
     : 24;
@@ -930,19 +931,31 @@ function buildOverlay({
   const isCitacao = modelId === 'citacao_marcador';
   const isUrgente = modelId === 'urgente_alerta';
   const isJm = modelId === 'jm';
+  const isPainelPremium = modelId === 'painel_premium';
   // tamanho escolhido em Minha marca (30–50, padrão 43), escalado ao canvas
-  let fontSize = Math.round((sizeMeta?.px || 43) * Math.min(sx, sy) * (isCitacao ? 1.12 : 1));
+  let fontSize = Math.round(
+    (sizeMeta?.px || 43) * Math.min(sx, sy) * (isCitacao ? 1.12 : isPainelPremium ? 1.34 : 1)
+  );
   let lineHeight = Math.round(fontSize * (modelId === 'estilo_fatos' || isCitacao ? 1.14 : 1.08));
   const safeCategory = escapeXml(category || 'ÚLTIMAS');
   const safeFooter = escapeXml(footer || brandName || '');
 
   // Quebra por largura real + reduz fonte se ainda passar (evita corte nas laterais).
-  const textMaxW = W - ww(modelId === 'bloco_inferior' || modelId === 'barra_lateral' || modelId === 'canto_solido' || modelId === 'minimalista' ? 160 : 120);
+  const textMaxW = W - ww(
+    isPainelPremium
+      ? 330
+      : modelId === 'bloco_inferior' || modelId === 'barra_lateral' || modelId === 'canto_solido' || modelId === 'minimalista'
+        ? 160
+        : 120
+  );
   let lines = [];
   if (!isCitacao && !isUrgente && !isJm) {
-    const titleUpper = String(title || '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
+    const titleUpper = String(title || '').replace(/\s+/g, ' ').trim();
+    const titleForWrap = isPainelPremium
+      ? titleUpper
+      : titleUpper.toLocaleUpperCase('pt-BR');
     for (let attempt = 0; attempt < 8; attempt += 1) {
-      lines = wrapTextToWidth(titleUpper, {
+      lines = wrapTextToWidth(titleForWrap, {
         maxWidth: textMaxW,
         fontSize,
         maxLines: 5,
@@ -1211,6 +1224,44 @@ function buildOverlay({
         markFill: primary,
       })}
       <text x="${x(540)}" y="${y(g.footerY)}" text-anchor="middle" class="footer-jm">${safeFooter.toLocaleUpperCase('pt-BR')}</text>`;
+  } else if (isPainelPremium) {
+    const panelX = x(42);
+    const panelY = y(770);
+    const panelW = W - ww(84);
+    const panelH = hh(500);
+    const logoBadgeX = x(70);
+    const logoBadgeY = y(706);
+    const logoBadgeW = ww(350);
+    const logoBadgeH = hh(118);
+    const titleTop = y(lines.length >= 5 ? 935 : lines.length === 4 ? 955 : 980);
+    const footerText = safeFooter || escapeXml(brandName || 'NOTÍCIAS');
+
+    layout = `
+      <defs>
+        <linearGradient id="premiumPanel" x1="0" y1="0" x2="1" y2=".25">
+          <stop offset="0%" stop-color="#07152f" stop-opacity=".98"/>
+          <stop offset="72%" stop-color="#102657" stop-opacity=".96"/>
+          <stop offset="100%" stop-color="#152e66" stop-opacity=".9"/>
+        </linearGradient>
+        <linearGradient id="premiumGlow" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stop-color="${primary}" stop-opacity=".78"/>
+          <stop offset="100%" stop-color="${degrade ? secondary : primary}" stop-opacity=".96"/>
+        </linearGradient>
+        <filter id="premiumShadow" x="-20%" y="-30%" width="140%" height="170%">
+          <feDropShadow dx="0" dy="${hh(12)}" stdDeviation="${ww(18)}" flood-color="#020617" flood-opacity=".48"/>
+        </filter>
+      </defs>
+      <path d="M ${panelX + ww(34)} ${panelY} H ${panelX + panelW - ww(170)} L ${panelX + panelW} ${panelY + hh(166)} V ${panelY + panelH - hh(34)} Q ${panelX + panelW} ${panelY + panelH} ${panelX + panelW - ww(34)} ${panelY + panelH} H ${panelX + ww(34)} Q ${panelX} ${panelY + panelH} ${panelX} ${panelY + panelH - hh(34)} V ${panelY + hh(34)} Q ${panelX} ${panelY} ${panelX + ww(34)} ${panelY} Z" fill="url(#premiumPanel)" filter="url(#premiumShadow)"/>
+      <path d="M ${x(770)} ${panelY} H ${x(910)} L ${W} ${panelY + hh(150)} V ${panelY + panelH} H ${x(820)} L ${x(690)} ${panelY + hh(330)} Z" fill="url(#premiumGlow)" opacity=".82"/>
+      <circle cx="${x(980)}" cy="${y(882)}" r="${ww(146)}" fill="none" stroke="${secondary}" stroke-width="${ww(34)}" opacity=".34"/>
+      <circle cx="${x(906)}" cy="${y(1195)}" r="${ww(92)}" fill="${primary}" opacity=".18"/>
+      <path d="M ${x(790)} ${y(1238)} L ${x(1032)} ${y(996)}" stroke="rgba(255,255,255,.22)" stroke-width="${ww(3)}"/>
+      <rect x="${logoBadgeX}" y="${logoBadgeY}" width="${logoBadgeW}" height="${logoBadgeH}" rx="${hh(58)}" fill="url(#accent)" stroke="rgba(255,255,255,.5)" stroke-width="${ww(2)}" filter="url(#premiumShadow)"/>
+      ${hasLogo ? '' : `<text x="${logoBadgeX + Math.round(logoBadgeW / 2)}" y="${logoBadgeY + Math.round(logoBadgeH * .67)}" text-anchor="middle" class="brand-premium">${escapeXml(brandName || 'SUA MARCA')}</text>`}
+      <text x="${x(88)}" y="${y(855)}" text-anchor="start" class="category-premium">${safeCategory}</text>
+      ${renderTitleLines(lines, { x: x(88), y: titleTop, lineHeight, anchor: 'start', className: 'title-premium' })}
+      <rect x="${x(88)}" y="${y(1230)}" width="${ww(92)}" height="${hh(7)}" rx="${hh(4)}" fill="url(#accent)"/>
+      <text x="${x(198)}" y="${y(1242)}" text-anchor="start" class="footer-premium">${footerText}</text>`;
   } else if (modelId === 'estilo_fatos') {
     const titleTop = y(fatosTitleTopBase(lines.length));
     layout = `
@@ -1294,7 +1345,7 @@ function buildOverlay({
       const brandY = y(fatosTitleTopBase(lines.length) - 95);
       fallbackBrand = `
         <text x="${x(540)}" y="${brandY}" text-anchor="middle" class="brand-fatos">${escapeXml(brandLabel)}</text>`;
-    } else if (modelId === 'citacao_marcador' || isUrgente || isJm) {
+    } else if (modelId === 'citacao_marcador' || isUrgente || isJm || isPainelPremium) {
       // Sem placa de marca no topo: a faixa/divisor já ocupa esse espaço.
       fallbackBrand = '';
     } else {
@@ -1305,7 +1356,12 @@ function buildOverlay({
   }
 
   // JM escurece a foto de baixo para cima: a manchete branca vive sobre a imagem.
-  const shadeStops = modelId === 'estilo_fatos' || isUrgente || isJm
+  const shadeStops = isPainelPremium
+    ? `
+          <stop offset="0%" stop-color="#000" stop-opacity=".02"/>
+          <stop offset="55%" stop-color="#000" stop-opacity=".08"/>
+          <stop offset="100%" stop-color="#000" stop-opacity=".3"/>`
+    : modelId === 'estilo_fatos' || isUrgente || isJm
     ? `
           <stop offset="0%" stop-color="#000" stop-opacity="0"/>
           <stop offset="38%" stop-color="#000" stop-opacity="0"/>
@@ -1362,6 +1418,10 @@ function buildOverlay({
           .title-mark { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${punchFontCssFinal}px; fill: #111111; filter: none; }
           .title-jm { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${headFontCss}px; fill: #ffffff; filter: url(#shadow); }
           .brand-jm { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(26 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(2 * sx))}px; fill: #111827; }
+          .brand-premium { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(30 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(1.5 * sx))}px; fill: #07152f; }
+          .category-premium { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 800; font-size: ${Math.round(25 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(2, Math.round(3 * sx))}px; fill: ${primary}; }
+          .title-premium { font-family: ${titleFontFamily}; font-weight: 900; font-size: ${fontSize}px; fill: #ffffff; filter: url(#shadow); }
+          .footer-premium { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 700; font-size: ${Math.round(24 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(1.2 * sx))}px; fill: #dbeafe; }
           .footer-jm { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(2, Math.round(3 * sx))}px; fill: ${primary}; filter: url(#shadow); }
           .footer { font-family: Arial, 'Segoe UI', sans-serif; font-weight: 900; font-size: ${Math.round(34 * Math.min(sx, sy))}px; letter-spacing: ${Math.max(1, Math.round(1 * sx))}px; fill: ${primary}; filter: url(#shadow); }
         </style>
@@ -1451,8 +1511,9 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
   const isCitacao = modelId === 'citacao_marcador';
   const isUrgente = modelId === 'urgente_alerta';
   const isJm = modelId === 'jm';
-  const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : isUrgente ? 330 : isJm ? 186 : 560) / 1080));
-  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : isUrgente ? 130 : isJm ? 40 : 125) / 1080));
+  const isPainelPremium = modelId === 'painel_premium';
+  const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : isUrgente ? 330 : isJm ? 186 : isPainelPremium ? 270 : 560) / 1080));
+  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : isUrgente ? 130 : isJm ? 40 : isPainelPremium ? 78 : 125) / 1080));
   const input = await sharp(absolute)
     .resize(maxW, maxH, { fit: 'inside', withoutEnlargement: true })
     .png()
@@ -1479,11 +1540,24 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
     const barTop = Math.round(g.barTop * syJm);
     const barH = Math.round(g.barHeight * syJm);
     top = barTop + Math.round(barH / 2) - Math.round(input.info.height / 2);
+  } else if (isPainelPremium) {
+    const syPremium = ch / 1350;
+    const badgeTop = Math.round(706 * syPremium);
+    const badgeH = Math.round(118 * syPremium);
+    top = badgeTop + Math.round((badgeH - input.info.height) / 2);
   }
+
+  const left = isPainelPremium
+    ? Math.max(
+        20,
+        Math.round(cw * (70 / 1080)) +
+          Math.round((cw * (350 / 1080) - input.info.width) / 2)
+      )
+    : Math.max(20, Math.round((cw - input.info.width) / 2));
 
   return {
     input: input.data,
-    left: Math.max(20, Math.round((cw - input.info.width) / 2)),
+    left,
     top,
   };
 }

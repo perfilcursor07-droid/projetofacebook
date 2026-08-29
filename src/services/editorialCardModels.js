@@ -62,6 +62,12 @@ const ART_MODELS = Object.freeze([
     description:
       'Foto inteira, faixa da logo sobre a foto e manchete branca com palavras destacadas na cor da marca, com o site no rodapé.',
   }),
+  Object.freeze({
+    id: 'painel_premium',
+    name: 'Painel premium',
+    description:
+      'Foto ampla, logo em destaque e painel editorial sofisticado com recorte diagonal e formas nas cores da marca.',
+  }),
 ]);
 
 const ART_MODEL_IDS = new Set(ART_MODELS.map((model) => model.id));
