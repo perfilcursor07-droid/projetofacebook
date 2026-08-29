@@ -5,13 +5,33 @@
     videos: 0, imagens: 0, clips: 0, publicacoes: 0, paginas: 0,
     videosByStatus: {}, clipsByStatus: {}, pubsByStatus: {}, imagensByStatus: {},
   };
+  const ms = typeof matterStats !== 'undefined' && matterStats ? matterStats : {};
   const pubs = typeof recent !== 'undefined' ? recent : [];
+  const mattersRecent = typeof recentMatters !== 'undefined' ? recentMatters : [];
+  const mattersScheduled = typeof scheduledMatters !== 'undefined' ? scheduledMatters : [];
   const connected = typeof hasFacebook !== 'undefined' ? hasFacebook : false;
+  const action = typeof nextAction !== 'undefined' && nextAction ? nextAction : null;
   const c = typeof charts !== 'undefined' ? charts : {
-    activity: { labels: [], videos: [], clips: [], publicacoes: [], imagens: [] },
+    activity: { labels: [], materias: [], videos: [], clips: [], publicacoes: [], imagens: [] },
     videosByStatus: {},
     clipsByStatus: {},
     pubsByStatus: {},
+    mattersByStatus: {},
+  };
+
+  const firstName = (typeof user !== 'undefined' && user && user.nome)
+    ? String(user.nome).trim().split(/\s+/)[0]
+    : '';
+  const hour = new Date().getHours();
+  const hello = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+
+  const statusLabels = {
+    rascunho: 'Rascunho',
+    pronto: 'Pronta',
+    agendado: 'Agendada',
+    publicado: 'Publicada',
+    erro: 'Erro',
+    pendente: 'Pendente',
   };
 
   function fmtDate(value) {
@@ -30,10 +50,12 @@
       publicado: 'bg-emerald-500/15 text-emerald-300',
       pendente: 'bg-amber-500/15 text-amber-300',
       erro: 'bg-rose-500/15 text-rose-300',
-      pronto: 'bg-emerald-500/15 text-emerald-300',
+      pronto: 'bg-sky-500/15 text-sky-300',
       processando: 'bg-amber-500/15 text-amber-300',
       baixado: 'bg-sky-500/15 text-sky-300',
       cortado: 'bg-violet-500/15 text-violet-300',
+      rascunho: 'bg-slate-700/50 text-slate-300',
+      agendado: 'bg-amber-500/15 text-amber-300',
     };
     return map[status] || 'bg-slate-700/40 text-slate-300';
   }
@@ -43,59 +65,174 @@
     return map[tipo] || tipo || 'Post';
   }
 
+  function matterTitle(item) {
+    const t = item && item.titulo ? String(item.titulo).trim() : '';
+    return t || 'Sem título';
+  }
+
+  const actionTone = {
+    amber: 'border-amber-500/30 bg-amber-500/10',
+    rose: 'border-rose-500/30 bg-rose-500/10',
+    sky: 'border-sky-500/30 bg-sky-500/10',
+    slate: 'border-slate-700 bg-slate-900/70',
+    emerald: 'border-emerald-500/25 bg-emerald-500/10',
+  };
+  const actionCta = {
+    amber: 'bg-amber-400 text-slate-950 hover:bg-amber-300',
+    rose: 'bg-rose-400 text-slate-950 hover:bg-rose-300',
+    sky: 'bg-sky-400 text-slate-950 hover:bg-sky-300',
+    slate: 'bg-slate-100 text-slate-950 hover:bg-white',
+    emerald: 'bg-emerald-500 text-slate-950 hover:bg-emerald-400',
+  };
+
   const chartsJson = JSON.stringify(c).replace(/</g, '\\u003c');
 %>
 
 <main class="mx-auto max-w-9xl px-4 py-4 sm:px-6 sm:py-6">
   <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
     <div class="min-w-0">
-      <p class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Visão geral</p>
-      <h1 class="mt-0.5 text-xl font-semibold text-white sm:text-2xl">Dashboard</h1>
-      <p class="mt-1 text-xs text-slate-400 sm:text-sm">Produção, cortes e publicações em um só lugar.</p>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Painel</p>
+      <h1 class="mt-0.5 text-xl font-semibold text-white sm:text-2xl">
+        <%= hello %><%= firstName ? ', ' + firstName : '' %>
+      </h1>
+      <p class="mt-1 text-xs text-slate-400 sm:text-sm">Pauta → escrever → agendar. O que importa agora está aqui em cima.</p>
     </div>
-    <div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-      <a href="/conteudo" class="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400 sm:text-sm">Criar conteúdo</a>
-      <a href="/fila" class="inline-flex items-center justify-center rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 hover:border-slate-500 sm:text-sm">Acompanhar fila</a>
-    </div>
+    <a href="/materia-manual" class="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400 sm:text-sm">
+      Criar matéria
+    </a>
   </div>
 
-  <!-- KPI cards compactos -->
+  <% if (action) { %>
+    <section class="mt-4 rounded-xl border px-3.5 py-3 sm:mt-5 sm:px-4 <%= actionTone[action.tone] || actionTone.emerald %>" aria-label="Próximo passo">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="min-w-0">
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400"><%= action.kicker %></p>
+          <p class="mt-0.5 text-sm font-semibold text-white sm:text-[15px]"><%= action.title %></p>
+          <p class="mt-0.5 text-xs text-slate-400"><%= action.text %></p>
+        </div>
+        <a href="<%= action.href %>" class="inline-flex shrink-0 items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold <%= actionCta[action.tone] || actionCta.emerald %>">
+          <%= action.cta %>
+        </a>
+      </div>
+    </section>
+  <% } %>
+
+  <section class="mt-4 grid gap-2 sm:mt-5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Começar">
+    <a href="/materia-manual" class="group rounded-xl border border-slate-800 bg-slate-900/50 p-3.5 transition hover:border-emerald-500/40 hover:bg-slate-900">
+      <p class="text-[11px] font-semibold text-white">Criar matéria</p>
+      <p class="mt-1 text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-400">Chat com pauta, link ou texto. Título, arte e post saem prontos para agendar.</p>
+    </a>
+    <a href="/virais" class="group rounded-xl border border-slate-800 bg-slate-900/50 p-3.5 transition hover:border-emerald-500/40 hover:bg-slate-900">
+      <p class="text-[11px] font-semibold text-white">Virais</p>
+      <p class="mt-1 text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-400">Pautas que já bombam no seu nicho — escolha uma e transforme em matéria.</p>
+    </a>
+    <a href="/minhas-materias" class="group rounded-xl border border-slate-800 bg-slate-900/50 p-3.5 transition hover:border-emerald-500/40 hover:bg-slate-900">
+      <p class="text-[11px] font-semibold text-white">Matérias salvas</p>
+      <p class="mt-1 text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-400">Rascunhos, agendadas e publicadas. Continue de onde parou.</p>
+    </a>
+    <a href="/biblioteca" class="group rounded-xl border border-slate-800 bg-slate-900/50 p-3.5 transition hover:border-emerald-500/40 hover:bg-slate-900">
+      <p class="text-[11px] font-semibold text-white">Biblioteca</p>
+      <p class="mt-1 text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-400">Fontes monitoradas e horários automáticos para a agenda da Página.</p>
+    </a>
+  </section>
+
   <div class="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-2.5 xl:grid-cols-5">
-    <article class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5">
-      <p class="text-[10px] uppercase tracking-wide text-slate-500">Vídeos</p>
-      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.videos %></p>
-      <p class="mt-0.5 text-[10px] leading-tight text-slate-500"><%= s.videosByStatus.cortado || 0 %> cortados · <%= s.videosByStatus.erro || 0 %> erro</p>
-    </article>
-    <article class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5">
-      <p class="text-[10px] uppercase tracking-wide text-slate-500">Cortes</p>
-      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.clips %></p>
-      <p class="mt-0.5 text-[10px] leading-tight text-slate-500"><%= s.clipsByStatus.pronto || 0 %> prontos · <%= s.clipsByStatus.processando || 0 %> proc.</p>
-    </article>
-    <article class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5">
-      <p class="text-[10px] uppercase tracking-wide text-slate-500">Imagens</p>
-      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.imagens %></p>
-      <p class="mt-0.5 text-[10px] leading-tight text-slate-500"><%= s.imagensByStatus.baixado || 0 %> baixadas</p>
-    </article>
-    <article class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5">
-      <p class="text-[10px] uppercase tracking-wide text-slate-500">Publicações</p>
-      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.publicacoes %></p>
-      <p class="mt-0.5 text-[10px] leading-tight text-slate-500"><%= s.pubsByStatus.publicado || 0 %> ok · <%= s.pubsByStatus.erro || 0 %> erro</p>
-    </article>
-    <article class="col-span-2 rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5 sm:col-span-1 xl:col-span-1">
+    <a href="/minhas-materias?status=rascunho" class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5 transition hover:border-slate-600">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">Rascunhos</p>
+      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= ms.rascunho || 0 %></p>
+      <p class="mt-0.5 text-[10px] leading-tight text-slate-500">Para revisar e agendar</p>
+    </a>
+    <a href="/minhas-materias?status=agendado" class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5 transition hover:border-slate-600">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">Agendadas</p>
+      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= ms.agendado || 0 %></p>
+      <p class="mt-0.5 text-[10px] leading-tight text-slate-500">Na fila de publicação</p>
+    </a>
+    <a href="/minhas-materias?status=publicado" class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5 transition hover:border-slate-600">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">Publicadas</p>
+      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= ms.publicado || 0 %></p>
+      <p class="mt-0.5 text-[10px] leading-tight text-slate-500">Já no ar</p>
+    </a>
+    <a href="/minhas-materias?status=viralizou" class="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5 transition hover:border-slate-600">
+      <p class="text-[10px] uppercase tracking-wide text-slate-500">Viralizou</p>
+      <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= ms.viralizou || 0 %></p>
+      <p class="mt-0.5 text-[10px] leading-tight text-slate-500">Com engajamento alto</p>
+    </a>
+    <a href="/paginas" class="col-span-2 rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 px-3 py-2.5 transition hover:border-slate-600 sm:col-span-1">
       <p class="text-[10px] uppercase tracking-wide text-slate-500">Páginas FB</p>
       <p class="mt-0.5 text-xl font-semibold tabular-nums text-white"><%= s.paginas %></p>
       <p class="mt-0.5 text-[10px] leading-tight <%= connected ? 'text-emerald-400' : 'text-amber-300' %>">
-        <%= connected ? 'Conta conectada' : 'Sem conta' %>
+        <%= connected ? 'Conta conectada' : 'Conectar Página' %>
       </p>
-    </article>
+    </a>
   </div>
 
-  <!-- Gráficos -->
+  <div class="mt-4 grid gap-3 sm:mt-5 lg:grid-cols-2">
+    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4">
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="text-xs font-semibold text-white sm:text-sm">Próximas na agenda</h2>
+        <a href="/minhas-materias?status=agendado" class="text-[10px] text-emerald-400 hover:text-emerald-300 sm:text-xs">Ver todas</a>
+      </div>
+      <% if (!mattersScheduled.length) { %>
+        <div class="mt-3 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 px-3 py-6 text-center">
+          <p class="text-xs text-slate-300">Nada agendado ainda.</p>
+          <p class="mt-1 text-[11px] text-slate-500">Termine um rascunho e escolha o horário, ou confirme uma pauta na biblioteca.</p>
+          <div class="mt-3 flex flex-wrap justify-center gap-2">
+            <a href="/minhas-materias?status=rascunho" class="text-[11px] text-emerald-400 hover:text-emerald-300">Ver rascunhos</a>
+            <span class="text-slate-700">·</span>
+            <a href="/biblioteca" class="text-[11px] text-emerald-400 hover:text-emerald-300">Abrir biblioteca</a>
+          </div>
+        </div>
+      <% } else { %>
+        <ul class="mt-3 space-y-1.5">
+          <% mattersScheduled.forEach((item) => { %>
+            <li>
+              <a href="/materias-ia/<%= item.id %>" class="flex items-start justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 transition hover:border-emerald-500/30">
+                <div class="min-w-0">
+                  <p class="truncate text-xs font-medium text-slate-100"><%= matterTitle(item) %></p>
+                  <p class="mt-0.5 truncate text-[11px] text-slate-500"><%= item.page_name || 'Sem Página' %></p>
+                </div>
+                <span class="shrink-0 text-[10px] tabular-nums text-amber-300"><%= fmtDate(item.scheduled_at) %></span>
+              </a>
+            </li>
+          <% }) %>
+        </ul>
+      <% } %>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4">
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="text-xs font-semibold text-white sm:text-sm">Últimas matérias</h2>
+        <a href="/minhas-materias" class="text-[10px] text-emerald-400 hover:text-emerald-300 sm:text-xs">Matérias salvas</a>
+      </div>
+      <% if (!mattersRecent.length) { %>
+        <div class="mt-3 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 px-3 py-6 text-center">
+          <p class="text-xs text-slate-300">Nenhuma matéria ainda.</p>
+          <p class="mt-1 text-[11px] text-slate-500">Abra o chat, cole um link ou peça uma pauta.</p>
+          <a href="/materia-manual" class="mt-3 inline-block text-[11px] text-emerald-400 hover:text-emerald-300">Criar matéria →</a>
+        </div>
+      <% } else { %>
+        <ul class="mt-3 space-y-1.5">
+          <% mattersRecent.forEach((item) => { %>
+            <li>
+              <a href="/materias-ia/<%= item.id %>" class="flex items-start justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 transition hover:border-emerald-500/30">
+                <div class="min-w-0">
+                  <p class="truncate text-xs font-medium text-slate-100"><%= matterTitle(item) %></p>
+                  <p class="mt-0.5 truncate text-[11px] text-slate-500"><%= item.page_name || 'Sem Página' %> · <%= fmtDate(item.updated_at || item.created_at) %></p>
+                </div>
+                <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] <%= statusTone(item.status) %>"><%= statusLabels[item.status] || item.status %></span>
+              </a>
+            </li>
+          <% }) %>
+        </ul>
+      <% } %>
+    </section>
+  </div>
+
   <div class="mt-4 grid gap-3 sm:mt-5 lg:grid-cols-3">
     <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4 lg:col-span-2">
       <div class="flex items-center justify-between gap-2">
         <h2 class="text-xs font-semibold text-white sm:text-sm">Atividade — 7 dias</h2>
-        <span class="text-[10px] text-slate-500">vídeos · cortes · pubs</span>
+        <span class="text-[10px] text-slate-500">matérias · publicações</span>
       </div>
       <div class="relative mt-2 h-48 sm:h-56">
         <canvas id="chart-activity" aria-label="Gráfico de atividade dos últimos 7 dias"></canvas>
@@ -103,100 +240,87 @@
     </section>
 
     <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4">
-      <h2 class="text-xs font-semibold text-white sm:text-sm">Publicações por status</h2>
+      <h2 class="text-xs font-semibold text-white sm:text-sm">Matérias por status</h2>
       <div class="relative mx-auto mt-2 h-48 max-w-[220px] sm:h-56">
-        <canvas id="chart-pubs" aria-label="Gráfico de publicações por status"></canvas>
+        <canvas id="chart-matters" aria-label="Gráfico de matérias por status"></canvas>
       </div>
     </section>
   </div>
 
-  <div class="mt-3 grid gap-3 sm:grid-cols-2">
-    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4">
-      <h2 class="text-xs font-semibold text-white sm:text-sm">Vídeos por status</h2>
-      <div class="relative mt-2 h-40 sm:h-44">
-        <canvas id="chart-videos" aria-label="Gráfico de vídeos por status"></canvas>
-      </div>
-    </section>
-    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4">
-      <h2 class="text-xs font-semibold text-white sm:text-sm">Cortes por status</h2>
-      <div class="relative mt-2 h-40 sm:h-44">
-        <canvas id="chart-clips" aria-label="Gráfico de cortes por status"></canvas>
-      </div>
-    </section>
-  </div>
-
-  <div class="mt-3 grid gap-3 lg:grid-cols-3">
-    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4 lg:col-span-1">
-      <h2 class="text-xs font-semibold text-white sm:text-sm">Atalhos</h2>
-      <div class="mt-2.5 space-y-1.5">
-        <a href="/conteudo" class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-300 transition hover:border-emerald-500/40 hover:text-white sm:text-sm">
-          Criar conteúdo
-          <span class="text-emerald-400">→</span>
-        </a>
-        <a href="/fila" class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-300 transition hover:border-emerald-500/40 hover:text-white sm:text-sm">
-          Acompanhar fila
-          <span class="text-emerald-400">→</span>
-        </a>
-        <a href="/paginas" class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-300 transition hover:border-emerald-500/40 hover:text-white sm:text-sm">
-          <%= connected ? 'Gerenciar páginas' : 'Conectar Facebook' %>
-          <span class="text-emerald-400">→</span>
-        </a>
-      </div>
-    </section>
-
-    <section class="rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-4 lg:col-span-2">
-      <div class="flex items-center justify-between gap-3">
-        <h2 class="text-xs font-semibold text-white sm:text-sm">Últimas publicações</h2>
-        <span class="shrink-0 text-[10px] text-slate-500 sm:text-xs"><%= pubs.length %> recentes</span>
+  <details class="mt-4 rounded-xl border border-slate-800 bg-slate-900/30 sm:mt-5">
+    <summary class="cursor-pointer px-3 py-3 text-xs font-semibold text-slate-300 sm:px-4 sm:text-sm">
+      <span class="flex items-center justify-between gap-2">
+        Produção de vídeo
+        <span class="text-[10px] font-normal text-slate-500"><%= s.videos %> vídeos · <%= s.clips %> cortes · <%= s.publicacoes %> pubs</span>
+      </span>
+    </summary>
+    <div class="border-t border-slate-800 px-3 pb-4 pt-3 sm:px-4">
+      <div class="grid grid-cols-2 gap-2 xl:grid-cols-4">
+        <article class="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+          <p class="text-[10px] uppercase tracking-wide text-slate-500">Vídeos</p>
+          <p class="mt-0.5 text-lg font-semibold tabular-nums text-white"><%= s.videos %></p>
+          <p class="mt-0.5 text-[10px] text-slate-500"><%= s.videosByStatus.cortado || 0 %> cortados · <%= s.videosByStatus.erro || 0 %> erro</p>
+        </article>
+        <article class="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+          <p class="text-[10px] uppercase tracking-wide text-slate-500">Cortes</p>
+          <p class="mt-0.5 text-lg font-semibold tabular-nums text-white"><%= s.clips %></p>
+          <p class="mt-0.5 text-[10px] text-slate-500"><%= s.clipsByStatus.pronto || 0 %> prontos · <%= s.clipsByStatus.processando || 0 %> proc.</p>
+        </article>
+        <article class="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+          <p class="text-[10px] uppercase tracking-wide text-slate-500">Imagens</p>
+          <p class="mt-0.5 text-lg font-semibold tabular-nums text-white"><%= s.imagens %></p>
+          <p class="mt-0.5 text-[10px] text-slate-500"><%= s.imagensByStatus.baixado || 0 %> baixadas</p>
+        </article>
+        <article class="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+          <p class="text-[10px] uppercase tracking-wide text-slate-500">Publicações</p>
+          <p class="mt-0.5 text-lg font-semibold tabular-nums text-white"><%= s.publicacoes %></p>
+          <p class="mt-0.5 text-[10px] text-slate-500"><%= s.pubsByStatus.publicado || 0 %> ok · <%= s.pubsByStatus.erro || 0 %> erro</p>
+        </article>
       </div>
 
-      <% if (!pubs.length) { %>
-        <div class="mt-4 rounded-lg border border-dashed border-slate-700 bg-slate-950/40 px-4 py-8 text-center">
-          <p class="text-sm text-slate-300">Nenhuma publicação ainda.</p>
-          <p class="mt-1 text-xs text-slate-500">Gere um corte na fila e publique como Reel.</p>
-          <a href="/fila" class="mt-3 inline-block text-xs text-emerald-400 hover:text-emerald-300">Ir para a fila →</a>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <a href="/conteudo" class="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] text-slate-300 hover:border-slate-500 hover:text-white">Criar conteúdo</a>
+        <a href="/fila" class="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] text-slate-300 hover:border-slate-500 hover:text-white">Acompanhar fila</a>
+      </div>
+
+      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <section class="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+          <h3 class="text-xs font-semibold text-white">Vídeos por status</h3>
+          <div class="relative mt-2 h-36">
+            <canvas id="chart-videos" aria-label="Gráfico de vídeos por status"></canvas>
+          </div>
+        </section>
+        <section class="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+          <h3 class="text-xs font-semibold text-white">Cortes por status</h3>
+          <div class="relative mt-2 h-36">
+            <canvas id="chart-clips" aria-label="Gráfico de cortes por status"></canvas>
+          </div>
+        </section>
+      </div>
+
+      <section class="mt-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-xs font-semibold text-white">Últimas publicações</h3>
+          <span class="text-[10px] text-slate-500"><%= pubs.length %> recentes</span>
         </div>
-      <% } else { %>
-        <ul class="mt-3 space-y-1.5 sm:hidden">
-          <% pubs.forEach((p) => { %>
-            <li class="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-xs font-medium text-slate-200"><%= tipoLabel(p.tipo) %></span>
-                <span class="rounded-full px-2 py-0.5 text-[10px] <%= statusTone(p.status) %>"><%= p.status %></span>
-              </div>
-              <p class="mt-1 truncate text-[11px] text-slate-400"><%= p.page_name || '—' %></p>
-              <p class="mt-0.5 text-[10px] text-slate-500"><%= fmtDate(p.published_at || p.created_at) %></p>
-            </li>
-          <% }) %>
-        </ul>
-
-        <div class="mt-3 hidden overflow-x-auto rounded-lg border border-slate-800 sm:block">
-          <table class="w-full min-w-[28rem] text-left text-xs sm:text-sm">
-            <thead class="bg-slate-950/80 text-[10px] uppercase tracking-wide text-slate-500">
-              <tr>
-                <th class="px-3 py-2 font-medium">Tipo</th>
-                <th class="px-3 py-2 font-medium">Página</th>
-                <th class="px-3 py-2 font-medium">Status</th>
-                <th class="px-3 py-2 font-medium">Quando</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-800">
-              <% pubs.forEach((p) => { %>
-                <tr class="bg-slate-950/30 hover:bg-slate-900/60">
-                  <td class="px-3 py-2 text-slate-200"><%= tipoLabel(p.tipo) %></td>
-                  <td class="px-3 py-2 text-slate-300"><%= p.page_name || '—' %></td>
-                  <td class="px-3 py-2">
-                    <span class="rounded-full px-2 py-0.5 text-[10px] <%= statusTone(p.status) %>"><%= p.status %></span>
-                  </td>
-                  <td class="px-3 py-2 text-slate-400"><%= fmtDate(p.published_at || p.created_at) %></td>
-                </tr>
-              <% }) %>
-            </tbody>
-          </table>
-        </div>
-      <% } %>
-    </section>
-  </div>
+        <% if (!pubs.length) { %>
+          <p class="mt-3 text-center text-[11px] text-slate-500">Nenhuma publicação de vídeo ainda.</p>
+        <% } else { %>
+          <ul class="mt-2 space-y-1.5">
+            <% pubs.slice(0, 6).forEach((p) => { %>
+              <li class="flex items-center justify-between gap-2 rounded-lg border border-slate-800/80 px-2.5 py-1.5">
+                <span class="text-[11px] text-slate-300"><%= tipoLabel(p.tipo) %> · <%= p.page_name || '—' %></span>
+                <span class="flex items-center gap-2">
+                  <span class="rounded-full px-2 py-0.5 text-[10px] <%= statusTone(p.status) %>"><%= p.status %></span>
+                  <span class="text-[10px] text-slate-500"><%= fmtDate(p.published_at || p.created_at) %></span>
+                </span>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+    </div>
+  </details>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
@@ -230,7 +354,7 @@
     return { labels: labels, values: values, empty: false };
   }
 
-  const act = data.activity || { labels: [], videos: [], clips: [], publicacoes: [] };
+  const act = data.activity || { labels: [], materias: [], videos: [], clips: [], publicacoes: [] };
   const ctxAct = document.getElementById('chart-activity');
   if (ctxAct) {
     new Chart(ctxAct, {
@@ -239,20 +363,10 @@
         labels: act.labels || [],
         datasets: [
           {
-            label: 'Vídeos',
-            data: act.videos || [],
+            label: 'Matérias',
+            data: act.materias || [],
             borderColor: '#34d399',
             backgroundColor: 'rgba(52, 211, 153, 0.12)',
-            tension: 0.35,
-            fill: true,
-            pointRadius: 3,
-            borderWidth: 2,
-          },
-          {
-            label: 'Cortes',
-            data: act.clips || [],
-            borderColor: '#38bdf8',
-            backgroundColor: 'rgba(56, 189, 248, 0.08)',
             tension: 0.35,
             fill: true,
             pointRadius: 3,
@@ -274,42 +388,42 @@
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { position: 'bottom' },
-        },
+        plugins: { legend: { position: 'bottom' } },
         scales: {
-          x: {
-            grid: { color: grid },
-            ticks: { maxRotation: 0 },
-          },
-          y: {
-            beginAtZero: true,
-            ticks: { precision: 0 },
-            grid: { color: grid },
-          },
+          x: { grid: { color: grid }, ticks: { maxRotation: 0 } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: grid } },
         },
       },
     });
   }
 
-  const pubColors = {
+  const matterLabels = {
+    rascunho: 'Rascunho',
+    pronto: 'Pronta',
+    agendado: 'Agendada',
+    publicado: 'Publicada',
+    erro: 'Erro',
+  };
+  const matterColors = {
+    rascunho: '#94a3b8',
+    pronto: '#38bdf8',
+    agendado: '#fbbf24',
     publicado: '#34d399',
-    pendente: '#fbbf24',
     erro: '#fb7185',
   };
-  const pubOrder = ['publicado', 'pendente', 'erro'];
-  const pubs = statusEntries(data.pubsByStatus, pubOrder);
-  const ctxPubs = document.getElementById('chart-pubs');
-  if (ctxPubs) {
-    new Chart(ctxPubs, {
+  const matterOrder = ['rascunho', 'pronto', 'agendado', 'publicado', 'erro'];
+  const matters = statusEntries(data.mattersByStatus, matterOrder);
+  const ctxMatters = document.getElementById('chart-matters');
+  if (ctxMatters) {
+    new Chart(ctxMatters, {
       type: 'doughnut',
       data: {
-        labels: pubs.labels,
+        labels: matters.labels.map(function (l) { return matterLabels[l] || l; }),
         datasets: [{
-          data: pubs.values,
-          backgroundColor: pubs.empty
+          data: matters.values,
+          backgroundColor: matters.empty
             ? ['#334155']
-            : pubs.labels.map(function (l) { return pubColors[l] || '#64748b'; }),
+            : matters.labels.map(function (l) { return matterColors[l] || '#64748b'; }),
           borderWidth: 0,
           hoverOffset: 4,
         }],
@@ -323,7 +437,7 @@
           tooltip: {
             callbacks: {
               label: function (ctx) {
-                if (pubs.empty) return ' Sem publicações';
+                if (matters.empty) return ' Sem matérias';
                 return ' ' + ctx.label + ': ' + ctx.raw;
               },
             },
@@ -343,8 +457,9 @@
   const videoOrder = ['pendente', 'baixado', 'cortado', 'publicado', 'erro'];
   const vids = statusEntries(data.videosByStatus, videoOrder);
   const ctxVids = document.getElementById('chart-videos');
+  let chartVideos = null;
   if (ctxVids) {
-    new Chart(ctxVids, {
+    chartVideos = new Chart(ctxVids, {
       type: 'bar',
       data: {
         labels: vids.labels,
@@ -364,11 +479,7 @@
         plugins: { legend: { display: false } },
         scales: {
           x: { grid: { display: false } },
-          y: {
-            beginAtZero: true,
-            ticks: { precision: 0 },
-            grid: { color: grid },
-          },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: grid } },
         },
       },
     });
@@ -385,8 +496,9 @@
   const clipOrder = ['sugerido', 'pendente', 'processando', 'pronto', 'publicado', 'erro'];
   const clips = statusEntries(data.clipsByStatus, clipOrder);
   const ctxClips = document.getElementById('chart-clips');
+  let chartClips = null;
   if (ctxClips) {
-    new Chart(ctxClips, {
+    chartClips = new Chart(ctxClips, {
       type: 'bar',
       data: {
         labels: clips.labels,
@@ -406,15 +518,19 @@
         plugins: { legend: { display: false } },
         scales: {
           x: { grid: { display: false } },
-          y: {
-            beginAtZero: true,
-            ticks: { precision: 0 },
-            grid: { color: grid },
-          },
+          y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: grid } },
         },
       },
     });
   }
+
+  document.querySelectorAll('details').forEach(function (el) {
+    el.addEventListener('toggle', function () {
+      if (!el.open) return;
+      if (chartVideos) chartVideos.resize();
+      if (chartClips) chartClips.resize();
+    });
+  });
 })();
 </script>
 

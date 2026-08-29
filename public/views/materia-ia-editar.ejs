@@ -71,11 +71,6 @@
             Republicar
           </button>
         <% } %>
-        <button type="button" id="btn-ensinar-ia"
-          class="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/20 sm:text-xs"
-          title="Gravar uma regra sua para as próximas matérias">
-          Ensinar IA
-        </button>
       </div>
     </div>
 
@@ -232,7 +227,7 @@
           </article>
 
           <!-- Metabox: Fonte / crédito -->
-          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 open:shadow-sm" open>
+          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 open:shadow-sm">
             <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-transparent px-3 py-2.5 text-xs font-semibold text-slate-200 group-open:border-slate-800 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
               <span>Fonte / crédito</span>
               <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
@@ -247,7 +242,7 @@
 
           <% if (canEdit) { %>
             <!-- Metabox: Ferramentas IA -->
-            <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40" open>
+            <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40">
               <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-transparent px-3 py-2.5 text-xs font-semibold text-slate-200 group-open:border-slate-800 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
                 <span>Ferramentas da IA</span>
                 <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
@@ -320,7 +315,7 @@
         <% } %>
 
           <!-- Metabox: Hashtags -->
-          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 <%= hashtagsList ? '' : 'hidden' %>" id="matter-hashtags-wrap" <%= hashtagsList ? 'open' : '' %>>
+          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 <%= hashtagsList ? '' : 'hidden' %>" id="matter-hashtags-wrap">
             <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-transparent px-3 py-2.5 text-xs font-semibold text-slate-200 group-open:border-slate-800 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
               <span>Hashtags</span>
               <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
@@ -331,7 +326,7 @@
           </details>
 
           <!-- Metabox: Fonte da matéria -->
-          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 <%= (fontesLinks.length || fonteTitulo) ? '' : 'hidden' %>" id="matter-fonte-wrap" <%= (fontesLinks.length || fonteTitulo) ? 'open' : '' %>>
+          <details class="wp-metabox group rounded-lg border border-slate-800 bg-slate-900/40 <%= (fontesLinks.length || fonteTitulo) ? '' : 'hidden' %>" id="matter-fonte-wrap">
             <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-transparent px-3 py-2.5 text-xs font-semibold text-slate-200 group-open:border-slate-800 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
               <span><%= fontesLinks.length > 1 ? 'Links das fontes' : 'Link da fonte' %></span>
               <span class="text-slate-600 group-open:rotate-180 transition">▾</span>
@@ -372,9 +367,18 @@
               <span class="font-medium text-slate-300"><%= statusLabels[st] || st %></span>
             </div>
 
-            <label class="block text-[11px] text-slate-500">
-              Tipo
-              <select id="matter-tipo" class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-2.5 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none" <%= isReel ? 'disabled' : '' %>>
+            <details class="group overflow-hidden rounded-lg border border-slate-800 bg-slate-950/30">
+              <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
+                <span>
+                  Canais e formato
+                  <span class="mt-0.5 block text-[10px] font-normal text-slate-500">Facebook, Instagram, X.com e tipo do post</span>
+                </span>
+                <span class="text-slate-600 transition group-open:rotate-180">▾</span>
+              </summary>
+              <div class="space-y-3 border-t border-slate-800 px-2.5 py-2.5">
+                <label class="block text-[11px] text-slate-500">
+                  Tipo
+                  <select id="matter-tipo" class="mt-1 w-full rounded border border-slate-800 bg-slate-900/50 px-2.5 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none" <%= isReel ? 'disabled' : '' %>>
                 <% if (isReel) { %>
                   <option value="reel" selected>Reel (vídeo)</option>
                 <% } else {
@@ -383,8 +387,8 @@
                   <option value="foto" <%= tipoSel !== 'texto' ? 'selected' : '' %>>Foto + legenda</option>
                   <option value="texto" <%= tipoSel === 'texto' ? 'selected' : '' %>>Texto</option>
                 <% } %>
-              </select>
-            </label>
+                  </select>
+                </label>
 
             <%
               const igPagina =
@@ -398,7 +402,7 @@
                   : { ativo: false, username: null };
               const xMarcado = Boolean(matter.publicar_x);
             %>
-            <div class="border-t border-slate-800 pt-3 space-y-2">
+                <div class="space-y-2">
               <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-2.5 py-2">
                 <input type="checkbox" id="matter-publicar-facebook" checked
                   class="mt-0.5 rounded border-slate-600 bg-slate-950 text-sky-500 focus:ring-sky-500/30" />
@@ -447,7 +451,9 @@
                   <a href="/paginas" class="text-slate-300 hover:underline">Ativar em /paginas</a>
                 </p>
               <% } %>
-            </div>
+                </div>
+              </div>
+            </details>
 
         <% if (canEdit) { %>
               <div class="flex flex-col gap-1.5 border-t border-slate-800 pt-3">
@@ -460,14 +466,13 @@
                   onclick="document.getElementById('btn-salvar')?.click()">
                   Salvar rascunho
                 </button>
-                <button type="button"
-                  class="rounded border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/20"
-                  onclick="document.getElementById('btn-ensinar-ia')?.click()">
-                  Ensinar IA
-                </button>
               </div>
 
-              <div class="border-t border-slate-800 pt-3 space-y-2">
+              <div class="space-y-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2.5">
+                <div class="flex items-center justify-between gap-2">
+                  <p class="text-[11px] font-semibold text-amber-100">Agendar publicação</p>
+                  <span class="text-[9px] uppercase tracking-wide text-amber-300/60">Araguaína −03</span>
+                </div>
                 <%
                   const ult = typeof ultimoAgendamento !== 'undefined' ? ultimoAgendamento : null;
                   const proxLocal = typeof proximoSlotLocal !== 'undefined' ? proximoSlotLocal : null;
@@ -491,7 +496,7 @@
                     <p class="mt-1 text-[10px] text-sky-200/70">Clique em Agendar para confirmar esse horário.</p>
                   </div>
                 <% } %>
-                <label class="block text-[11px] text-slate-500"><%= jaEstaAgendada ? 'Remarcar' : 'Agendar' %> (Araguaína −03)
+                <label class="block text-[11px] text-slate-400"><%= jaEstaAgendada ? 'Novo horário' : 'Data e horário' %>
                   <input
                     id="matter-schedule"
                     type="datetime-local"
@@ -519,25 +524,33 @@
                 <% } else if (!jaEstaAgendada) { %>
                   <p class="text-[10px] text-slate-600">Nenhuma outra matéria agendada ainda.</p>
                 <% } %>
-                <button type="button" id="btn-agendar" class="w-full rounded border border-slate-600 px-3 py-1.5 text-[11px] text-slate-300 hover:border-slate-400">
+                <button type="button" id="btn-agendar" class="w-full rounded border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20">
                   <%= jaEstaAgendada ? 'Remarcar' : 'Agendar' %>
                 </button>
               </div>
 
-              <button type="button" id="btn-variacao-tema"
-                class="w-full rounded border border-violet-500/30 px-3 py-2 text-[11px] font-medium text-violet-200 hover:bg-violet-500/10"
-                <%= reelProcessing ? 'disabled' : '' %>>
-                Nova matéria neste tema
-              </button>
-              <% if (canGerarReelNarrado) { %>
-                <button type="button" id="btn-gerar-reel"
-                  class="w-full rounded border border-sky-500/30 px-3 py-2 text-[11px] font-medium text-sky-200 hover:bg-sky-500/10"
-                  data-has-video="<%= matter.video_path ? '1' : '0' %>"
+              <details class="group overflow-hidden rounded-lg border border-slate-800 bg-slate-950/30">
+                <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
+                  <span>Outras ações</span>
+                  <span class="text-slate-600 transition group-open:rotate-180">▾</span>
+                </summary>
+                <div class="space-y-2 border-t border-slate-800 p-2.5">
+                  <button type="button" id="btn-variacao-tema"
+                    class="w-full rounded border border-violet-500/30 px-3 py-2 text-[11px] font-medium text-violet-200 hover:bg-violet-500/10"
                   <%= reelProcessing ? 'disabled' : '' %>>
-                  <%= matter.video_path && isReel ? 'Regenerar Reel narrado' : 'Gerar Reel narrado' %>
-                </button>
-                <p class="text-[10px] leading-snug text-slate-500">Resumo narrado até 60s + voz + trilha (sem legenda no vídeo).</p>
-              <% } %>
+                    Nova matéria neste tema
+                  </button>
+                  <% if (canGerarReelNarrado) { %>
+                    <button type="button" id="btn-gerar-reel"
+                      class="w-full rounded border border-sky-500/30 px-3 py-2 text-[11px] font-medium text-sky-200 hover:bg-sky-500/10"
+                      data-has-video="<%= matter.video_path ? '1' : '0' %>"
+                      <%= reelProcessing ? 'disabled' : '' %>>
+                      <%= matter.video_path && isReel ? 'Regenerar Reel narrado' : 'Gerar Reel narrado' %>
+                    </button>
+                    <p class="text-[10px] leading-snug text-slate-500">Resumo narrado até 60s + voz + trilha (sem legenda no vídeo).</p>
+                  <% } %>
+                </div>
+              </details>
             <% } else if (canRepublish) { %>
               <% if (matter.published_at) { %>
                 <p class="text-[10px] text-slate-500">Publicada em <%= new Date(matter.published_at).toLocaleString('pt-BR') %></p>
@@ -611,9 +624,12 @@
               </div>
             </div>
             <% if (canEdit && typeof artModelChoices !== 'undefined' && artModelChoices.length > 1) { %>
-              <div id="matter-art-models" class="border-b border-slate-800 px-3 py-2">
-                <p class="text-[10px] font-medium text-slate-400">Modelo da arte</p>
-                <div class="mt-1.5 grid grid-cols-2 gap-2">
+              <details id="matter-art-models" class="group border-b border-slate-800">
+                <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[10px] font-medium text-slate-400 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
+                  <span>Modelo da arte</span>
+                  <span class="text-slate-600 transition group-open:rotate-180">▾</span>
+                </summary>
+                <div class="grid grid-cols-2 gap-2 border-t border-slate-800 px-3 py-2">
                   <% artModelChoices.forEach((m) => {
                     const ativo = String(typeof arteModeloAtivo !== 'undefined' ? arteModeloAtivo : '') === m.id;
                   %>
@@ -633,7 +649,7 @@
                     </button>
                   <% }) %>
                 </div>
-          </div>
+              </details>
         <% } %>
             <div class="p-2">
               <div id="matter-img-frame-preview" class="relative overflow-hidden rounded border border-slate-800 bg-slate-900/50">
@@ -649,13 +665,15 @@
                 <img id="matter-img" src="<%= imageUrl %>" alt="Arte da matéria" class="relative z-10 block h-auto w-full object-cover" />
               </div>
               <% if (canEdit) { %>
-                <div id="matter-art-frame" class="mt-2 space-y-2 rounded-lg border border-slate-700/80 bg-slate-950/60 p-2">
-                  <div>
-                    <p class="text-[11px] font-medium text-slate-300">Enquadramento</p>
-                    <p class="mt-0.5 text-[10px] leading-relaxed text-slate-500">
-                      Abaixo de 100%, a foto aparece inteira no formato 4:5 (1080×1350) do Facebook. A marca fica fixa por cima.
+                <details id="matter-art-frame" class="group mt-2 rounded-lg border border-slate-700/80 bg-slate-950/60">
+                  <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2 text-[11px] font-medium text-slate-300 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
+                    <span>Enquadramento da imagem</span>
+                    <span class="text-slate-600 transition group-open:rotate-180">▾</span>
+                  </summary>
+                  <div class="space-y-2 border-t border-slate-800 p-2">
+                    <p class="text-[10px] leading-relaxed text-slate-500">
+                      Ajuste zoom e posição da foto. A marca permanece fixa por cima.
                     </p>
-                  </div>
                   <label class="block">
                     <span class="flex items-center justify-between text-[10px] text-slate-400">
                       Zoom
@@ -680,21 +698,23 @@
                     <input id="art-offset-y" type="range" min="0" max="100" step="1" value="50"
                       class="mt-1 w-full accent-sky-500" />
                   </label>
-                  <button type="button" id="btn-art-enquadrar"
-                    class="w-full rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40">
-                    Aplicar enquadramento
-                  </button>
-            </div>
+                    <button type="button" id="btn-art-enquadrar"
+                      class="w-full rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40">
+                      Aplicar enquadramento
+                    </button>
+                  </div>
+                </details>
               <% } %>
             </div>
           </div>
         <% } %>
 
         <% if (canEdit && !isReel) { %>
-          <div class="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
-            <div class="border-b border-slate-800 px-3 py-2">
-              <p class="text-xs font-semibold text-slate-200">Trocar imagem</p>
-            </div>
+          <details class="group overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800/40 [&::-webkit-details-marker]:hidden">
+              <span>Trocar imagem</span>
+              <span class="text-slate-600 transition group-open:rotate-180">▾</span>
+            </summary>
             <div class="space-y-2.5 px-3 py-3">
               <div id="matter-img-suggest-loading" class="hidden items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5">
                 <span class="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-300/30 border-t-amber-300"></span>
@@ -803,7 +823,7 @@
                 </div>
               </div>
             </div>
-          </div>
+          </details>
         <% } %>
       </aside>
     </div>
@@ -869,51 +889,6 @@
       <div class="flex items-center justify-end gap-2 border-t border-slate-800 px-4 py-3">
         <button type="button" id="matter-crop-cancel" class="rounded border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">Cancelar</button>
         <button type="button" id="matter-crop-save" class="rounded bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-50">Recortar e salvar</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="ensinar-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="ensinar-modal-title">
-    <div class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-xl border border-slate-800 bg-slate-900 shadow-xl shadow-black/40">
-      <div class="border-b border-slate-800 px-5 py-4">
-        <h2 id="ensinar-modal-title" class="text-base font-semibold text-white">Ensinar a IA</h2>
-        <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-          Escreva do seu jeito, olhando para esta matéria. A regra é guardada e passa a valer nas
-          <strong class="text-slate-300">próximas matérias</strong> — não muda esta aqui.
-        </p>
-      </div>
-
-      <div class="space-y-3 overflow-y-auto px-5 py-4">
-        <label class="block text-[11px] text-slate-400">
-          O que a IA deve aprender
-          <textarea id="ensinar-texto" rows="4"
-            class="mt-1 w-full rounded border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
-            placeholder="Ex.: em matéria de política, cite o partido junto do nome do parlamentar e não use adjetivo antes do cargo."></textarea>
-              </label>
-        <p class="text-[10px] leading-relaxed text-slate-500">
-          Pode escrever "em matéria assim, faça isso" — a IA reescreve como regra que se entende sozinha
-          depois, sem guardar os nomes e fatos desta pauta.
-        </p>
-
-        <div>
-          <p class="mb-1.5 text-[11px] font-semibold text-slate-300">Já aprendido</p>
-          <div id="ensinar-lista" class="max-h-40 overflow-y-auto rounded border border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px] leading-relaxed text-slate-400">
-            Carregando…
-            </div>
-        </div>
-
-        <p id="ensinar-status" class="hidden text-[11px] leading-relaxed"></p>
-      </div>
-
-      <div class="flex items-center justify-end gap-2 border-t border-slate-800 px-5 py-3">
-        <button type="button" id="ensinar-fechar"
-          class="rounded border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
-          Fechar
-        </button>
-        <button type="button" id="ensinar-salvar"
-          class="rounded bg-sky-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
-          Gravar lição
-        </button>
       </div>
     </div>
   </div>
@@ -1010,5 +985,5 @@
       update();
     })();
   </script>
-  <script src="/js/materia-ia-editar.js?v=20260828xEditor1"></script>
+  <script src="/js/materia-ia-editar.js?v=20260828organiza1"></script>
 <%- include('partials/app-end') %>

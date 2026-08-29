@@ -204,6 +204,35 @@ const AiMatters = {
     return db(this.table).where({ user_id: userId }).orderBy('created_at', 'desc').limit(limit);
   },
 
+  findRecentWithPage(userId, limit = 6) {
+    return db(this.table)
+      .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
+      .where('ai_matters.user_id', userId)
+      .select(
+        'ai_matters.id',
+        'ai_matters.titulo',
+        'ai_matters.status',
+        'ai_matters.scheduled_at',
+        'ai_matters.published_at',
+        'ai_matters.updated_at',
+        'ai_matters.created_at',
+        'facebook_pages.page_name as page_name'
+      )
+      .orderBy('ai_matters.updated_at', 'desc')
+      .limit(Math.max(1, Math.min(20, Number(limit) || 6)));
+  },
+
+  countByDay(userId, days = 7) {
+    const d = Math.max(1, Math.min(90, Number(days) || 7));
+    return db(this.table)
+      .where({ user_id: userId })
+      .where('created_at', '>=', db.raw('DATE_SUB(CURDATE(), INTERVAL ? DAY)', [d - 1]))
+      .select(db.raw('DATE(created_at) as dia'))
+      .count('* as total')
+      .groupByRaw('DATE(created_at)')
+      .orderBy('dia', 'asc');
+  },
+
   /**
    * Lista matérias com dados da publicação (views, link FB).
    * @param {object} opts

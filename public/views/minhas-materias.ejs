@@ -72,6 +72,20 @@
       return '';
     }
   }
+  function formatQuandoCurto(value) {
+    if (!value) return '';
+    try {
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return '';
+      const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+      const day = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return day + ' ' + months[d.getMonth()] + ' · ' + hh + ':' + mm;
+    } catch {
+      return '';
+    }
+  }
   function listHref({ status, page, keepQuery, nivel, ordem } = {}) {
     const params = new URLSearchParams();
     if (keepQuery !== false && q) params.set('q', q);
@@ -115,19 +129,20 @@
   const toItem = Math.min(pag.page * pag.perPage, pag.total);
 %>
 
-  <main class="mx-auto max-w-9xl px-4 py-5 sm:px-6 sm:py-8" data-matters-page>
-    <div class="flex flex-wrap items-center justify-between gap-2">
+  <main class="mx-auto max-w-9xl px-4 py-4 sm:px-6 sm:py-6" data-matters-page>
+    <div class="flex flex-wrap items-end justify-between gap-2">
       <div class="min-w-0">
-        <h1 class="text-lg font-semibold text-white sm:text-xl">Matérias salvas</h1>
-        <p class="mt-0.5 text-xs text-slate-500">Revise, edite e publique. Engajamento das publicadas atualiza ao abrir a página.</p>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Matérias</p>
+        <h1 class="mt-0.5 text-lg font-semibold text-white sm:text-xl">Matérias salvas</h1>
+        <p class="mt-0.5 text-xs text-slate-500">Rascunhos, agenda e publicadas — abra para editar, agendar ou ver o engajamento.</p>
       </div>
-      <a href="/conteudo"
-        class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 sm:text-sm">
-        Criar conteúdo
+      <a href="/materia-manual"
+        class="inline-flex h-9 items-center rounded-lg bg-emerald-500 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 sm:text-sm">
+        Criar matéria
       </a>
     </div>
 
-    <form method="get" action="/minhas-materias" class="mt-3 flex flex-wrap gap-1.5">
+    <form method="get" action="/minhas-materias" class="mt-3 flex flex-wrap items-center gap-1.5">
       <% if (activeStatus && activeStatus !== 'all') { %>
         <input type="hidden" name="status" value="<%= activeStatus %>" />
       <% } %>
@@ -140,13 +155,13 @@
       <label class="relative min-w-[180px] flex-1">
         <span class="sr-only">Buscar matérias</span>
         <input type="search" name="q" value="<%= q %>" placeholder="Buscar título, texto, fonte…"
-          class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30" />
+          class="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30" />
       </label>
-      <button type="submit" class="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 hover:border-emerald-500 hover:text-emerald-300 sm:text-sm">
+      <button type="submit" class="inline-flex h-9 items-center rounded-lg border border-slate-700 px-3 text-xs text-slate-200 hover:border-emerald-500 hover:text-emerald-300 sm:text-sm">
         Buscar
       </button>
       <% if (q) { %>
-        <a href="<%= listHref({ status: activeStatus, page: 1, keepQuery: false }) %>" class="rounded-lg px-2.5 py-2 text-xs text-slate-500 hover:text-slate-300">Limpar</a>
+        <a href="<%= listHref({ status: activeStatus, page: 1, keepQuery: false }) %>" class="inline-flex h-9 items-center rounded-lg px-2.5 text-xs text-slate-500 hover:text-slate-300">Limpar</a>
       <% } %>
     </form>
 
@@ -173,7 +188,7 @@
           role="tab"
           aria-selected="<%= isActive ? 'true' : 'false' %>"
           data-status="<%= tab.key %>"
-          class="mia-status-tab inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition <%= activeCls %>">
+          class="mia-status-tab inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition <%= activeCls %>">
           <%= tab.label %>
           <span class="mia-tab-count rounded-md px-1.5 py-0.5 text-[10px] tabular-nums <%= countCls %>"><%= count %></span>
         </a>
@@ -233,8 +248,8 @@
           : (activeStatus === 'viralizou'
             ? 'Nenhuma matéria com bom engajamento ainda. Abra Publicadas para sincronizar curtidas/comentários, ou aguarde o sync automático desta aba.'
             : (activeStatus !== 'all' ? 'Nenhuma matéria neste status.' : 'Nenhuma matéria gerada ainda.')) %>
-        <a href="<%= q || activeStatus !== 'all' ? '/minhas-materias' : '/conteudo' %>" class="mt-2 block text-emerald-400 hover:text-emerald-300">
-          <%= q || activeStatus !== 'all' ? 'Ver todas →' : 'Criar conteúdo →' %>
+        <a href="<%= q || activeStatus !== 'all' ? '/minhas-materias' : '/materia-manual' %>" class="mt-2 block text-emerald-400 hover:text-emerald-300">
+          <%= q || activeStatus !== 'all' ? 'Ver todas →' : 'Criar matéria →' %>
         </a>
       </p>
     <% } else { %>
@@ -266,7 +281,14 @@
         </div>
       <% } %>
 
-      <ul id="mia-matters-list" class="mt-2 divide-y divide-slate-800/80 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      <ul id="mia-matters-list" class="mia-matters-list mt-2 rounded-xl border border-slate-800 bg-slate-900/40 <%= activeStatus === 'rascunho' ? 'is-select' : '' %>">
+        <li class="mia-matters-head" aria-hidden="true">
+          <% if (activeStatus === 'rascunho') { %><span></span><% } %>
+          <span></span>
+          <span>Matéria</span>
+          <span>Quando</span>
+          <span class="text-right">Ações</span>
+        </li>
         <% mattersList.forEach((item) => {
           const st = item.status || 'rascunho';
           const thumbUrl = artThumbUrl(item);
@@ -278,12 +300,22 @@
           const viral = isPub
             ? viralBadge(item.pub_fb_likes, item.pub_fb_comments, item.pub_fb_shares, item.pub_fb_views)
             : null;
+          const hasImg = Boolean(thumbUrl);
+          const whenValue = st === 'agendado' && item.scheduled_at
+            ? item.scheduled_at
+            : (isPub ? (item.published_at || item.pub_published_at || item.updated_at) : item.created_at);
+          const whenLabel = st === 'agendado' && item.scheduled_at
+            ? 'Agendada'
+            : (isPub ? 'Publicada' : 'Criada');
+          const whenCls = st === 'agendado' && item.scheduled_at
+            ? 'text-amber-300/90'
+            : (isPub ? 'text-emerald-300/90' : 'text-slate-500');
         %>
-          <li class="mia-matter-row group flex items-center gap-2 px-2.5 py-1.5 transition hover:bg-slate-900/70 sm:px-3 sm:py-2"
+          <li class="mia-matter-row group transition hover:bg-slate-900/70"
             data-id="<%= item.id %>"
             data-status="<%= st %>">
             <% if (activeStatus === 'rascunho') { %>
-              <label class="flex shrink-0 cursor-pointer items-center self-center">
+              <label class="flex shrink-0 cursor-pointer items-center justify-center">
                 <input type="checkbox"
                   class="mia-matter-check h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500/40"
                   value="<%= item.id %>"
@@ -292,7 +324,7 @@
               </label>
             <% } %>
             <a href="/materias-ia/<%= item.id %>"
-              class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-800 bg-slate-950 sm:h-14 sm:w-14"
+              class="mia-matter-thumb flex shrink-0 items-center justify-center overflow-hidden border border-slate-800 bg-slate-950"
               title="Abrir matéria">
               <% if (thumbUrl) { %>
                 <img src="<%= thumbUrl %>" alt="" loading="lazy"
@@ -301,81 +333,82 @@
                 <span class="px-1 text-center text-[9px] leading-tight text-slate-600">sem arte</span>
               <% } %>
             </a>
-            <div class="min-w-0 flex-1">
+            <div class="min-w-0">
               <div class="flex min-w-0 items-center gap-1.5">
-                <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
+                <span class="mia-matter-status shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide <%= statusClass[st] || statusClass.rascunho %>"><%= statusLabels[st] || st %></span>
                 <% if (viral) { %>
                   <span class="mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 <%= viral.cls %>"><%= viral.label %></span>
                 <% } %>
                 <% if (activeStatus === 'viralizou' && viral) { %>
                   <span class="mia-viral-score shrink-0 text-[9px] tabular-nums text-slate-500" title="Pontuação ponderada de engajamento">score <%= Math.round(viral.score) %></span>
                 <% } %>
-                <a href="/materias-ia/<%= item.id %>" class="min-w-0 truncate text-sm font-medium text-white hover:text-emerald-200">
+                <a href="/materias-ia/<%= item.id %>" class="mia-matter-title text-sm font-medium text-white hover:text-emerald-200">
                   <%= item.titulo || 'Sem título' %>
                 </a>
               </div>
-              <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
+              <div class="mia-when-mobile mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
                 <% if (item.page_name) { %>
-                  <span class="truncate max-w-[140px] sm:max-w-[200px]"><%= item.page_name %></span>
+                  <span class="truncate"><%= item.page_name %></span>
                 <% } %>
-                <% if (st === 'agendado' && item.scheduled_at) { %>
-                  <span class="font-medium text-amber-300/90">Agendada: <%= formatQuando(item.scheduled_at) %></span>
-                <% } else if (isPub) { %>
-                  <span class="font-medium text-emerald-300/90">Publicada: <%= formatQuando(item.published_at || item.pub_published_at || item.updated_at) %></span>
-                <% } else { %>
-                  <span>Criada: <%= item.created_at ? formatQuando(item.created_at) : '' %></span>
-                <% } %>
-                <% if (isPub) { %>
-                  <button type="button"
-                    class="mia-matter-views inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-slate-400 hover:text-sky-300"
-                    data-id="<%= item.id %>"
-                    title="Atualizar engajamento no Facebook (curtidas, comentários, views)">
-                    <span class="mia-likes-label"><%= likesLabel != null ? likesLabel + ' curtidas' : 'curtidas' %></span>
-                    <span class="text-slate-600">·</span>
-                    <span class="mia-comments-label"><%= commentsLabel != null ? commentsLabel + ' coment.' : 'coment.' %></span>
-                    <span class="text-slate-600">·</span>
-                    <span class="mia-shares-label"><%= sharesLabel != null ? sharesLabel + ' compart.' : 'compart.' %></span>
-                    <span class="text-slate-600">·</span>
-                    <span class="mia-views-label"><%= viewsLabel != null ? viewsLabel + ' views' : 'views' %></span>
-                    <span class="text-[9px] text-sky-400/80">↻</span>
-                  </button>
+                <% if (whenValue) { %>
+                  <span class="font-medium <%= whenCls %>"><%= whenLabel %>: <%= formatQuandoCurto(whenValue) %></span>
                 <% } %>
               </div>
-            </div>
-            <div class="flex shrink-0 items-center gap-1">
-              <%
-                const hasImg = Boolean(thumbUrl);
-              %>
-              <% if (hasImg) { %>
+              <% if (isPub) { %>
                 <button type="button"
-                  class="mia-matter-reel rounded-md border border-sky-500/30 px-2 py-1 text-[10px] text-sky-200 transition hover:bg-sky-500/15 sm:text-[11px]"
+                  class="mia-matter-views mia-matter-metrics mt-0.5 text-[10px] text-slate-400 hover:text-sky-300"
                   data-id="<%= item.id %>"
-                  data-titulo="<%= item.titulo || 'Sem título' %>"
-                  data-has-video="<%= item.video_path ? '1' : '0' %>"
-                  title="Gera Reel 9:16 com narração (imagem + voz)">
-                  Reel
+                  title="Atualizar engajamento no Facebook (curtidas, comentários, views)">
+                  <span class="mia-likes-label"><%= likesLabel != null ? likesLabel + ' curtidas' : 'curtidas' %></span>
+                  <span class="text-slate-600">·</span>
+                  <span class="mia-comments-label"><%= commentsLabel != null ? commentsLabel + ' coment.' : 'coment.' %></span>
+                  <span class="text-slate-600">·</span>
+                  <span class="mia-shares-label"><%= sharesLabel != null ? sharesLabel + ' compart.' : 'compart.' %></span>
+                  <span class="text-slate-600">·</span>
+                  <span class="mia-views-label"><%= viewsLabel != null ? viewsLabel + ' views' : 'views' %></span>
+                  <span class="text-[9px] text-sky-400/80">↻</span>
                 </button>
               <% } %>
-              <button type="button"
-                class="mia-matter-variacao rounded-md border border-violet-500/30 px-2 py-1 text-[10px] text-violet-200 transition hover:bg-violet-500/15 sm:text-[11px]"
-                data-id="<%= item.id %>"
-                data-titulo="<%= item.titulo || 'Sem título' %>"
-                title="Gera outra matéria no mesmo tema">
-                Nova
+            </div>
+            <div class="mia-matter-when text-[10px] text-slate-500">
+              <% if (whenValue) { %>
+                <span class="font-medium tabular-nums <%= whenCls %>"><%= whenLabel %> · <%= formatQuandoCurto(whenValue) %></span>
+              <% } else { %>
+                <span>—</span>
+              <% } %>
+              <% if (item.page_name) { %>
+                <span class="mia-matter-page"><%= item.page_name %></span>
+              <% } %>
+            </div>
+            <div class="mia-matter-actions">
+              <button type="button" class="mia-matter-menu-btn" aria-haspopup="menu" aria-expanded="false">
+                Ações
+                <svg class="h-3 w-3 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
               </button>
-              <a href="/materias-ia/<%= item.id %>"
-                class="rounded-md border border-slate-700 px-2 py-1 text-[10px] text-slate-300 transition hover:border-emerald-500/50 hover:text-emerald-300 sm:text-[11px]"
-                title="Editar">
-                Editar
-              </a>
-              <button type="button"
-                class="mia-matter-remove rounded-md border border-rose-500/25 px-1.5 py-1 text-[10px] text-rose-300/90 transition hover:border-rose-400 hover:bg-rose-500/10 sm:text-[11px]"
-                data-id="<%= item.id %>"
-                data-titulo="<%= item.titulo || 'Sem título' %>"
-                title="Remover"
-                aria-label="Remover">
-                ×
-              </button>
+              <div class="mia-matter-menu" role="menu">
+                <a href="/materias-ia/<%= item.id %>" role="menuitem">Editar</a>
+                <% if (hasImg) { %>
+                  <button type="button" role="menuitem"
+                    class="mia-matter-reel"
+                    data-id="<%= item.id %>"
+                    data-titulo="<%= item.titulo || 'Sem título' %>"
+                    data-has-video="<%= item.video_path ? '1' : '0' %>">
+                    Gerar Reel
+                  </button>
+                <% } %>
+                <button type="button" role="menuitem"
+                  class="mia-matter-variacao"
+                  data-id="<%= item.id %>"
+                  data-titulo="<%= item.titulo || 'Sem título' %>">
+                  Nova variação
+                </button>
+                <button type="button" role="menuitem"
+                  class="mia-matter-remove"
+                  data-id="<%= item.id %>"
+                  data-titulo="<%= item.titulo || 'Sem título' %>">
+                  Remover
+                </button>
+              </div>
             </div>
           </li>
         <% }) %>
@@ -387,29 +420,29 @@
           <div class="flex flex-wrap items-center gap-1">
             <% if (pag.page > 1) { %>
               <a href="<%= listHref({ page: pag.page - 1 }) %>"
-                class="rounded-lg border border-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white">
+                class="inline-flex h-8 items-center rounded-lg border border-slate-800 px-2.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white">
                 ← Anterior
               </a>
             <% } else { %>
-              <span class="rounded-lg border border-slate-800/50 px-2.5 py-1.5 text-xs text-slate-600">← Anterior</span>
+              <span class="inline-flex h-8 items-center rounded-lg border border-slate-800/50 px-2.5 text-xs text-slate-600">← Anterior</span>
             <% } %>
 
             <% pages.forEach((p) => { %>
               <% if (p === pag.page) { %>
-                <span class="inline-flex min-w-[2rem] items-center justify-center rounded-lg bg-emerald-500 px-2 py-1.5 text-xs font-semibold text-slate-950"><%= p %></span>
+                <span class="inline-flex h-8 min-w-[2rem] items-center justify-center rounded-lg bg-emerald-500 px-2 text-xs font-semibold text-slate-950"><%= p %></span>
               <% } else { %>
                 <a href="<%= listHref({ page: p }) %>"
-                  class="inline-flex min-w-[2rem] items-center justify-center rounded-lg border border-slate-800 px-2 py-1.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white"><%= p %></a>
+                  class="inline-flex h-8 min-w-[2rem] items-center justify-center rounded-lg border border-slate-800 px-2 text-xs text-slate-300 hover:border-slate-600 hover:text-white"><%= p %></a>
               <% } %>
             <% }) %>
 
             <% if (pag.page < pag.totalPages) { %>
               <a href="<%= listHref({ page: pag.page + 1 }) %>"
-                class="rounded-lg border border-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white">
+                class="inline-flex h-8 items-center rounded-lg border border-slate-800 px-2.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white">
                 Próxima →
               </a>
             <% } else { %>
-              <span class="rounded-lg border border-slate-800/50 px-2.5 py-1.5 text-xs text-slate-600">Próxima →</span>
+              <span class="inline-flex h-8 items-center rounded-lg border border-slate-800/50 px-2.5 text-xs text-slate-600">Próxima →</span>
             <% } %>
           </div>
         </nav>
@@ -417,5 +450,5 @@
     <% } %>
   </main>
 
-  <script src="/js/minhas-materias.js?v=20260824viralfilter"></script>
+  <script src="/js/minhas-materias.js?v=20260828menu"></script>
 <%- include('partials/app-end') %>

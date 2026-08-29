@@ -46,7 +46,7 @@
       badge = document.createElement('span');
       badge.className =
         'mia-viral-badge shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1';
-      const status = row.querySelector('.min-w-0 .shrink-0');
+      const status = row.querySelector('.mia-matter-status');
       if (status && status.parentNode) {
         status.insertAdjacentElement('afterend', badge);
       } else {
@@ -178,7 +178,44 @@
     );
   }
 
+  function closeAllMenus(except) {
+    list.querySelectorAll('.mia-matter-actions.is-open').forEach((wrap) => {
+      if (except && wrap === except) return;
+      wrap.classList.remove('is-open', 'is-up');
+      const btn = wrap.querySelector('.mia-matter-menu-btn');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function toggleMenu(wrap) {
+    const willOpen = !wrap.classList.contains('is-open');
+    closeAllMenus();
+    if (!willOpen) return;
+    wrap.classList.add('is-open');
+    const btn = wrap.querySelector('.mia-matter-menu-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    const spaceBelow = window.innerHeight - wrap.getBoundingClientRect().bottom;
+    wrap.classList.toggle('is-up', spaceBelow < 180);
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.mia-matter-actions')) closeAllMenus();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAllMenus();
+  });
+
   list.addEventListener('click', async (e) => {
+    const menuBtn = e.target.closest('.mia-matter-menu-btn');
+    if (menuBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const wrap = menuBtn.closest('.mia-matter-actions');
+      if (wrap) toggleMenu(wrap);
+      return;
+    }
+
     const removeBtn = e.target.closest('.mia-matter-remove');
     const variacaoBtn = e.target.closest('.mia-matter-variacao');
     const reelBtn = e.target.closest('.mia-matter-reel');
