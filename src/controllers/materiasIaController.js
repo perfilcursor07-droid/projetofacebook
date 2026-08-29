@@ -704,12 +704,11 @@ async function showMatter(req, res, next) {
 
     const {
       anexarHashtagsAoFinal,
-      garantirFonteNoConteudo,
-      atualizarFonteCreditoDaImagem,
       removerFechamentoOracao,
       removerComentariosEditoriaisIa,
       fundirParagrafosIncompletos,
       extrairHashtagsDoTexto,
+      normalizarCreditosImagemDuplicados,
     } = require('../services/editorialGuidelinesFb');
     if (Array.isArray(hashtags) && hashtags.length) {
       matter.materia = anexarHashtagsAoFinal(matter.materia || '', hashtags);
@@ -726,24 +725,18 @@ async function showMatter(req, res, next) {
       const corpo = fundirParagrafosIncompletos(body);
       materiaLimpa = anexarHashtagsAoFinal(corpo, tags.length ? tags : hashtags);
     }
-    materiaLimpa = garantirFonteNoConteudo(materiaLimpa, {
-      fonteUrl: matter.fonte_url,
-    });
+    materiaLimpa = normalizarCreditosImagemDuplicados(materiaLimpa) || materiaLimpa;
     if (materiaLimpa !== String(matter.materia || '').trim()) {
       matter.materia = materiaLimpa;
       if (['rascunho', 'pronto', 'erro', 'agendado'].includes(matter.status)) {
         patchShow.materia = materiaLimpa;
       }
     }
-    const fonteCreditoPreservada = atualizarFonteCreditoDaImagem(
-      matter.fonte_credito,
-      null,
-      { fonteUrl: matter.fonte_url }
-    );
-    if (fonteCreditoPreservada !== matter.fonte_credito) {
-      matter.fonte_credito = fonteCreditoPreservada;
+    const fonteCreditoLimpa = normalizarCreditosImagemDuplicados(matter.fonte_credito);
+    if (fonteCreditoLimpa !== (String(matter.fonte_credito || '').trim() || null)) {
+      matter.fonte_credito = fonteCreditoLimpa;
       if (['rascunho', 'pronto', 'erro', 'agendado'].includes(matter.status)) {
-        patchShow.fonte_credito = fonteCreditoPreservada;
+        patchShow.fonte_credito = fonteCreditoLimpa;
       }
     }
     if (Object.keys(patchShow).length) {
@@ -1570,17 +1563,12 @@ async function aplicarImagemUrl(req, res, next) {
       imagemAutor = CREDITO_IMAGEM_FALLBACK;
     }
 
-    const fonte = {
-      fonteNome: artwork.matter?.fonte_titulo || matter.fonte_titulo,
-      fonteUrl: artwork.matter?.fonte_url || matter.fonte_url,
-    };
     const materiaAtual = artwork.matter?.materia || matter.materia;
-    const materiaComCredito = atualizarCreditoImagemNaMateria(materiaAtual, imagemAutor, fonte);
+    const materiaComCredito = atualizarCreditoImagemNaMateria(materiaAtual, imagemAutor);
     const fonteCreditoAtual = artwork.matter?.fonte_credito ?? matter.fonte_credito;
     const fonteCreditoComImagem = atualizarFonteCreditoDaImagem(
       fonteCreditoAtual,
-      imagemAutor,
-      fonte
+      imagemAutor
     );
     if (
       (materiaComCredito && materiaComCredito !== materiaAtual) ||

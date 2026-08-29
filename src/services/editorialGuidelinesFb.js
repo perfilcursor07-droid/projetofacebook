@@ -1278,81 +1278,92 @@ function garantirFonteNoConteudo(materia, { fonteNome, fonteUrl } = {}) {
   return anexarHashtagsAoFinal(cleanBody, tags);
 }
 
-/** Mantém o link da fonte no campo próprio e atualiza somente o crédito da foto. */
-function atualizarFonteCreditoDaImagem(
-  fonteCredito,
-  imagemAutor,
-  { fonteNome, fonteUrl } = {}
-) {
-  const deveAtualizarFoto = imagemAutor != null && String(imagemAutor).trim() !== '';
-  const credito = deveAtualizarFoto ? limparCreditoAutor(imagemAutor) : null;
+/**
+ * Substitui exclusivamente o crédito visual. Linhas de Fonte/Fontes e URLs são
+ * tratadas como dados imutáveis neste fluxo. Também repara créditos de foto
+ * duplicados ou colados na mesma linha da fonte por versões antigas.
+ */
+function atualizarSomenteCreditoDaImagem(texto, imagemAutor, { parentetico = false } = {}) {
+  const original = String(texto || '').replace(/\r\n/g, '\n').trim();
+  if (imagemAutor == null || String(imagemAutor).trim() === '') return original || null;
+
+  const credito = limparCreditoAutor(imagemAutor);
   const foto = credito === CREDITO_IMAGEM_FALLBACK ? 'Reprodução' : credito;
-  const fonte = nomeFontePrincipal({ fonteNome, fonteUrl });
-  const url = /^https?:\/\//i.test(String(fonteUrl || '').trim())
-    ? String(fonteUrl).trim()
-    : null;
-  let campo = String(fonteCredito || '').trim();
+  const tinhaParentetico = /\(Foto:\s*[^)]+\)/i.test(original);
+  const tinhaImagemEmLista = /^\s*[•*\-]\s*Imagem\s*:/im.test(original);
+  const linhaFoto = tinhaImagemEmLista
+    ? `• Imagem: ${credito}`
+    : parentetico || tinhaParentetico
+      ? `(Foto: ${foto})`
+      : `Foto: ${foto}`;
+  const saida = [];
+  let inserido = false;
 
-  if (url && !campo.toLowerCase().includes(url.toLowerCase())) {
-    const linha = `• ${fonte || 'Fonte'} — ${url}`;
-    const fonteSimples = campo.match(/^Fonte:[ \t]*(.+)$/im);
-    if (/^Fonte:[ \t]*$/im.test(campo)) {
-      campo = campo.replace(/^Fonte:[ \t]*$/im, `Fonte:\n${linha}`);
-    } else if (fonteSimples) {
-      const nomeAtual = fonteSimples[1].trim();
-      const atualNorm = normalizarNomeFonte(nomeAtual);
-      const fonteNorm = normalizarNomeFonte(fonte);
-      const manterAtual =
-        atualNorm && fonteNorm && !atualNorm.includes(fonteNorm) && !fonteNorm.includes(atualNorm);
-      campo = campo.replace(
-        /^Fonte:[ \t]*.+$/im,
-        `Fonte:\n${linha}${manterAtual ? `\n• ${nomeAtual}` : ''}`
-      );
-    } else {
-      campo = `Fonte:\n${linha}${campo ? `\n\n${campo}` : ''}`;
+  for (const linhaOriginal of original.split('\n')) {
+    const linha = String(linhaOriginal || '');
+    if (/^\s*[•*\-]\s*Imagem\s*:/i.test(linha) || /^\s*\(?Foto\s*:/i.test(linha)) {
+      if (!inserido) {
+        saida.push(linhaFoto);
+        inserido = true;
+      }
+      continue;
     }
+
+    // Corrige: "Fonte: ... Foto: Reprodução Foto: Reprodução" sem tocar no
+    // texto que vem antes do primeiro crédito visual.
+    const fotoColada = linha.search(/\s+\(?Foto\s*:/i);
+    if (fotoColada >= 0) {
+      const prefixo = linha.slice(0, fotoColada).trimEnd();
+      if (prefixo) saida.push(prefixo);
+      if (!inserido) {
+        saida.push(linhaFoto);
+        inserido = true;
+      }
+      continue;
+    }
+    saida.push(linha);
   }
 
-  if (deveAtualizarFoto) {
-    if (/\(Foto:\s*[^)]+\)/i.test(campo)) {
-      campo = campo.replace(/\(Foto:\s*[^)]+\)/i, `(Foto: ${foto})`);
-    } else if (/^Foto:\s*.+$/im.test(campo)) {
-      campo = campo.replace(/^Foto:\s*.+$/im, `(Foto: ${foto})`);
-    } else {
-      campo = `${campo}${campo ? '\n\n' : ''}(Foto: ${foto})`;
-    }
+  if (!inserido) {
+    let indice = saida.findIndex((linha) => /^\s*(?:#|Siga\s+o\s+JM\s+Not[ií]cia)/i.test(linha));
+    if (indice < 0) indice = saida.length;
+    saida.splice(indice, 0, linhaFoto, '');
   }
 
-  return campo.trim().slice(0, 2000) || null;
+  return saida
+    .join('\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .slice(0, 12000) || null;
 }
 
-/** Atualiza só a linha de crédito da imagem e preserva a fonte da matéria. */
-function atualizarCreditoImagemNaMateria(materia, imagemAutor, fonte = {}) {
-  const credito = limparCreditoAutor(imagemAutor);
-  const { body, tags } = extrairHashtagsDoTexto(materia);
-  let cleanBody = String(body || '').trim();
-  const foto = credito === CREDITO_IMAGEM_FALLBACK ? 'Reprodução' : credito;
+/** Repara registros antigos com duas linhas Foto sem escolher uma fonte nova. */
+function normalizarCreditosImagemDuplicados(texto) {
+  const original = String(texto || '').replace(/\r\n/g, '\n').trim();
+  const marcadores = original.match(/\(?Foto\s*:|^[ \t]*[•*\-][ \t]*Imagem\s*:/gim) || [];
+  if (marcadores.length <= 1) return original || null;
 
-  // JM: (Foto: …)
-  if (/\(Foto:\s*[^)]+\)/i.test(cleanBody)) {
-    cleanBody = cleanBody.replace(/\(Foto:\s*[^)]+\)/i, `(Foto: ${foto})`);
-  } else if (/^Foto:\s*.+/m.test(cleanBody)) {
-    // Manual / rodapé novo: Foto: …
-    cleanBody = cleanBody.replace(
-      /^Foto:\s*.+$/m,
-      `Foto: ${foto}`
-    );
-  } else if (/Fontes:\s*\n(?:[•\-*].+\n?)+$/i.test(cleanBody)) {
-    if (/[•\*]\s*Imagem\s*:/i.test(cleanBody)) {
-      cleanBody = cleanBody.replace(/([•\*]\s*Imagem\s*:\s*)([^\n]+)/i, `$1${credito}`);
-    } else {
-      cleanBody = cleanBody.replace(/(Fontes:\s*\n(?:[•\*].+\n?)*)/i, (m) => `${m.trimEnd()}\n• Imagem: ${credito}\n`);
-    }
-  } else {
-    cleanBody = `${cleanBody}\n\nFoto: ${foto}`.trim();
-  }
+  const matchFoto = original.match(
+    /\(?Foto\s*:\s*(.*?)(?=\s+\(?Foto\s*:|\)?(?:\s*$|\n))/i
+  );
+  const matchImagem = original.match(/^[ \t]*[•*\-][ \t]*Imagem\s*:\s*([^\n]+)/im);
+  const credito = String(matchFoto?.[1] || matchImagem?.[1] || CREDITO_IMAGEM_FALLBACK)
+    .replace(/\)\s*$/, '')
+    .trim();
+  return atualizarSomenteCreditoDaImagem(original, credito, {
+    parentetico: /\(Foto\s*:/i.test(original),
+  });
+}
 
-  return garantirFonteNoConteudo(anexarHashtagsAoFinal(cleanBody, tags), fonte);
+/** Mantém o campo de fontes byte a byte e altera somente Foto/Imagem. */
+function atualizarFonteCreditoDaImagem(fonteCredito, imagemAutor) {
+  return atualizarSomenteCreditoDaImagem(fonteCredito, imagemAutor, { parentetico: true });
+}
+
+/** Mantém a fonte jornalística no conteúdo e altera somente a linha Foto. */
+function atualizarCreditoImagemNaMateria(materia, imagemAutor) {
+  return atualizarSomenteCreditoDaImagem(materia, imagemAutor, { parentetico: false });
 }
 
 /**
@@ -1453,6 +1464,7 @@ module.exports = {
   garantirFonteNoConteudo,
   atualizarFonteCreditoDaImagem,
   atualizarCreditoImagemNaMateria,
+  normalizarCreditosImagemDuplicados,
   extrairAutorImagemHeuristico,
   limparCreditoAutor,
   materiaJaTemCredito,
