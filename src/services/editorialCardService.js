@@ -934,7 +934,7 @@ function buildOverlay({
   const isPainelPremium = modelId === 'painel_premium';
   // tamanho escolhido em Minha marca (30–50, padrão 43), escalado ao canvas
   let fontSize = Math.round(
-    (sizeMeta?.px || 43) * Math.min(sx, sy) * (isCitacao ? 1.12 : isPainelPremium ? 1.34 : 1)
+    (sizeMeta?.px || 43) * Math.min(sx, sy) * (isCitacao ? 1.12 : isPainelPremium ? 1.12 : 1)
   );
   let lineHeight = Math.round(fontSize * (modelId === 'estilo_fatos' || isCitacao ? 1.14 : 1.08));
   const safeCategory = escapeXml(category || 'ÚLTIMAS');
@@ -1226,14 +1226,14 @@ function buildOverlay({
       <text x="${x(540)}" y="${y(g.footerY)}" text-anchor="middle" class="footer-jm">${safeFooter.toLocaleUpperCase('pt-BR')}</text>`;
   } else if (isPainelPremium) {
     const panelX = x(42);
-    const panelY = y(770);
+    const panelY = y(880);
     const panelW = W - ww(84);
-    const panelH = hh(500);
+    const panelH = hh(390);
     const logoBadgeX = x(70);
-    const logoBadgeY = y(706);
+    const logoBadgeY = y(820);
     const logoBadgeW = ww(350);
-    const logoBadgeH = hh(118);
-    const titleTop = y(lines.length >= 5 ? 935 : lines.length === 4 ? 955 : 980);
+    const logoBadgeH = hh(110);
+    const titleTop = y(lines.length >= 5 ? 995 : lines.length === 4 ? 1010 : 1030);
     const footerText = /^(?:not[ií]cias?|sua marca)$/i.test(
       String(footer || brandName || '').trim()
     )
@@ -1257,11 +1257,11 @@ function buildOverlay({
       </defs>
       <path d="M ${panelX + ww(34)} ${panelY} H ${panelX + panelW - ww(170)} L ${panelX + panelW} ${panelY + hh(166)} V ${panelY + panelH - hh(34)} Q ${panelX + panelW} ${panelY + panelH} ${panelX + panelW - ww(34)} ${panelY + panelH} H ${panelX + ww(34)} Q ${panelX} ${panelY + panelH} ${panelX} ${panelY + panelH - hh(34)} V ${panelY + hh(34)} Q ${panelX} ${panelY} ${panelX + ww(34)} ${panelY} Z" fill="url(#premiumPanel)" filter="url(#premiumShadow)"/>
       <path d="M ${x(770)} ${panelY} H ${x(910)} L ${W} ${panelY + hh(150)} V ${panelY + panelH} H ${x(820)} L ${x(690)} ${panelY + hh(330)} Z" fill="url(#premiumGlow)" opacity=".82"/>
-      <circle cx="${x(980)}" cy="${y(882)}" r="${ww(146)}" fill="none" stroke="${secondary}" stroke-width="${ww(34)}" opacity=".34"/>
-      <circle cx="${x(906)}" cy="${y(1195)}" r="${ww(92)}" fill="${primary}" opacity=".18"/>
+      <circle cx="${x(980)}" cy="${y(958)}" r="${ww(122)}" fill="none" stroke="${secondary}" stroke-width="${ww(30)}" opacity=".34"/>
+      <circle cx="${x(906)}" cy="${y(1195)}" r="${ww(78)}" fill="${primary}" opacity=".18"/>
       <path d="M ${x(790)} ${y(1238)} L ${x(1032)} ${y(996)}" stroke="rgba(255,255,255,.22)" stroke-width="${ww(3)}"/>
       ${hasLogo ? `<rect x="${logoBadgeX}" y="${logoBadgeY}" width="${logoBadgeW}" height="${logoBadgeH}" rx="${hh(58)}" fill="url(#accent)" stroke="rgba(255,255,255,.5)" stroke-width="${ww(2)}" filter="url(#premiumShadow)"/>` : ''}
-      <text x="${x(88)}" y="${y(855)}" text-anchor="start" class="category-premium">${safeCategory}</text>
+      <text x="${x(88)}" y="${y(955)}" text-anchor="start" class="category-premium">${safeCategory}</text>
       ${renderTitleLines(lines, { x: x(88), y: titleTop, lineHeight, anchor: 'start', className: 'title-premium' })}
       ${footerText ? `
         <rect x="${x(88)}" y="${y(1230)}" width="${ww(92)}" height="${hh(7)}" rx="${hh(4)}" fill="url(#accent)"/>
@@ -1517,7 +1517,7 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
   const isJm = modelId === 'jm';
   const isPainelPremium = modelId === 'painel_premium';
   const maxW = Math.round(cw * ((isFatos || isCitacao ? 200 : isUrgente ? 330 : isJm ? 186 : isPainelPremium ? 270 : 560) / 1080));
-  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : isUrgente ? 130 : isJm ? 40 : isPainelPremium ? 78 : 125) / 1080));
+  const maxH = Math.round(cw * ((isFatos || isCitacao ? 90 : isUrgente ? 130 : isJm ? 40 : isPainelPremium ? 72 : 125) / 1080));
   const input = await sharp(absolute)
     .resize(maxW, maxH, { fit: 'inside', withoutEnlargement: true })
     .png()
@@ -1546,8 +1546,8 @@ async function buildLogoComposite(logoPath, canvasWidth = WIDTH, options = {}) {
     top = barTop + Math.round(barH / 2) - Math.round(input.info.height / 2);
   } else if (isPainelPremium) {
     const syPremium = ch / 1350;
-    const badgeTop = Math.round(706 * syPremium);
-    const badgeH = Math.round(118 * syPremium);
+    const badgeTop = Math.round(820 * syPremium);
+    const badgeH = Math.round(110 * syPremium);
     top = badgeTop + Math.round((badgeH - input.info.height) / 2);
   }
 
