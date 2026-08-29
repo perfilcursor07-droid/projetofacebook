@@ -56,3 +56,15 @@ test('Largura do Painel premium é configurável e limitada entre 80% e 100%', (
   );
   assert.equal(aplicado.painelLargura, 84);
 });
+
+test('Altura do Painel premium é configurável e limitada entre 22% e 40%', () => {
+  assert.equal(normalizeModelConfig({ painelAltura: 10 }).painelAltura, 22);
+  assert.equal(normalizeModelConfig({ painelAltura: 30 }).painelAltura, 30);
+  assert.equal(normalizeModelConfig({ painelAltura: 60 }).painelAltura, 40);
+
+  const aplicado = applyModelConfig(
+    { marca_modelo_config: JSON.stringify({ painel_premium: { painelAltura: 24 } }) },
+    'painel_premium'
+  );
+  assert.equal(aplicado.painelAltura, 24);
+});

@@ -29,6 +29,9 @@ const JM_TITLE_GAP_DEFAULT = 18;
 const PAINEL_WIDTH_MIN = 80;
 const PAINEL_WIDTH_MAX = 100;
 const PAINEL_WIDTH_DEFAULT = 92;
+const PAINEL_HEIGHT_MIN = 22;
+const PAINEL_HEIGHT_MAX = 40;
+const PAINEL_HEIGHT_DEFAULT = 27;
 
 function normalizarCor(valor) {
   const cor = String(valor || '').trim().toLowerCase();
@@ -63,6 +66,12 @@ function normalizarPainelLargura(valor) {
   return Math.min(PAINEL_WIDTH_MAX, Math.max(PAINEL_WIDTH_MIN, Math.round(n)));
 }
 
+function normalizarPainelAltura(valor) {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return PAINEL_HEIGHT_DEFAULT;
+  return Math.min(PAINEL_HEIGHT_MAX, Math.max(PAINEL_HEIGHT_MIN, Math.round(n)));
+}
+
 function normalizarBooleano(valor, padrao = true) {
   if (valor == null || valor === '') return padrao;
   if (valor === true || valor === 1) return true;
@@ -95,6 +104,11 @@ function normalizeModelConfig(entrada = {}) {
     entrada.painelLargura ?? entrada.painel_largura ?? entrada.panelWidth ?? entrada.panel_width;
   if (painelLargura != null && painelLargura !== '') {
     cfg.painelLargura = normalizarPainelLargura(painelLargura);
+  }
+  const painelAltura =
+    entrada.painelAltura ?? entrada.painel_altura ?? entrada.panelHeight ?? entrada.panel_height;
+  if (painelAltura != null && painelAltura !== '') {
+    cfg.painelAltura = normalizarPainelAltura(painelAltura);
   }
 
   const corTitulo = String(entrada.tituloCor ?? entrada.titulo_cor ?? '').trim();
@@ -176,6 +190,10 @@ function applyModelConfig(user, modelId, extras = {}) {
       cfg.painelLargura != null
         ? normalizarPainelLargura(cfg.painelLargura)
         : PAINEL_WIDTH_DEFAULT,
+    painelAltura:
+      cfg.painelAltura != null
+        ? normalizarPainelAltura(cfg.painelAltura)
+        : PAINEL_HEIGHT_DEFAULT,
     config: cfg,
   };
 }
@@ -192,6 +210,9 @@ module.exports = {
   PAINEL_WIDTH_MIN,
   PAINEL_WIDTH_MAX,
   PAINEL_WIDTH_DEFAULT,
+  PAINEL_HEIGHT_MIN,
+  PAINEL_HEIGHT_MAX,
+  PAINEL_HEIGHT_DEFAULT,
   normalizeModelConfig,
   parseModelConfigs,
   configForModel,
