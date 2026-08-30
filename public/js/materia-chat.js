@@ -28,6 +28,7 @@
     modeloIa: document.getElementById('chat-ai-model'),
     modeloIaNome: document.getElementById('chat-ai-model-name'),
     modeloIaNivel: document.getElementById('chat-ai-model-level'),
+    modeloIaSelect: document.getElementById('chat-ai-model-select'),
     emptySub: document.getElementById('chat-empty-sub'),
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
@@ -58,6 +59,8 @@
     modo: 'escrever',
     tipoConversa: 'livre',
     modelosIa: null,
+    provedoresIa: null,
+    trocandoModeloIa: false,
     salvandoPautas: false,
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
     ultimasPautas: [],
@@ -160,6 +163,7 @@
       `Modelo em uso: ${nome}${nivel ? ` ${nivel}` : ''}`,
       modelo.modelo ? `ID: ${modelo.modelo}` : null,
       modelo.origem ? `Origem: ${modelo.origem}` : null,
+      el.modeloIaSelect ? 'Administrador: clique para trocar o modelo global' : null,
     ]
       .filter(Boolean)
       .join(' · ');
@@ -174,7 +178,83 @@
     }
   }
 
-  async function carregarModeloIa() {
+  function valorModeloIa(provider, model) {
+    return `${String(provider || '')}|${String(model || '')}`;
+  }
+
+  function modelosUnicos(provider) {
+    const catalogo = Array.isArray(provider?.session?.models) ? provider.session.models : [];
+    const modelos = catalogo
+      .map((model) => ({
+        id: String(model?.id || model || '').trim(),
+        name: String(model?.name || model?.id || model || '').trim(),
+        access: String(model?.access || '').trim(),
+      }))
+      .filter((model) => model.id);
+    const atual = String(provider?.model || '').trim();
+    if (atual && !modelos.some((model) => model.id === atual)) {
+      modelos.unshift({ id: atual, name: atual, access: '' });
+    }
+    return modelos.filter((model, index, lista) =>
+      lista.findIndex((item) => item.id === model.id) === index
+    );
+  }
+
+  function renderizarSeletorModelosIa() {
+    if (!el.modeloIaSelect) return;
+    const settings = state.provedoresIa || { providers: [], selectedProvider: '' };
+    const conectados = (settings.providers || []).filter((provider) => Boolean(provider.configured));
+    const fragment = document.createDocumentFragment();
+    let totalModelos = 0;
+
+    conectados.forEach((provider) => {
+      const modelos = modelosUnicos(provider);
+      if (!modelos.length) return;
+      const group = document.createElement('optgroup');
+      const origem = provider.connectionMode === 'session' ? 'desktop conectado' : 'API conectada';
+      group.label = `${provider.label || provider.provider} · ${origem}`;
+      modelos.forEach((model) => {
+        const option = document.createElement('option');
+        option.value = valorModeloIa(provider.provider, model.id);
+        option.textContent = `${model.name || model.id}${model.access ? ` · ${model.access}` : ''}`;
+        option.selected = settings.selectedProvider === provider.provider && provider.model === model.id;
+        group.appendChild(option);
+        totalModelos += 1;
+      });
+      fragment.appendChild(group);
+    });
+
+    el.modeloIaSelect.replaceChildren();
+    if (!totalModelos) {
+      const option = document.createElement('option');
+      option.textContent = 'Conecte uma IA em Provedores IA';
+      option.disabled = true;
+      option.selected = true;
+      el.modeloIaSelect.appendChild(option);
+    } else {
+      el.modeloIaSelect.appendChild(fragment);
+      const atual = modeloAtual();
+      const valorAtual = valorModeloIa(atual.provider, atual.modelo);
+      if (Array.from(el.modeloIaSelect.options).some((option) => option.value === valorAtual)) {
+        el.modeloIaSelect.value = valorAtual;
+      }
+    }
+    el.modeloIaSelect.disabled = state.trocandoModeloIa || state.enviando || !totalModelos;
+    el.modeloIa?.classList.toggle('is-changing', state.trocandoModeloIa);
+  }
+
+  async function carregarProvedoresIa() {
+    if (!el.modeloIaSelect) return;
+    try {
+      state.provedoresIa = await api('/api/admin/ai-providers');
+    } catch (err) {
+      state.provedoresIa = null;
+      if (err.status !== 403) setStatus(err.message || 'Não foi possível carregar os modelos conectados.');
+    }
+    renderizarSeletorModelosIa();
+  }
+
+  async function carregarModeloIa({ carregarProvedores = true } = {}) {
     atualizarModeloIa();
     try {
       const data = await api(`${API}/modelo`);
@@ -183,6 +263,38 @@
       state.modelosIa = null;
     }
     atualizarModeloIa();
+    if (carregarProvedores) await carregarProvedoresIa();
+    else renderizarSeletorModelosIa();
+  }
+
+  async function selecionarModeloIa() {
+    if (!el.modeloIaSelect || state.trocandoModeloIa || state.enviando) return;
+    const [provider, ...modelParts] = String(el.modeloIaSelect.value || '').split('|');
+    const model = modelParts.join('|');
+    if (!provider || !model) return;
+    const option = el.modeloIaSelect.selectedOptions?.[0];
+    const nome = String(option?.textContent || model).split(' · ')[0];
+    const provedor = (state.provedoresIa?.providers || []).find((item) => item.provider === provider);
+    const provedorNome = provedor?.label || provider;
+    const atual = modeloAtual();
+    if (atual.provider === provider && atual.modelo === model) return;
+
+    state.trocandoModeloIa = true;
+    renderizarSeletorModelosIa();
+    setStatus(`Validando ${provedorNome} · ${nome}…`);
+    try {
+      state.provedoresIa = await api(`/api/admin/ai-providers/${encodeURIComponent(provider)}/select`, {
+        method: 'POST',
+        body: JSON.stringify({ model }),
+      });
+      await carregarModeloIa({ carregarProvedores: false });
+      setStatus(`${provedorNome} · ${nome} agora será usado no Matéria manual.`);
+    } catch (err) {
+      setStatus(err.message || `Não foi possível selecionar ${nome}.`);
+    } finally {
+      state.trocandoModeloIa = false;
+      renderizarSeletorModelosIa();
+    }
   }
 
   function isMobileDrawer() {
@@ -1971,6 +2083,7 @@
     el.enviar.classList.toggle('opacity-60', on);
     el.parar?.classList.toggle('hidden', !on);
     if (el.toggleTranscricao) el.toggleTranscricao.disabled = on;
+    renderizarSeletorModelosIa();
     if (on && state.vozAtiva) pararVoz();
   }
 
@@ -2287,6 +2400,7 @@
     state.transcreverVideo = !state.transcreverVideo;
     aplicarToggleTranscricao();
   });
+  el.modeloIaSelect?.addEventListener('change', selecionarModeloIa);
 
   el.modoBtns?.forEach((btn) => {
     btn.addEventListener('click', () => definirModo(btn.dataset.chatModo));
