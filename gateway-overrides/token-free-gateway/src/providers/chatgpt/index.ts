@@ -7,10 +7,7 @@ export const definition: ProviderDefinition = {
 	id: "chatgpt-web",
 	name: "ChatGPT Web",
 	models: [
-		{ id: "gpt-5", name: "GPT-5" },
-		{ id: "gpt-5.6", name: "GPT-5.6" },
-		{ id: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
-		{ id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
+		{ id: "gpt-5.6", name: "GPT-5.6 Sol" },
 	],
 	factory: (credentials) => new ChatGPTWebClient(credentials as ChatGPTWebAuth),
 	loginFn: loginChatGPTWeb,

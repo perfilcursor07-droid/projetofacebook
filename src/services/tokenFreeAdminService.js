@@ -64,13 +64,13 @@ const WEB_PROVIDERS = {
     menuSelection: '2',
     label: 'ChatGPT',
     loginUrl: 'https://chatgpt.com/',
-    defaultModel: 'gpt-5',
+    // No ChatGPT comum, o alias gpt-5.6 é atendido pelo GPT-5.6 Sol.
+    // Terra e Luna pertencem a Work/Codex/API e não podem ser escolhidos
+    // diretamente pela sessão web padrão.
+    defaultModel: 'gpt-5.6',
     supportsApi: true,
     models: [
-      { id: 'gpt-5', name: 'GPT-5', access: 'Conforme seu plano' },
-      { id: 'gpt-5.6', name: 'GPT-5.6', access: 'Plano com acesso ao modelo' },
-      { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', access: 'Plano com acesso ao modelo' },
-      { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', access: 'Plano com acesso ao modelo' },
+      { id: 'gpt-5.6', name: 'GPT-5.6 Sol', access: 'Disponível conforme seu plano ChatGPT' },
     ],
   },
   deepseek: {

@@ -13,7 +13,13 @@ test('catálogo web usa gerações atuais e inclui Gemini', () => {
     WEB_PROVIDERS.claude.models.map((model) => model.id),
     ['claude-sonnet-5', 'claude-opus-5', 'claude-haiku-4-5']
   );
-  assert.ok(WEB_PROVIDERS.openai.models.some((model) => model.id === 'gpt-5'));
+  assert.deepEqual(WEB_PROVIDERS.openai.models, [
+    {
+      id: 'gpt-5.6',
+      name: 'GPT-5.6 Sol',
+      access: 'Disponível conforme seu plano ChatGPT',
+    },
+  ]);
   assert.ok(WEB_PROVIDERS.deepseek.models.some((model) => model.id === 'deepseek-v4-flash'));
   assert.ok(WEB_PROVIDERS.grok.models.some((model) => model.id === 'grok-4.6'));
   assert.ok(WEB_PROVIDERS.gemini.models.some((model) => model.id === 'gemini-flash'));
@@ -125,7 +131,7 @@ test('prioriza a sessão web do desktop sem exigir chave de API', async () => {
       {
         provider: 'openai',
         label: 'ChatGPT',
-        model: 'gpt-5',
+        model: 'gpt-5.6',
         configured: true,
         connectionMode: 'session',
         apiKey: '',
@@ -133,7 +139,7 @@ test('prioriza a sessão web do desktop sem exigir chave de API', async () => {
       [{ role: 'user', content: 'Olá' }]
     );
     assert.equal(text, 'resposta pela sessão');
-    assert.equal(chamada.options.model, 'gpt-5');
+    assert.equal(chamada.options.model, 'gpt-5.6');
     assert.equal(chamada.options.tarefa, 'conversa');
   } finally {
     tokenFreeGatewayService.chatCompletion = originalChatCompletion;

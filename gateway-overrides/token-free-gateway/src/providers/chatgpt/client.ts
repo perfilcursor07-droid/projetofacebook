@@ -22,12 +22,12 @@ export class ChatGPTWebClient extends BaseApiClient<ChatGPTWebAuth> {
 		hostKey: "chatgpt.com",
 		startUrl: "https://chatgpt.com/",
 		cookieDomain: ".chatgpt.com",
-		defaultModel: "gpt-5",
+		// O alias gpt-5.6 é resolvido pelo ChatGPT como GPT-5.6 Sol.
+		// Não anunciar variantes que a interface padrão do ChatGPT não deixa
+		// selecionar diretamente evita que o painel prometa uma troca falsa.
+		defaultModel: "gpt-5.6",
 		models: [
-			{ id: "gpt-5", name: "GPT-5" },
-			{ id: "gpt-5.6", name: "GPT-5.6" },
-			{ id: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
-			{ id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
+			{ id: "gpt-5.6", name: "GPT-5.6 Sol" },
 		],
 	};
 

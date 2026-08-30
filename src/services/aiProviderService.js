@@ -14,7 +14,7 @@ const PROVIDERS = {
   openai: {
     id: 'openai',
     label: 'ChatGPT',
-    model: () => 'gpt-5',
+    model: () => 'gpt-5.6',
     origin: 'openai',
     supportsApi: true,
   },
@@ -658,6 +658,7 @@ function humanModelName(model, provider) {
   if (lower.includes('claude-sonnet')) return 'Sonnet';
   if (lower.includes('claude-haiku')) return 'Haiku';
   if (lower.includes('claude-opus')) return 'Opus';
+  if (provider === 'openai' && (lower === 'gpt-5.6' || lower === 'gpt-5.6-sol')) return 'GPT-5.6 Sol';
   if (provider === 'openai') return value.toUpperCase().replace(/^GPT-/, 'GPT-');
   if (provider === 'deepseek' && lower.includes('v4')) return 'DeepSeek V4';
   if (provider === 'grok') return value.replace(/^grok-/i, 'Grok ').replace(/-/g, ' ');
