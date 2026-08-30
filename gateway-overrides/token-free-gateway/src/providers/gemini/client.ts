@@ -75,6 +75,36 @@ async function selectGeminiModel(page: Page, model?: string): Promise<void> {
 	await delay(500);
 }
 
+async function findGeminiInput(page: Page) {
+	// O Gemini migrou de textarea para rich-textarea/Quill. Além dos seletores
+	// genéricos, priorizamos o campo que a própria interface anuncia por ARIA.
+	const inputSelectors = [
+		'[aria-label*="Insira um comando para o Gemini" i]',
+		'[aria-label*="comando para o Gemini" i]',
+		'[aria-label*="Ask Gemini" i]',
+		'rich-textarea [role="textbox"]',
+		'rich-textarea [contenteditable="true"]',
+		'textarea[placeholder*="Gemini"]',
+		'textarea[placeholder*="问问"]',
+		'textarea[aria-label*="prompt"]',
+		'[role="textbox"][contenteditable="true"]',
+		'div[role="textbox"]',
+		'textarea',
+		'[contenteditable="true"]',
+	];
+
+	// A página autenticada pode levar alguns segundos para hidratar após abrir
+	// uma conversa. Antes, page.$ retornava null e encerrava o pedido cedo.
+	for (let attempt = 0; attempt < 20; attempt++) {
+		for (const selector of inputSelectors) {
+			const handle = await page.$(`${selector}:visible`).catch(() => null);
+			if (handle) return handle;
+		}
+		await delay(500);
+	}
+	return null;
+}
+
 export class GeminiWebClient extends BaseDomClient<GeminiWebAuth> {
 	readonly providerId = "gemini-web";
 
@@ -98,19 +128,7 @@ export class GeminiWebClient extends BaseDomClient<GeminiWebAuth> {
 
 	protected async sendViaDom(page: Page, params: NormalizedSendParams): Promise<string> {
 		await selectGeminiModel(page, params.model);
-		const inputSelectors = [
-			'textarea[placeholder*="Gemini"]',
-			'textarea[placeholder*="问问"]',
-			'textarea[aria-label*="prompt"]',
-			"textarea",
-			'div[role="textbox"]',
-			'[contenteditable="true"]',
-		];
-		let inputHandle = null;
-		for (const sel of inputSelectors) {
-			inputHandle = await page.$(sel);
-			if (inputHandle) break;
-		}
+		const inputHandle = await findGeminiInput(page);
 		if (!inputHandle) throw new Error("Gemini: could not find chat input");
 
 		await inputHandle.click();
