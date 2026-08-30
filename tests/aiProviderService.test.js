@@ -5,6 +5,7 @@ const axios = require('axios');
 
 const credentialCipher = require('../src/services/credentialCipher');
 const aiProviderService = require('../src/services/aiProviderService');
+const tokenFreeGatewayService = require('../src/services/tokenFreeGatewayService');
 
 test('cifra credencial antes de persistir e recupera o valor original', () => {
   const original = 'sk-teste-nao-real-123';
@@ -97,6 +98,33 @@ test('usa os endpoints oficiais compatíveis para DeepSeek e Grok', async () => 
     ]);
   } finally {
     axios.post = originalPost;
+  }
+});
+
+test('prioriza a sessão web do desktop sem exigir chave de API', async () => {
+  const originalChatCompletion = tokenFreeGatewayService.chatCompletion;
+  let chamada = null;
+  tokenFreeGatewayService.chatCompletion = async (messages, options) => {
+    chamada = { messages, options };
+    return 'resposta pela sessão';
+  };
+  try {
+    const text = await aiProviderService.complete(
+      {
+        provider: 'openai',
+        label: 'ChatGPT',
+        model: 'gpt-4',
+        configured: true,
+        connectionMode: 'session',
+        apiKey: '',
+      },
+      [{ role: 'user', content: 'Olá' }]
+    );
+    assert.equal(text, 'resposta pela sessão');
+    assert.equal(chamada.options.model, 'gpt-4');
+    assert.equal(chamada.options.tarefa, 'conversa');
+  } finally {
+    tokenFreeGatewayService.chatCompletion = originalChatCompletion;
   }
 });
 

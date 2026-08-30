@@ -13,19 +13,19 @@ const PROVIDERS = {
   openai: {
     id: 'openai',
     label: 'ChatGPT',
-    model: () => env.openaiModel || 'gpt-5.4',
+    model: () => 'gpt-4',
     origin: 'openai',
   },
   deepseek: {
     id: 'deepseek',
     label: 'DeepSeek',
-    model: () => env.deepseekWriterModel || env.deepseekModel || 'deepseek-v4-flash',
+    model: () => 'deepseek-chat',
     origin: 'deepseek',
   },
   grok: {
     id: 'grok',
     label: 'Grok',
-    model: () => env.xaiModel || 'grok-4.6',
+    model: () => 'grok-2',
     origin: 'xai',
   },
 };
@@ -79,8 +79,20 @@ function decryptKey(row) {
 }
 
 function isConfigured(provider, row = null) {
-  if (provider === 'claude') return claudeConfigured();
+  if (provider === 'claude') return Boolean(require('./claudeService').isConfigured());
   return Boolean(row?.api_key_cipher || envApiKey(provider));
+}
+
+async function webSessions() {
+  return require('./tokenFreeAdminService').providerSessions();
+}
+
+function sessionModel(session, savedModel, provider) {
+  const available = (session?.models || []).map((item) => String(item.id || item));
+  const saved = String(savedModel || '').trim();
+  if (session?.autorizada && available.includes(saved)) return saved;
+  if (session?.autorizada) return String(session.defaultModel || PROVIDERS[provider].model());
+  return normalizeModel(saved, provider);
 }
 
 function legacyProvider() {
@@ -105,17 +117,30 @@ async function rowsByProvider() {
   }
 }
 
-function toPublic(provider, row, selectedProvider) {
+function toPublic(provider, row, selectedProvider, session = null) {
   const metadata = PROVIDERS[provider];
-  const configured = isConfigured(provider, row);
+  const sessionConfigured = Boolean(session?.autorizada);
+  const apiConfigured = isConfigured(provider, row);
+  const configured = sessionConfigured || apiConfigured;
   return {
     provider,
     label: metadata.label,
-    model: String(row?.model || metadata.model()),
+    model: sessionModel(session, row?.model, provider),
     configured,
+    connectionMode: sessionConfigured ? 'session' : apiConfigured ? 'api' : null,
+    session: session
+      ? {
+          authorized: sessionConfigured,
+          updatedAt: session.atualizadaEm || null,
+          defaultModel: session.defaultModel,
+          models: session.models || [],
+        }
+      : null,
     credentialSource:
-      provider === 'claude'
-        ? configured ? 'sessão/API Claude' : null
+      sessionConfigured
+        ? 'sessão do desktop'
+        : provider === 'claude'
+          ? apiConfigured ? 'API Claude' : null
         : row?.api_key_cipher
           ? 'painel'
           : envApiKey(provider)
@@ -133,13 +158,13 @@ function toPublic(provider, row, selectedProvider) {
 }
 
 async function listPublic() {
-  const rows = await rowsByProvider();
+  const [rows, sessions] = await Promise.all([rowsByProvider(), webSessions()]);
   const selectedRow = [...rows.values()].find((row) => Boolean(row.selected_materia_manual));
   const selectedProvider = selectedRow?.provider || legacyProvider();
   return {
     selectedProvider,
     providers: Object.keys(PROVIDERS).map((provider) =>
-      toPublic(provider, rows.get(provider), selectedProvider)
+      toPublic(provider, rows.get(provider), selectedProvider, sessions[provider])
     ),
   };
 }
@@ -153,13 +178,20 @@ async function getSelected({ includeApiKey = true } = {}) {
     if (!missingTable(err)) throw err;
   }
   const provider = normalizeProvider(row?.provider || legacyProvider());
+  const sessions = await webSessions();
+  const session = sessions[provider];
+  const sessionConfigured = Boolean(session?.autorizada);
+  const apiConfigured = isConfigured(provider, row);
   return {
     provider,
     label: PROVIDERS[provider].label,
-    model: normalizeModel(row?.model, provider),
-    configured: isConfigured(provider, row),
-    apiKey: provider === 'claude' || !includeApiKey ? '' : decryptKey(row) || envApiKey(provider),
-    origin: PROVIDERS[provider].origin,
+    model: sessionModel(session, row?.model, provider),
+    configured: sessionConfigured || apiConfigured,
+    connectionMode: sessionConfigured ? 'session' : apiConfigured ? 'api' : null,
+    apiKey: sessionConfigured || provider === 'claude' || !includeApiKey
+      ? ''
+      : decryptKey(row) || envApiKey(provider),
+    origin: sessionConfigured ? 'token-free-gateway' : PROVIDERS[provider].origin,
   };
 }
 
@@ -177,19 +209,18 @@ async function save(providerValue, { apiKey, model } = {}) {
     data.last_test_at = null;
   }
   const row = await AiProviderSettings.upsert(provider, data);
-  return toPublic(provider, row, Boolean(row.selected_materia_manual) ? provider : null);
+  const sessions = await webSessions();
+  return toPublic(provider, row, Boolean(row.selected_materia_manual) ? provider : null, sessions[provider]);
 }
 
 async function select(providerValue, { model } = {}) {
   const provider = normalizeProvider(providerValue);
   const current = await AiProviderSettings.findByProvider(provider);
-  const selectedModel = normalizeModel(model || current?.model, provider);
-  if (!isConfigured(provider, current)) {
-    const err = new Error(
-      provider === 'claude'
-        ? 'Autorize a sessão do Claude ou configure ANTHROPIC_API_KEY antes de selecionar.'
-        : `Cadastre a chave da ${PROVIDERS[provider].label} antes de selecionar.`
-    );
+  const sessions = await webSessions();
+  const session = sessions[provider];
+  const selectedModel = sessionModel(session, model || current?.model, provider);
+  if (!session?.autorizada && !isConfigured(provider, current)) {
+    const err = new Error(`Conecte ${PROVIDERS[provider].label} pelo desktop privado antes de selecionar.`);
     err.status = 422;
     throw err;
   }
@@ -212,7 +243,8 @@ async function removeKey(providerValue) {
   const effectivelySelected = explicitlySelected
     ? explicitlySelected.provider === provider
     : legacyProvider() === provider;
-  if (effectivelySelected && !envApiKey(provider)) {
+  const sessions = await webSessions();
+  if (effectivelySelected && !sessions[provider]?.autorizada && !envApiKey(provider)) {
     const err = new Error('Selecione outro provedor para o Matéria manual antes de remover esta chave.');
     err.status = 409;
     throw err;
@@ -224,7 +256,7 @@ async function removeKey(providerValue) {
     last_test_message: null,
     last_test_at: null,
   });
-  return toPublic(provider, row, Boolean(row.selected_materia_manual) ? provider : null);
+  return toPublic(provider, row, Boolean(row.selected_materia_manual) ? provider : null, sessions[provider]);
 }
 
 function jsonInstruction(messages, json) {
@@ -492,12 +524,33 @@ async function callClaude(config, messages, options = {}) {
   throw err;
 }
 
+async function callWebSession(config, messages, options = {}) {
+  const tokenFree = require('./tokenFreeGatewayService');
+  return tokenFree.chatCompletion(messages, {
+    ...options,
+    tarefa: 'conversa',
+    model: config.model,
+    conversationName: options.conversationName || 'ViralizeAI — Matéria manual',
+  });
+}
+
+async function streamWebSession(config, messages, options = {}) {
+  const tokenFree = require('./tokenFreeGatewayService');
+  return tokenFree.chatCompletionStream(messages, {
+    ...options,
+    tarefa: 'conversa',
+    model: config.model,
+    conversationName: options.conversationName || 'ViralizeAI — Matéria manual',
+  });
+}
+
 async function complete(config, messages, options = {}) {
   if (!config?.configured) {
     const err = new Error(`Configure ${config?.label || 'o provedor'} antes de usar no Matéria manual.`);
     err.status = 503;
     throw err;
   }
+  if (config.connectionMode === 'session') return callWebSession(config, messages, options);
   if (config.provider === 'claude') return callClaude(config, messages, options);
   if (!config.apiKey) {
     const err = new Error(`A chave da ${config.label} não está configurada.`);
@@ -510,6 +563,7 @@ async function complete(config, messages, options = {}) {
 
 async function completeStream(config, messages, options = {}) {
   if (!config?.configured) return complete(config, messages, options);
+  if (config.connectionMode === 'session') return streamWebSession(config, messages, options);
   if (config.provider === 'claude') {
     const tokenFree = require('./tokenFreeGatewayService');
     if (tokenFree.isConfigured()) {
@@ -538,14 +592,17 @@ async function completeStream(config, messages, options = {}) {
 async function test(providerValue, { apiKey, model } = {}) {
   const provider = normalizeProvider(providerValue);
   const row = await AiProviderSettings.findByProvider(provider);
+  const sessions = await webSessions();
+  const session = sessions[provider];
+  const sessionConfigured = Boolean(session?.autorizada);
+  const apiConfigured = isConfigured(provider, row) || Boolean(String(apiKey || '').trim());
   const config = {
     provider,
     label: PROVIDERS[provider].label,
-    model: normalizeModel(model || row?.model, provider),
-    configured: provider === 'claude'
-      ? claudeConfigured()
-      : Boolean(String(apiKey || '').trim() || row?.api_key_cipher || envApiKey(provider)),
-    apiKey: provider === 'claude'
+    model: sessionModel(session, model || row?.model, provider),
+    configured: sessionConfigured || apiConfigured,
+    connectionMode: sessionConfigured ? 'session' : apiConfigured ? 'api' : null,
+    apiKey: sessionConfigured || provider === 'claude'
       ? ''
       : String(apiKey || '').trim() || decryptKey(row) || envApiKey(provider),
   };

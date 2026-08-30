@@ -45,9 +45,10 @@ async function reiniciar(_req, res, next) {
 async function autorizar(req, res, next) {
   try {
     const trocarConta = req.body?.trocarConta === true || req.body?.trocarConta === 'true';
+    const provider = String(req.body?.provider || 'claude').trim().toLowerCase();
     return res.status(202).json({
       ok: true,
-      autorizacao: tokenFreeAdminService.iniciarAutorizacao({ trocarConta }),
+      autorizacao: tokenFreeAdminService.iniciarAutorizacao({ provider, trocarConta }),
     });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -67,9 +68,12 @@ async function continuarAutorizacao(_req, res, next) {
   }
 }
 
-async function testar(_req, res, next) {
+async function testar(req, res, next) {
   try {
-    return res.json(await tokenFreeAdminService.testar());
+    return res.json(await tokenFreeAdminService.testar({
+      provider: String(req.body?.provider || 'claude').trim().toLowerCase(),
+      model: req.body?.model || null,
+    }));
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     return next(err);

@@ -94,6 +94,12 @@
       const provider = card.dataset.providerCard;
       const item = providerById(provider);
       if (!item) return;
+      const liveSession = currentStatus?.providers?.[provider] || null;
+      const sessionAuthorized = liveSession
+        ? Boolean(liveSession.autorizada)
+        : Boolean(item.session?.authorized);
+      const sessionExpired = liveSession?.valida === false;
+      const connected = (sessionAuthorized && !sessionExpired) || item.configured;
       const isSelected = providerSettings.selectedProvider === provider;
       card.classList.toggle('border-violet-500/60', isSelected);
       card.classList.toggle('bg-violet-500/5', isSelected);
@@ -101,10 +107,18 @@
 
       const badge = card.querySelector('.ai-provider-badge');
       if (badge) {
-        badge.textContent = isSelected ? 'Em uso' : item.configured ? 'Conectado' : 'Não conectado';
+        badge.textContent = sessionExpired
+          ? 'Sessão expirada'
+          : isSelected && connected
+            ? 'Em uso'
+            : sessionAuthorized
+              ? 'Sessão conectada'
+              : item.configured
+                ? 'API conectada'
+                : 'Não conectado';
         badge.classList.remove(...allToneClasses);
         badge.classList.add(
-          ...(toneClasses[isSelected ? 'good' : item.configured ? 'neutral' : 'warn'])
+          ...(toneClasses[sessionExpired ? 'bad' : isSelected && connected ? 'good' : connected ? 'neutral' : 'warn'])
         );
       }
 
@@ -112,12 +126,14 @@
       if (modelInput && document.activeElement !== modelInput) modelInput.value = item.model || '';
       const keyInput = card.querySelector('[data-provider-key]');
       if (keyInput) {
-        keyInput.placeholder = item.configured
-          ? `Conectado${item.credentialSource ? ` via ${item.credentialSource}` : ''} — deixe vazio para manter`
-          : 'Cole a chave aqui';
+        keyInput.placeholder = item.credentialSource === 'painel'
+          ? 'Chave salva — deixe vazio para manter'
+          : 'Cole a chave somente se quiser usar a API';
       }
       const remove = card.querySelector('.ai-provider-remove');
-      remove?.classList.toggle('hidden', !item.configured || item.credentialSource !== 'painel');
+      remove?.classList.toggle('hidden', item.credentialSource !== 'painel');
+      const connect = card.querySelector('.ai-provider-connect');
+      if (connect) connect.textContent = sessionAuthorized ? 'Reconectar pelo desktop' : 'Conectar pelo desktop';
       const select = card.querySelector('.ai-provider-select');
       if (select) {
         select.textContent = isSelected ? 'Selecionado no Matéria manual' : 'Usar no Matéria manual';
@@ -128,9 +144,11 @@
       if (test) {
         test.textContent = item.lastTest?.at
           ? `${item.lastTest.status === 'success' ? 'Último teste aprovado' : 'Último teste falhou'} · ${formatDate(item.lastTest.at)}`
-          : item.configured
-            ? 'Credencial pronta para teste.'
-            : 'Cadastre a credencial para conectar.';
+          : sessionAuthorized
+            ? 'Sessão pronta para teste.'
+            : item.configured
+              ? 'API pronta para teste.'
+              : 'Conecte pelo desktop para começar.';
       }
     });
 
@@ -187,7 +205,23 @@
     renderProviders(providerSettings);
     try {
       const form = providerForm(provider);
-      if (action === 'save') {
+      if (action === 'connect') {
+        const label = providerById(provider)?.label || provider;
+        const desktopUrl = currentStatus?.desktop?.urlLocal;
+        if (currentStatus?.desktop?.necessario && desktopUrl) {
+          window.open(desktopUrl, '_blank', 'noopener');
+        }
+        setProviderFeedback(`Abrindo o desktop privado para conectar ${label}…`, 'neutral');
+        await request('/authorize', {
+          method: 'POST',
+          body: { provider, trocarConta: false },
+        });
+        await refresh(true);
+        setProviderFeedback(
+          `Entre no ${label} dentro do desktop privado. A sessão será salva automaticamente.`,
+          'warn'
+        );
+      } else if (action === 'save') {
         await saveProvider(provider);
       } else if (action === 'test') {
         if (form.apiKey) await saveProvider(provider, { silent: true });
@@ -304,7 +338,10 @@
     const authVisible = ['running', 'waiting_login', 'waiting_browser_login', 'success', 'error'].includes(auth.status);
     progress?.classList.toggle('hidden', !authVisible);
     if ($('claude-auth-label')) {
-      $('claude-auth-label').textContent = auth.status === 'error' ? 'Falha na autorização' : 'Autorização do Claude';
+      const providerLabel = auth.providerLabel || 'IA';
+      $('claude-auth-label').textContent = auth.status === 'error'
+        ? `Falha ao conectar ${providerLabel}`
+        : `Autorização do ${providerLabel}`;
     }
     if ($('claude-auth-message')) $('claude-auth-message').textContent = auth.message || '';
 
@@ -317,6 +354,7 @@
         : 'Gateway sem Bearer token: mantenha a porta 3456 acessível somente localmente.',
     ];
     $('claude-security-status').textContent = securityParts.join(' ');
+    renderProviders(providerSettings);
     syncButtons();
   }
 
@@ -358,10 +396,11 @@
       pendingMessage = 'Reiniciando o gateway…';
     } else if (action === 'test') {
       path = '/test';
+      body = { provider: 'claude', model: 'claude-sonnet-5' };
       pendingMessage = 'Testando o Sonnet 5…';
     } else if (action === 'authorize') {
       path = '/authorize';
-      body = { trocarConta: false };
+      body = { provider: 'claude', trocarConta: false };
       pendingMessage = 'Abrindo o Chrome para entrar no Claude…';
     } else if (action === 'switch') {
       const confirmed = window.confirm(
@@ -369,7 +408,7 @@
       );
       if (!confirmed) return;
       path = '/authorize';
-      body = { trocarConta: true };
+      body = { provider: 'claude', trocarConta: true };
       pendingMessage = 'Removendo a sessão atual e abrindo o Chrome…';
     } else if (action === 'continue') {
       path = '/authorize/continue';
@@ -416,6 +455,5 @@
   });
 
   render(currentStatus);
-  renderProviders(providerSettings);
   window.setInterval(() => refresh(true), 5000);
 })();

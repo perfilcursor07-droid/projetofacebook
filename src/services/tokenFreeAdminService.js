@@ -45,8 +45,54 @@ const COMMAND_TIMEOUT_MS = 45 * 1000;
 const MAX_OUTPUT_CHARS = 12_000;
 const DEFAULT_NOVNC_PORT = 6080;
 
+const WEB_PROVIDERS = {
+  claude: {
+    profileId: 'claude-web',
+    menuSelection: '1',
+    label: 'Claude',
+    loginUrl: 'https://claude.ai/new',
+    defaultModel: 'claude-sonnet-5',
+    models: ['claude-sonnet-5', 'claude-sonnet-4-20250514', 'claude-sonnet-4-6'],
+  },
+  openai: {
+    profileId: 'chatgpt-web',
+    menuSelection: '2',
+    label: 'ChatGPT',
+    loginUrl: 'https://chatgpt.com/',
+    defaultModel: 'gpt-4',
+    models: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+  },
+  deepseek: {
+    profileId: 'deepseek-web',
+    menuSelection: '3',
+    label: 'DeepSeek',
+    loginUrl: 'https://chat.deepseek.com/',
+    defaultModel: 'deepseek-chat',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+  },
+  grok: {
+    profileId: 'grok-web',
+    menuSelection: '8',
+    label: 'Grok',
+    loginUrl: 'https://grok.com/',
+    defaultModel: 'grok-2',
+    models: ['grok-1', 'grok-2'],
+  },
+};
+
+function providerInfo(value = 'claude') {
+  const id = String(value || 'claude').trim().toLowerCase();
+  const info = WEB_PROVIDERS[id];
+  if (info) return { id, ...info };
+  const err = new Error('Provedor web inválido.');
+  err.status = 400;
+  throw err;
+}
+
 let authJob = {
   status: 'idle',
+  provider: null,
+  providerLabel: null,
   message: 'Nenhuma autorização em andamento.',
   startedAt: null,
   finishedAt: null,
@@ -70,11 +116,15 @@ async function lerJsonSeguro(filePath, fallback) {
 
 async function authMetadata() {
   const store = await lerJsonSeguro(AUTH_FILE, { profiles: {} });
-  const profile = store?.profiles?.['claude-web'];
-  return {
-    autorizada: Boolean(profile?.credentials?.sessionKey || profile?.credentials?.cookie),
-    atualizadaEm: isoDate(profile?.updatedAt),
-  };
+  const result = {};
+  for (const [provider, info] of Object.entries(WEB_PROVIDERS)) {
+    const profile = store?.profiles?.[info.profileId];
+    result[provider] = {
+      autorizada: Boolean(profile?.credentials && Object.keys(profile.credentials).length),
+      atualizadaEm: isoDate(profile?.updatedAt),
+    };
+  }
+  return result;
 }
 
 async function configMetadata() {
@@ -90,6 +140,8 @@ async function configMetadata() {
 function authJobPublico() {
   return {
     status: authJob.status,
+    provider: authJob.provider || null,
+    providerLabel: authJob.providerLabel || null,
     message: authJob.message,
     startedAt: authJob.startedAt,
     finishedAt: authJob.finishedAt,
@@ -168,6 +220,23 @@ async function status() {
     healthError = err.message;
   }
 
+  const providerStatuses = {};
+  for (const [provider, info] of Object.entries(WEB_PROVIDERS)) {
+    const session = health?.sessions?.[info.profileId];
+    providerStatuses[provider] = {
+      provider,
+      label: info.label,
+      profileId: info.profileId,
+      autorizada: Boolean(auth?.[provider]?.autorizada),
+      atualizadaEm: auth?.[provider]?.atualizadaEm || null,
+      valida: session?.valid === true ? true : session?.valid === false ? false : null,
+      motivo: session?.reason || null,
+      models: modelos
+        .filter((item) => info.models.includes(String(item?.id || '')))
+        .map((item) => ({ id: String(item.id), name: item.name || item.id })),
+      defaultModel: info.defaultModel,
+    };
+  }
   const sessao = health?.sessions?.['claude-web'];
   const modeloConfigurado = gatewayClient.MODELO;
   const modeloDisponivel = modelos.some((item) => String(item?.id || '') === modeloConfigurado);
@@ -186,9 +255,10 @@ async function status() {
       cdpUrl: config.cdpUrl,
     },
     desktop,
+    providers: providerStatuses,
     claude: {
-      autorizada: auth.autorizada,
-      atualizadaEm: auth.atualizadaEm,
+      autorizada: auth.claude?.autorizada,
+      atualizadaEm: auth.claude?.atualizadaEm,
       valida: sessao?.valid === true ? true : sessao?.valid === false ? false : null,
       motivo: sessao?.reason || null,
       modelo: modeloConfigurado,
@@ -272,7 +342,7 @@ async function aguardarChromeCdp(timeout = 20_000) {
   return false;
 }
 
-async function iniciarChromeVisualServidor() {
+async function iniciarChromeVisualServidor(startUrl = WEB_PROVIDERS.claude.loginUrl) {
   const chromePath = CHROME_LINUX_CANDIDATES.find((candidate) => fs.existsSync(candidate));
   if (!chromePath) {
     const err = new Error('Google Chrome/Chromium não encontrado no servidor.');
@@ -298,7 +368,7 @@ async function iniciarChromeVisualServidor() {
     '--password-store=basic',
     '--remote-allow-origins=*',
     '--window-size=1440,1000',
-    'https://claude.ai/new',
+    startUrl,
   ];
 
   try {
@@ -336,11 +406,12 @@ async function reiniciar() {
   return { ok: true, message: 'Gateway reiniciado.' };
 }
 
-async function removerCredencialClaude() {
+async function removerCredencialProvider(provider = 'claude') {
+  const info = providerInfo(provider);
   const store = await lerJsonSeguro(AUTH_FILE, { profiles: {} });
   if (!store.profiles || typeof store.profiles !== 'object') store.profiles = {};
-  if (!store.profiles['claude-web']) return false;
-  delete store.profiles['claude-web'];
+  if (!store.profiles[info.profileId]) return false;
+  delete store.profiles[info.profileId];
   await fsp.mkdir(path.dirname(AUTH_FILE), { recursive: true });
   const tempPath = `${AUTH_FILE}.tmp`;
   await fsp.writeFile(tempPath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
@@ -366,29 +437,32 @@ async function limparSessaoClaudeDoChrome() {
     timeout: COMMAND_TIMEOUT_MS,
     env: { TOKEN_FREE_GATEWAY_SOURCE_DIR: TOOL_DIR },
   });
-  await removerCredencialClaude();
+  await removerCredencialProvider('claude');
 }
 
-function iniciarAutorizacao({ trocarConta = false } = {}) {
+function iniciarAutorizacao({ provider = 'claude', trocarConta = false } = {}) {
+  const providerConfig = providerInfo(provider);
   assertCli();
   if (process.platform === 'linux' && !process.env.DISPLAY) {
     const err = new Error(
-      'Desktop do Claude não configurado. Instale o desktop privado e recarregue o PM2 antes de entrar novamente.'
+      'Desktop privado não configurado. Instale o desktop e recarregue o PM2 antes de conectar a conta.'
     );
     err.status = 409;
     throw err;
   }
   if (['running', 'waiting_login', 'waiting_browser_login'].includes(authJob.status)) {
-    const err = new Error('Já existe uma autorização do Claude em andamento.');
+    const err = new Error('Já existe uma autorização de IA em andamento.');
     err.status = 409;
     throw err;
   }
 
   authJob = {
     status: 'running',
+    provider: providerConfig.id,
+    providerLabel: providerConfig.label,
     message: trocarConta
-      ? 'Preparando o Chrome para entrar em outra conta…'
-      : 'Abrindo o Chrome do servidor para autorizar o Claude…',
+      ? `Preparando o Chrome para entrar em outra conta ${providerConfig.label}…`
+      : `Abrindo o Chrome do servidor para conectar ${providerConfig.label}…`,
     startedAt: new Date().toISOString(),
     finishedAt: null,
   };
@@ -396,7 +470,8 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
   // O endpoint responde imediatamente. A tela acompanha este trabalho por polling.
   void (async () => {
     try {
-      if (trocarConta) await limparSessaoClaudeDoChrome();
+      if (trocarConta && providerConfig.id === 'claude') await limparSessaoClaudeDoChrome();
+      else if (trocarConta) await removerCredencialProvider(providerConfig.id);
 
       // Faz o webauth abrir uma janela nova e aguardar a confirmação manual.
       // Sem isso, um Chrome já aberto tentaria capturar a sessão imediatamente.
@@ -413,7 +488,7 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
           ...authJob,
           message: 'Iniciando o Chrome no desktop privado…',
         };
-        await iniciarChromeVisualServidor();
+        await iniciarChromeVisualServidor(providerConfig.loginUrl);
       }
 
       const child = spawn(BUN_PATH, [ENTRY_FILE, 'webauth'], {
@@ -425,8 +500,8 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
       activeAuthChild = child;
       let buffer = '';
       let detectouPromptInicial = false;
-      let detectouPromptClaude = false;
-      let enviouClaude = false;
+      let detectouPromptProvider = false;
+      let enviouProvider = false;
       let concluida = false;
 
       activeAuthTimer = setTimeout(() => {
@@ -448,27 +523,27 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
           authJob = {
             ...authJob,
             status: 'waiting_login',
-            message: 'Chrome aberto no desktop privado. Entre no Claude e depois clique em “Já entrei, concluir”.',
+            message: `Chrome aberto no desktop privado. Entre no ${providerConfig.label} e depois clique em “Já entrei, concluir”.`,
           };
         }
-        if (!detectouPromptClaude && /Please log(?:in| in) to Claude/i.test(buffer)) {
-          detectouPromptClaude = true;
+        if (!detectouPromptProvider && /Please (?:log(?:in| in)|sign in) to/i.test(buffer)) {
+          detectouPromptProvider = true;
           authJob = {
             ...authJob,
             status: 'waiting_browser_login',
-            message: 'Aguardando o Claude confirmar a sessão no Chrome…',
+            message: `Aguardando ${providerConfig.label} confirmar a sessão no Chrome…`,
           };
         }
-        if (!enviouClaude && /Enter selection:/i.test(buffer)) {
-          enviouClaude = true;
-          child.stdin?.write('1\n');
+        if (!enviouProvider && /Enter selection:/i.test(buffer)) {
+          enviouProvider = true;
+          child.stdin?.write(`${providerConfig.menuSelection}\n`);
           authJob = {
             ...authJob,
-            status: 'running',
-            message: 'Capturando a nova sessão do Claude…',
+            status: 'waiting_browser_login',
+            message: `Entre no ${providerConfig.label} pelo desktop privado. A sessão será capturada automaticamente…`,
           };
         }
-        if (/Claude Web authorization succeeded/i.test(buffer)) concluida = true;
+        if (/authorization succeeded/i.test(buffer)) concluida = true;
       };
 
       child.stdout.on('data', analisar);
@@ -493,7 +568,7 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
           authJob = {
             ...authJob,
             status: 'error',
-            message: 'O Claude não confirmou a nova sessão. Abra o Chrome e tente novamente.',
+            message: `${providerConfig.label} não confirmou a nova sessão. Abra o desktop e tente novamente.`,
             finishedAt: new Date().toISOString(),
           };
           return;
@@ -508,7 +583,7 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
           authJob = {
             ...authJob,
             status: 'success',
-            message: 'Claude autorizado e gateway reiniciado com sucesso.',
+            message: `${providerConfig.label} conectado e gateway reiniciado com sucesso.`,
             finishedAt: new Date().toISOString(),
           };
         } catch (err) {
@@ -535,7 +610,7 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
 
 function continuarAutorizacao() {
   if (authJob.status !== 'waiting_login' || !activeAuthChild?.stdin) {
-    const err = new Error('Não existe um login do Claude aguardando confirmação.');
+    const err = new Error('Não existe um login aguardando confirmação.');
     err.status = 409;
     throw err;
   }
@@ -543,19 +618,21 @@ function continuarAutorizacao() {
   authJob = {
     ...authJob,
     status: 'running',
-    message: 'Confirmando o login e capturando a sessão do Claude…',
+    message: `Confirmando o login e capturando a sessão de ${authJob.providerLabel || 'IA'}…`,
   };
   activeAuthChild.stdin.write('\n');
   return authJobPublico();
 }
 
-async function testar() {
+async function testar({ provider = 'claude', model = null } = {}) {
+  const providerConfig = providerInfo(provider);
+  const selectedModel = String(model || providerConfig.defaultModel).trim();
   const inicio = Date.now();
   try {
     const { data } = await axios.post(
       `${gatewayClient.BASE_URL}/chat/completions`,
       {
-        model: gatewayClient.MODELO,
+        model: selectedModel,
         messages: [{ role: 'user', content: 'Responda somente com OK.' }],
         stream: false,
       },
@@ -569,13 +646,13 @@ async function testar() {
     );
     const resposta = String(data?.choices?.[0]?.message?.content || '').trim();
     if (!resposta) {
-      const err = new Error('O Claude respondeu sem conteúdo.');
+      const err = new Error(`${providerConfig.label} respondeu sem conteúdo.`);
       err.status = 502;
       throw err;
     }
     return {
       ok: true,
-      message: `Claude respondeu em ${((Date.now() - inicio) / 1000).toFixed(1)}s.`,
+      message: `${providerConfig.label} respondeu em ${((Date.now() - inicio) / 1000).toFixed(1)}s.`,
       resposta: resposta.slice(0, 80),
     };
   } catch (err) {
@@ -588,10 +665,27 @@ async function testar() {
     )
       .replace(/\s+/g, ' ')
       .trim();
-    const falha = new Error(`Teste do Claude falhou: ${remoto.slice(0, 500)}`);
+    const falha = new Error(`Teste do ${providerConfig.label} falhou: ${remoto.slice(0, 500)}`);
     falha.status = Number(err?.response?.status) || 502;
     throw falha;
   }
+}
+
+async function providerSessions() {
+  const auth = await authMetadata();
+  const result = {};
+  for (const [provider, info] of Object.entries(WEB_PROVIDERS)) {
+    result[provider] = {
+      provider,
+      label: info.label,
+      profileId: info.profileId,
+      autorizada: Boolean(auth?.[provider]?.autorizada),
+      atualizadaEm: auth?.[provider]?.atualizadaEm || null,
+      defaultModel: info.defaultModel,
+      models: info.models.map((id) => ({ id, name: id })),
+    };
+  }
+  return result;
 }
 
 module.exports = {
@@ -601,6 +695,8 @@ module.exports = {
   iniciarAutorizacao,
   continuarAutorizacao,
   testar,
+  providerSessions,
+  WEB_PROVIDERS,
   // Metadados expostos para teste; nunca incluem cookie/sessionKey.
   paths: { TOOL_DIR, AUTH_FILE, CONFIG_FILE, LOG_FILE },
 };
