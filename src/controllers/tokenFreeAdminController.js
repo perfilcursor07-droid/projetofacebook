@@ -2,10 +2,14 @@ const tokenFreeAdminService = require('../services/tokenFreeAdminService');
 
 async function index(_req, res, next) {
   try {
-    const initialStatus = await tokenFreeAdminService.status();
+    const [initialStatus, initialProviders] = await Promise.all([
+      tokenFreeAdminService.status(),
+      require('../services/aiProviderService').listPublic(),
+    ]);
     return res.render('claude-gateway', {
-      title: 'Sessão do Claude',
+      title: 'Provedores de IA',
       initialStatus,
+      initialProviders,
     });
   } catch (err) {
     return next(err);

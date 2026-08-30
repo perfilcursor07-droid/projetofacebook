@@ -2334,6 +2334,8 @@ async function responder({
     (String(modo) === 'pautas' || (String(modo) !== 'manual' && pedeListaDePautas));
   const deepseekService = require('./deepseekService');
   const materiaIaService = require('./materiaIaService');
+  const provedorManual = require('./aiProviderContext').current();
+  const nomeIa = provedorManual?.label || 'Claude';
   deepseekService.assertDeepseek('conversa');
 
   const pedido = String(texto || '').replace(/\s+$/g, '').trim();
@@ -2357,7 +2359,7 @@ async function responder({
   } else {
     const tipoExistente = chat.modo === 'livre' ? 'livre' : 'materia';
     if (tipoExistente !== tipoSolicitado) {
-      throw erro('Inicie uma nova conversa para trocar entre Matéria e Claude livre.', 409);
+      throw erro(`Inicie uma nova conversa para trocar entre Matéria e ${nomeIa} livre.`, 409);
     }
     const patch = { pesquisar_web: pesquisarWeb ? 1 : 0, tom, periodo: periodoFinal };
     if (!chat.titulo) patch.titulo = tituloDaConversa(pedido);
@@ -2522,6 +2524,14 @@ async function responder({
 
   if (conversaLivre) {
     let fontesWeb = [];
+    const pedidoSolicitaPesquisa = !pedidoMemoriaEditorial &&
+      /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
+        pedido
+      );
+    // A sessão Claude possui pesquisa nativa. Para os demais provedores, o
+    // ViralizeAI coleta as fontes antes da chamada e entrega o material lido.
+    const pesquisarPeloSistema = pesquisarWeb ||
+      (provedorManual?.provider && provedorManual.provider !== 'claude' && pedidoSolicitaPesquisa);
     const urlsNoPedidoLivre = extrairUrlsDoTexto(pedido);
     const urlsSociaisLivre = urlsNoPedidoLivre.filter((url) => classificarUrlFonte(url));
     const urlsArtigosLivre = urlsNoPedidoLivre.filter(
@@ -2575,7 +2585,7 @@ async function responder({
       }
     }
 
-    if (pesquisarWeb && !pedidoMemoriaEditorial) {
+    if (pesquisarPeloSistema && !pedidoMemoriaEditorial) {
       registrarPasso({ kind: 'pesquisa', texto: 'Pesquisando na internet…' });
       try {
         const consultaLivre = pedido
@@ -2597,8 +2607,8 @@ async function responder({
       registrarPasso({
         kind: fontesWeb.length ? 'fontes' : 'aviso',
         texto: fontesWeb.length
-          ? `${fontesWeb.length} fonte(s) encontrada(s) para o Claude consultar`
-          : 'A pesquisa não encontrou fontes; o Claude responderá sem resultados novos da web.',
+          ? `${fontesWeb.length} fonte(s) encontrada(s) para ${nomeIa} consultar`
+          : `A pesquisa não encontrou fontes; ${nomeIa} responderá sem resultados novos da web.`,
       });
     }
 
@@ -2613,15 +2623,12 @@ async function responder({
     }
     fontesWeb = fontesUnicas.slice(0, 12);
 
-    const pediuPesquisaClaude = !pedidoMemoriaEditorial &&
-      /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
-        pedido
-      );
+    const pediuPesquisaClaude = pedidoSolicitaPesquisa;
     registrarPasso({
       kind: pediuPesquisaClaude ? 'pesquisa' : 'pensando',
       texto: pediuPesquisaClaude
-        ? 'Claude está pesquisando na web…'
-        : 'Claude está respondendo…',
+        ? `${nomeIa} está pesquisando na web…`
+        : `${nomeIa} está respondendo…`,
     });
     onEvent({ tipo: 'inicio-resposta' });
     const historicoLivre = anteriores.map((mensagem) => ({
@@ -2676,7 +2683,7 @@ async function responder({
       }
       registrarPasso({
         kind: 'fontes',
-        texto: `Claude pesquisou na web e consultou ${fontesClaude.length} fonte(s)`,
+        texto: `${nomeIa} pesquisou na web e consultou ${fontesClaude.length} fonte(s)`,
       });
     }
     let fontesFinais = selecionarFontesRespostaLivre(respostaLivreFinal, {
@@ -4709,7 +4716,7 @@ async function gerarTitulosAlternativosDaMensagem({ userId, messageId, tituloAtu
     throw erro('Mensagem não encontrada', 404);
   }
   if (row.role !== 'assistant') {
-    throw erro('Só respostas do Claude podem receber sugestões de título.', 400);
+    throw erro('Só respostas da IA podem receber sugestões de título.', 400);
   }
 
   const conversaLivre = row.chat_modo === 'livre';

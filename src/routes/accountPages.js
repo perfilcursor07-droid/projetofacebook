@@ -5,6 +5,7 @@ const { uploadLogo } = require('../middleware/uploadLogo');
 const profileController = require('../controllers/profileController');
 const usersController = require('../controllers/usersController');
 const tokenFreeAdminController = require('../controllers/tokenFreeAdminController');
+const aiProvidersController = require('../controllers/aiProvidersController');
 
 const router = express.Router();
 
@@ -38,5 +39,10 @@ router.post('/api/admin/claude-gateway/restart', requireAuth, requireAdmin, toke
 router.post('/api/admin/claude-gateway/authorize', requireAuth, requireAdmin, tokenFreeAdminController.autorizar);
 router.post('/api/admin/claude-gateway/authorize/continue', requireAuth, requireAdmin, tokenFreeAdminController.continuarAutorizacao);
 router.post('/api/admin/claude-gateway/test', requireAuth, requireAdmin, tokenFreeAdminController.testar);
+router.get('/api/admin/ai-providers', requireAuth, requireAdmin, aiProvidersController.list);
+router.put('/api/admin/ai-providers/:provider', requireAuth, requireAdmin, aiProvidersController.save);
+router.post('/api/admin/ai-providers/:provider/select', requireAuth, requireAdmin, aiProvidersController.select);
+router.post('/api/admin/ai-providers/:provider/test', requireAuth, requireAdmin, aiProvidersController.test);
+router.delete('/api/admin/ai-providers/:provider/key', requireAuth, requireAdmin, aiProvidersController.removeKey);
 
 module.exports = router;

@@ -1,19 +1,28 @@
 (function () {
   const initialEl = document.getElementById('claude-initial-status');
   if (!initialEl) return;
+  const providersInitialEl = document.getElementById('ai-providers-initial');
 
   const $ = (id) => document.getElementById(id);
   const buttons = Array.from(document.querySelectorAll('[data-action]'));
+  const providerButtons = Array.from(document.querySelectorAll('[data-ai-action]'));
   const feedback = $('claude-feedback');
   const progress = $('claude-auth-progress');
   const loginDone = $('claude-login-done');
   let busy = false;
   let currentStatus = {};
+  let providerSettings = { providers: [], selectedProvider: 'claude' };
+  let providerBusy = false;
 
   try {
     currentStatus = JSON.parse(initialEl.textContent || '{}');
   } catch {
     currentStatus = {};
+  }
+  try {
+    providerSettings = JSON.parse(providersInitialEl?.textContent || '{}');
+  } catch {
+    providerSettings = { providers: [], selectedProvider: 'claude' };
   }
 
   const toneClasses = {
@@ -54,6 +63,165 @@
     feedback.textContent = message;
     feedback.className = 'mt-4 rounded-lg border px-3 py-2 text-xs';
     feedback.classList.add(...(toneClasses[tone] || toneClasses.neutral));
+  }
+
+  function setProviderFeedback(message, tone) {
+    const element = $('ai-provider-feedback');
+    if (!element) return;
+    if (!message) {
+      element.classList.add('hidden');
+      return;
+    }
+    element.textContent = message;
+    element.className = 'mt-3 rounded-lg border px-3 py-2 text-xs';
+    element.classList.add(...(toneClasses[tone] || toneClasses.neutral));
+  }
+
+  function providerById(provider) {
+    return (providerSettings.providers || []).find((item) => item.provider === provider) || null;
+  }
+
+  function renderProviders(settings) {
+    providerSettings = settings || providerSettings;
+    const selected = providerById(providerSettings.selectedProvider);
+    if ($('ai-selected-summary')) {
+      $('ai-selected-summary').textContent = selected
+        ? `${selected.label} · ${selected.model}`
+        : 'Nenhum provedor selecionado';
+    }
+
+    document.querySelectorAll('[data-provider-card]').forEach((card) => {
+      const provider = card.dataset.providerCard;
+      const item = providerById(provider);
+      if (!item) return;
+      const isSelected = providerSettings.selectedProvider === provider;
+      card.classList.toggle('border-violet-500/60', isSelected);
+      card.classList.toggle('bg-violet-500/5', isSelected);
+      card.classList.toggle('border-slate-800', !isSelected);
+
+      const badge = card.querySelector('.ai-provider-badge');
+      if (badge) {
+        badge.textContent = isSelected ? 'Em uso' : item.configured ? 'Conectado' : 'Não conectado';
+        badge.classList.remove(...allToneClasses);
+        badge.classList.add(
+          ...(toneClasses[isSelected ? 'good' : item.configured ? 'neutral' : 'warn'])
+        );
+      }
+
+      const modelInput = card.querySelector('[data-provider-model]');
+      if (modelInput && document.activeElement !== modelInput) modelInput.value = item.model || '';
+      const keyInput = card.querySelector('[data-provider-key]');
+      if (keyInput) {
+        keyInput.placeholder = item.configured
+          ? `Conectado${item.credentialSource ? ` via ${item.credentialSource}` : ''} — deixe vazio para manter`
+          : 'Cole a chave aqui';
+      }
+      const remove = card.querySelector('.ai-provider-remove');
+      remove?.classList.toggle('hidden', !item.configured || item.credentialSource !== 'painel');
+      const select = card.querySelector('.ai-provider-select');
+      if (select) {
+        select.textContent = isSelected ? 'Selecionado no Matéria manual' : 'Usar no Matéria manual';
+        select.disabled = providerBusy || isSelected;
+        select.classList.toggle('opacity-60', isSelected);
+      }
+      const test = card.querySelector('.ai-provider-test');
+      if (test) {
+        test.textContent = item.lastTest?.at
+          ? `${item.lastTest.status === 'success' ? 'Último teste aprovado' : 'Último teste falhou'} · ${formatDate(item.lastTest.at)}`
+          : item.configured
+            ? 'Credencial pronta para teste.'
+            : 'Cadastre a credencial para conectar.';
+      }
+    });
+
+    providerButtons.forEach((button) => {
+      const selectedButton = button.dataset.aiAction === 'select' &&
+        button.dataset.provider === providerSettings.selectedProvider;
+      button.disabled = providerBusy || selectedButton;
+    });
+  }
+
+  async function providerRequest(path, options = {}) {
+    const response = await fetch(`/api/admin/ai-providers${path}`, {
+      method: options.method || 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Falha HTTP ${response.status}`);
+    return data;
+  }
+
+  function providerForm(provider) {
+    return {
+      model: document.querySelector(`[data-provider-model="${provider}"]`)?.value.trim() || '',
+      apiKey: document.querySelector(`[data-provider-key="${provider}"]`)?.value.trim() || '',
+    };
+  }
+
+  async function refreshProviders() {
+    const data = await providerRequest('');
+    renderProviders(data);
+    return data;
+  }
+
+  async function saveProvider(provider, { silent = false } = {}) {
+    const form = providerForm(provider);
+    const data = await providerRequest(`/${provider}`, {
+      method: 'PUT',
+      body: form,
+    });
+    const keyInput = document.querySelector(`[data-provider-key="${provider}"]`);
+    if (keyInput) keyInput.value = '';
+    await refreshProviders();
+    if (!silent) setProviderFeedback(`${data.provider.label} salvo com segurança.`, 'good');
+    return data;
+  }
+
+  async function runProviderAction(action, provider) {
+    if (providerBusy) return;
+    providerBusy = true;
+    renderProviders(providerSettings);
+    try {
+      const form = providerForm(provider);
+      if (action === 'save') {
+        await saveProvider(provider);
+      } else if (action === 'test') {
+        if (form.apiKey) await saveProvider(provider, { silent: true });
+        setProviderFeedback(`Testando ${providerById(provider)?.label || provider}…`, 'neutral');
+        const data = await providerRequest(`/${provider}/test`, {
+          method: 'POST',
+          body: { model: form.model },
+        });
+        await refreshProviders();
+        setProviderFeedback(data.message || 'Conexão validada.', 'good');
+      } else if (action === 'select') {
+        if (form.apiKey) await saveProvider(provider, { silent: true });
+        const data = await providerRequest(`/${provider}/select`, {
+          method: 'POST',
+          body: { model: form.model },
+        });
+        renderProviders(data);
+        setProviderFeedback(
+          `${providerById(provider)?.label || provider} será usado em matérias, títulos e ajustes do Matéria manual.`,
+          'good'
+        );
+      } else if (action === 'remove') {
+        if (!window.confirm('Remover esta chave salva do servidor?')) return;
+        await providerRequest(`/${provider}/key`, { method: 'DELETE' });
+        await refreshProviders();
+        setProviderFeedback('Chave salva removida.', 'good');
+      }
+    } catch (err) {
+      setProviderFeedback(err.message, 'bad');
+      await refreshProviders().catch(() => {});
+    } finally {
+      providerBusy = false;
+      renderProviders(providerSettings);
+    }
   }
 
   function syncButtons() {
@@ -230,6 +398,11 @@
   buttons.forEach((button) => {
     button.addEventListener('click', () => runAction(button.dataset.action));
   });
+  providerButtons.forEach((button) => {
+    button.addEventListener('click', () =>
+      runProviderAction(button.dataset.aiAction, button.dataset.provider)
+    );
+  });
   $('claude-refresh')?.addEventListener('click', () => refresh(false));
   $('desktop-copy')?.addEventListener('click', async () => {
     const command = $('desktop-ssh-command')?.textContent || '';
@@ -243,5 +416,6 @@
   });
 
   render(currentStatus);
+  renderProviders(providerSettings);
   window.setInterval(() => refresh(true), 5000);
 })();

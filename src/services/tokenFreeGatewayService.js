@@ -186,14 +186,14 @@ function assertConfigured(tarefa = 'conversa') {
 
 function bodyDaChamada(
   messages,
-  { temperature, json, stream, tarefa, conversationId, conversationName, webSearch }
+  { temperature, json, stream, tarefa, conversationId, conversationName, webSearch, model }
 ) {
   const conversa = String(
     conversationId || `viralizeai:internal:${String(tarefa || 'conversa')}`
   ).slice(0, 240);
   const mensagensPreparadas = prepararMensagens(messages, json);
   return {
-    model: MODELO,
+    model: String(model || MODELO).trim(),
     // A tarefa "conversa" é atendida pelo claude.ai via navegador. Um único
     // prompt evita que o gateway mostre "System:" como texto do usuário.
     messages: String(tarefa || '').trim().toLowerCase() === 'conversa'
@@ -226,6 +226,7 @@ async function chatCompletion(
     conversationId = null,
     conversationName = null,
     webSearch = false,
+    model = MODELO,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -242,6 +243,7 @@ async function chatCompletion(
         conversationId,
         conversationName,
         webSearch,
+        model,
       }),
       { headers: headers(false), timeout }
     );
@@ -269,6 +271,7 @@ async function chatCompletionStream(
     conversationId = null,
     conversationName = null,
     webSearch = false,
+    model = MODELO,
   } = {}
 ) {
   assertConfigured(tarefa);
@@ -286,6 +289,7 @@ async function chatCompletionStream(
         conversationId,
         conversationName,
         webSearch,
+        model,
       }),
       {
         headers: headers(true),
@@ -348,6 +352,7 @@ async function chatCompletionStream(
       conversationId,
       conversationName,
       webSearch,
+      model,
     });
     if (typeof onDelta === 'function') onDelta(texto);
     return texto;

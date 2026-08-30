@@ -28,6 +28,7 @@
     modeloIa: document.getElementById('chat-ai-model'),
     modeloIaNome: document.getElementById('chat-ai-model-name'),
     modeloIaNivel: document.getElementById('chat-ai-model-level'),
+    emptySub: document.getElementById('chat-empty-sub'),
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
     modoBtns: document.querySelectorAll('.chat-modo-btn'),
@@ -130,10 +131,25 @@
       : { provider: 'claude', nome: 'Sonnet 5', nivel: 'Médio', origem: 'redação' };
   }
 
+  function modeloAtual() {
+    const tipo = state.tipoConversa === 'livre' ? 'livre' : 'materia';
+    return state.modelosIa?.[tipo] || modeloFallback(tipo);
+  }
+
+  function nomeProvedorAtual() {
+    const modelo = modeloAtual();
+    if (modelo.provedorNome) return modelo.provedorNome;
+    return {
+      claude: 'Claude',
+      openai: 'ChatGPT',
+      deepseek: 'DeepSeek',
+      grok: 'Grok',
+    }[modelo.provider] || 'IA';
+  }
+
   function atualizarModeloIa() {
     if (!el.modeloIa) return;
-    const tipo = state.tipoConversa === 'livre' ? 'livre' : 'materia';
-    const modelo = state.modelosIa?.[tipo] || modeloFallback(tipo);
+    const modelo = modeloAtual();
     const nome = modelo.nome || 'IA';
     const nivel = modelo.nivel || '';
     if (el.modeloIaNome) el.modeloIaNome.textContent = nome;
@@ -146,6 +162,15 @@
     ]
       .filter(Boolean)
       .join(' · ');
+    const providerName = nomeProvedorAtual();
+    const livreButton = document.querySelector('[data-chat-tipo="livre"]');
+    if (livreButton) {
+      livreButton.textContent = `${providerName} livre`;
+      livreButton.title = `Conversa normal com ${providerName}, sem critérios editoriais`;
+    }
+    if (el.emptySub) {
+      el.emptySub.textContent = `Converse com ${providerName}, crie matérias ou encontre pautas recentes.`;
+    }
   }
 
   async function carregarModeloIa() {
@@ -535,8 +560,8 @@
       const rotulo =
         state.tipoConversa === 'livre'
           ? temPesquisaWeb
-            ? 'Pesquisa do Claude'
-            : 'Conversa com Claude'
+            ? `Pesquisa do ${nomeProvedorAtual()}`
+            : `Conversa com ${nomeProvedorAtual()}`
           : temPesquisaWeb
             ? 'Pesquisa e apuração'
             : 'Leitura e reescrita';
@@ -826,7 +851,7 @@
     if (titulo && !/^(achei|encontrei|aqui est[aá]|claro|vamos)\b/i.test(titulo)) {
       return titulo.slice(0, 180);
     }
-    return 'Matéria criada no Claude';
+    return `Matéria criada no ${nomeProvedorAtual()}`;
   }
 
   function areaSalvar(mensagem, container, { livre = false } = {}) {
@@ -879,7 +904,7 @@
         wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
         const label = document.createElement('p');
         label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-        label.textContent = 'Títulos sugeridos pelo Claude';
+        label.textContent = `Títulos sugeridos pelo ${nomeProvedorAtual()}`;
         wrap.appendChild(label);
         listaTitulos = document.createElement('div');
         listaTitulos.className = 'mt-1.5 grid gap-1.5';
@@ -944,7 +969,9 @@
     );
     const sugerirTitulos = livre
       ? criarBotao(
-          alternativos.length ? 'Gerar outros 3 com Claude' : 'Sugerir 3 com Claude',
+          alternativos.length
+            ? `Gerar outros 3 com ${nomeProvedorAtual()}`
+            : `Sugerir 3 com ${nomeProvedorAtual()}`,
           'rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20'
         )
       : null;
@@ -955,7 +982,7 @@
       sugerirTitulos.disabled = true;
       const rotulo = sugerirTitulos.textContent;
       sugerirTitulos.textContent = 'Sugerindo…';
-      aviso.textContent = 'Claude está gerando 3 títulos…';
+      aviso.textContent = `${nomeProvedorAtual()} está gerando 3 títulos…`;
       try {
         const data = await api(`${API}/mensagens/${mensagem.id}/titulos-alternativos`, {
           method: 'POST',
@@ -967,7 +994,7 @@
         aviso.textContent = err.message;
       } finally {
         sugerirTitulos.disabled = false;
-        sugerirTitulos.textContent = rotulo || 'Gerar outros 3 com Claude';
+        sugerirTitulos.textContent = rotulo || `Gerar outros 3 com ${nomeProvedorAtual()}`;
       }
     });
 
@@ -1791,7 +1818,9 @@
     } catch {
       /* ignore */
     }
-    el.titulo.textContent = state.tipoConversa === 'livre' ? 'Nova conversa com Claude' : 'Nova conversa';
+    el.titulo.textContent = state.tipoConversa === 'livre'
+      ? `Nova conversa com ${nomeProvedorAtual()}`
+      : 'Nova conversa';
     el.renomear?.classList.add('hidden');
     state.pesquisarWeb = false;
     aplicarTipoConversa();
@@ -1861,7 +1890,7 @@
     if (el.toggleWeb) {
       el.toggleWeb.disabled = livre;
       el.toggleWeb.title = livre
-        ? 'A pesquisa nativa da sua conta Claude fica disponível automaticamente.'
+        ? `A pesquisa disponível para ${nomeProvedorAtual()} fica ativa automaticamente.`
         : 'Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa.';
     }
     if (el.toggleWebLabel) {
@@ -1876,7 +1905,7 @@
     }
     if (el.input) {
       el.input.placeholder = livre
-        ? 'Converse normalmente com o Claude…'
+        ? `Converse normalmente com ${nomeProvedorAtual()}…`
         : state.modo === 'pautas'
           ? 'Tema para pesquisar. Ex.: Polêmica Silas Malafaia'
           : 'Descreva o assunto, cole um link ou peça um ajuste…';
@@ -1893,7 +1922,7 @@
     aplicarTipoConversa();
     setStatus(
       tipo === 'livre'
-        ? 'Claude ativo · conversa sem regras editoriais.'
+        ? `${nomeProvedorAtual()} ativo · conversa sem regras editoriais.`
         : 'Modo Matéria ativo · ferramentas editoriais disponíveis.'
     );
     el.input?.focus();
@@ -2069,10 +2098,10 @@
     setStatus(
       state.tipoConversa === 'livre'
         ? pedePesquisaLivre
-          ? 'Claude está pesquisando na web…'
+          ? `${nomeProvedorAtual()} está pesquisando na web…`
           : state.pesquisarWeb
-          ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''} para o Claude…`
-          : 'Claude está respondendo…'
+          ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''} para ${nomeProvedorAtual()}…`
+          : `${nomeProvedorAtual()} está respondendo…`
         : state.modo === 'pautas'
         ? `Procurando matérias sobre o tema${janela ? ` — ${janela.toLowerCase()}` : ''}…`
         : state.pesquisarWeb

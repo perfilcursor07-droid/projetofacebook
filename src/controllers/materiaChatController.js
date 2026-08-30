@@ -27,7 +27,10 @@ function nivelModelo(modelo, provider) {
   return '';
 }
 
-function montarModeloChat(tipo) {
+function montarModeloChat(tipo, providerContext = null) {
+  if (providerContext) {
+    return require('../services/aiProviderService').describe(providerContext);
+  }
   const deepseek = require('../services/deepseekService');
   // Os dois modos do /materia-manual usam a tarefa `conversa` no serviço de
   // streaming. O modo Matéria muda o prompt e as ferramentas editoriais, não
@@ -66,11 +69,14 @@ function montarModeloChat(tipo) {
 
 async function modelo(req, res, next) {
   try {
+    const providerContext = await require('../services/aiProviderService').getSelected({
+      includeApiKey: false,
+    });
     return res.json({
       ok: true,
       modelos: {
-        materia: montarModeloChat('materia'),
-        livre: montarModeloChat('livre'),
+        materia: montarModeloChat('materia', providerContext),
+        livre: montarModeloChat('livre', providerContext),
       },
     });
   } catch (err) {
