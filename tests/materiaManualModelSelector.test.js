@@ -18,6 +18,7 @@ test('administrador pode escolher o modelo diretamente no Matéria manual', asyn
   const html = await renderFor('administrador');
 
   assert.match(html, /id="chat-ai-model-select"/);
+  assert.match(html, /id="chat-ai-model-menu"/);
   assert.match(html, /aria-label="Escolher modelo de IA do Matéria manual"/);
   assert.match(html, /data-admin-model-selector="1"/);
 });

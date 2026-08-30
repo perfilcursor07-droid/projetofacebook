@@ -29,6 +29,7 @@
     modeloIaNome: document.getElementById('chat-ai-model-name'),
     modeloIaNivel: document.getElementById('chat-ai-model-level'),
     modeloIaSelect: document.getElementById('chat-ai-model-select'),
+    modeloIaMenu: document.getElementById('chat-ai-model-menu'),
     emptySub: document.getElementById('chat-empty-sub'),
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
@@ -200,12 +201,28 @@
     );
   }
 
+  function fecharMenuModeloIa() {
+    el.modeloIa?.classList.remove('is-open');
+    el.modeloIa?.setAttribute('aria-expanded', 'false');
+    if (el.modeloIaMenu) el.modeloIaMenu.hidden = true;
+  }
+
+  function abrirMenuModeloIa() {
+    if (!el.modeloIaSelect || el.modeloIaSelect.disabled) return;
+    el.modeloIa?.classList.add('is-open');
+    el.modeloIa?.setAttribute('aria-expanded', 'true');
+    if (el.modeloIaMenu) el.modeloIaMenu.hidden = false;
+  }
+
   function renderizarSeletorModelosIa() {
     if (!el.modeloIaSelect) return;
     const settings = state.provedoresIa || { providers: [], selectedProvider: '' };
     const conectados = (settings.providers || []).filter((provider) => Boolean(provider.configured));
     const fragment = document.createDocumentFragment();
+    const menuFragment = document.createDocumentFragment();
     let totalModelos = 0;
+    const atual = modeloAtual();
+    const valorAtual = valorModeloIa(atual.provider, atual.modelo);
 
     conectados.forEach((provider) => {
       const modelos = modelosUnicos(provider);
@@ -213,28 +230,57 @@
       const group = document.createElement('optgroup');
       const origem = provider.connectionMode === 'session' ? 'desktop conectado' : 'API conectada';
       group.label = `${provider.label || provider.provider} · ${origem}`;
+      const heading = document.createElement('p');
+      heading.className = 'mia-chat-model-menu-label';
+      heading.textContent = group.label;
+      menuFragment.appendChild(heading);
       modelos.forEach((model) => {
+        const value = valorModeloIa(provider.provider, model.id);
+        const selected = settings.selectedProvider === provider.provider && provider.model === model.id;
         const option = document.createElement('option');
-        option.value = valorModeloIa(provider.provider, model.id);
+        option.value = value;
         option.textContent = `${model.name || model.id}${model.access ? ` · ${model.access}` : ''}`;
-        option.selected = settings.selectedProvider === provider.provider && provider.model === model.id;
+        option.selected = selected;
         group.appendChild(option);
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.setAttribute('role', 'option');
+        item.className = 'mia-chat-model-menu-item' + (selected || value === valorAtual ? ' is-active' : '');
+        item.dataset.modelValue = value;
+        item.setAttribute('aria-selected', selected || value === valorAtual ? 'true' : 'false');
+        const name = document.createElement('span');
+        name.className = 'mia-chat-model-menu-item-name';
+        name.textContent = model.name || model.id;
+        item.appendChild(name);
+        if (model.access) {
+          const meta = document.createElement('span');
+          meta.className = 'mia-chat-model-menu-item-meta';
+          meta.textContent = model.access;
+          item.appendChild(meta);
+        }
+        menuFragment.appendChild(item);
         totalModelos += 1;
       });
       fragment.appendChild(group);
     });
 
     el.modeloIaSelect.replaceChildren();
+    if (el.modeloIaMenu) el.modeloIaMenu.replaceChildren();
     if (!totalModelos) {
       const option = document.createElement('option');
       option.textContent = 'Conecte uma IA em Provedores IA';
       option.disabled = true;
       option.selected = true;
       el.modeloIaSelect.appendChild(option);
+      if (el.modeloIaMenu) {
+        const empty = document.createElement('p');
+        empty.className = 'mia-chat-model-menu-label';
+        empty.textContent = 'Conecte uma IA em Provedores IA';
+        el.modeloIaMenu.appendChild(empty);
+      }
     } else {
       el.modeloIaSelect.appendChild(fragment);
-      const atual = modeloAtual();
-      const valorAtual = valorModeloIa(atual.provider, atual.modelo);
+      if (el.modeloIaMenu) el.modeloIaMenu.appendChild(menuFragment);
       if (Array.from(el.modeloIaSelect.options).some((option) => option.value === valorAtual)) {
         el.modeloIaSelect.value = valorAtual;
       }
@@ -2383,7 +2429,10 @@
   el.drawerClose?.addEventListener('click', closeDrawer);
   el.drawerBackdrop?.addEventListener('click', closeDrawer);
   window.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape') closeDrawer();
+    if (ev.key === 'Escape') {
+      fecharMenuModeloIa();
+      closeDrawer();
+    }
   });
   window.addEventListener('resize', () => {
     if (!isMobileDrawer()) closeDrawer();
@@ -2401,6 +2450,26 @@
     aplicarToggleTranscricao();
   });
   el.modeloIaSelect?.addEventListener('change', selecionarModeloIa);
+  el.modeloIa?.addEventListener('click', (ev) => {
+    if (!el.modeloIaSelect) return;
+    if (ev.target.closest('#chat-ai-model-menu')) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (el.modeloIa.classList.contains('is-open')) fecharMenuModeloIa();
+    else abrirMenuModeloIa();
+  });
+  el.modeloIaMenu?.addEventListener('click', (ev) => {
+    const item = ev.target.closest('[data-model-value]');
+    if (!item || !el.modeloIaSelect || el.modeloIaSelect.disabled) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    el.modeloIaSelect.value = item.dataset.modelValue;
+    fecharMenuModeloIa();
+    selecionarModeloIa();
+  });
+  document.addEventListener('click', (ev) => {
+    if (!ev.target.closest('#chat-ai-model')) fecharMenuModeloIa();
+  });
 
   el.modoBtns?.forEach((btn) => {
     btn.addEventListener('click', () => definirModo(btn.dataset.chatModo));

@@ -2,7 +2,7 @@
   <%
     const podeEscolherModeloIa = Boolean(user && user.nivel_acesso === 'administrador');
   %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260829seletorModeloAdmin1" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260829modeloMenuEscuro" />
 
   <main class="mia-chat" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -197,11 +197,11 @@
                   <span class="mia-chat-chip-dot"></span>
                   <span id="chat-toggle-web-label">Web</span>
                 </button>
-                <<%= podeEscolherModeloIa ? 'label' : 'span' %>
+                <div
                   id="chat-ai-model"
                   class="mia-chat-model-pill<%= podeEscolherModeloIa ? ' is-selectable' : '' %>"
                   data-admin-model-selector="<%= podeEscolherModeloIa ? '1' : '0' %>"
-                  <%- podeEscolherModeloIa ? 'for="chat-ai-model-select"' : '' %>
+                  <%- podeEscolherModeloIa ? 'role="combobox" aria-expanded="false" aria-controls="chat-ai-model-menu" aria-haspopup="listbox"' : '' %>
                   title="Modelo de IA em uso nesta conversa">
                   <span id="chat-ai-model-name">IA</span>
                   <span id="chat-ai-model-level">—</span>
@@ -210,11 +210,12 @@
                   </svg>
                   <% if (podeEscolherModeloIa) { %>
                     <select id="chat-ai-model-select" class="mia-chat-model-native-select"
-                      aria-label="Escolher modelo de IA do Matéria manual" disabled>
+                      aria-label="Escolher modelo de IA do Matéria manual" tabindex="-1" disabled>
                       <option>Carregando modelos conectados…</option>
                     </select>
+                    <div id="chat-ai-model-menu" class="mia-chat-model-menu" role="listbox" hidden></div>
                   <% } %>
-                </<%= podeEscolherModeloIa ? 'label' : 'span' %>>
+                </div>
               </div>
 
               <span id="chat-status" class="mia-chat-status" aria-live="polite"></span>
@@ -391,6 +392,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260829seletorModeloAdmin1"></script>
+  <script src="/js/materia-chat.js?v=20260829modeloMenuEscuro"></script>
   <script src="/js/materia-chat-extras.js?v=20260829maislidasfontes2"></script>
 <%- include('partials/app-end') %>
