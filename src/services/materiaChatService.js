@@ -2627,6 +2627,10 @@ async function responder({
           .replace(/\s+/g, ' ')
           .trim()
           .slice(0, 240) || pedido.slice(0, 240);
+        console.info(
+          `[materia-chat][pesquisa] provider=${provedorManual?.provider || 'padrão'} ` +
+          `consulta=${JSON.stringify(consultaLivre)}`
+        );
         const fontesPesquisa = await materiaIaService.coletarFatosNaWeb({
           consultas: [consultaLivre],
           periodo: periodoFinal,
@@ -2635,8 +2639,15 @@ async function responder({
           logPrefix: '[claude-livre]',
         });
         fontesWeb.push(...fontesPesquisa);
+        console.info(
+          `[materia-chat][pesquisa] provider=${provedorManual?.provider || 'padrão'} ` +
+          `fontes=${fontesPesquisa.length}`
+        );
       } catch (err) {
-        console.warn('[claude-livre] pesquisa:', err.message);
+        console.warn(
+          `[materia-chat][pesquisa] provider=${provedorManual?.provider || 'padrão'} falhou:`,
+          err.message
+        );
       }
       registrarPasso({
         kind: fontesWeb.length ? 'fontes' : 'aviso',
