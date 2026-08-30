@@ -3059,8 +3059,6 @@ async function gerarMateriaComPesquisa({
     err.status = 400;
     throw err;
   }
-  const usuarioPediuPesquisa = /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(texto);
-
   const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()] ? String(tom).toLowerCase() : 'natural';
   const tomDesc = TITULO_TOMES[tomKey];
   const blocoMarca = blocoTituloMarcaArte(marcaModeloArte);
@@ -3399,6 +3397,7 @@ async function conversarLivre({
     err.status = 400;
     throw err;
   }
+  const usuarioPediuPesquisa = /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(texto);
 
   const messages = [
     {
