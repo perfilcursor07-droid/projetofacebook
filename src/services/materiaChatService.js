@@ -74,6 +74,39 @@ function assuntoParaBusca(texto) {
   return t.length >= 3 ? t : String(texto || '').trim();
 }
 
+function pesquisaLivreSemAssunto(texto) {
+  const restante = assuntoParaBusca(texto)
+    .toLowerCase()
+    .replace(/\b(?:na\s+internet|na\s+web|internet|web|e|fa[cç]a|escreva|crie|inclua|implemente|complete|a|uma|mat[ée]ria|not[íi]cia|por\s+favor)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return restante.length < 8;
+}
+
+// Um segundo pedido como “pesquise na internet e faça a matéria” não traz o
+// assunto de novo. Recupera o título das fontes ou da resposta anterior para
+// que a busca consulte o caso correto, e não a frase genérica do comando.
+function consultaPesquisaLivre(pedido, mensagensAnteriores = []) {
+  const assuntoAtual = assuntoParaBusca(pedido);
+  if (!pesquisaLivreSemAssunto(pedido)) return assuntoAtual.slice(0, 240);
+
+  const anteriores = Array.isArray(mensagensAnteriores) ? [...mensagensAnteriores].reverse() : [];
+  for (const mensagem of anteriores) {
+    const fontes = parseJson(mensagem?.fontes, []);
+    const tituloFonte = (Array.isArray(fontes) ? fontes : [])
+      .map((fonte) => String(fonte?.titulo || '').replace(/\s+/g, ' ').trim())
+      .find((titulo) => titulo.length >= 12);
+    if (tituloFonte) return tituloFonte.slice(0, 240);
+
+    const conteudo = String(mensagem?.content || '');
+    const tituloCitado = [...conteudo.matchAll(/["“]([^"”\n]{12,220})["”]/g)]
+      .map((match) => String(match[1] || '').replace(/\s+/g, ' ').trim())
+      .find((titulo) => /\b[A-ZÀ-Ú][\wÀ-ÿ-]+\b/.test(titulo));
+    if (tituloCitado) return tituloCitado.slice(0, 240);
+  }
+  return assuntoAtual.slice(0, 240);
+}
+
 function motivoDaBuscaVazia() {
   try {
     const pausados = require('./providerHealth').pausados() || [];
@@ -2589,11 +2622,11 @@ async function responder({
     if (pesquisarPeloSistema && !pedidoMemoriaEditorial) {
       registrarPasso({ kind: 'pesquisa', texto: 'Pesquisando na internet…' });
       try {
-        const consultaLivre = pedido
+        const consultaLivre = consultaPesquisaLivre(pedido, anteriores)
           .replace(/https?:\/\/\S+/gi, ' ')
           .replace(/\s+/g, ' ')
           .trim()
-          .slice(0, 180) || pedido.slice(0, 180);
+          .slice(0, 240) || pedido.slice(0, 240);
         const fontesPesquisa = await materiaIaService.coletarFatosNaWeb({
           consultas: [consultaLivre],
           periodo: periodoFinal,
@@ -4796,4 +4829,5 @@ module.exports = {
   textoEmOutroIdioma,
   respostaLivreComMetaComentario,
   confirmacaoMemoriaEditorial,
+  consultaPesquisaLivre,
 };

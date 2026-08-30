@@ -10,6 +10,7 @@ const {
   consultasGoogleNewsParaResolverFontesLivres,
   respostaLivreComMetaComentario,
   confirmacaoMemoriaEditorial,
+  consultaPesquisaLivre,
 } = require('../src/services/materiaChatService');
 const {
   montarRodapeMateriaComFontes,
@@ -49,6 +50,19 @@ Foto: Reprodução/CGADB
   assert.match(resultado.corpo, /Fonte: JM Notícia/);
   assert.match(resultado.corpo, /Foto: Reprodução\/CGADB/);
   assert.deepEqual(resultado.hashtags, ['CGADB', 'AssembleiaDeDeus', 'Polemica']);
+});
+
+test('novo pedido genérico de pesquisa reaproveita o assunto apurado na conversa', () => {
+  const consulta = consultaPesquisaLivre('PESQUISE NA INTERNET E implemente a matéria', [
+    {
+      role: 'assistant',
+      fontes: JSON.stringify([
+        { titulo: "O que está escrito na mão de Flávio? Candidato usou 'cola' como Bolsonaro" },
+      ]),
+    },
+  ]);
+
+  assert.equal(consulta, "O que está escrito na mão de Flávio? Candidato usou 'cola' como Bolsonaro");
 });
 
 test('saudação com primeira linha em negrito não vira matéria nem recebe títulos', () => {
