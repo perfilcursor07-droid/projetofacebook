@@ -250,8 +250,15 @@ async function enviar(req, res, next) {
     return res.end();
   } catch (err) {
     clearInterval(heartbeat);
-    // Erro de banco/driver traz SQL e dados na mensagem: fica no log, não na tela.
-    const ehErroInterno = Boolean(err.sql || err.sqlMessage || err.code);
+    // Só erro de banco/driver pode esconder a mensagem. Axios usa códigos como
+    // ERR_BAD_RESPONSE para erros dos provedores; tratá-los como SQL mascarava
+    // a causa real e fazia parecer que a conversa não havia sido salva.
+    const codigo = String(err.code || '').toUpperCase();
+    const ehErroInterno = Boolean(
+      err.sql ||
+      err.sqlMessage ||
+      /^(ER_|SQLITE_|PG_)/.test(codigo)
+    );
     if (ehErroInterno) {
       console.error('[materia-chat] erro interno:', err.code || '', err.sqlMessage || err.message);
     }

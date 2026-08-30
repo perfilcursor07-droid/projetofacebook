@@ -24,7 +24,11 @@ async function selectGeminiModel(page: Page, model?: string): Promise<void> {
 
 	const directSelectors = [
 		'button[aria-label*="model" i]',
+		'button[aria-label*="modelo" i]',
 		'[role="button"][aria-label*="model" i]',
+		'[role="button"][aria-label*="modelo" i]',
+		'button[aria-haspopup="listbox"]',
+		'[role="button"][aria-haspopup="listbox"]',
 		'button[class*="model-selector"]',
 		'[data-test-id*="model-selector"]',
 	];
@@ -47,17 +51,25 @@ async function selectGeminiModel(page: Page, model?: string): Promise<void> {
 			}
 		}
 	}
-	if (!picker) throw new Error("Gemini: seletor de modelo não foi encontrado na página.");
+	// O Gemini muda este controle com frequência e algumas contas não exibem
+	// seletor (o modelo padrão já é o único disponível). Não bloquear toda a
+	// conversa nesse caso: o pedido segue com o modelo padrão da conta.
+	if (!picker) {
+		console.warn(`Gemini: seletor de modelo não encontrado; usando o modelo padrão para ${model}.`);
+		return;
+	}
 
 	const current = String(await picker.innerText().catch(() => "")).trim();
 	if (wanted.test(current)) return;
 	await picker.click();
 	await delay(400);
 	const options = page
-		.locator('[role="menuitem"]:visible, [role="option"]:visible, [role="radio"]:visible, mat-option:visible')
+		.locator('[role="menuitem"]:visible, [role="option"]:visible, [role="radio"]:visible, mat-option:visible, [role="listbox"] [role="button"]:visible')
 		.filter({ hasText: wanted });
 	if (!(await options.count())) {
-		throw new Error(`Gemini: o modelo ${model} não está disponível para esta conta.`);
+		console.warn(`Gemini: o modelo ${model} não está disponível para esta conta; usando o modelo padrão.`);
+		await page.keyboard.press("Escape").catch(() => undefined);
+		return;
 	}
 	await options.last().click();
 	await delay(500);
