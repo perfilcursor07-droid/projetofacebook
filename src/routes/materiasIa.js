@@ -2,7 +2,6 @@ const express = require('express');
 const controller = require('../controllers/materiasIaController');
 const chatController = require('../controllers/materiaChatController');
 const { uploadMatterImage } = require('../middleware/uploadMatterImage');
-const aiProviderContext = require('../services/aiProviderContext');
 
 const router = express.Router();
 
@@ -15,12 +14,12 @@ router.post('/chat/conversas/:id/duplicar', chatController.duplicar);
 router.patch('/chat/conversas/:id', chatController.renomear);
 router.patch('/chat/conversas/:id/fixar', chatController.fixar);
 router.delete('/chat/conversas/:id', chatController.excluir);
-router.post('/chat/conversas/:id/mensagens', aiProviderContext.materiaManual, chatController.enviar);
+router.post('/chat/conversas/:id/mensagens', chatController.enviar);
 router.delete('/chat/conversas/:id/mensagens/:messageId', chatController.apagarDaMensagem);
 router.post('/chat/mensagens/:messageId/materia', chatController.salvarMateria);
-router.post('/chat/mensagens/:messageId/titulos-alternativos', aiProviderContext.materiaManual, chatController.gerarTitulosAlternativos);
+router.post('/chat/mensagens/:messageId/titulos-alternativos', chatController.gerarTitulosAlternativos);
 router.post('/chat/mensagens/:messageId/materias', chatController.salvarTodasAsMaterias);
-router.post('/chat/pautas/rascunhos', aiProviderContext.materiaManual, chatController.salvarPautasComoRascunhos);
+router.post('/chat/pautas/rascunhos', chatController.salvarPautasComoRascunhos);
 // Memória editorial compartilhada (ensinamentos do editor).
 router.get('/chat/orientacoes', chatController.obterOrientacoes);
 router.put('/chat/orientacoes', chatController.salvarOrientacoes);
@@ -32,9 +31,9 @@ router.post('/radar-face', controller.radarFace);
 router.post('/reescrever-link', controller.reescreverLink);
 router.post('/gerar', controller.gerar);
 router.post('/gerar-preview', controller.gerarPreview);
-router.post('/manual', aiProviderContext.materiaManual, controller.criarManual);
+router.post('/manual', controller.criarManual);
 router.post('/gerar-lote', controller.gerarLote);
-router.post('/gerar-manual', aiProviderContext.materiaManual, (req, res, next) => {
+router.post('/gerar-manual', (req, res, next) => {
   uploadMatterImage(req, res, (uploadError) => {
     if (uploadError) {
       return res.status(uploadError.status || 400).json({ error: uploadError.message });

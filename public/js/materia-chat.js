@@ -3,7 +3,6 @@
 (() => {
   const API = '/api/materias-ia/chat';
   const STORAGE_KEY = 'mia_chat_atual';
-  const MODEL_STORAGE_KEY = 'mia_chat_modelo_local';
   const MAX_PAUTAS_LOTE = 8;
   const MAX_LINKS_LOTE = 12;
 
@@ -29,9 +28,6 @@
     modeloIa: document.getElementById('chat-ai-model'),
     modeloIaNome: document.getElementById('chat-ai-model-name'),
     modeloIaNivel: document.getElementById('chat-ai-model-level'),
-    modeloIaSelect: document.getElementById('chat-ai-model-select'),
-    modeloIaMenu: document.getElementById('chat-ai-model-menu'),
-    emptySub: document.getElementById('chat-empty-sub'),
     tom: document.getElementById('chat-tom'),
     periodo: document.getElementById('chat-periodo'),
     modoBtns: document.querySelectorAll('.chat-modo-btn'),
@@ -61,9 +57,6 @@
     modo: 'escrever',
     tipoConversa: 'livre',
     modelosIa: null,
-    provedoresIa: null,
-    modeloIaLocal: null,
-    trocandoModeloIa: false,
     salvandoPautas: false,
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
     ultimasPautas: [],
@@ -137,44 +130,10 @@
       : { provider: 'claude', nome: 'Sonnet 5', nivel: 'Médio', origem: 'redação' };
   }
 
-  function modeloAtual() {
-    const tipo = state.tipoConversa === 'livre' ? 'livre' : 'materia';
-    return state.modeloIaLocal || state.modelosIa?.[tipo] || modeloFallback(tipo);
-  }
-
-  function modeloIaParaRequest() {
-    if (!state.modeloIaLocal) return null;
-    return { provider: state.modeloIaLocal.provider, model: state.modeloIaLocal.modelo };
-  }
-
-  function modeloLocal(provider, model) {
-    const provedor = (state.provedoresIa?.providers || []).find((item) => item.provider === provider);
-    const modelo = modelosUnicos(provedor).find((item) => item.id === model);
-    return {
-      provider,
-      modelo: model,
-      nome: modelo?.name || model,
-      nivel: modelo?.access || '',
-      origem: provedor?.connectionMode === 'session' ? 'sessão do desktop' : 'API',
-      provedorNome: provedor?.label || provider,
-    };
-  }
-
-  function nomeProvedorAtual() {
-    const modelo = modeloAtual();
-    if (modelo.provedorNome) return modelo.provedorNome;
-    return {
-      claude: 'Claude',
-      openai: 'ChatGPT',
-      deepseek: 'DeepSeek',
-      grok: 'Grok',
-      gemini: 'Gemini',
-    }[modelo.provider] || 'IA';
-  }
-
   function atualizarModeloIa() {
     if (!el.modeloIa) return;
-    const modelo = modeloAtual();
+    const tipo = state.tipoConversa === 'livre' ? 'livre' : 'materia';
+    const modelo = state.modelosIa?.[tipo] || modeloFallback(tipo);
     const nome = modelo.nome || 'IA';
     const nivel = modelo.nivel || '';
     if (el.modeloIaNome) el.modeloIaNome.textContent = nome;
@@ -184,157 +143,12 @@
       `Modelo em uso: ${nome}${nivel ? ` ${nivel}` : ''}`,
       modelo.modelo ? `ID: ${modelo.modelo}` : null,
       modelo.origem ? `Origem: ${modelo.origem}` : null,
-      el.modeloIaSelect ? 'Administrador: escolha o modelo somente para a sua sessão' : null,
     ]
       .filter(Boolean)
       .join(' · ');
-    const providerName = nomeProvedorAtual();
-    const livreButton = document.querySelector('[data-chat-tipo="livre"]');
-    if (livreButton) {
-      livreButton.textContent = `${providerName} livre`;
-      livreButton.title = `Conversa normal com ${providerName}, sem critérios editoriais`;
-    }
-    if (el.emptySub) {
-      el.emptySub.textContent = `Converse com ${providerName}, crie matérias ou encontre pautas recentes.`;
-    }
   }
 
-  function valorModeloIa(provider, model) {
-    return `${String(provider || '')}|${String(model || '')}`;
-  }
-
-  function modelosUnicos(provider) {
-    const catalogo = Array.isArray(provider?.session?.models) ? provider.session.models : [];
-    const modelos = catalogo
-      .map((model) => ({
-        id: String(model?.id || model || '').trim(),
-        name: String(model?.name || model?.id || model || '').trim(),
-        access: String(model?.access || '').trim(),
-      }))
-      .filter((model) => model.id);
-    const atual = String(provider?.model || '').trim();
-    if (atual && !modelos.some((model) => model.id === atual)) {
-      modelos.unshift({ id: atual, name: atual, access: '' });
-    }
-    return modelos.filter((model, index, lista) =>
-      lista.findIndex((item) => item.id === model.id) === index
-    );
-  }
-
-  function fecharMenuModeloIa() {
-    el.modeloIa?.classList.remove('is-open');
-    el.modeloIa?.setAttribute('aria-expanded', 'false');
-    if (el.modeloIaMenu) el.modeloIaMenu.hidden = true;
-  }
-
-  function abrirMenuModeloIa() {
-    if (!el.modeloIaSelect || el.modeloIaSelect.disabled) return;
-    el.modeloIa?.classList.add('is-open');
-    el.modeloIa?.setAttribute('aria-expanded', 'true');
-    if (el.modeloIaMenu) el.modeloIaMenu.hidden = false;
-  }
-
-  function renderizarSeletorModelosIa() {
-    if (!el.modeloIaSelect) return;
-    const settings = state.provedoresIa || { providers: [], selectedProvider: '' };
-    const conectados = (settings.providers || []).filter((provider) => Boolean(provider.configured));
-    const fragment = document.createDocumentFragment();
-    const menuFragment = document.createDocumentFragment();
-    let totalModelos = 0;
-    const atual = modeloAtual();
-    const valorAtual = valorModeloIa(atual.provider, atual.modelo);
-
-    conectados.forEach((provider) => {
-      const modelos = modelosUnicos(provider);
-      if (!modelos.length) return;
-      const group = document.createElement('optgroup');
-      const origem = provider.connectionMode === 'session' ? 'desktop conectado' : 'API conectada';
-      group.label = `${provider.label || provider.provider} · ${origem}`;
-      const heading = document.createElement('p');
-      heading.className = 'mia-chat-model-menu-label';
-      heading.textContent = group.label;
-      menuFragment.appendChild(heading);
-      modelos.forEach((model) => {
-        const value = valorModeloIa(provider.provider, model.id);
-        const selected = value === valorAtual;
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = `${model.name || model.id}${model.access ? ` · ${model.access}` : ''}`;
-        option.selected = selected;
-        group.appendChild(option);
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.setAttribute('role', 'option');
-        item.className = 'mia-chat-model-menu-item' + (selected || value === valorAtual ? ' is-active' : '');
-        item.dataset.modelValue = value;
-        item.setAttribute('aria-selected', selected || value === valorAtual ? 'true' : 'false');
-        const name = document.createElement('span');
-        name.className = 'mia-chat-model-menu-item-name';
-        name.textContent = model.name || model.id;
-        item.appendChild(name);
-        if (model.access) {
-          const meta = document.createElement('span');
-          meta.className = 'mia-chat-model-menu-item-meta';
-          meta.textContent = model.access;
-          item.appendChild(meta);
-        }
-        menuFragment.appendChild(item);
-        totalModelos += 1;
-      });
-      fragment.appendChild(group);
-    });
-
-    el.modeloIaSelect.replaceChildren();
-    if (el.modeloIaMenu) el.modeloIaMenu.replaceChildren();
-    if (!totalModelos) {
-      const option = document.createElement('option');
-      option.textContent = 'Conecte uma IA em Provedores IA';
-      option.disabled = true;
-      option.selected = true;
-      el.modeloIaSelect.appendChild(option);
-      if (el.modeloIaMenu) {
-        const empty = document.createElement('p');
-        empty.className = 'mia-chat-model-menu-label';
-        empty.textContent = 'Conecte uma IA em Provedores IA';
-        el.modeloIaMenu.appendChild(empty);
-      }
-    } else {
-      el.modeloIaSelect.appendChild(fragment);
-      if (el.modeloIaMenu) el.modeloIaMenu.appendChild(menuFragment);
-      if (Array.from(el.modeloIaSelect.options).some((option) => option.value === valorAtual)) {
-        el.modeloIaSelect.value = valorAtual;
-      }
-    }
-    el.modeloIaSelect.disabled = state.trocandoModeloIa || state.enviando || !totalModelos;
-    el.modeloIa?.classList.toggle('is-changing', state.trocandoModeloIa);
-  }
-
-  async function carregarProvedoresIa() {
-    if (!el.modeloIaSelect) return;
-    try {
-      state.provedoresIa = await api('/api/admin/ai-providers');
-    } catch (err) {
-      state.provedoresIa = null;
-      if (err.status !== 403) setStatus(err.message || 'Não foi possível carregar os modelos conectados.');
-    }
-    try {
-      const salvo = JSON.parse(sessionStorage.getItem(MODEL_STORAGE_KEY) || 'null');
-      if (salvo?.provider && salvo?.model) {
-        const existe = (state.provedoresIa?.providers || []).some((provider) =>
-          provider.provider === salvo.provider && provider.configured &&
-          modelosUnicos(provider).some((model) => model.id === salvo.model)
-        );
-        state.modeloIaLocal = existe ? modeloLocal(salvo.provider, salvo.model) : null;
-        if (!existe) sessionStorage.removeItem(MODEL_STORAGE_KEY);
-      }
-    } catch {
-      state.modeloIaLocal = null;
-    }
-    atualizarModeloIa();
-    renderizarSeletorModelosIa();
-  }
-
-  async function carregarModeloIa({ carregarProvedores = true } = {}) {
+  async function carregarModeloIa() {
     atualizarModeloIa();
     try {
       const data = await api(`${API}/modelo`);
@@ -343,36 +157,6 @@
       state.modelosIa = null;
     }
     atualizarModeloIa();
-    if (carregarProvedores) await carregarProvedoresIa();
-    else renderizarSeletorModelosIa();
-  }
-
-  async function selecionarModeloIa() {
-    if (!el.modeloIaSelect || state.trocandoModeloIa || state.enviando) return;
-    const [provider, ...modelParts] = String(el.modeloIaSelect.value || '').split('|');
-    const model = modelParts.join('|');
-    if (!provider || !model) return;
-    const option = el.modeloIaSelect.selectedOptions?.[0];
-    const nome = String(option?.textContent || model).split(' · ')[0];
-    const provedor = (state.provedoresIa?.providers || []).find((item) => item.provider === provider);
-    const provedorNome = provedor?.label || provider;
-    const atual = modeloAtual();
-    if (atual.provider === provider && atual.modelo === model) return;
-
-    state.trocandoModeloIa = true;
-    renderizarSeletorModelosIa();
-    setStatus(`Selecionando ${provedorNome} · ${nome} para a sua sessão…`);
-    try {
-      state.modeloIaLocal = modeloLocal(provider, model);
-      sessionStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify({ provider, model }));
-      atualizarModeloIa();
-      setStatus(`${provedorNome} · ${nome} será usado somente na sua sessão.`);
-    } catch (err) {
-      setStatus(err.message || `Não foi possível selecionar ${nome}.`);
-    } finally {
-      state.trocandoModeloIa = false;
-      renderizarSeletorModelosIa();
-    }
   }
 
   function isMobileDrawer() {
@@ -751,8 +535,8 @@
       const rotulo =
         state.tipoConversa === 'livre'
           ? temPesquisaWeb
-            ? `Pesquisa do ${nomeProvedorAtual()}`
-            : `Conversa com ${nomeProvedorAtual()}`
+            ? 'Pesquisa do Claude'
+            : 'Conversa com Claude'
           : temPesquisaWeb
             ? 'Pesquisa e apuração'
             : 'Leitura e reescrita';
@@ -1042,7 +826,7 @@
     if (titulo && !/^(achei|encontrei|aqui est[aá]|claro|vamos)\b/i.test(titulo)) {
       return titulo.slice(0, 180);
     }
-    return `Matéria criada no ${nomeProvedorAtual()}`;
+    return 'Matéria criada no Claude';
   }
 
   function areaSalvar(mensagem, container, { livre = false } = {}) {
@@ -1095,7 +879,7 @@
         wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
         const label = document.createElement('p');
         label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-        label.textContent = `Títulos sugeridos pelo ${nomeProvedorAtual()}`;
+        label.textContent = 'Títulos sugeridos pelo Claude';
         wrap.appendChild(label);
         listaTitulos = document.createElement('div');
         listaTitulos.className = 'mt-1.5 grid gap-1.5';
@@ -1160,9 +944,7 @@
     );
     const sugerirTitulos = livre
       ? criarBotao(
-          alternativos.length
-            ? `Gerar outros 3 com ${nomeProvedorAtual()}`
-            : `Sugerir 3 com ${nomeProvedorAtual()}`,
+          alternativos.length ? 'Gerar outros 3 com Claude' : 'Sugerir 3 com Claude',
           'rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20'
         )
       : null;
@@ -1173,11 +955,11 @@
       sugerirTitulos.disabled = true;
       const rotulo = sugerirTitulos.textContent;
       sugerirTitulos.textContent = 'Sugerindo…';
-      aviso.textContent = `${nomeProvedorAtual()} está gerando 3 títulos…`;
+      aviso.textContent = 'Claude está gerando 3 títulos…';
       try {
         const data = await api(`${API}/mensagens/${mensagem.id}/titulos-alternativos`, {
           method: 'POST',
-          body: JSON.stringify({ tituloAtual: tituloLivre?.value.trim() || null, modeloIa: modeloIaParaRequest() }),
+          body: JSON.stringify({ tituloAtual: tituloLivre?.value.trim() || null }),
         });
         mostrarTitulosAlternativos(data.titulos || []);
         aviso.textContent = '3 títulos prontos — escolha um para usar no rascunho.';
@@ -1185,7 +967,7 @@
         aviso.textContent = err.message;
       } finally {
         sugerirTitulos.disabled = false;
-        sugerirTitulos.textContent = rotulo || `Gerar outros 3 com ${nomeProvedorAtual()}`;
+        sugerirTitulos.textContent = rotulo || 'Gerar outros 3 com Claude';
       }
     });
 
@@ -1527,7 +1309,6 @@
             pautas: lote,
             pesquisarWeb: state.pesquisarWeb,
             periodo: el.periodo?.value || '30d',
-            modeloIa: modeloIaParaRequest(),
           }),
         });
         for (const item of data.salvas || []) salvas.push({ ...item, indice: inicio + Number(item.indice) });
@@ -2010,9 +1791,7 @@
     } catch {
       /* ignore */
     }
-    el.titulo.textContent = state.tipoConversa === 'livre'
-      ? `Nova conversa com ${nomeProvedorAtual()}`
-      : 'Nova conversa';
+    el.titulo.textContent = state.tipoConversa === 'livre' ? 'Nova conversa com Claude' : 'Nova conversa';
     el.renomear?.classList.add('hidden');
     state.pesquisarWeb = false;
     aplicarTipoConversa();
@@ -2082,7 +1861,7 @@
     if (el.toggleWeb) {
       el.toggleWeb.disabled = livre;
       el.toggleWeb.title = livre
-        ? `A pesquisa disponível para ${nomeProvedorAtual()} fica ativa automaticamente.`
+        ? 'A pesquisa nativa da sua conta Claude fica disponível automaticamente.'
         : 'Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa.';
     }
     if (el.toggleWebLabel) {
@@ -2097,7 +1876,7 @@
     }
     if (el.input) {
       el.input.placeholder = livre
-        ? `Converse normalmente com ${nomeProvedorAtual()}…`
+        ? 'Converse normalmente com o Claude…'
         : state.modo === 'pautas'
           ? 'Tema para pesquisar. Ex.: Polêmica Silas Malafaia'
           : 'Descreva o assunto, cole um link ou peça um ajuste…';
@@ -2114,7 +1893,7 @@
     aplicarTipoConversa();
     setStatus(
       tipo === 'livre'
-        ? `${nomeProvedorAtual()} ativo · conversa sem regras editoriais.`
+        ? 'Claude ativo · conversa sem regras editoriais.'
         : 'Modo Matéria ativo · ferramentas editoriais disponíveis.'
     );
     el.input?.focus();
@@ -2162,7 +1941,6 @@
     el.enviar.classList.toggle('opacity-60', on);
     el.parar?.classList.toggle('hidden', !on);
     if (el.toggleTranscricao) el.toggleTranscricao.disabled = on;
-    renderizarSeletorModelosIa();
     if (on && state.vozAtiva) pararVoz();
   }
 
@@ -2291,10 +2069,10 @@
     setStatus(
       state.tipoConversa === 'livre'
         ? pedePesquisaLivre
-          ? `${nomeProvedorAtual()} está pesquisando na web…`
+          ? 'Claude está pesquisando na web…'
           : state.pesquisarWeb
-          ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''} para ${nomeProvedorAtual()}…`
-          : `${nomeProvedorAtual()} está respondendo…`
+          ? `Pesquisando na internet${janela ? ` — ${janela.toLowerCase()}` : ''} para o Claude…`
+          : 'Claude está respondendo…'
         : state.modo === 'pautas'
         ? `Procurando matérias sobre o tema${janela ? ` — ${janela.toLowerCase()}` : ''}…`
         : state.pesquisarWeb
@@ -2342,7 +2120,6 @@
           periodo: el.periodo?.value || '30d',
           modo: state.modo,
           tipoConversa: state.tipoConversa,
-          modeloIa: modeloIaParaRequest(),
         }),
       });
 
@@ -2463,10 +2240,7 @@
   el.drawerClose?.addEventListener('click', closeDrawer);
   el.drawerBackdrop?.addEventListener('click', closeDrawer);
   window.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape') {
-      fecharMenuModeloIa();
-      closeDrawer();
-    }
+    if (ev.key === 'Escape') closeDrawer();
   });
   window.addEventListener('resize', () => {
     if (!isMobileDrawer()) closeDrawer();
@@ -2482,27 +2256,6 @@
   el.toggleTranscricao?.addEventListener('click', () => {
     state.transcreverVideo = !state.transcreverVideo;
     aplicarToggleTranscricao();
-  });
-  el.modeloIaSelect?.addEventListener('change', selecionarModeloIa);
-  el.modeloIa?.addEventListener('click', (ev) => {
-    if (!el.modeloIaSelect) return;
-    if (ev.target.closest('#chat-ai-model-menu')) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (el.modeloIa.classList.contains('is-open')) fecharMenuModeloIa();
-    else abrirMenuModeloIa();
-  });
-  el.modeloIaMenu?.addEventListener('click', (ev) => {
-    const item = ev.target.closest('[data-model-value]');
-    if (!item || !el.modeloIaSelect || el.modeloIaSelect.disabled) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    el.modeloIaSelect.value = item.dataset.modelValue;
-    fecharMenuModeloIa();
-    selecionarModeloIa();
-  });
-  document.addEventListener('click', (ev) => {
-    if (!ev.target.closest('#chat-ai-model')) fecharMenuModeloIa();
   });
 
   el.modoBtns?.forEach((btn) => {

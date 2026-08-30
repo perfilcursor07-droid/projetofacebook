@@ -74,39 +74,6 @@ function assuntoParaBusca(texto) {
   return t.length >= 3 ? t : String(texto || '').trim();
 }
 
-function pesquisaLivreSemAssunto(texto) {
-  const restante = assuntoParaBusca(texto)
-    .toLowerCase()
-    .replace(/\b(?:na\s+internet|na\s+web|internet|web|e|fa[cç]a|escreva|crie|inclua|implemente|complete|a|uma|mat[ée]ria|not[íi]cia|por\s+favor)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return restante.length < 8;
-}
-
-// Um segundo pedido como “pesquise na internet e faça a matéria” não traz o
-// assunto de novo. Recupera o título das fontes ou da resposta anterior para
-// que a busca consulte o caso correto, e não a frase genérica do comando.
-function consultaPesquisaLivre(pedido, mensagensAnteriores = []) {
-  const assuntoAtual = assuntoParaBusca(pedido);
-  if (!pesquisaLivreSemAssunto(pedido)) return assuntoAtual.slice(0, 240);
-
-  const anteriores = Array.isArray(mensagensAnteriores) ? [...mensagensAnteriores].reverse() : [];
-  for (const mensagem of anteriores) {
-    const fontes = parseJson(mensagem?.fontes, []);
-    const tituloFonte = (Array.isArray(fontes) ? fontes : [])
-      .map((fonte) => String(fonte?.titulo || '').replace(/\s+/g, ' ').trim())
-      .find((titulo) => titulo.length >= 12);
-    if (tituloFonte) return tituloFonte.slice(0, 240);
-
-    const conteudo = String(mensagem?.content || '');
-    const tituloCitado = [...conteudo.matchAll(/["“]([^"”\n]{12,220})["”]/g)]
-      .map((match) => String(match[1] || '').replace(/\s+/g, ' ').trim())
-      .find((titulo) => /\b[A-ZÀ-Ú][\wÀ-ÿ-]+\b/.test(titulo));
-    if (tituloCitado) return tituloCitado.slice(0, 240);
-  }
-  return assuntoAtual.slice(0, 240);
-}
-
 function motivoDaBuscaVazia() {
   try {
     const pausados = require('./providerHealth').pausados() || [];
@@ -2367,8 +2334,6 @@ async function responder({
     (String(modo) === 'pautas' || (String(modo) !== 'manual' && pedeListaDePautas));
   const deepseekService = require('./deepseekService');
   const materiaIaService = require('./materiaIaService');
-  const provedorManual = require('./aiProviderContext').current();
-  const nomeIa = provedorManual?.label || 'Claude';
   deepseekService.assertDeepseek('conversa');
 
   const pedido = String(texto || '').replace(/\s+$/g, '').trim();
@@ -2392,7 +2357,7 @@ async function responder({
   } else {
     const tipoExistente = chat.modo === 'livre' ? 'livre' : 'materia';
     if (tipoExistente !== tipoSolicitado) {
-      throw erro(`Inicie uma nova conversa para trocar entre Matéria e ${nomeIa} livre.`, 409);
+      throw erro('Inicie uma nova conversa para trocar entre Matéria e Claude livre.', 409);
     }
     const patch = { pesquisar_web: pesquisarWeb ? 1 : 0, tom, periodo: periodoFinal };
     if (!chat.titulo) patch.titulo = tituloDaConversa(pedido);
@@ -2557,15 +2522,6 @@ async function responder({
 
   if (conversaLivre) {
     let fontesWeb = [];
-    const pedidoSolicitaPesquisa = !pedidoMemoriaEditorial &&
-      /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
-        pedido
-      );
-    // A busca do ViralizeAI é a fonte comum e verificável para todos os
-    // provedores. Antes o Claude ficava fora desta etapa por depender apenas
-    // da busca nativa do site; quando ela não era exposta pela sessão, ele
-    // dizia que não tinha ferramenta mesmo com uma pesquisa solicitada.
-    const pesquisarPeloSistema = pesquisarWeb || pedidoSolicitaPesquisa;
     const urlsNoPedidoLivre = extrairUrlsDoTexto(pedido);
     const urlsSociaisLivre = urlsNoPedidoLivre.filter((url) => classificarUrlFonte(url));
     const urlsArtigosLivre = urlsNoPedidoLivre.filter(
@@ -2619,18 +2575,14 @@ async function responder({
       }
     }
 
-    if (pesquisarPeloSistema && !pedidoMemoriaEditorial) {
+    if (pesquisarWeb && !pedidoMemoriaEditorial) {
       registrarPasso({ kind: 'pesquisa', texto: 'Pesquisando na internet…' });
       try {
-        const consultaLivre = consultaPesquisaLivre(pedido, anteriores)
+        const consultaLivre = pedido
           .replace(/https?:\/\/\S+/gi, ' ')
           .replace(/\s+/g, ' ')
           .trim()
-          .slice(0, 240) || pedido.slice(0, 240);
-        console.info(
-          `[materia-chat][pesquisa] provider=${provedorManual?.provider || 'padrão'} ` +
-          `consulta=${JSON.stringify(consultaLivre)}`
-        );
+          .slice(0, 180) || pedido.slice(0, 180);
         const fontesPesquisa = await materiaIaService.coletarFatosNaWeb({
           consultas: [consultaLivre],
           periodo: periodoFinal,
@@ -2639,21 +2591,14 @@ async function responder({
           logPrefix: '[claude-livre]',
         });
         fontesWeb.push(...fontesPesquisa);
-        console.info(
-          `[materia-chat][pesquisa] provider=${provedorManual?.provider || 'padrão'} ` +
-          `fontes=${fontesPesquisa.length}`
-        );
       } catch (err) {
-        console.warn(
-          `[materia-chat][pesquisa] provider=${provedorManual?.provider || 'padrão'} falhou:`,
-          err.message
-        );
+        console.warn('[claude-livre] pesquisa:', err.message);
       }
       registrarPasso({
         kind: fontesWeb.length ? 'fontes' : 'aviso',
         texto: fontesWeb.length
-          ? `${fontesWeb.length} fonte(s) encontrada(s) para ${nomeIa} consultar`
-          : `A pesquisa não encontrou fontes; ${nomeIa} responderá sem resultados novos da web.`,
+          ? `${fontesWeb.length} fonte(s) encontrada(s) para o Claude consultar`
+          : 'A pesquisa não encontrou fontes; o Claude responderá sem resultados novos da web.',
       });
     }
 
@@ -2668,12 +2613,15 @@ async function responder({
     }
     fontesWeb = fontesUnicas.slice(0, 12);
 
-    const pediuPesquisaClaude = pedidoSolicitaPesquisa;
+    const pediuPesquisaClaude = !pedidoMemoriaEditorial &&
+      /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
+        pedido
+      );
     registrarPasso({
       kind: pediuPesquisaClaude ? 'pesquisa' : 'pensando',
       texto: pediuPesquisaClaude
-        ? `${nomeIa} está pesquisando na web…`
-        : `${nomeIa} está respondendo…`,
+        ? 'Claude está pesquisando na web…'
+        : 'Claude está respondendo…',
     });
     onEvent({ tipo: 'inicio-resposta' });
     const historicoLivre = anteriores.map((mensagem) => ({
@@ -2728,7 +2676,7 @@ async function responder({
       }
       registrarPasso({
         kind: 'fontes',
-        texto: `${nomeIa} pesquisou na web e consultou ${fontesClaude.length} fonte(s)`,
+        texto: `Claude pesquisou na web e consultou ${fontesClaude.length} fonte(s)`,
       });
     }
     let fontesFinais = selecionarFontesRespostaLivre(respostaLivreFinal, {
@@ -4761,7 +4709,7 @@ async function gerarTitulosAlternativosDaMensagem({ userId, messageId, tituloAtu
     throw erro('Mensagem não encontrada', 404);
   }
   if (row.role !== 'assistant') {
-    throw erro('Só respostas da IA podem receber sugestões de título.', 400);
+    throw erro('Só respostas do Claude podem receber sugestões de título.', 400);
   }
 
   const conversaLivre = row.chat_modo === 'livre';
@@ -4840,5 +4788,4 @@ module.exports = {
   textoEmOutroIdioma,
   respostaLivreComMetaComentario,
   confirmacaoMemoriaEditorial,
-  consultaPesquisaLivre,
 };

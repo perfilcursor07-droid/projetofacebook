@@ -1,8 +1,5 @@
 <%- include('partials/app-start') %>
-  <%
-    const podeEscolherModeloIa = Boolean(user && user.nivel_acesso === 'administrador');
-  %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260829modeloMenuEscuro" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260828mensagensMesmaLargura1" />
 
   <main class="mia-chat" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -78,7 +75,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z"/><path d="m18.5 15 .9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9Z"/></svg>
               </span>
               <h1 class="mia-chat-empty-title">Como posso ajudar?</h1>
-              <p id="chat-empty-sub" class="mia-chat-empty-sub">Converse com a IA, crie matérias ou encontre pautas recentes.</p>
+              <p class="mia-chat-empty-sub">Converse com o Claude, crie matérias ou encontre pautas recentes.</p>
             </div>
           </div>
         </div>
@@ -177,8 +174,8 @@
 
                 <div class="mia-chat-seg" id="chat-tipo-seg" role="group" aria-label="Tipo de conversa">
                   <button type="button" data-chat-tipo="livre" aria-pressed="true"
-                    title="Conversa normal com a IA escolhida, sem critérios editoriais"
-                    class="chat-tipo-btn mia-chat-seg-btn is-active">IA livre</button>
+                    title="Conversa normal com o Claude, sem critérios editoriais"
+                    class="chat-tipo-btn mia-chat-seg-btn is-active">Claude</button>
                   <button type="button" data-chat-tipo="materia" aria-pressed="false"
                     title="Cria matérias usando as regras editoriais do sistema"
                     class="chat-tipo-btn mia-chat-seg-btn">Matéria</button>
@@ -197,25 +194,13 @@
                   <span class="mia-chat-chip-dot"></span>
                   <span id="chat-toggle-web-label">Web</span>
                 </button>
-                <div
-                  id="chat-ai-model"
-                  class="mia-chat-model-pill<%= podeEscolherModeloIa ? ' is-selectable' : '' %>"
-                  data-admin-model-selector="<%= podeEscolherModeloIa ? '1' : '0' %>"
-                  <%- podeEscolherModeloIa ? 'role="combobox" aria-expanded="false" aria-controls="chat-ai-model-menu" aria-haspopup="listbox"' : '' %>
-                  title="Modelo de IA em uso nesta conversa">
+                <span id="chat-ai-model" class="mia-chat-model-pill" title="Modelo de IA em uso nesta conversa">
                   <span id="chat-ai-model-name">IA</span>
                   <span id="chat-ai-model-level">—</span>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                     <path d="m6 9 6 6 6-6"/>
                   </svg>
-                  <% if (podeEscolherModeloIa) { %>
-                    <select id="chat-ai-model-select" class="mia-chat-model-native-select"
-                      aria-label="Escolher modelo de IA do Matéria manual" tabindex="-1" disabled>
-                      <option>Carregando modelos conectados…</option>
-                    </select>
-                    <div id="chat-ai-model-menu" class="mia-chat-model-menu" role="listbox" hidden></div>
-                  <% } %>
-                </div>
+                </span>
               </div>
 
               <span id="chat-status" class="mia-chat-status" aria-live="polite"></span>
@@ -392,6 +377,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260829modeloMenuEscuro"></script>
+  <script src="/js/materia-chat.js?v=20260827materiaNovaRecusa1"></script>
   <script src="/js/materia-chat-extras.js?v=20260829maislidasfontes2"></script>
 <%- include('partials/app-end') %>

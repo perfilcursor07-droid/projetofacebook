@@ -17,11 +17,6 @@ const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   databaseUrl: process.env.DATABASE_URL || 'mysql://root:@localhost:3306/clipador',
   sessionSecret: process.env.SESSION_SECRET || 'dev-session-secret-change-me',
-  /** Chave exclusiva para cifrar credenciais de provedores salvas no banco. */
-  aiCredentialsSecret:
-    process.env.AI_CREDENTIALS_SECRET ||
-    process.env.SESSION_SECRET ||
-    'dev-session-secret-change-me',
   /** deepseek | claude | token-free — quem escreve as materias. */
   aiProvider: String(process.env.AI_PROVIDER || 'deepseek').toLowerCase(),
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -45,10 +40,6 @@ const env = {
    */
   deepseekWriterModel:
     process.env.DEEPSEEK_WRITER_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
-  openaiApiKey: process.env.OPENAI_API_KEY || '',
-  openaiModel: process.env.OPENAI_MODEL || 'gpt-5.4',
-  xaiApiKey: process.env.XAI_API_KEY || '',
-  xaiModel: process.env.XAI_MODEL || 'grok-4.6',
   pexelsApiKey: process.env.PEXELS_API_KEY || '',
   // Desligados por padrão: chaves esgotadas/403 estavam atrasando toda busca.
   // Reative explicitamente somente depois de validar saldo e funcionamento.

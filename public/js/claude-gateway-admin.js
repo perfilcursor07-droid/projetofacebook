@@ -1,28 +1,19 @@
 (function () {
   const initialEl = document.getElementById('claude-initial-status');
   if (!initialEl) return;
-  const providersInitialEl = document.getElementById('ai-providers-initial');
 
   const $ = (id) => document.getElementById(id);
   const buttons = Array.from(document.querySelectorAll('[data-action]'));
-  const providerButtons = Array.from(document.querySelectorAll('[data-ai-action]'));
   const feedback = $('claude-feedback');
   const progress = $('claude-auth-progress');
   const loginDone = $('claude-login-done');
   let busy = false;
   let currentStatus = {};
-  let providerSettings = { providers: [], selectedProvider: 'claude' };
-  let providerBusy = false;
 
   try {
     currentStatus = JSON.parse(initialEl.textContent || '{}');
   } catch {
     currentStatus = {};
-  }
-  try {
-    providerSettings = JSON.parse(providersInitialEl?.textContent || '{}');
-  } catch {
-    providerSettings = { providers: [], selectedProvider: 'claude' };
   }
 
   const toneClasses = {
@@ -63,223 +54,6 @@
     feedback.textContent = message;
     feedback.className = 'mt-4 rounded-lg border px-3 py-2 text-xs';
     feedback.classList.add(...(toneClasses[tone] || toneClasses.neutral));
-  }
-
-  function setProviderFeedback(message, tone) {
-    const element = $('ai-provider-feedback');
-    if (!element) return;
-    if (!message) {
-      element.classList.add('hidden');
-      return;
-    }
-    element.textContent = message;
-    element.className = 'mt-3 rounded-lg border px-3 py-2 text-xs';
-    element.classList.add(...(toneClasses[tone] || toneClasses.neutral));
-  }
-
-  function providerById(provider) {
-    return (providerSettings.providers || []).find((item) => item.provider === provider) || null;
-  }
-
-  function renderProviders(settings) {
-    providerSettings = settings || providerSettings;
-    const selected = providerById(providerSettings.selectedProvider);
-    if ($('ai-selected-summary')) {
-      $('ai-selected-summary').textContent = selected
-        ? `${selected.label} · ${selected.model}`
-        : 'Nenhum provedor selecionado';
-    }
-
-    document.querySelectorAll('[data-provider-card]').forEach((card) => {
-      const provider = card.dataset.providerCard;
-      const item = providerById(provider);
-      if (!item) return;
-      const liveSession = currentStatus?.providers?.[provider] || null;
-      const sessionAuthorized = liveSession
-        ? Boolean(liveSession.autorizada)
-        : Boolean(item.session?.authorized);
-      const sessionExpired = liveSession?.valida === false;
-      const connected = (sessionAuthorized && !sessionExpired) || item.configured;
-      const isSelected = providerSettings.selectedProvider === provider;
-      card.classList.toggle('border-violet-500/60', isSelected);
-      card.classList.toggle('bg-violet-500/5', isSelected);
-      card.classList.toggle('border-slate-800', !isSelected);
-
-      const badge = card.querySelector('.ai-provider-badge');
-      if (badge) {
-        badge.textContent = sessionExpired
-          ? 'Sessão expirada'
-          : isSelected && connected
-            ? 'Em uso'
-            : sessionAuthorized
-              ? 'Sessão conectada'
-              : item.configured
-                ? 'API conectada'
-                : 'Não conectado';
-        badge.classList.remove(...allToneClasses);
-        badge.classList.add(
-          ...(toneClasses[sessionExpired ? 'bad' : isSelected && connected ? 'good' : connected ? 'neutral' : 'warn'])
-        );
-      }
-
-      const modelInput = card.querySelector('[data-provider-model]');
-      if (modelInput && document.activeElement !== modelInput) {
-        const accountModels = liveSession?.models?.length
-          ? liveSession.models
-          : item.session?.models || [];
-        if (accountModels.length) {
-          const signature = accountModels.map((model) => model.id).join('|');
-          if (modelInput.dataset.modelsSignature !== signature) {
-            const preferred = accountModels.some((model) => model.id === item.model)
-              ? item.model
-              : accountModels[0].id;
-            modelInput.replaceChildren(...accountModels.map((model) => {
-              const option = document.createElement('option');
-              option.value = model.id;
-              option.textContent = `${model.name || model.id}${model.access ? ` · ${model.access}` : ''}`;
-              option.selected = model.id === preferred;
-              return option;
-            }));
-            modelInput.dataset.modelsSignature = signature;
-          } else if (Array.from(modelInput.options).some((option) => option.value === item.model)) {
-            modelInput.value = item.model;
-          }
-        } else {
-          modelInput.value = item.model || '';
-        }
-      }
-      const keyInput = card.querySelector('[data-provider-key]');
-      if (keyInput) {
-        keyInput.placeholder = item.credentialSource === 'painel'
-          ? 'Chave salva — deixe vazio para manter'
-          : 'Cole a chave somente se quiser usar a API';
-      }
-      const remove = card.querySelector('.ai-provider-remove');
-      remove?.classList.toggle('hidden', item.credentialSource !== 'painel');
-      const connect = card.querySelector('.ai-provider-connect');
-      if (connect) connect.textContent = sessionAuthorized ? 'Reconectar pelo desktop' : 'Conectar pelo desktop';
-      const select = card.querySelector('.ai-provider-select');
-      if (select) {
-        select.textContent = isSelected ? 'Selecionado no Matéria manual' : 'Usar no Matéria manual';
-        select.disabled = providerBusy || isSelected;
-        select.classList.toggle('opacity-60', isSelected);
-      }
-      const test = card.querySelector('.ai-provider-test');
-      if (test) {
-        test.textContent = item.lastTest?.at
-          ? `${item.lastTest.status === 'success' ? 'Último teste aprovado' : 'Último teste falhou'} · ${formatDate(item.lastTest.at)}`
-          : sessionAuthorized
-            ? 'Sessão pronta para teste.'
-            : item.configured
-              ? 'API pronta para teste.'
-              : 'Conecte pelo desktop para começar.';
-      }
-    });
-
-    providerButtons.forEach((button) => {
-      const selectedButton = button.dataset.aiAction === 'select' &&
-        button.dataset.provider === providerSettings.selectedProvider;
-      button.disabled = providerBusy || selectedButton;
-    });
-  }
-
-  async function providerRequest(path, options = {}) {
-    const response = await fetch(`/api/admin/ai-providers${path}`, {
-      method: options.method || 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `Falha HTTP ${response.status}`);
-    return data;
-  }
-
-  function providerForm(provider) {
-    return {
-      model: document.querySelector(`[data-provider-model="${provider}"]`)?.value.trim() || '',
-      apiKey: document.querySelector(`[data-provider-key="${provider}"]`)?.value.trim() || '',
-    };
-  }
-
-  async function refreshProviders() {
-    const data = await providerRequest('');
-    renderProviders(data);
-    return data;
-  }
-
-  async function saveProvider(provider, { silent = false } = {}) {
-    const form = providerForm(provider);
-    const data = await providerRequest(`/${provider}`, {
-      method: 'PUT',
-      body: form,
-    });
-    const keyInput = document.querySelector(`[data-provider-key="${provider}"]`);
-    if (keyInput) keyInput.value = '';
-    await refreshProviders();
-    if (!silent) setProviderFeedback(`${data.provider.label} salvo com segurança.`, 'good');
-    return data;
-  }
-
-  async function runProviderAction(action, provider) {
-    if (providerBusy) return;
-    providerBusy = true;
-    renderProviders(providerSettings);
-    try {
-      const form = providerForm(provider);
-      if (action === 'connect') {
-        const label = providerById(provider)?.label || provider;
-        const desktopUrl = currentStatus?.desktop?.urlLocal;
-        if (currentStatus?.desktop?.necessario && desktopUrl) {
-          window.open(desktopUrl, '_blank', 'noopener');
-        }
-        setProviderFeedback(`Abrindo o desktop privado para conectar ${label}…`, 'neutral');
-        await request('/authorize', {
-          method: 'POST',
-          body: { provider, trocarConta: false },
-        });
-        await refresh(true);
-        setProviderFeedback(
-          `Entre no ${label} dentro do desktop privado. A sessão será salva automaticamente.`,
-          'warn'
-        );
-      } else if (action === 'save') {
-        await saveProvider(provider);
-      } else if (action === 'test') {
-        if (form.apiKey) await saveProvider(provider, { silent: true });
-        setProviderFeedback(`Testando ${providerById(provider)?.label || provider}…`, 'neutral');
-        const data = await providerRequest(`/${provider}/test`, {
-          method: 'POST',
-          body: { model: form.model },
-        });
-        await refreshProviders();
-        setProviderFeedback(data.message || 'Conexão validada.', 'good');
-      } else if (action === 'select') {
-        if (form.apiKey) await saveProvider(provider, { silent: true });
-        const data = await providerRequest(`/${provider}/select`, {
-          method: 'POST',
-          body: { model: form.model },
-        });
-        renderProviders(data);
-        setProviderFeedback(
-          `${providerById(provider)?.label || provider} será usado em matérias, títulos e ajustes do Matéria manual.`,
-          'good'
-        );
-      } else if (action === 'remove') {
-        if (!window.confirm('Remover esta chave salva do servidor?')) return;
-        await providerRequest(`/${provider}/key`, { method: 'DELETE' });
-        await refreshProviders();
-        setProviderFeedback('Chave salva removida.', 'good');
-      }
-    } catch (err) {
-      setProviderFeedback(err.message, 'bad');
-      await refreshProviders().catch(() => {});
-    } finally {
-      providerBusy = false;
-      renderProviders(providerSettings);
-    }
   }
 
   function syncButtons() {
@@ -362,10 +136,7 @@
     const authVisible = ['running', 'waiting_login', 'waiting_browser_login', 'success', 'error'].includes(auth.status);
     progress?.classList.toggle('hidden', !authVisible);
     if ($('claude-auth-label')) {
-      const providerLabel = auth.providerLabel || 'IA';
-      $('claude-auth-label').textContent = auth.status === 'error'
-        ? `Falha ao conectar ${providerLabel}`
-        : `Autorização do ${providerLabel}`;
+      $('claude-auth-label').textContent = auth.status === 'error' ? 'Falha na autorização' : 'Autorização do Claude';
     }
     if ($('claude-auth-message')) $('claude-auth-message').textContent = auth.message || '';
 
@@ -378,7 +149,6 @@
         : 'Gateway sem Bearer token: mantenha a porta 3456 acessível somente localmente.',
     ];
     $('claude-security-status').textContent = securityParts.join(' ');
-    renderProviders(providerSettings);
     syncButtons();
   }
 
@@ -420,11 +190,10 @@
       pendingMessage = 'Reiniciando o gateway…';
     } else if (action === 'test') {
       path = '/test';
-      body = { provider: 'claude', model: 'claude-sonnet-5' };
       pendingMessage = 'Testando o Sonnet 5…';
     } else if (action === 'authorize') {
       path = '/authorize';
-      body = { provider: 'claude', trocarConta: false };
+      body = { trocarConta: false };
       pendingMessage = 'Abrindo o Chrome para entrar no Claude…';
     } else if (action === 'switch') {
       const confirmed = window.confirm(
@@ -432,7 +201,7 @@
       );
       if (!confirmed) return;
       path = '/authorize';
-      body = { provider: 'claude', trocarConta: true };
+      body = { trocarConta: true };
       pendingMessage = 'Removendo a sessão atual e abrindo o Chrome…';
     } else if (action === 'continue') {
       path = '/authorize/continue';
@@ -460,11 +229,6 @@
 
   buttons.forEach((button) => {
     button.addEventListener('click', () => runAction(button.dataset.action));
-  });
-  providerButtons.forEach((button) => {
-    button.addEventListener('click', () =>
-      runProviderAction(button.dataset.aiAction, button.dataset.provider)
-    );
   });
   $('claude-refresh')?.addEventListener('click', () => refresh(false));
   $('desktop-copy')?.addEventListener('click', async () => {

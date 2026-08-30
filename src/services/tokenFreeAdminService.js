@@ -45,96 +45,8 @@ const COMMAND_TIMEOUT_MS = 45 * 1000;
 const MAX_OUTPUT_CHARS = 12_000;
 const DEFAULT_NOVNC_PORT = 6080;
 
-const WEB_PROVIDERS = {
-  claude: {
-    profileId: 'claude-web',
-    menuSelection: '1',
-    label: 'Claude',
-    loginUrl: 'https://claude.ai/new',
-    defaultModel: 'claude-sonnet-5',
-    supportsApi: false,
-    models: [
-      { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', access: 'Conforme seu plano' },
-      { id: 'claude-opus-5', name: 'Claude Opus 5', access: 'Plano pago' },
-      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', access: 'Conforme seu plano' },
-    ],
-  },
-  openai: {
-    profileId: 'chatgpt-web',
-    menuSelection: '2',
-    label: 'ChatGPT',
-    loginUrl: 'https://chatgpt.com/',
-    // No ChatGPT comum, o alias gpt-5.6 é atendido pelo GPT-5.6 Sol.
-    // Terra e Luna pertencem a Work/Codex/API e não podem ser escolhidos
-    // diretamente pela sessão web padrão.
-    defaultModel: 'gpt-5.6',
-    supportsApi: true,
-    models: [
-      { id: 'gpt-5.6', name: 'GPT-5.6 Sol', access: 'Disponível conforme seu plano ChatGPT' },
-    ],
-  },
-  deepseek: {
-    profileId: 'deepseek-web',
-    menuSelection: '3',
-    label: 'DeepSeek',
-    loginUrl: 'https://chat.deepseek.com/',
-    defaultModel: 'deepseek-v4-flash',
-    supportsApi: true,
-    models: [
-      { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', access: 'Grátis com limites' },
-      { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', access: 'Conforme sua conta' },
-    ],
-  },
-  grok: {
-    profileId: 'grok-web',
-    menuSelection: '8',
-    label: 'Grok',
-    loginUrl: 'https://grok.com/',
-    defaultModel: 'grok-4.5',
-    supportsApi: true,
-    models: [
-      { id: 'grok-4.5', name: 'Grok 4.5', access: 'Grátis limitado/conforme plano' },
-      { id: 'grok-4.6', name: 'Grok 4.6', access: 'Plano com acesso ao modelo' },
-    ],
-  },
-  gemini: {
-    profileId: 'gemini-web',
-    menuSelection: '5',
-    label: 'Gemini',
-    loginUrl: 'https://gemini.google.com/app',
-    defaultModel: 'gemini-flash',
-    supportsApi: false,
-    models: [
-      { id: 'gemini-flash-lite', name: 'Gemini Flash-Lite', access: 'Grátis' },
-      { id: 'gemini-flash', name: 'Gemini Flash', access: 'Grátis com limites' },
-      { id: 'gemini-pro', name: 'Gemini Pro', access: 'Plano Google AI' },
-    ],
-  },
-};
-
-function providerInfo(value = 'claude') {
-  const id = String(value || 'claude').trim().toLowerCase();
-  const info = WEB_PROVIDERS[id];
-  if (info) return { id, ...info };
-  const err = new Error('Provedor web inválido.');
-  err.status = 400;
-  throw err;
-}
-
-function modelBelongsToProvider(provider, modelId) {
-  const id = String(modelId || '').toLowerCase();
-  if (provider === 'claude') return id.startsWith('claude-');
-  if (provider === 'openai') return /^(gpt-|o\d|chatgpt-)/.test(id);
-  if (provider === 'deepseek') return id.startsWith('deepseek-');
-  if (provider === 'grok') return id.startsWith('grok-');
-  if (provider === 'gemini') return id.startsWith('gemini-');
-  return false;
-}
-
 let authJob = {
   status: 'idle',
-  provider: null,
-  providerLabel: null,
   message: 'Nenhuma autorização em andamento.',
   startedAt: null,
   finishedAt: null,
@@ -158,15 +70,11 @@ async function lerJsonSeguro(filePath, fallback) {
 
 async function authMetadata() {
   const store = await lerJsonSeguro(AUTH_FILE, { profiles: {} });
-  const result = {};
-  for (const [provider, info] of Object.entries(WEB_PROVIDERS)) {
-    const profile = store?.profiles?.[info.profileId];
-    result[provider] = {
-      autorizada: Boolean(profile?.credentials && Object.keys(profile.credentials).length),
-      atualizadaEm: isoDate(profile?.updatedAt),
-    };
-  }
-  return result;
+  const profile = store?.profiles?.['claude-web'];
+  return {
+    autorizada: Boolean(profile?.credentials?.sessionKey || profile?.credentials?.cookie),
+    atualizadaEm: isoDate(profile?.updatedAt),
+  };
 }
 
 async function configMetadata() {
@@ -182,8 +90,6 @@ async function configMetadata() {
 function authJobPublico() {
   return {
     status: authJob.status,
-    provider: authJob.provider || null,
-    providerLabel: authJob.providerLabel || null,
     message: authJob.message,
     startedAt: authJob.startedAt,
     finishedAt: authJob.finishedAt,
@@ -262,31 +168,6 @@ async function status() {
     healthError = err.message;
   }
 
-  const providerStatuses = {};
-  for (const [provider, info] of Object.entries(WEB_PROVIDERS)) {
-    const session = health?.sessions?.[info.profileId];
-    providerStatuses[provider] = {
-      provider,
-      label: info.label,
-      profileId: info.profileId,
-      autorizada: Boolean(auth?.[provider]?.autorizada),
-      atualizadaEm: auth?.[provider]?.atualizadaEm || null,
-      valida: session?.valid === true ? true : session?.valid === false ? false : null,
-      motivo: session?.reason || null,
-      models: modelos
-        .filter((item) => modelBelongsToProvider(provider, item?.id))
-        .map((item) => {
-          const catalog = info.models.find((model) => model.id === String(item?.id || ''));
-          return {
-            id: String(item.id),
-            name: item.name || catalog?.name || item.id,
-            access: catalog?.access || 'Disponível na conta conectada',
-          };
-        }),
-      defaultModel: info.defaultModel,
-      supportsApi: info.supportsApi,
-    };
-  }
   const sessao = health?.sessions?.['claude-web'];
   const modeloConfigurado = gatewayClient.MODELO;
   const modeloDisponivel = modelos.some((item) => String(item?.id || '') === modeloConfigurado);
@@ -305,10 +186,9 @@ async function status() {
       cdpUrl: config.cdpUrl,
     },
     desktop,
-    providers: providerStatuses,
     claude: {
-      autorizada: auth.claude?.autorizada,
-      atualizadaEm: auth.claude?.atualizadaEm,
+      autorizada: auth.autorizada,
+      atualizadaEm: auth.atualizadaEm,
       valida: sessao?.valid === true ? true : sessao?.valid === false ? false : null,
       motivo: sessao?.reason || null,
       modelo: modeloConfigurado,
@@ -392,7 +272,7 @@ async function aguardarChromeCdp(timeout = 20_000) {
   return false;
 }
 
-async function iniciarChromeVisualServidor(startUrl = WEB_PROVIDERS.claude.loginUrl) {
+async function iniciarChromeVisualServidor() {
   const chromePath = CHROME_LINUX_CANDIDATES.find((candidate) => fs.existsSync(candidate));
   if (!chromePath) {
     const err = new Error('Google Chrome/Chromium não encontrado no servidor.');
@@ -418,7 +298,7 @@ async function iniciarChromeVisualServidor(startUrl = WEB_PROVIDERS.claude.login
     '--password-store=basic',
     '--remote-allow-origins=*',
     '--window-size=1440,1000',
-    startUrl,
+    'https://claude.ai/new',
   ];
 
   try {
@@ -456,12 +336,11 @@ async function reiniciar() {
   return { ok: true, message: 'Gateway reiniciado.' };
 }
 
-async function removerCredencialProvider(provider = 'claude') {
-  const info = providerInfo(provider);
+async function removerCredencialClaude() {
   const store = await lerJsonSeguro(AUTH_FILE, { profiles: {} });
   if (!store.profiles || typeof store.profiles !== 'object') store.profiles = {};
-  if (!store.profiles[info.profileId]) return false;
-  delete store.profiles[info.profileId];
+  if (!store.profiles['claude-web']) return false;
+  delete store.profiles['claude-web'];
   await fsp.mkdir(path.dirname(AUTH_FILE), { recursive: true });
   const tempPath = `${AUTH_FILE}.tmp`;
   await fsp.writeFile(tempPath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
@@ -487,32 +366,29 @@ async function limparSessaoClaudeDoChrome() {
     timeout: COMMAND_TIMEOUT_MS,
     env: { TOKEN_FREE_GATEWAY_SOURCE_DIR: TOOL_DIR },
   });
-  await removerCredencialProvider('claude');
+  await removerCredencialClaude();
 }
 
-function iniciarAutorizacao({ provider = 'claude', trocarConta = false } = {}) {
-  const providerConfig = providerInfo(provider);
+function iniciarAutorizacao({ trocarConta = false } = {}) {
   assertCli();
   if (process.platform === 'linux' && !process.env.DISPLAY) {
     const err = new Error(
-      'Desktop privado não configurado. Instale o desktop e recarregue o PM2 antes de conectar a conta.'
+      'Desktop do Claude não configurado. Instale o desktop privado e recarregue o PM2 antes de entrar novamente.'
     );
     err.status = 409;
     throw err;
   }
   if (['running', 'waiting_login', 'waiting_browser_login'].includes(authJob.status)) {
-    const err = new Error('Já existe uma autorização de IA em andamento.');
+    const err = new Error('Já existe uma autorização do Claude em andamento.');
     err.status = 409;
     throw err;
   }
 
   authJob = {
     status: 'running',
-    provider: providerConfig.id,
-    providerLabel: providerConfig.label,
     message: trocarConta
-      ? `Preparando o Chrome para entrar em outra conta ${providerConfig.label}…`
-      : `Abrindo o Chrome do servidor para conectar ${providerConfig.label}…`,
+      ? 'Preparando o Chrome para entrar em outra conta…'
+      : 'Abrindo o Chrome do servidor para autorizar o Claude…',
     startedAt: new Date().toISOString(),
     finishedAt: null,
   };
@@ -520,8 +396,7 @@ function iniciarAutorizacao({ provider = 'claude', trocarConta = false } = {}) {
   // O endpoint responde imediatamente. A tela acompanha este trabalho por polling.
   void (async () => {
     try {
-      if (trocarConta && providerConfig.id === 'claude') await limparSessaoClaudeDoChrome();
-      else if (trocarConta) await removerCredencialProvider(providerConfig.id);
+      if (trocarConta) await limparSessaoClaudeDoChrome();
 
       // Faz o webauth abrir uma janela nova e aguardar a confirmação manual.
       // Sem isso, um Chrome já aberto tentaria capturar a sessão imediatamente.
@@ -538,7 +413,7 @@ function iniciarAutorizacao({ provider = 'claude', trocarConta = false } = {}) {
           ...authJob,
           message: 'Iniciando o Chrome no desktop privado…',
         };
-        await iniciarChromeVisualServidor(providerConfig.loginUrl);
+        await iniciarChromeVisualServidor();
       }
 
       const child = spawn(BUN_PATH, [ENTRY_FILE, 'webauth'], {
@@ -550,8 +425,8 @@ function iniciarAutorizacao({ provider = 'claude', trocarConta = false } = {}) {
       activeAuthChild = child;
       let buffer = '';
       let detectouPromptInicial = false;
-      let detectouPromptProvider = false;
-      let enviouProvider = false;
+      let detectouPromptClaude = false;
+      let enviouClaude = false;
       let concluida = false;
 
       activeAuthTimer = setTimeout(() => {
@@ -573,27 +448,27 @@ function iniciarAutorizacao({ provider = 'claude', trocarConta = false } = {}) {
           authJob = {
             ...authJob,
             status: 'waiting_login',
-            message: `Chrome aberto no desktop privado. Entre no ${providerConfig.label} e depois clique em “Já entrei, concluir”.`,
+            message: 'Chrome aberto no desktop privado. Entre no Claude e depois clique em “Já entrei, concluir”.',
           };
         }
-        if (!detectouPromptProvider && /Please (?:log(?:in| in)|sign in) to/i.test(buffer)) {
-          detectouPromptProvider = true;
+        if (!detectouPromptClaude && /Please log(?:in| in) to Claude/i.test(buffer)) {
+          detectouPromptClaude = true;
           authJob = {
             ...authJob,
             status: 'waiting_browser_login',
-            message: `Aguardando ${providerConfig.label} confirmar a sessão no Chrome…`,
+            message: 'Aguardando o Claude confirmar a sessão no Chrome…',
           };
         }
-        if (!enviouProvider && /Enter selection:/i.test(buffer)) {
-          enviouProvider = true;
-          child.stdin?.write(`${providerConfig.menuSelection}\n`);
+        if (!enviouClaude && /Enter selection:/i.test(buffer)) {
+          enviouClaude = true;
+          child.stdin?.write('1\n');
           authJob = {
             ...authJob,
-            status: 'waiting_browser_login',
-            message: `Entre no ${providerConfig.label} pelo desktop privado. A sessão será capturada automaticamente…`,
+            status: 'running',
+            message: 'Capturando a nova sessão do Claude…',
           };
         }
-        if (/authorization succeeded/i.test(buffer)) concluida = true;
+        if (/Claude Web authorization succeeded/i.test(buffer)) concluida = true;
       };
 
       child.stdout.on('data', analisar);
@@ -618,7 +493,7 @@ function iniciarAutorizacao({ provider = 'claude', trocarConta = false } = {}) {
           authJob = {
             ...authJob,
             status: 'error',
-            message: `${providerConfig.label} não confirmou a nova sessão. Abra o desktop e tente novamente.`,
+            message: 'O Claude não confirmou a nova sessão. Abra o Chrome e tente novamente.',
             finishedAt: new Date().toISOString(),
           };
           return;
@@ -633,7 +508,7 @@ function iniciarAutorizacao({ provider = 'claude', trocarConta = false } = {}) {
           authJob = {
             ...authJob,
             status: 'success',
-            message: `${providerConfig.label} conectado e gateway reiniciado com sucesso.`,
+            message: 'Claude autorizado e gateway reiniciado com sucesso.',
             finishedAt: new Date().toISOString(),
           };
         } catch (err) {
@@ -660,7 +535,7 @@ function iniciarAutorizacao({ provider = 'claude', trocarConta = false } = {}) {
 
 function continuarAutorizacao() {
   if (authJob.status !== 'waiting_login' || !activeAuthChild?.stdin) {
-    const err = new Error('Não existe um login aguardando confirmação.');
+    const err = new Error('Não existe um login do Claude aguardando confirmação.');
     err.status = 409;
     throw err;
   }
@@ -668,21 +543,19 @@ function continuarAutorizacao() {
   authJob = {
     ...authJob,
     status: 'running',
-    message: `Confirmando o login e capturando a sessão de ${authJob.providerLabel || 'IA'}…`,
+    message: 'Confirmando o login e capturando a sessão do Claude…',
   };
   activeAuthChild.stdin.write('\n');
   return authJobPublico();
 }
 
-async function testar({ provider = 'claude', model = null } = {}) {
-  const providerConfig = providerInfo(provider);
-  const selectedModel = String(model || providerConfig.defaultModel).trim();
+async function testar() {
   const inicio = Date.now();
   try {
     const { data } = await axios.post(
       `${gatewayClient.BASE_URL}/chat/completions`,
       {
-        model: selectedModel,
+        model: gatewayClient.MODELO,
         messages: [{ role: 'user', content: 'Responda somente com OK.' }],
         stream: false,
       },
@@ -696,13 +569,13 @@ async function testar({ provider = 'claude', model = null } = {}) {
     );
     const resposta = String(data?.choices?.[0]?.message?.content || '').trim();
     if (!resposta) {
-      const err = new Error(`${providerConfig.label} respondeu sem conteúdo.`);
+      const err = new Error('O Claude respondeu sem conteúdo.');
       err.status = 502;
       throw err;
     }
     return {
       ok: true,
-      message: `${providerConfig.label} respondeu em ${((Date.now() - inicio) / 1000).toFixed(1)}s.`,
+      message: `Claude respondeu em ${((Date.now() - inicio) / 1000).toFixed(1)}s.`,
       resposta: resposta.slice(0, 80),
     };
   } catch (err) {
@@ -715,28 +588,10 @@ async function testar({ provider = 'claude', model = null } = {}) {
     )
       .replace(/\s+/g, ' ')
       .trim();
-    const falha = new Error(`Teste do ${providerConfig.label} falhou: ${remoto.slice(0, 500)}`);
+    const falha = new Error(`Teste do Claude falhou: ${remoto.slice(0, 500)}`);
     falha.status = Number(err?.response?.status) || 502;
     throw falha;
   }
-}
-
-async function providerSessions() {
-  const auth = await authMetadata();
-  const result = {};
-  for (const [provider, info] of Object.entries(WEB_PROVIDERS)) {
-    result[provider] = {
-      provider,
-      label: info.label,
-      profileId: info.profileId,
-      autorizada: Boolean(auth?.[provider]?.autorizada),
-      atualizadaEm: auth?.[provider]?.atualizadaEm || null,
-      defaultModel: info.defaultModel,
-      supportsApi: info.supportsApi,
-      models: info.models.map((model) => ({ ...model })),
-    };
-  }
-  return result;
 }
 
 module.exports = {
@@ -746,8 +601,6 @@ module.exports = {
   iniciarAutorizacao,
   continuarAutorizacao,
   testar,
-  providerSessions,
-  WEB_PROVIDERS,
   // Metadados expostos para teste; nunca incluem cookie/sessionKey.
   paths: { TOOL_DIR, AUTH_FILE, CONFIG_FILE, LOG_FILE },
 };

@@ -27,10 +27,7 @@ function nivelModelo(modelo, provider) {
   return '';
 }
 
-function montarModeloChat(tipo, providerContext = null) {
-  if (providerContext) {
-    return require('../services/aiProviderService').describe(providerContext);
-  }
+function montarModeloChat(tipo) {
   const deepseek = require('../services/deepseekService');
   // Os dois modos do /materia-manual usam a tarefa `conversa` no serviço de
   // streaming. O modo Matéria muda o prompt e as ferramentas editoriais, não
@@ -69,14 +66,11 @@ function montarModeloChat(tipo, providerContext = null) {
 
 async function modelo(req, res, next) {
   try {
-    const providerContext = await require('../services/aiProviderService').getSelected({
-      includeApiKey: false,
-    });
     return res.json({
       ok: true,
       modelos: {
-        materia: montarModeloChat('materia', providerContext),
-        livre: montarModeloChat('livre', providerContext),
+        materia: montarModeloChat('materia'),
+        livre: montarModeloChat('livre'),
       },
     });
   } catch (err) {
@@ -250,15 +244,8 @@ async function enviar(req, res, next) {
     return res.end();
   } catch (err) {
     clearInterval(heartbeat);
-    // Só erro de banco/driver pode esconder a mensagem. Axios usa códigos como
-    // ERR_BAD_RESPONSE para erros dos provedores; tratá-los como SQL mascarava
-    // a causa real e fazia parecer que a conversa não havia sido salva.
-    const codigo = String(err.code || '').toUpperCase();
-    const ehErroInterno = Boolean(
-      err.sql ||
-      err.sqlMessage ||
-      /^(ER_|SQLITE_|PG_)/.test(codigo)
-    );
+    // Erro de banco/driver traz SQL e dados na mensagem: fica no log, não na tela.
+    const ehErroInterno = Boolean(err.sql || err.sqlMessage || err.code);
     if (ehErroInterno) {
       console.error('[materia-chat] erro interno:', err.code || '', err.sqlMessage || err.message);
     }
