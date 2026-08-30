@@ -31,17 +31,13 @@ test('usuário comum vê o modelo, mas não recebe o seletor administrativo', as
   assert.doesNotMatch(html, /id="chat-ai-model-select"/);
 });
 
-test('seletor lista somente provedores conectados e usa a rota administrativa protegida', () => {
+test('seletor lista somente provedores conectados e mantém a escolha somente na sessão do administrador', () => {
   const client = fs.readFileSync(
     path.join(__dirname, '..', 'public', 'js', 'materia-chat.js'),
     'utf8'
   );
-  const routes = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'routes', 'accountPages.js'),
-    'utf8'
-  );
-
   assert.match(client, /filter\(\(provider\) => Boolean\(provider\.configured\)\)/);
-  assert.match(client, /\/api\/admin\/ai-providers\/\$\{encodeURIComponent\(provider\)\}\/select/);
-  assert.match(routes, /ai-providers\/:provider\/select', requireAuth, requireAdmin/);
+  assert.match(client, /mia_chat_modelo_local/);
+  assert.match(client, /modeloIa: modeloIaParaRequest\(\)/);
+  assert.doesNotMatch(client, /ai-providers\/\$\{encodeURIComponent\(provider\)\}\/select/);
 });

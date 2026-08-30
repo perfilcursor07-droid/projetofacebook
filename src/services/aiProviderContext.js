@@ -9,7 +9,11 @@ function current() {
 
 async function materiaManual(req, _res, next) {
   try {
-    const config = await aiProviderService.getSelected();
+    const requested = req.user?.nivel_acesso === 'administrador' ? req.body?.modeloIa : null;
+    const config = await aiProviderService.getForManual({
+      provider: requested?.provider,
+      model: requested?.model,
+    });
     return storage.run(config, next);
   } catch (err) {
     return next(err);

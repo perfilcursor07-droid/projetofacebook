@@ -207,6 +207,45 @@ async function getSelected({ includeApiKey = true } = {}) {
   };
 }
 
+// A escolha feita dentro de uma conversa do Matéria manual não pode alterar o
+// provedor padrão da instalação. Esta função monta uma configuração efêmera:
+// ela usa a conexão já cadastrada em /claude, mas não grava nada no banco.
+async function getForManual({ provider: providerValue, model, includeApiKey = true } = {}) {
+  if (!providerValue) return getSelected({ includeApiKey });
+
+  const provider = normalizeProvider(providerValue);
+  const [rows, sessions] = await Promise.all([rowsByProvider(), webSessions()]);
+  const row = rows.get(provider) || null;
+  const session = sessions[provider];
+  const sessionConfigured = Boolean(session?.autorizada);
+  const apiConfigured = isConfigured(provider, row);
+  if (!sessionConfigured && !apiConfigured) {
+    const err = new Error(`Conecte ${PROVIDERS[provider].label} em /claude antes de usar este modelo.`);
+    err.status = 422;
+    throw err;
+  }
+
+  const requestedModel = normalizeModel(model || row?.model, provider);
+  const available = (session?.models || []).map((item) => String(item?.id || item));
+  if (sessionConfigured && available.length && !available.includes(requestedModel)) {
+    const err = new Error(`O modelo selecionado não está disponível na sessão do ${PROVIDERS[provider].label}.`);
+    err.status = 422;
+    throw err;
+  }
+
+  return {
+    provider,
+    label: PROVIDERS[provider].label,
+    model: requestedModel,
+    configured: true,
+    connectionMode: sessionConfigured ? 'session' : 'api',
+    apiKey: sessionConfigured || provider === 'claude' || !includeApiKey
+      ? ''
+      : decryptKey(row) || envApiKey(provider),
+    origin: sessionConfigured ? 'token-free-gateway' : PROVIDERS[provider].origin,
+  };
+}
+
 async function save(providerValue, { apiKey, model } = {}) {
   const provider = normalizeProvider(providerValue);
   const current = await AiProviderSettings.findByProvider(provider);
@@ -682,6 +721,7 @@ module.exports = {
   PROVIDERS,
   listPublic,
   getSelected,
+  getForManual,
   save,
   select,
   removeKey,

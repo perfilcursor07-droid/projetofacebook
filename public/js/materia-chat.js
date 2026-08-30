@@ -3,6 +3,7 @@
 (() => {
   const API = '/api/materias-ia/chat';
   const STORAGE_KEY = 'mia_chat_atual';
+  const MODEL_STORAGE_KEY = 'mia_chat_modelo_local';
   const MAX_PAUTAS_LOTE = 8;
   const MAX_LINKS_LOTE = 12;
 
@@ -61,6 +62,7 @@
     tipoConversa: 'livre',
     modelosIa: null,
     provedoresIa: null,
+    modeloIaLocal: null,
     trocandoModeloIa: false,
     salvandoPautas: false,
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
@@ -137,7 +139,25 @@
 
   function modeloAtual() {
     const tipo = state.tipoConversa === 'livre' ? 'livre' : 'materia';
-    return state.modelosIa?.[tipo] || modeloFallback(tipo);
+    return state.modeloIaLocal || state.modelosIa?.[tipo] || modeloFallback(tipo);
+  }
+
+  function modeloIaParaRequest() {
+    if (!state.modeloIaLocal) return null;
+    return { provider: state.modeloIaLocal.provider, model: state.modeloIaLocal.modelo };
+  }
+
+  function modeloLocal(provider, model) {
+    const provedor = (state.provedoresIa?.providers || []).find((item) => item.provider === provider);
+    const modelo = modelosUnicos(provedor).find((item) => item.id === model);
+    return {
+      provider,
+      modelo: model,
+      nome: modelo?.name || model,
+      nivel: modelo?.access || '',
+      origem: provedor?.connectionMode === 'session' ? 'sessão do desktop' : 'API',
+      provedorNome: provedor?.label || provider,
+    };
   }
 
   function nomeProvedorAtual() {
@@ -164,7 +184,7 @@
       `Modelo em uso: ${nome}${nivel ? ` ${nivel}` : ''}`,
       modelo.modelo ? `ID: ${modelo.modelo}` : null,
       modelo.origem ? `Origem: ${modelo.origem}` : null,
-      el.modeloIaSelect ? 'Administrador: clique para trocar o modelo global' : null,
+      el.modeloIaSelect ? 'Administrador: escolha o modelo somente para a sua sessão' : null,
     ]
       .filter(Boolean)
       .join(' · ');
@@ -236,7 +256,7 @@
       menuFragment.appendChild(heading);
       modelos.forEach((model) => {
         const value = valorModeloIa(provider.provider, model.id);
-        const selected = settings.selectedProvider === provider.provider && provider.model === model.id;
+        const selected = value === valorAtual;
         const option = document.createElement('option');
         option.value = value;
         option.textContent = `${model.name || model.id}${model.access ? ` · ${model.access}` : ''}`;
@@ -297,6 +317,20 @@
       state.provedoresIa = null;
       if (err.status !== 403) setStatus(err.message || 'Não foi possível carregar os modelos conectados.');
     }
+    try {
+      const salvo = JSON.parse(sessionStorage.getItem(MODEL_STORAGE_KEY) || 'null');
+      if (salvo?.provider && salvo?.model) {
+        const existe = (state.provedoresIa?.providers || []).some((provider) =>
+          provider.provider === salvo.provider && provider.configured &&
+          modelosUnicos(provider).some((model) => model.id === salvo.model)
+        );
+        state.modeloIaLocal = existe ? modeloLocal(salvo.provider, salvo.model) : null;
+        if (!existe) sessionStorage.removeItem(MODEL_STORAGE_KEY);
+      }
+    } catch {
+      state.modeloIaLocal = null;
+    }
+    atualizarModeloIa();
     renderizarSeletorModelosIa();
   }
 
@@ -327,14 +361,12 @@
 
     state.trocandoModeloIa = true;
     renderizarSeletorModelosIa();
-    setStatus(`Validando ${provedorNome} · ${nome}…`);
+    setStatus(`Selecionando ${provedorNome} · ${nome} para a sua sessão…`);
     try {
-      state.provedoresIa = await api(`/api/admin/ai-providers/${encodeURIComponent(provider)}/select`, {
-        method: 'POST',
-        body: JSON.stringify({ model }),
-      });
-      await carregarModeloIa({ carregarProvedores: false });
-      setStatus(`${provedorNome} · ${nome} agora será usado no Matéria manual.`);
+      state.modeloIaLocal = modeloLocal(provider, model);
+      sessionStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify({ provider, model }));
+      atualizarModeloIa();
+      setStatus(`${provedorNome} · ${nome} será usado somente na sua sessão.`);
     } catch (err) {
       setStatus(err.message || `Não foi possível selecionar ${nome}.`);
     } finally {
@@ -1145,7 +1177,7 @@
       try {
         const data = await api(`${API}/mensagens/${mensagem.id}/titulos-alternativos`, {
           method: 'POST',
-          body: JSON.stringify({ tituloAtual: tituloLivre?.value.trim() || null }),
+          body: JSON.stringify({ tituloAtual: tituloLivre?.value.trim() || null, modeloIa: modeloIaParaRequest() }),
         });
         mostrarTitulosAlternativos(data.titulos || []);
         aviso.textContent = '3 títulos prontos — escolha um para usar no rascunho.';
@@ -1495,6 +1527,7 @@
             pautas: lote,
             pesquisarWeb: state.pesquisarWeb,
             periodo: el.periodo?.value || '30d',
+            modeloIa: modeloIaParaRequest(),
           }),
         });
         for (const item of data.salvas || []) salvas.push({ ...item, indice: inicio + Number(item.indice) });
@@ -2309,6 +2342,7 @@
           periodo: el.periodo?.value || '30d',
           modo: state.modo,
           tipoConversa: state.tipoConversa,
+          modeloIa: modeloIaParaRequest(),
         }),
       });
 
