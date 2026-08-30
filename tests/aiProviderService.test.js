@@ -6,6 +6,18 @@ const axios = require('axios');
 const credentialCipher = require('../src/services/credentialCipher');
 const aiProviderService = require('../src/services/aiProviderService');
 const tokenFreeGatewayService = require('../src/services/tokenFreeGatewayService');
+const { WEB_PROVIDERS } = require('../src/services/tokenFreeAdminService');
+
+test('catálogo web usa gerações atuais e inclui Gemini', () => {
+  assert.deepEqual(
+    WEB_PROVIDERS.claude.models.map((model) => model.id),
+    ['claude-sonnet-5', 'claude-opus-5', 'claude-haiku-4-5']
+  );
+  assert.ok(WEB_PROVIDERS.openai.models.some((model) => model.id === 'gpt-5'));
+  assert.ok(WEB_PROVIDERS.deepseek.models.some((model) => model.id === 'deepseek-v4-flash'));
+  assert.ok(WEB_PROVIDERS.grok.models.some((model) => model.id === 'grok-4.6'));
+  assert.ok(WEB_PROVIDERS.gemini.models.some((model) => model.id === 'gemini-flash'));
+});
 
 test('cifra credencial antes de persistir e recupera o valor original', () => {
   const original = 'sk-teste-nao-real-123';
@@ -113,7 +125,7 @@ test('prioriza a sessão web do desktop sem exigir chave de API', async () => {
       {
         provider: 'openai',
         label: 'ChatGPT',
-        model: 'gpt-4',
+        model: 'gpt-5',
         configured: true,
         connectionMode: 'session',
         apiKey: '',
@@ -121,8 +133,29 @@ test('prioriza a sessão web do desktop sem exigir chave de API', async () => {
       [{ role: 'user', content: 'Olá' }]
     );
     assert.equal(text, 'resposta pela sessão');
-    assert.equal(chamada.options.model, 'gpt-4');
+    assert.equal(chamada.options.model, 'gpt-5');
     assert.equal(chamada.options.tarefa, 'conversa');
+  } finally {
+    tokenFreeGatewayService.chatCompletion = originalChatCompletion;
+  }
+});
+
+test('Gemini usa a sessão web e não exige chave de API', async () => {
+  const originalChatCompletion = tokenFreeGatewayService.chatCompletion;
+  tokenFreeGatewayService.chatCompletion = async (_messages, options) => options.model;
+  try {
+    const text = await aiProviderService.complete(
+      {
+        provider: 'gemini',
+        label: 'Gemini',
+        model: 'gemini-flash',
+        configured: true,
+        connectionMode: 'session',
+        apiKey: '',
+      },
+      [{ role: 'user', content: 'Olá' }]
+    );
+    assert.equal(text, 'gemini-flash');
   } finally {
     tokenFreeGatewayService.chatCompletion = originalChatCompletion;
   }

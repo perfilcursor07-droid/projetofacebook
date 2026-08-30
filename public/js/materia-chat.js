@@ -144,6 +144,7 @@
       openai: 'ChatGPT',
       deepseek: 'DeepSeek',
       grok: 'Grok',
+      gemini: 'Gemini',
     }[modelo.provider] || 'IA';
   }
 

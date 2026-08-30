@@ -123,7 +123,31 @@
       }
 
       const modelInput = card.querySelector('[data-provider-model]');
-      if (modelInput && document.activeElement !== modelInput) modelInput.value = item.model || '';
+      if (modelInput && document.activeElement !== modelInput) {
+        const accountModels = liveSession?.models?.length
+          ? liveSession.models
+          : item.session?.models || [];
+        if (accountModels.length) {
+          const signature = accountModels.map((model) => model.id).join('|');
+          if (modelInput.dataset.modelsSignature !== signature) {
+            const preferred = accountModels.some((model) => model.id === item.model)
+              ? item.model
+              : accountModels[0].id;
+            modelInput.replaceChildren(...accountModels.map((model) => {
+              const option = document.createElement('option');
+              option.value = model.id;
+              option.textContent = `${model.name || model.id}${model.access ? ` · ${model.access}` : ''}`;
+              option.selected = model.id === preferred;
+              return option;
+            }));
+            modelInput.dataset.modelsSignature = signature;
+          } else if (Array.from(modelInput.options).some((option) => option.value === item.model)) {
+            modelInput.value = item.model;
+          }
+        } else {
+          modelInput.value = item.model || '';
+        }
+      }
       const keyInput = card.querySelector('[data-provider-key]');
       if (keyInput) {
         keyInput.placeholder = item.credentialSource === 'painel'

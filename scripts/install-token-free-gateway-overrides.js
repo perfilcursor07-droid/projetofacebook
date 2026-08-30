@@ -12,8 +12,16 @@ const files = [
   'src/providers/claude/client.ts',
   'src/providers/claude/index.ts',
   'src/providers/claude/stream.ts',
+  'src/providers/chatgpt/client.ts',
+  'src/providers/chatgpt/index.ts',
+  'src/providers/deepseek/client.ts',
+  'src/providers/deepseek/index.ts',
   'src/providers/factory/base-api-client.ts',
   'src/providers/factory/types.ts',
+  'src/providers/gemini/client.ts',
+  'src/providers/gemini/index.ts',
+  'src/providers/grok/client.ts',
+  'src/providers/grok/index.ts',
   'src/providers/types.ts',
 ];
 

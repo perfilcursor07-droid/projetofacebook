@@ -9,24 +9,35 @@ const PROVIDERS = {
     label: 'Claude',
     model: () => env.tokenFreeGateway?.model || env.claudeWriterModel || 'claude-sonnet-5',
     origin: 'token-free-gateway',
+    supportsApi: false,
   },
   openai: {
     id: 'openai',
     label: 'ChatGPT',
-    model: () => 'gpt-4',
+    model: () => 'gpt-5',
     origin: 'openai',
+    supportsApi: true,
   },
   deepseek: {
     id: 'deepseek',
     label: 'DeepSeek',
-    model: () => 'deepseek-chat',
+    model: () => 'deepseek-v4-flash',
     origin: 'deepseek',
+    supportsApi: true,
   },
   grok: {
     id: 'grok',
     label: 'Grok',
-    model: () => 'grok-2',
+    model: () => 'grok-4.5',
     origin: 'xai',
+    supportsApi: true,
+  },
+  gemini: {
+    id: 'gemini',
+    label: 'Gemini',
+    model: () => 'gemini-flash',
+    origin: 'token-free-gateway',
+    supportsApi: false,
   },
 };
 
@@ -127,6 +138,7 @@ function toPublic(provider, row, selectedProvider, session = null) {
     label: metadata.label,
     model: sessionModel(session, row?.model, provider),
     configured,
+    supportsApi: Boolean(metadata.supportsApi),
     connectionMode: sessionConfigured ? 'session' : apiConfigured ? 'api' : null,
     session: session
       ? {
@@ -200,7 +212,7 @@ async function save(providerValue, { apiKey, model } = {}) {
   const current = await AiProviderSettings.findByProvider(provider);
   const data = { model: normalizeModel(model || current?.model, provider) };
   const normalizedKey = String(apiKey || '').trim();
-  if (provider !== 'claude' && normalizedKey) {
+  if (PROVIDERS[provider].supportsApi && normalizedKey) {
     data.api_key_cipher = credentialCipher.encrypt(normalizedKey);
   }
   if (normalizedKey || (current && data.model !== current.model)) {
@@ -233,8 +245,8 @@ async function select(providerValue, { model } = {}) {
 
 async function removeKey(providerValue) {
   const provider = normalizeProvider(providerValue);
-  if (provider === 'claude') {
-    const err = new Error('A sessão do Claude é gerenciada pelos controles próprios da página.');
+  if (!PROVIDERS[provider].supportsApi) {
+    const err = new Error(`A sessão do ${PROVIDERS[provider].label} é gerenciada pelo desktop privado.`);
     err.status = 400;
     throw err;
   }
@@ -558,6 +570,11 @@ async function complete(config, messages, options = {}) {
     throw err;
   }
   if (config.provider === 'openai') return callOpenAI(config, messages, options);
+  if (config.provider === 'gemini') {
+    const err = new Error('Conecte o Gemini pelo desktop privado para usar este provedor.');
+    err.status = 503;
+    throw err;
+  }
   return callOpenAICompatible(config, messages, options);
 }
 
@@ -586,6 +603,7 @@ async function completeStream(config, messages, options = {}) {
   }
   if (!config.apiKey) return complete(config, messages, options);
   if (config.provider === 'openai') return streamOpenAI(config, messages, options);
+  if (config.provider === 'gemini') return complete(config, messages, options);
   return streamOpenAICompatible(config, messages, options);
 }
 

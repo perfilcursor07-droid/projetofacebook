@@ -52,31 +52,63 @@ const WEB_PROVIDERS = {
     label: 'Claude',
     loginUrl: 'https://claude.ai/new',
     defaultModel: 'claude-sonnet-5',
-    models: ['claude-sonnet-5', 'claude-sonnet-4-20250514', 'claude-sonnet-4-6'],
+    supportsApi: false,
+    models: [
+      { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', access: 'Conforme seu plano' },
+      { id: 'claude-opus-5', name: 'Claude Opus 5', access: 'Plano pago' },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', access: 'Conforme seu plano' },
+    ],
   },
   openai: {
     profileId: 'chatgpt-web',
     menuSelection: '2',
     label: 'ChatGPT',
     loginUrl: 'https://chatgpt.com/',
-    defaultModel: 'gpt-4',
-    models: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+    defaultModel: 'gpt-5',
+    supportsApi: true,
+    models: [
+      { id: 'gpt-5', name: 'GPT-5', access: 'Conforme seu plano' },
+      { id: 'gpt-5.6', name: 'GPT-5.6', access: 'Plano com acesso ao modelo' },
+      { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', access: 'Plano com acesso ao modelo' },
+      { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', access: 'Plano com acesso ao modelo' },
+    ],
   },
   deepseek: {
     profileId: 'deepseek-web',
     menuSelection: '3',
     label: 'DeepSeek',
     loginUrl: 'https://chat.deepseek.com/',
-    defaultModel: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    defaultModel: 'deepseek-v4-flash',
+    supportsApi: true,
+    models: [
+      { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', access: 'Grátis com limites' },
+      { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', access: 'Conforme sua conta' },
+    ],
   },
   grok: {
     profileId: 'grok-web',
     menuSelection: '8',
     label: 'Grok',
     loginUrl: 'https://grok.com/',
-    defaultModel: 'grok-2',
-    models: ['grok-1', 'grok-2'],
+    defaultModel: 'grok-4.5',
+    supportsApi: true,
+    models: [
+      { id: 'grok-4.5', name: 'Grok 4.5', access: 'Grátis limitado/conforme plano' },
+      { id: 'grok-4.6', name: 'Grok 4.6', access: 'Plano com acesso ao modelo' },
+    ],
+  },
+  gemini: {
+    profileId: 'gemini-web',
+    menuSelection: '5',
+    label: 'Gemini',
+    loginUrl: 'https://gemini.google.com/app',
+    defaultModel: 'gemini-flash',
+    supportsApi: false,
+    models: [
+      { id: 'gemini-flash-lite', name: 'Gemini Flash-Lite', access: 'Grátis' },
+      { id: 'gemini-flash', name: 'Gemini Flash', access: 'Grátis com limites' },
+      { id: 'gemini-pro', name: 'Gemini Pro', access: 'Plano Google AI' },
+    ],
   },
 };
 
@@ -87,6 +119,16 @@ function providerInfo(value = 'claude') {
   const err = new Error('Provedor web inválido.');
   err.status = 400;
   throw err;
+}
+
+function modelBelongsToProvider(provider, modelId) {
+  const id = String(modelId || '').toLowerCase();
+  if (provider === 'claude') return id.startsWith('claude-');
+  if (provider === 'openai') return /^(gpt-|o\d|chatgpt-)/.test(id);
+  if (provider === 'deepseek') return id.startsWith('deepseek-');
+  if (provider === 'grok') return id.startsWith('grok-');
+  if (provider === 'gemini') return id.startsWith('gemini-');
+  return false;
 }
 
 let authJob = {
@@ -232,9 +274,17 @@ async function status() {
       valida: session?.valid === true ? true : session?.valid === false ? false : null,
       motivo: session?.reason || null,
       models: modelos
-        .filter((item) => info.models.includes(String(item?.id || '')))
-        .map((item) => ({ id: String(item.id), name: item.name || item.id })),
+        .filter((item) => modelBelongsToProvider(provider, item?.id))
+        .map((item) => {
+          const catalog = info.models.find((model) => model.id === String(item?.id || ''));
+          return {
+            id: String(item.id),
+            name: item.name || catalog?.name || item.id,
+            access: catalog?.access || 'Disponível na conta conectada',
+          };
+        }),
       defaultModel: info.defaultModel,
+      supportsApi: info.supportsApi,
     };
   }
   const sessao = health?.sessions?.['claude-web'];
@@ -682,7 +732,8 @@ async function providerSessions() {
       autorizada: Boolean(auth?.[provider]?.autorizada),
       atualizadaEm: auth?.[provider]?.atualizadaEm || null,
       defaultModel: info.defaultModel,
-      models: info.models.map((id) => ({ id, name: id })),
+      supportsApi: info.supportsApi,
+      models: info.models.map((model) => ({ ...model })),
     };
   }
   return result;
