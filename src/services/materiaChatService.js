@@ -2528,10 +2528,11 @@ async function responder({
       /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
         pedido
       );
-    // A sessão Claude possui pesquisa nativa. Para os demais provedores, o
-    // ViralizeAI coleta as fontes antes da chamada e entrega o material lido.
-    const pesquisarPeloSistema = pesquisarWeb ||
-      (provedorManual?.provider && provedorManual.provider !== 'claude' && pedidoSolicitaPesquisa);
+    // A busca do ViralizeAI é a fonte comum e verificável para todos os
+    // provedores. Antes o Claude ficava fora desta etapa por depender apenas
+    // da busca nativa do site; quando ela não era exposta pela sessão, ele
+    // dizia que não tinha ferramenta mesmo com uma pesquisa solicitada.
+    const pesquisarPeloSistema = pesquisarWeb || pedidoSolicitaPesquisa;
     const urlsNoPedidoLivre = extrairUrlsDoTexto(pedido);
     const urlsSociaisLivre = urlsNoPedidoLivre.filter((url) => classificarUrlFonte(url));
     const urlsArtigosLivre = urlsNoPedidoLivre.filter(
