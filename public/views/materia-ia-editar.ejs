@@ -182,6 +182,14 @@
                         <%= titulosAlt.length ? 'Gerar outros 3 com Claude' : 'Gerar 3 com Claude' %>
                       </button>
                     </div>
+                    <label for="matter-titulos-alt-pedido" class="mt-2 block text-[10px] text-slate-500">
+                      Como você quer os títulos? <span class="text-slate-600">Ex.: mais polêmico, com “dispara”, sem perder os fatos.</span>
+                    </label>
+                    <div class="mt-1 flex gap-1.5">
+                      <input id="matter-titulos-alt-pedido" type="text" maxlength="500"
+                        placeholder="Descreva o tom ou ângulo que deseja…"
+                        class="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none" />
+                    </div>
                     <div id="matter-titulos-alt" class="mt-1.5 grid gap-1.5">
                       <% titulosAlt.forEach(function (t) { %>
                         <button type="button" data-titulo-alt="<%= t %>"

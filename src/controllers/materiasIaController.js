@@ -1261,6 +1261,10 @@ async function titulosAlternativos(req, res, next) {
 
     const tituloAtual = String(req.body?.tituloAtual || matter.titulo || '').trim();
     const materia = String(req.body?.materia || matter.materia || '').trim();
+    const orientacaoEditor = String(req.body?.orientacao || req.body?.pedido || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 500);
     const titulos = await materiaIaService.gerarESalvarTitulosAlternativos({
       matterId,
       userId: req.session.userId,
@@ -1269,6 +1273,7 @@ async function titulosAlternativos(req, res, next) {
       fonteTitulo: matter.fonte_titulo || null,
       // Não repete o que o editor já viu nesta matéria.
       evitar: guardados,
+      orientacaoEditor,
     });
     if (!titulos.length) {
       return res

@@ -2283,6 +2283,7 @@ async function gerarTitulosAlternativos({
   marcaModeloArte = null,
   quantidade = 3,
   evitar = [],
+  orientacaoEditor = null,
   tarefa = 'auxiliar',
 }) {
   const somenteClaude = String(tarefa || '').toLowerCase() === 'conversa';
@@ -2292,6 +2293,7 @@ async function gerarTitulosAlternativos({
   if (corpo.length < 80 && !tituloAtual) return [];
 
   const total = Math.min(Math.max(Number(quantidade) || 3, 1), 5);
+  const orientacao = String(orientacaoEditor || '').replace(/\s+/g, ' ').trim().slice(0, 500);
   const blocoMarca = blocoTituloMarcaArte(marcaModeloArte);
   const maxTitulo = blocoMarca ? 130 : 120;
   const evitarList = [tituloAtual, ...(Array.isArray(evitar) ? evitar : [])]
@@ -2319,6 +2321,7 @@ ${ancoras.length ? `- Âncoras do assunto: ${ancoras.join(', ')}. Cada manchete 
 - Substitua todos os colchetes pelos fatos da matéria atual; nunca copie nomes, números ou fatos de outro caso.
 - Estilo JM Notícia: título forte, jornalístico e com potencial de clique, sem inventar nem distorcer.
 - Fidelidade total ao texto: NÃO invente fato, número, data, nome ou fala que não esteja na matéria.
+- Quando houver preferência do editor, use-a SOMENTE como direção de tom e redação; ela nunca autoriza mudar os fatos, protagonistas ou o núcleo da matéria.
 - Sem emoji, Caps Lock excessivo, clickbait mentiroso ou pontos de exclamação em série.
 - Não repita o título atual nem faça três versões quase idênticas.${
           tentativa > 1
@@ -2334,6 +2337,7 @@ ${ancoras.length ? `- Âncoras do assunto: ${ancoras.join(', ')}. Cada manchete 
             ? `Também NÃO use estes:\n- ${[...evitarList.slice(1), ...saida].join('\n- ')}`
             : null,
           fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
+          orientacao ? `Preferência de título do editor: ${orientacao}` : null,
           corpo ? `Texto da matéria:\n${corpo.slice(0, 2500)}` : null,
           `Gere ${total} manchetes alternativas, todas sobre o mesmo núcleo do título principal.`,
         ]

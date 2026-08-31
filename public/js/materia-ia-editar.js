@@ -870,6 +870,7 @@
   const altLista = document.getElementById('matter-titulos-alt');
   const altBtn = document.getElementById('btn-titulos-alt');
   const altDica = document.getElementById('matter-titulos-alt-dica');
+  const altPedido = document.getElementById('matter-titulos-alt-pedido');
 
   function aplicarTituloAlternativo(novo) {
     if (!novo || !tituloEl) return;
@@ -922,6 +923,7 @@
         body: JSON.stringify({
           tituloAtual: String(tituloEl?.value || '').trim(),
           materia: String(materiaEl?.value || '').trim(),
+          orientacao: String(altPedido?.value || '').trim(),
         }),
       });
       const data = await res.json().catch(() => ({}));
