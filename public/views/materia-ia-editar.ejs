@@ -784,14 +784,18 @@
                 </div>
                 <div id="matter-colagem-body" class="hidden space-y-2">
                   <p class="text-[10px] leading-relaxed text-slate-400">
-                    Clique em 2 miniaturas. As fotos preenchem o painel (corte inteligente) para ficarem grandes. Use o zoom abaixo e o enquadramento na imagem destacada.
+                    A arte final fica em 1080×1350 (post do Facebook). Escolha preservar rostos para evitar cortes excessivos ou preencher painel para ampliar as fotos.
                   </p>
+                  <div class="flex gap-1.5">
+                    <button type="button" data-colagem-fit="preservar" class="colagem-fit-btn flex-1 rounded border border-amber-500/50 bg-amber-500/15 px-2 py-1 text-[10px] font-semibold text-amber-100">Preservar rostos</button>
+                    <button type="button" data-colagem-fit="preencher" class="colagem-fit-btn flex-1 rounded border border-slate-600 px-2 py-1 text-[10px] font-semibold text-slate-300 hover:border-amber-500/40">Preencher painel</button>
+                  </div>
                   <label class="block">
                     <span class="flex items-center justify-between text-[10px] text-amber-200/80">
                       Zoom das 2 fotos
-                      <span id="colagem-zoom-valor" class="tabular-nums text-slate-500">108%</span>
+                      <span id="colagem-zoom-valor" class="tabular-nums text-slate-500">92%</span>
                     </span>
-                    <input id="colagem-zoom" type="range" min="90" max="150" step="1" value="108"
+                    <input id="colagem-zoom" type="range" min="80" max="150" step="1" value="92"
                       class="mt-1 w-full accent-amber-500" />
                   </label>
                   <div class="flex gap-1.5">

@@ -1,4 +1,6 @@
 const axios = require('axios');
+const path = require('path');
+const { spawn } = require('child_process');
 const { env } = require('../config/env');
 const deepseekService = require('./deepseekService');
 const pexelsService = require('./pexelsService');
@@ -168,6 +170,88 @@ async function buscarBraveImagens(consulta, { count = 10 } = {}) {
     );
     return [];
   }
+}
+
+function tokensDaConsulta(valor) {
+  return String(valor || '')
+    .toLocaleLowerCase('pt-BR')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 3);
+}
+
+function pareceNomePessoa(consulta) {
+  return /\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ]+\s+(?:de\s+|da\s+|do\s+)?[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ]+/u.test(String(consulta || ''));
+}
+
+function ordenarPorAderencia(imagens, consulta) {
+  const termos = [...new Set(tokensDaConsulta(consulta))];
+  const frase = termos.join(' ');
+  return (imagens || [])
+    .map((imagem, indice) => {
+      const material = `${imagem.titulo || ''} ${imagem.fonte || ''} ${imagem.link || ''}`
+        .toLocaleLowerCase('pt-BR')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      const acertos = termos.filter((termo) => material.includes(termo)).length;
+      const fraseInteira = frase && material.includes(frase) ? 30 : 0;
+      return { imagem, indice, pontos: fraseInteira + acertos * 5 };
+    })
+    .sort((a, b) => b.pontos - a.pontos || a.indice - b.indice)
+    .map((item) => item.imagem);
+}
+
+function executarBuscaImagemPython(binario, payload) {
+  return new Promise((resolve, reject) => {
+    const script = path.resolve(__dirname, '../../scripts/image_search.py');
+    const child = spawn(binario, [script], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => child.kill('SIGKILL'), 22_000);
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0 && !stdout.trim()) return reject(new Error(stderr.trim() || `Python encerrou (${code})`));
+      try { resolve(JSON.parse(stdout.trim() || '{}')); } catch { reject(new Error(stderr.trim() || 'Resposta inválida da busca Python')); }
+    });
+    child.stdin.end(JSON.stringify(payload));
+  });
+}
+
+async function buscarPythonBingImagens(consulta, { count = 10 } = {}) {
+  const candidatos = [
+    String(env.pythonPath || '').trim(),
+    process.platform === 'win32' ? 'python' : 'python3',
+    process.platform === 'win32' ? 'py' : 'python',
+  ].filter((item, indice, lista) => item && lista.indexOf(item) === indice);
+  for (const binario of candidatos) {
+    try {
+      const result = await executarBuscaImagemPython(binario, { query: consulta, limit: count });
+      if (!result?.ok) throw new Error(result?.error || 'Bing não respondeu');
+      const imagens = (result.items || []).map((img, idx) => ({
+        id: `python-bing:${idx}:${String(img.url || '').slice(-36)}`,
+        url: img.url || null,
+        thumbnail: img.thumbnail || img.url || null,
+        titulo: img.titulo || consulta,
+        fonte: 'Bing Images',
+        link: img.link || null,
+        origem: 'python-bing',
+        consulta,
+      })).filter((img) => img.url && /^https?:\/\//i.test(img.url) && !imagemPareceRuim(img));
+      if (imagens.length) return imagens;
+    } catch (err) {
+      if (!/ENOENT|not found|n[aã]o foi poss[ií]vel encontrar/i.test(String(err.message || ''))) {
+        console.warn('[sugerirImagens] python-bing:', err.message);
+        falhasProvedor.registrar('Busca Python', err.message);
+        return [];
+      }
+    }
+  }
+  return [];
 }
 
 /**
@@ -383,6 +467,13 @@ async function buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef, m
     juntar(await buscarGoogleNewsImagens(consulta, { count: 10 }));
   }
 
+  // Busca independente e sem chave: entra depois das capas editoriais do
+  // Google News, mas antes de banco de imagens. Assim amplia opções quando
+  // Brave/Google não acharem a pessoa ou termo exato.
+  if (encontradas.length < minimo) {
+    juntar(await buscarPythonBingImagens(consulta, { count: 12 }));
+  }
+
   // Pexels é banco de stock: não serve para pessoa nomeada, mas resolve
   // assunto genérico. A consulta vai traduzida quando dá.
   if (encontradas.length < minimo && !temPessoa) {
@@ -393,7 +484,7 @@ async function buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef, m
     }
   }
 
-  return encontradas;
+  return ordenarPorAderencia(encontradas, consulta);
 }
 
 
@@ -546,7 +637,9 @@ async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
   falhasProvedor.iniciar();
   const serperEsgotadoRef = { value: false };
   const batch = await buscarImagensConsulta(consulta, {
-    temPessoa: false,
+    // Nome próprio precisa de resultados editoriais da pessoa, não imagens de
+    // banco genéricas só porque o campo de busca foi preenchido manualmente.
+    temPessoa: pareceNomePessoa(consulta),
     serperEsgotadoRef,
     minimo: limite,
   });
@@ -592,6 +685,7 @@ async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
     google: 'Serper',
     brave: 'Brave Images',
     'google-news': 'Google News (capa dos veículos)',
+    'python-bing': 'Busca Python (Bing Images)',
     pexels: 'Pexels',
   };
   const avisoParts = [];
@@ -618,5 +712,6 @@ module.exports = {
   buscarSerpApiImagens,
   buscarSerperImagens,
   buscarBraveImagens,
+  buscarPythonBingImagens,
   buscarGoogleNewsImagens,
 };

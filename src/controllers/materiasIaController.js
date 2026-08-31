@@ -1614,10 +1614,13 @@ async function aplicarColagemDuasImagens(req, res, next) {
     const thumbnailA = String(req.body?.thumbnailA || req.body?.thumbA || '').trim() || null;
     const thumbnailB = String(req.body?.thumbnailB || req.body?.thumbB || '').trim() || null;
     const layout = String(req.body?.layout || 'lado').toLowerCase() === 'cima' ? 'cima' : 'lado';
+    const fit = String(req.body?.fit || req.body?.enquadramento || 'preservar').toLowerCase() === 'preencher'
+      ? 'preencher'
+      : 'preservar';
     const zoomRaw = Number(req.body?.zoom);
     const offsetXRaw = Number(req.body?.offsetX ?? req.body?.offset_x);
     const offsetYRaw = Number(req.body?.offsetY ?? req.body?.offset_y);
-    const zoom = Number.isFinite(zoomRaw) ? zoomRaw : 108;
+    const zoom = Number.isFinite(zoomRaw) ? zoomRaw : (fit === 'preservar' ? 92 : 108);
     const offsetX = Number.isFinite(offsetXRaw) ? offsetXRaw : 50;
     const offsetY = Number.isFinite(offsetYRaw) ? offsetYRaw : 50;
 
@@ -1636,6 +1639,7 @@ async function aplicarColagemDuasImagens(req, res, next) {
       thumbnailA,
       thumbnailB,
       layout,
+      fit,
       title,
       zoom,
       offsetX,
@@ -1649,6 +1653,7 @@ async function aplicarColagemDuasImagens(req, res, next) {
       imagemFonteUrl: artwork.matter?.imagem_fonte_url || null,
       hasLogo: artwork.hasLogo,
       layout,
+      fit,
     });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });

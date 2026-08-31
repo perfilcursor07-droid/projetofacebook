@@ -264,6 +264,7 @@ async function composeDualCollageArtwork({
   thumbnailA = null,
   thumbnailB = null,
   layout = 'lado',
+  fit = 'preservar',
   title = null,
   zoom = 108,
   offsetX = 50,
@@ -299,6 +300,7 @@ async function composeDualCollageArtwork({
   try {
     collageBuffer = await buildDualCollageBuffer(bufA, bufB, {
       layout,
+      fit,
       zoom,
       offsetX,
       offsetY,

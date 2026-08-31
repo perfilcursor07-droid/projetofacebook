@@ -1692,12 +1692,12 @@
 
   /* —— Colagem com 2 imagens —— */
   window.__COLAGEM_MODE__ = false;
-  window.__COLAGEM__ = { a: null, b: null, layout: 'lado', zoom: 108 };
+  window.__COLAGEM__ = { a: null, b: null, layout: 'lado', fit: 'preservar', zoom: 92 };
 
   const colagemZoom = document.getElementById('colagem-zoom');
   const colagemZoomValor = document.getElementById('colagem-zoom-valor');
   colagemZoom?.addEventListener('input', () => {
-    const z = Math.min(150, Math.max(90, Number(colagemZoom.value) || 108));
+    const z = Math.min(150, Math.max(80, Number(colagemZoom.value) || 92));
     window.__COLAGEM__.zoom = z;
     if (colagemZoomValor) colagemZoomValor.textContent = z + '%';
   });
@@ -1710,7 +1710,8 @@
       if (!el) return;
       if (item?.url) {
         const thumb = String(item.thumbnail || item.url).replace(/"/g, '&quot;');
-        el.innerHTML = `<img src="${thumb}" alt="" class="h-full w-full object-cover" />`;
+        const fit = window.__COLAGEM__.fit === 'preencher' ? 'object-cover' : 'object-contain';
+        el.innerHTML = `<img src="${thumb}" alt="" class="h-full w-full ${fit}" />`;
         el.classList.remove('border-dashed', 'text-slate-500');
         el.classList.add('border-amber-500/50');
       } else {
@@ -1777,6 +1778,22 @@
     });
   });
 
+  document.querySelectorAll('.colagem-fit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const fit = btn.getAttribute('data-colagem-fit') === 'preencher' ? 'preencher' : 'preservar';
+      window.__COLAGEM__.fit = fit;
+      document.querySelectorAll('.colagem-fit-btn').forEach((b) => {
+        const active = b.getAttribute('data-colagem-fit') === fit;
+        b.classList.toggle('border-amber-500/50', active);
+        b.classList.toggle('bg-amber-500/15', active);
+        b.classList.toggle('text-amber-100', active);
+        b.classList.toggle('border-slate-600', !active);
+        b.classList.toggle('text-slate-300', !active);
+      });
+      renderColagemSlots();
+    });
+  });
+
   document.getElementById('btn-colagem-limpar')?.addEventListener('click', () => {
     window.__COLAGEM__.a = null;
     window.__COLAGEM__.b = null;
@@ -1809,7 +1826,8 @@
           thumbnailA: a.thumbnail || a.url || null,
           thumbnailB: b.thumbnail || b.url || null,
           layout: window.__COLAGEM__.layout || 'lado',
-          zoom: Number(colagemZoom?.value ?? window.__COLAGEM__.zoom ?? 108),
+          fit: window.__COLAGEM__.fit || 'preservar',
+          zoom: Number(colagemZoom?.value ?? window.__COLAGEM__.zoom ?? 92),
           offsetX: Number(artOffsetX?.value ?? 50),
           offsetY: Number(artOffsetY?.value ?? 50),
           titulo: tituloEl?.value || '',

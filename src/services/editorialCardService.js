@@ -1770,17 +1770,23 @@ async function buildFeedBaseImage(sourceBuffer, options = {}) {
  * Monta uma única foto 1080×1350 a partir de duas imagens.
  * layout: 'lado' (esquerda/direita) | 'cima' (acima/abaixo)
  *
- * Em cada painel: cover (fotos grandes, cortando as bordas) + zoom/pan opcional.
+ * Em cada painel, `preservar` mantém pessoas e rostos inteiros com fundo
+ * discreto; `preencher` amplia para ocupar todo o painel.
  */
 async function buildDualCollageBuffer(bufferA, bufferB, opts = {}) {
   const layout = opts.layout || 'lado';
   const mode = String(layout || 'lado').toLowerCase() === 'cima' ? 'cima' : 'lado';
+  const fit = String(opts.fit || 'preservar').toLowerCase() === 'preencher'
+    ? 'preencher'
+    : 'preservar';
   const gap = 4;
   const halfW = mode === 'lado' ? Math.floor((WIDTH - gap) / 2) : WIDTH;
   const halfH = mode === 'cima' ? Math.floor((HEIGHT - gap) / 2) : HEIGHT;
 
-  // Default 108: preenche o painel e corta um pouco as bordas (as duas ficam grandes).
-  const zoomA = clampArtZoom(opts.zoomA ?? opts.zoom, 108);
+  // Preservar usa zoom abaixo de 100: mostra a fotografia completa sobre um
+  // fundo desfocado, evitando transformar rosto em braço/recorte lateral.
+  const zoomPadrao = fit === 'preservar' ? 92 : 108;
+  const zoomA = clampArtZoom(opts.zoomA ?? opts.zoom, zoomPadrao);
   const zoomB = clampArtZoom(opts.zoomB ?? opts.zoom, zoomA);
   const offsetXA = clampArtOffset(opts.offsetXA ?? opts.offsetX, 50);
   const offsetYA = clampArtOffset(opts.offsetYA ?? opts.offsetY, 50);
