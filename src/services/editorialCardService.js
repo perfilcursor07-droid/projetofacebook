@@ -146,11 +146,37 @@ async function fetchImage(url) {
     }
   })();
   const isMetaCdn = /fbsbx\.com|fbcdn\.net|cdninstagram\.com|instagram\.com|facebook\.com/i.test(safeUrl);
+  const isInstagramCdn = /cdninstagram\.com|instagram\.com/i.test(safeUrl);
   const isBraveCdn = /brave\.com|search\.brave|gstatic\.com|googleusercontent\.com|ggpht\.com|bing\.com|pinimg\.com|wp\.com|cloudfront\.net/i.test(
     host
   );
 
+  let metaCookie = null;
+  if (isMetaCdn) {
+    try {
+      metaCookie = isInstagramCdn
+        ? require('./instagramCookies').buildInstagramCookieHeader()
+        : require('./facebookCookies').buildFacebookCookieHeader();
+    } catch {
+      metaCookie = null;
+    }
+  }
+
   const headerSets = [
+    ...(isMetaCdn && metaCookie
+      ? [{
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          Referer: isInstagramCdn
+            ? 'https://www.instagram.com/'
+            : 'https://www.facebook.com/',
+          Cookie: metaCookie,
+          'Sec-Fetch-Dest': 'image',
+          'Sec-Fetch-Mode': 'no-cors',
+          'Sec-Fetch-Site': 'cross-site',
+        }]
+      : []),
     {
       'User-Agent': isMetaCdn
         ? 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'

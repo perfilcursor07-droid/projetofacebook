@@ -1199,12 +1199,38 @@ function escolherMensagemDoPost(html, urlAlvo) {
 }
 
 function normalizarUrlImagemFacebook(value) {
-  const url = String(value || '')
+  const url = decodificarEntidades(unescapeJsonString(String(value || '')))
     .replace(/\\\//g, '/')
-    .replace(/\\u0026/g, '&')
-    .replace(/&amp;/g, '&')
+    .replace(/\\u0026/gi, '&')
     .trim();
-  return /^https:\/\//i.test(url) && /(?:scontent|fbcdn)\./i.test(url) ? url : null;
+  if (!/^https:\/\//i.test(url)) return null;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return /(?:^|\.)(?:fbcdn\.net|fbsbx\.com|cdninstagram\.com)$/.test(host) ||
+      host.startsWith('scontent')
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function dimensoesPertoDaImagemFacebook(html, indice) {
+  const trecho = String(html || '').slice(Math.max(0, indice - 500), indice + 900);
+  const width = Number(
+    trecho.match(/"(?:width|image_width)"\s*:\s*(\d{1,5})/i)?.[1] || 0
+  );
+  const height = Number(
+    trecho.match(/"(?:height|image_height)"\s*:\s*(\d{1,5})/i)?.[1] || 0
+  );
+  return { width, height };
+}
+
+function pareceImagemPequenaFacebook(item) {
+  if (item.width && item.height && (item.width < 240 || item.height < 240)) return true;
+  return /(?:^|[?&_/.=-])(?:s|p)?(?:40|50|60|80|100|120)x(?:40|50|60|80|100|120)(?:[?&_/.=-]|$)|t\d+\.\d+-1\//i.test(
+    item.url
+  );
 }
 
 /**
@@ -1221,11 +1247,19 @@ function escolherImagemDoPostFacebook(html, escolha) {
   const padroes = [
     /"(?:photo_image|full_width_image|thumbnailImage|image)"\s*:\s*\{[\s\S]{0,900}?"uri"\s*:\s*"((?:\\.|[^"\\])*)"/g,
     /"uri"\s*:\s*"((?:\\.|[^"\\])*)"[\s\S]{0,260}?"(?:photo_image|full_width_image|thumbnailImage)"/g,
+    // Payloads atuais também usam url/src, preferred_thumbnail, preview_image
+    // e blocos media sem os nomes antigos acima.
+    /"(?:photo_image|full_width_image|thumbnailImage|preferred_thumbnail|preview_image|viewer_image|image|media)"\s*:\s*\{[\s\S]{0,1800}?"(?:uri|url|src)"\s*:\s*"((?:\\.|[^"\\])*)"/g,
+    /"(?:uri|url|src)"\s*:\s*"((?:\\.|[^"\\])*(?:fbcdn\.net|fbsbx\.com|cdninstagram\.com)(?:\\.|[^"\\])*)"/g,
+    /<img\b[^>]*\bsrc=["'](https:[^"']+(?:fbcdn\.net|fbsbx\.com|cdninstagram\.com)[^"']*)["']/gi,
   ];
   for (const re of padroes) {
     for (const match of bruto.matchAll(re)) {
       const url = normalizarUrlImagemFacebook(match[1]);
-      if (url) candidatos.push({ url, indice: match.index ?? 0 });
+      if (url) {
+        const indice = match.index ?? 0;
+        candidatos.push({ url, indice, ...dimensoesPertoDaImagemFacebook(bruto, indice) });
+      }
     }
   }
   if (!candidatos.length) return null;
@@ -1240,11 +1274,71 @@ function escolherImagemDoPostFacebook(html, escolha) {
       // No payload do story, o bloco de anexos normalmente vem logo depois da
       // mensagem. Imagem anterior costuma ser avatar ou o post anterior.
       const penalidadeAnterior = item.indice < pontoDeReferencia ? 30_000 : 0;
-      return { ...item, distancia, score: distancia + penalidadeAnterior };
+      const penalidadePequena = pareceImagemPequenaFacebook(item) ? 500_000 : 0;
+      return {
+        ...item,
+        distancia,
+        score: distancia + penalidadeAnterior + penalidadePequena,
+      };
     })
     .sort((a, b) => a.score - b.score)[0];
   // Acima disso a mídia pertence, na prática, a outro bloco da página.
-  return melhor && melhor.distancia <= 90_000 ? melhor.url : null;
+  return melhor && melhor.distancia <= 140_000 && !pareceImagemPequenaFacebook(melhor)
+    ? melhor.url
+    : null;
+}
+
+function identificadorPostFacebook(url) {
+  const value = String(url || '');
+  return (
+    value.match(/story_fbid=(pfbid[A-Za-z0-9]+|\d{6,})/i)?.[1] ||
+    value.match(/\/posts\/(pfbid[A-Za-z0-9]+|\d{6,})/i)?.[1] ||
+    value.match(/[?&]fbid=(pfbid[A-Za-z0-9]+|\d{6,})/i)?.[1] ||
+    value.match(/(pfbid[A-Za-z0-9]+)/i)?.[1] ||
+    null
+  );
+}
+
+/**
+ * O Page Plugin público já é usado pela Biblioteca e costuma trazer a foto
+ * mesmo quando o HTML completo esconde a mídia no payload. Para permalinks com
+ * o dono no caminho, localiza o MESMO pfbid na timeline e reaproveita a capa.
+ */
+async function extrairViaFacebookPagePlugin(url) {
+  let parsed;
+  try {
+    parsed = new URL(String(url || ''));
+  } catch {
+    return null;
+  }
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  const owner = parts[0] || '';
+  const idPost = identificadorPostFacebook(url);
+  if (!owner || !idPost || /^(?:permalink\.php|photo\.php|story\.php)$/i.test(owner)) {
+    return null;
+  }
+
+  try {
+    const { listarPostsViaPlugin } = require('./facebookPageScrape');
+    const posts = await listarPostsViaPlugin(`https://www.facebook.com/${owner}`, 40);
+    const post = posts.find((item) => identificadorPostFacebook(item?.url) === idPost);
+    if (!post || (!post.texto && !post.thumbnail)) return null;
+    console.info(
+      `[socialPost] fb-page-plugin: id=${idPost.slice(0, 14)} imagem=${Boolean(post.thumbnail)} posts=${posts.length}`
+    );
+    return {
+      url: post.url || url,
+      titulo: post.titulo || (post.texto ? String(post.texto).slice(0, 140) : null),
+      texto: post.texto || null,
+      imagem: normalizarUrlImagemFacebook(post.thumbnail) || null,
+      veiculo: post.autor || owner,
+      publicadoEm: post.publicadoEm || null,
+      metodo: 'fb-page-plugin',
+    };
+  } catch (err) {
+    console.warn('[socialPost] fb-page-plugin:', err.message);
+    return null;
+  }
 }
 
 async function extrairViaFacebookHtml(url) {
@@ -1451,6 +1545,9 @@ async function extrairPostSocial(url, opts = {}) {
   // sem consumir créditos de provedor. Tentamos antes dos serviços pagos.
   if (plataforma === 'facebook') {
     incorporar(await extrairViaFacebookHtml(link));
+    if (!melhor.texto || !melhor.imagem) {
+      incorporar(await extrairViaFacebookPagePlugin(link));
+    }
   }
 
   // Provedor com proxy residencial. A coleta por URL evita os bloqueios de
@@ -1546,7 +1643,7 @@ async function extrairPostSocial(url, opts = {}) {
   // A Biblioteca já usa Apify para posts públicos do Facebook. O chat de
   // matéria manual reaproveita o mesmo provedor quando ScrapeCreators/HTML
   // falham, inclusive para links /share/p/ resolvidos para permalink.php.
-  if (plataforma === 'facebook' && precisaTexto()) {
+  if (plataforma === 'facebook' && (precisaTexto() || !melhor.imagem)) {
     const apifyFacebook = require('./apifyFacebookService');
     if (apifyFacebook.isConfigured()) {
       try {
