@@ -683,6 +683,7 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
     trecho: recortarTranscricao(trecho, 14000),
     dataPublicacao,
     dataTimestamp,
+    imagem: /^https?:\/\//i.test(String(info.thumbnail || '')) ? String(info.thumbnail) : null,
     ehRedeSocial: true,
     plataforma: 'youtube',
   };
@@ -821,7 +822,17 @@ async function extrairFontesDeLinks(
       }
 
       // Com a opcao ativa, transcreve o audio; sem ela, tenta apenas legendas.
-      let trecho = `LEGENDA ORIGINAL DA PUBLICAÇÃO:\n${texto}`;
+      let trecho = [
+        'IDENTIDADE DA PUBLICAÇÃO (preserve e use como atribuição quando necessário):',
+        `Plataforma: ${rotulo}`,
+        social.veiculo ? `Perfil/Página: ${social.veiculo}` : null,
+        social.autorUrl ? `URL do perfil/página: ${social.autorUrl}` : null,
+        social.publicadoEm ? `Publicado em: ${social.publicadoEm}` : null,
+        social.imagem ? `Imagem original do post: ${social.imagem}` : null,
+        `LEGENDA ORIGINAL DA PUBLICAÇÃO:\n${texto}`,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
       const ehVideo =
         social.isVideo === true ||
         Boolean(social.videoUrl) ||
@@ -4311,6 +4322,15 @@ async function salvarMateriaDoChat({
     : fonteDoIndice
       ? [fonteDoIndice]
       : fontesLista;
+  // Em links sociais, a imagem extraída da própria publicação é sempre a
+  // primeira opção de capa — pesquisas complementares não podem substituí-la.
+  const fonteSocialComImagem = fontesDaMateria.find(
+    (fonte) => fonte?.ehRedeSocial && /^https?:\/\//i.test(String(fonte?.imagem || ''))
+  ) || null;
+  const fontePrincipal =
+    fontesDaMateria.find((fonte) => /^https?:\/\//i.test(String(fonte?.url || ''))) ||
+    fontesDaMateria[0] ||
+    null;
   let pageId = facebookPageId || row.chat_page_id || null;
   if (pageId) {
     const page = await materiaIaService.resolvePage(userId, pageId);
@@ -4325,7 +4345,10 @@ async function salvarMateriaDoChat({
   const opcoesRodape = {
     materia: corpo,
     fontes: fontesDaMateria,
-    creditoImagem: creditoImagem || 'Reprodução',
+    creditoImagem: creditoImagem ||
+      (fonteSocialComImagem?.veiculo
+        ? `Reprodução/${fonteSocialComImagem.veiculo}`
+        : 'Reprodução'),
     hashtags: info.hashtags || parseJson(row.hashtags, []),
     // Salvar deve preservar os parágrafos vistos no chat. O limite pode ser
     // tratado pelo editor ao publicar, nunca com corte silencioso aqui.
@@ -4357,14 +4380,12 @@ async function salvarMateriaDoChat({
       : tituloDaEscolha && alternativas.includes(tituloDaEscolha)
       ? tituloDaEscolha
       : tituloOriginal;
-  const fontePrincipal =
-    fontesDaMateria.find((fonte) => /^https?:\/\//i.test(String(fonte?.url || ''))) ||
-    fontesDaMateria[0] ||
-    null;
   let imagemFonte =
     imagemUrl && /^https?:\/\//i.test(imagemUrl)
       ? imagemUrl
-      : /^https?:\/\//i.test(String(fontePrincipal?.imagem || ''))
+      : /^https?:\/\//i.test(String(fonteSocialComImagem?.imagem || ''))
+        ? String(fonteSocialComImagem.imagem)
+        : /^https?:\/\//i.test(String(fontePrincipal?.imagem || ''))
         ? String(fontePrincipal.imagem)
         : null;
 
