@@ -1486,7 +1486,9 @@ async function sugerirImagens(req, res, next) {
       sugerirImagensParaMateria,
       buscarImagensPorPalavra,
     } = require('../services/imageSuggestService');
-    const limite = Math.min(Number(req.body?.limite) || 12, 18);
+    // O editor usa uma grade grande: 24 opções evitam que a escolha dependa
+    // das primeiras fotos devolvidas por um único buscador.
+    const limite = Math.min(Number(req.body?.limite) || 24, 30);
     const consultaManual = String(
       req.body?.q ?? req.body?.consulta ?? req.body?.busca ?? req.body?.query ?? ''
     ).trim();

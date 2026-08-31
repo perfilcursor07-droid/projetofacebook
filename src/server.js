@@ -62,6 +62,13 @@ app.listen(env.port, async () => {
     console.error('[recover] falhou:', err.message);
   }
 
+  // Não interrompe o site: se o gateway tiver voltado sem a sessão em memória,
+  // reaproveita silenciosamente o login que já está salvo no Chrome privado.
+  setTimeout(() => {
+    const { recuperarClaudeAposReload } = require('./services/tokenFreeAdminService');
+    void recuperarClaudeAposReload();
+  }, 8_000);
+
   try {
     const materiaIaService = require('./services/materiaIaService');
     const bibliotecaService = require('./services/bibliotecaService');

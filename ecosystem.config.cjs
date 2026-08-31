@@ -27,6 +27,11 @@ module.exports = {
         PORT: 3010,
         // Chrome visível no desktop virtual privado usado para renovar o Claude.
         DISPLAY: ':99',
+        // Mantém credenciais e o perfil do Chrome no usuário de deploy, mesmo
+        // quando um reload é disparado por outro shell.
+        HOME: '/home/viralizeai',
+        TFG_STORE_PATH: '/home/viralizeai/.token-free-gateway/auth-profiles.json',
+        TFG_CDP_URL: 'http://127.0.0.1:9222',
         // Garante yt-dlp/node do sistema mesmo com PATH reduzido do PM2.
         // NVM do viralizeai vem PRIMEIRO: /usr/local/bin/node é symlink para o
         // NVM de outro usuário (sem permissão) e quebra o desafio JS do YouTube.

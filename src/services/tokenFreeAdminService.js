@@ -336,6 +336,87 @@ async function reiniciar() {
   return { ok: true, message: 'Gateway reiniciado.' };
 }
 
+/**
+ * Depois de um reload, o Chrome isolado normalmente continua autenticado, mas
+ * o gateway pode ter sido reiniciado antes de reler o perfil. Reexecutamos o
+ * webauth de forma não interativa: ele apenas captura a sessão já existente,
+ * sem apagar cookies nem abrir fluxo de troca de conta.
+ */
+async function recapturarClaudeDoChrome() {
+  const auth = await authMetadata();
+  if (!auth.autorizada) return { ok: false, skipped: true, reason: 'sem credencial salva' };
+  if (process.platform === 'linux' && !process.env.DISPLAY) {
+    return { ok: false, skipped: true, reason: 'desktop privado indisponível' };
+  }
+
+  if (!(await aguardarChromeCdp(1_500))) {
+    await iniciarChromeVisualServidor();
+  }
+
+  const resultado = await new Promise((resolve, reject) => {
+    const child = spawn(BUN_PATH, [ENTRY_FILE, 'webauth'], {
+      cwd: TOOL_DIR,
+      env: process.env,
+      windowsHide: true,
+      shell: false,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let output = '';
+    let selectionSent = false;
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(reject, new Error('A recaptura automática passou de 75 segundos.'));
+    }, 75_000);
+    const analisar = (chunk) => {
+      output = `${output}${chunk.toString('utf8')}`.slice(-MAX_OUTPUT_CHARS);
+      if (!selectionSent && /Enter selection:/i.test(output)) {
+        // O menu é montado pelo próprio gateway; obtém o número do Claude em
+        // vez de assumir que ele sempre será a primeira opção.
+        const match = output.match(/^\s*(\d+)\.\s+Claude(?:\s|$)/im);
+        if (match?.[1]) {
+          selectionSent = true;
+          child.stdin?.write(`${match[1]}\n`);
+        }
+      }
+    };
+    child.stdout.on('data', analisar);
+    child.stderr.on('data', analisar);
+    child.on('error', (err) => finish(reject, err));
+    child.on('close', (code) => {
+      if (code === 0 && /Claude Web authorization succeeded/i.test(output)) {
+        return finish(resolve, { output });
+      }
+      return finish(reject, new Error(output.replace(/\s+/g, ' ').slice(-600) || `webauth encerrou (${code})`));
+    });
+  });
+
+  await reiniciar();
+  return { ok: true, message: 'Sessão do Claude recapturada do Chrome.', output: resultado.output };
+}
+
+/** Não bloqueia a inicialização do site e nunca exige login interativo. */
+async function recuperarClaudeAposReload() {
+  if (String(process.env.TFG_AUTO_RECAPTURE || 'true').toLowerCase() === 'false') return;
+  try {
+    const atual = await status();
+    if (atual.claude.valida === true || !atual.claude.autorizada) return;
+    const resultado = await recapturarClaudeDoChrome();
+    if (resultado.ok) console.info('[claude-reload] sessão recapturada automaticamente do Chrome.');
+    else console.info(`[claude-reload] recaptura ignorada: ${resultado.reason}.`);
+  } catch (err) {
+    // O site segue de pé. Se o próprio login do Claude expirou, o painel
+    // continua mostrando a ação manual como último recurso.
+    console.warn('[claude-reload] não foi possível recapturar a sessão:', err.message);
+  }
+}
+
 async function removerCredencialClaude() {
   const store = await lerJsonSeguro(AUTH_FILE, { profiles: {} });
   if (!store.profiles || typeof store.profiles !== 'object') store.profiles = {};
@@ -601,6 +682,7 @@ module.exports = {
   iniciarAutorizacao,
   continuarAutorizacao,
   testar,
+  recuperarClaudeAposReload,
   // Metadados expostos para teste; nunca incluem cookie/sessionKey.
   paths: { TOOL_DIR, AUTH_FILE, CONFIG_FILE, LOG_FILE },
 };

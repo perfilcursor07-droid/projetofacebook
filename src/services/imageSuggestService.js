@@ -1,6 +1,7 @@
 const axios = require('axios');
 const path = require('path');
 const { spawn } = require('child_process');
+const { JSDOM } = require('jsdom');
 const { env } = require('../config/env');
 const deepseekService = require('./deepseekService');
 const pexelsService = require('./pexelsService');
@@ -255,6 +256,82 @@ async function buscarPythonBingImagens(consulta, { count = 10 } = {}) {
 }
 
 /**
+ * Consulta complementar no Google Images pelo Chrome já usado pelo sistema.
+ * Não depende de chave: quando o Google apresenta uma página de bloqueio ou
+ * muda o HTML, simplesmente devolve vazio e os demais buscadores continuam.
+ * Os links escolhidos são sempre os originais publicados nos sites, nunca as
+ * miniaturas hospedadas pelo próprio Google.
+ */
+async function buscarGoogleImagensViaChrome(consulta, { count = 12 } = {}) {
+  try {
+    const { carregarHtmlViaChrome } = require('./articleSource');
+    // Testes e instalações minimalistas podem carregar só o extrator de capa.
+    // Nesse caso o Google pelo navegador é opcional, não uma falha da busca.
+    if (typeof carregarHtmlViaChrome !== 'function') return [];
+    const url = `https://www.google.com/search?${new URLSearchParams({
+      tbm: 'isch',
+      hl: 'pt-BR',
+      gl: 'br',
+      q: pareceNomePessoa(consulta) ? `"${consulta}"` : consulta,
+    }).toString()}`;
+    const pagina = await carregarHtmlViaChrome(url, { timeoutMs: 16_000 });
+    if (!pagina?.html) return [];
+
+    const dom = new JSDOM(pagina.html);
+    const document = dom.window.document;
+    const candidatas = [];
+    const incluir = (urlImagem, titulo = '', link = null) => {
+      const limpa = String(urlImagem || '').replace(/&amp;/g, '&').trim();
+      if (!/^https?:\/\//i.test(limpa)) return;
+      if (/^(?:https?:\/\/)?(?:www\.)?(google\.|gstatic\.|googleusercontent\.)/i.test(limpa)) return;
+      candidatas.push({ url: limpa, titulo, link });
+    };
+
+    document.querySelectorAll('[data-iurl], [data-ou]').forEach((elemento) => {
+      incluir(
+        elemento.getAttribute('data-iurl') || elemento.getAttribute('data-ou'),
+        elemento.getAttribute('alt') || elemento.textContent || consulta,
+        elemento.closest('a')?.href || null
+      );
+    });
+    document.querySelectorAll('a[href*="imgurl="]').forEach((link) => {
+      try {
+        const destino = new URL(link.href, 'https://www.google.com');
+        incluir(destino.searchParams.get('imgurl'), link.textContent || consulta, link.href);
+      } catch {
+        // Link incompleto não é um resultado aproveitável.
+      }
+    });
+
+    // O formato do Google muda com frequência. Estes atributos cobrem os dois
+    // formatos atuais e mantêm o fallback independente de uma biblioteca frágil.
+    const vistos = new Set();
+    return candidatas
+      .filter((item) => {
+        const chave = item.url.split('?')[0].toLowerCase();
+        if (vistos.has(chave) || imagemPareceRuim(item)) return false;
+        vistos.add(chave);
+        return true;
+      })
+      .slice(0, count)
+      .map((item, idx) => ({
+        id: `google-chrome:${idx}:${item.url.slice(-36)}`,
+        url: item.url,
+        thumbnail: item.url,
+        titulo: item.titulo || consulta,
+        fonte: 'Google Images',
+        link: item.link,
+        origem: 'google-chrome',
+        consulta,
+      }));
+  } catch (err) {
+    console.warn('[sugerirImagens] google-images-chrome:', err.message);
+    falhasProvedor.registrar('Google Images', err.message);
+    return [];
+  }
+}
+
+/**
  * Fallback sem chave: busca reportagens no Google News e usa a imagem de capa
  * publicada pelo próprio veículo. É mais aderente à matéria que uma foto de
  * stock e continua funcionando quando SerpApi/Serper/Brave ficam sem cota.
@@ -445,21 +522,48 @@ function consultaParaPexels(consulta) {
  * cota), a busca inteira voltava vazia mesmo com Brave/Pexels funcionando —
  * era o caso de "padre" não trazer nada de vez em quando.
  */
-async function buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef, minimo = 6 }) {
+async function buscarImagensConsulta(
+  consulta,
+  { temPessoa, serperEsgotadoRef, minimo = 6, diversificar = false } = {}
+) {
   const encontradas = [];
   const juntar = (lista) => {
     for (const img of lista || []) encontradas.push(img);
   };
 
-  juntar(await buscarSerpApiImagens(consulta, { num: 12 }));
+  juntar(await buscarSerpApiImagens(consulta, { num: diversificar ? 18 : 12 }));
 
-  if (encontradas.length < minimo && env.serperApiKey && !serperEsgotadoRef.value) {
+  // Na busca digitada pelo usuário, não paramos no primeiro provedor que
+  // respondeu. Uma fonte pode conhecer o assunto, mas não a pessoa; combinar
+  // Brave, Bing e Google oferece opções realmente diferentes para escolher.
+  if (diversificar) {
+    // Aspas evitam que "Davi Miranda Filho" seja tratado como três palavras
+    // soltas e traga imagens de pessoas diferentes chamadas Davi ou Miranda.
+    const consultaExata = temPessoa ? `"${consulta}"` : consulta;
+    const tarefas = [
+      buscarBraveImagens(consultaExata, { count: 18 }),
+      buscarPythonBingImagens(consultaExata, { count: 18 }),
+      buscarGoogleImagensViaChrome(consulta, { count: 18 }),
+    ];
+    if (env.serperApiKey && !serperEsgotadoRef.value) {
+      tarefas.push(
+        buscarSerperImagens(consultaExata, { num: 18 }).then(({ imagens, esgotado }) => {
+          if (esgotado) serperEsgotadoRef.value = true;
+          return imagens;
+        })
+      );
+    }
+    const lotes = await Promise.all(tarefas);
+    lotes.forEach(juntar);
+  }
+
+  if (!diversificar && encontradas.length < minimo && env.serperApiKey && !serperEsgotadoRef.value) {
     const { imagens, esgotado } = await buscarSerperImagens(consulta, { num: 10 });
     if (esgotado) serperEsgotadoRef.value = true;
     juntar(imagens);
   }
 
-  if (encontradas.length < minimo) {
+  if (!diversificar && encontradas.length < minimo) {
     juntar(await buscarBraveImagens(consulta, { count: 12 }));
   }
 
@@ -470,13 +574,13 @@ async function buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef, m
   // Busca independente e sem chave: entra depois das capas editoriais do
   // Google News, mas antes de banco de imagens. Assim amplia opções quando
   // Brave/Google não acharem a pessoa ou termo exato.
-  if (encontradas.length < minimo) {
+  if (!diversificar && encontradas.length < minimo) {
     juntar(await buscarPythonBingImagens(consulta, { count: 12 }));
   }
 
   // Pexels é banco de stock: não serve para pessoa nomeada, mas resolve
   // assunto genérico. A consulta vai traduzida quando dá.
-  if (encontradas.length < minimo && !temPessoa) {
+  if ((!diversificar || encontradas.length < minimo) && !temPessoa) {
     juntar(await buscarPexelsImagens(consulta, { perPage: 8 }));
     const emIngles = consultaParaPexels(consulta);
     if (emIngles && encontradas.length < minimo) {
@@ -524,7 +628,7 @@ async function sugerirImagensParaMateria({
   materia,
   fonteTitulo,
   imagemAtual = null,
-  limite = 12,
+  limite = 24,
 }) {
   falhasProvedor.iniciar();
 
@@ -565,7 +669,12 @@ async function sugerirImagensParaMateria({
 
   for (const consulta of plano.consultas) {
     consultasUsadas.push(consulta);
-    const batch = await buscarImagensConsulta(consulta, { temPessoa, serperEsgotadoRef });
+    const batch = await buscarImagensConsulta(consulta, {
+      temPessoa,
+      serperEsgotadoRef,
+      minimo: limite,
+      diversificar: true,
+    });
     if (batch[0]?.origem && !fonteUsada) fonteUsada = batch[0].origem;
 
     for (const img of batch) {
@@ -623,7 +732,7 @@ async function sugerirImagensParaMateria({
  * Busca fotos por palavra-chave digitada (sem IA).
  * Mesma cadeia: SerpApi → Serper → Brave → Google News → Pexels.
  */
-async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
+async function buscarImagensPorPalavra(consultaRaw, { limite = 24 } = {}) {
   const consulta = String(consultaRaw || '')
     .trim()
     .replace(/\s+/g, ' ')
@@ -642,6 +751,7 @@ async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
     temPessoa: pareceNomePessoa(consulta),
     serperEsgotadoRef,
     minimo: limite,
+    diversificar: true,
   });
 
   const vistos = new Set();
@@ -685,6 +795,7 @@ async function buscarImagensPorPalavra(consultaRaw, { limite = 12 } = {}) {
     google: 'Serper',
     brave: 'Brave Images',
     'google-news': 'Google News (capa dos veículos)',
+    'google-chrome': 'Google Images (navegador)',
     'python-bing': 'Busca Python (Bing Images)',
     pexels: 'Pexels',
   };
@@ -713,5 +824,6 @@ module.exports = {
   buscarSerperImagens,
   buscarBraveImagens,
   buscarPythonBingImagens,
+  buscarGoogleImagensViaChrome,
   buscarGoogleNewsImagens,
 };

@@ -1916,7 +1916,8 @@
     }
   }
 
-  const SUGGEST_CACHE_KEY = 'matter-img-suggest:' + cfg.id;
+  // Nova chave evita reaproveitar a lista antiga, menor e de um único provedor.
+  const SUGGEST_CACHE_KEY = 'matter-img-suggest:v2:' + cfg.id;
 
   function saveSuggestCache(data) {
     try {
@@ -1980,13 +1981,15 @@
                 ? 'Brave'
                 : img.origem === 'google-news'
                   ? 'Notícia'
-                : img.origem === 'google'
+                  : img.origem === 'google-chrome'
+                    ? 'Google'
+                  : img.origem === 'google'
                   ? 'Serper'
                   : img.origem || '';
         const border = isAtual ? 'border-emerald-400' : 'border-slate-700 hover:border-violet-400';
         return `<button type="button" data-suggest-idx="${i}" title="${String(img.titulo || '').replace(/"/g, '&quot;')}"
           class="relative shrink-0 overflow-hidden rounded-md border bg-slate-950 focus:outline-none focus:ring-1 focus:ring-violet-400 ${border}"
-          style="width:48px;height:64px;padding:0;flex:0 0 48px">
+          style="width:56px;height:72px;padding:0;flex:0 0 56px">
           <img src="${thumb}" alt="" loading="lazy" decoding="async"
             style="width:100%;height:100%;object-fit:cover;display:block" />
           <span class="absolute bottom-0 left-0 right-0 bg-black/75 py-px text-center text-[8px] leading-tight text-slate-200">${label}</span>
@@ -2025,7 +2028,7 @@
       meta.textContent = q ? 'Buscando “' + q + '”…' : 'Buscando fotos relacionadas…';
     }
     try {
-      const body = q ? { q } : {};
+      const body = q ? { q, limite: 24 } : { limite: 24 };
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/sugerir-imagens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
