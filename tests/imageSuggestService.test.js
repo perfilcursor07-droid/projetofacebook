@@ -101,3 +101,46 @@ test('usa capas do Google News quando SerpApi e Brave estao indisponiveis', asyn
   assert.match(result.aviso, /Google News \(capa dos veículos\)/);
   assert.equal(chamadasPexels, 0);
 });
+
+test('Bing Images extrai murl do /images/async sem API key', async (t) => {
+  const servicePath = require.resolve('../src/services/imageSuggestService');
+  const restaurar = [];
+  restaurar.push(
+    substituirModulo('axios', {
+      get: async (url) => {
+        assert.match(String(url), /bing\.com\/images\/async/);
+        return {
+          data:
+            'junk murl&quot;:&quot;https://cdn.igreja.test/culto.jpg&quot; ' +
+            'turl&quot;:&quot;https://tse.mm.bing.net/th?id=abc&quot; ' +
+            '&quot;t&quot;:&quot;Culto na igreja&quot; ' +
+            'purl&quot;:&quot;https://jornal.test/culto&quot; more',
+        };
+      },
+      post: async () => {
+        throw new Error('Serper não deve ser chamado neste teste');
+      },
+    }),
+    substituirModulo('../src/config/env', { env: {} }),
+    substituirModulo('../src/services/deepseekService', {}),
+    substituirModulo('../src/services/pexelsService', { searchPhotos: async () => ({ photos: [] }) }),
+    substituirModulo('../src/services/providerHealth', {
+      estaFora: () => false,
+      registrarFalha: () => {},
+      registrarSucesso: () => {},
+    })
+  );
+
+  delete require.cache[servicePath];
+  t.after(() => {
+    delete require.cache[servicePath];
+    restaurar.reverse().forEach((fn) => fn());
+  });
+
+  const service = require(servicePath);
+  const imagens = await service.buscarBingImagens('culto igreja', { count: 8 });
+  assert.equal(imagens.length, 1);
+  assert.equal(imagens[0].origem, 'bing');
+  assert.equal(imagens[0].url, 'https://cdn.igreja.test/culto.jpg');
+  assert.match(imagens[0].thumbnail, /bing\.net/);
+});

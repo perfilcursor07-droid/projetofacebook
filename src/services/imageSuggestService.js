@@ -1,7 +1,6 @@
 const axios = require('axios');
 const path = require('path');
 const { spawn } = require('child_process');
-const { JSDOM } = require('jsdom');
 const { env } = require('../config/env');
 const deepseekService = require('./deepseekService');
 const pexelsService = require('./pexelsService');
@@ -138,6 +137,121 @@ async function buscarSerperImagens(consulta, { num = 10 } = {}) {
     console.warn('[sugerirImagens] serper:', err.response?.data?.message || err.message);
     falhasProvedor.registrar('Serper', err.response?.data?.message || err.message);
     return { imagens: [], esgotado: false };
+  }
+}
+
+function decodificarCampoBing(raw) {
+  let valor = String(raw || '')
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\u003d/gi, '=')
+    .replace(/\\\//g, '/');
+  try {
+    valor = JSON.parse(`"${valor}"`);
+  } catch {
+    valor = valor
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/\\"/g, '"');
+  }
+  return String(valor || '').trim();
+}
+
+function extrairImagensBingHtml(html, consulta, count) {
+  const page = String(html || '');
+  const vistos = new Set();
+  const items = [];
+
+  const incluir = (url, thumbnail, titulo, link) => {
+    const limpa = decodificarCampoBing(url);
+    if (!/^https?:\/\//i.test(limpa)) return;
+    if (/bing\.com\/th\?/i.test(limpa) && !thumbnail) return;
+    const chave = limpa.split('?')[0].toLowerCase();
+    if (vistos.has(chave)) return;
+    const item = {
+      url: limpa,
+      thumbnail: decodificarCampoBing(thumbnail) || limpa,
+      titulo: decodificarCampoBing(titulo) || consulta,
+      link: decodificarCampoBing(link) || null,
+    };
+    if (imagemPareceRuim(item)) return;
+    vistos.add(chave);
+    items.push(item);
+  };
+
+  const blobs = page.matchAll(/\bm="(\{[\s\S]*?\})"/g);
+  for (const match of blobs) {
+    if (items.length >= count) break;
+    let meta = null;
+    try {
+      meta = JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+    } catch {
+      continue;
+    }
+    incluir(meta.murl, meta.turl, meta.t, meta.purl);
+  }
+
+  if (items.length < count) {
+    const murlRe = /murl&quot;:&quot;(.*?)&quot;|"murl"\s*:\s*"(.*?)"/g;
+    let match;
+    while (items.length < count && (match = murlRe.exec(page))) {
+      const raw = match[1] || match[2];
+      const aroundStart = Math.max(0, match.index - 1600);
+      const chunk = page.slice(aroundStart, match.index + 2200);
+      const thumb = (chunk.match(/turl&quot;:&quot;(.*?)&quot;/) || chunk.match(/"turl"\s*:\s*"(.*?)"/) || [])[1];
+      const titulo = (chunk.match(/&quot;t&quot;:&quot;(.*?)&quot;/) || chunk.match(/"t"\s*:\s*"(.*?)"/) || [])[1];
+      const link = (chunk.match(/purl&quot;:&quot;(.*?)&quot;/) || chunk.match(/"purl"\s*:\s*"(.*?)"/) || [])[1];
+      incluir(raw, thumb, titulo, link);
+    }
+  }
+
+  return items.slice(0, count);
+}
+
+/**
+ * Bing Images sem API key — endpoint interno /images/async (o mesmo do
+ * better_bing_image_downloader). Sem Chrome e sem Python.
+ */
+async function buscarBingImagens(consulta, { count = 12 } = {}) {
+  const q = String(consulta || '').replace(/\s+/g, ' ').trim();
+  if (q.length < 2) return [];
+  try {
+    const { data: html } = await axios.get('https://www.bing.com/images/async', {
+      params: {
+        q,
+        first: 0,
+        count: Math.min(Math.max(count, 10), 35),
+        adlt: 'moderate',
+        mkt: 'pt-BR',
+      },
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        Referer: 'https://www.bing.com/images/search',
+      },
+      timeout: 15000,
+      responseType: 'text',
+      decompress: true,
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+    const extraidas = extrairImagensBingHtml(html, q, count);
+    return extraidas.map((img, idx) => ({
+      id: `bing:${idx}:${String(img.url).slice(-36)}`,
+      url: img.url,
+      thumbnail: img.thumbnail,
+      titulo: img.titulo,
+      fonte: 'Bing Images',
+      link: img.link,
+      largura: null,
+      altura: null,
+      origem: 'bing',
+      consulta: q,
+    }));
+  } catch (err) {
+    console.warn('[sugerirImagens] bing:', err.message);
+    falhasProvedor.registrar('Bing', err.message);
+    return [];
   }
 }
 
@@ -278,6 +392,7 @@ async function buscarPythonBingImagens(consulta, { count = 10 } = {}) {
  */
 async function buscarGoogleImagensViaChrome(consulta, { count = 12 } = {}) {
   try {
+    const { JSDOM } = require('jsdom');
     const { carregarHtmlViaChrome } = require('./articleSource');
     // Testes e instalações minimalistas podem carregar só o extrator de capa.
     // Nesse caso o Google pelo navegador é opcional, não uma falha da busca.
@@ -555,6 +670,7 @@ async function buscarImagensConsulta(
     const tarefas = [
       comPrazo(buscarSerpApiImagens(consulta, { num: 18 }), 7_000, 'SerpApi'),
       comPrazo(buscarBraveImagens(consultaExata, { count: 18 }), 8_000, 'Brave'),
+      comPrazo(buscarBingImagens(consultaExata, { count: 18 }), 8_000, 'Bing'),
       comPrazo(buscarPythonBingImagens(consultaExata, { count: 18 }), 9_000, 'Busca Python'),
       comPrazo(buscarGoogleImagensViaChrome(consulta, { count: 18 }), 9_000, 'Google Images'),
     ];
@@ -586,13 +702,15 @@ async function buscarImagensConsulta(
     juntar(await buscarBraveImagens(consulta, { count: 12 }));
   }
 
+  if (!diversificar && encontradas.length < minimo) {
+    juntar(await comPrazo(buscarBingImagens(consulta, { count: 12 }), 8_000, 'Bing'));
+  }
+
   if (encontradas.length < minimo) {
     juntar(await comPrazo(buscarGoogleNewsImagens(consulta, { count: 10 }), 9_000, 'Google News'));
   }
 
-  // Busca independente e sem chave: entra depois das capas editoriais do
-  // Google News, mas antes de banco de imagens. Assim amplia opções quando
-  // Brave/Google não acharem a pessoa ou termo exato.
+  // Python Bing só se o HTTP nativo não rendeu o suficiente.
   if (!diversificar && encontradas.length < minimo) {
     juntar(await buscarPythonBingImagens(consulta, { count: 12 }));
   }
@@ -640,7 +758,7 @@ function planoDeConsultasSemIa({ titulo, fonteTitulo }) {
 
 /**
  * IA analisa a matéria → busca fotos reais
- * (SerpApi → Serper → Brave → capas do Google News → Pexels).
+ * (SerpApi → Serper → Brave → Bing → capas do Google News → Pexels).
  */
 async function sugerirImagensParaMateria({
   titulo,
@@ -733,6 +851,7 @@ async function sugerirImagensParaMateria({
   const avisoParts = [];
   if (fonteUsada === 'serpapi') avisoParts.push('Fotos via SerpApi (Google Images)');
   else if (fonteUsada === 'brave') avisoParts.push('Fotos via Brave Images');
+  else if (fonteUsada === 'bing' || fonteUsada === 'python-bing') avisoParts.push('Fotos via Bing Images');
   else if (fonteUsada === 'google') avisoParts.push('Fotos via Serper');
   else if (fonteUsada === 'google-news') avisoParts.push('Fotos editoriais via Google News');
   if (serperEsgotadoRef.value) avisoParts.push('Serper.dev sem créditos');
@@ -749,7 +868,7 @@ async function sugerirImagensParaMateria({
 
 /**
  * Busca fotos por palavra-chave digitada (sem IA).
- * Mesma cadeia: SerpApi → Serper → Brave → Google News → Pexels.
+ * Mesma cadeia: SerpApi → Serper → Brave → Bing → Google News → Pexels.
  */
 async function buscarImagensPorPalavra(consultaRaw, { limite = 24 } = {}) {
   const consulta = String(consultaRaw || '')
@@ -813,9 +932,10 @@ async function buscarImagensPorPalavra(consultaRaw, { limite = 24 } = {}) {
     serpapi: 'SerpApi (Google Images)',
     google: 'Serper',
     brave: 'Brave Images',
+    bing: 'Bing Images',
     'google-news': 'Google News (capa dos veículos)',
     'google-chrome': 'Google Images (navegador)',
-    'python-bing': 'Busca Python (Bing Images)',
+    'python-bing': 'Bing Images (Python)',
     pexels: 'Pexels',
   };
   const avisoParts = [];
@@ -842,6 +962,7 @@ module.exports = {
   buscarSerpApiImagens,
   buscarSerperImagens,
   buscarBraveImagens,
+  buscarBingImagens,
   buscarPythonBingImagens,
   buscarGoogleImagensViaChrome,
   buscarGoogleNewsImagens,
