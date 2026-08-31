@@ -27,6 +27,20 @@ const falhasProvedor = {
   },
 };
 
+// A busca de imagem não pode deixar o editor carregando indefinidamente por
+// causa de um provedor externo. Ao estourar o prazo, seguimos com as fontes
+// que já responderam.
+function comPrazo(promessa, ms, provedor) {
+  let timer = null;
+  const expirou = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      falhasProvedor.registrar(provedor, `sem resposta em ${Math.round(ms / 1000)}s`);
+      resolve([]);
+    }, ms);
+  });
+  return Promise.race([Promise.resolve(promessa), expirou]).finally(() => clearTimeout(timer));
+}
+
 function imagemPareceRuim(item) {
   const hay = `${item.url || ''} ${item.titulo || ''} ${item.fonte || ''}`.toLowerCase();
   return /logo|sprite|icon|avatar|emoji|favicon|1x1|pixel|banner-ad|tracking/i.test(hay);
@@ -531,8 +545,6 @@ async function buscarImagensConsulta(
     for (const img of lista || []) encontradas.push(img);
   };
 
-  juntar(await buscarSerpApiImagens(consulta, { num: diversificar ? 18 : 12 }));
-
   // Na busca digitada pelo usuário, não paramos no primeiro provedor que
   // respondeu. Uma fonte pode conhecer o assunto, mas não a pessoa; combinar
   // Brave, Bing e Google oferece opções realmente diferentes para escolher.
@@ -541,20 +553,27 @@ async function buscarImagensConsulta(
     // soltas e traga imagens de pessoas diferentes chamadas Davi ou Miranda.
     const consultaExata = temPessoa ? `"${consulta}"` : consulta;
     const tarefas = [
-      buscarBraveImagens(consultaExata, { count: 18 }),
-      buscarPythonBingImagens(consultaExata, { count: 18 }),
-      buscarGoogleImagensViaChrome(consulta, { count: 18 }),
+      comPrazo(buscarSerpApiImagens(consulta, { num: 18 }), 7_000, 'SerpApi'),
+      comPrazo(buscarBraveImagens(consultaExata, { count: 18 }), 8_000, 'Brave'),
+      comPrazo(buscarPythonBingImagens(consultaExata, { count: 18 }), 9_000, 'Busca Python'),
+      comPrazo(buscarGoogleImagensViaChrome(consulta, { count: 18 }), 9_000, 'Google Images'),
     ];
     if (env.serperApiKey && !serperEsgotadoRef.value) {
       tarefas.push(
-        buscarSerperImagens(consultaExata, { num: 18 }).then(({ imagens, esgotado }) => {
-          if (esgotado) serperEsgotadoRef.value = true;
-          return imagens;
-        })
+        comPrazo(
+          buscarSerperImagens(consultaExata, { num: 18 }).then(({ imagens, esgotado }) => {
+            if (esgotado) serperEsgotadoRef.value = true;
+            return imagens;
+          }),
+          8_000,
+          'Serper'
+        )
       );
     }
     const lotes = await Promise.all(tarefas);
     lotes.forEach(juntar);
+  } else {
+    juntar(await comPrazo(buscarSerpApiImagens(consulta, { num: 12 }), 8_000, 'SerpApi'));
   }
 
   if (!diversificar && encontradas.length < minimo && env.serperApiKey && !serperEsgotadoRef.value) {
@@ -568,7 +587,7 @@ async function buscarImagensConsulta(
   }
 
   if (encontradas.length < minimo) {
-    juntar(await buscarGoogleNewsImagens(consulta, { count: 10 }));
+    juntar(await comPrazo(buscarGoogleNewsImagens(consulta, { count: 10 }), 9_000, 'Google News'));
   }
 
   // Busca independente e sem chave: entra depois das capas editoriais do
