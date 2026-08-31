@@ -1139,7 +1139,7 @@ async function extrairViaMbasic(url) {
  * (story_fbid / pfbid / fbid). Sem âncora e com mais de um candidato, devolve
  * texto nulo — melhor pedir a legenda do que publicar o post errado.
  *
- * @returns {{ texto: string|null, candidatos: number, ancoras: number, criterio: string, idPost: string|null }}
+ * @returns {{ texto: string|null, indice: number|null, candidatos: number, ancoras: number, criterio: string, idPost: string|null }}
  */
 function escolherMensagemDoPost(html, urlAlvo) {
   const candidatos = [];
@@ -1173,9 +1173,11 @@ function escolherMensagemDoPost(html, urlAlvo) {
 
   const base = { candidatos: candidatos.length, ancoras: ancoras.length, idPost };
 
-  if (!candidatos.length) return { ...base, texto: null, criterio: 'sem-candidatos' };
-  if (candidatos.length === 1) return { ...base, texto: candidatos[0].texto, criterio: 'única' };
-  if (!ancoras.length) return { ...base, texto: null, criterio: 'ambíguo' };
+  if (!candidatos.length) return { ...base, texto: null, indice: null, criterio: 'sem-candidatos' };
+  if (candidatos.length === 1) {
+    return { ...base, texto: candidatos[0].texto, indice: candidatos[0].indice, criterio: 'única' };
+  }
+  if (!ancoras.length) return { ...base, texto: null, indice: null, criterio: 'ambíguo' };
 
   let melhor = null;
   let menorDistancia = Infinity;
@@ -1188,7 +1190,61 @@ function escolherMensagemDoPost(html, urlAlvo) {
       }
     }
   }
-  return { ...base, texto: melhor?.texto || null, criterio: `ancorado(${menorDistancia})` };
+  return {
+    ...base,
+    texto: melhor?.texto || null,
+    indice: melhor?.indice ?? null,
+    criterio: `ancorado(${menorDistancia})`,
+  };
+}
+
+function normalizarUrlImagemFacebook(value) {
+  const url = String(value || '')
+    .replace(/\\\//g, '/')
+    .replace(/\\u0026/g, '&')
+    .replace(/&amp;/g, '&')
+    .trim();
+  return /^https:\/\//i.test(url) && /(?:scontent|fbcdn)\./i.test(url) ? url : null;
+}
+
+/**
+ * O HTML autenticado contém imagem de perfil, anúncios e posts sugeridos. A
+ * foto da matéria precisa estar próxima da mensagem já ancorada no permalink,
+ * nunca ser apenas a primeira URL scontent encontrada na página.
+ */
+function escolherImagemDoPostFacebook(html, escolha) {
+  const bruto = String(html || '');
+  const pontoDeReferencia = Number.isFinite(Number(escolha?.indice))
+    ? Number(escolha.indice)
+    : null;
+  const candidatos = [];
+  const padroes = [
+    /"(?:photo_image|full_width_image|thumbnailImage|image)"\s*:\s*\{[\s\S]{0,900}?"uri"\s*:\s*"((?:\\.|[^"\\])*)"/g,
+    /"uri"\s*:\s*"((?:\\.|[^"\\])*)"[\s\S]{0,260}?"(?:photo_image|full_width_image|thumbnailImage)"/g,
+  ];
+  for (const re of padroes) {
+    for (const match of bruto.matchAll(re)) {
+      const url = normalizarUrlImagemFacebook(match[1]);
+      if (url) candidatos.push({ url, indice: match.index ?? 0 });
+    }
+  }
+  if (!candidatos.length) return null;
+
+  const vistos = new Set();
+  const unicos = candidatos.filter((item) => !vistos.has(item.url) && vistos.add(item.url));
+  if (pontoDeReferencia == null) return unicos.length === 1 ? unicos[0].url : null;
+
+  const melhor = unicos
+    .map((item) => {
+      const distancia = Math.abs(item.indice - pontoDeReferencia);
+      // No payload do story, o bloco de anexos normalmente vem logo depois da
+      // mensagem. Imagem anterior costuma ser avatar ou o post anterior.
+      const penalidadeAnterior = item.indice < pontoDeReferencia ? 30_000 : 0;
+      return { ...item, distancia, score: distancia + penalidadeAnterior };
+    })
+    .sort((a, b) => a.score - b.score)[0];
+  // Acima disso a mídia pertence, na prática, a outro bloco da página.
+  return melhor && melhor.distancia <= 90_000 ? melhor.url : null;
 }
 
 async function extrairViaFacebookHtml(url) {
@@ -1231,29 +1287,13 @@ async function extrairViaFacebookHtml(url) {
       return null;
     }
 
-    // A página autenticada não traz og:image; a foto vem no JSON do story.
+    // A página autenticada não traz og:image confiável; a foto vem no JSON do
+    // mesmo story. A seleção é ancorada na mensagem escolhida acima.
     const parsed = parseOgFromHtml(html, finalUrl || url);
-    let imagem = parsed.imagem;
-    if (!imagem) {
-      const imgRes = [
-        /"photo_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
-        /"full_width_image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
-        /"image"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]*scontent[^"]+)"/i,
-        /"thumbnailImage"\s*:\s*\{[^}]*?"uri"\s*:\s*"(https:[^"]+)"/i,
-        /"(https:\\?\/\\?\/scontent[^"]+?\.(?:jpg|png|webp)[^"]*)"/i,
-      ];
-      for (const re of imgRes) {
-        const m = html.match(re);
-        if (!m?.[1]) continue;
-        const candidato = m[1]
-          .replace(/\\\//g, '/')
-          .replace(/\\u0026/g, '&')
-          .replace(/&amp;/g, '&');
-        if (/rsrc\.php|static\.xx\.fbcdn/i.test(candidato)) continue;
-        imagem = candidato;
-        break;
-      }
-    }
+    let imagem = escolherImagemDoPostFacebook(html, escolha);
+    // og:image é usado apenas quando o HTML não contém diversos blocos de
+    // mídia. Em páginas longas, ele pode ser uma recomendação e não a foto.
+    if (!imagem && escolha.candidatos <= 1) imagem = parsed.imagem;
 
     console.warn(
       `[socialPost] fb-html: texto=${texto?.length || 0} imagem=${Boolean(imagem)} len=${html.length}`
@@ -1634,4 +1674,5 @@ module.exports = {
   extrairPostSocial,
   socialParaTopico,
   escolherMensagemDoPost,
+  escolherImagemDoPostFacebook,
 };

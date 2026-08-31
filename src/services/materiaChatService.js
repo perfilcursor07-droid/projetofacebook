@@ -4397,7 +4397,16 @@ async function salvarMateriaDoChat({
   // o rascunho, reabre somente a fonte principal e captura og:image,
   // twitter:image ou a imagem destacada. O fluxo abaixo já baixa essa foto e
   // compõe a arte 4:5 da marca.
-  if (!imagemFonte && /^https?:\/\//i.test(String(fontePrincipal?.url || ''))) {
+  // Post de rede social não deve passar pelo leitor genérico de artigos: o
+  // HTML de Facebook/Instagram pode expor og:image de recomendação, avatar ou
+  // outro post. Para esses links, usamos somente a mídia confirmada durante a
+  // extração do post; sem ela, deixamos o editor escolher em vez de inventar
+  // uma imagem aparentemente relacionada.
+  if (
+    !imagemFonte &&
+    !fontePrincipal?.ehRedeSocial &&
+    /^https?:\/\//i.test(String(fontePrincipal?.url || ''))
+  ) {
     try {
       const { extrairMetadadosImagemArtigo } = require('./articleSource');
       const metaImagem = await extrairMetadadosImagemArtigo(fontePrincipal.url);
