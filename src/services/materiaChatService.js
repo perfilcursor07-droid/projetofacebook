@@ -2657,6 +2657,9 @@ async function responder({
       // Livre nas mensagens seguintes.
       conversationId: `viralizeai:livre:user:${userId}:chat:${chat.id}:msg:${userMessageId}`,
       conversationName: chat.titulo || tituloDaConversa(pedido),
+      // Preserva a pesquisa nativa para consultas livres, mas não a dispara
+      // sobre uma publicação que já foi extraída pelo próprio sistema.
+      pesquisarWeb: Boolean(pesquisarWeb),
     });
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
     // A memória é persistida pelo ViralizeAI antes da chamada ao Claude. Se o
