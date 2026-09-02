@@ -14,6 +14,11 @@ const AUTH_FILE = process.env.TFG_STORE_PATH || path.join(os.homedir(), '.token-
 const PLAYWRIGHT_PATH = path.join(GATEWAY_ROOT, 'node_modules', 'playwright-core');
 const CHATGPT_MODEL = String(process.env.CHATGPT_IMAGE_MODEL || 'gpt-5.6').trim();
 const MAX_PROMPT = 1800;
+const FORMATO_FACEBOOK = [
+  'REGRA OBRIGATÓRIA DE FORMATO:',
+  'gere a imagem em orientação VERTICAL, na proporção EXATA 4:5, equivalente a 1080 × 1350 pixels para uma postagem no feed do Facebook.',
+  'Não entregue imagem quadrada nem horizontal. Reorganize a composição para preencher completamente o quadro vertical, sem barras ou bordas.',
+].join(' ');
 let geracaoAtiva = null;
 const conversasRecentes = new Map();
 
@@ -110,10 +115,15 @@ function promptPadrao({ titulo = '', materia = '' } = {}) {
     'Crie uma NOVA imagem editorial fotorrealista inspirada na imagem de referência enviada.',
     'Mantenha o assunto, as pessoas e a atmosfera reconhecíveis, mas reconstrua a cena de forma original e natural.',
     'Não inclua texto, letras, legendas, placas legíveis, logotipos, marcas d’água, molduras ou elementos gráficos.',
-    'Composição vertical 4:5, alta qualidade, adequada como imagem destacada de uma notícia no Facebook.',
+    'Composição vertical exata 4:5 (1080 × 1350 pixels), em alta qualidade, adequada como imagem destacada de uma notícia no feed do Facebook.',
     'Não altere a identidade de pessoas públicas presentes na referência e não invente acontecimentos.',
     contexto ? `Contexto da matéria:\n${contexto}` : null,
   ].filter(Boolean).join('\n\n');
+}
+
+function promptComFormatoFacebook(prompt, contexto = {}) {
+  const pedido = String(prompt || '').trim().slice(0, MAX_PROMPT) || promptPadrao(contexto);
+  return `${pedido}\n\n${FORMATO_FACEBOOK}`;
 }
 
 async function baixarImagemDaPagina(page, src) {
@@ -374,7 +384,7 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
     await input.waitFor({ state: 'visible', timeout: 20_000 });
     await anexarImagemNoComposer(page, input, upload);
 
-    const pedido = String(prompt || '').trim().slice(0, MAX_PROMPT) || promptPadrao({ titulo, materia });
+    const pedido = promptComFormatoFacebook(prompt, { titulo, materia });
     await input.fill(pedido);
     // A referência anexada também é um <img>. Guardamos tudo que já existe
     // para buscar somente a nova imagem criada depois do envio.
@@ -465,6 +475,7 @@ module.exports = {
   gerarImagem,
   recuperarImagem,
   promptPadrao,
+  promptComFormatoFacebook,
   // Exposto somente para validar a compatibilidade dos cookies do Chrome.
   cookiesDoHeader,
 };

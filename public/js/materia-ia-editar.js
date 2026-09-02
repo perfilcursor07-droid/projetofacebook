@@ -412,7 +412,7 @@
         'Crie uma NOVA imagem editorial fotorrealista inspirada na imagem de referência enviada.',
         'Mantenha o assunto, as pessoas e a atmosfera reconhecíveis, mas reconstrua a cena de forma original e natural.',
         'Não inclua texto, letras, legendas, placas legíveis, logotipos, marcas d’água, molduras ou elementos gráficos.',
-        'Composição vertical 4:5, alta qualidade, adequada como imagem destacada de uma notícia no Facebook.',
+        'Composição vertical exata 4:5 (1080 × 1350 pixels), em alta qualidade, adequada como imagem destacada de uma notícia no feed do Facebook. Não gere imagem quadrada ou horizontal.',
         'Contexto da matéria: ' + String(tituloEl?.value || '').trim(),
       ].join('\n\n');
     }

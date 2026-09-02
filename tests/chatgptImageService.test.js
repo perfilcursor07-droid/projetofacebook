@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { promptPadrao, cookiesDoHeader } = require('../src/services/chatgptImageService');
+const { promptPadrao, promptComFormatoFacebook, cookiesDoHeader } = require('../src/services/chatgptImageService');
 
 test('prompt de imagem pede reconstrução baseada na referência e sem texto', () => {
   const prompt = promptPadrao({
@@ -13,8 +13,19 @@ test('prompt de imagem pede reconstrução baseada na referência e sem texto', 
   assert.match(prompt, /nova imagem editorial fotorrealista/i);
   assert.match(prompt, /não inclua texto/i);
   assert.match(prompt, /logotipos, marcas d’água/i);
-  assert.match(prompt, /vertical 4:5/i);
+  assert.match(prompt, /vertical.*4:5/i);
+  assert.match(prompt, /1080 × 1350/i);
   assert.match(prompt, /Liderança comenta decisão/i);
+});
+
+test('formato do feed do Facebook é obrigatório mesmo em prompt personalizado', () => {
+  const prompt = promptComFormatoFacebook('Deixe a pessoa com expressão triste.');
+
+  assert.match(prompt, /Deixe a pessoa com expressão triste/);
+  assert.match(prompt, /REGRA OBRIGATÓRIA DE FORMATO/);
+  assert.match(prompt, /proporção EXATA 4:5/);
+  assert.match(prompt, /1080 × 1350 pixels/);
+  assert.match(prompt, /Não entregue imagem quadrada nem horizontal/);
 });
 
 test('cookies do ChatGPT usam URL host-only aceita pelo Chrome', () => {
