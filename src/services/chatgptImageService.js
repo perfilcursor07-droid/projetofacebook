@@ -151,15 +151,11 @@ async function estadoDosAnexos(composer) {
       '[class*="file-thumbnail"]',
       '[class*="image-preview"]',
     ].join(',')).length;
-    const arquivosSelecionados = [...root.querySelectorAll('input[type="file"]')]
-      .flatMap((node) => [...(node.files || [])])
-      .filter((file) => file.name === 'imagem-referencia.jpg').length;
     return {
       nomeDoArquivo: texto.includes('imagem-referencia.jpg'),
       imagens,
       controlesRemover,
       marcadores,
-      arquivosSelecionados,
     };
   });
 }
@@ -173,7 +169,6 @@ async function aguardarAnexo(composer, anterior, timeout = 35_000) {
       || atual.imagens > anterior.imagens
       || atual.controlesRemover > anterior.controlesRemover
       || atual.marcadores > anterior.marcadores
-      || atual.arquivosSelecionados > anterior.arquivosSelecionados
     )) return true;
     await composer.page().waitForTimeout(500);
   }
@@ -194,58 +189,54 @@ async function anexarImagemNoComposer(page, input, upload) {
   // sendo colocado exclusivamente no input do compositor ativo.
   const areaDeConfirmacao = page.locator('body');
   const anterior = await estadoDosAnexos(areaDeConfirmacao);
-  const inputsDoComposer = composer.locator('input[type="file"]');
-  const total = await inputsDoComposer.count();
-  let inputArquivo = null;
-
-  // Há outros inputs de arquivo na página (avatar/importação). Somente o input
-  // pertencente ao formulário da mensagem pode receber a imagem da matéria.
-  for (let i = 0; i < total; i += 1) {
-    const candidato = inputsDoComposer.nth(i);
-    const accept = String(await candidato.getAttribute('accept') || '').toLowerCase();
-    if (!inputArquivo || accept.includes('image')) inputArquivo = candidato;
-    if (accept.includes('image')) break;
+  // Aciona o fluxo real da interface. Preencher diretamente o primeiro input
+  // oculto pode selecionar um campo interno que o React não usa no compositor.
+  const botaoAnexar = page.locator([
+    '[data-testid="composer-plus-btn"]:visible',
+    'button[aria-label*="Attach" i]:visible',
+    'button[aria-label*="Anex" i]:visible',
+    'button[aria-label*="Adicionar" i]:visible',
+  ].join(',')).last();
+  if (!(await botaoAnexar.count())) {
+    throw erro('O botão de anexar imagem não foi encontrado no ChatGPT.', 502);
   }
 
-  if (inputArquivo) {
-    await inputArquivo.setInputFiles(upload);
-  } else {
-    const botaoAnexar = composer.locator([
-      '[data-testid="composer-plus-btn"]',
-      'button[aria-label*="Attach" i]',
-      'button[aria-label*="Anex" i]',
-      'button[aria-label*="Adicionar" i]',
-    ].join(',')).first();
-    if (!(await botaoAnexar.count())) {
-      throw erro('O botão de anexar imagem não foi encontrado no ChatGPT.', 502);
-    }
+  let escolhaPromise = page.waitForEvent('filechooser', { timeout: 2500 }).catch(() => null);
+  await botaoAnexar.click();
+  let escolha = await escolhaPromise;
 
-    await botaoAnexar.click();
+  if (!escolha) {
     const opcaoUpload = page.locator([
-      '[role="menuitem"]:has-text("Adicionar fotos e arquivos")',
-      '[role="menuitem"]:has-text("Add photos & files")',
-      '[role="menuitem"]:has-text("Carregar do computador")',
-      '[role="menuitem"]:has-text("Upload from computer")',
-      'button:has-text("Adicionar fotos e arquivos")',
-      'button:has-text("Add photos & files")',
+      '[role="menuitem"]:has-text("Adicionar fotos e arquivos"):visible',
+      '[role="menuitem"]:has-text("Add photos & files"):visible',
+      '[role="menuitem"]:has-text("Carregar do computador"):visible',
+      '[role="menuitem"]:has-text("Upload from computer"):visible',
+      '[role="menuitem"]:has-text("Enviar arquivo"):visible',
+      '[role="menuitem"]:has-text("Upload file"):visible',
+      'button:has-text("Adicionar fotos e arquivos"):visible',
+      'button:has-text("Add photos & files"):visible',
+      'button:has-text("Carregar do computador"):visible',
+      'button:has-text("Upload from computer"):visible',
     ].join(',')).first();
 
-    if (await opcaoUpload.count()) {
-      const escolha = page.waitForEvent('filechooser', { timeout: 8_000 }).catch(() => null);
-      await opcaoUpload.click();
-      const seletor = await escolha;
-      if (seletor) {
-        await seletor.setFiles(upload);
-      } else {
-        const inputAberto = composer.locator('input[type="file"]').last();
-        if (!(await inputAberto.count())) throw erro('O seletor de arquivos do ChatGPT não abriu.', 502);
-        await inputAberto.setInputFiles(upload);
-      }
-    } else {
-      const inputAberto = composer.locator('input[type="file"]').last();
-      if (!(await inputAberto.count())) throw erro('A opção de enviar imagem não apareceu no ChatGPT.', 502);
-      await inputAberto.setInputFiles(upload);
+    try {
+      await opcaoUpload.waitFor({ state: 'visible', timeout: 8000 });
+    } catch {
+      throw erro('A opção “Adicionar fotos e arquivos” não apareceu no ChatGPT.', 502);
     }
+    escolhaPromise = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
+    await opcaoUpload.click();
+    escolha = await escolhaPromise;
+  }
+
+  if (escolha) {
+    await escolha.setFiles(upload);
+  } else {
+    // Compatibilidade com versões que não disparam filechooser, mas criam o
+    // input correto somente depois de clicar na opção da interface.
+    const inputAberto = composer.locator('input[type="file"][accept*="image" i], input[type="file"]').last();
+    if (!(await inputAberto.count())) throw erro('O seletor de arquivos do ChatGPT não abriu.', 502);
+    await inputAberto.setInputFiles(upload);
   }
 
   if (!(await aguardarAnexo(areaDeConfirmacao, anterior))) {
