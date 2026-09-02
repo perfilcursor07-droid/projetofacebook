@@ -130,7 +130,9 @@
               : `<button type="button" data-set-default="${p.id}" class="ay-default-btn rounded-lg border border-violet-500/40 px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/15">Usar como padrão</button>`;
             const keyBadge = p.has_ayrshare_profile_key
               ? `<span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs text-emerald-200">Profile Key ok</span>`
-              : `<span class="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs text-amber-200">sem Profile Key</span>`;
+              : isDefault
+                ? `<span class="rounded-full bg-sky-500/15 px-2.5 py-0.5 text-xs text-sky-200">usa Primary Profile</span>`
+                : `<span class="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs text-amber-200">sem Profile Key</span>`;
             const igOn = Boolean(p.instagram_ativo);
             const igUser = p.instagram_username ? '@' + p.instagram_username : '';
             const igBadge = igOn

@@ -184,7 +184,7 @@ async function publishContent({
       file: localFile ? path.basename(localFile) : null,
     });
 
-    const { resolvePageForUser, pagesForUser } = require('./facebookPageResolver');
+    const { resolvePageForUser, pagesForUser, defaultPageIdForUser } = require('./facebookPageResolver');
 
     // A página precisa pertencer ao usuário logado, senão nem tenta publicar.
     const freshPage = await resolvePageForUser(userId, page.id);
@@ -198,19 +198,47 @@ async function publishContent({
 
     const profileKey = String(freshPage.ayrshare_profile_key || '').trim();
 
-    // Sem Profile Key a Ayrshare publica no Primary Profile, ou seja, em outra Página.
-    // Com mais de uma Página cadastrada isso publica no lugar errado — bloqueia.
+    // Sem Profile Key a Ayrshare publica no Primary Profile. Com várias páginas,
+    // isso só é seguro quando o editor marcou explicitamente esta como padrão e
+    // o Primary Profile confirma ter Facebook conectado. As outras continuam
+    // bloqueadas para nunca publicar na página errada.
     if (!profileKey) {
       const paginas = await pagesForUser(userId);
       if (paginas.length > 1) {
-        const err = new Error(
-          `A Página “${freshPage.page_name}” está sem Profile Key da Ayrshare. ` +
-            'Sem ela o post iria para o Primary Profile (outra Página). ' +
-            'Cole o Profile Key desta Página em /paginas e publique de novo.'
-        );
-        err.status = 422;
-        err.code = 'AYRSHARE_PROFILE_KEY_MISSING';
-        throw err;
+        const paginaPadraoId = await defaultPageIdForUser(userId);
+        if (Number(freshPage.id) !== Number(paginaPadraoId)) {
+          const err = new Error(
+            `A Página “${freshPage.page_name}” está sem Profile Key da Ayrshare. ` +
+              'Somente a Página padrão pode usar o Primary Profile; para esta, cole o Profile Key do User Profile em /paginas.'
+          );
+          err.status = 422;
+          err.code = 'AYRSHARE_PROFILE_KEY_MISSING';
+          throw err;
+        }
+        try {
+          const primary = await ayrshareService.fetchProfileByKey(null, { permitirPrimary: true });
+          if (!primary.facebookConnected) {
+            const err = new Error(
+              'O Primary Profile da Ayrshare não tem uma Página do Facebook conectada. Conecte-a em Social Accounts ou use o Profile Key de um User Profile.'
+            );
+            err.status = 422;
+            err.code = 'AYRSHARE_PRIMARY_FACEBOOK_MISSING';
+            throw err;
+          }
+          console.info('[publish] usando Primary Profile Ayrshare para a Página padrão', {
+            pageId: freshPage.id,
+            page: freshPage.page_name,
+            facebook: primary.facebookPageName || null,
+          });
+        } catch (err) {
+          if (err.status) throw err;
+          const erro = new Error(
+            `Não consegui confirmar o Primary Profile da Ayrshare: ${ayrshareService.apiErrorMessage(err)}`
+          );
+          erro.status = 422;
+          erro.code = 'AYRSHARE_PRIMARY_PROFILE_UNAVAILABLE';
+          throw erro;
+        }
       }
     }
 
@@ -222,6 +250,16 @@ async function publishContent({
       );
       err.status = 422;
       err.code = 'AYRSHARE_PROFILE_KEY_INVALID';
+      throw err;
+    }
+
+    if (profileKey && ayrshareService.isAyrshareApiKey(profileKey)) {
+      const err = new Error(
+        `A Página “${freshPage.page_name}” tem a API Key geral salva como Profile Key. ` +
+          'Remova esse valor em /paginas para usar o Primary Profile ou cole o Profile Key correto de um User Profile.'
+      );
+      err.status = 422;
+      err.code = 'AYRSHARE_API_KEY_AS_PROFILE_KEY';
       throw err;
     }
 
