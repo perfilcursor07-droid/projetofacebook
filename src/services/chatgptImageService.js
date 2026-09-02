@@ -340,6 +340,11 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
 
     const pedido = String(prompt || '').trim().slice(0, MAX_PROMPT) || promptPadrao({ titulo, materia });
     await input.fill(pedido);
+    // A referência anexada também é um <img>. Guardamos tudo que já existe
+    // para buscar somente a nova imagem criada depois do envio.
+    const imagensAntesDoEnvio = new Set(await page.locator('img').evaluateAll((imagens) =>
+      imagens.map((img) => img.currentSrc || img.src || '').filter(Boolean)
+    ));
     const sendButton = page.locator(
       '[data-testid="send-button"]:not([disabled]), button[aria-label*="Send prompt" i]:not([disabled]), button[aria-label*="Enviar" i]:not([disabled])'
     ).first();
@@ -353,12 +358,12 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
       await input.press('Enter');
     }
 
-    const assistant = page.locator('[data-message-author-role="assistant"]').last();
-    await assistant.waitFor({ state: 'visible', timeout: 90_000 });
-    const limite = Date.now() + 210_000;
+    const limite = Date.now() + 300_000;
     let src = '';
     while (Date.now() < limite && !src) {
-      const imagens = assistant.locator('img');
+      // Nas versões atuais, a arte pode ser renderizada fora do elemento com
+      // data-message-author-role="assistant". Procura na conversa inteira.
+      const imagens = page.locator('img');
       const total = await imagens.count();
       for (let i = total - 1; i >= 0; i -= 1) {
         const candidata = imagens.nth(i);
@@ -366,8 +371,15 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
           src: img.currentSrc || img.src || '',
           width: img.naturalWidth || 0,
           height: img.naturalHeight || 0,
+          displayedWidth: img.getBoundingClientRect().width,
+          displayedHeight: img.getBoundingClientRect().height,
+          alt: img.getAttribute('alt') || '',
         })).catch(() => null);
-        if (dados?.src && dados.width >= 256 && dados.height >= 256) {
+        const imagemNova = dados?.src && !imagensAntesDoEnvio.has(dados.src);
+        const tamanhoValido = dados?.width >= 256 && dados?.height >= 256;
+        const exibicaoValida = dados?.displayedWidth >= 180 && dados?.displayedHeight >= 120;
+        const pareceGerada = /generated|gerada|criada|image|imagem/i.test(dados?.alt || '');
+        if (imagemNova && tamanhoValido && (exibicaoValida || pareceGerada)) {
           src = dados.src;
           break;
         }
@@ -375,6 +387,7 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
       if (!src) await page.waitForTimeout(2000);
     }
     if (!src) {
+      const assistant = page.locator('[data-message-author-role="assistant"]').last();
       const resposta = String(await assistant.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
       throw erro(
         resposta
