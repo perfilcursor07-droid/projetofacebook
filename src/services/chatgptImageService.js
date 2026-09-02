@@ -175,6 +175,39 @@ async function aguardarAnexo(composer, anterior, timeout = 35_000) {
   return false;
 }
 
+async function colarImagemNoComposer(input, upload) {
+  await input.focus();
+  return input.evaluate((target, arquivo) => {
+    const binario = atob(arquivo.base64);
+    const bytes = new Uint8Array(binario.length);
+    for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
+    const file = new File([bytes], arquivo.name, { type: arquivo.mimeType });
+    const transferencia = new DataTransfer();
+    transferencia.items.add(file);
+
+    let evento;
+    try {
+      evento = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: transferencia,
+      });
+    } catch {
+      evento = new Event('paste', { bubbles: true, cancelable: true });
+    }
+    // Algumas versões do Chromium ignoram clipboardData no construtor, mas o
+    // ChatGPT consulta essa propriedade no manipulador de paste.
+    if (!evento.clipboardData) {
+      Object.defineProperty(evento, 'clipboardData', { value: transferencia });
+    }
+    return target.dispatchEvent(evento);
+  }, {
+    name: upload.name,
+    mimeType: upload.mimeType,
+    base64: upload.buffer.toString('base64'),
+  });
+}
+
 async function anexarImagemNoComposer(page, input, upload) {
   let composer = input.locator('xpath=ancestor::form[1]');
   if (!(await composer.count())) {
@@ -189,6 +222,12 @@ async function anexarImagemNoComposer(page, input, upload) {
   // sendo colocado exclusivamente no input do compositor ativo.
   const areaDeConfirmacao = page.locator('body');
   const anterior = await estadoDosAnexos(areaDeConfirmacao);
+
+  // Colar uma imagem no editor usa o mesmo fluxo suportado pelo ChatGPT para
+  // capturas de tela e independe do idioma ou da estrutura do menu de anexos.
+  await colarImagemNoComposer(input, upload);
+  if (await aguardarAnexo(areaDeConfirmacao, anterior, 20_000)) return;
+
   // Aciona o fluxo real da interface. Preencher diretamente o primeiro input
   // oculto pode selecionar um campo interno que o React não usa no compositor.
   const botaoAnexar = page.locator([
@@ -206,7 +245,7 @@ async function anexarImagemNoComposer(page, input, upload) {
   let escolha = await escolhaPromise;
 
   if (!escolha) {
-    const opcaoUpload = page.locator([
+    let opcaoUpload = page.locator([
       '[role="menuitem"]:has-text("Adicionar fotos e arquivos"):visible',
       '[role="menuitem"]:has-text("Add photos & files"):visible',
       '[role="menuitem"]:has-text("Carregar do computador"):visible',
@@ -220,13 +259,22 @@ async function anexarImagemNoComposer(page, input, upload) {
     ].join(',')).first();
 
     try {
-      await opcaoUpload.waitFor({ state: 'visible', timeout: 8000 });
+      await opcaoUpload.waitFor({ state: 'visible', timeout: 5000 });
     } catch {
-      throw erro('A opção “Adicionar fotos e arquivos” não apareceu no ChatGPT.', 502);
+      const opcaoGenerica = page.locator('[role="menuitem"]:visible, [role="option"]:visible')
+        .filter({ hasText: /foto|photo|arquivo|file|upload|carregar/i })
+        .first();
+      if (await opcaoGenerica.count()) {
+        opcaoUpload = opcaoGenerica;
+      } else {
+        throw erro('O ChatGPT não aceitou a imagem colada e não exibiu a opção de anexar arquivos.', 502);
+      }
     }
-    escolhaPromise = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
-    await opcaoUpload.click();
-    escolha = await escolhaPromise;
+    if (!escolha) {
+      escolhaPromise = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
+      await opcaoUpload.click();
+      escolha = await escolhaPromise;
+    }
   }
 
   if (escolha) {
