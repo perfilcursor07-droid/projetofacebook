@@ -331,8 +331,12 @@
   const cropHeightValue = document.getElementById('matter-crop-height-value');
   const cropXValue = document.getElementById('matter-crop-x-value');
   const cropYValue = document.getElementById('matter-crop-y-value');
+  const chatgptImagePrompt = document.getElementById('matter-chatgpt-image-prompt');
+  const chatgptImageGenerate = document.getElementById('matter-chatgpt-image-generate');
+  const chatgptImageStatus = document.getElementById('matter-chatgpt-image-status');
   let cropInteraction = null;
   let cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
+  let cropSourceUrl = '';
   let bodyOverflowBeforeCrop = '';
 
   function clampCropValue(value, min = 0, max = 100) {
@@ -401,6 +405,16 @@
       return;
     }
     cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
+    cropSourceUrl = sourceUrl;
+    if (chatgptImagePrompt && !chatgptImagePrompt.value.trim()) {
+      chatgptImagePrompt.value = [
+        'Crie uma NOVA imagem editorial fotorrealista inspirada na imagem de referência enviada.',
+        'Mantenha o assunto, as pessoas e a atmosfera reconhecíveis, mas reconstrua a cena de forma original e natural.',
+        'Não inclua texto, letras, legendas, placas legíveis, logotipos, marcas d’água, molduras ou elementos gráficos.',
+        'Composição vertical 4:5, alta qualidade, adequada como imagem destacada de uma notícia no Facebook.',
+        'Contexto da matéria: ' + String(tituloEl?.value || '').trim(),
+      ].join('\n\n');
+    }
     bodyOverflowBeforeCrop = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     cropModal.classList.remove('hidden');
@@ -411,6 +425,48 @@
       : sourceUrl;
     requestAnimationFrame(updateCropSelection);
   }
+
+  chatgptImageGenerate?.addEventListener('click', async () => {
+    const prompt = String(chatgptImagePrompt?.value || '').trim();
+    if (prompt.length < 20) {
+      if (chatgptImageStatus) chatgptImageStatus.textContent = 'Descreva a imagem com pelo menos 20 caracteres.';
+      chatgptImagePrompt?.focus();
+      return;
+    }
+    const original = chatgptImageGenerate.textContent;
+    chatgptImageGenerate.disabled = true;
+    chatgptImageGenerate.textContent = 'Gerando…';
+    if (chatgptImageStatus) {
+      chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-emerald-200';
+      chatgptImageStatus.textContent = 'ChatGPT está analisando a referência e criando uma nova imagem. Isso pode levar alguns minutos…';
+    }
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/gerar-chatgpt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, titulo: tituloEl?.value || '' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+      cropSourceUrl = String(data.imagemFonteUrl || '').trim();
+      if (!cropSourceUrl) throw new Error('O ChatGPT respondeu sem uma imagem utilizável.');
+      cropBox = { left: 0, top: 0, width: 1, height: 1 };
+      cropImage.onload = () => requestAnimationFrame(updateCropSelection);
+      cropImage.src = cropSourceUrl + '?chatgpt=' + Date.now();
+      if (chatgptImageStatus) {
+        chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-emerald-300';
+        chatgptImageStatus.textContent = 'Nova imagem pronta. Ajuste o recorte abaixo e clique em “Recortar e salvar”.';
+      }
+    } catch (err) {
+      if (chatgptImageStatus) {
+        chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-rose-300';
+        chatgptImageStatus.textContent = err.message || 'Falha ao gerar imagem com o ChatGPT.';
+      }
+    } finally {
+      chatgptImageGenerate.disabled = false;
+      chatgptImageGenerate.textContent = original || 'Gerar imagem sem texto';
+    }
+  });
 
   function applyCropControls() {
     const geometry = cropGeometry();
@@ -541,6 +597,7 @@
           width: geometry.width / geometry.imageWidth,
           height: geometry.height / geometry.imageHeight,
           titulo: tituloEl?.value || '',
+          sourceUrl: cropSourceUrl || null,
         }),
       });
       const data = await res.json().catch(() => ({}));

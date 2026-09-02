@@ -245,6 +245,7 @@ router.post('/matters/:id/arte/enquadrar', async (req, res, next) => {
 
 router.post('/matters/:id/arte/recortar', async (req, res, next) => {
   let storedSource = null;
+  let generatedSourceToRemove = null;
   try {
     const matterId = Number(req.params.id);
     if (!Number.isInteger(matterId) || matterId < 1) {
@@ -259,7 +260,16 @@ router.post('/matters/:id/arte/recortar', async (req, res, next) => {
       return res.status(400).json({ error: 'A imagem de uma matéria publicada não pode ser alterada' });
     }
 
-    let sourceUrl = String(matter.imagem_fonte_url || '').trim();
+    const generatedSource = String(req.body?.sourceUrl || '').trim();
+    const generatedPattern = new RegExp(
+      `^/media/fontes/user_${Number(req.session.userId)}/materia_${matterId}_[0-9]+_[a-f0-9]+\\.jpg$`,
+      'i'
+    );
+    if (generatedSource && !generatedPattern.test(generatedSource)) {
+      return res.status(400).json({ error: 'A imagem temporária informada não pertence a esta matéria' });
+    }
+    generatedSourceToRemove = generatedSource || null;
+    let sourceUrl = generatedSource || String(matter.imagem_fonte_url || '').trim();
     if (/\/media\/artes\//i.test(sourceUrl)) sourceUrl = '';
     if (
       !sourceUrl &&
@@ -297,6 +307,10 @@ router.post('/matters/:id/arte/recortar', async (req, res, next) => {
       offsetY: 50,
       fitMode: 'contain',
     });
+    if (generatedSourceToRemove && generatedSourceToRemove !== storedSource.publicUrl) {
+      removeMatterSourceImage(generatedSourceToRemove);
+      generatedSourceToRemove = null;
+    }
 
     return res.json({
       ok: true,
@@ -307,7 +321,59 @@ router.post('/matters/:id/arte/recortar', async (req, res, next) => {
     });
   } catch (err) {
     if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
+    if (generatedSourceToRemove) removeMatterSourceImage(generatedSourceToRemove);
     if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+});
+
+router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
+  let storedSource = null;
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID da matéria inválido' });
+    }
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'A imagem de uma matéria publicada não pode ser alterada' });
+    }
+
+    let sourceUrl = String(matter.imagem_fonte_url || '').trim();
+    if (/\/media\/artes\//i.test(sourceUrl)) sourceUrl = '';
+    if (!sourceUrl && !matter.imagem_path && !/\/media\/artes\//i.test(String(matter.imagem_url || ''))) {
+      sourceUrl = String(matter.imagem_url || '').trim();
+    }
+    if (!sourceUrl) {
+      return res.status(400).json({ error: 'Escolha uma foto de origem antes de gerar uma versão com o ChatGPT.' });
+    }
+
+    const chatgptImageService = require('../services/chatgptImageService');
+    const generated = await chatgptImageService.gerarImagem({
+      sourceUrl,
+      prompt: req.body?.prompt,
+      titulo: String(req.body?.titulo || matter.titulo || '').trim(),
+      materia: matter.materia || '',
+    });
+    storedSource = await storeMatterSourceImage({
+      userId: req.session.userId,
+      matterId,
+      buffer: generated.buffer,
+    });
+
+    return res.json({
+      ok: true,
+      imagemFonteUrl: storedSource.publicUrl,
+      prompt: generated.prompt,
+      model: generated.model,
+    });
+  } catch (err) {
+    if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    console.error('[chatgpt-imagem]', err.message);
     return next(err);
   }
 });

@@ -48,6 +48,7 @@ const DEFAULT_NOVNC_PORT = 6080;
 let authJob = {
   status: 'idle',
   message: 'Nenhuma autorização em andamento.',
+  provider: null,
   startedAt: null,
   finishedAt: null,
 };
@@ -68,11 +69,13 @@ async function lerJsonSeguro(filePath, fallback) {
   }
 }
 
-async function authMetadata() {
+async function authMetadata(providerId = 'claude-web') {
   const store = await lerJsonSeguro(AUTH_FILE, { profiles: {} });
-  const profile = store?.profiles?.['claude-web'];
+  const profile = store?.profiles?.[providerId];
   return {
-    autorizada: Boolean(profile?.credentials?.sessionKey || profile?.credentials?.cookie),
+    autorizada: Boolean(
+      profile?.credentials?.sessionKey || profile?.credentials?.cookie || profile?.credentials?.accessToken
+    ),
     atualizadaEm: isoDate(profile?.updatedAt),
   };
 }
@@ -91,6 +94,7 @@ function authJobPublico() {
   return {
     status: authJob.status,
     message: authJob.message,
+    provider: authJob.provider,
     startedAt: authJob.startedAt,
     finishedAt: authJob.finishedAt,
   };
@@ -148,8 +152,9 @@ async function desktopMetadata() {
 }
 
 async function status() {
-  const [auth, config, desktop] = await Promise.all([
-    authMetadata(),
+  const [auth, chatgptAuth, config, desktop] = await Promise.all([
+    authMetadata('claude-web'),
+    authMetadata('chatgpt-web'),
     configMetadata(),
     desktopMetadata(),
   ]);
@@ -169,6 +174,7 @@ async function status() {
   }
 
   const sessao = health?.sessions?.['claude-web'];
+  const sessaoChatgpt = health?.sessions?.['chatgpt-web'];
   const modeloConfigurado = gatewayClient.MODELO;
   const modeloDisponivel = modelos.some((item) => String(item?.id || '') === modeloConfigurado);
 
@@ -193,6 +199,14 @@ async function status() {
       motivo: sessao?.reason || null,
       modelo: modeloConfigurado,
       modeloDisponivel,
+    },
+    chatgpt: {
+      autorizada: chatgptAuth.autorizada,
+      atualizadaEm: chatgptAuth.atualizadaEm,
+      valida: sessaoChatgpt?.valid === true ? true : sessaoChatgpt?.valid === false ? false : null,
+      motivo: sessaoChatgpt?.reason || null,
+      modelo: 'gpt-5.6',
+      modeloDisponivel: modelos.some((item) => String(item?.id || '') === 'gpt-5.6'),
     },
     seguranca: {
       apiKeyProtegida: config.apiKeyProtegida,
@@ -272,7 +286,7 @@ async function aguardarChromeCdp(timeout = 20_000) {
   return false;
 }
 
-async function iniciarChromeVisualServidor() {
+async function iniciarChromeVisualServidor(startUrl = 'https://claude.ai/new') {
   const chromePath = CHROME_LINUX_CANDIDATES.find((candidate) => fs.existsSync(candidate));
   if (!chromePath) {
     const err = new Error('Google Chrome/Chromium não encontrado no servidor.');
@@ -298,7 +312,7 @@ async function iniciarChromeVisualServidor() {
     '--password-store=basic',
     '--remote-allow-origins=*',
     '--window-size=1440,1000',
-    'https://claude.ai/new',
+    startUrl,
   ];
 
   try {
@@ -450,26 +464,29 @@ async function limparSessaoClaudeDoChrome() {
   await removerCredencialClaude();
 }
 
-function iniciarAutorizacao({ trocarConta = false } = {}) {
+function iniciarAutorizacao({ trocarConta = false, provider = 'claude' } = {}) {
+  const providerKey = provider === 'chatgpt' ? 'chatgpt' : 'claude';
+  const providerLabel = providerKey === 'chatgpt' ? 'ChatGPT' : 'Claude';
   assertCli();
   if (process.platform === 'linux' && !process.env.DISPLAY) {
     const err = new Error(
-      'Desktop do Claude não configurado. Instale o desktop privado e recarregue o PM2 antes de entrar novamente.'
+      `Desktop do ${providerLabel} não configurado. Instale o desktop privado e recarregue o PM2 antes de entrar novamente.`
     );
     err.status = 409;
     throw err;
   }
   if (['running', 'waiting_login', 'waiting_browser_login'].includes(authJob.status)) {
-    const err = new Error('Já existe uma autorização do Claude em andamento.');
+    const err = new Error('Já existe uma autorização de IA em andamento.');
     err.status = 409;
     throw err;
   }
 
   authJob = {
     status: 'running',
+    provider: providerKey,
     message: trocarConta
       ? 'Preparando o Chrome para entrar em outra conta…'
-      : 'Abrindo o Chrome do servidor para autorizar o Claude…',
+      : `Abrindo o Chrome do servidor para autorizar o ${providerLabel}…`,
     startedAt: new Date().toISOString(),
     finishedAt: null,
   };
@@ -477,7 +494,7 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
   // O endpoint responde imediatamente. A tela acompanha este trabalho por polling.
   void (async () => {
     try {
-      if (trocarConta) await limparSessaoClaudeDoChrome();
+      if (trocarConta && providerKey === 'claude') await limparSessaoClaudeDoChrome();
 
       // Faz o webauth abrir uma janela nova e aguardar a confirmação manual.
       // Sem isso, um Chrome já aberto tentaria capturar a sessão imediatamente.
@@ -494,7 +511,9 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
           ...authJob,
           message: 'Iniciando o Chrome no desktop privado…',
         };
-        await iniciarChromeVisualServidor();
+        await iniciarChromeVisualServidor(
+          providerKey === 'chatgpt' ? 'https://chatgpt.com/' : 'https://claude.ai/new'
+        );
       }
 
       const child = spawn(BUN_PATH, [ENTRY_FILE, 'webauth'], {
@@ -506,8 +525,8 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
       activeAuthChild = child;
       let buffer = '';
       let detectouPromptInicial = false;
-      let detectouPromptClaude = false;
-      let enviouClaude = false;
+      let detectouPromptProvider = false;
+      let enviouProvider = false;
       let concluida = false;
 
       activeAuthTimer = setTimeout(() => {
@@ -529,27 +548,36 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
           authJob = {
             ...authJob,
             status: 'waiting_login',
-            message: 'Chrome aberto no desktop privado. Entre no Claude e depois clique em “Já entrei, concluir”.',
+            message: `Chrome aberto no desktop privado. Entre no ${providerLabel} e depois clique em “Já entrei, concluir”.`,
           };
         }
-        if (!detectouPromptClaude && /Please log(?:in| in) to Claude/i.test(buffer)) {
-          detectouPromptClaude = true;
+        const providerPrompt = providerKey === 'chatgpt'
+          ? /Please log(?:in| in) to ChatGPT/i
+          : /Please log(?:in| in) to Claude/i;
+        if (!detectouPromptProvider && providerPrompt.test(buffer)) {
+          detectouPromptProvider = true;
           authJob = {
             ...authJob,
             status: 'waiting_browser_login',
-            message: 'Aguardando o Claude confirmar a sessão no Chrome…',
+            message: `Aguardando o ${providerLabel} confirmar a sessão no Chrome…`,
           };
         }
-        if (!enviouClaude && /Enter selection:/i.test(buffer)) {
-          enviouClaude = true;
-          child.stdin?.write('1\n');
+        if (!enviouProvider && /Enter selection:/i.test(buffer)) {
+          const nomeMenu = providerKey === 'chatgpt' ? 'ChatGPT Web' : 'Claude';
+          const match = buffer.match(new RegExp(`^\\s*(\\d+)\\.\\s+${nomeMenu}(?:\\s|$)`, 'im'));
+          if (!match?.[1]) return;
+          enviouProvider = true;
+          child.stdin?.write(`${match[1]}\n`);
           authJob = {
             ...authJob,
             status: 'running',
-            message: 'Capturando a nova sessão do Claude…',
+            message: `Capturando a nova sessão do ${providerLabel}…`,
           };
         }
-        if (/Claude Web authorization succeeded/i.test(buffer)) concluida = true;
+        const sucesso = providerKey === 'chatgpt'
+          ? /ChatGPT Web authorization succeeded/i
+          : /Claude Web authorization succeeded/i;
+        if (sucesso.test(buffer)) concluida = true;
       };
 
       child.stdout.on('data', analisar);
@@ -574,7 +602,7 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
           authJob = {
             ...authJob,
             status: 'error',
-            message: 'O Claude não confirmou a nova sessão. Abra o Chrome e tente novamente.',
+            message: `O ${providerLabel} não confirmou a nova sessão. Abra o Chrome e tente novamente.`,
             finishedAt: new Date().toISOString(),
           };
           return;
@@ -589,7 +617,7 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
           authJob = {
             ...authJob,
             status: 'success',
-            message: 'Claude autorizado e gateway reiniciado com sucesso.',
+            message: `${providerLabel} autorizado e gateway reiniciado com sucesso.`,
             finishedAt: new Date().toISOString(),
           };
         } catch (err) {
@@ -616,7 +644,7 @@ function iniciarAutorizacao({ trocarConta = false } = {}) {
 
 function continuarAutorizacao() {
   if (authJob.status !== 'waiting_login' || !activeAuthChild?.stdin) {
-    const err = new Error('Não existe um login do Claude aguardando confirmação.');
+    const err = new Error('Não existe um login de IA aguardando confirmação.');
     err.status = 409;
     throw err;
   }
@@ -624,7 +652,7 @@ function continuarAutorizacao() {
   authJob = {
     ...authJob,
     status: 'running',
-    message: 'Confirmando o login e capturando a sessão do Claude…',
+    message: `Confirmando o login e capturando a sessão do ${authJob.provider === 'chatgpt' ? 'ChatGPT' : 'Claude'}…`,
   };
   activeAuthChild.stdin.write('\n');
   return authJobPublico();

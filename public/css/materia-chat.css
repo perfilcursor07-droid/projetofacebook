@@ -726,6 +726,64 @@ body.mia-chat-drawer-open {
   color: var(--mia-chat-muted);
 }
 
+.mia-chat-title-tone {
+  width: min(44rem, 100%);
+  padding: 1rem;
+  border: 1px solid var(--mia-chat-border);
+  border-radius: 0.85rem;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.mia-chat-title-tone-label {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.mia-chat-title-tone-help {
+  margin: 0.3rem 0 0;
+  color: var(--mia-chat-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.mia-chat-title-tone-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.chat-title-tone {
+  padding: 0.5rem 0.72rem;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.chat-title-tone:hover {
+  border-color: rgba(16, 185, 129, 0.65);
+  color: #fff;
+}
+
+.chat-title-tone.is-active {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.13);
+  color: #a7f3d0;
+}
+
+.chat-title-tone:focus-visible {
+  outline: 2px solid rgba(52, 211, 153, 0.7);
+  outline-offset: 2px;
+}
+
 @media (min-width: 640px) {
   .mia-chat-empty-sub {
     margin-top: 0.65rem;

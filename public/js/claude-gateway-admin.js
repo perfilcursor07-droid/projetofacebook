@@ -74,6 +74,7 @@
     const gateway = currentStatus.gateway || {};
     const chrome = currentStatus.chrome || {};
     const claude = currentStatus.claude || {};
+    const chatgpt = currentStatus.chatgpt || {};
     const security = currentStatus.seguranca || {};
     const auth = currentStatus.autorizacao || {};
     const desktop = currentStatus.desktop || {};
@@ -108,6 +109,26 @@
     $('claude-title').textContent = claudeTitle;
     $('claude-detail').textContent = claude.motivo || `Atualizada em ${formatDate(claude.atualizadaEm)}`;
 
+    let chatgptTone = 'bad';
+    let chatgptBadge = 'Não autorizada';
+    let chatgptTitle = 'Faça o login no ChatGPT';
+    if (chatgpt.valida === true) {
+      chatgptTone = 'good';
+      chatgptBadge = 'Válida';
+      chatgptTitle = 'Sessão pronta para imagens';
+    } else if (chatgpt.valida === false) {
+      chatgptTone = 'bad';
+      chatgptBadge = 'Expirada';
+      chatgptTitle = 'É necessário entrar novamente';
+    } else if (chatgpt.autorizada) {
+      chatgptTone = 'warn';
+      chatgptBadge = 'Salva';
+      chatgptTitle = 'Sessão salva, ainda não validada';
+    }
+    setBadge('chatgpt-badge', chatgptBadge, chatgptTone);
+    $('chatgpt-title').textContent = chatgptTitle;
+    $('chatgpt-detail').textContent = chatgpt.motivo || `Atualizada em ${formatDate(chatgpt.atualizadaEm)}`;
+
     setBadge('model-badge', claude.modeloDisponivel ? 'Disponível' : 'Indisponível', claude.modeloDisponivel ? 'good' : 'warn');
     $('model-title').textContent = claude.modelo || 'claude-sonnet-5';
     $('model-detail').textContent = claude.modeloDisponivel
@@ -136,7 +157,8 @@
     const authVisible = ['running', 'waiting_login', 'waiting_browser_login', 'success', 'error'].includes(auth.status);
     progress?.classList.toggle('hidden', !authVisible);
     if ($('claude-auth-label')) {
-      $('claude-auth-label').textContent = auth.status === 'error' ? 'Falha na autorização' : 'Autorização do Claude';
+      const providerLabel = auth.provider === 'chatgpt' ? 'ChatGPT' : 'Claude';
+      $('claude-auth-label').textContent = auth.status === 'error' ? 'Falha na autorização' : `Autorização do ${providerLabel}`;
     }
     if ($('claude-auth-message')) $('claude-auth-message').textContent = auth.message || '';
 
@@ -193,8 +215,12 @@
       pendingMessage = 'Testando o Sonnet 5…';
     } else if (action === 'authorize') {
       path = '/authorize';
-      body = { trocarConta: false };
+      body = { trocarConta: false, provider: 'claude' };
       pendingMessage = 'Abrindo o Chrome para entrar no Claude…';
+    } else if (action === 'authorize-chatgpt') {
+      path = '/authorize';
+      body = { trocarConta: false, provider: 'chatgpt' };
+      pendingMessage = 'Abrindo o Chrome para entrar no ChatGPT…';
     } else if (action === 'switch') {
       const confirmed = window.confirm(
         'Trocar a conta do Claude? Isso apagará somente a sessão do Claude no Chrome isolado e abrirá uma nova tela de login.'
@@ -205,7 +231,7 @@
       pendingMessage = 'Removendo a sessão atual e abrindo o Chrome…';
     } else if (action === 'continue') {
       path = '/authorize/continue';
-      pendingMessage = 'Confirmando o login do Claude…';
+      pendingMessage = `Confirmando o login do ${currentStatus?.autorizacao?.provider === 'chatgpt' ? 'ChatGPT' : 'Claude'}…`;
     } else {
       return;
     }

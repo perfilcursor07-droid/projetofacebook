@@ -1,5 +1,5 @@
 <%- include('partials/app-start') %>
-  <link rel="stylesheet" href="/css/materia-chat.css?v=20260828mensagensMesmaLargura1" />
+  <link rel="stylesheet" href="/css/materia-chat.css?v=20260902tomTitulosClaude1" />
 
   <main class="mia-chat" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -77,6 +77,18 @@
               <h1 class="mia-chat-empty-title">Como posso ajudar?</h1>
               <p class="mia-chat-empty-sub">Converse com o Claude, crie matérias ou encontre pautas recentes.</p>
             </div>
+            <section class="mia-chat-title-tone" aria-labelledby="chat-title-tone-label">
+              <p id="chat-title-tone-label" class="mia-chat-title-tone-label">Como devem ser os títulos sugeridos pelo Claude?</p>
+              <p class="mia-chat-title-tone-help">Escolha o tom desta conversa. O Claude seguirá esse estilo sem inventar fatos.</p>
+              <div class="mia-chat-title-tone-options" role="group" aria-label="Tom dos títulos sugeridos">
+                <button type="button" class="chat-title-tone is-active" data-title-tone="natural" aria-pressed="true">Natural</button>
+                <button type="button" class="chat-title-tone" data-title-tone="polemico" aria-pressed="false">Suspense e polêmica</button>
+                <button type="button" class="chat-title-tone" data-title-tone="factual" aria-pressed="false">Factual</button>
+                <button type="button" class="chat-title-tone" data-title-tone="direto" aria-pressed="false">Direto</button>
+                <button type="button" class="chat-title-tone" data-title-tone="emocional" aria-pressed="false">Emocional</button>
+                <button type="button" class="chat-title-tone" data-title-tone="curiosidade" aria-pressed="false">Curiosidade</button>
+              </div>
+            </section>
           </div>
         </div>
 
@@ -157,10 +169,10 @@
                         </label>
 
                         <label class="mia-chat-tool-field">
-                          <span>Tom</span>
-                          <select id="chat-tom" title="Tom" class="mia-chat-select">
+                          <span>Tom dos títulos</span>
+                          <select id="chat-tom" title="Tom dos títulos sugeridos pelo Claude" class="mia-chat-select">
                             <option value="natural" selected>Natural</option>
-                            <option value="polemico">Polêmico</option>
+                            <option value="polemico">Suspense e polêmica</option>
                             <option value="direto">Direto</option>
                             <option value="curiosidade">Curiosidade</option>
                             <option value="emocional">Emocional</option>
@@ -377,6 +389,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260827materiaNovaRecusa1"></script>
+  <script src="/js/materia-chat.js?v=20260902tomTitulosClaude1"></script>
   <script src="/js/materia-chat-extras.js?v=20260829maislidasfontes2"></script>
 <%- include('partials/app-end') %>

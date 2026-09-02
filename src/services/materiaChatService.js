@@ -10,6 +10,7 @@ const PERIODOS = ['24h', '3d', '7d', '15d', '30d', '60d', '90d', '180d'];
 // padrão para assuntos institucionais, políticos ou eleitorais.
 const PERIODO_PADRAO = '30d';
 const MAX_URLS_PEDIDO = 12;
+const TONS_TITULO = new Set(['natural', 'polemico', 'direto', 'curiosidade', 'emocional', 'factual']);
 const JANELAS_DE_RESGATE = Object.freeze({
   '24h': '7d',
   '3d': '15d',
@@ -93,6 +94,11 @@ function erro(mensagem, status = 400) {
   const err = new Error(mensagem);
   err.status = status;
   return err;
+}
+
+function normalizarTomTitulos(tom) {
+  const valor = String(tom || '').trim().toLowerCase();
+  return TONS_TITULO.has(valor) ? valor : 'natural';
 }
 
 function parseJson(raw, fallback) {
@@ -1597,18 +1603,21 @@ async function criarConversa({
   titulo = null,
   facebookPageId = null,
   modo = 'materia',
+  tom = 'natural',
 }) {
   const id = await AiChats.create({
     user_id: userId,
     facebook_page_id: facebookPageId || null,
     titulo: titulo ? tituloDaConversa(titulo) : null,
     modo: modo === 'livre' ? 'livre' : 'materia',
+    tom: normalizarTomTitulos(tom),
   });
   const chat = await AiChats.findById(id);
   return {
     id: chat.id,
     titulo: chat.titulo || 'Nova conversa',
     modo: chat.modo === 'livre' ? 'livre' : 'materia',
+    tom: chat.tom || 'natural',
     fixada: Boolean(chat.fixado),
     mensagens: [],
   };
@@ -2351,6 +2360,7 @@ async function responder({
   if (pedido.length < 3) throw erro('Escreva o que você quer que a IA faça', 400);
 
   const periodoFinal = PERIODOS.includes(String(periodo)) ? String(periodo) : PERIODO_PADRAO;
+  const tomTitulos = normalizarTomTitulos(tom);
 
   let chat = chatId ? await AiChats.findByIdForUser(chatId, userId) : null;
   if (chatId && !chat) throw erro('Conversa não encontrada', 404);
@@ -2360,7 +2370,7 @@ async function responder({
       titulo: tituloDaConversa(pedido),
       modo: tipoSolicitado,
       pesquisar_web: pesquisarWeb ? 1 : 0,
-      tom,
+      tom: tomTitulos,
       periodo: periodoFinal,
     });
     chat = await AiChats.findById(novoId);
@@ -2370,7 +2380,7 @@ async function responder({
     if (tipoExistente !== tipoSolicitado) {
       throw erro('Inicie uma nova conversa para trocar entre Matéria e Claude livre.', 409);
     }
-    const patch = { pesquisar_web: pesquisarWeb ? 1 : 0, tom, periodo: periodoFinal };
+    const patch = { pesquisar_web: pesquisarWeb ? 1 : 0, tom: tomTitulos, periodo: periodoFinal };
     if (!chat.titulo) patch.titulo = tituloDaConversa(pedido);
     await AiChats.update(chat.id, patch);
     if (patch.titulo) {
@@ -2466,6 +2476,7 @@ async function responder({
           titulo: infoLivre.titulo,
           materia: infoLivre.corpo,
           marcaModeloArte: user?.marca_modelo_arte || null,
+          tom: tomTitulos,
           tarefa: 'conversa',
         });
       } catch (err) {
@@ -2798,6 +2809,7 @@ async function responder({
           titulo: info.titulo,
           materia: info.corpo,
           marcaModeloArte: user?.marca_modelo_arte || null,
+          tom: tomTitulos,
           tarefa: 'conversa',
         });
       } catch (err) {
@@ -4756,7 +4768,12 @@ async function salvarPautasComoRascunhos({
  * por isso as manchetes precisam poder ser pedidas neste momento, antes do
  * rascunho existir.
  */
-async function gerarTitulosAlternativosDaMensagem({ userId, messageId, tituloAtual = null } = {}) {
+async function gerarTitulosAlternativosDaMensagem({
+  userId,
+  messageId,
+  tituloAtual = null,
+  tom = null,
+} = {}) {
   const row = await AiChatMessages.findByIdWithChat(messageId);
   if (!row || Number(row.chat_user_id) !== Number(userId)) {
     throw erro('Mensagem não encontrada', 404);
@@ -4783,10 +4800,13 @@ async function gerarTitulosAlternativosDaMensagem({ userId, messageId, tituloAtu
   const Users = require('../models/Users');
   const deepseekService = require('./deepseekService');
   const user = await Users.findById(userId);
+  const tomTitulos = normalizarTomTitulos(tom || row.chat_tom);
+  if (tom) await AiChats.update(row.chat_id, { tom: tomTitulos });
   const titulos = await deepseekService.gerarTitulosAlternativos({
     titulo: tituloBase,
     materia: String(info.corpo || '').trim(),
     marcaModeloArte: user?.marca_modelo_arte || null,
+    tom: tomTitulos,
     tarefa: 'conversa',
   });
   const limpos = [...new Set(

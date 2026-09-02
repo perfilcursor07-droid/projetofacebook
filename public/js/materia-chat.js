@@ -29,6 +29,7 @@
     modeloIaNome: document.getElementById('chat-ai-model-name'),
     modeloIaNivel: document.getElementById('chat-ai-model-level'),
     tom: document.getElementById('chat-tom'),
+    titleToneBtns: document.querySelectorAll('.chat-title-tone'),
     periodo: document.getElementById('chat-periodo'),
     modoBtns: document.querySelectorAll('.chat-modo-btn'),
     tipoBtns: document.querySelectorAll('.chat-tipo-btn'),
@@ -959,7 +960,10 @@
       try {
         const data = await api(`${API}/mensagens/${mensagem.id}/titulos-alternativos`, {
           method: 'POST',
-          body: JSON.stringify({ tituloAtual: tituloLivre?.value.trim() || null }),
+          body: JSON.stringify({
+            tituloAtual: tituloLivre?.value.trim() || null,
+            tom: el.tom?.value || 'natural',
+          }),
         });
         mostrarTitulosAlternativos(data.titulos || []);
         aviso.textContent = '3 títulos prontos — escolha um para usar no rascunho.';
@@ -1794,6 +1798,10 @@
     el.titulo.textContent = state.tipoConversa === 'livre' ? 'Nova conversa com Claude' : 'Nova conversa';
     el.renomear?.classList.add('hidden');
     state.pesquisarWeb = false;
+    // Cada conversa começa com uma escolha editorial limpa. O destaque na
+    // tela inicial torna explícito que este tom será aplicado às manchetes.
+    if (el.tom) el.tom.value = 'natural';
+    aplicarTomDosTitulos('natural');
     aplicarTipoConversa();
     aplicarToggleWeb();
     limparMensagens();
@@ -1820,6 +1828,7 @@
       state.pesquisarWeb = chat.pesquisarWeb === true;
       aplicarToggleWeb();
       if (el.tom) el.tom.value = chat.tom || 'natural';
+      aplicarTomDosTitulos(chat.tom || 'natural');
       if (el.periodo) el.periodo.value = chat.periodo || '30d';
       renderMensagens(chat.mensagens || []);
       renderConversas();
@@ -1856,7 +1865,8 @@
         : 'chat-tipo-btn mia-chat-seg-btn';
     });
     el.modoSeg?.classList.toggle('hidden', livre);
-    el.tom?.closest('.mia-chat-tool-field')?.classList.toggle('hidden', livre);
+    // O tom também vale para os títulos extraídos de respostas do Claude
+    // Livre, portanto permanece disponível nos dois tipos de conversa.
     el.toggleTranscricao?.classList.toggle('hidden', livre);
     if (el.toggleWeb) {
       el.toggleWeb.disabled = livre;
@@ -1897,6 +1907,19 @@
         : 'Modo Matéria ativo · ferramentas editoriais disponíveis.'
     );
     el.input?.focus();
+  }
+
+  function aplicarTomDosTitulos(tom) {
+    const valor = ['natural', 'polemico', 'direto', 'curiosidade', 'emocional', 'factual']
+      .includes(String(tom || '').toLowerCase())
+      ? String(tom).toLowerCase()
+      : 'natural';
+    if (el.tom && el.tom.value !== valor) el.tom.value = valor;
+    el.titleToneBtns?.forEach((btn) => {
+      const ativo = btn.dataset.titleTone === valor;
+      btn.classList.toggle('is-active', ativo);
+      btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+    });
   }
 
   function aplicarToggleTranscricao() {
@@ -2264,6 +2287,14 @@
   el.tipoBtns?.forEach((btn) => {
     btn.addEventListener('click', () => definirTipoConversa(btn.dataset.chatTipo));
   });
+  el.titleToneBtns?.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      aplicarTomDosTitulos(btn.dataset.titleTone);
+      setStatus(`Tom dos títulos: ${btn.textContent.trim()}.`);
+      el.input?.focus();
+    });
+  });
+  el.tom?.addEventListener('change', () => aplicarTomDosTitulos(el.tom.value));
 
   el.input.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && !ev.shiftKey) {

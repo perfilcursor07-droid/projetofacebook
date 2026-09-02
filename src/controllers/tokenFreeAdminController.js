@@ -4,7 +4,7 @@ async function index(_req, res, next) {
   try {
     const initialStatus = await tokenFreeAdminService.status();
     return res.render('claude-gateway', {
-      title: 'Sessão do Claude',
+      title: 'Sessões do Claude e ChatGPT',
       initialStatus,
     });
   } catch (err) {
@@ -41,9 +41,10 @@ async function reiniciar(_req, res, next) {
 async function autorizar(req, res, next) {
   try {
     const trocarConta = req.body?.trocarConta === true || req.body?.trocarConta === 'true';
+    const provider = req.body?.provider === 'chatgpt' ? 'chatgpt' : 'claude';
     return res.status(202).json({
       ok: true,
-      autorizacao: tokenFreeAdminService.iniciarAutorizacao({ trocarConta }),
+      autorizacao: tokenFreeAdminService.iniciarAutorizacao({ trocarConta, provider }),
     });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });

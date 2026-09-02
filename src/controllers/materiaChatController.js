@@ -93,6 +93,7 @@ async function criar(req, res, next) {
       userId: req.session.userId,
       titulo: req.body?.titulo || null,
       modo: req.body?.modo === 'livre' ? 'livre' : 'materia',
+      tom: req.body?.tom || 'natural',
     });
     return res.status(201).json({ ok: true, chat });
   } catch (err) {
@@ -288,6 +289,7 @@ async function gerarTitulosAlternativos(req, res, next) {
       userId: req.session.userId,
       messageId: Number(req.params.messageId),
       tituloAtual: req.body?.tituloAtual || req.body?.titulo || null,
+      tom: req.body?.tom || null,
     });
     return res.json({ ok: true, ...resultado });
   } catch (err) {

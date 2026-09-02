@@ -74,3 +74,40 @@ test('sem Token-Free, títulos usam API Claude e nunca DeepSeek', async () => {
   }
 });
 
+test('títulos alternativos enviados ao Claude respeitam o tom escolhido na conversa', async () => {
+  const originals = {
+    cobreTarefa: tokenFree.cobreTarefa,
+    tokenChat: tokenFree.chatCompletion,
+  };
+  let mensagensRecebidas = null;
+
+  try {
+    tokenFree.cobreTarefa = (tarefa) => tarefa === 'conversa';
+    tokenFree.chatCompletion = async (messages) => {
+      mensagensRecebidas = messages;
+      return JSON.stringify({
+        titulos: [
+          'Silas Malafaia confronta governo e acende nova disputa pública sobre liberdade religiosa',
+          'Silas Malafaia eleva tensão com governo após episódio que provoca reação entre lideranças',
+          'Confronto entre Silas Malafaia e governo ganha novo capítulo e amplia pressão nos bastidores',
+        ],
+      });
+    };
+
+    const titulos = await deepseekService.gerarTitulosAlternativos({
+      titulo: 'Silas Malafaia confronta governo em debate sobre liberdade religiosa',
+      materia:
+        'Silas Malafaia criticou publicamente uma decisão do governo durante um debate sobre liberdade religiosa. A manifestação provocou respostas de representantes oficiais e de outras lideranças.',
+      tom: 'polemico',
+      tarefa: 'conversa',
+    });
+
+    const prompt = mensagensRecebidas.map((item) => item.content).join('\n');
+    assert.equal(titulos.length, 3);
+    assert.match(prompt, /Tom escolhido pelo usuário: polemico/i);
+    assert.match(prompt, /SUSPENSE E POLÊMICA DE VERDADE/i);
+  } finally {
+    tokenFree.cobreTarefa = originals.cobreTarefa;
+    tokenFree.chatCompletion = originals.tokenChat;
+  }
+});

@@ -1980,8 +1980,8 @@ async function resumirAlertaBiblioteca({ plataforma, nomeFonte, titulo, url, sni
 const TITULO_TOMES = {
   natural: 'Natural e jornalístico: claro, fluido, sem exagero.',
   polemico:
-    'POLEMICO DE VERDADE (não “um pouco mais forte”): manchete de briga, tensão e contraste. ' +
-    'Deve parecer que vai gerar comentário/raiva/defesa. Use confronto, cobrança ou divisão explícita. ' +
+    'SUSPENSE E POLÊMICA DE VERDADE (não “um pouco mais forte”): manchete com tensão, contraste e expectativa. ' +
+    'Use conflito, cobrança, consequência ou revelação presente no texto para despertar comentário e curiosidade. ' +
     'Sem fake news, sem xingamento gratuito, sem Caps Lock e sem !!!.',
   direto: 'Direto e seco: sujeito + verbo + fato, manchete de portal.',
   curiosidade: 'Curiosidade: abre lacuna ou pergunta implícita que faz a pessoa querer ler.',
@@ -2284,6 +2284,7 @@ async function gerarTitulosAlternativos({
   quantidade = 3,
   evitar = [],
   orientacaoEditor = null,
+  tom = 'natural',
   tarefa = 'auxiliar',
 }) {
   const somenteClaude = String(tarefa || '').toLowerCase() === 'conversa';
@@ -2293,6 +2294,10 @@ async function gerarTitulosAlternativos({
   if (corpo.length < 80 && !tituloAtual) return [];
 
   const total = Math.min(Math.max(Number(quantidade) || 3, 1), 5);
+  const tomKey = TITULO_TOMES[String(tom || '').toLowerCase()]
+    ? String(tom).toLowerCase()
+    : 'natural';
+  const tomDesc = TITULO_TOMES[tomKey];
   const orientacao = String(orientacaoEditor || '').replace(/\s+/g, ' ').trim().slice(0, 500);
   const blocoMarca = blocoTituloMarcaArte(marcaModeloArte);
   const maxTitulo = blocoMarca ? 130 : 120;
@@ -2320,6 +2325,13 @@ ${ancoras.length ? `- Âncoras do assunto: ${ancoras.join(', ')}. Cada manchete 
 - Modelos de ESTRUTURA: "Disputa por [tema]: [lado A] tenta avançar enquanto [lado B] aposta em [estratégia]"; "[dimensão documentada] em jogo: [lado A] e [lado B] entram na batalha por [tema]"; "[grupo/tema] vira peça-chave e coloca [lado A] e [lado B] em lados opostos".
 - Substitua todos os colchetes pelos fatos da matéria atual; nunca copie nomes, números ou fatos de outro caso.
 - Estilo JM Notícia: título forte, jornalístico e com potencial de clique, sem inventar nem distorcer.
+- Tom obrigatório para TODAS as alternativas: ${tomDesc}
+- O tom muda o gancho e a redação, mas nunca muda o fato central. Não misture estilos que contrariem o tom escolhido.
+${
+  tomKey === 'polemico'
+    ? '- Em suspense e polêmica, crie tensão verdadeira a partir do texto: antecipe conflito, consequência ou revelação sem esconder informação essencial nem prometer o que a matéria não entrega.'
+    : ''
+}
 - Fidelidade total ao texto: NÃO invente fato, número, data, nome ou fala que não esteja na matéria.
 - Quando houver preferência do editor, use-a SOMENTE como direção de tom e redação; ela nunca autoriza mudar os fatos, protagonistas ou o núcleo da matéria.
 - Sem emoji, Caps Lock excessivo, clickbait mentiroso ou pontos de exclamação em série.
@@ -2337,6 +2349,7 @@ ${ancoras.length ? `- Âncoras do assunto: ${ancoras.join(', ')}. Cada manchete 
             ? `Também NÃO use estes:\n- ${[...evitarList.slice(1), ...saida].join('\n- ')}`
             : null,
           fonteTitulo ? `Fonte original: ${fonteTitulo}` : null,
+          `Tom escolhido pelo usuário: ${tomKey} — ${tomDesc}`,
           orientacao ? `Preferência de título do editor: ${orientacao}` : null,
           corpo ? `Texto da matéria:\n${corpo.slice(0, 2500)}` : null,
           `Gere ${total} manchetes alternativas, todas sobre o mesmo núcleo do título principal.`,
