@@ -132,6 +132,120 @@ async function baixarImagemDaPagina(page, src) {
   return { mimeType: match[1], buffer: Buffer.from(match[2], 'base64') };
 }
 
+async function estadoDosAnexos(composer) {
+  return composer.evaluate((root) => {
+    const texto = String(root.innerText || root.textContent || '').toLowerCase();
+    const imagens = [...root.querySelectorAll('img')].filter((img) => {
+      const src = String(img.currentSrc || img.src || '');
+      return /^(blob:|data:image\/)/i.test(src) || (img.naturalWidth >= 48 && img.naturalHeight >= 48);
+    }).length;
+    const controlesRemover = [...root.querySelectorAll('button, [role="button"]')].filter((node) => {
+      const rotulo = `${node.getAttribute('aria-label') || ''} ${node.getAttribute('title') || ''}`;
+      return /remove|remover|excluir|delete/i.test(rotulo) && /file|arquivo|anexo|image|imagem|upload/i.test(rotulo);
+    }).length;
+    const marcadores = root.querySelectorAll([
+      '[data-testid*="attachment"]',
+      '[data-testid*="file-thumbnail"]',
+      '[data-testid*="upload"]',
+      '[class*="attachment"]',
+      '[class*="file-thumbnail"]',
+    ].join(',')).length;
+    return {
+      nomeDoArquivo: texto.includes('imagem-referencia.jpg'),
+      imagens,
+      controlesRemover,
+      marcadores,
+    };
+  });
+}
+
+async function aguardarAnexo(composer, anterior, timeout = 35_000) {
+  const limite = Date.now() + timeout;
+  while (Date.now() < limite) {
+    const atual = await estadoDosAnexos(composer).catch(() => null);
+    if (atual && (
+      atual.nomeDoArquivo
+      || atual.imagens > anterior.imagens
+      || atual.controlesRemover > anterior.controlesRemover
+      || atual.marcadores > anterior.marcadores
+    )) return true;
+    await composer.page().waitForTimeout(500);
+  }
+  return false;
+}
+
+async function anexarImagemNoComposer(page, input, upload) {
+  let composer = input.locator('xpath=ancestor::form[1]');
+  if (!(await composer.count())) {
+    composer = page.locator('#composer-background, [data-testid="composer"]').filter({ visible: true }).first();
+  }
+  if (!(await composer.count())) {
+    throw erro('Não foi possível localizar o compositor ativo do ChatGPT.', 502);
+  }
+
+  const anterior = await estadoDosAnexos(composer);
+  const inputsDoComposer = composer.locator('input[type="file"]');
+  const total = await inputsDoComposer.count();
+  let inputArquivo = null;
+
+  // Há outros inputs de arquivo na página (avatar/importação). Somente o input
+  // pertencente ao formulário da mensagem pode receber a imagem da matéria.
+  for (let i = 0; i < total; i += 1) {
+    const candidato = inputsDoComposer.nth(i);
+    const accept = String(await candidato.getAttribute('accept') || '').toLowerCase();
+    if (!inputArquivo || accept.includes('image')) inputArquivo = candidato;
+    if (accept.includes('image')) break;
+  }
+
+  if (inputArquivo) {
+    await inputArquivo.setInputFiles(upload);
+  } else {
+    const botaoAnexar = composer.locator([
+      '[data-testid="composer-plus-btn"]',
+      'button[aria-label*="Attach" i]',
+      'button[aria-label*="Anex" i]',
+      'button[aria-label*="Adicionar" i]',
+    ].join(',')).first();
+    if (!(await botaoAnexar.count())) {
+      throw erro('O botão de anexar imagem não foi encontrado no ChatGPT.', 502);
+    }
+
+    await botaoAnexar.click();
+    const opcaoUpload = page.locator([
+      '[role="menuitem"]:has-text("Adicionar fotos e arquivos")',
+      '[role="menuitem"]:has-text("Add photos & files")',
+      '[role="menuitem"]:has-text("Carregar do computador")',
+      '[role="menuitem"]:has-text("Upload from computer")',
+      'button:has-text("Adicionar fotos e arquivos")',
+      'button:has-text("Add photos & files")',
+    ].join(',')).first();
+
+    if (await opcaoUpload.count()) {
+      const escolha = page.waitForEvent('filechooser', { timeout: 8_000 }).catch(() => null);
+      await opcaoUpload.click();
+      const seletor = await escolha;
+      if (seletor) {
+        await seletor.setFiles(upload);
+      } else {
+        const inputAberto = composer.locator('input[type="file"]').last();
+        if (!(await inputAberto.count())) throw erro('O seletor de arquivos do ChatGPT não abriu.', 502);
+        await inputAberto.setInputFiles(upload);
+      }
+    } else {
+      const inputAberto = composer.locator('input[type="file"]').last();
+      if (!(await inputAberto.count())) throw erro('A opção de enviar imagem não apareceu no ChatGPT.', 502);
+      await inputAberto.setInputFiles(upload);
+    }
+  }
+
+  if (!(await aguardarAnexo(composer, anterior))) {
+    throw erro(
+      'A imagem de referência não foi anexada ao ChatGPT. O prompt não foi enviado; tente novamente.',
+      502
+    );
+  }
+}
+
 async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
   const credentials = await credenciaisChatgpt();
   const upload = await imagemParaUpload(sourceUrl);
@@ -162,19 +276,10 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
       throw erro('A sessão do ChatGPT expirou. Entre novamente pela página /claude.', 401);
     }
 
-    let fileInput = page.locator('input[type="file"]').first();
-    if (!(await fileInput.count())) {
-      const attach = page.locator(
-        '[data-testid="composer-plus-btn"], button[aria-label*="Attach" i], button[aria-label*="Anex" i], button[aria-label*="Adicionar" i]'
-      ).first();
-      if (await attach.count()) await attach.click();
-      await page.waitForSelector('input[type="file"]', { timeout: 10_000 });
-      fileInput = page.locator('input[type="file"]').first();
-    }
-    await fileInput.setInputFiles(upload);
-
     const input = page.locator('#prompt-textarea:visible, textarea:visible, [contenteditable="true"]:visible').first();
     await input.waitFor({ state: 'visible', timeout: 20_000 });
+    await anexarImagemNoComposer(page, input, upload);
+
     const pedido = String(prompt || '').trim().slice(0, MAX_PROMPT) || promptPadrao({ titulo, materia });
     await input.fill(pedido);
     const sendButton = page.locator(
