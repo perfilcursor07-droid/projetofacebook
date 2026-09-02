@@ -2538,6 +2538,11 @@ async function responder({
     const urlsArtigosLivre = urlsNoPedidoLivre.filter(
       (url) => !classificarUrlFonte(url) && hostDoLink(url)
     );
+    // O editor colocou este link como fonte. Se o leitor do site bloquear a
+    // extração, a pesquisa nativa do Claude vira o plano B automaticamente.
+    // Só não fazemos isso quando ele pediu expressamente para não pesquisar.
+    const pediuSemPesquisaLivre = /\b(n[ãa]o\s+(pesquis|busqu|procur)|sem\s+(pesquis|busca|buscar|internet))/i.test(pedido);
+    let artigoNaoExtraidoLivre = false;
 
     // O Claude não consegue abrir vários links sociais autenticados. Extraímos
     // com o mesmo pipeline do modo Escrever e entregamos o conteúdo já lido.
@@ -2577,6 +2582,7 @@ async function responder({
         onPasso: registrarPasso,
       });
       fontesWeb.push(...fontes);
+      artigoNaoExtraidoLivre = Boolean(falhas.length && !fontes.length && !pediuSemPesquisaLivre);
       for (const falha of falhas) {
         registrarPasso({
           kind: 'aviso',
@@ -2624,10 +2630,13 @@ async function responder({
     }
     fontesWeb = fontesUnicas.slice(0, 12);
 
-    const pediuPesquisaClaude = !pedidoMemoriaEditorial &&
+    const pediuPesquisaClaude = !pedidoMemoriaEditorial && (
+      artigoNaoExtraidoLivre ||
+      Boolean(pesquisarWeb) ||
       /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
         pedido
-      );
+      )
+    );
     registrarPasso({
       kind: pediuPesquisaClaude ? 'pesquisa' : 'pensando',
       texto: pediuPesquisaClaude
@@ -2639,8 +2648,11 @@ async function responder({
       role: mensagem.role,
       content: mensagem.content,
     }));
+    const pedidoParaClaudeLivre = artigoNaoExtraidoLivre
+      ? `${pedido}\n\nO sistema não conseguiu extrair o texto do link acima. Use obrigatoriamente sua pesquisa na web para abrir essa URL ou localizar reportagens confiáveis sobre o mesmo fato antes de responder. Não diga que você não tem acesso à web.`
+      : pedido;
     const respostaLivre = await deepseekService.conversarLivre({
-      pedido,
+      pedido: pedidoParaClaudeLivre,
       historico: historicoLivre,
       fontesWeb,
       memoriaEditorial: memoriaEditorialLivre,
@@ -2659,7 +2671,7 @@ async function responder({
       conversationName: chat.titulo || tituloDaConversa(pedido),
       // Preserva a pesquisa nativa para consultas livres, mas não a dispara
       // sobre uma publicação que já foi extraída pelo próprio sistema.
-      pesquisarWeb: Boolean(pesquisarWeb),
+      pesquisarWeb: Boolean(pesquisarWeb || artigoNaoExtraidoLivre),
     });
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
     // A memória é persistida pelo ViralizeAI antes da chamada ao Claude. Se o
@@ -3187,9 +3199,17 @@ async function responder({
 
     if (urlsArtigos.length === 1 && !fontesArtigo.length) {
       assuntoDoLink = tituloProvavelDoLink(urlsArtigos[0]);
-      // Procurar o título em outros sites já é pesquisa externa. O link exato
-      // continua sendo lido acima, mas este resgate só pode rodar com a opção
-      // "Pesquisar na web" ligada.
+      // O editor enviou o link como fonte. Quando o portal bloqueia a leitura,
+      // pesquisa o mesmo título em fontes abertas automaticamente; respeita
+      // somente o pedido explícito de "sem pesquisa".
+      if (!usarPesquisa && !pediuSemPesquisa) {
+        usarPesquisa = true;
+        registrarPasso({
+          kind: 'pesquisa',
+          texto: 'O portal bloqueou a leitura direta. Ativando pesquisa para localizar a mesma pauta em fontes abertas.',
+          url: urlsArtigos[0],
+        });
+      }
       resgateArtigoPorTitulo = Boolean(assuntoDoLink && usarPesquisa);
       if (resgateArtigoPorTitulo) {
         registrarPasso({
