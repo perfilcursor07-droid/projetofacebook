@@ -141,20 +141,25 @@ async function estadoDosAnexos(composer) {
     }).length;
     const controlesRemover = [...root.querySelectorAll('button, [role="button"]')].filter((node) => {
       const rotulo = `${node.getAttribute('aria-label') || ''} ${node.getAttribute('title') || ''}`;
-      return /remove|remover|excluir|delete/i.test(rotulo) && /file|arquivo|anexo|image|imagem|upload/i.test(rotulo);
+      return /remove|remover|excluir|delete/i.test(rotulo);
     }).length;
     const marcadores = root.querySelectorAll([
       '[data-testid*="attachment"]',
       '[data-testid*="file-thumbnail"]',
-      '[data-testid*="upload"]',
+      '[data-testid*="image-preview"]',
       '[class*="attachment"]',
       '[class*="file-thumbnail"]',
+      '[class*="image-preview"]',
     ].join(',')).length;
+    const arquivosSelecionados = [...root.querySelectorAll('input[type="file"]')]
+      .flatMap((node) => [...(node.files || [])])
+      .filter((file) => file.name === 'imagem-referencia.jpg').length;
     return {
       nomeDoArquivo: texto.includes('imagem-referencia.jpg'),
       imagens,
       controlesRemover,
       marcadores,
+      arquivosSelecionados,
     };
   });
 }
@@ -168,6 +173,7 @@ async function aguardarAnexo(composer, anterior, timeout = 35_000) {
       || atual.imagens > anterior.imagens
       || atual.controlesRemover > anterior.controlesRemover
       || atual.marcadores > anterior.marcadores
+      || atual.arquivosSelecionados > anterior.arquivosSelecionados
     )) return true;
     await composer.page().waitForTimeout(500);
   }
@@ -183,7 +189,11 @@ async function anexarImagemNoComposer(page, input, upload) {
     throw erro('Não foi possível localizar o compositor ativo do ChatGPT.', 502);
   }
 
-  const anterior = await estadoDosAnexos(composer);
+  // A miniatura que o ChatGPT cria pode ficar em um portal fora do <form>.
+  // Por isso a confirmação observa a página toda, embora o arquivo continue
+  // sendo colocado exclusivamente no input do compositor ativo.
+  const areaDeConfirmacao = page.locator('body');
+  const anterior = await estadoDosAnexos(areaDeConfirmacao);
   const inputsDoComposer = composer.locator('input[type="file"]');
   const total = await inputsDoComposer.count();
   let inputArquivo = null;
@@ -238,7 +248,16 @@ async function anexarImagemNoComposer(page, input, upload) {
     }
   }
 
-  if (!(await aguardarAnexo(composer, anterior))) {
+  if (!(await aguardarAnexo(areaDeConfirmacao, anterior))) {
+    const diagnostico = await page.evaluate(() => ({
+      url: location.href,
+      inputs: [...document.querySelectorAll('input[type="file"]')].map((node) => ({
+        accept: node.getAttribute('accept') || '',
+        files: [...(node.files || [])].map((file) => file.name),
+        noFormulario: Boolean(node.closest('form')),
+      })),
+    })).catch(() => null);
+    console.warn('[chatgpt-imagem] anexo não confirmado', diagnostico);
     throw erro(
       'A imagem de referência não foi anexada ao ChatGPT. O prompt não foi enviado; tente novamente.',
       502
