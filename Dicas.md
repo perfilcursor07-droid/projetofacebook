@@ -8,15 +8,15 @@ npm run build:css
 npm run dev
 
 -- Produção CloudPanel (www.viralizeai.online) — NÃO use root
-su - viralizeai
-cd /home/viralizeai/htdocs/www.viralizeai.online
-git pull origin main
-npm install --omit=dev
+git pull --ff-only origin main
+npm ci --omit=dev
+npm run migrate
 npm run build:css
-NODE_ENV=production npm run migrate
-npm run gateway:restart
-pm2 reload viralizeai --update-env || pm2 start ecosystem.config.cjs
+npm run gateway:sync
+pm2 restart viralizeai --update-env
 pm2 save
+pm2 status viralizeai
+curl -I --max-time 5 http://127.0.0.1:3010/
 pm2 logs viralizeai --lines 50
 
 SUBIR GIT
