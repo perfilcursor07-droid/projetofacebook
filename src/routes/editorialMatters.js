@@ -357,6 +357,7 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
       prompt: req.body?.prompt,
       titulo: String(req.body?.titulo || matter.titulo || '').trim(),
       materia: matter.materia || '',
+      recoveryKey: `${req.session.userId}:${matterId}`,
     });
     storedSource = await storeMatterSourceImage({
       userId: req.session.userId,
@@ -374,6 +375,43 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
     if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
     if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('[chatgpt-imagem]', err.message);
+    return next(err);
+  }
+});
+
+router.post('/matters/:id/arte/recuperar-chatgpt', async (req, res, next) => {
+  let storedSource = null;
+  try {
+    const matterId = Number(req.params.id);
+    if (!Number.isInteger(matterId) || matterId < 1) {
+      return res.status(400).json({ error: 'ID da matéria inválido' });
+    }
+    const matter = await AiMatters.findById(matterId);
+    if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Matéria não encontrada' });
+    }
+    if (matter.status === 'publicado') {
+      return res.status(400).json({ error: 'A imagem de uma matéria publicada não pode ser alterada' });
+    }
+
+    const chatgptImageService = require('../services/chatgptImageService');
+    const generated = await chatgptImageService.recuperarImagem({
+      recoveryKey: `${req.session.userId}:${matterId}`,
+    });
+    storedSource = await storeMatterSourceImage({
+      userId: req.session.userId,
+      matterId,
+      buffer: generated.buffer,
+    });
+    return res.json({
+      ok: true,
+      imagemFonteUrl: storedSource.publicUrl,
+      model: generated.model,
+    });
+  } catch (err) {
+    if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    console.error('[chatgpt-imagem:recuperar]', err.message);
     return next(err);
   }
 });

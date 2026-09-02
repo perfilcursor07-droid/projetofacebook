@@ -15,6 +15,7 @@ const PLAYWRIGHT_PATH = path.join(GATEWAY_ROOT, 'node_modules', 'playwright-core
 const CHATGPT_MODEL = String(process.env.CHATGPT_IMAGE_MODEL || 'gpt-5.6').trim();
 const MAX_PROMPT = 1800;
 let geracaoAtiva = null;
+const conversasRecentes = new Map();
 
 function erro(message, status = 400) {
   const err = new Error(message);
@@ -130,6 +131,41 @@ async function baixarImagemDaPagina(page, src) {
   const match = String(dataUrl || '').match(/^data:([^;,]+);base64,(.+)$/s);
   if (!match) throw erro('O ChatGPT gerou a imagem, mas não foi possível baixá-la.', 502);
   return { mimeType: match[1], buffer: Buffer.from(match[2], 'base64') };
+}
+
+function registrarConversa(recoveryKey, url) {
+  const chave = String(recoveryKey || '').trim();
+  const conversaUrl = String(url || '').trim();
+  if (!chave || !/^https:\/\/chatgpt\.com\/c\/[a-z0-9-]+/i.test(conversaUrl)) return;
+  conversasRecentes.set(chave, { url: conversaUrl, updatedAt: Date.now() });
+  while (conversasRecentes.size > 200) conversasRecentes.delete(conversasRecentes.keys().next().value);
+}
+
+async function localizarImagemGerada(page, ignoradas = new Set()) {
+  const imagens = page.locator('img');
+  const total = await imagens.count();
+  for (let i = total - 1; i >= 0; i -= 1) {
+    const candidata = imagens.nth(i);
+    const dados = await candidata.evaluate((img) => ({
+      src: img.currentSrc || img.src || '',
+      width: img.naturalWidth || 0,
+      height: img.naturalHeight || 0,
+      displayedWidth: img.getBoundingClientRect().width,
+      displayedHeight: img.getBoundingClientRect().height,
+      alt: img.getAttribute('alt') || '',
+      authorRole: img.closest('[data-message-author-role]')?.getAttribute('data-message-author-role') || '',
+    })).catch(() => null);
+    const imagemNova = dados?.src && !ignoradas.has(dados.src);
+    const tamanhoValido = dados?.width >= 256 && dados?.height >= 256;
+    const exibicaoValida = dados?.displayedWidth >= 180 && dados?.displayedHeight >= 120;
+    const pareceGerada = /generated|gerada|criada|image|imagem/i.test(dados?.alt || '');
+    const imagemDaReferencia = dados?.authorRole === 'user'
+      || /uploaded image|imagem enviada|anexo do usuário/i.test(dados?.alt || '');
+    if (imagemNova && !imagemDaReferencia && tamanhoValido && (exibicaoValida || pareceGerada)) {
+      return dados.src;
+    }
+  }
+  return '';
 }
 
 async function estadoDosAnexos(composer) {
@@ -304,7 +340,7 @@ async function anexarImagemNoComposer(page, input, upload) {
   }
 }
 
-async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
+async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey }) {
   const credentials = await credenciaisChatgpt();
   const upload = await imagemParaUpload(sourceUrl);
   let chromium;
@@ -358,32 +394,15 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
       await input.press('Enter');
     }
 
+    await page.waitForURL(/https:\/\/chatgpt\.com\/c\//i, { timeout: 30_000 }).catch(() => {});
+    registrarConversa(recoveryKey, page.url());
+
     const limite = Date.now() + 300_000;
     let src = '';
     while (Date.now() < limite && !src) {
       // Nas versões atuais, a arte pode ser renderizada fora do elemento com
       // data-message-author-role="assistant". Procura na conversa inteira.
-      const imagens = page.locator('img');
-      const total = await imagens.count();
-      for (let i = total - 1; i >= 0; i -= 1) {
-        const candidata = imagens.nth(i);
-        const dados = await candidata.evaluate((img) => ({
-          src: img.currentSrc || img.src || '',
-          width: img.naturalWidth || 0,
-          height: img.naturalHeight || 0,
-          displayedWidth: img.getBoundingClientRect().width,
-          displayedHeight: img.getBoundingClientRect().height,
-          alt: img.getAttribute('alt') || '',
-        })).catch(() => null);
-        const imagemNova = dados?.src && !imagensAntesDoEnvio.has(dados.src);
-        const tamanhoValido = dados?.width >= 256 && dados?.height >= 256;
-        const exibicaoValida = dados?.displayedWidth >= 180 && dados?.displayedHeight >= 120;
-        const pareceGerada = /generated|gerada|criada|image|imagem/i.test(dados?.alt || '');
-        if (imagemNova && tamanhoValido && (exibicaoValida || pareceGerada)) {
-          src = dados.src;
-          break;
-        }
-      }
+      src = await localizarImagemGerada(page, imagensAntesDoEnvio);
       if (!src) await page.waitForTimeout(2000);
     }
     if (!src) {
@@ -403,6 +422,35 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
   }
 }
 
+async function recuperarImagem({ recoveryKey }) {
+  const registro = conversasRecentes.get(String(recoveryKey || '').trim());
+  if (!registro?.url) {
+    throw erro('Ainda não existe uma conversa recente do ChatGPT para esta matéria. Gere a imagem primeiro.', 409);
+  }
+
+  const browser = await require(PLAYWRIGHT_PATH).chromium.connectOverCDP(await websocketCdp());
+  const context = browser.contexts()[0];
+  if (!context) throw erro('O Chrome isolado não disponibilizou um perfil de navegação.', 503);
+  const page = await context.newPage();
+  try {
+    await page.goto(registro.url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    if (!(await sessaoChatgptAtiva(page))) {
+      throw erro('A sessão do ChatGPT expirou. Entre novamente pela página /claude.', 401);
+    }
+    const limite = Date.now() + 60_000;
+    let src = '';
+    while (Date.now() < limite && !src) {
+      src = await localizarImagemGerada(page);
+      if (!src) await page.waitForTimeout(1500);
+    }
+    if (!src) throw erro('Nenhuma imagem gerada foi encontrada na última conversa do ChatGPT.', 404);
+    const result = await baixarImagemDaPagina(page, src);
+    return { ...result, model: CHATGPT_MODEL };
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 async function gerarImagem(args) {
   if (geracaoAtiva) throw erro('Já existe uma imagem sendo gerada no ChatGPT. Aguarde a conclusão.', 409);
   geracaoAtiva = executarGeracao(args);
@@ -415,6 +463,7 @@ async function gerarImagem(args) {
 
 module.exports = {
   gerarImagem,
+  recuperarImagem,
   promptPadrao,
   // Exposto somente para validar a compatibilidade dos cookies do Chrome.
   cookiesDoHeader,

@@ -333,6 +333,7 @@
   const cropYValue = document.getElementById('matter-crop-y-value');
   const chatgptImagePrompt = document.getElementById('matter-chatgpt-image-prompt');
   const chatgptImageGenerate = document.getElementById('matter-chatgpt-image-generate');
+  const chatgptImageRecover = document.getElementById('matter-chatgpt-image-recover');
   const chatgptImageStatus = document.getElementById('matter-chatgpt-image-status');
   let cropInteraction = null;
   let cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
@@ -426,6 +427,20 @@
     requestAnimationFrame(updateCropSelection);
   }
 
+  function showChatgptImage(data, recovered = false) {
+    cropSourceUrl = String(data?.imagemFonteUrl || '').trim();
+    if (!cropSourceUrl) throw new Error('O ChatGPT respondeu sem uma imagem utilizável.');
+    cropBox = { left: 0, top: 0, width: 1, height: 1 };
+    cropImage.onload = () => requestAnimationFrame(updateCropSelection);
+    cropImage.src = cropSourceUrl + '?chatgpt=' + Date.now();
+    if (chatgptImageStatus) {
+      chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-emerald-300';
+      chatgptImageStatus.textContent = recovered
+        ? 'Imagem recuperada da conversa. Ajuste o recorte e clique em “Recortar e salvar”.'
+        : 'Nova imagem pronta. Ajuste o recorte abaixo e clique em “Recortar e salvar”.';
+    }
+  }
+
   chatgptImageGenerate?.addEventListener('click', async () => {
     const prompt = String(chatgptImagePrompt?.value || '').trim();
     if (prompt.length < 20) {
@@ -435,6 +450,7 @@
     }
     const original = chatgptImageGenerate.textContent;
     chatgptImageGenerate.disabled = true;
+    if (chatgptImageRecover) chatgptImageRecover.disabled = true;
     chatgptImageGenerate.textContent = 'Gerando…';
     if (chatgptImageStatus) {
       chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-emerald-200';
@@ -448,15 +464,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
-      cropSourceUrl = String(data.imagemFonteUrl || '').trim();
-      if (!cropSourceUrl) throw new Error('O ChatGPT respondeu sem uma imagem utilizável.');
-      cropBox = { left: 0, top: 0, width: 1, height: 1 };
-      cropImage.onload = () => requestAnimationFrame(updateCropSelection);
-      cropImage.src = cropSourceUrl + '?chatgpt=' + Date.now();
-      if (chatgptImageStatus) {
-        chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-emerald-300';
-        chatgptImageStatus.textContent = 'Nova imagem pronta. Ajuste o recorte abaixo e clique em “Recortar e salvar”.';
-      }
+      showChatgptImage(data);
     } catch (err) {
       if (chatgptImageStatus) {
         chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-rose-300';
@@ -464,7 +472,37 @@
       }
     } finally {
       chatgptImageGenerate.disabled = false;
+      if (chatgptImageRecover) chatgptImageRecover.disabled = false;
       chatgptImageGenerate.textContent = original || 'Gerar imagem sem texto';
+    }
+  });
+
+  chatgptImageRecover?.addEventListener('click', async () => {
+    const original = chatgptImageRecover.textContent;
+    chatgptImageRecover.disabled = true;
+    chatgptImageGenerate.disabled = true;
+    chatgptImageRecover.textContent = 'Buscando…';
+    if (chatgptImageStatus) {
+      chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-sky-200';
+      chatgptImageStatus.textContent = 'Buscando a última imagem gerada na conversa do ChatGPT…';
+    }
+    try {
+      const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/recuperar-chatgpt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Não foi possível recuperar a imagem do ChatGPT.');
+      showChatgptImage(data, true);
+    } catch (err) {
+      if (chatgptImageStatus) {
+        chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-rose-300';
+        chatgptImageStatus.textContent = err.message || 'Não foi possível recuperar a imagem do ChatGPT.';
+      }
+    } finally {
+      chatgptImageRecover.disabled = false;
+      chatgptImageGenerate.disabled = false;
+      chatgptImageRecover.textContent = original || 'Pegar imagem nova gerada';
     }
   });
 
