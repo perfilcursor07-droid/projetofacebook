@@ -525,6 +525,13 @@ function looksLikeRefId(value) {
   return /^[0-9a-f]{32,64}$/i.test(String(value || '').trim());
 }
 
+/** A API Key geral autentica o ViralizeAI; nunca pode ser Profile-Key de página. */
+function isAyrshareApiKey(value) {
+  const informado = String(value || '').trim();
+  const configurado = String(env.ayrshare?.apiKey || '').trim();
+  return Boolean(informado && configurado && informado === configurado);
+}
+
 /**
  * Detalhes do profile referente à Profile Key informada (GET /user).
  * Serve para validar a chave e saber se a Página do Facebook está conectada.
@@ -1275,6 +1282,7 @@ module.exports = {
   twitterWeightedLength,
   publicMediaUrlFromLocal,
   looksLikeRefId,
+  isAyrshareApiKey,
   isTwitterByoConfigured,
   looksLikeAyrshareId,
   fetchProfileByKey,

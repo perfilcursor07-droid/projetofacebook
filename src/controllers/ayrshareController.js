@@ -53,6 +53,16 @@ async function setProfileKey(req, res, next) {
       throw err;
     }
 
+    if (ayrshareService.isAyrshareApiKey(profileKey)) {
+      const err = new Error(
+        'Você colou a API Key geral da Ayrshare no campo Profile Key. ' +
+          'Ela fica somente no .env (AYRSHARE_API_KEY). Para esta Página, crie ou reative um User Profile na Ayrshare e cole o Profile Key dele — não o RefId nem a API Key.'
+      );
+      err.status = 400;
+      err.code = 'AYRSHARE_API_KEY_INSTEAD_OF_PROFILE_KEY';
+      throw err;
+    }
+
     // Duas páginas com a mesma chave publicariam sempre no mesmo lugar.
     const paginas = await pagesForUser(req.session.userId);
     const conflito = paginas.find(
