@@ -47,12 +47,29 @@ function cookiesDoHeader(raw) {
       return {
         name: part.slice(0, idx).trim(),
         value: part.slice(idx + 1),
-        domain: '.chatgpt.com',
-        path: '/',
+        // `url` cria um cookie host-only válido inclusive para os prefixos
+        // __Host-* e __Secure-*. Combinar esses cookies com `domain` fazia o
+        // Chrome rejeitar o lote inteiro com Storage.setCookies.
+        url: 'https://chatgpt.com/',
         secure: true,
       };
     })
-    .filter(Boolean);
+    .filter((cookie) =>
+      Boolean(cookie?.name && cookie.value) && /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(cookie.name)
+    );
+}
+
+async function sessaoChatgptAtiva(page) {
+  return page.evaluate(async () => {
+    try {
+      const response = await fetch('/api/auth/session', { credentials: 'include' });
+      if (!response.ok) return false;
+      const data = await response.json();
+      return Boolean(data?.accessToken || data?.user?.id || data?.user?.email);
+    } catch {
+      return false;
+    }
+  });
 }
 
 async function websocketCdp() {
@@ -128,13 +145,20 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia }) {
   const browser = await chromium.connectOverCDP(await websocketCdp());
   const context = browser.contexts()[0];
   if (!context) throw erro('O Chrome isolado não disponibilizou um perfil de navegação.', 503);
-  const cookies = cookiesDoHeader(credentials.cookie);
-  if (cookies.length) await context.addCookies(cookies);
 
   const page = await context.newPage();
   try {
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    if (/auth\/login|log-in/i.test(page.url())) {
+    // O login feito em /claude vive no mesmo perfil do Chrome, então em geral
+    // não há nada para reinjetar. Só usa a cópia salva como recuperação.
+    if (!(await sessaoChatgptAtiva(page))) {
+      const cookies = cookiesDoHeader(credentials.cookie);
+      if (cookies.length) {
+        await context.addCookies(cookies);
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 45_000 });
+      }
+    }
+    if (!(await sessaoChatgptAtiva(page)) || /auth\/login|log-in/i.test(page.url())) {
       throw erro('A sessão do ChatGPT expirou. Entre novamente pela página /claude.', 401);
     }
 
@@ -213,4 +237,9 @@ async function gerarImagem(args) {
   }
 }
 
-module.exports = { gerarImagem, promptPadrao };
+module.exports = {
+  gerarImagem,
+  promptPadrao,
+  // Exposto somente para validar a compatibilidade dos cookies do Chrome.
+  cookiesDoHeader,
+};
