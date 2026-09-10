@@ -1,0 +1,108 @@
+/* Visual da tela de escrita, isolado das outras telas de chat. */
+body:has(.mia-manual-claude) #app-sidebar,
+body:has(.mia-manual-claude) #app-content > header { background: #1c1c1a; border-color: #393831; }
+body:has(.mia-manual-claude) #app-sidebar .sidebar-brand,
+body:has(.mia-manual-claude) #app-content > header > a { color: #d9ac92; }
+.mia-manual-claude {
+  --mia-chat-bg: #262624;
+  --mia-chat-sidebar: #20201e;
+  --mia-chat-surface: #30302e;
+  --mia-chat-surface-hover: #3a3936;
+  --mia-chat-border: #45443f;
+  --mia-chat-text: #eceae3;
+  --mia-chat-muted: #aaa79f;
+  --mia-chat-accent: #d49379;
+  --mia-chat-user-bg: #353530;
+  --mia-chat-stream: 47rem;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--mia-chat-text);
+}
+.mia-manual-claude .mia-chat-sidebar { padding: 1.25rem .85rem; gap: .85rem; }
+.mia-manual-claude .mia-chat-sidebar-head { display: flex; padding: .2rem .55rem .5rem; }
+.mia-manual-claude .mia-chat-sidebar-head-title { font-size: .75rem; color: var(--mia-chat-muted); }
+.mia-manual-claude .mia-chat-new {
+  background: transparent; border: 1px solid #50473f; border-radius: .65rem;
+  color: #e5b19a; padding: .75rem; font-weight: 500;
+}
+.mia-manual-claude .mia-chat-new:hover { background: #36302b; }
+.mia-manual-claude .mia-chat-search { background: transparent; border-color: #393934; border-radius: .6rem; }
+.mia-manual-claude .mia-chat-sidebar-label { text-transform: none; font-size: .75rem; font-weight: 400; margin-top: 1rem; }
+.mia-manual-claude .mia-chat-conv { color: #c4c1b8; padding: .65rem .6rem; }
+.mia-manual-claude .mia-chat-conv.is-active { background: #34332e; color: #f2eee4; }
+.mia-manual-claude .mia-chat-sidebar-foot { border-color: #343430; padding-top: .8rem; }
+.mia-manual-claude .mia-chat-header { min-height: 4.5rem; border: 0; background: transparent; padding: 1rem 1.65rem; }
+.mia-manual-claude .mia-chat-header-title > span { display: block; color: #aaa79f; font-size: .68rem; margin-bottom: .2rem; }
+.mia-manual-claude .mia-chat-header-title p { color: #ddd9d0; font-size: .9rem; font-weight: 500; }
+.mia-manual-claude .mia-chat-icon-btn { border-color: transparent; color: #bab7af; }
+.mia-manual-claude .mia-chat-empty { min-height: auto; gap: 1.3rem; padding: 1rem 0; }
+.mia-manual-claude .mia-chat-empty-copy { gap: .8rem; }
+.mia-manual-claude .mia-chat-empty-mark { width: 3rem; height: 3rem; background: none; border: 0; color: #d49379; margin-bottom: .65rem; }
+.mia-manual-claude .mia-chat-empty-mark svg { width: 2.6rem; height: 2.6rem; }
+.mia-manual-claude .mia-chat-empty-title {
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: clamp(2rem, 3.3vw, 3.2rem); line-height: 1.15; font-weight: 400;
+  letter-spacing: -.045em; color: #eee9de;
+}
+.mia-manual-claude .mia-chat-empty-sub { color: #aaa79f; font-size: .9rem; line-height: 1.6; max-width: 30rem; }
+.mia-manual-claude .mia-chat-title-tone { border: 0; background: transparent; padding: .2rem; margin: 0; width: 100%; }
+.mia-manual-claude .mia-chat-title-tone-label { cursor: pointer; color: #b8b3a9; font-size: .75rem; font-weight: 400; width: fit-content; margin: auto; }
+.mia-manual-claude .mia-chat-title-tone-help { margin: .75rem 0; color: #aaa79f; }
+.mia-manual-claude .mia-chat-title-tone-options { justify-content: center; }
+.mia-manual-claude .chat-title-tone { border-color: #494740; background: transparent; color: #bbb7ae; border-radius: 2rem; }
+.mia-manual-claude .chat-title-tone.is-active { background: #40362e; border-color: #8f6753; color: #efc3ab; }
+.mia-manual-claude .mia-chat-composer-wrap { background: var(--mia-chat-bg); padding: .85rem 1.5rem 1rem; }
+.mia-manual-claude .mia-chat-composer {
+  background: #30302e; border: 1px solid #55534d; border-radius: 1.35rem;
+  padding: .9rem 1rem .65rem; box-shadow: 0 8px 28px #00000018;
+  max-width: var(--mia-chat-stream); margin-inline: auto;
+}
+.mia-manual-claude .mia-chat-composer:focus-within { border-color: #94816f; box-shadow: 0 8px 28px #00000018; }
+.mia-manual-claude .mia-chat-input { font-size: 1rem; line-height: 1.6; min-height: 4.6rem; padding: .3rem .3rem .9rem; color: #f0ebe2; scrollbar-width: thin; scrollbar-color: #666158 transparent; }
+.mia-manual-claude .mia-chat-input::placeholder { color: #aaa69d; }
+.mia-manual-claude .mia-chat-toolbar { gap: .5rem; align-items: center; }
+.mia-manual-claude .mia-chat-toolbar-main { flex: 1; gap: .4rem; min-width: 0; flex-wrap: wrap; }
+.mia-manual-claude .mia-chat-seg { border-color: #4b4943; background: transparent; border-radius: .5rem; }
+.mia-manual-claude .mia-chat-seg-btn { color: #b9b5ac; font-size: .72rem; font-weight: 400; }
+.mia-manual-claude .mia-chat-seg-btn.is-active { background: #49433a; color: #f0d7c6; box-shadow: none; }
+.mia-manual-claude .mia-chat-chip { color: #bbb7af; background: transparent; border-color: #504d46; }
+.mia-manual-claude .mia-chat-chip.is-on { color: #efd0ba; border-color: #947358; background: #40362d; }
+.mia-manual-claude .mia-chat-model-pill { color: #cec9be; border: 0; background: transparent; margin-left: auto; font-size: .72rem; }
+.mia-manual-claude .mia-chat-more > summary,
+.mia-manual-claude .mia-chat-voice { background: transparent; border-color: #504d46; color: #c9c4b8; border-radius: .6rem; }
+.mia-manual-claude .mia-chat-more-menu { background: #30302b; border-color: #514d43; box-shadow: 0 12px 40px #0005; }
+.mia-manual-claude .mia-chat-menu-item:hover { background: #444038; }
+.mia-manual-claude .mia-chat-send { background: #d49379; color: #251e19; width: 2.25rem; height: 2.25rem; border-radius: .7rem; }
+.mia-manual-claude .mia-chat-send:hover:not(:disabled) { background: #e4ab91; }
+.mia-manual-claude .mia-chat-hint { color: #8f8b82; font-size: .68rem; margin-top: .75rem; }
+.mia-manual-claude .mia-msg-user-bubble { background: #353530; border: 1px solid #414139; border-radius: 1rem; padding: 1rem 1.2rem; }
+.mia-manual-claude .mia-msg-ai-body .mia-msg-ai-text,
+.mia-manual-claude .mia-msg-ai-body .mia-msg-ai-anchor { font-size: 1.0625rem; line-height: 1.8; color: #e6e1d5; }
+.mia-manual-claude .mia-msg-ai-body .mia-msg-ai-title { font-size: 1.3rem; color: #f0eadd; }
+.mia-manual-claude .mia-chat-messages { scrollbar-color: #555148 transparent; }
+.mia-manual-claude :is(button, summary, input, textarea, select, a):focus-visible { outline: 2px solid #dbab8c; outline-offset: 3px; }
+
+/* A primeira mensagem fica junto do convite; depois o editor volta ao rodapé. */
+.mia-manual-claude .mia-chat-main:has(#chat-vazio:not(.hidden)):not(.is-manual-open) { overflow-y: auto; }
+.mia-manual-claude .mia-chat-main:has(#chat-vazio:not(.hidden)):not(.is-manual-open) .mia-chat-messages {
+  flex: 0 0 auto; overflow: visible; margin-top: auto; padding-top: 2rem; padding-bottom: .5rem;
+}
+.mia-manual-claude .mia-chat-main:has(#chat-vazio:not(.hidden)):not(.is-manual-open) .mia-chat-composer-wrap {
+  flex: 0 0 auto; margin-bottom: auto; padding-bottom: clamp(2rem, 12vh, 8rem);
+}
+@media (min-width: 1024px) {
+  .mia-manual-claude .mia-chat-shell { grid-template-columns: 232px minmax(0, 1fr); }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  .mia-manual-claude .mia-chat-shell { height: 100dvh; }
+}
+@media (max-width: 639px) {
+  .mia-manual-claude .mia-chat-header { min-height: 3.5rem; padding: .65rem .75rem; }
+  .mia-manual-claude .mia-chat-empty-title { font-size: 2.1rem; }
+  .mia-manual-claude .mia-chat-empty-sub { font-size: .82rem; max-width: 18rem; }
+  .mia-manual-claude .mia-chat-composer-wrap { padding: .65rem .65rem max(.7rem, env(safe-area-inset-bottom)); }
+  .mia-manual-claude .mia-chat-composer { padding: .75rem .7rem .6rem; border-radius: 1.1rem; }
+  .mia-manual-claude .mia-chat-toolbar { flex-wrap: wrap; }
+  .mia-manual-claude .mia-chat-toolbar-main { flex-basis: 100%; }
+  .mia-manual-claude .mia-chat-send-row { margin-left: auto; }
+  .mia-manual-claude .mia-chat-main:has(#chat-vazio:not(.hidden)):not(.is-manual-open) .mia-chat-composer-wrap { padding-bottom: 1rem; }
+}

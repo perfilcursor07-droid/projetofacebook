@@ -1,14 +1,15 @@
 <%- include('partials/app-start') %>
   <link rel="stylesheet" href="/css/materia-chat.css?v=20260902tomTitulosClaude1" />
+  <link rel="stylesheet" href="/css/materia-manual.css?v=20260910claude1" />
 
-  <main class="mia-chat" data-recolher-menu>
+  <main class="mia-chat mia-manual-claude" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
 
     <div id="mia-manual" class="mia-chat-shell mia-panel">
       <!-- Sidebar de conversas (drawer no mobile) -->
       <aside id="chat-sidebar" class="mia-chat-sidebar">
         <div class="mia-chat-sidebar-head">
-          <p class="mia-chat-sidebar-head-title">Conversas</p>
+          <p class="mia-chat-sidebar-head-title">Seu espaço de escrita</p>
           <button type="button" id="chat-drawer-close" class="mia-chat-icon-btn mia-chat-mobile-only" aria-label="Fechar conversas">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12"/>
@@ -53,7 +54,7 @@
             </svg>
           </button>
           <div class="mia-chat-header-title">
-            <span>Matéria manual</span>
+            <span>ViralizeAI · Escrita</span>
             <p id="chat-titulo" class="truncate">Nova conversa</p>
           </div>
           <div class="mia-chat-header-actions">
@@ -72,14 +73,14 @@
           <div id="chat-vazio" class="mia-chat-empty">
             <div class="mia-chat-empty-copy">
               <span class="mia-chat-empty-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z"/><path d="m18.5 15 .9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9Z"/></svg>
+                <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 3v34M3 20h34M8 8l24 24M8 32 32 8M13.5 4.5l13 31M4.5 13.5l31 13M4.5 26.5l31-13M13.5 35.5l13-31"/></svg>
               </span>
-              <h1 class="mia-chat-empty-title">Como posso ajudar?</h1>
-              <p class="mia-chat-empty-sub">Converse com o Claude, crie matérias ou encontre pautas recentes.</p>
+              <h1 class="mia-chat-empty-title">O que vamos escrever hoje?</h1>
+              <p class="mia-chat-empty-sub">Uma ideia, um link ou uma boa conversa. Comece por aqui.</p>
             </div>
-            <section class="mia-chat-title-tone" aria-labelledby="chat-title-tone-label">
-              <p id="chat-title-tone-label" class="mia-chat-title-tone-label">Como devem ser os títulos sugeridos pelo Claude?</p>
-              <p class="mia-chat-title-tone-help">Escolha o tom desta conversa. O Claude seguirá esse estilo sem inventar fatos.</p>
+            <details class="mia-chat-title-tone">
+              <summary id="chat-title-tone-label" class="mia-chat-title-tone-label">Personalizar o tom da escrita</summary>
+              <p class="mia-chat-title-tone-help">Escolha como os títulos serão sugeridos nesta conversa.</p>
               <div class="mia-chat-title-tone-options" role="group" aria-label="Tom dos títulos sugeridos">
                 <button type="button" class="chat-title-tone is-active" data-title-tone="natural" aria-pressed="true">Natural</button>
                 <button type="button" class="chat-title-tone" data-title-tone="polemico" aria-pressed="false">Suspense e polêmica</button>
@@ -88,14 +89,15 @@
                 <button type="button" class="chat-title-tone" data-title-tone="emocional" aria-pressed="false">Emocional</button>
                 <button type="button" class="chat-title-tone" data-title-tone="curiosidade" aria-pressed="false">Curiosidade</button>
               </div>
-            </section>
+            </details>
           </div>
         </div>
 
         <div class="mia-chat-composer-wrap">
           <div class="mia-chat-composer" id="chat-composer">
             <textarea id="chat-input" rows="1"
-              placeholder="Descreva o assunto ou cole vários links, um por linha…"
+              placeholder="Como posso ajudar? Escreva uma ideia ou cole um link…"
+              aria-label="Mensagem para a IA"
               class="mia-chat-input"></textarea>
             <span id="chat-links-detectados" class="mia-chat-links-hint hidden"></span>
 
@@ -252,8 +254,8 @@
                   </svg>
                 </button>
                 <button type="button" id="chat-enviar" class="mia-chat-send" title="Enviar (Enter)" aria-label="Enviar">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87.99l.01 4.61c0 .81.88 1.32 1.39.91z"/>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 19V5m-6 6 6-6 6 6"/>
                   </svg>
                 </button>
               </div>
