@@ -71,6 +71,7 @@ const env = {
      * auto | ayrshare | postsyncer | postpulse | facebook
      * auto: Ayrshare (se key) → PostSyncer (se vinculado) → PostPulse → Graph API
      */
+    // Defina ayrshare explicitamente quando a tela de páginas for gerenciada por esse provedor.
     publishProvider: (process.env.PUBLISH_PROVIDER || 'auto').toLowerCase(),
   },
   postsyncer: {
