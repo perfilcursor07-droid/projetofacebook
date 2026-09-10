@@ -10,6 +10,7 @@ const {
   consultasGoogleNewsParaResolverFontesLivres,
   respostaLivreComMetaComentario,
   confirmacaoMemoriaEditorial,
+  separarMaterias,
 } = require('../src/services/materiaChatService');
 const {
   montarRodapeMateriaComFontes,
@@ -361,4 +362,56 @@ test('marcador opinativo é retirado sem apagar um fato objetivo', () => {
   );
 
   assert.equal(limpa, 'O encontro reuniu 300 participantes segundo a organização.');
+});
+
+test('resposta com duas matérias separadas por linha horizontal vira rascunhos separados', () => {
+  const resposta = `Janja chama Lula de "verdadeiro ungido de Deus" em ato de campanha no Piauí
+
+A primeira-dama Janja da Silva afirmou, durante ato de campanha em Teresina, que Lula é o "verdadeiro ungido de Deus". Este primeiro parágrafo traz o fato central da matéria.
+
+Segundo a reportagem, a declaração ocorreu em palanque ao lado do presidente e repercutiu entre grupos religiosos e políticos nas redes sociais.
+
+Fonte: Fuxico Gospel — https://www.fuxicogospel.com.br/politica/janja-chama-lula-de-verdadeiro-ungido-de-deus-em-ato-eleitoral-no-piaui/ Foto: Reprodução
+
+#Janja #Lula #Eleicoes
+
+Títulos alternativos:
+
+1. "Verdadeiro ungido de Deus": Janja usa linguagem religiosa em ato no Piauí
+
+2. Discurso religioso volta ao centro da campanha após fala de Janja
+
+---
+
+Mãe de Dinho, do Mamonas Assassinas, relembra fé do filho antes da tragédia de 1996
+
+Célia Alves, mãe do vocalista Dinho, relembrou detalhes da criação cristã do filho e de seu processo de luto após o acidente aéreo que matou os integrantes da banda.
+
+De acordo com Célia, a infância de Dinho foi marcada pela leitura bíblica e por cultos em família. Ela afirmou que o filho conhecia as Escrituras desde criança.
+
+Fonte: Fuxico Gospel — https://www.fuxicogospel.com.br/famosos/mae-de-dinho-do-mamonas-assassinas-revela-reconciliacao-do-filho-com-deus-antes-de-tragedia/ Foto: Reprodução
+
+#MamonasAssassinas #Dinho #Fe
+
+Títulos alternativos:
+
+1. Mãe de Dinho relembra fé do filho antes da tragédia`;
+
+  const materias = separarMaterias(resposta);
+
+  assert.equal(materias.length, 2);
+  assert.equal(
+    materias[0].titulo,
+    'Janja chama Lula de "verdadeiro ungido de Deus" em ato de campanha no Piauí'
+  );
+  assert.equal(
+    materias[1].titulo,
+    'Mãe de Dinho, do Mamonas Assassinas, relembra fé do filho antes da tragédia de 1996'
+  );
+  assert.match(materias[0].corpo, /primeira-dama Janja/);
+  assert.doesNotMatch(materias[0].corpo, /Mãe de Dinho|Títulos alternativos/i);
+  assert.match(materias[1].corpo, /Célia Alves/);
+  assert.doesNotMatch(materias[1].corpo, /Janja chama Lula|Títulos alternativos/i);
+  assert.deepEqual(materias[0].hashtags, ['Janja', 'Lula', 'Eleicoes']);
+  assert.deepEqual(materias[1].hashtags, ['MamonasAssassinas', 'Dinho', 'Fe']);
 });

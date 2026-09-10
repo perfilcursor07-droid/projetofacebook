@@ -27,6 +27,7 @@ git commit -m "feat: sua mensagem aqui"
 git push origin main
 
 rapido
+cd /home/viralizeai/htdocs/www.viralizeai.online
 git pull --ff-only origin main
 npm ci --omit=dev
 npm run migrate

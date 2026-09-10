@@ -1156,15 +1156,55 @@ function interpretarResposta(conteudo) {
   };
 }
 
+function removerSecaoTitulosAlternativos(conteudo) {
+  return String(conteudo || '')
+    .replace(
+      /\n+\s*(?:t[ií]tulos?\s+alternativos?|op[cç][oõ]es\s+de\s+t[ií]tulos?)\s*:?\s*\n[\s\S]*$/i,
+      ''
+    )
+    .trim();
+}
+
+function montarMateriaSeparada(bloco, indice) {
+  const conteudo = removerSecaoTitulosAlternativos(bloco);
+  if (!conteudo) return null;
+  let info = interpretarResposta(conteudo);
+  if (!info.ehMateria) {
+    info = interpretarRespostaLivreParaRascunho(conteudo);
+  }
+  const titulo = info.titulo || conteudo.split('\n')[0].replace(/^#{1,6}\s*/, '').trim();
+  if (!titulo) return null;
+  const corpo = info.corpo || conteudo;
+  return {
+    indice,
+    titulo: String(titulo).slice(0, 180),
+    corpo,
+    hashtags: info.hashtags || [],
+    conteudo,
+    salvavel: String(corpo || '').trim().length >= 120,
+  };
+}
+
 /**
  * Uma resposta pode conter várias matérias ("escreva 5 matérias sobre X").
  * Reconhece os separadores que a IA usa: "### MATERIA 1", "# 1. Título",
- * "## 2. Título" ou "**1. Título**" no começo da linha.
+ * "## 2. Título", "**1. Título**" ou "---" entre textos completos.
  * @returns {Array<{indice:number, titulo:string, corpo:string, hashtags:string[], conteudo:string}>}
  */
 function separarMaterias(conteudo) {
   const bruto = String(conteudo || '').replace(/\r\n/g, '\n').trim();
   if (!bruto) return [];
+
+  const porSeparador = bruto
+    .split(/\n\s*(?:-{3,}|_{3,}|\*{3,})\s*\n/g)
+    .map((parte) => parte.trim())
+    .filter(Boolean);
+  if (porSeparador.length >= 2) {
+    const materiasSeparadas = porSeparador
+      .map((bloco, indice) => montarMateriaSeparada(bloco, indice))
+      .filter(Boolean);
+    if (materiasSeparadas.filter((m) => m.salvavel).length >= 2) return materiasSeparadas;
+  }
 
   const linhas = bruto.split('\n');
   const cortes = [];
@@ -1201,17 +1241,8 @@ function separarMaterias(conteudo) {
 
   const materias = [];
   blocos.forEach((bloco, i) => {
-    const info = interpretarResposta(bloco);
-    const titulo = info.titulo || bloco.split('\n')[0].replace(/^#{1,6}\s*/, '').trim();
-    if (!titulo) return;
-    materias.push({
-      indice: i,
-      titulo: String(titulo).slice(0, 180),
-      corpo: info.corpo || bloco,
-      hashtags: info.hashtags || [],
-      conteudo: bloco,
-      salvavel: String(info.corpo || bloco).trim().length >= 120,
-    });
+    const materia = montarMateriaSeparada(bloco, i);
+    if (materia) materias.push(materia);
   });
 
   return materias.filter((m) => m.salvavel).length >= 2 ? materias : [];
@@ -1692,9 +1723,12 @@ function localizarBlocoDeMateriaLivre(conteudo) {
     // Título jornalístico costuma ser uma linha isolada, sem ponto final;
     // isso evita confundir os parágrafos de contexto com a manchete.
     if (!proximaEhVazia || titulo.length < 15 || titulo.length > 220 || /[.!?]$/.test(titulo)) continue;
-    const corpo = linhas.slice(i + 2, indiceFonte).join('\n').trim();
-    const paragrafos = corpo.split(/\n\s*\n/).filter((p) => p.trim().length >= 40);
-    if (corpo.length >= 180 && paragrafos.length >= 2) return { titulo, corpo };
+    if (/\b(?:segue|aqui est[aá]|esta [ée])\s+(?:a\s+)?mat[eé]ria\s*:?\s*$/i.test(titulo)) continue;
+    const corpoAntesDaFonte = linhas.slice(i + 2, indiceFonte).join('\n').trim();
+    const paragrafos = corpoAntesDaFonte.split(/\n\s*\n/).filter((p) => p.trim().length >= 40);
+    if (corpoAntesDaFonte.length >= 180 && paragrafos.length >= 2) {
+      return { titulo, corpo: linhas.slice(i + 2).join('\n').trim() };
+    }
   }
   return null;
 }
@@ -1755,7 +1789,11 @@ function interpretarRespostaLivreParaRascunho(conteudo, tituloEscolhido = null) 
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 180);
-    return { ehMateria: true, titulo, corpo: blocoMateria.corpo, hashtags: tags, devolutivaDePesquisa: false };
+    const corpo = removerSecaoTitulosAlternativos(blocoMateria.corpo)
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi, '$1')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return { ehMateria: true, titulo, corpo, hashtags: tags, devolutivaDePesquisa: false };
   }
 
   const linhas = texto.split('\n');
@@ -2459,11 +2497,19 @@ async function responder({
     let respostaLimpa = limparArtefatosDeTextoLivre(resposta);
     let infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
     let podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido });
+    let materiasSeparadas = separarMaterias(respostaLimpa);
+    if (materiasSeparadas.length >= 2) {
+      podeSalvarRascunho = false;
+    }
     if (podeSalvarRascunho) {
       const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
       respostaLimpa = removerComentariosEditoriaisIa(respostaLimpa);
       infoLivre = interpretarRespostaLivreParaRascunho(respostaLimpa);
       podeSalvarRascunho = respostaLivrePodeVirarMateria(infoLivre, { pedido });
+      materiasSeparadas = separarMaterias(respostaLimpa);
+      if (materiasSeparadas.length >= 2) {
+        podeSalvarRascunho = false;
+      }
     }
     let titulosAlternativos = [];
     if (podeSalvarRascunho && infoLivre.titulo) {
@@ -2531,12 +2577,14 @@ async function responder({
     }
     await AiChats.touch(chat.id);
     const salva = await AiChatMessages.findById(assistantId);
+    const serializada = serializarMensagem(salva);
+    const temVariasMaterias = Array.isArray(serializada.materias) && serializada.materias.length >= 2;
     const mensagem = {
-      ...serializarMensagem(salva),
-      ehMateria: false,
-      materias: [],
+      ...serializada,
+      ehMateria: temVariasMaterias,
+      materias: temVariasMaterias ? serializada.materias : [],
       titulosAlternativos,
-      podeSalvarRascunho,
+      podeSalvarRascunho: temVariasMaterias ? false : podeSalvarRascunho,
     };
     onEvent({ tipo: 'fim', chatId: chat.id, mensagem });
     return { chatId: chat.id, mensagem };
