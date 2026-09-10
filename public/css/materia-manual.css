@@ -56,7 +56,7 @@ body:has(.mia-manual-claude) #app-content > header > a { color: #d9ac92; }
   padding: .9rem 1rem .65rem; box-shadow: 0 8px 28px #00000018;
   max-width: var(--mia-chat-stream); margin-inline: auto;
 }
-.mia-manual-claude .mia-chat-composer:focus-within { border-color: #94816f; box-shadow: 0 8px 28px #00000018; }
+.mia-manual-claude .mia-chat-composer:focus-within { box-shadow: 0 8px 28px #00000018; }
 .mia-manual-claude .mia-chat-input { font-size: 1rem; line-height: 1.6; min-height: 4.6rem; padding: .3rem .3rem .9rem; color: #f0ebe2; scrollbar-width: thin; scrollbar-color: #666158 transparent; }
 .mia-manual-claude .mia-chat-input::placeholder { color: #aaa69d; }
 .mia-manual-claude .mia-chat-toolbar { gap: .5rem; align-items: center; }
@@ -79,7 +79,7 @@ body:has(.mia-manual-claude) #app-content > header > a { color: #d9ac92; }
 .mia-manual-claude .mia-msg-ai-body .mia-msg-ai-anchor { font-size: 1.0625rem; line-height: 1.8; color: #e6e1d5; }
 .mia-manual-claude .mia-msg-ai-body .mia-msg-ai-title { font-size: 1.3rem; color: #f0eadd; }
 .mia-manual-claude .mia-chat-messages { scrollbar-color: #555148 transparent; }
-.mia-manual-claude :is(button, summary, input, textarea, select, a):focus-visible { outline: 2px solid #dbab8c; outline-offset: 3px; }
+.mia-manual-claude :is(button, summary, input, textarea, select, a):focus-visible { outline: 0px solid #dbab8c; outline-offset: 3px; }
 
 /* A primeira mensagem fica junto do convite; depois o editor volta ao rodapé. */
 .mia-manual-claude .mia-chat-main:has(#chat-vazio:not(.hidden)):not(.is-manual-open) { overflow-y: auto; }
