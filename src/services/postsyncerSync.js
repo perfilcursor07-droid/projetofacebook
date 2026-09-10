@@ -7,7 +7,7 @@ function isPostsyncerStubAccount(account) {
   if (!account) return false;
   const token = String(account.access_token || '');
   const fbUid = String(account.fb_user_id || '');
-  return token.startsWith('postsyncer:') || fbUid.startsWith('postsyncer:');
+  return token.startsWith('postsyncer:') || fbUid.startsWith('postsyncer:') || token.startsWith('ayrshare:') || fbUid.startsWith('ayrshare:');
 }
 
 /**

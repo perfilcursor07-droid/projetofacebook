@@ -536,6 +536,24 @@ function isAyrshareApiKey(value) {
  * Detalhes do profile referente à Profile Key informada (GET /user).
  * Serve para validar a chave e saber se a Página do Facebook está conectada.
  */
+async function listProfiles({ cursor = null } = {}) {
+  const { data } = await axios.get(`${API}/profiles`, {
+    headers: authHeaders(),
+    params: { limit: 100, ...(cursor ? { cursor } : {}) },
+    timeout: 30000,
+  });
+  if (!Array.isArray(data?.profiles)) throw new Error('Não foi possível listar os perfis na Ayrshare. Verifique se seu plano permite consultar User Profiles.');
+  return {
+    profiles: data.profiles.map((p) => ({
+      ref_id: p.refId,
+      title: p.displayTitle || p.title || p.refId,
+      status: p.status,
+      facebook_connected: (p.activeSocialAccounts || []).includes('facebook'),
+    })),
+    next_cursor: data.pagination?.hasMore ? data.pagination.nextCursor : null,
+  };
+}
+
 async function fetchProfileByKey(profileKey, { permitirPrimary = false } = {}) {
   assertConfigured();
   const key = String(profileKey || '').trim();
@@ -1286,6 +1304,7 @@ module.exports = {
   isTwitterByoConfigured,
   looksLikeAyrshareId,
   fetchProfileByKey,
+  listProfiles,
   fetchFacebookPostAnalytics,
   fetchFacebookHistory,
   findFacebookPostInHistory,

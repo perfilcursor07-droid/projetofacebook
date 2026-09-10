@@ -309,4 +309,53 @@ async function setX(req, res, next) {
   }
 }
 
-module.exports = { setProfileKey, setInstagram, setX };
+async function listProfiles(req, res, next) {
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json(await ayrshareService.listProfiles({ cursor: String(req.query.cursor || '').slice(0, 2000) || null }));
+  } catch (err) {
+    next(Object.assign(new Error('Não foi possível buscar os perfis. Confira o acesso a User Profiles na Ayrshare ou adicione pelo Profile Key abaixo.'), { status: 502 }));
+  }
+}
+
+async function addPage(req, res, next) {
+  try {
+    const key = String(req.body?.profile_key || '').trim();
+    const refId = String(req.body?.ref_id || '').trim();
+    const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
+    if (!key || key.length > 128) fail('Cole o Profile Key do perfil que deseja adicionar.');
+    if (ayrshareService.looksLikeRefId(key)) fail('Esse valor é o RefId. Abra o perfil na Ayrshare e copie a chave na tela Profile Key.');
+    if (ayrshareService.isAyrshareApiKey(key)) fail('Use o Profile Key deste perfil, não a API Key geral.');
+    let profile;
+    try { profile = await ayrshareService.fetchProfileByKey(key); }
+    catch { fail('A Ayrshare não validou o Profile Key. Confira a chave e tente novamente.', 422); }
+    if (refId && profile.refId !== refId) fail('O Profile Key pertence a outro perfil. Copie a chave do perfil selecionado.', 422);
+    if (profile.isPrimary || !profile.refId) fail('Selecione um User Profile válido da Ayrshare.', 422);
+    if (!profile.facebookConnected) fail('Este perfil ainda não tem Facebook conectado. Conecte a Página em Social Accounts na Ayrshare e tente novamente.', 422);
+    const pageId = String(profile.facebookPageId || `ayrshare:${profile.refId}`);
+    const pageName = profile.facebookPageName || profile.title;
+    if (!pageName || pageId.length > 64) fail('A Ayrshare não retornou a identificação da página. Confira a conexão em Social Accounts.', 422);
+    const db = require('../config/db');
+    const result = await db.transaction(async (trx) => {
+      // Serializa cadastros da mesma conta e preserva a página padrão.
+      await trx('users').where({ id: req.session.userId }).forUpdate().first();
+      let account = await trx('facebook_accounts').where({ user_id: req.session.userId }).first();
+      if (!account) {
+        await trx('facebook_accounts').insert({ user_id: req.session.userId, fb_user_id: `ayrshare:${req.session.userId}`, access_token: 'ayrshare:stub' });
+        account = await trx('facebook_accounts').where({ user_id: req.session.userId }).first();
+      }
+      const pages = await trx('facebook_pages').where({ facebook_account_id: account.id });
+      const existing = pages.find((p) => p.ayrshare_profile_key === key || p.page_id === pageId || p.page_id === `ayrshare:${profile.refId}`);
+      if (existing) {
+        if (existing.ayrshare_profile_key && existing.ayrshare_profile_key !== key) fail('Esta página já possui outro Profile Key. Atualize o vínculo no cartão existente.', 409);
+        await trx('facebook_pages').where({ id: existing.id }).update({ ayrshare_profile_key: key, page_name: String(pageName).slice(0, 255), updated_at: trx.fn.now() });
+        return { id: existing.id, page_name: pageName, existing: true };
+      }
+      const [id] = await trx('facebook_pages').insert({ facebook_account_id: account.id, page_id: pageId, page_name: String(pageName).slice(0, 255), page_access_token: 'ayrshare:stub', ayrshare_profile_key: key });
+      return { id, page_name: pageName, existing: false };
+    });
+    res.json({ ok: true, page: result, aviso: result.existing ? 'Página já cadastrada; vínculo confirmado.' : 'Página adicionada. Você já pode usá-la como padrão.' });
+  } catch (err) { next(err); }
+}
+
+module.exports = { setProfileKey, setInstagram, setX, listProfiles, addPage };

@@ -26,10 +26,10 @@
             1) Em
             <a href="https://app.ayrshare.com" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">app.ayrshare.com</a>
             crie um <strong class="font-medium text-slate-300">User Profile</strong> por Página FB e conecte a Página em Social Accounts.<br />
-            2) Em cada profile, copie o <strong class="font-medium text-slate-300">Profile Key</strong> e cole abaixo.<br />
+            2) Clique em <strong class="font-medium text-slate-300">Buscar perfis na Ayrshare</strong> ou adicione diretamente pelo Profile Key abaixo.<br />
             3) Atenção: em <em>Manage Profiles</em> aparece o <strong class="font-medium text-amber-300">RefId</strong>,
-            que <strong class="font-medium text-amber-300">não serve</strong>. O Profile Key é entregue na criação do
-            User Profile (ou pode ser gerado de novo na Ayrshare).<br />
+            que não substitui a chave. Para copiar o <strong class="font-medium text-slate-300">Profile Key</strong>,
+            selecione o perfil na Ayrshare e abra a tela Profile Key. Cole a chave uma única vez no cadastro.<br />
             4) Sem Profile Key, o post iria para o <em>Primary Profile</em>; com mais de uma Página, o ViralizeAI bloqueia
             a publicação em vez de postar na Página errada.
           </p>
@@ -43,6 +43,24 @@
         </a>
       </div>
     </div>
+
+    <section class="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4">
+      <h2 class="text-sm font-semibold text-white">Adicionar página da Ayrshare</h2>
+      <p class="mt-2 text-sm text-slate-400">Conectou uma página nova? Adicione aqui sem alterar o projeto. O nome e o destino serão identificados pelo Profile Key.</p>
+      <% if (typeof user !== 'undefined' && user?.nivel_acesso === 'administrador') { %>
+      <button type="button" id="ay-discover" class="mt-3 rounded-lg border border-emerald-700/60 px-3 py-1.5 text-sm text-emerald-200">Buscar perfis na Ayrshare</button>
+      <p id="ay-discovery-status" role="status" class="mt-2 text-sm text-slate-400"></p>
+      <div id="ay-discovery-results" class="mt-3 space-y-3"></div>
+      <% } %>
+      <form id="ay-add-page" class="mt-4 space-y-3">
+        <p id="ay-selected-profile" class="text-sm text-emerald-200">Adicionar diretamente pelo Profile Key</p>
+        <label class="block text-sm text-slate-300" for="ay-new-key">Profile Key da nova página</label>
+        <input id="ay-new-key" type="password" required maxlength="128" autocomplete="off" placeholder="Cole o Profile Key, não o RefId" class="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200" />
+        <button type="submit" class="rounded-lg border border-emerald-700/60 px-3 py-1.5 text-sm text-emerald-200">Adicionar página</button>
+        <button type="button" id="ay-clear-selection" class="text-sm text-slate-400">Limpar seleção</button>
+        <p id="ay-add-status" role="status" class="text-sm text-slate-300"></p>
+      </form>
+    </section>
 
     <div id="content" class="mt-8">
       <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-10 text-center">
@@ -99,6 +117,70 @@
     }
 
     <% if (useAyrshare) { %>
+    let selectedRefId = '';
+    let profileCursor = null;
+    document.getElementById('ay-clear-selection').addEventListener('click', () => {
+      selectedRefId = '';
+      document.getElementById('ay-selected-profile').textContent = 'Adicionar diretamente pelo Profile Key';
+      document.getElementById('ay-new-key').value = '';
+    });
+    document.getElementById('ay-discover')?.addEventListener('click', async (event) => {
+      const btn = event.currentTarget;
+      const status = document.getElementById('ay-discovery-status');
+      const results = document.getElementById('ay-discovery-results');
+      btn.disabled = true;
+      status.textContent = 'Consultando perfis…';
+      if (!profileCursor) results.replaceChildren();
+      try {
+        const response = await fetch('/api/facebook/ayrshare/profiles' + (profileCursor ? '?cursor=' + encodeURIComponent(profileCursor) : ''));
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Falha ao buscar perfis');
+        for (const profile of data.profiles || []) {
+          const row = document.createElement('div');
+          row.className = 'rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300';
+          const label = document.createElement('p');
+          label.textContent = profile.title + (profile.facebook_connected ? ' · Facebook conectado' : ' · Conecte o Facebook em Social Accounts');
+          row.append(label);
+          if (profile.facebook_connected && profile.status === 'active') {
+            const select = document.createElement('button');
+            select.type = 'button';
+            select.className = 'mt-2 text-emerald-300';
+            select.textContent = 'Selecionar perfil';
+            select.addEventListener('click', () => {
+              selectedRefId = profile.ref_id;
+              document.getElementById('ay-selected-profile').textContent = 'Perfil selecionado: ' + profile.title;
+              document.getElementById('ay-new-key').value = '';
+              document.getElementById('ay-new-key').focus();
+            });
+            row.append(select);
+          }
+          results.append(row);
+        }
+        profileCursor = data.next_cursor || null;
+        btn.textContent = profileCursor ? 'Carregar mais perfis' : 'Atualizar perfis da Ayrshare';
+        status.textContent = results.children.length ? 'Selecione o perfil e cole seu Profile Key abaixo. A Ayrshare não fornece as chaves nesta consulta.' : 'Nenhum User Profile encontrado nesta API Key. Confira a conta principal na Ayrshare. Você também pode adicionar diretamente pelo Profile Key.';
+      } catch (err) { status.textContent = err.message; }
+      finally { btn.disabled = false; }
+    });
+    document.getElementById('ay-add-page').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const btn = event.currentTarget.querySelector('[type="submit"]');
+      const status = document.getElementById('ay-add-status');
+      btn.disabled = true;
+      status.textContent = 'Validando o perfil e identificando a página…';
+      try {
+        const response = await fetch('/api/facebook/ayrshare/pages', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile_key: document.getElementById('ay-new-key').value.trim(), ref_id: selectedRefId }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Não foi possível adicionar a página');
+        document.getElementById('ay-clear-selection').click();
+        status.textContent = data.page.page_name + ': ' + data.aviso;
+        await loadAyrshare();
+      } catch (err) { status.textContent = err.message; }
+      finally { btn.disabled = false; }
+    });
     async function loadAyrshare() {
       try {
         const res = await fetch('/api/facebook/pages');
@@ -110,8 +192,7 @@
             <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-8 text-center">
               <p class="text-slate-300">Nenhuma página listada no app ainda.</p>
               <p class="mt-2 text-sm text-slate-500">
-                As páginas que já existiam (PostSyncer/OAuth) continuam válidas como alvos de publicação.
-                Se a lista estiver vazia, conecte o Facebook uma vez só para importar os nomes.
+                Use “Adicionar página da Ayrshare” acima para cadastrar sua primeira página pelo Profile Key.
               </p>
               <a href="/api/auth/facebook"
                 class="mt-5 inline-block rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-medium text-slate-200 hover:border-[#1877F2] hover:text-white">

@@ -5,6 +5,11 @@ const postsyncerController = require('../controllers/postsyncerController');
 const ayrshareController = require('../controllers/ayrshareController');
 
 const router = express.Router();
+const { loadCurrentUser, requireAdmin } = require('../middleware/accessControl');
+
+// A descoberta lista perfis da API Key compartilhada: somente administradores.
+router.get('/ayrshare/profiles', loadCurrentUser, requireAdmin, ayrshareController.listProfiles);
+router.post('/ayrshare/pages', ayrshareController.addPage);
 
 router.get('/pages', facebookController.listPages);
 router.put('/pages/default', facebookController.setDefaultPage);
