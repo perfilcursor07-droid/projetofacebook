@@ -31,11 +31,17 @@ git commit -m "feat: sua mensagem aqui"
 git push origin main
 
 
+CLAUDE EXIBIR AUTENTICAÇÃO
 Abre Powershell
 ssh -N -L 6080:127.0.0.1:6080 viralizeai@www.viralizeai.online
 
 Entra no link
 http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=remote
+
+
+
+Para acompanhar ao vivo:
+su - viralizeai -c 'export PATH=/home/viralizeai/.nvm/versions/node/v22.23.1/bin:/usr/bin:/bin; node /home/viralizeai/.nvm/versions/node/v22.23.1/lib/node_modules/pm2/bin/pm2 logs viralizeai --lines 80'
 
 
 
