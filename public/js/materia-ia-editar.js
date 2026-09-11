@@ -335,10 +335,14 @@
   const chatgptImageGenerate = document.getElementById('matter-chatgpt-image-generate');
   const chatgptImageRecover = document.getElementById('matter-chatgpt-image-recover');
   const chatgptImageStatus = document.getElementById('matter-chatgpt-image-status');
+  const chatgptImageJobs = document.getElementById('matter-chatgpt-image-jobs');
   let cropInteraction = null;
   let cropBox = { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
   let cropSourceUrl = '';
   let bodyOverflowBeforeCrop = '';
+  let chatgptImageJobSeq = 0;
+  let chatgptImageActiveJobs = 0;
+  let chatgptImageLastAppliedSeq = 0;
 
   function clampCropValue(value, min = 0, max = 100) {
     return Math.min(max, Math.max(min, Number(value) || 0));
@@ -441,21 +445,96 @@
     }
   }
 
+  function setChatgptStatus(text, tone = 'muted') {
+    if (!chatgptImageStatus) return;
+    const tones = {
+      muted: 'text-slate-500',
+      running: 'text-emerald-200',
+      ok: 'text-emerald-300',
+      info: 'text-sky-200',
+      error: 'text-rose-300',
+    };
+    chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] ' + (tones[tone] || tones.muted);
+    chatgptImageStatus.textContent = text;
+  }
+
+  function updateChatgptGenerateLabel() {
+    if (!chatgptImageGenerate) return;
+    chatgptImageGenerate.disabled = false;
+    chatgptImageGenerate.textContent = chatgptImageActiveJobs > 0
+      ? 'Gerar outra versão'
+      : 'Gerar imagem sem texto';
+  }
+
+  function createChatgptJobRow(jobId, prompt) {
+    if (!chatgptImageJobs) return null;
+    const row = document.createElement('div');
+    row.className = 'rounded-lg border border-slate-700 bg-slate-950/60 px-2.5 py-2 text-[10px] text-slate-300';
+
+    const head = document.createElement('div');
+    head.className = 'flex flex-wrap items-center justify-between gap-2';
+
+    const label = document.createElement('span');
+    label.className = 'font-semibold text-emerald-200';
+    label.textContent = 'Versão ' + jobId;
+    head.appendChild(label);
+
+    const state = document.createElement('span');
+    state.className = 'text-slate-500';
+    state.textContent = 'gerando...';
+    head.appendChild(state);
+    row.appendChild(head);
+
+    const preview = document.createElement('p');
+    preview.className = 'mt-1 line-clamp-2 text-slate-500';
+    preview.textContent = prompt;
+    row.appendChild(preview);
+
+    const actions = document.createElement('div');
+    actions.className = 'mt-2 hidden flex-wrap items-center gap-2';
+    row.appendChild(actions);
+
+    chatgptImageJobs.prepend(row);
+    return { row, state, actions };
+  }
+
+  function finishChatgptJob(job, data, jobId, recovered = false) {
+    job.state.className = 'text-emerald-300';
+    job.state.textContent = recovered ? 'recuperada' : 'pronta';
+    job.actions.classList.remove('hidden');
+    job.actions.classList.add('flex');
+
+    const useButton = document.createElement('button');
+    useButton.type = 'button';
+    useButton.className = 'rounded-md border border-emerald-500/50 bg-emerald-500/10 px-2 py-1 font-semibold text-emerald-100 hover:bg-emerald-500/20';
+    useButton.textContent = 'Usar no recorte';
+    useButton.addEventListener('click', () => {
+      showChatgptImage(data, recovered);
+      chatgptImageLastAppliedSeq = Math.max(chatgptImageLastAppliedSeq, jobId);
+    });
+    job.actions.appendChild(useButton);
+  }
+
+  function failChatgptJob(job, message) {
+    job.state.className = 'text-rose-300';
+    job.state.textContent = message || 'falhou';
+  }
+
   chatgptImageGenerate?.addEventListener('click', async () => {
     const prompt = String(chatgptImagePrompt?.value || '').trim();
     if (prompt.length < 20) {
-      if (chatgptImageStatus) chatgptImageStatus.textContent = 'Descreva a imagem com pelo menos 20 caracteres.';
+      setChatgptStatus('Descreva a imagem com pelo menos 20 caracteres.', 'error');
       chatgptImagePrompt?.focus();
       return;
     }
-    const original = chatgptImageGenerate.textContent;
-    chatgptImageGenerate.disabled = true;
-    if (chatgptImageRecover) chatgptImageRecover.disabled = true;
-    chatgptImageGenerate.textContent = 'Gerando…';
-    if (chatgptImageStatus) {
-      chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-emerald-200';
-      chatgptImageStatus.textContent = 'ChatGPT está analisando a referência e criando uma nova imagem. Isso pode levar alguns minutos…';
-    }
+    const jobId = ++chatgptImageJobSeq;
+    const job = createChatgptJobRow(jobId, prompt);
+    chatgptImageActiveJobs += 1;
+    updateChatgptGenerateLabel();
+    setChatgptStatus(
+      'Versão ' + jobId + ' enviada. Você pode gerar outra enquanto ela fica pronta.',
+      'running'
+    );
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/gerar-chatgpt', {
         method: 'POST',
@@ -464,28 +543,26 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
-      showChatgptImage(data);
-    } catch (err) {
-      if (chatgptImageStatus) {
-        chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-rose-300';
-        chatgptImageStatus.textContent = err.message || 'Falha ao gerar imagem com o ChatGPT.';
+      if (job) finishChatgptJob(job, data, jobId);
+      if (jobId >= chatgptImageLastAppliedSeq) {
+        showChatgptImage(data);
+        chatgptImageLastAppliedSeq = jobId;
       }
+      setChatgptStatus('Versão ' + jobId + ' pronta. Ajuste o recorte ou escolha outra versão da lista.', 'ok');
+    } catch (err) {
+      if (job) failChatgptJob(job, err.message || 'Falha ao gerar imagem');
+      setChatgptStatus(err.message || 'Falha ao gerar imagem com o ChatGPT.', 'error');
     } finally {
-      chatgptImageGenerate.disabled = false;
-      if (chatgptImageRecover) chatgptImageRecover.disabled = false;
-      chatgptImageGenerate.textContent = original || 'Gerar imagem sem texto';
+      chatgptImageActiveJobs = Math.max(0, chatgptImageActiveJobs - 1);
+      updateChatgptGenerateLabel();
     }
   });
 
   chatgptImageRecover?.addEventListener('click', async () => {
     const original = chatgptImageRecover.textContent;
     chatgptImageRecover.disabled = true;
-    chatgptImageGenerate.disabled = true;
     chatgptImageRecover.textContent = 'Buscando…';
-    if (chatgptImageStatus) {
-      chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-sky-200';
-      chatgptImageStatus.textContent = 'Buscando a última imagem gerada na conversa do ChatGPT…';
-    }
+    setChatgptStatus('Buscando a última imagem gerada na conversa do ChatGPT…', 'info');
     try {
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/recuperar-chatgpt', {
         method: 'POST',
@@ -494,15 +571,16 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Não foi possível recuperar a imagem do ChatGPT.');
       showChatgptImage(data, true);
+      const jobId = ++chatgptImageJobSeq;
+      const job = createChatgptJobRow(jobId, 'Imagem recuperada da conversa recente do ChatGPT.');
+      if (job) finishChatgptJob(job, data, jobId, true);
+      chatgptImageLastAppliedSeq = Math.max(chatgptImageLastAppliedSeq, jobId);
     } catch (err) {
-      if (chatgptImageStatus) {
-        chatgptImageStatus.className = 'min-w-0 flex-1 text-[10px] text-rose-300';
-        chatgptImageStatus.textContent = err.message || 'Não foi possível recuperar a imagem do ChatGPT.';
-      }
+      setChatgptStatus(err.message || 'Não foi possível recuperar a imagem do ChatGPT.', 'error');
     } finally {
       chatgptImageRecover.disabled = false;
-      chatgptImageGenerate.disabled = false;
       chatgptImageRecover.textContent = original || 'Pegar imagem nova gerada';
+      updateChatgptGenerateLabel();
     }
   });
 

@@ -19,7 +19,6 @@ const FORMATO_FACEBOOK = [
   'gere a imagem em orientação VERTICAL, na proporção EXATA 4:5, equivalente a 1080 × 1350 pixels para uma postagem no feed do Facebook.',
   'Não entregue imagem quadrada nem horizontal. Reorganize a composição para preencher completamente o quadro vertical, sem barras ou bordas.',
 ].join(' ');
-let geracaoAtiva = null;
 const conversasRecentes = new Map();
 
 function erro(message, status = 400) {
@@ -462,13 +461,7 @@ async function recuperarImagem({ recoveryKey }) {
 }
 
 async function gerarImagem(args) {
-  if (geracaoAtiva) throw erro('Já existe uma imagem sendo gerada no ChatGPT. Aguarde a conclusão.', 409);
-  geracaoAtiva = executarGeracao(args);
-  try {
-    return await geracaoAtiva;
-  } finally {
-    geracaoAtiva = null;
-  }
+  return executarGeracao(args);
 }
 
 module.exports = {
