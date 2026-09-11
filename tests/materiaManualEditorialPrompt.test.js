@@ -6,6 +6,7 @@ const path = require('node:path');
 const {
   blocoCriteriosMateriaManual,
   blocoEstiloJmNoticia,
+  montarRodapeMateriaComFontes,
 } = require('../src/services/editorialGuidelinesFb');
 const { priorizarFontesIndependentes } = require('../src/services/materiaIaService');
 
@@ -86,4 +87,32 @@ test('Mais lidas possui agrupamento e filtro por fonte', () => {
   assert.match(source, /mia-x-source-group/);
   assert.match(source, /aplicarFiltroFonte/);
   assert.match(source, /Todas as fontes/);
+});
+
+test('matéria manual remove bloco de títulos alternativos do corpo salvo', () => {
+  const textoGerado = `**[[LISTA DE CONVIDADOS]]: celular de Vorcaro revela conversas com Fábio Faria sobre festa**
+
+**MENSAGENS APREENDIDAS CITAM CONVITES E CONTATOS COM EX-MINISTRO**
+
+O celular de Daniel Vorcaro revelou conversas com Fábio Faria sobre uma festa organizada em meio às investigações envolvendo o Banco Master.
+
+Segundo as mensagens, o ex-ministro aparece tratando do encaminhamento de convites, mas negou envolvimento com qualquer assunto financeiro.
+
+#BancoMaster #FabioFaria #DanielVorcaro #Politica #JMNotícia
+
+**Títulos alternativos:** 1. [[LISTA DE CONVIDADOS]]: celular de Vorcaro revela conversas com Fábio Faria sobre festa 2. Genro de Silvio Santos aparece em mensagens apreendidas de dono do Banco Master 3. "Só encaminhei convites": Fábio Faria nega envolvimento após vazamento de conversas com Vorcaro`;
+
+  const resultado = montarRodapeMateriaComFontes({
+    materia: textoGerado,
+    fontes: [{ veiculo: 'Metrópoles', url: 'https://www.metropoles.com/exemplo' }],
+    creditoImagem: 'Reprodução',
+    hashtags: ['BancoMaster', 'FabioFaria', 'DanielVorcaro', 'Politica', 'JMNotícia'],
+    limitarLegenda: false,
+  });
+
+  assert.doesNotMatch(resultado.materia, /Títulos alternativos/i);
+  assert.doesNotMatch(resultado.materia, /Genro de Silvio Santos aparece em mensagens/i);
+  assert.match(resultado.materia, /O celular de Daniel Vorcaro revelou conversas/);
+  assert.match(resultado.materia, /Fonte: Metrópoles/);
+  assert.match(resultado.materia, /#BancoMaster #FabioFaria #DanielVorcaro #Politica #JMNoticia/);
 });

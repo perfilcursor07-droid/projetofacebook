@@ -574,10 +574,13 @@ async function atualizarMateria(req, res, next) {
 
     const body = req.body || {};
     const patch = {};
-    const { removerFechamentoOracao } = require('../services/editorialGuidelinesFb');
+    const {
+      removerFechamentoOracao,
+      removerSecaoTitulosAlternativos,
+    } = require('../services/editorialGuidelinesFb');
     if (body.titulo != null) patch.titulo = String(body.titulo).trim().slice(0, 300);
     if (body.materia != null) {
-      patch.materia = removerFechamentoOracao(String(body.materia));
+      patch.materia = removerFechamentoOracao(removerSecaoTitulosAlternativos(body.materia));
     }
     if (body.fonteCredito != null || body.fonte_credito != null) {
       const raw = body.fonteCredito != null ? body.fonteCredito : body.fonte_credito;

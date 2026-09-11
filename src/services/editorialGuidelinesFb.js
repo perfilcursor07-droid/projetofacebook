@@ -63,6 +63,17 @@ function removerComentariosEditoriaisIa(texto) {
     .trim();
 }
 
+function removerSecaoTitulosAlternativos(texto) {
+  return String(texto || '')
+    .replace(/\r\n/g, '\n')
+    .replace(
+      /(?:^|\n+)\s*(?:[*_]{1,3}\s*)?(?:t[ií]tulos?\s+alternativos?|op[cç][oõ]es\s+de\s+t[ií]tulos?|sugest(?:ões|oes)\s+de\s+t[ií]tulos?)\s*:?\s*(?:[*_]{1,3})?(?=\s*(?:$|\n|\d{1,2}\s*[.)]|[-*•]))[\s\S]*$/i,
+      ''
+    )
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function sortearFaixaChars() {
   // Sempre o mesmo alvo: tamanho máximo útil para Face/Insta.
   return { min: FAIXA_CORPO_FB.min, max: FAIXA_CORPO_FB.max };
@@ -652,7 +663,7 @@ function formatFacebookCaption({ titulo, materia, hashtags, fonteCredito, inclui
   } catch {
     title = title.replace(/\[\[|\]\]/g, '').replace(/\(\(|\)\)/g, '').replace(/\s+/g, ' ').trim();
   }
-  let working = removerFechamentoOracao(String(materia || ''));
+  let working = removerFechamentoOracao(removerSecaoTitulosAlternativos(materia));
   const extracted = extrairHashtagsDoTexto(working);
   let body = extracted.body;
 
@@ -890,7 +901,7 @@ function nomeSiteDeUrl(url) {
 
 function removerBlocoCreditosDoCorpo(cleanBody) {
   // NÃO usar /Por\s+.+/gi solto — apaga "conhecida por …" no meio da matéria.
-  return String(cleanBody || '')
+  return removerSecaoTitulosAlternativos(cleanBody)
     .replace(/\n*Fontes:\s*\n(?:[•\-*].+\n?)+/gi, '')
     .replace(/(?:^|\n+)Fonte:\s*\n(?:[•\-*].+\n?)+/gi, '\n')
     .replace(/(?:^|\n+)Fonte:\s*[^\n]+(?:\n\(Foto:[^\n]+\))?/gi, '\n')
@@ -1059,7 +1070,7 @@ function montarRodapeMateriaComFontes({
   hashtags = [],
   limitarLegenda = true,
 } = {}) {
-  const { body, tags } = extrairHashtagsDoTexto(materia);
+  const { body, tags } = extrairHashtagsDoTexto(removerSecaoTitulosAlternativos(materia));
   let cleanBody = removerBlocoCreditosDoCorpo(body);
   // Remove linhas soltas de URL/crédito que a IA às vezes deixa no fim
   cleanBody = cleanBody
@@ -1435,6 +1446,7 @@ module.exports = {
   avaliarComprimentoFb,
   detectarMuletasIa,
   removerComentariosEditoriaisIa,
+  removerSecaoTitulosAlternativos,
   detectarCitacoesInventadas,
   titulosParecidos,
   mesmoAssuntoNoticia,
