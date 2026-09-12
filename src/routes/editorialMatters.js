@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { requireAuth } = require('../middleware/requireAuth');
 const { uploadMatterImage } = require('../middleware/uploadMatterImage');
 const AiMatters = require('../models/AiMatters');
@@ -14,6 +15,26 @@ const { publishEditorialPhoto } = require('../services/editorialPublishService')
 
 const router = express.Router();
 router.use(requireAuth);
+
+const chatgptImageJobs = new Map();
+const CHATGPT_JOB_TTL_MS = 30 * 60 * 1000;
+
+function cleanupChatgptImageJobs() {
+  const limite = Date.now() - CHATGPT_JOB_TTL_MS;
+  for (const [id, job] of chatgptImageJobs) {
+    if (job.updatedAt < limite) chatgptImageJobs.delete(id);
+  }
+}
+
+function publicChatgptImageJob(job) {
+  return {
+    ok: job.status !== 'error',
+    jobId: job.id,
+    status: job.status,
+    ...(job.result || {}),
+    ...(job.error ? { error: job.error } : {}),
+  };
+}
 
 router.get('/matters/:id/arte/marca-overlay', async (req, res, next) => {
   try {
@@ -328,7 +349,6 @@ router.post('/matters/:id/arte/recortar', async (req, res, next) => {
 });
 
 router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
-  let storedSource = null;
   try {
     const matterId = Number(req.params.id);
     if (!Number.isInteger(matterId) || matterId < 1) {
@@ -351,30 +371,74 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
       return res.status(400).json({ error: 'Escolha uma foto de origem antes de gerar uma versão com o ChatGPT.' });
     }
 
-    const chatgptImageService = require('../services/chatgptImageService');
-    const generated = await chatgptImageService.gerarImagem({
-      sourceUrl,
-      prompt: req.body?.prompt,
-      titulo: String(req.body?.titulo || matter.titulo || '').trim(),
-      materia: matter.materia || '',
-      recoveryKey: `${req.session.userId}:${matterId}`,
-    });
-    storedSource = await storeMatterSourceImage({
-      userId: req.session.userId,
+    cleanupChatgptImageJobs();
+    const jobId = crypto.randomUUID();
+    const userId = Number(req.session.userId);
+    const requestedPrompt = req.body?.prompt;
+    const requestedTitle = String(req.body?.titulo || matter.titulo || '').trim();
+    const job = {
+      id: jobId,
+      userId,
       matterId,
-      buffer: generated.buffer,
+      status: 'running',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      result: null,
+      error: '',
+    };
+    chatgptImageJobs.set(jobId, job);
+
+    // Responde imediatamente. Cada trabalho abre sua própria página e sua
+    // própria conversa no Chrome isolado, sem manter o clique preso ao anterior.
+    setImmediate(async () => {
+      let storedSource = null;
+      try {
+        const chatgptImageService = require('../services/chatgptImageService');
+        const generated = await chatgptImageService.gerarImagem({
+          sourceUrl,
+          prompt: requestedPrompt,
+          titulo: requestedTitle,
+          materia: matter.materia || '',
+          recoveryKey: `${userId}:${matterId}`,
+        });
+        storedSource = await storeMatterSourceImage({
+          userId,
+          matterId,
+          buffer: generated.buffer,
+        });
+        job.status = 'ready';
+        job.result = {
+          imagemFonteUrl: storedSource.publicUrl,
+          prompt: generated.prompt,
+          model: generated.model,
+        };
+      } catch (err) {
+        if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
+        job.status = 'error';
+        job.error = err.message || 'O ChatGPT não conseguiu gerar a imagem.';
+        console.error(`[chatgpt-imagem:${jobId}]`, job.error);
+      } finally {
+        job.updatedAt = Date.now();
+      }
     });
 
-    return res.json({
-      ok: true,
-      imagemFonteUrl: storedSource.publicUrl,
-      prompt: generated.prompt,
-      model: generated.model,
-    });
+    return res.status(202).json(publicChatgptImageJob(job));
   } catch (err) {
-    if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
     if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('[chatgpt-imagem]', err.message);
+    return next(err);
+  }
+});
+
+router.get('/matters/:id/arte/gerar-chatgpt/:jobId', async (req, res, next) => {
+  try {
+    const matterId = Number(req.params.id);
+    const job = chatgptImageJobs.get(String(req.params.jobId || ''));
+    if (!job || job.matterId !== matterId || job.userId !== Number(req.session.userId)) {
+      return res.status(404).json({ error: 'Geração de imagem não encontrada ou expirada.' });
+    }
+    return res.status(job.status === 'running' ? 202 : 200).json(publicChatgptImageJob(job));
+  } catch (err) {
     return next(err);
   }
 });

@@ -520,6 +520,26 @@
     job.state.textContent = message || 'falhou';
   }
 
+  async function waitChatgptImageJob(initial, job) {
+    if (!initial?.jobId || initial.status === 'ready') return initial;
+    const deadline = Date.now() + (7 * 60 * 1000);
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const res = await fetch(
+        '/api/materias-ia/matters/' + cfg.id + '/arte/gerar-chatgpt/' + encodeURIComponent(initial.jobId),
+        { headers: { Accept: 'application/json' } }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 202) {
+        throw new Error(data.error || 'Não foi possível acompanhar a geração da imagem.');
+      }
+      if (data.status === 'error') throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+      if (data.status === 'ready') return data;
+      if (job) job.state.textContent = 'gerando em conversa separada...';
+    }
+    throw new Error('A geração continua no ChatGPT. Use “Pegar imagem nova gerada” dentro de alguns minutos.');
+  }
+
   chatgptImageGenerate?.addEventListener('click', async () => {
     const prompt = String(chatgptImagePrompt?.value || '').trim();
     if (prompt.length < 20) {
@@ -541,8 +561,9 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, titulo: tituloEl?.value || '' }),
       });
-      const data = await res.json().catch(() => ({}));
+      let data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+      data = await waitChatgptImageJob(data, job);
       if (job) finishChatgptJob(job, data, jobId);
       if (jobId >= chatgptImageLastAppliedSeq) {
         showChatgptImage(data);

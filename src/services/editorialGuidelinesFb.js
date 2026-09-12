@@ -46,7 +46,7 @@ function removerComentariosEditoriaisIa(texto) {
   const marcador = /^(?:[*_]+\s*)?(?:[ée]\s+importante\s+(?:destacar|ressaltar|lembrar|observar)|vale\s+(?:destacar|ressaltar|lembrar|observar)|cabe\s+(?:destacar|ressaltar|lembrar|observar)|[ée]\s+fundamental\s+(?:destacar|ressaltar|lembrar|observar)|n[aã]o\s+podemos\s+esquecer)(?:\s+que)?\s*[:,;—–-]?\s*/i;
   const ressalvaDeChecagem = /\b(?:sem\s+confirma[cç][aã]o|n[aã]o\s+(?:foi|foram|h[aá]|havia|existe|existia)\s+(?:poss[ií]vel\s+)?(?:confirmar|confirma[cç][aã]o|verificar|verifica[cç][aã]o)|confirma[cç][aã]o\s+(?:m[eé]dica|oficial|independente)|verifica[cç][aã]o\s+independente|laudo\s+m[eé]dico|dispon[ií]vel\s+publicamente)\b/i;
 
-  return String(texto || '')
+  return removerSecaoTitulosAlternativos(texto)
     .replace(/\r\n/g, '\n')
     .split(/\n\s*\n/)
     .map((paragrafo) => {

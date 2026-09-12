@@ -7,8 +7,10 @@ const {
   blocoCriteriosMateriaManual,
   blocoEstiloJmNoticia,
   montarRodapeMateriaComFontes,
+  removerComentariosEditoriaisIa,
 } = require('../src/services/editorialGuidelinesFb');
 const { priorizarFontesIndependentes } = require('../src/services/materiaIaService');
+const { serializarMensagem } = require('../src/services/materiaChatService');
 
 test('prompt da matéria manual exige redação original e fatos somente da apuração', () => {
   const prompt = blocoEstiloJmNoticia({ pesquisa: true });
@@ -115,4 +117,44 @@ Segundo as mensagens, o ex-ministro aparece tratando do encaminhamento de convit
   assert.match(resultado.materia, /O celular de Daniel Vorcaro revelou conversas/);
   assert.match(resultado.materia, /Fonte: Metrópoles/);
   assert.match(resultado.materia, /#BancoMaster #FabioFaria #DanielVorcaro #Politica #JMNoticia/);
+});
+
+test('resposta exibida no chat remove títulos alternativos em lista numerada', () => {
+  const textoGerado = `**\"Cavalo de Troia\": pastor critica psicologia moderna nas igrejas**
+
+O pastor publicou um vídeo em que apresenta sua interpretação sobre o tema.
+
+**Fonte:** YouTube
+
+#Psicologia #Fé #Igreja #Notícia #JMNotícia
+
+**Siga o JM Notícia.**
+
+Títulos alternativos:
+
+1. [[quem nomeia o problema decide a solução]]: pastor critica psicologia
+
+2. Pastor compara psicologia moderna a \"cavalo de Troia\"
+
+3. [[a culpa não é do agente]]: pastor critica avanço da psicologia`;
+
+  const resultado = removerComentariosEditoriaisIa(textoGerado);
+
+  assert.match(resultado, /Cavalo de Troia/);
+  assert.match(resultado, /Siga o JM Notícia/);
+  assert.doesNotMatch(resultado, /Títulos alternativos/i);
+  assert.doesNotMatch(resultado, /quem nomeia o problema/i);
+  assert.doesNotMatch(resultado, /Pastor compara psicologia moderna/i);
+
+  const mensagemAntiga = serializarMensagem({
+    id: 1,
+    role: 'assistant',
+    content: textoGerado,
+    hashtags: '[]',
+    fontes: '[]',
+    passos: '[]',
+    titulos_alternativos: '[]',
+  });
+  assert.doesNotMatch(mensagemAntiga.content, /Títulos alternativos/i);
+  assert.doesNotMatch(mensagemAntiga.content, /quem nomeia o problema/i);
 });

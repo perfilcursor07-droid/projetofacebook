@@ -1157,12 +1157,8 @@ function interpretarResposta(conteudo) {
 }
 
 function removerSecaoTitulosAlternativos(conteudo) {
-  return String(conteudo || '')
-    .replace(
-      /\n+\s*(?:t[ií]tulos?\s+alternativos?|op[cç][oõ]es\s+de\s+t[ií]tulos?)\s*:?\s*\n[\s\S]*$/i,
-      ''
-    )
-    .trim();
+  const { removerSecaoTitulosAlternativos: remover } = require('./editorialGuidelinesFb');
+  return remover(conteudo);
 }
 
 function montarMateriaSeparada(bloco, indice) {
@@ -1560,7 +1556,13 @@ function limparParaBanco(valor, max = 500) {
 }
 
 function serializarMensagem(row) {
-  const conteudo = String(row.content || '');
+  const conteudoBruto = String(row.content || '');
+  // Também limpa mensagens antigas já gravadas no banco, para o bloco não
+  // reaparecer ao recarregar uma conversa criada antes desta correção.
+  const conteudo =
+    row.role === 'assistant'
+      ? removerSecaoTitulosAlternativos(conteudoBruto)
+      : conteudoBruto;
   const info = row.role === 'assistant' ? interpretarResposta(conteudo) : null;
   const infoLivre = row.role === 'assistant' && row.chat_modo === 'livre'
     ? interpretarRespostaLivreParaRascunho(conteudo)
@@ -4900,6 +4902,7 @@ module.exports = {
   consultasGoogleNewsParaResolverFontesLivres,
   resolverFontesDeclaradasGoogleNewsLivre,
   separarMaterias,
+  serializarMensagem,
   extrairUrlsDoTexto,
   extrairFontesDeArtigos,
   extrairXComoFonte,
