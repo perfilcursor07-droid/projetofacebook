@@ -731,7 +731,9 @@
         ? `${topicos.length} pauta(s) nova(s) encontradas a partir do que mais engajou na sua página. Selecione uma ou mais para salvar como rascunho.`
       : topicos.length
         ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais para criar no chat ou salvar direto como rascunho.`
-        : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
+        : Number(data.totalOcultado) > 0
+          ? `As pautas encontradas nas últimas ${horas}h já viraram matéria nesta conta. Busque outro tema ou atualize mais tarde para ver novidades.`
+          : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
     corpo.appendChild(p);
     if (paginaFacebook && avisosPagina.length) {
       const aviso = document.createElement('p');
@@ -749,6 +751,12 @@
       const ocultadas = document.createElement('p');
       ocultadas.className = 'mia-x-result-note';
       ocultadas.textContent = `${Number(data.totalOcultado)} pauta(s) já transformada(s) em matéria foram ocultadas para evitar repetição.`;
+      corpo.appendChild(ocultadas);
+    }
+    if (!maisLidas && !paraPublico && !paginaFacebook && Number(data.totalOcultado) > 0) {
+      const ocultadas = document.createElement('p');
+      ocultadas.className = 'mia-x-result-note';
+      ocultadas.textContent = `${Number(data.totalOcultado)} pauta(s) já gerada(s), agendada(s) ou publicada(s) foram ocultadas.`;
       corpo.appendChild(ocultadas);
     }
     if (maisLidas && Array.isArray(data.erros) && data.erros.length) {

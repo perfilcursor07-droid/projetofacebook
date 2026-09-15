@@ -37,3 +37,12 @@ test('ordenação por métrica usa a opção selecionada antes do score', () => 
 
   assert.match(orderClause, /^order by COALESCE\(publications\.fb_shares, 0\) DESC/);
 });
+
+test('consulta de referências usadas cobre todo o histórico sem limite', () => {
+  const built = AiMatters.findUsedReferencesByUser(7).toSQL();
+
+  assert.match(built.sql, /`status` in \(\?, \?, \?, \?\)/);
+  assert.match(built.sql, /`publication_id` is not null/);
+  assert.doesNotMatch(built.sql, /limit \?/);
+  assert.deepEqual(built.bindings, [7, 'rascunho', 'pronto', 'agendado', 'publicado']);
+});

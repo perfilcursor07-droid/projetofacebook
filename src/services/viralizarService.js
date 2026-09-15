@@ -1109,7 +1109,9 @@ async function sincronizarPautasUsadas({
     };
   }
 
-  const matters = await AiMatters.findByUser(userId, 300);
+  // O histórico completo é necessário: uma pauta antiga pode voltar aos
+  // rankings meses depois. A consulta traz só os campos usados na comparação.
+  const matters = await AiMatters.findUsedReferencesByUser(userId);
   const urlsUsadas = new Set();
   const titulosUsados = [];
 

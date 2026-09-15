@@ -120,7 +120,10 @@ function distribuirPorTema(agrupados, rotulos, limite) {
  * Radar por tema, reaproveitando os coletores já existentes no projeto.
  * Cada coletor é tolerante a falha: chave de API vencida não derruba o radar.
  */
-async function radarPorTemas(temas, { horas = 24, limite = LIMITE_TOPICOS } = {}) {
+async function radarPorTemas(
+  temas,
+  { horas = 24, limite = LIMITE_TOPICOS, userId = null } = {}
+) {
   const nr = require('../services/newsResearch');
   const alvo = temas.slice(0, 5);
   const when = horas === 48 ? '2d' : '1d';
@@ -155,11 +158,28 @@ async function radarPorTemas(temas, { horas = 24, limite = LIMITE_TOPICOS } = {}
     (a, b) => b.calor - a.calor
   );
 
-  const escolhidos = distribuirPorTema(
+  // Mantém uma reserva para substituir resultados que já viraram matéria.
+  // O corte final só acontece depois da comparação com o histórico da conta.
+  const candidatos = distribuirPorTema(
     agrupados,
     alvo.map((t) => t.rotulo),
-    limite
+    Math.max(limite * 3, 60)
   );
+
+  let escolhidos = candidatos;
+  let totalOcultado = 0;
+  if (userId && candidatos.length) {
+    const viralizarService = require('../services/viralizarService');
+    const sincronizado = await viralizarService.sincronizarPautasUsadas({
+      userId,
+      facebookPageId: null,
+      topicos: candidatos,
+      excluidos: [],
+    });
+    escolhidos = sincronizado.topicos || [];
+    totalOcultado = Number(sincronizado.novosExcluidos) || 0;
+  }
+  escolhidos = escolhidos.slice(0, limite);
 
   // Apuração extra é bônus e roda em paralelo: se falhar, o item cru já serve.
   const { apurarTopico } = require('../services/articleSource');
@@ -168,7 +188,7 @@ async function radarPorTemas(temas, { horas = 24, limite = LIMITE_TOPICOS } = {}
     r.status === 'fulfilled' && r.value ? { ...r.value, tema: escolhidos[i].tema } : escolhidos[i]
   );
 
-  return { topicos, totalAnalisado: filtrados.length, horas };
+  return { topicos, totalAnalisado: filtrados.length, totalOcultado, horas };
 }
 
 function limpar(valor, max) {
@@ -254,7 +274,11 @@ router.post('/em-alta', async (req, res, next) => {
       : Promise.resolve([]);
 
     const [resultado, tendenciasGoogle] = await Promise.all([
-      radarPorTemas(temas, { horas, limite: LIMITE_TOPICOS }),
+      radarPorTemas(temas, {
+        horas,
+        limite: LIMITE_TOPICOS,
+        userId: req.session.userId,
+      }),
       tendenciasPromise,
     ]);
 
@@ -280,6 +304,7 @@ router.post('/em-alta', async (req, res, next) => {
       padrao: usandoPadrao,
       limite: LIMITE_TOPICOS,
       totalAnalisado: Number(resultado.totalAnalisado) || 0,
+      totalOcultado: Number(resultado.totalOcultado) || 0,
       tendenciasGoogle: (Array.isArray(tendenciasGoogle) ? tendenciasGoogle : []).map((item) => ({
         termo: limpar(item.termo, 120),
         crescimento: Number(item.crescimento) || 0,

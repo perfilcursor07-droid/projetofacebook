@@ -204,6 +204,30 @@ const AiMatters = {
     return db(this.table).where({ user_id: userId }).orderBy('created_at', 'desc').limit(limit);
   },
 
+  /**
+   * Referências leves de todo o histórico que já virou matéria na conta.
+   * Usado pelos radares para não oferecer novamente pauta publicada,
+   * agendada, pronta ou ainda em rascunho.
+   */
+  findUsedReferencesByUser(userId) {
+    return db(this.table)
+      .where({ user_id: userId })
+      .andWhere(function matterJaUsada() {
+        this.whereIn('status', ['rascunho', 'pronto', 'agendado', 'publicado']).orWhereNotNull(
+          'publication_id'
+        );
+      })
+      .select(
+        'id',
+        'titulo',
+        'fonte_titulo',
+        'fonte_url',
+        'status',
+        'publication_id',
+        'facebook_page_id'
+      );
+  },
+
   findRecentWithPage(userId, limit = 6) {
     return db(this.table)
       .leftJoin('facebook_pages', 'ai_matters.facebook_page_id', 'facebook_pages.id')
