@@ -119,6 +119,27 @@ Segundo as mensagens, o ex-ministro aparece tratando do encaminhamento de convit
   assert.match(resultado.materia, /#BancoMaster #FabioFaria #DanielVorcaro #Politica #JMNoticia/);
 });
 
+test('matéria manual remove títulos alternativos grudados na linha de hashtags', () => {
+  const textoGerado = `Um vídeo com uma profecia atribuída ao evangelista Rubens Gabriel voltou a circular nas redes sociais após os desdobramentos do caso Banco Master.
+
+Na gravação, o evangelista afirma ter recebido uma mensagem sobre situações ocultas no STF e cita Alexandre de Moraes.
+
+#AlexandreDeMoraes #STF #Profecia #RubensGabriel #BancoMaster #Gospel Três títulos alternativos: 1. ["Eu vejo o impeachment dele": profecia sobre Moraes viraliza após caso Master] 2. [[Vídeo de 2023 "previu" crise de Moraes no STF, dizem internautas]] 3. [[Profecia sobre "balança do STF" repercute em meio a revelações do caso Master]]`;
+
+  const resultado = montarRodapeMateriaComFontes({
+    materia: textoGerado,
+    fontes: [{ veiculo: 'Instagram', url: 'https://www.instagram.com/p/exemplo/' }],
+    creditoImagem: 'Reprodução',
+    hashtags: ['AlexandreDeMoraes', 'STF', 'Profecia', 'RubensGabriel', 'BancoMaster'],
+    limitarLegenda: false,
+  });
+
+  assert.doesNotMatch(resultado.materia, /Três títulos alternativos/i);
+  assert.doesNotMatch(resultado.materia, /Eu vejo o impeachment dele/i);
+  assert.match(resultado.materia, /#AlexandreDeMoraes #STF #Profecia #RubensGabriel #BancoMaster/);
+  assert.match(resultado.materia, /Fonte: Instagram/);
+});
+
 test('resposta exibida no chat remove títulos alternativos em lista numerada', () => {
   const textoGerado = `**\"Cavalo de Troia\": pastor critica psicologia moderna nas igrejas**
 

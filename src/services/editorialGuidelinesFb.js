@@ -67,8 +67,12 @@ function removerSecaoTitulosAlternativos(texto) {
   return String(texto || '')
     .replace(/\r\n/g, '\n')
     .replace(
-      /(?:^|\n+)\s*(?:[*_]{1,3}\s*)?(?:t[ií]tulos?\s+alternativos?|op[cç][oõ]es\s+de\s+t[ií]tulos?|sugest(?:ões|oes)\s+de\s+t[ií]tulos?)\s*:?\s*(?:[*_]{1,3})?(?=\s*(?:$|\n|\d{1,2}\s*[.)]|[-*•]))[\s\S]*$/i,
+      /(?:^|\n+)\s*(?:[*_]{1,3}\s*)?(?:(?:tr[eê]s|3)\s+)?(?:t[ií]tulos?\s+alternativos?|op[cç][oõ]es\s+de\s+t[ií]tulos?|sugest(?:ões|oes)\s+de\s+t[ií]tulos?)\s*:?\s*(?:[*_]{1,3})?(?=\s*(?:$|\n|\d{1,2}\s*[.)]|[-*•]|\[|["“]))[\s\S]*$/i,
       ''
+    )
+    .replace(
+      /((?:^|\s)#[\p{L}\p{M}\p{N}_]+(?:\s+#[\p{L}\p{M}\p{N}_]+){0,20})\s+(?:[*_]{1,3}\s*)?(?:(?:tr[eê]s|3)\s+)?(?:t[ií]tulos?\s+alternativos?|op[cç][oõ]es\s+de\s+t[ií]tulos?|sugest(?:ões|oes)\s+de\s+t[ií]tulos?)\s*:?\s*(?:[*_]{1,3})?[\s\S]*$/iu,
+      '$1'
     )
     .replace(/\n{3,}/g, '\n\n')
     .trim();
