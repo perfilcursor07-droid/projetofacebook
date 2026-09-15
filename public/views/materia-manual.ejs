@@ -1,6 +1,6 @@
 <%- include('partials/app-start') %>
   <link rel="stylesheet" href="/css/materia-chat.css?v=20260902tomTitulosClaude1" />
-  <link rel="stylesheet" href="/css/materia-manual.css?v=20260912verde2" />
+  <link rel="stylesheet" href="/css/materia-manual.css?v=20260915radarGoogleRedes1" />
 
   <main class="mia-chat mia-manual-claude" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -78,6 +78,36 @@
               <h1 class="mia-chat-empty-title">O que vamos escrever hoje?</h1>
               <p class="mia-chat-empty-sub">Uma ideia, um link ou uma boa conversa. Comece por aqui.</p>
             </div>
+            <section class="mia-chat-radar-start" aria-labelledby="chat-radar-start-title">
+              <div class="mia-chat-radar-start-head">
+                <div>
+                  <p class="mia-chat-radar-start-eyebrow">Radar de pautas</p>
+                  <h2 id="chat-radar-start-title">Descubra o que pode virar matéria agora</h2>
+                </div>
+                <span class="mia-chat-radar-start-live"><i aria-hidden="true"></i> Atualizado ao buscar</span>
+              </div>
+              <div class="mia-chat-radar-start-grid">
+                <button type="button" id="chat-radar-alta" class="mia-chat-radar-start-card">
+                  <span class="mia-chat-radar-start-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-9"/><path d="M15 6h6v6"/></svg>
+                  </span>
+                  <span><strong>Google + redes</strong><small>Buscas crescendo, notícias e posts recentes</small></span>
+                </button>
+                <button type="button" id="chat-radar-publico" class="mia-chat-radar-start-card">
+                  <span class="mia-chat-radar-start-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/><path d="M16 3.2a4 4 0 0 1 0 7.6M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+                  </span>
+                  <span><strong>Para meu público</strong><small>Pautas parecidas com o que mais engajou</small></span>
+                </button>
+                <button type="button" id="chat-radar-mais-lidas" class="mia-chat-radar-start-card">
+                  <span class="mia-chat-radar-start-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M9 7h7M9 11h7"/></svg>
+                  </span>
+                  <span><strong>Mais lidas</strong><small>Rankings dos portais cadastrados</small></span>
+                </button>
+              </div>
+              <p class="mia-chat-radar-start-help">Escolha uma pauta para a IA pesquisar e escrever, ou marque várias para gerar em lote.</p>
+            </section>
             <details class="mia-chat-title-tone">
               <summary id="chat-title-tone-label" class="mia-chat-title-tone-label">Personalizar o tom da escrita</summary>
               <p class="mia-chat-title-tone-help">Escolha como os títulos serão sugeridos nesta conversa.</p>
@@ -392,5 +422,5 @@
     })();
   </script>
   <script src="/js/materia-chat.js?v=20260902tomTitulosClaude1"></script>
-  <script src="/js/materia-chat-extras.js?v=20260829maislidasfontes2"></script>
+  <script src="/js/materia-chat-extras.js?v=20260915radarGoogleRedes1"></script>
 <%- include('partials/app-end') %>

@@ -86,6 +86,21 @@
       background: rgba(16,185,129,.12); color: #6ee7b7;
       font-size: .65rem; font-weight: 500;
     }
+    .mia-x-google-trends {
+      margin: .65rem 0 .15rem; padding: .65rem;
+      border: 1px solid rgba(52,211,153,.2); border-radius: .7rem;
+      background: rgba(16,185,129,.055);
+    }
+    .mia-x-google-trends-title {
+      margin: 0 0 .45rem; color: #a7f3d0; font-size: .68rem; font-weight: 650;
+    }
+    .mia-x-google-trends-list { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .mia-x-google-trend {
+      border: 1px solid #3f5149; border-radius: 999px; background: #29332f;
+      padding: .28rem .55rem; color: #d6d3ca; font-size: .68rem; line-height: 1.2;
+      cursor: pointer;
+    }
+    .mia-x-google-trend:hover { border-color: #10b981; color: #fff; background: #244137; }
     .mia-x-source-filter {
       display: flex; flex-wrap: wrap; gap: .35rem; margin: .65rem 0 .55rem;
       padding-bottom: .55rem; border-bottom: 1px solid #1e293b;
@@ -334,6 +349,17 @@
     'Cole uma página do Facebook, escolha os posts e crie rascunhos',
     ICONE_FACEBOOK
   );
+
+  const atalhosRadar = {
+    alta: document.getElementById('chat-radar-alta'),
+    publico: document.getElementById('chat-radar-publico'),
+    maisLidas: document.getElementById('chat-radar-mais-lidas'),
+  };
+
+  function ligarAtalhoRadar(botao, acao) {
+    if (!botao) return;
+    botao.addEventListener('click', acao);
+  }
 
   function desativarPaginaFacebook() {
     paginaFacebookAtiva = false;
@@ -679,8 +705,12 @@
     const paraPublico = data.origem === 'viralizadas';
     const paginaFacebook = data.origem === 'pagina-facebook';
     const maisLidas = data.origem === 'mais-lidas';
-    const podeSalvarRascunho = paraPublico || paginaFacebook || maisLidas;
+    const podeSalvarRascunho =
+      paraPublico || paginaFacebook || maisLidas || data.origem === 'em-alta';
     const basesVirais = Array.isArray(data.basesVirais) ? data.basesVirais : [];
+    const tendenciasGoogle = Array.isArray(data.tendenciasGoogle)
+      ? data.tendenciasGoogle.filter((item) => item?.termo)
+      : [];
     const avisosPagina = Array.isArray(data.avisos) ? data.avisos.filter(Boolean) : [];
 
     limparBlocosAlta();
@@ -700,7 +730,7 @@
       : paraPublico
         ? `${topicos.length} pauta(s) nova(s) encontradas a partir do que mais engajou na sua página. Selecione uma ou mais para salvar como rascunho.`
       : topicos.length
-        ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais e eu escrevo tudo de uma vez.`
+        ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais para criar no chat ou salvar direto como rascunho.`
         : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
     corpo.appendChild(p);
     if (paginaFacebook && avisosPagina.length) {
@@ -764,6 +794,27 @@
     });
     head.appendChild(recarregar);
     box.appendChild(head);
+
+    if (!maisLidas && !paraPublico && !paginaFacebook && tendenciasGoogle.length) {
+      const trends = document.createElement('section');
+      trends.className = 'mia-x-google-trends';
+      const trendsTitle = document.createElement('p');
+      trendsTitle.className = 'mia-x-google-trends-title';
+      trendsTitle.textContent = 'Buscas crescendo no Google Brasil';
+      const trendsList = document.createElement('div');
+      trendsList.className = 'mia-x-google-trends-list';
+      tendenciasGoogle.slice(0, 12).forEach((item) => {
+        const trend = document.createElement('button');
+        trend.type = 'button';
+        trend.className = 'mia-x-google-trend';
+        trend.textContent = item.termo;
+        trend.title = `Pesquisar notícias e posts sobre ${item.termo}`;
+        trend.addEventListener('click', () => carregarAlta(item.termo));
+        trendsList.appendChild(trend);
+      });
+      trends.append(trendsTitle, trendsList);
+      box.appendChild(trends);
+    }
 
     if (paraPublico && basesVirais.length) {
       const bases = document.createElement('div');
@@ -886,7 +937,7 @@
       const gerar = document.createElement('button');
       gerar.type = 'button';
       gerar.className = 'mia-x-lote-gerar';
-      gerar.textContent = paraPublico ? 'Gerar no chat' : 'Gerar selecionados';
+      gerar.textContent = podeSalvarRascunho ? 'Criar no chat' : 'Criar selecionadas';
       gerar.disabled = true;
       lote.appendChild(selecionar);
       if (podeSalvarRascunho) lote.appendChild(salvar);
@@ -941,11 +992,13 @@
         gerar.disabled = total === 0 || salvando;
         gerar.textContent = total
           ? paraPublico
-            ? `Gerar ${total} no chat`
-            : `Gerar ${total} selecionado(s)`
+            ? `Criar ${total} no chat`
+            : `Criar ${total} matéria(s)`
           : paraPublico
-            ? 'Gerar no chat'
-            : 'Gerar selecionados';
+            ? 'Criar no chat'
+            : podeSalvarRascunho
+              ? 'Criar no chat'
+              : 'Criar selecionadas';
         selecionar.textContent = total
           ? 'Limpar seleção'
           : paginaFacebook
@@ -1095,6 +1148,8 @@
           t.veiculo || 'Web',
           formatarDataPauta(t),
           paginaFacebook && t.mediaType === 'video' ? 'Vídeo' : '',
+          t.sinalGoogleNews ? 'Google News' : '',
+          t.sinalRedes ? 'Redes sociais' : '',
           t.contagemFontes > 1 ? `${t.contagemFontes} fontes` : '',
         ]
           .filter(Boolean)
@@ -1126,7 +1181,7 @@
         const gerarUm = document.createElement('button');
         gerarUm.type = 'button';
         gerarUm.className = 'mia-x-card-gerar';
-        gerarUm.textContent = podeSalvarRascunho ? 'Salvar' : 'Gerar';
+        gerarUm.textContent = podeSalvarRascunho ? 'Salvar rascunho' : 'Criar matéria';
         gerarUm.addEventListener('click', async (ev) => {
           ev.stopPropagation();
           if (!podeSalvarRascunho) {
@@ -1245,6 +1300,10 @@
     marcarAlta(true);
     carregarAlta('');
   });
+
+  ligarAtalhoRadar(atalhosRadar.alta, () => btnAlta.click());
+  ligarAtalhoRadar(atalhosRadar.publico, () => btnPublico.click());
+  ligarAtalhoRadar(atalhosRadar.maisLidas, () => btnMaisLidas.click());
 
   async function carregarParaPublico() {
     if (carregandoPublico) return;

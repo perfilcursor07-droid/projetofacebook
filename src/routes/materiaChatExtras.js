@@ -178,6 +178,20 @@ function limpar(valor, max) {
     .slice(0, max);
 }
 
+async function comPrazo(promessa, ms, fallback) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve(promessa).catch(() => fallback),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Rankings configurados em Configurações → Descobrir pautas. */
 router.post('/mais-lidas', async (req, res, next) => {
   try {
@@ -228,7 +242,21 @@ router.post('/em-alta', async (req, res, next) => {
     const usandoPadrao = temasDaBusca.length === 0;
     const temas = usandoPadrao ? TEMAS_PADRAO : temasDaBusca;
 
-    const resultado = await radarPorTemas(temas, { horas, limite: LIMITE_TOPICOS });
+    const tendenciasPromise = usandoPadrao
+      ? comPrazo(
+          require('../services/googleTrendsService').buscarTrendsBrasil({
+            limit: 12,
+            onlyGospel: false,
+          }),
+          8000,
+          []
+        )
+      : Promise.resolve([]);
+
+    const [resultado, tendenciasGoogle] = await Promise.all([
+      radarPorTemas(temas, { horas, limite: LIMITE_TOPICOS }),
+      tendenciasPromise,
+    ]);
 
     const topicos = (resultado.topicos || [])
       .filter((t) => t && t.titulo && (t.link || t.url))
@@ -240,15 +268,22 @@ router.post('/em-alta', async (req, res, next) => {
         tema: limpar(t.tema, 60) || null,
         contagemFontes: Number(t.contagemFontes) || 1,
         calor: Number(t.calor) || 0,
+        sinalRedes: Boolean(t.sinalRedes || t.redeSocial || t.tipoFonte === 'rede_social'),
+        sinalGoogleNews: Boolean(t.sinalTrends || t.emAlta),
       }));
 
     return res.json({
       ok: true,
+      origem: 'em-alta',
       horas,
       temas: temas.map((t) => t.rotulo),
       padrao: usandoPadrao,
       limite: LIMITE_TOPICOS,
       totalAnalisado: Number(resultado.totalAnalisado) || 0,
+      tendenciasGoogle: (Array.isArray(tendenciasGoogle) ? tendenciasGoogle : []).map((item) => ({
+        termo: limpar(item.termo, 120),
+        crescimento: Number(item.crescimento) || 0,
+      })).filter((item) => item.termo),
       topicos,
     });
   } catch (err) {

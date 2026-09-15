@@ -50,6 +50,55 @@ body:has(.mia-manual-claude) #app-content > header > a { color: #34d399; }
 .mia-manual-claude .mia-chat-title-tone-label { cursor: pointer; color: #b8b3a9; font-size: .75rem; font-weight: 400; width: fit-content; margin: auto; }
 .mia-manual-claude .mia-chat-title-tone-help { margin: .75rem 0; color: #aaa79f; }
 .mia-manual-claude .mia-chat-title-tone-options { justify-content: center; }
+.mia-manual-claude .mia-chat-radar-start {
+  width: min(100%, 47rem); margin: .15rem auto 0; padding: 1rem;
+  border: 1px solid #45443f; border-radius: 1rem; background: #2d2d2a;
+  text-align: left;
+}
+.mia-manual-claude .mia-chat-radar-start-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+}
+.mia-manual-claude .mia-chat-radar-start-eyebrow {
+  margin: 0 0 .2rem; color: #6ee7b7; font-size: .65rem; font-weight: 700;
+  letter-spacing: .09em; text-transform: uppercase;
+}
+.mia-manual-claude .mia-chat-radar-start h2 {
+  margin: 0; color: #eee9de; font-size: .95rem; line-height: 1.35; font-weight: 600;
+}
+.mia-manual-claude .mia-chat-radar-start-live {
+  display: inline-flex; align-items: center; gap: .35rem; flex: 0 0 auto;
+  color: #aaa79f; font-size: .65rem; white-space: nowrap;
+}
+.mia-manual-claude .mia-chat-radar-start-live i {
+  width: .42rem; height: .42rem; border-radius: 50%; background: #34d399;
+  box-shadow: 0 0 0 .2rem rgb(52 211 153 / 12%);
+}
+.mia-manual-claude .mia-chat-radar-start-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .55rem; margin-top: .85rem;
+}
+.mia-manual-claude .mia-chat-radar-start-card {
+  display: flex; align-items: flex-start; gap: .6rem; min-width: 0; padding: .75rem;
+  border: 1px solid #4a4943; border-radius: .75rem; background: #343431;
+  color: #e6e1d5; text-align: left; cursor: pointer;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.mia-manual-claude .mia-chat-radar-start-card:hover {
+  border-color: #059669; background: #293a33; transform: translateY(-1px);
+}
+.mia-manual-claude .mia-chat-radar-start-card:disabled { opacity: .55; cursor: wait; transform: none; }
+.mia-manual-claude .mia-chat-radar-start-card > span:last-child { min-width: 0; }
+.mia-manual-claude .mia-chat-radar-start-card strong,
+.mia-manual-claude .mia-chat-radar-start-card small { display: block; }
+.mia-manual-claude .mia-chat-radar-start-card strong { font-size: .78rem; line-height: 1.3; font-weight: 650; }
+.mia-manual-claude .mia-chat-radar-start-card small { margin-top: .18rem; color: #aaa79f; font-size: .67rem; line-height: 1.35; }
+.mia-manual-claude .mia-chat-radar-start-icon {
+  display: grid; place-items: center; flex: 0 0 1.75rem; width: 1.75rem; height: 1.75rem;
+  border-radius: .5rem; background: #223d32; color: #6ee7b7;
+}
+.mia-manual-claude .mia-chat-radar-start-icon svg { width: 1rem; height: 1rem; }
+.mia-manual-claude .mia-chat-radar-start-help {
+  margin: .65rem 0 0; color: #8f8b83; font-size: .68rem; line-height: 1.4;
+}
 .mia-manual-claude .chat-title-tone { border-color: #494740; background: transparent; color: #bbb7ae; border-radius: 2rem; }
 .mia-manual-claude .chat-title-tone.is-active { background: #233c32; border-color: #059669; color: #a7f3d0; }
 .mia-manual-claude .mia-chat-composer-wrap { background: var(--mia-chat-bg); padding: .85rem 1.5rem 1rem; }
@@ -105,6 +154,12 @@ body:has(.mia-manual-claude) #app-content > header > a { color: #34d399; }
   .mia-manual-claude .mia-chat-header { min-height: 3.5rem; padding: .65rem .75rem; }
   .mia-manual-claude .mia-chat-empty-title { font-size: 2.1rem; }
   .mia-manual-claude .mia-chat-empty-sub { font-size: .82rem; max-width: 18rem; }
+  .mia-manual-claude .mia-chat-radar-start { width: 100%; padding: .8rem; border-radius: .85rem; }
+  .mia-manual-claude .mia-chat-radar-start-head { display: block; }
+  .mia-manual-claude .mia-chat-radar-start-live { margin-top: .35rem; }
+  .mia-manual-claude .mia-chat-radar-start-grid { grid-template-columns: 1fr; gap: .42rem; }
+  .mia-manual-claude .mia-chat-radar-start-card { padding: .65rem .7rem; }
+  .mia-manual-claude .mia-chat-radar-start-help { display: none; }
   .mia-manual-claude .mia-chat-composer-wrap { padding: .65rem .65rem max(.7rem, env(safe-area-inset-bottom)); }
   .mia-manual-claude .mia-chat-composer { padding: .55rem .6rem .45rem; border-radius: 1.1rem; }
   .mia-manual-claude .mia-chat-toolbar { flex-wrap: wrap; }
