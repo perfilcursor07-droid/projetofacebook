@@ -82,10 +82,11 @@
     .mia-x-alta-title { margin: 0; font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #64748b; }
     .mia-x-temas { display: flex; flex-wrap: wrap; gap: .3rem; margin: .5rem 0 .1rem; }
     .mia-x-tema {
-      border-radius: .35rem; padding: .1rem .4rem;
+      border: 1px solid rgba(16,185,129,.2); border-radius: .35rem; padding: .18rem .45rem;
       background: rgba(16,185,129,.12); color: #6ee7b7;
-      font-size: .65rem; font-weight: 500;
+      font-size: .65rem; font-weight: 500; cursor: pointer;
     }
+    .mia-x-tema:hover { border-color: rgba(16,185,129,.7); color: #d1fae5; }
     .mia-x-google-trends {
       margin: .65rem 0 .15rem; padding: .65rem;
       border: 1px solid rgba(52,211,153,.2); border-radius: .7rem;
@@ -359,6 +360,15 @@
   function ligarAtalhoRadar(botao, acao) {
     if (!botao) return;
     botao.addEventListener('click', acao);
+  }
+
+  function rotuloJanelaRadar(horas) {
+    const n = Number(horas) || 48;
+    if (n === 24) return 'nas últimas 24 horas';
+    if (n === 48) return 'nas últimas 48 horas';
+    if (n === 72) return 'nos últimos 3 dias';
+    if (n === 168) return 'nos últimos 7 dias';
+    return `nas últimas ${n} horas`;
   }
 
   function desativarPaginaFacebook() {
@@ -702,6 +712,7 @@
     const topicos = data.topicos || [];
     const temas = data.temas || [];
     const horas = data.horas || 24;
+    const janela = rotuloJanelaRadar(horas);
     const paraPublico = data.origem === 'viralizadas';
     const paginaFacebook = data.origem === 'pagina-facebook';
     const maisLidas = data.origem === 'mais-lidas';
@@ -730,10 +741,10 @@
       : paraPublico
         ? `${topicos.length} pauta(s) nova(s) encontradas a partir do que mais engajou na sua página. Selecione uma ou mais para salvar como rascunho.`
       : topicos.length
-        ? `${topicos.length} assunto(s) em alta nas últimas ${horas}h (${data.totalAnalisado || 0} analisados). Marque um ou mais para criar no chat ou salvar direto como rascunho.`
+        ? `${topicos.length} assunto(s) em alta ${janela} (${data.totalAnalisado || 0} analisados). Marque um ou mais para criar no chat ou salvar direto como rascunho.`
         : Number(data.totalOcultado) > 0
-          ? `As pautas encontradas nas últimas ${horas}h já viraram matéria nesta conta. Busque outro tema ou atualize mais tarde para ver novidades.`
-          : `Não achei nada em alta nas últimas ${horas}h nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
+          ? `As pautas encontradas ${janela} já viraram matéria nesta conta. Busque outro tema ou atualize mais tarde para ver novidades.`
+          : `Não achei nada em alta ${janela} nesses temas. Tente de novo em alguns minutos ou busque outro tema abaixo.`;
     corpo.appendChild(p);
     if (paginaFacebook && avisosPagina.length) {
       const aviso = document.createElement('p');
@@ -848,9 +859,12 @@
       const chips = document.createElement('div');
       chips.className = 'mia-x-temas';
       temas.forEach((t) => {
-        const chip = document.createElement('span');
+        const chip = document.createElement('button');
+        chip.type = 'button';
         chip.className = 'mia-x-tema';
         chip.textContent = t;
+        chip.title = `Aprofundar a pesquisa em ${t}`;
+        chip.addEventListener('click', () => carregarAlta(t));
         chips.appendChild(chip);
       });
       box.appendChild(chips);
@@ -1278,7 +1292,14 @@
     carregandoAlta = true;
     btnAlta.disabled = true;
 
-    const horas = el.periodo?.value === '24h' ? 24 : 48;
+    const horasPorPeriodo = {
+      '24h': 24,
+      '3d': 72,
+      '7d': 168,
+    };
+    // Para “Em alta”, períodos editoriais longos são limitados a 7 dias:
+    // mantém novidade sem zerar a pesquisa quando 30/60/90 dias estiver selecionado.
+    const horas = horasPorPeriodo[el.periodo?.value] || 168;
     const termo = String(busca || '').replace(/\s+/g, ' ').trim();
 
     setStatus(

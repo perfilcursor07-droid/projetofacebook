@@ -12,7 +12,7 @@ const { uploadMatterImage } = require('../middleware/uploadMatterImage');
 const router = express.Router();
 
 /** Quantos assuntos o radar devolve por vez. */
-const LIMITE_TOPICOS = 20;
+const LIMITE_TOPICOS = 30;
 
 /**
  * Temas que abrem por padrão ao clicar em "Em alta".
@@ -22,16 +22,48 @@ const LIMITE_TOPICOS = 20;
  */
 const TEMAS_PADRAO = Object.freeze([
   Object.freeze({
-    rotulo: 'política',
-    consultas: Object.freeze(['política evangélicos', 'bancada evangélica', 'deputado pastor']),
+    rotulo: 'Política e fé',
+    consultas: Object.freeze(['política evangélicos', 'bancada evangélica']),
   }),
   Object.freeze({
-    rotulo: 'igreja evangélica',
-    consultas: Object.freeze(['igreja evangélica', 'pastor igreja evangélica', 'culto evangélico']),
+    rotulo: 'Denominações',
+    consultas: Object.freeze(['Assembleia de Deus decisão', 'denominação evangélica pastor']),
   }),
   Object.freeze({
-    rotulo: 'polêmica gospel',
-    consultas: Object.freeze(['polêmica gospel', 'cantor gospel polêmica', 'cantora gospel']),
+    rotulo: 'Pastores e líderes',
+    consultas: Object.freeze(['pastor declaração polêmica', 'líder evangélico notícia']),
+  }),
+  Object.freeze({
+    rotulo: 'Música gospel',
+    consultas: Object.freeze(['cantor gospel notícia', 'música gospel polêmica']),
+  }),
+  Object.freeze({
+    rotulo: 'Escatologia e profecia',
+    consultas: Object.freeze(['escatologia profecia pastor', 'arrebatamento Israel evangélicos']),
+  }),
+  Object.freeze({
+    rotulo: 'Testemunhos e conversão',
+    consultas: Object.freeze(['testemunho cristão superação', 'cura conversão evangélico']),
+  }),
+  Object.freeze({
+    rotulo: 'Família e comportamento',
+    consultas: Object.freeze(['família cristã pastor', 'comportamento igreja evangélica']),
+  }),
+  Object.freeze({
+    rotulo: 'Missões e perseguição',
+    consultas: Object.freeze(['cristãos perseguidos missão', 'missionário evangélico notícia']),
+  }),
+  Object.freeze({
+    rotulo: 'Fé, ciência e saúde',
+    consultas: Object.freeze(['fé ciência estudo oração', 'saúde mental igreja evangélica']),
+  }),
+  Object.freeze({
+    rotulo: 'Israel e mundo cristão',
+    consultas: Object.freeze(['Israel evangélicos profecia', 'cristãos mundo religião']),
+  }),
+  Object.freeze({
+    rotulo: 'Polêmicas nas redes',
+    consultas: Object.freeze(['pastor viralizou redes sociais', 'polêmica gospel internet']),
   }),
 ]);
 
@@ -125,19 +157,20 @@ async function radarPorTemas(
   { horas = 24, limite = LIMITE_TOPICOS, userId = null } = {}
 ) {
   const nr = require('../services/newsResearch');
-  const alvo = temas.slice(0, 5);
-  const when = horas === 48 ? '2d' : '1d';
+  const alvo = temas.slice(0, 12);
+  const periodoPesquisa = { horas };
+  const when = nr.whenParaGoogle(periodoPesquisa);
 
   // Cada busca carrega o tema de origem para a cota funcionar depois.
   const tarefas = [];
   const marcar = (tema, promessa) => tarefas.push({ tema, promessa });
   alvo.forEach((tema, indice) => {
-    tema.consultas.slice(0, 3).forEach((consulta) => {
+    tema.consultas.slice(0, 2).forEach((consulta) => {
       marcar(tema.rotulo, nr.buscarGoogleNewsEmAlta(consulta));
       marcar(tema.rotulo, nr.buscarGoogleNewsRss(consulta, { when }));
-      marcar(tema.rotulo, nr.buscarBraveNews(consulta, 1));
+      marcar(tema.rotulo, nr.buscarBraveNews(consulta, periodoPesquisa));
       // Redes sociais só na primeira consulta de cada tema: é a busca mais cara.
-      if (indice < 3 && consulta === tema.consultas[0]) {
+      if (indice < 6 && consulta === tema.consultas[0]) {
         marcar(tema.rotulo, nr.buscarSerperRedes(consulta));
       }
     });
@@ -250,7 +283,8 @@ router.post('/em-alta', async (req, res, next) => {
   try {
     const body = req.body || {};
     const busca = limpar(body.busca || body.palavrasExtras || body.palavras_extras, 200);
-    const horas = Number(body.horas) === 48 ? 48 : 24;
+    const horasSolicitadas = Number(body.horas);
+    const horas = [24, 48, 72, 168].includes(horasSolicitadas) ? horasSolicitadas : 48;
 
     const temasDaBusca = busca
       .split(/[,;]+/)
