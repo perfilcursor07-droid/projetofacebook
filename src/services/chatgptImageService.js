@@ -25,6 +25,64 @@ const SEM_TEXTO_NA_IMAGEM = [
   'Não recrie nem substitua esses elementos por outros textos.',
 ].join(' ');
 const conversasRecentes = new Map();
+let conexaoBrowser = null;
+let filaPreparacao = Promise.resolve();
+
+async function reservarPreparacao() {
+  const anterior = filaPreparacao;
+  let liberar;
+  filaPreparacao = new Promise((resolve) => { liberar = resolve; });
+  await anterior;
+  return liberar;
+}
+
+async function obterBrowser() {
+  if (!conexaoBrowser) {
+    const tentativa = (async () => {
+      let chromium;
+      try {
+        ({ chromium } = require(PLAYWRIGHT_PATH));
+      } catch {
+        throw erro('O módulo de navegador do gateway não está instalado.', 503);
+      }
+      try {
+        return await chromium.connectOverCDP(await websocketCdp(), { timeout: 60_000 });
+      } catch (cause) {
+        if (cause.status) throw cause;
+        throw erro('O Chrome do ChatGPT não respondeu a tempo. Aguarde as gerações atuais e confira o navegador na página /claude antes de tentar novamente.', 503);
+      }
+    })();
+    conexaoBrowser = tentativa;
+    tentativa.then((browser) => {
+      browser.on('disconnected', () => {
+        if (conexaoBrowser === tentativa) conexaoBrowser = null;
+      });
+    }, () => {
+      if (conexaoBrowser === tentativa) conexaoBrowser = null;
+    });
+  }
+  return conexaoBrowser;
+}
+
+async function aguardarEditor(page) {
+  const input = page.locator('#prompt-textarea:visible, textarea:visible, [contenteditable="true"]:visible').first();
+  for (let tentativa = 0; tentativa < 2; tentativa += 1) {
+    try {
+      await input.waitFor({ state: 'visible', timeout: 45_000 });
+      return input;
+    } catch {
+      if (page.isClosed()) throw erro('A conversa do ChatGPT foi fechada antes do envio. Tente novamente.', 503);
+      if (/auth\/login|log-in/i.test(page.url()) || !(await sessaoChatgptAtiva(page))) {
+        throw erro('A sessão do ChatGPT expirou. Entre novamente pela página /claude.', 401);
+      }
+      // A recarga ocorre somente antes de anexar a foto ou enviar o pedido.
+      if (tentativa === 0) {
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 45_000 });
+      }
+    }
+  }
+  throw erro('O campo de mensagem do ChatGPT não carregou. Abra /claude e confira se há algum aviso ou verificação pendente; depois tente novamente.', 503);
+}
 
 function erro(message, status = 400) {
   const err = new Error(message);
@@ -357,19 +415,13 @@ async function anexarImagemNoComposer(page, input, upload) {
 async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey }) {
   const credentials = await credenciaisChatgpt();
   const upload = await imagemParaUpload(sourceUrl);
-  let chromium;
+  const liberarPreparacao = await reservarPreparacao();
+  let page;
   try {
-    ({ chromium } = require(PLAYWRIGHT_PATH));
-  } catch {
-    throw erro('O módulo de navegador do gateway não está instalado.', 503);
-  }
-
-  const browser = await chromium.connectOverCDP(await websocketCdp());
-  const context = browser.contexts()[0];
-  if (!context) throw erro('O Chrome isolado não disponibilizou um perfil de navegação.', 503);
-
-  const page = await context.newPage();
-  try {
+    const browser = await obterBrowser();
+    const context = browser.contexts()[0];
+    if (!context) throw erro('O Chrome isolado não disponibilizou um perfil de navegação.', 503);
+    page = await context.newPage();
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     // O login feito em /claude vive no mesmo perfil do Chrome, então em geral
     // não há nada para reinjetar. Só usa a cópia salva como recuperação.
@@ -384,8 +436,7 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
       throw erro('A sessão do ChatGPT expirou. Entre novamente pela página /claude.', 401);
     }
 
-    const input = page.locator('#prompt-textarea:visible, textarea:visible, [contenteditable="true"]:visible').first();
-    await input.waitFor({ state: 'visible', timeout: 20_000 });
+    const input = await aguardarEditor(page);
     await anexarImagemNoComposer(page, input, upload);
 
     const pedido = promptComFormatoFacebook(prompt, { titulo, materia });
@@ -410,6 +461,7 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
 
     await page.waitForURL(/https:\/\/chatgpt\.com\/c\//i, { timeout: 30_000 }).catch(() => {});
     registrarConversa(recoveryKey, page.url());
+    liberarPreparacao();
 
     const limite = Date.now() + 300_000;
     let src = '';
@@ -432,7 +484,8 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
     const result = await baixarImagemDaPagina(page, src);
     return { ...result, prompt: pedido, model: CHATGPT_MODEL };
   } finally {
-    await page.close().catch(() => {});
+    liberarPreparacao();
+    if (page) await page.close().catch(() => {});
   }
 }
 
@@ -442,7 +495,7 @@ async function recuperarImagem({ recoveryKey }) {
     throw erro('Ainda não existe uma conversa recente do ChatGPT para esta matéria. Gere a imagem primeiro.', 409);
   }
 
-  const browser = await require(PLAYWRIGHT_PATH).chromium.connectOverCDP(await websocketCdp());
+  const browser = await obterBrowser();
   const context = browser.contexts()[0];
   if (!context) throw erro('O Chrome isolado não disponibilizou um perfil de navegação.', 503);
   const page = await context.newPage();
