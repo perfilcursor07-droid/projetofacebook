@@ -72,7 +72,22 @@
     return [...new Set(encontradas.map((url) => url.replace(/[),.;!?]+$/, '')))];
   }
 
+  function linksComOpcaoDeMaterias(texto) {
+    return urlsDoTexto(texto).some((link) => {
+      try {
+        const host = new URL(link).hostname.toLowerCase();
+        return /(^|\.)(youtube\.com|youtu\.be|instagram\.com|facebook\.com|fb\.watch)$/.test(host);
+      } catch { return false; }
+    });
+  }
+
   function atualizarLinksDetectados() {
+    const opcoes = document.getElementById('chat-video-options');
+    const quantidade = document.getElementById('chat-video-count');
+    if (opcoes) {
+      opcoes.hidden = !linksComOpcaoDeMaterias(el.input?.value);
+      if (opcoes.hidden && quantidade) quantidade.value = '1';
+    }
     if (!el.linksDetectados) return;
     const total = urlsDoTexto(el.input?.value).length;
     if (total < 2) {
@@ -2105,7 +2120,12 @@
 
   async function enviar() {
     if (state.enviando) return;
-    const texto = String(el.input.value || '').trim();
+    let texto = String(el.input.value || '').trim();
+    const quantidadeVideo = linksComOpcaoDeMaterias(texto)
+      ? Number(document.getElementById('chat-video-count')?.value || 1) : 1;
+    if ([2, 3, 4, 5].includes(quantidadeVideo)) {
+      texto += `\n\nCrie até ${quantidadeVideo} matérias independentes a partir dos assuntos distintos presentes no conteúdo dos links acima. Analise a transcrição completa disponível e a legenda. Cada matéria deve ter um foco diferente, título próprio, corpo e crédito da fonte. Não repita o mesmo fato com títulos diferentes e não invente assuntos para completar a quantidade. Se houver apenas um assunto aproveitável, entregue somente uma matéria. Separe cada matéria com o cabeçalho "### MATÉRIA 1", "### MATÉRIA 2" e assim por diante. A quantidade é o total para este pedido, não por link.`;
+    }
     const escolhaNumerada = entradaEhEscolhaNumerada(texto);
     const pedePesquisaLivre =
       state.tipoConversa === 'livre' &&

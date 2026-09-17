@@ -1,6 +1,6 @@
 <%- include('partials/app-start') %>
   <link rel="stylesheet" href="/css/materia-chat.css?v=20260902tomTitulosClaude1" />
-  <link rel="stylesheet" href="/css/materia-manual.css?v=20260916revisao2" />
+  <link rel="stylesheet" href="/css/materia-manual.css?v=20260916video3" />
 
   <main class="mia-chat mia-manual-claude" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -136,6 +136,17 @@
               aria-label="Mensagem para a IA"
               class="mia-chat-input"></textarea>
             <span id="chat-links-detectados" class="mia-chat-links-hint hidden"></span>
+            <div id="chat-video-options" class="mia-video-options" hidden>
+              <label for="chat-video-count">Quantas matérias quer criar deste conteúdo?</label>
+              <select id="chat-video-count">
+                <option value="1">Uma matéria</option>
+                <option value="2">Até 2 matérias</option>
+                <option value="3">Até 3 matérias</option>
+                <option value="4">Até 4 matérias</option>
+                <option value="5">Até 5 matérias</option>
+              </select>
+              <small>A IA separa assuntos diferentes quando houver conteúdo suficiente. Links de posts também são aceitos.</small>
+            </div>
 
             <div class="mia-chat-toolbar">
               <div class="mia-chat-toolbar-main">
@@ -427,6 +438,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260916revisao2"></script>
+  <script src="/js/materia-chat.js?v=20260916video3"></script>
   <script src="/js/materia-chat-extras.js?v=20260915radarAmpliado1"></script>
 <%- include('partials/app-end') %>

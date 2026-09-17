@@ -1,4 +1,8 @@
 /* Visual da tela de escrita, isolado das outras telas de chat. */
+.mia-manual-claude .mia-video-options { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding: .8rem; margin: .4rem 0; border-radius: .75rem; background: #23352e; border: 1px solid #3e6453; }
+.mia-manual-claude .mia-video-options label { color: #d1fae5; font-size: .8rem; }
+.mia-manual-claude .mia-video-options select { background: #202923; color: #e4eee6; border: 1px solid #648471; border-radius: .5rem; padding: .45rem; font-size: .8rem; }
+.mia-manual-claude .mia-video-options small { flex-basis: 100%; color: #abbeb0; font-size: .72rem; line-height: 1.5; }
 .mia-manual-claude .mia-review-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
 .mia-manual-claude .mia-review-actions button { border: 1px solid #55534c; border-radius: 2rem; padding: .5rem .8rem; color: #dedacf; background: transparent; font-size: .78rem; }
 .mia-manual-claude .mia-review-actions button:hover { background: #344238; border-color: #6b9981; }

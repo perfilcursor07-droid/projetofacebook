@@ -4062,7 +4062,8 @@ async function responder({
 
   let resposta = '';
   try {
-    if (pedidoEmLote && fontes.length > 1) {
+    const dividirAssuntosDoVideo = /Crie até [2-5] matérias independentes a partir dos assuntos distintos/i.test(pedido);
+    if (pedidoEmLote && fontes.length > 1 && !dividirAssuntosDoVideo) {
       const partes = [];
       const instrucaoExtra = pedidoSemUrls();
       const urlsSelecionadas = new Set(urlsFonte.map(normalizarUrlComparacao).filter(Boolean));

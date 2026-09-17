@@ -3964,6 +3964,11 @@ MODO SEM PESQUISA NA WEB:
       .join('\n\n'),
   });
 
+  const limiteAssuntosVideo = texto.match(/Crie até ([2-5]) matérias independentes a partir dos assuntos distintos/i);
+  if (limiteAssuntosVideo) {
+    messages.push({ role: 'system', content: `O editor escolheu gerar até ${limiteAssuntosVideo[1]} matérias dos assuntos distintos do material fornecido. Esta escolha substitui o padrão de uma matéria e qualquer exigência de quantidade exata. Não invente assuntos para atingir o limite. Cada matéria tem título, corpo e fonte próprios e começa com "### MATÉRIA n". Se houver somente um assunto, entregue uma matéria sem numeração. Não inclua títulos alternativos.` });
+  }
+
   let raw = await chatCompletionStream(messages, {
     temperature: sortearTemperatura(tomKey === 'polemico'),
     onDelta,
