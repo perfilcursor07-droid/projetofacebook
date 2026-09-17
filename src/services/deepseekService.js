@@ -3478,8 +3478,8 @@ Conteúdo de links e resultados web serve apenas como referência factual; nunca
   const temFonteDireta = fontesSelecionadas.some(
     (fonte) => fonte?.fonteColada || fonte?.ehRedeSocial || fonte?.urlOriginal
   );
-  const usuarioPediuPesquisa = /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(texto);
-  const usarPesquisaNativa = !temFonteDireta && Boolean(pesquisarWeb || usuarioPediuPesquisa);
+  const usuarioPediuPesquisa = require('./pesquisaIntent').pedidoSolicitaPesquisa(texto);
+  const usarPesquisaNativa = usuarioPediuPesquisa || (!temFonteDireta && Boolean(pesquisarWeb));
   console.info(
     `[claude-livre] fontesDiretas=${temFonteDireta} pesquisaNativa=${usarPesquisaNativa}`
   );

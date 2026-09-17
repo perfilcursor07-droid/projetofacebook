@@ -1,4 +1,5 @@
 const AiChats = require('../models/AiChats');
+const { pedidoSolicitaPesquisa } = require('./pesquisaIntent');
 const AiChatMessages = require('../models/AiChatMessages');
 const AiMatters = require('../models/AiMatters');
 const db = require('../config/db');
@@ -2658,10 +2659,16 @@ async function responder({
       }
     }
 
-    if (pesquisarWeb && !pedidoMemoriaEditorial) {
+    const pesquisarLivre = !pediuSemPesquisaLivre && !pedidoMemoriaEditorial &&
+      (pesquisarWeb || artigoNaoExtraidoLivre || pedidoSolicitaPesquisa(pedido));
+    if (pesquisarLivre) {
       registrarPasso({ kind: 'pesquisa', texto: 'Pesquisando na internet…' });
       try {
-        const consultaLivre = pedido
+        const pedidoCurtoDeBusca = /^(?:busque|busca|pesquise|procure)\b/i.test(pedido.trim()) && pedido.trim().split(/\s+/).length <= 6;
+        const assuntoAnterior = pedidoCurtoDeBusca
+          ? [...anteriores].reverse().find((m) => m.role === 'user' && String(m.content || '').trim().split(/\s+/).length > 6)?.content
+          : null;
+        const consultaLivre = String(assuntoAnterior || pedido)
           .replace(/https?:\/\/\S+/gi, ' ')
           .replace(/\s+/g, ' ')
           .trim()
@@ -2699,9 +2706,7 @@ async function responder({
     const pediuPesquisaClaude = !pedidoMemoriaEditorial && (
       artigoNaoExtraidoLivre ||
       Boolean(pesquisarWeb) ||
-      /\b(pesquis\w*|busc\w*|procur\w*|recent\w*|hoje|agora|atual(?:mente)?|últim\w*)\b/i.test(
-        pedido
-      )
+      pedidoSolicitaPesquisa(pedido)
     );
     registrarPasso({
       kind: pediuPesquisaClaude ? 'pesquisa' : 'pensando',
@@ -2737,7 +2742,7 @@ async function responder({
       conversationName: chat.titulo || tituloDaConversa(pedido),
       // Preserva a pesquisa nativa para consultas livres, mas não a dispara
       // sobre uma publicação que já foi extraída pelo próprio sistema.
-      pesquisarWeb: Boolean(pesquisarWeb || artigoNaoExtraidoLivre),
+      pesquisarWeb: Boolean(pesquisarLivre),
     });
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
     if (respostaAdmitePeriodoNaoAtendido(pedido, respostaLivreFinal)) {
