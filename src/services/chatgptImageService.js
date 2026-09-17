@@ -19,6 +19,11 @@ const FORMATO_FACEBOOK = [
   'gere a imagem em orientação VERTICAL, na proporção EXATA 4:5, equivalente a 1080 × 1350 pixels para uma postagem no feed do Facebook.',
   'Não entregue imagem quadrada nem horizontal. Reorganize a composição para preencher completamente o quadro vertical, sem barras ou bordas.',
 ].join(' ');
+const SEM_TEXTO_NA_IMAGEM = [
+  'REGRA OBRIGATÓRIA: a imagem final deve ficar totalmente sem texto.',
+  'Remova qualquer palavra, letra, número, legenda, placa legível, logotipo, marca d’água, moldura ou elemento gráfico presente na referência.',
+  'Não recrie nem substitua esses elementos por outros textos.',
+].join(' ');
 const conversasRecentes = new Map();
 
 function erro(message, status = 400) {
@@ -122,7 +127,7 @@ function promptPadrao({ titulo = '', materia = '' } = {}) {
 
 function promptComFormatoFacebook(prompt, contexto = {}) {
   const pedido = String(prompt || '').trim().slice(0, MAX_PROMPT) || promptPadrao(contexto);
-  return `${pedido}\n\n${FORMATO_FACEBOOK}`;
+  return `${pedido}\n\n${SEM_TEXTO_NA_IMAGEM}\n\n${FORMATO_FACEBOOK}`;
 }
 
 async function baixarImagemDaPagina(page, src) {

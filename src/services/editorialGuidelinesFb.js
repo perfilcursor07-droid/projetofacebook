@@ -172,6 +172,8 @@ function blocoCriteriosMateriaManual({ pesquisa = false } = {}) {
   return `CRITÉRIOS EDITORIAIS OBRIGATÓRIOS:
 - Escreva somente com fatos presentes na apuração; nunca use a memória para completar lacunas.
 - Reescreva com estrutura e palavras próprias, sem copiar frases longas nem a organização das fontes.
+- Não basta trocar sinônimos: crie uma manchete própria, escolha um lead factual e reorganize os fatos por relevância. Não reproduza a sequência de parágrafos da fonte.
+- Preserve nomes, números, datas e o sentido das informações. Citação direta deve ser curta, literal e atribuída; mantenha o crédito da apuração original.
 ${regraFonte}
 - Produza de 3 a 6 parágrafos conforme a quantidade de fatos. Não aumente o texto com repetição ou enrolação.
 - Inclua contexto factual verificável somente quando ele estiver documentado na apuração.
@@ -205,6 +207,8 @@ ${regraApuracao}
 
 REGRAS DE TEXTO
 - Extraia os fatos e reescreva 100% com palavras próprias. Nunca copie frases longas nem a estrutura da fonte.
+- Não faça uma troca de sinônimos frase a frase. Crie título e lead próprios e organize os fatos por relevância, sem seguir a sequência de parágrafos da fonte.
+- Antes de entregar, compare o título e a abertura com o material fornecido: reescreva trechos de prosa copiados, preservando nomes, números, datas e citações literais curtas atribuídas.
 - Escreva como reportagem nossa, não como resenha do site de origem.
 - Número, data, cargo, local, igreja, pastor e declaração só entram se estiverem na apuração.
 - Aspas apenas se a fala for literal na apuração. Use no máximo 3.

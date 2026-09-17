@@ -217,11 +217,16 @@ function imagemPareceLogoOuAvatar(url, className = '') {
 function attrsImagem(tagOrAttrs) {
   const attrs = String(tagOrAttrs || '');
   const cls = attrs.match(/\bclass=["']([^"']+)["']/i)?.[1] || '';
-  const src =
-    attrs.match(/\bsrc=["']([^"']+)["']/i)?.[1] ||
-    attrs.match(/\bdata-src=["']([^"']+)["']/i)?.[1] ||
-    attrs.match(/\bsrcset=["']([^"']+)["']/i)?.[1]?.split(',')[0]?.trim()?.split(/\s+/)[0] ||
-    null;
+  const attribute = (name) => attrs.match(new RegExp('(?:^|\\s)' + name + '=["\']([^"\']+)["\']', 'i'))?.[1];
+  const srcset = attribute('data-srcset') || attribute('srcset') || '';
+  const maior = srcset.split(',').map((item) => {
+    const [url, tamanho] = item.trim().split(/\s+/);
+    return { url, tamanho: parseFloat(tamanho) || 0 };
+  }).filter((item) => item.url && !/^data:/i.test(item.url))
+    .sort((a, b) => b.tamanho - a.tamanho)[0]?.url;
+  const src = [maior, attribute('data-src'), attribute('data-lazy-src'), attribute('src')]
+    .find((url) => url && !/^(?:data:|blob:|javascript:)/i.test(url)
+      && !/(?:placeholder|transparent|spacer)(?:[._/-]|$)/i.test(url)) || null;
   const w = Number(attrs.match(/\bwidth=["']?(\d+)/i)?.[1] || 0);
   const h = Number(attrs.match(/\bheight=["']?(\d+)/i)?.[1] || 0);
   return { cls, src, w, h };

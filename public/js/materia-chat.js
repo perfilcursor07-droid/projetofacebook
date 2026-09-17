@@ -56,7 +56,7 @@
     vozFinal: '',
     recognition: null,
     modo: 'escrever',
-    tipoConversa: 'livre',
+    tipoConversa: 'materia',
     modelosIa: null,
     salvandoPautas: false,
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
@@ -841,6 +841,28 @@
       : 'Gostou? Salve como rascunho — ou peça um ajuste no campo abaixo do chat.';
     box.appendChild(info);
 
+    const ajustesRapidos = document.createElement('div');
+    ajustesRapidos.className = 'mia-review-actions';
+    for (const [rotulo, pedido] of [
+      ['Encurtar', 'Encurte a matéria preservando os fatos principais e os créditos.'],
+      ['Melhorar abertura', 'Reescreva a abertura com estrutura própria e o fato mais relevante, sem copiar a fonte nem acrescentar fatos.'],
+      ['Revisar redação', 'Revise clareza, repetições e atribuições desta matéria. Evite reproduzir frases e a estrutura das fontes; mantenha citações literais curtas e atribuídas.'],
+    ]) {
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.textContent = rotulo;
+      botao.addEventListener('click', () => {
+        if (state.enviando) return;
+        const ajuste = `${pedido}\nMatéria: ${mensagem.titulo || String(mensagem.content || '').slice(0, 180)}`;
+        el.input.value = [el.input.value.trim(), ajuste].filter(Boolean).join('\n\n');
+        autoGrowInput();
+        el.input.focus();
+        setStatus('Revise o pedido e envie para aplicar o ajuste.');
+      });
+      ajustesRapidos.appendChild(botao);
+    }
+    box.appendChild(ajustesRapidos);
+
     let tituloLivre = null;
     if (livre) {
       tituloLivre = document.createElement('input');
@@ -925,16 +947,27 @@
     grid.className = 'mt-2 grid gap-2 md:grid-cols-2';
     const imagem = document.createElement('input');
     imagem.type = 'url';
+    imagem.setAttribute('aria-label', 'URL da imagem da capa');
     imagem.placeholder = 'URL da imagem da capa (opcional)';
     imagem.className =
       'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none';
     const credito = document.createElement('input');
     credito.type = 'text';
+    credito.setAttribute('aria-label', 'Crédito da foto');
     credito.placeholder = 'Crédito da foto (ex.: Reprodução/Instagram)';
     credito.className = imagem.className;
     grid.appendChild(imagem);
     grid.appendChild(credito);
-    box.appendChild(grid);
+    const opcoesImagem = document.createElement('details');
+    opcoesImagem.className = 'mia-image-options';
+    const resumoImagem = document.createElement('summary');
+    resumoImagem.textContent = 'Imagem de capa e crédito (opcional)';
+    opcoesImagem.appendChild(resumoImagem);
+    const dicaImagem = document.createElement('p');
+    dicaImagem.textContent = 'Ao salvar, o sistema tenta aproveitar a imagem extraída da fonte. Confira a foto no editor antes de publicar, ou informe outra URL abaixo.';
+    opcoesImagem.appendChild(dicaImagem);
+    opcoesImagem.appendChild(grid);
+    box.appendChild(opcoesImagem);
 
     const acoes = document.createElement('div');
     acoes.className = 'mt-2 grid gap-2 sm:flex sm:flex-wrap sm:items-center';
@@ -1789,7 +1822,7 @@
     state.chatId = null;
     // Conversa nova abre direto no Claude; o modo Matéria continua
     // disponível quando o editor quiser aplicar o fluxo editorial completo.
-    if (!preservarTipo) state.tipoConversa = 'livre';
+    if (!preservarTipo) state.tipoConversa = 'materia';
     try {
       sessionStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -1875,7 +1908,7 @@
         : 'Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa.';
     }
     if (el.toggleWebLabel) {
-      el.toggleWebLabel.textContent = livre ? 'Auto' : 'Web';
+      el.toggleWebLabel.textContent = livre ? 'Pesquisa automática' : 'Pesquisar fontes';
     }
     if (livre) {
       el.toggleWeb?.setAttribute('aria-pressed', 'true');
@@ -1904,7 +1937,7 @@
     setStatus(
       tipo === 'livre'
         ? 'Claude ativo · conversa sem regras editoriais.'
-        : 'Modo Matéria ativo · ferramentas editoriais disponíveis.'
+        : 'Pronto para criar. Cole um link ou conte o que deseja escrever.'
     );
     el.input?.focus();
   }
@@ -2345,6 +2378,32 @@
     });
   });
 
+  document.querySelectorAll('[data-start-matter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const escolha = btn.dataset.startMatter;
+      const radar = document.getElementById('chat-radar-options');
+      if (escolha === 'pautas') {
+        if (radar) {
+          radar.hidden = !radar.hidden;
+          btn.setAttribute('aria-expanded', String(!radar.hidden));
+          if (!radar.hidden) radar.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+        return;
+      }
+      definirTipoConversa('materia');
+      definirModo('escrever');
+      const dicas = {
+        link: 'Cole o link da notícia abaixo. Você pode acrescentar o enfoque desejado.',
+        tema: 'Conte o tema e os fatos que você já conhece. Ative “Pesquisar fontes” para ampliar a apuração.',
+        video: 'Cole o link do vídeo abaixo. A IA usará a transcrição disponível ou processará o áudio.',
+      };
+      setStatus(dicas[escolha] || 'Descreva sua matéria abaixo.');
+      el.input.placeholder = escolha === 'video' ? 'Cole o link do vídeo…'
+        : escolha === 'link' ? 'Cole o link da notícia…' : 'Sobre o que você quer escrever?';
+      el.input.focus();
+    });
+  });
+
   document.querySelectorAll('.chat-exemplo').forEach((btn) => {
     btn.addEventListener('click', () => {
       const textoEl = btn.querySelector('.mia-chat-prompt-text');
@@ -2361,6 +2420,16 @@
   async function iniciar() {
     if (state.iniciado) return;
     state.iniciado = true;
+    // Um único menu mantém anexos, criação manual e ajustes encontráveis.
+    const ferramentas = document.querySelector('#chat-ferramentas .mia-chat-more-menu');
+    const criar = document.getElementById('chat-criar');
+    const secaoCriar = criar?.querySelector('.mia-chat-menu-sec');
+    if (ferramentas && secaoCriar) {
+      ferramentas.prepend(secaoCriar);
+      criar.hidden = true;
+    }
+    const ajustes = ferramentas?.querySelector('.mia-chat-tools');
+    if (ajustes && el.modoSeg) ajustes.appendChild(el.modoSeg);
     prepararVoz();
     carregarModeloIa();
     aplicarToggleWeb();

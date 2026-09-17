@@ -26,6 +26,9 @@ test('formato do feed do Facebook é obrigatório mesmo em prompt personalizado'
   assert.match(prompt, /proporção EXATA 4:5/);
   assert.match(prompt, /1080 × 1350 pixels/);
   assert.match(prompt, /Não entregue imagem quadrada nem horizontal/);
+  assert.match(prompt, /imagem final deve ficar totalmente sem texto/i);
+  assert.match(prompt, /Remova qualquer palavra, letra, número/i);
+  assert.match(prompt, /Não recrie nem substitua esses elementos por outros textos/i);
 });
 
 test('cookies do ChatGPT usam URL host-only aceita pelo Chrome', () => {

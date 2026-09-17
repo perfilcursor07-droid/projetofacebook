@@ -1,6 +1,6 @@
 <%- include('partials/app-start') %>
   <link rel="stylesheet" href="/css/materia-chat.css?v=20260902tomTitulosClaude1" />
-  <link rel="stylesheet" href="/css/materia-manual.css?v=20260915radarGoogleRedes1" />
+  <link rel="stylesheet" href="/css/materia-manual.css?v=20260916revisao2" />
 
   <main class="mia-chat mia-manual-claude" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -75,10 +75,16 @@
               <span class="mia-chat-empty-mark" aria-hidden="true">
                 <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 3v34M3 20h34M8 8l24 24M8 32 32 8M13.5 4.5l13 31M4.5 13.5l31 13M4.5 26.5l31-13M13.5 35.5l13-31"/></svg>
               </span>
-              <h1 class="mia-chat-empty-title">O que vamos escrever hoje?</h1>
-              <p class="mia-chat-empty-sub">Uma ideia, um link ou uma boa conversa. Comece por aqui.</p>
+              <h1 class="mia-chat-empty-title">Sua próxima matéria começa aqui.</h1>
+              <p class="mia-chat-empty-sub">Cole um link, conte uma ideia ou envie um arquivo. A IA ajuda a pesquisar, escrever e revisar.</p>
             </div>
-            <section class="mia-chat-radar-start" aria-labelledby="chat-radar-start-title">
+            <div class="mia-start-actions" aria-label="Como começar sua matéria">
+              <button type="button" data-start-matter="link"><span aria-hidden="true">↗</span><strong>Criar de um link</strong><small>Transforme uma notícia em matéria</small></button>
+              <button type="button" data-start-matter="tema"><span aria-hidden="true">✎</span><strong>Escrever sobre um tema</strong><small>Comece com uma ideia ou fatos</small></button>
+              <button type="button" data-start-matter="video"><span aria-hidden="true">▷</span><strong>Usar um vídeo</strong><small>Cole o link para extrair o conteúdo</small></button>
+              <button type="button" data-start-matter="pautas" aria-controls="chat-radar-options" aria-expanded="false"><span aria-hidden="true">⌕</span><strong>Descobrir pautas</strong><small>Encontre seu próximo assunto</small></button>
+            </div>
+            <section id="chat-radar-options" class="mia-chat-radar-start" aria-labelledby="chat-radar-start-title" hidden>
               <div class="mia-chat-radar-start-head">
                 <div>
                   <p class="mia-chat-radar-start-eyebrow">Radar de pautas</p>
@@ -217,12 +223,12 @@
                 </details>
 
                 <div class="mia-chat-seg" id="chat-tipo-seg" role="group" aria-label="Tipo de conversa">
-                  <button type="button" data-chat-tipo="livre" aria-pressed="true"
+                  <button type="button" data-chat-tipo="livre" aria-pressed="false"
                     title="Conversa normal com o Claude, sem critérios editoriais"
-                    class="chat-tipo-btn mia-chat-seg-btn is-active">Claude</button>
-                  <button type="button" data-chat-tipo="materia" aria-pressed="false"
+                    class="chat-tipo-btn mia-chat-seg-btn">Conversar</button>
+                  <button type="button" data-chat-tipo="materia" aria-pressed="true"
                     title="Cria matérias usando as regras editoriais do sistema"
-                    class="chat-tipo-btn mia-chat-seg-btn">Matéria</button>
+                    class="chat-tipo-btn mia-chat-seg-btn is-active">Criar matéria</button>
                 </div>
                 <div class="mia-chat-seg" id="chat-modo-seg" role="group" aria-label="O que a IA deve fazer">
                   <button type="button" data-chat-modo="escrever" aria-pressed="true"
@@ -236,7 +242,7 @@
                   title="Desligado: extrai o link e escreve sem verificar. Ligado: pesquisa outras fontes, verifica os fatos e revisa."
                   class="mia-chat-chip mia-chat-web-toggle">
                   <span class="mia-chat-chip-dot"></span>
-                  <span id="chat-toggle-web-label">Web</span>
+                  <span id="chat-toggle-web-label">Pesquisar fontes</span>
                 </button>
                 <span id="chat-ai-model" class="mia-chat-model-pill" title="Modelo de IA em uso nesta conversa">
                   <span id="chat-ai-model-name">IA</span>
@@ -421,6 +427,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260902tomTitulosClaude1"></script>
+  <script src="/js/materia-chat.js?v=20260916revisao2"></script>
   <script src="/js/materia-chat-extras.js?v=20260915radarAmpliado1"></script>
 <%- include('partials/app-end') %>

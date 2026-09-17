@@ -1,4 +1,34 @@
 /* Visual da tela de escrita, isolado das outras telas de chat. */
+.mia-manual-claude .mia-review-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
+.mia-manual-claude .mia-review-actions button { border: 1px solid #55534c; border-radius: 2rem; padding: .5rem .8rem; color: #dedacf; background: transparent; font-size: .78rem; }
+.mia-manual-claude .mia-review-actions button:hover { background: #344238; border-color: #6b9981; }
+.mia-manual-claude .mia-image-options { border-top: 1px solid #45443f; padding: .8rem 0; margin-top: .6rem; }
+.mia-manual-claude .mia-image-options summary { cursor: pointer; font-size: .8rem; color: #d3cfc4; }
+.mia-manual-claude .mia-image-options p { font-size: .75rem; color: #aaa79f; margin-top: .65rem; line-height: 1.6; }
+.mia-manual-claude [hidden] { display: none !important; }
+.mia-manual-claude .mia-start-actions {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .7rem; width: 100%; max-width: 40rem; margin: .8rem auto;
+}
+.mia-manual-claude .mia-start-actions button {
+  display: grid; grid-template-columns: 2rem 1fr; column-gap: .6rem;
+  padding: 1rem; text-align: left; border: 1px solid #45443f;
+  border-radius: 1rem; background: #2c2c29; color: #eceae3;
+  transition: background .15s, border-color .15s;
+}
+.mia-manual-claude .mia-start-actions button:hover {
+  background: #333a32; border-color: #638575;
+}
+.mia-manual-claude .mia-start-actions button > span {
+  grid-row: span 2; color: #6ee7b7; font-size: 1.5rem; align-self: center;
+}
+.mia-manual-claude .mia-start-actions strong { font-size: .85rem; font-weight: 550; }
+.mia-manual-claude .mia-start-actions small { margin-top: .25rem; color: #aaa79f; font-size: .73rem; line-height: 1.5; }
+@media (max-width: 479px) {
+  .mia-manual-claude .mia-start-actions { gap: .5rem; }
+  .mia-manual-claude .mia-start-actions button { display: flex; flex-direction: column; padding: .8rem; gap: .3rem; }
+  .mia-manual-claude .mia-start-actions button > span { align-self: start; }
+}
 body:has(.mia-manual-claude) #app-sidebar,
 body:has(.mia-manual-claude) #app-content > header { background: #1c1c1a; border-color: #393831; }
 body:has(.mia-manual-claude) #app-sidebar .sidebar-brand,
@@ -36,49 +66,49 @@ body:has(.mia-manual-claude) #app-content > header > a { color: #34d399; }
 .mia-manual-claude .mia-chat-header-title > span { display: block; color: #7f7c74; font-size: .62rem; line-height: 1.2; letter-spacing: .04em; margin-bottom: .05rem; }
 .mia-manual-claude .mia-chat-header-title p { color: #d5d1c8; font-size: .84rem; line-height: 1.3; font-weight: 500; }
 .mia-manual-claude .mia-chat-icon-btn { border-color: transparent; color: #bab7af; }
-.mia-manual-claude .mia-chat-empty { min-height: auto; gap: 1.3rem; padding: 1rem 0; }
-.mia-manual-claude .mia-chat-empty-copy { gap: .8rem; }
-.mia-manual-claude .mia-chat-empty-mark { width: 3rem; height: 3rem; background: none; border: 0; color: #34d399; margin-bottom: .65rem; }
-.mia-manual-claude .mia-chat-empty-mark svg { width: 2.6rem; height: 2.6rem; }
+.mia-manual-claude .mia-chat-empty { min-height: auto; gap: 1rem; padding: .7rem 0; }
+.mia-manual-claude .mia-chat-empty-copy { gap: .5rem; }
+.mia-manual-claude .mia-chat-empty-mark { width: 2.2rem; height: 2.2rem; background: none; border: 0; color: #34d399; margin-bottom: .4rem; }
+.mia-manual-claude .mia-chat-empty-mark svg { width: 2rem; height: 2rem; }
 .mia-manual-claude .mia-chat-empty-title {
   font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-  font-size: clamp(2rem, 3.3vw, 3.2rem); line-height: 1.15; font-weight: 400;
-  letter-spacing: -.045em; color: #eee9de;
+  font-size: clamp(1.4rem, 2.5vw, 2rem); line-height: 1.2; font-weight: 400;
+  letter-spacing: -.035em; color: #eee9de;
 }
-.mia-manual-claude .mia-chat-empty-sub { color: #aaa79f; font-size: .9rem; line-height: 1.6; max-width: 30rem; }
+.mia-manual-claude .mia-chat-empty-sub { color: #aaa79f; font-size: .78rem; line-height: 1.5; max-width: 28rem; }
 .mia-manual-claude .mia-chat-title-tone { border: 0; background: transparent; padding: .2rem; margin: 0; width: 100%; }
 .mia-manual-claude .mia-chat-title-tone-label { cursor: pointer; color: #b8b3a9; font-size: .75rem; font-weight: 400; width: fit-content; margin: auto; }
 .mia-manual-claude .mia-chat-title-tone-help { margin: .75rem 0; color: #aaa79f; }
 .mia-manual-claude .mia-chat-title-tone-options { justify-content: center; }
 .mia-manual-claude .mia-chat-radar-start {
-  width: min(100%, 47rem); margin: .15rem auto 0; padding: 1rem;
-  border: 1px solid #45443f; border-radius: 1rem; background: #2d2d2a;
+  width: min(100%, 47rem); margin: .15rem auto 0; padding: .65rem;
+  border: 1px solid #45443f; border-radius: .75rem; background: #2d2d2a;
   text-align: left;
 }
 .mia-manual-claude .mia-chat-radar-start-head {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: .65rem;
 }
 .mia-manual-claude .mia-chat-radar-start-eyebrow {
-  margin: 0 0 .2rem; color: #6ee7b7; font-size: .65rem; font-weight: 700;
+  margin: 0 0 .15rem; color: #6ee7b7; font-size: .58rem; font-weight: 700;
   letter-spacing: .09em; text-transform: uppercase;
 }
 .mia-manual-claude .mia-chat-radar-start h2 {
-  margin: 0; color: #eee9de; font-size: .95rem; line-height: 1.35; font-weight: 600;
+  margin: 0; color: #eee9de; font-size: .82rem; line-height: 1.3; font-weight: 600;
 }
 .mia-manual-claude .mia-chat-radar-start-live {
-  display: inline-flex; align-items: center; gap: .35rem; flex: 0 0 auto;
-  color: #aaa79f; font-size: .65rem; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: .3rem; flex: 0 0 auto;
+  color: #aaa79f; font-size: .6rem; white-space: nowrap;
 }
 .mia-manual-claude .mia-chat-radar-start-live i {
-  width: .42rem; height: .42rem; border-radius: 50%; background: #34d399;
-  box-shadow: 0 0 0 .2rem rgb(52 211 153 / 12%);
+  width: .38rem; height: .38rem; border-radius: 50%; background: #34d399;
+  box-shadow: 0 0 0 .18rem rgb(52 211 153 / 12%);
 }
 .mia-manual-claude .mia-chat-radar-start-grid {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .55rem; margin-top: .85rem;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; margin-top: .6rem;
 }
 .mia-manual-claude .mia-chat-radar-start-card {
-  display: flex; align-items: flex-start; gap: .6rem; min-width: 0; padding: .75rem;
-  border: 1px solid #4a4943; border-radius: .75rem; background: #343431;
+  display: flex; align-items: flex-start; gap: .5rem; min-width: 0; padding: .55rem;
+  border: 1px solid #4a4943; border-radius: .6rem; background: #343431;
   color: #e6e1d5; text-align: left; cursor: pointer;
   transition: border-color .15s, background .15s, transform .15s;
 }
@@ -89,15 +119,15 @@ body:has(.mia-manual-claude) #app-content > header > a { color: #34d399; }
 .mia-manual-claude .mia-chat-radar-start-card > span:last-child { min-width: 0; }
 .mia-manual-claude .mia-chat-radar-start-card strong,
 .mia-manual-claude .mia-chat-radar-start-card small { display: block; }
-.mia-manual-claude .mia-chat-radar-start-card strong { font-size: .78rem; line-height: 1.3; font-weight: 650; }
-.mia-manual-claude .mia-chat-radar-start-card small { margin-top: .18rem; color: #aaa79f; font-size: .67rem; line-height: 1.35; }
+.mia-manual-claude .mia-chat-radar-start-card strong { font-size: .7rem; line-height: 1.25; font-weight: 650; }
+.mia-manual-claude .mia-chat-radar-start-card small { margin-top: .12rem; color: #aaa79f; font-size: .6rem; line-height: 1.3; }
 .mia-manual-claude .mia-chat-radar-start-icon {
-  display: grid; place-items: center; flex: 0 0 1.75rem; width: 1.75rem; height: 1.75rem;
-  border-radius: .5rem; background: #223d32; color: #6ee7b7;
+  display: grid; place-items: center; flex: 0 0 1.4rem; width: 1.4rem; height: 1.4rem;
+  border-radius: .45rem; background: #223d32; color: #6ee7b7;
 }
-.mia-manual-claude .mia-chat-radar-start-icon svg { width: 1rem; height: 1rem; }
+.mia-manual-claude .mia-chat-radar-start-icon svg { width: .85rem; height: .85rem; }
 .mia-manual-claude .mia-chat-radar-start-help {
-  margin: .65rem 0 0; color: #8f8b83; font-size: .68rem; line-height: 1.4;
+  margin: .5rem 0 0; color: #8f8b83; font-size: .62rem; line-height: 1.35;
 }
 .mia-manual-claude .chat-title-tone { border-color: #494740; background: transparent; color: #bbb7ae; border-radius: 2rem; }
 .mia-manual-claude .chat-title-tone.is-active { background: #233c32; border-color: #059669; color: #a7f3d0; }
@@ -134,16 +164,12 @@ body:has(.mia-manual-claude) #app-content > header > a { color: #34d399; }
 .mia-manual-claude .mia-msg-ai-body .mia-msg-ai-anchor { font-size: 1.0625rem; line-height: 1.8; color: #e6e1d5; }
 .mia-manual-claude .mia-msg-ai-body .mia-msg-ai-title { font-size: 1.3rem; color: #f0eadd; }
 .mia-manual-claude .mia-chat-messages { scrollbar-color: #555148 transparent; }
-.mia-manual-claude :is(button, summary, input, textarea, select, a):focus-visible { outline: 0px solid #34d399; outline-offset: 3px; }
+.mia-manual-claude :is(button, summary, input, textarea, select, a):focus-visible { outline: 2px solid #34d399; outline-offset: 3px; }
 
-/* A primeira mensagem fica junto do convite; depois o editor volta ao rodapé. */
-.mia-manual-claude .mia-chat-main:has(#chat-vazio:not(.hidden)):not(.is-manual-open) { overflow-y: auto; }
-.mia-manual-claude .mia-chat-main:has(#chat-vazio:not(.hidden)):not(.is-manual-open) .mia-chat-messages {
-  flex: 0 0 auto; overflow: visible; margin-top: auto; padding-top: 2rem; padding-bottom: .5rem;
-}
-.mia-manual-claude .mia-chat-main:has(#chat-vazio:not(.hidden)):not(.is-manual-open) .mia-chat-composer-wrap {
-  flex: 0 0 auto; margin-bottom: auto; padding-bottom: clamp(2rem, 12vh, 8rem);
-}
+/* Composer fixado no rodapé */
+.mia-manual-claude .mia-chat-main { display: flex; flex-direction: column; overflow: hidden; }
+.mia-manual-claude .mia-chat-messages { flex: 1 1 auto; overflow-y: auto; }
+.mia-manual-claude .mia-chat-composer-wrap { flex: 0 0 auto; position: sticky; bottom: 0; z-index: 10; }
 @media (min-width: 1024px) {
   .mia-manual-claude .mia-chat-shell { grid-template-columns: 232px minmax(0, 1fr); }
 }
@@ -165,5 +191,4 @@ body:has(.mia-manual-claude) #app-content > header > a { color: #34d399; }
   .mia-manual-claude .mia-chat-toolbar { flex-wrap: wrap; }
   .mia-manual-claude .mia-chat-toolbar-main { flex-basis: 100%; }
   .mia-manual-claude .mia-chat-send-row { margin-left: auto; }
-  .mia-manual-claude .mia-chat-main:has(#chat-vazio:not(.hidden)):not(.is-manual-open) .mia-chat-composer-wrap { padding-bottom: 1rem; }
 }

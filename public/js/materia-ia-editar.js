@@ -398,9 +398,17 @@
   }
 
   function closeCropModal() {
+    if (chatgptImageActiveJobs > 0) {
+      setChatgptStatus(
+        'Aguarde a geração terminar antes de fechar esta janela.',
+        'running'
+      );
+      return false;
+    }
     cropInteraction = null;
     cropModal?.classList.add('hidden');
     document.body.style.overflow = bodyOverflowBeforeCrop;
+    return true;
   }
 
   function openCropModal() {
@@ -459,11 +467,18 @@
   }
 
   function updateChatgptGenerateLabel() {
-    if (!chatgptImageGenerate) return;
-    chatgptImageGenerate.disabled = false;
-    chatgptImageGenerate.textContent = chatgptImageActiveJobs > 0
-      ? 'Gerar outra versão'
-      : 'Gerar imagem sem texto';
+    const gerando = chatgptImageActiveJobs > 0;
+    if (chatgptImageGenerate) {
+      chatgptImageGenerate.disabled = false;
+      chatgptImageGenerate.textContent = gerando
+        ? 'Gerar outra versão'
+        : 'Gerar imagem sem texto';
+    }
+    [cropClose, cropCancel].forEach((button) => {
+      if (!button) return;
+      button.disabled = gerando;
+      button.title = gerando ? 'Aguarde a geração da imagem terminar' : '';
+    });
   }
 
   function createChatgptJobRow(jobId, prompt) {
@@ -656,9 +671,6 @@
   btnAbrirRecorte?.addEventListener('click', openCropModal);
   cropClose?.addEventListener('click', closeCropModal);
   cropCancel?.addEventListener('click', closeCropModal);
-  cropModal?.addEventListener('click', (event) => {
-    if (event.target === cropModal) closeCropModal();
-  });
   cropStage?.addEventListener('pointerdown', (event) => {
     const geometry = cropGeometry();
     const stageRect = cropStage.getBoundingClientRect();
