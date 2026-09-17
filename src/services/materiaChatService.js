@@ -2009,6 +2009,11 @@ function veiculoDaUrlLivre(url) {
     .slice(0, 80);
 }
 
+function respostaAdmitePeriodoNaoAtendido(pedido, resposta) {
+  const datas = /\b\d{1,2}\s*(?:a|até|e|-)\s*\d{1,2}\s*(?:de\s+|\/)\w+/i.test(String(pedido || ''));
+  return datas && /(?:n[ãa]o\s+(?:localizei|encontrei)[^.\n]{0,140}(?:espec[ií]fico|datado|intervalo|per[ií]odo)|resultados\s+s[ãa]o\s+de\s+antes|desdobramento\s+mais\s+pr[oó]ximo\s+da\s+data)/i.test(String(resposta || ''));
+}
+
 function fonteCombinaComNomeLivre(fonte, nome) {
   const alvo = normalizarNomeFonteLivre(nome);
   if (!alvo) return 0;
@@ -2023,7 +2028,7 @@ function fonteCombinaComNomeLivre(fonte, nome) {
     'diario do centro do mundo': ['diario do centro do mundo', 'diariodocentrodomundo', 'dcm'],
     comunhao: ['comunhao'],
   };
-  const termos = aliases[alvo] || [alvo, ...alvo.split(' ').filter((t) => t.length >= 4)];
+  const termos = aliases[alvo] || [alvo, alvo.replace(/\s+/g, '')];
   let pontos = 0;
   for (const termo of termos) if (material.includes(termo)) pontos += termo === alvo ? 12 : 4;
   return pontos;
@@ -2735,6 +2740,10 @@ async function responder({
       pesquisarWeb: Boolean(pesquisarWeb || artigoNaoExtraidoLivre),
     });
     let respostaLivreFinal = limparArtefatosDeTextoLivre(respostaLivre);
+    if (respostaAdmitePeriodoNaoAtendido(pedido, respostaLivreFinal)) {
+      registrarPasso({ kind: 'aviso', texto: 'A pesquisa não confirmou um fato no intervalo solicitado.' });
+      return finalizarLivre('Não encontrei um fato confirmado dentro das datas que você pediu. Os resultados encontrados são de outro período. Envie um link publicado nesse intervalo ou peça para ampliar a pesquisa.', { fontesUsadas: [], usouWeb: true });
+    }
     // A memória é persistida pelo ViralizeAI antes da chamada ao Claude. Se o
     // provedor web confundir o contexto e negar essa capacidade, não mostramos
     // ao editor uma afirmação falsa sobre o próprio sistema.
@@ -2830,6 +2839,16 @@ async function responder({
           ? `${resolvidas} link(s) correspondente(s) às fontes citadas foram confirmados`
           : 'Não encontrei links correspondentes; mantive os nomes das fontes sem apontar páginas erradas.',
       });
+    }
+    const fonteCapa = fontesFinais.find((f) => /^https?:\/\//i.test(String(f.url || '')));
+    if (fonteCapa && !fonteCapa.imagem && !classificarUrlFonte(fonteCapa.url)) {
+      try {
+        const meta = await require('./articleSource').extrairMetadadosImagemArtigo(fonteCapa.url);
+        if (meta?.imagem) fonteCapa.imagem = meta.imagem;
+        registrarPasso({ kind: meta?.imagem ? 'fontes' : 'aviso', texto: meta?.imagem ? 'Imagem de capa localizada na fonte selecionada.' : 'A fonte não disponibilizou uma imagem de capa. Escolha uma foto no editor.' });
+      } catch {
+        registrarPasso({ kind: 'aviso', texto: 'Não foi possível recuperar a imagem de capa da fonte.' });
+      }
     }
     return finalizarLivre(respostaLivreFinal, {
       fontesUsadas: fontesFinais,
@@ -4880,6 +4899,7 @@ async function gerarTitulosAlternativosDaMensagem({
 }
 
 module.exports = {
+  respostaAdmitePeriodoNaoAtendido,
   listarConversas,
   criarConversa,
   duplicarConversa,
