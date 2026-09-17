@@ -2864,8 +2864,16 @@ async function responder({
   /** Salva a resposta na conversa e avisa o front (usado no fluxo normal e na checagem). */
   const finalizar = async (resposta, { fontesUsadas = [], usouWeb = false, pautas = null } = {}) => {
     let respostaFinal = String(resposta || '');
+    const materiasDoLote = separarMaterias(respostaFinal);
+    const temLote = materiasDoLote.length >= 2;
+    if (temLote) {
+      const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
+      respostaFinal = materiasDoLote.map((materia, indice) =>
+        `### MATÉRIA ${indice + 1}\n${removerComentariosEditoriaisIa(materia.conteudo)}`
+      ).join('\n\n');
+    }
     let info = interpretarResposta(respostaFinal);
-    if (info.ehMateria) {
+    if (info.ehMateria && !temLote) {
       const { removerComentariosEditoriaisIa } = require('./editorialGuidelinesFb');
       respostaFinal = removerComentariosEditoriaisIa(respostaFinal);
       info = interpretarResposta(respostaFinal);
@@ -2874,7 +2882,7 @@ async function responder({
     // Toda matéria que chega no chat vem com 3 opções de manchete para o editor
     // escolher antes de salvar o rascunho.
     let titulosAlternativos = [];
-    if (info.ehMateria && info.titulo) {
+    if (!temLote && info.ehMateria && info.titulo) {
       registrarPasso({ kind: 'pensando', texto: 'Montando 3 títulos alternativos…' });
       try {
         const Users = require('../models/Users');

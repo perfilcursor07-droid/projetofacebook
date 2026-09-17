@@ -64,6 +64,16 @@ function removerComentariosEditoriaisIa(texto) {
 }
 
 function removerSecaoTitulosAlternativos(texto) {
+  // O corte de sugestões termina na próxima matéria, nunca no fim do lote.
+  const blocos = String(texto || '').replace(/\r\n/g, '\n')
+    .split(/(?=^#{1,6}\s*mat[eé]ria\s*\d+\b)/im);
+  if (blocos.length > 1) {
+    return blocos.map((bloco) => limparTitulosAlternativosDoBloco(bloco)).filter(Boolean).join('\n\n');
+  }
+  return limparTitulosAlternativosDoBloco(texto);
+}
+
+function limparTitulosAlternativosDoBloco(texto) {
   return String(texto || '')
     .replace(/\r\n/g, '\n')
     .replace(
