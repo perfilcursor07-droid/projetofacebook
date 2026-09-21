@@ -33,6 +33,7 @@ function publicChatgptImageJob(job) {
     status: job.status,
     ...(job.result || {}),
     ...(job.error ? { error: job.error } : {}),
+    ...(job.errorCode ? { errorCode: job.errorCode } : {}),
   };
 }
 
@@ -375,6 +376,7 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
     const jobId = crypto.randomUUID();
     const userId = Number(req.session.userId);
     const requestedPrompt = req.body?.prompt;
+    const requestedMode = req.body?.modo === 'simbolica' ? 'simbolica' : 'referencia';
     const requestedTitle = String(req.body?.titulo || matter.titulo || '').trim();
     const job = {
       id: jobId,
@@ -400,6 +402,7 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
           titulo: requestedTitle,
           materia: matter.materia || '',
           recoveryKey: `${userId}:${matterId}`,
+          modo: requestedMode,
         });
         storedSource = await storeMatterSourceImage({
           userId,
@@ -416,6 +419,7 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
         if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
         job.status = 'error';
         job.error = err.message || 'O ChatGPT não conseguiu gerar a imagem.';
+        job.errorCode = err.code || '';
         console.error(`[chatgpt-imagem:${jobId}]`, job.error);
       } finally {
         job.updatedAt = Date.now();

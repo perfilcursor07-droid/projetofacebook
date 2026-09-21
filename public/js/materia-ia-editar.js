@@ -333,6 +333,7 @@
   const cropYValue = document.getElementById('matter-crop-y-value');
   const chatgptImagePrompt = document.getElementById('matter-chatgpt-image-prompt');
   const chatgptImageGenerate = document.getElementById('matter-chatgpt-image-generate');
+  const chatgptImageSymbolic = document.getElementById('matter-chatgpt-image-symbolic');
   const chatgptImageRecover = document.getElementById('matter-chatgpt-image-recover');
   const chatgptImageStatus = document.getElementById('matter-chatgpt-image-status');
   const chatgptImageJobs = document.getElementById('matter-chatgpt-image-jobs');
@@ -548,22 +549,28 @@
       if (!res.ok && res.status !== 202) {
         throw new Error(data.error || 'Não foi possível acompanhar a geração da imagem.');
       }
-      if (data.status === 'error') throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+      if (data.status === 'error') {
+        const error = new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+        error.code = data.errorCode;
+        throw error;
+      }
       if (data.status === 'ready') return data;
       if (job) job.state.textContent = 'gerando em conversa separada...';
     }
     throw new Error('A geração continua no ChatGPT. Use “Pegar imagem nova gerada” dentro de alguns minutos.');
   }
 
-  chatgptImageGenerate?.addEventListener('click', async () => {
+  async function startChatgptImageJob(modo = 'referencia') {
     const prompt = String(chatgptImagePrompt?.value || '').trim();
-    if (prompt.length < 20) {
+    if (modo === 'referencia' && prompt.length < 20) {
       setChatgptStatus('Descreva a imagem com pelo menos 20 caracteres.', 'error');
       chatgptImagePrompt?.focus();
       return;
     }
     const jobId = ++chatgptImageJobSeq;
-    const job = createChatgptJobRow(jobId, prompt);
+    const job = createChatgptJobRow(jobId, modo === 'simbolica'
+      ? 'Ilustração simbólica de fé e esperança, sem pessoas e sem a foto original.'
+      : prompt);
     chatgptImageActiveJobs += 1;
     updateChatgptGenerateLabel();
     setChatgptStatus(
@@ -574,7 +581,7 @@
       const res = await fetch('/api/materias-ia/matters/' + cfg.id + '/arte/gerar-chatgpt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, titulo: tituloEl?.value || '' }),
+        body: JSON.stringify({ prompt, titulo: tituloEl?.value || '', modo }),
       });
       let data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
@@ -588,11 +595,15 @@
     } catch (err) {
       if (job) failChatgptJob(job, err.message || 'Falha ao gerar imagem');
       setChatgptStatus(err.message || 'Falha ao gerar imagem com o ChatGPT.', 'error');
+      if (err.code === 'image_safety_refusal') chatgptImageSymbolic?.focus();
     } finally {
       chatgptImageActiveJobs = Math.max(0, chatgptImageActiveJobs - 1);
       updateChatgptGenerateLabel();
     }
-  });
+  }
+
+  chatgptImageGenerate?.addEventListener('click', () => startChatgptImageJob());
+  chatgptImageSymbolic?.addEventListener('click', () => startChatgptImageJob('simbolica'));
 
   chatgptImageRecover?.addEventListener('click', async () => {
     const original = chatgptImageRecover.textContent;

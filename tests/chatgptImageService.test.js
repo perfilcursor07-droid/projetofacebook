@@ -3,11 +3,26 @@ const test = require('node:test');
 
 const {
   promptPadrao,
+  promptSimbolicoPadrao,
+  recusaDeSeguranca,
   promptComFormatoFacebook,
   cookiesDoHeader,
   verificarSessaoChatgpt,
   garantirSessaoChatgpt,
 } = require('../src/services/chatgptImageService');
+
+test('ilustração simbólica não inclui referência, pessoas nem contexto da matéria', () => {
+  const prompt = promptComFormatoFacebook(promptSimbolicoPadrao(), {}, { semReferencia: true });
+  assert.match(prompt, /fé e esperança/);
+  assert.match(prompt, /Não represente pessoas/);
+  assert.doesNotMatch(prompt, /imagem de referência|Contexto da matéria|Menina de 4 anos/i);
+  assert.doesNotMatch(prompt, /presente na referência/i);
+});
+
+test('recusa de segurança de imagens é reconhecida sem tratar como falha de login', () => {
+  assert.equal(recusaDeSeguranca('We’re so sorry, but the image we created may violate our guardrails around acceptable depictions of teens and children.'), true);
+  assert.equal(recusaDeSeguranca('A sessão do ChatGPT expirou.'), false);
+});
 
 test('prompt de imagem pede reconstrução baseada na referência e sem texto', () => {
   const prompt = promptPadrao({

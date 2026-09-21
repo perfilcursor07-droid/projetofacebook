@@ -218,9 +218,25 @@ function promptPadrao({ titulo = '', materia = '' } = {}) {
   ].filter(Boolean).join('\n\n');
 }
 
-function promptComFormatoFacebook(prompt, contexto = {}) {
+function promptSimbolicoPadrao() {
+  return [
+    'Crie uma ilustração editorial original e simbólica sobre fé e esperança.',
+    'Mostre luz suave atravessando uma janela e iluminando uma mesa simples com uma Bíblia fechada.',
+    'Não represente pessoas, silhuetas, pacientes, hospitais ou um acontecimento real.',
+    'A imagem não deve parecer uma fotografia documental da matéria.',
+  ].join(' ');
+}
+
+function recusaDeSeguranca(resposta) {
+  return /guardrails|acceptable depictions of teens and children|violate.*polic|violat.*diretriz|pol[ií]tica de conte[uú]do|não posso gerar essa imagem/i.test(String(resposta || ''));
+}
+
+function promptComFormatoFacebook(prompt, contexto = {}, { semReferencia = false } = {}) {
   const pedido = String(prompt || '').trim().slice(0, MAX_PROMPT) || promptPadrao(contexto);
-  return `${pedido}\n\n${SEM_TEXTO_NA_IMAGEM}\n\n${FORMATO_FACEBOOK}`;
+  const regraSemTexto = semReferencia
+    ? SEM_TEXTO_NA_IMAGEM.replace('presente na referência', 'que apareça na imagem')
+    : SEM_TEXTO_NA_IMAGEM;
+  return `${pedido}\n\n${regraSemTexto}\n\n${FORMATO_FACEBOOK}`;
 }
 
 async function baixarImagemDaPagina(page, src) {
@@ -447,9 +463,10 @@ async function anexarImagemNoComposer(page, input, upload) {
   }
 }
 
-async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey }) {
+async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey, modo = 'referencia' }) {
   const credentials = await credenciaisChatgpt();
-  const upload = await imagemParaUpload(sourceUrl);
+  const simbolica = modo === 'simbolica';
+  const upload = simbolica ? null : await imagemParaUpload(sourceUrl);
   const liberarPreparacao = await reservarPreparacao();
   let page;
   try {
@@ -461,9 +478,11 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
     await garantirSessaoChatgpt(page, context, credentials);
 
     const input = await aguardarEditor(page);
-    await anexarImagemNoComposer(page, input, upload);
+    if (upload) await anexarImagemNoComposer(page, input, upload);
 
-    const pedido = promptComFormatoFacebook(prompt, { titulo, materia });
+    const pedido = simbolica
+      ? promptComFormatoFacebook(promptSimbolicoPadrao(), {}, { semReferencia: true })
+      : promptComFormatoFacebook(prompt, { titulo, materia });
     await input.fill(pedido);
     // A referência anexada também é um <img>. Guardamos tudo que já existe
     // para buscar somente a nova imagem criada depois do envio.
@@ -493,7 +512,15 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
       // Nas versões atuais, a arte pode ser renderizada fora do elemento com
       // data-message-author-role="assistant". Procura na conversa inteira.
       src = await localizarImagemGerada(page, imagensAntesDoEnvio);
-      if (!src) await page.waitForTimeout(2000);
+      if (!src) {
+        const respostaAtual = String(await page.locator('[data-message-author-role="assistant"]').last().innerText().catch(() => ''));
+        if (recusaDeSeguranca(respostaAtual)) {
+          const falha = erro('O ChatGPT recusou gerar esta imagem por suas regras de segurança. Use a foto original ou peça uma ilustração simbólica sem pessoas.', 422);
+          falha.code = 'image_safety_refusal';
+          throw falha;
+        }
+        await page.waitForTimeout(2000);
+      }
     }
     if (!src) {
       const assistant = page.locator('[data-message-author-role="assistant"]').last();
@@ -548,6 +575,8 @@ module.exports = {
   gerarImagem,
   recuperarImagem,
   promptPadrao,
+  promptSimbolicoPadrao,
+  recusaDeSeguranca,
   promptComFormatoFacebook,
   // Exposto somente para validar a compatibilidade dos cookies do Chrome.
   cookiesDoHeader,
