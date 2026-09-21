@@ -42,6 +42,7 @@ const CLEAR_SESSION_SCRIPT = path.join(PROJECT_ROOT, 'scripts/token-free-clear-c
 
 const AUTH_TIMEOUT_MS = 6 * 60 * 1000;
 const COMMAND_TIMEOUT_MS = 45 * 1000;
+const CHROME_START_TIMEOUT_MS = 45 * 1000;
 const MAX_OUTPUT_CHARS = 12_000;
 const DEFAULT_NOVNC_PORT = 6080;
 
@@ -151,6 +152,24 @@ async function desktopMetadata() {
   };
 }
 
+async function chromeMetadata(cdpUrl) {
+  try {
+    const base = String(cdpUrl || 'http://127.0.0.1:9222').replace(/\/$/, '');
+    const response = await axios.get(`${base}/json/version`, { timeout: 1_500 });
+    return {
+      conectado: response.status === 200,
+      navegador: String(response.data?.Browser || '').trim() || null,
+      erro: null,
+    };
+  } catch (err) {
+    return {
+      conectado: false,
+      navegador: null,
+      erro: err.code === 'ECONNREFUSED' ? 'Porta CDP sem resposta.' : err.message,
+    };
+  }
+}
+
 async function status() {
   const [auth, chatgptAuth, config, desktop] = await Promise.all([
     authMetadata('claude-web'),
@@ -158,6 +177,7 @@ async function status() {
     configMetadata(),
     desktopMetadata(),
   ]);
+  const chromeDireto = await chromeMetadata(config.cdpUrl);
   let health = null;
   let healthError = null;
   let modelos = [];
@@ -188,8 +208,10 @@ async function status() {
       plataforma: process.platform,
     },
     chrome: {
-      conectado: health?.browser === 'connected',
+      conectado: chromeDireto.conectado || health?.browser === 'connected',
       cdpUrl: config.cdpUrl,
+      navegador: chromeDireto.navegador,
+      erro: chromeDireto.erro,
     },
     desktop,
     claude: {
@@ -286,7 +308,44 @@ async function aguardarChromeCdp(timeout = 20_000) {
   return false;
 }
 
+function pastaPerfilChrome() {
+  return path.join(os.homedir(), '.config', 'chrome-tfg-debug');
+}
+
+async function ultimasLinhasArquivo(filePath, limite = 3500) {
+  try {
+    const conteudo = await fsp.readFile(filePath, 'utf8');
+    return conteudo.slice(-limite).replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Remove somente os marcadores efêmeros que o Chrome deixa quando encerra
+ * abruptamente. Cookies, Local Storage e as contas autenticadas permanecem.
+ * Só deve ser chamada depois de confirmar que o CDP não está respondendo.
+ */
+async function limparTravasTemporariasChrome() {
+  if (await aguardarChromeCdp(900)) return [];
+  const perfil = pastaPerfilChrome();
+  const removidos = [];
+  for (const nome of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+    const alvo = path.join(perfil, nome);
+    try {
+      await fsp.rm(alvo, { force: true });
+      removidos.push(nome);
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        console.warn(`[claude-chrome] não foi possível remover ${nome}:`, err.message);
+      }
+    }
+  }
+  return removidos;
+}
+
 async function iniciarChromeVisualServidor(startUrl = 'https://claude.ai/new') {
+  if (await aguardarChromeCdp(1_200)) return { iniciado: false, jaEstavaOnline: true };
   const chromePath = CHROME_LINUX_CANDIDATES.find((candidate) => fs.existsSync(candidate));
   if (!chromePath) {
     const err = new Error('Google Chrome/Chromium não encontrado no servidor.');
@@ -294,7 +353,7 @@ async function iniciarChromeVisualServidor(startUrl = 'https://claude.ai/new') {
     throw err;
   }
 
-  const userDataDir = path.join(os.homedir(), '.config', 'chrome-tfg-debug');
+  const userDataDir = pastaPerfilChrome();
   fs.mkdirSync(userDataDir, { recursive: true });
   await fsp.mkdir(DATA_DIR, { recursive: true });
   const chromeLog = path.join(DATA_DIR, 'chrome.log');
@@ -328,11 +387,16 @@ async function iniciarChromeVisualServidor(startUrl = 'https://claude.ai/new') {
     fs.closeSync(logFd);
   }
 
-  if (!(await aguardarChromeCdp())) {
-    const err = new Error(`Chrome visual não iniciou no DISPLAY ${process.env.DISPLAY}. Consulte ${chromeLog}.`);
+  if (!(await aguardarChromeCdp(CHROME_START_TIMEOUT_MS))) {
+    const detalhe = await ultimasLinhasArquivo(chromeLog);
+    const err = new Error(
+      `Chrome visual não iniciou no DISPLAY ${process.env.DISPLAY || '(não definido)'}.` +
+        (detalhe ? ` Último registro: ${detalhe.slice(-900)}` : ` Consulte ${chromeLog}.`)
+    );
     err.status = 502;
     throw err;
   }
+  return { iniciado: true, jaEstavaOnline: false };
 }
 
 async function comandoGateway(command) {
@@ -340,14 +404,59 @@ async function comandoGateway(command) {
   return executar(BUN_PATH, [ENTRY_FILE, command], { cwd: TOOL_DIR });
 }
 
+async function prepararChromeParaGateway() {
+  if (process.platform !== 'linux') return { preparado: false, motivo: 'plataforma local' };
+  if (!process.env.DISPLAY) {
+    const err = new Error(
+      'O desktop privado está sem DISPLAY. Reinicie os processos claude-xvfb/openbox e recarregue o ViralizeAI.'
+    );
+    err.status = 503;
+    throw err;
+  }
+  if (await aguardarChromeCdp(1_500)) {
+    return { preparado: true, chromeJaOnline: true, travasRemovidas: [] };
+  }
+
+  // Uma inicialização interrompida pode deixar processo/lock sem abrir o CDP.
+  // O comando é tolerante: gateway offline também pode responder com erro.
+  try {
+    await comandoGateway('chrome stop');
+  } catch {
+    // Continua com a recuperação visual abaixo.
+  }
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  const travasRemovidas = await limparTravasTemporariasChrome();
+  await iniciarChromeVisualServidor();
+  return { preparado: true, chromeJaOnline: false, travasRemovidas };
+}
+
 async function iniciar() {
+  const chrome = await prepararChromeParaGateway();
   await comandoGateway('start');
-  return { ok: true, message: 'Gateway iniciado.' };
+  return {
+    ok: true,
+    message: chrome.chromeJaOnline
+      ? 'Gateway iniciado com o Chrome existente.'
+      : 'Chrome recuperado e gateway iniciado.',
+  };
 }
 
 async function reiniciar() {
-  await comandoGateway('restart');
-  return { ok: true, message: 'Gateway reiniciado.' };
+  // Reinício limpo evita que um processo parcial do gateway tente reutilizar
+  // um Chrome morto e falhe novamente no timeout interno de 15 segundos.
+  try {
+    await comandoGateway('stop');
+  } catch {
+    // Se já estava offline, seguimos normalmente.
+  }
+  const chrome = await prepararChromeParaGateway();
+  await comandoGateway('start');
+  return {
+    ok: true,
+    message: chrome.chromeJaOnline
+      ? 'Gateway reiniciado e conectado ao Chrome.'
+      : 'Chrome recuperado e gateway reiniciado.',
+  };
 }
 
 /**

@@ -87,7 +87,9 @@
 
     setBadge('chrome-badge', chrome.conectado ? 'Conectado' : 'Desconectado', chrome.conectado ? 'good' : 'warn');
     $('chrome-title').textContent = chrome.conectado ? 'Navegador disponível' : 'Aguardando navegador';
-    $('chrome-detail').textContent = chrome.cdpUrl || 'CDP local não informado';
+    $('chrome-detail').textContent = chrome.conectado
+      ? `${chrome.cdpUrl || 'CDP local'}${chrome.navegador ? ` · ${chrome.navegador}` : ''}`
+      : `${chrome.cdpUrl || 'CDP local não informado'}${chrome.erro ? ` · ${chrome.erro}` : ''}`;
 
     let claudeTone = 'bad';
     let claudeBadge = 'Não autorizada';
