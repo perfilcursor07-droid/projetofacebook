@@ -72,7 +72,8 @@ async function aguardarEditor(page) {
       return input;
     } catch {
       if (page.isClosed()) throw erro('A conversa do ChatGPT foi fechada antes do envio. Tente novamente.', 503);
-      if (/auth\/login|log-in/i.test(page.url()) || !(await sessaoChatgptAtiva(page))) {
+      const sessao = await verificarSessaoChatgpt(page);
+      if (sessao.estado === 'expirada') {
         throw erro('A sessão do ChatGPT expirou. Entre novamente pela página /claude.', 401);
       }
       // A recarga ocorre somente antes de anexar a foto ou enviar o pedido.
@@ -95,13 +96,10 @@ async function credenciaisChatgpt() {
   try {
     store = JSON.parse(await fs.readFile(AUTH_FILE, 'utf8'));
   } catch {
-    throw erro('A sessão do ChatGPT não está configurada. Entre no ChatGPT pela página /claude.', 409);
+    return null;
   }
   const credentials = store?.profiles?.['chatgpt-web']?.credentials;
-  if (!credentials?.cookie && !credentials?.accessToken) {
-    throw erro('A sessão do ChatGPT não está configurada. Entre no ChatGPT pela página /claude.', 409);
-  }
-  return credentials;
+  return credentials?.cookie || credentials?.accessToken ? credentials : null;
 }
 
 function cookiesDoHeader(raw) {
@@ -127,17 +125,54 @@ function cookiesDoHeader(raw) {
     );
 }
 
-async function sessaoChatgptAtiva(page) {
+async function verificarSessaoChatgpt(page) {
+  if (/auth\/login|log-in|\/login(?:[/?#]|$)/i.test(page.url())) {
+    return { estado: 'expirada', motivo: 'redirecionado para login' };
+  }
   return page.evaluate(async () => {
     try {
       const response = await fetch('/api/auth/session', { credentials: 'include' });
-      if (!response.ok) return false;
-      const data = await response.json();
-      return Boolean(data?.accessToken || data?.user?.id || data?.user?.email);
+      if (response.status === 401) return { estado: 'expirada', motivo: 'sessão HTTP 401' };
+      if (!response.ok) return { estado: 'indefinida', motivo: `sessão HTTP ${response.status}` };
+      const data = await response.json().catch(() => null);
+      if (data?.accessToken || data?.user?.id || data?.user?.email) {
+        return { estado: 'ativa', motivo: 'sessão validada' };
+      }
+      return { estado: 'indefinida', motivo: 'resposta de sessão sem campos conhecidos' };
     } catch {
-      return false;
+      return { estado: 'indefinida', motivo: 'consulta de sessão indisponível' };
     }
-  });
+  }).catch(() => ({ estado: 'indefinida', motivo: 'navegador não respondeu à consulta de sessão' }));
+}
+
+async function garantirSessaoChatgpt(page, context, credentials) {
+  let sessao = await verificarSessaoChatgpt(page);
+  if (sessao.estado === 'ativa') return;
+
+  // O perfil visual do Chrome é a fonte principal. Só reinjeta a cópia de
+  // cookies quando houve prova de expiração; um 429/503 da API de sessão não
+  // deve substituir cookies atuais nem ser anunciado como logout.
+  if (sessao.estado === 'expirada' && credentials?.cookie) {
+    const cookies = cookiesDoHeader(credentials.cookie);
+    if (cookies.length) {
+      await context.addCookies(cookies);
+      await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
+      sessao = await verificarSessaoChatgpt(page);
+    }
+  }
+  if (sessao.estado === 'expirada') {
+    throw erro('A sessão do ChatGPT expirou. Entre novamente pela página /claude.', 401);
+  }
+  if (sessao.estado === 'ativa') return;
+
+  // A API de sessão pode estar temporariamente indisponível ou mudar seu
+  // formato. O editor autenticado, se visível, permite prosseguir com segurança.
+  const editor = page.locator('#prompt-textarea:visible, textarea:visible, [contenteditable="true"]:visible').first();
+  if (await editor.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true, () => false)) return;
+  throw erro(
+    `Não foi possível confirmar a sessão do ChatGPT (${sessao.motivo}). Abra o Chrome em /claude e confira se o ChatGPT carrega normalmente.`,
+    503
+  );
 }
 
 async function websocketCdp() {
@@ -423,18 +458,7 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
     if (!context) throw erro('O Chrome isolado não disponibilizou um perfil de navegação.', 503);
     page = await context.newPage();
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    // O login feito em /claude vive no mesmo perfil do Chrome, então em geral
-    // não há nada para reinjetar. Só usa a cópia salva como recuperação.
-    if (!(await sessaoChatgptAtiva(page))) {
-      const cookies = cookiesDoHeader(credentials.cookie);
-      if (cookies.length) {
-        await context.addCookies(cookies);
-        await page.reload({ waitUntil: 'domcontentloaded', timeout: 45_000 });
-      }
-    }
-    if (!(await sessaoChatgptAtiva(page)) || /auth\/login|log-in/i.test(page.url())) {
-      throw erro('A sessão do ChatGPT expirou. Entre novamente pela página /claude.', 401);
-    }
+    await garantirSessaoChatgpt(page, context, credentials);
 
     const input = await aguardarEditor(page);
     await anexarImagemNoComposer(page, input, upload);
@@ -501,9 +525,7 @@ async function recuperarImagem({ recoveryKey }) {
   const page = await context.newPage();
   try {
     await page.goto(registro.url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    if (!(await sessaoChatgptAtiva(page))) {
-      throw erro('A sessão do ChatGPT expirou. Entre novamente pela página /claude.', 401);
-    }
+    await garantirSessaoChatgpt(page, context, await credenciaisChatgpt());
     const limite = Date.now() + 60_000;
     let src = '';
     while (Date.now() < limite && !src) {
@@ -529,4 +551,6 @@ module.exports = {
   promptComFormatoFacebook,
   // Exposto somente para validar a compatibilidade dos cookies do Chrome.
   cookiesDoHeader,
+  verificarSessaoChatgpt,
+  garantirSessaoChatgpt,
 };

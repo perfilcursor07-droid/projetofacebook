@@ -1,7 +1,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { promptPadrao, promptComFormatoFacebook, cookiesDoHeader } = require('../src/services/chatgptImageService');
+const {
+  promptPadrao,
+  promptComFormatoFacebook,
+  cookiesDoHeader,
+  verificarSessaoChatgpt,
+  garantirSessaoChatgpt,
+} = require('../src/services/chatgptImageService');
 
 test('prompt de imagem pede reconstrução baseada na referência e sem texto', () => {
   const prompt = promptPadrao({
@@ -43,4 +49,58 @@ test('cookies do ChatGPT usam URL host-only aceita pelo Chrome', () => {
     assert.equal('domain' in cookie, false);
     assert.equal('path' in cookie, false);
   }
+});
+
+function paginaComSessao({ status = 200, data = {}, url = 'https://chatgpt.com/', editor = false } = {}) {
+  return {
+    url: () => url,
+    evaluate: async (callback) => {
+      const anterior = global.fetch;
+      global.fetch = async () => ({
+        status,
+        ok: status >= 200 && status < 300,
+        json: async () => data,
+      });
+      try {
+        return await callback();
+      } finally {
+        global.fetch = anterior;
+      }
+    },
+    locator: () => ({
+      first: () => ({
+        waitFor: editor ? async () => {} : async () => { throw new Error('editor ausente'); },
+      }),
+    }),
+  };
+}
+
+test('erro temporário na API de sessão não é confundido com login expirado', async () => {
+  const page = paginaComSessao({ status: 503, editor: true });
+  const sessao = await verificarSessaoChatgpt(page);
+  assert.equal(sessao.estado, 'indefinida');
+  await assert.doesNotReject(garantirSessaoChatgpt(page, {}, null));
+});
+
+test('sem sessão e sem editor mostra erro técnico, não falso logout', async () => {
+  const page = paginaComSessao({ status: 429 });
+  await assert.rejects(garantirSessaoChatgpt(page, {}, null), (err) => {
+    assert.equal(err.status, 503);
+    assert.match(err.message, /sessão HTTP 429/);
+    return true;
+  });
+});
+
+test('HTTP 401 do ChatGPT confirma que é necessário novo login', async () => {
+  const page = paginaComSessao({ status: 401 });
+  await assert.rejects(garantirSessaoChatgpt(page, {}, null), (err) => {
+    assert.equal(err.status, 401);
+    assert.match(err.message, /sessão do ChatGPT expirou/i);
+    return true;
+  });
+});
+
+test('formato desconhecido da sessão não impede editor autenticado', async () => {
+  const page = paginaComSessao({ status: 200, data: { novoFormato: true }, editor: true });
+  await assert.doesNotReject(garantirSessaoChatgpt(page, {}, null));
 });
