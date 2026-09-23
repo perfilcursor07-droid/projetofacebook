@@ -215,11 +215,28 @@ async function prepareItem(userId, source, page, row, hash) {
   await db(ITEMS).where({ id: row.id }).update(touch({ state: 'ready', fingerprint: hash, error: null }));
 }
 
-async function publish(userId, sourceId) {
+async function prepareAndPublish(userId, sourceId) {
   const source = await ownedMatter(userId, sourceId);
-  const selected = await selectedPages(userId);
+  const targets = await selectedPages(userId);
+  const fingerprint = editorial.fingerprint(source);
+  await prepare(userId, sourceId);
+  // The existing queue is serial: this continuation follows preparation jobs,
+  // including jobs already running when the editor clicks this action.
+  enqueue(`preparar e publicar matéria ${sourceId}`, async () => {
+    await publish(userId, sourceId, { pageIds: targets.map((p) => Number(p.id)), fingerprint });
+  });
+  return status(userId, sourceId);
+}
+
+async function publish(userId, sourceId, preparedRequest = null) {
+  const source = await ownedMatter(userId, sourceId);
+  let selected = await selectedPages(userId);
+  if (preparedRequest) {
+    selected = selected.filter((p) => preparedRequest.pageIds.includes(Number(p.id)));
+    if (editorial.fingerprint(source) !== preparedRequest.fingerprint) return;
+  }
   const rows = await db(ITEMS).where({ user_id: userId, source_id: sourceId }).whereIn('page_id', selected.map((p) => p.id));
-  if (rows.length !== selected.length || rows.some((r) => !['ready', 'sending', 'sent', 'uncertain', 'blocked'].includes(r.state))) {
+  if (!preparedRequest && (rows.length !== selected.length || rows.some((r) => !['ready', 'sending', 'sent', 'uncertain', 'blocked'].includes(r.state)))) {
     fail('Prepare todas as versões antes de publicar.');
   }
   for (const row of rows.filter((r) => r.state === 'ready')) {
@@ -235,6 +252,10 @@ async function publish(userId, sourceId) {
       try {
         const active = await db(ITEMS).where({ id: row.id, state: 'sending' }).first();
         if (!active) return;
+        if (preparedRequest && editorial.fingerprint(await ownedMatter(userId, sourceId)) !== preparedRequest.fingerprint) {
+          await db(ITEMS).where({ id: row.id }).update(touch({ state: 'ready', error: 'A matéria principal mudou. Clique em Preparar e publicar novamente.' }));
+          return;
+        }
         if (!(await selectedPages(userId)).some((p) => Number(p.id) === Number(row.page_id))) fail('Destino desativado antes do envio.');
         const child = await ownedMatter(userId, row.matter_id);
         if (child.publication_id) {
@@ -283,4 +304,4 @@ async function retry(userId, sourceId, itemId, confirmedNotPublished) {
   return status(userId, sourceId);
 }
 
-module.exports = { settings, saveSettings, saveBrand, status, prepare, publish, retry };
+module.exports = { settings, saveSettings, saveBrand, status, prepare, publish, retry, prepareAndPublish };

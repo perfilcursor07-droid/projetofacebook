@@ -151,7 +151,7 @@ test('resposta inválida ou repetida não passa na validação editorial', () =>
   assert.equal(out.titulo,'Novo título');
 });
 
-test('editor preserva principal e exige ação de publicar depois do preparo', async () => {
+test('editor solicita preparo e envio com uma única ação e bloqueia clique concorrente', async () => {
   const { JSDOM } = require('jsdom');
   const ejs = require('ejs');
   const template = fs.readFileSync(path.resolve(__dirname, '../public/views/partials/page-distribution.ejs'), 'utf8');
@@ -172,13 +172,41 @@ test('editor preserva principal e exige ação de publicar depois do preparo', a
     w.eval(fs.readFileSync(path.resolve(__dirname, '../public/js/page-distribution.js'), 'utf8'));
     await new Promise(setImmediate);
     assert.equal(calls.some((url) => url.endsWith('/publish')), false);
-    await w.pageDistribution.handlePublish();
-    assert.equal(calls.filter((url) => url.endsWith('/prepare')).length, 1);
-    assert.equal(calls.some((url) => url.endsWith('/publish')), false);
     await Promise.all([w.pageDistribution.handlePublish(), w.pageDistribution.handlePublish()]);
-    assert.equal(calls.filter((url) => url.endsWith('/publish')).length, 1);
+    assert.equal(calls.filter((url) => url.endsWith('/prepare-and-publish')).length, 1);
     assert.equal(calls.some((url) => url === '/api/materias-ia/matters/1/publicar'), false);
   } finally { w.close(); }
+});
+
+test('ação única prepara e publica todas, sem duplicar ao repetir', async () => {
+  const h = harness();
+  await h.service.saveSettings(7, { enabled:true, pageIds:[10,11] });
+  await Promise.all([h.service.prepareAndPublish(7,1),h.service.prepareAndPublish(7,1)]);
+  assert.equal(h.sends.length,0);
+  await h.drain();
+  assert.equal(h.generations(),2);
+  assert.deepEqual(h.sends.map(s=>s.facebook_page_id),[10,11]);
+  await h.service.prepareAndPublish(7,1); await h.drain();
+  assert.equal(h.sends.length,2);
+});
+
+test('ação única não inclui páginas marcadas depois do clique', async () => {
+  const h=harness();
+  await h.service.saveSettings(7,{enabled:true,pageIds:[10]});
+  await h.service.prepareAndPublish(7,1);
+  await h.service.saveSettings(7,{enabled:true,pageIds:[10,11]});
+  await h.service.prepare(7,1);
+  await h.drain();
+  assert.deepEqual(h.sends.map(s=>s.facebook_page_id),[10]);
+});
+
+test('alterar a principal durante preparo impede envio automático', async () => {
+  const h=harness();
+  await h.service.saveSettings(7,{enabled:true,pageIds:[10]});
+  await h.service.prepareAndPublish(7,1);
+  h.matterMap.get(1).titulo='Título alterado';
+  await h.drain();
+  assert.equal(h.sends.length,0);
 });
 
 test('recupera falha antiga, preserva histórico e não libera destinos enviados', async () => {

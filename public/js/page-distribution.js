@@ -116,13 +116,8 @@
   }
   async function publish() {
     await window.saveMatterForDistribution?.();
-    await refresh();
-    if (!ready()) { await prepare(); say('Versões em preparo. Quando estiverem prontas, clique em Publicar nas páginas.'); return; }
-    if (!data.items.some((i) => i.selected && i.state === 'ready')) {
-      say('Nenhuma versão pronta para enviar. Nas bloqueadas, corrija o motivo e use Liberar nova tentativa.', true); return;
-    }
-    await request(url + '/publish', 'POST', {}); await refresh();
-    say('Envio iniciado. Acompanhe o resultado de cada página abaixo.');
+    await request(url + '/prepare-and-publish', 'POST', {}); await refresh();
+    say('Preparo e publicação iniciados. As versões aprovadas serão enviadas sem outro clique. Bloqueios aparecem por página.');
   }
   function renderEditor() {
     const open = new Set([...content.querySelectorAll('details[open]')].map((e) => e.dataset.item));
@@ -136,7 +131,7 @@
     }
     content.append(el('p', 'Facebook: ' + data.pages.map((p) => p.name).join(', '), 'pd-help'));
     content.append(el('p', 'A principal fica preservada. Cada versão terá seu próprio registro em Matérias salvas. Nos Reels, o vídeo é mantido; título e legenda variam.', 'pd-help'));
-    content.append(button('Preparar versões', prepare), button('Publicar nas ' + data.pages.length + ' páginas', publish, true),
+    content.append(button('Preparar e publicar nas ' + data.pages.length + ' páginas', publish, true), button('Somente preparar rascunhos', prepare),
       button('Atualizar andamento', refresh), link('Configurar destinos', '/paginas'));
     data.items.forEach((i) => {
       const item = el('details', null, 'pd-item'); item.dataset.item = String(i.id); item.open = open.has(String(i.id));
@@ -163,7 +158,7 @@
       if (i.matterId) item.append(link('Revisar versão', '/materias-ia/' + i.matterId));
       content.append(item);
     });
-    say('Gerar ou salvar não publica. Páginas já enviadas não são reenviadas pelo grupo.');
+    say('Preparar e publicar envia as versões aprovadas automaticamente. Somente preparar rascunhos não envia. Páginas já enviadas não são repetidas.');
   }
   const initial = (mode === 'editor' ? refresh() : request('/settings').then((r) => {
     data = r; if (mode === 'brands') renderBrands(); else renderSettings();

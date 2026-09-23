@@ -24,6 +24,7 @@ router.put('/brands/:pageId', upload, handle((r) => service.saveBrand(
   r.session.userId, Number(r.params.pageId), r.body.config ? JSON.parse(r.body.config) : r.body, r.file)));
 router.get('/matters/:id', handle((r) => service.status(r.session.userId, Number(r.params.id))));
 router.post('/matters/:id/prepare', handle((r) => service.prepare(r.session.userId, Number(r.params.id)), 202));
+router.post('/matters/:id/prepare-and-publish', handle((r) => service.prepareAndPublish(r.session.userId, Number(r.params.id)), 202));
 router.post('/matters/:id/publish', handle((r) => service.publish(r.session.userId, Number(r.params.id)), 202));
 router.post('/matters/:id/items/:itemId/retry', handle((r) => service.retry(
   r.session.userId, Number(r.params.id), Number(r.params.itemId), r.body.confirmedNotPublished)));
