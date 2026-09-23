@@ -392,6 +392,24 @@ async function colarImagemNoComposer(input, upload) {
   });
 }
 
+async function soltarImagemNoComposer(input, upload) {
+  return input.evaluate((target, arquivo) => {
+    const binario = atob(arquivo.base64);
+    const bytes = new Uint8Array(binario.length);
+    for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
+    const transferencia = new DataTransfer();
+    transferencia.items.add(new File([bytes], arquivo.name, { type: arquivo.mimeType }));
+    const alvo = target.closest('form') || target;
+    for (const tipo of ['dragenter', 'dragover', 'drop']) {
+      alvo.dispatchEvent(new DragEvent(tipo, { bubbles: true, cancelable: true, dataTransfer: transferencia }));
+    }
+  }, {
+    name: upload.name,
+    mimeType: upload.mimeType,
+    base64: upload.buffer.toString('base64'),
+  });
+}
+
 async function anexarImagemNoComposer(page, input, upload) {
   let composer = input.locator('xpath=ancestor::form[1]');
   if (!(await composer.count())) {
@@ -409,11 +427,30 @@ async function anexarImagemNoComposer(page, input, upload) {
 
   // Colar uma imagem no editor usa o mesmo fluxo suportado pelo ChatGPT para
   // capturas de tela e independe do idioma ou da estrutura do menu de anexos.
-  await colarImagemNoComposer(input, upload);
-  if (await aguardarAnexo(areaDeConfirmacao, anterior, 20_000)) return;
+  await colarImagemNoComposer(input, upload).catch(() => {});
+  if (await aguardarAnexo(areaDeConfirmacao, anterior, 8_000)) return;
 
-  // Aciona o fluxo real da interface. Preencher diretamente o primeiro input
-  // oculto pode selecionar um campo interno que o React não usa no compositor.
+  // O ChatGPT deixou de aceitar o paste sintético em algumas versões. Tenta
+  // os <input type="file"> existentes, priorizando os que aceitam imagem; cada
+  // tentativa é confirmada pela miniatura antes de passar para a próxima.
+  const inputsDeArquivo = page.locator('input[type="file"]');
+  const totalInputs = await inputsDeArquivo.count();
+  const ordem = [];
+  for (let i = 0; i < totalInputs; i += 1) {
+    const accept = String(await inputsDeArquivo.nth(i).getAttribute('accept').catch(() => '') || '');
+    if (/image|\*/i.test(accept) || !accept) ordem.push({ i, prioridade: /image/i.test(accept) ? 0 : 1 });
+  }
+  ordem.sort((a, b) => a.prioridade - b.prioridade);
+  for (const { i } of ordem.slice(0, 4)) {
+    const ok = await inputsDeArquivo.nth(i).setInputFiles(upload).then(() => true, () => false);
+    if (ok && await aguardarAnexo(areaDeConfirmacao, anterior, 12_000)) return;
+  }
+
+  // Arrastar e soltar no compositor usa o mesmo manipulador de "drop" da interface.
+  await soltarImagemNoComposer(input, upload).catch(() => {});
+  if (await aguardarAnexo(areaDeConfirmacao, anterior, 10_000)) return;
+
+  // Último recurso: aciona o fluxo real do menu de anexos.
   const botaoAnexar = page.locator([
     '[data-testid="composer-plus-btn"]:visible',
     'button[aria-label*="Attach" i]:visible',
@@ -451,7 +488,7 @@ async function anexarImagemNoComposer(page, input, upload) {
       if (await opcaoGenerica.count()) {
         opcaoUpload = opcaoGenerica;
       } else {
-        throw erro('O ChatGPT não aceitou a imagem colada e não exibiu a opção de anexar arquivos.', 502);
+        throw erro('O ChatGPT não aceitou a imagem de referência (colar, campo de arquivo, arrastar e menu de anexos falharam). Confira se o ChatGPT abre normalmente no Chrome da página /claude.', 502);
       }
     }
     if (!escolha) {
