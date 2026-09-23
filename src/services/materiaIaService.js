@@ -656,6 +656,35 @@ async function criarMateriaManual({
 }
 
 async function publicarMateria(userId, matterId, overrides = {}) {
+  const variant = await AiMatters.findById(matterId);
+  if (!variant || Number(variant.user_id) !== Number(userId)) {
+    const err = new Error('Matéria não encontrada'); err.status = 404; throw err;
+  }
+  if (!variant.distribution_brand || overrides.distributionClaim) {
+    return publicarMateriaIndividual(userId, matterId, overrides);
+  }
+  const items = () => db('page_distribution_items').where({ user_id: userId, matter_id: matterId });
+  const claimed = !variant.publication_id && await items().where({ state: 'ready' })
+    .update({ state: 'sending', updated_at: db.fn.now() });
+  if (!claimed) {
+    const err = new Error('Esta versão está em preparo, já foi enviada ou aguarda conferência do envio na matéria principal.');
+    err.status = 409; throw err;
+  }
+  try {
+    const result = await publicarMateriaIndividual(userId, matterId, {
+      ...overrides, facebook_page_id: variant.facebook_page_id, sync: true,
+    });
+    const confirmed = Boolean(result.postId || result.fbPostUrl);
+    await items().update({ state: confirmed ? 'sent' : 'uncertain', updated_at: db.fn.now(),
+      error: confirmed ? null : 'Provedor não confirmou o ID. Confira o envio na página.' });
+    return result;
+  } catch (err) {
+    await items().update({ state: 'uncertain', updated_at: db.fn.now(), error: String(err.message).slice(0, 500) });
+    throw err;
+  }
+}
+
+async function publicarMateriaIndividual(userId, matterId, overrides = {}) {
   let matter = await AiMatters.findById(matterId);
   if (!matter || matter.user_id !== userId) {
     const err = new Error('Matéria não encontrada');
@@ -664,7 +693,9 @@ async function publicarMateria(userId, matterId, overrides = {}) {
   }
 
   const facebookPageId = overrides.facebook_page_id || matter.facebook_page_id;
-  const page = await resolvePage(userId, facebookPageId);
+  const page = matter.distribution_brand
+    ? await require('./facebookPageResolver').resolvePageForUser(userId, facebookPageId)
+    : await resolvePage(userId, facebookPageId);
   if (!page) {
     const err = new Error('Conecte/selecione uma página do Facebook');
     err.status = 400;

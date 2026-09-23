@@ -154,7 +154,8 @@ async function composeMatterArtwork({
   }
 
   const finalTitleRaw = String(title || matter.titulo || '').trim();
-  const user = await Users.findById(userId);
+  const storedUser = await Users.findById(userId);
+  const user = storedUser ? require('./pageDistributionEditorial').effectiveBrand(storedUser, matter) : null;
   if (!user) throw new Error('Usuário da matéria não encontrado');
   const { resolveArtModelForMatter } = require('./editorialCardModels');
   const modelId = resolveArtModelForMatter(user, model || matter.arte_modelo);

@@ -365,7 +365,9 @@ async function publicar(req, res, next) {
       matter?.tipo_publicacao === 'reel' ? 'reel' : tipoBody === 'auto' ? matter?.tipo_publicacao : tipoBody;
 
     const result = await materiaIaService.publicarMateria(req.session.userId, matterId, {
-      facebook_page_id: await resolvePageId(req.session.userId, body),
+      facebook_page_id: matter?.distribution_brand
+        ? matter.facebook_page_id
+        : await resolvePageId(req.session.userId, body),
       tipo_publicacao: tipo || matter?.tipo_publicacao || 'texto',
       titulo: body.titulo,
       materia: body.materia,
@@ -782,7 +784,8 @@ async function showMatter(req, res, next) {
     let brandPreviewVersion = Date.now();
     try {
       const Users = require('../models/Users');
-      const user = await Users.findById(req.session.userId);
+      const storedBrandUser = await Users.findById(req.session.userId);
+      const user = require('../services/pageDistributionEditorial').effectiveBrand(storedBrandUser, matter);
       const {
         normalizeArtModel,
         getUserArtModelChoices,

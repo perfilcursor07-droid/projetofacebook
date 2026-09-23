@@ -1,0 +1,8 @@
+<section class="pd-panel" data-page-distribution="<%= mode %>" <%= typeof matterId !== 'undefined' ? 'data-matter-id=' + Number(matterId) : '' %>>
+  <h2><%= mode === 'brands' ? 'Marca por página (opcional)' : mode === 'editor' ? 'Versões por página' : 'Publicar em várias páginas' %></h2>
+  <p class="pd-help"><%= mode === 'brands' ? 'Escolha um modelo e cores para cada destino. Sem marca própria, será usada Minha marca da conta.' : mode === 'editor' ? 'Mesmo assunto, títulos e textos diferentes. Prepare, revise as versões e publique nas páginas selecionadas de uma só vez.' : 'Ative e marque as páginas desta conta. No editor da matéria, a IA prepara um título e conteúdo próprios para cada uma, preservando os fatos da principal.' %></p>
+  <div data-pd-content></div>
+  <p data-pd-status role="status" aria-live="polite" class="pd-help">Carregando configuração…</p>
+</section>
+<link rel="stylesheet" href="/css/page-distribution.css?v=1" />
+<script src="/js/page-distribution.js?v=1" defer></script>

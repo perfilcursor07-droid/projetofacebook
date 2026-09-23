@@ -36,6 +36,7 @@
       </a>
     </div>
 
+    <%- include('partials/page-distribution', { mode: 'brands' }) %>
     <form action="/minha-marca" method="POST" enctype="multipart/form-data" class="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <input type="hidden" name="marca_tab" value="<%= activeTab %>" />
       <input type="hidden" name="marca_modelo_arte" value="<%= profile.marca_modelo_arte || defaultArtModel %>" id="hidden-modelo-arte" />

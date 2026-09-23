@@ -1052,6 +1052,8 @@
     return data;
   }
 
+  window.saveMatterForDistribution = () => cfg.canEdit ? salvar() : Promise.resolve();
+
   document.getElementById('btn-salvar')?.addEventListener('click', async () => {
     setStatus('Salvando…');
     try {
@@ -1474,6 +1476,12 @@
   });
 
   document.getElementById('btn-publicar')?.addEventListener('click', async () => {
+    try {
+      if (window.pageDistribution && await window.pageDistribution.handlePublish()) return;
+    } catch (err) {
+      setStatus(err.message, true);
+      return;
+    }
     // A Página de destino é sempre a padrão da conta logada, definida em /paginas.
     const publishBtn = document.getElementById('btn-publicar');
     const isRepublish = Boolean(cfg.canRepublish || publishBtn?.dataset.republicar === '1');
