@@ -293,30 +293,55 @@ async function localizarImagemGerada(page, ignoradas = new Set()) {
 
 async function estadoDosAnexos(composer) {
   return composer.evaluate((root) => {
-    const texto = String(root.innerText || root.textContent || '').toLowerCase();
-    const imagens = [...root.querySelectorAll('img')].filter((img) => {
-      const src = String(img.currentSrc || img.src || '');
-      return /^(blob:|data:image\/)/i.test(src) || (img.naturalWidth >= 48 && img.naturalHeight >= 48);
-    }).length;
-    const controlesRemover = [...root.querySelectorAll('button, [role="button"]')].filter((node) => {
-      const rotulo = `${node.getAttribute('aria-label') || ''} ${node.getAttribute('title') || ''}`;
-      return /remove|remover|excluir|delete/i.test(rotulo);
-    }).length;
-    const marcadores = root.querySelectorAll([
-      '[data-testid*="attachment"]',
-      '[data-testid*="file-thumbnail"]',
-      '[data-testid*="image-preview"]',
-      '[class*="attachment"]',
-      '[class*="file-thumbnail"]',
-      '[class*="image-preview"]',
-    ].join(',')).length;
+    // Observar a página inteira gerava falso positivo: avatares, ícones e
+    // botões "remover" do histórico eram contados como anexo, e o prompt
+    // saía sem a foto. Sinais genéricos só valem dentro do compositor; na
+    // página inteira contam apenas prévias locais (blob:/data:) e o nome do arquivo.
+    const pagina = root.ownerDocument || document;
+    const form = pagina.querySelector('#prompt-textarea')?.closest('form')
+      || pagina.querySelector('[data-testid="composer"], #composer-background');
+    const texto = String(form?.innerText || '').toLowerCase();
+    const previasLocais = [...pagina.querySelectorAll('img')].filter((img) =>
+      /^(blob:|data:image\/)/i.test(String(img.currentSrc || img.src || ''))
+    ).length;
+    const imagensNoCompositor = form
+      ? [...form.querySelectorAll('img')].filter((img) => img.naturalWidth >= 32 && img.naturalHeight >= 32).length
+      : 0;
+    const controlesRemover = form
+      ? [...form.querySelectorAll('button, [role="button"]')].filter((node) => {
+        const rotulo = `${node.getAttribute('aria-label') || ''} ${node.getAttribute('title') || ''}`;
+        return /remove|remover|excluir|delete/i.test(rotulo);
+      }).length
+      : 0;
+    const marcadores = form
+      ? form.querySelectorAll('[data-testid*="attachment"], [data-testid*="file-thumbnail"], [data-testid*="image-preview"]').length
+      : 0;
     return {
-      nomeDoArquivo: texto.includes('imagem-referencia.jpg'),
-      imagens,
+      nomeDoArquivo: texto.includes('imagem-referencia'),
+      imagens: previasLocais + imagensNoCompositor,
       controlesRemover,
       marcadores,
     };
   });
+}
+
+async function mensagemEnviadaTemImagem(page, timeout = 25_000) {
+  const limite = Date.now() + timeout;
+  while (Date.now() < limite) {
+    const temImagem = await page.evaluate(() => {
+      const mensagens = document.querySelectorAll('[data-message-author-role="user"]');
+      const ultima = mensagens[mensagens.length - 1];
+      if (!ultima) return null;
+      // A foto enviada costuma ficar no turno do usuário, às vezes fora do
+      // elemento com data-message-author-role; sobe até o artigo do turno.
+      const turno = ultima.closest('article, [data-testid^="conversation-turn"]') || ultima;
+      return Boolean(turno.querySelector('img'))
+        || /imagem-referencia/i.test(turno.innerText || '');
+    }).catch(() => null);
+    if (temImagem) return true;
+    await page.waitForTimeout(700);
+  }
+  return false;
 }
 
 async function aguardarAnexo(composer, anterior, timeout = 35_000) {
@@ -505,6 +530,13 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
     await page.waitForURL(/https:\/\/chatgpt\.com\/c\//i, { timeout: 30_000 }).catch(() => {});
     registrarConversa(recoveryKey, page.url());
     liberarPreparacao();
+
+    if (upload && !(await mensagemEnviadaTemImagem(page))) {
+      throw erro(
+        'A imagem de referência não chegou ao ChatGPT junto com o pedido. Tente gerar novamente.',
+        502
+      );
+    }
 
     const limite = Date.now() + 300_000;
     let src = '';
