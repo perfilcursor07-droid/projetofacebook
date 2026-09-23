@@ -7,6 +7,7 @@ const { enqueue } = require('../workers/queue');
 const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
+const { failureState } = require('./distributionFailure');
 const { env } = require('../config/env');
 
 const SETTINGS = 'page_distribution_settings';
@@ -135,7 +136,7 @@ async function status(userId, sourceId) {
     if (!page) continue;
     const m = row.matter_id ? await ownedMatter(userId, row.matter_id) : null;
     items.push({ id: row.id, pageId: row.page_id, pageName: page.name, selected: page.selected,
-      state: m?.publication_id && row.state === 'ready' ? 'sent' : row.state,
+      state: row.state === 'uncertain' && failureState(row.error) === 'blocked' ? 'blocked' : row.state,
       error: row.error, matterId: m?.id, title: m?.titulo, text: m?.materia,
       image: m?.imagem_url, stale: row.fingerprint !== editorial.fingerprint(source) });
   }
@@ -153,7 +154,7 @@ async function prepare(userId, sourceId) {
     const key = { user_id: userId, source_id: sourceId, page_id: page.id };
     await db(ITEMS).insert(key).onConflict(['user_id', 'source_id', 'page_id']).ignore();
     const row = await db(ITEMS).where(key).first();
-    if (['sending', 'sent', 'uncertain', 'preparing', 'queued'].includes(row.state)) continue;
+    if (['sending', 'sent', 'uncertain', 'blocked', 'preparing', 'queued'].includes(row.state)) continue;
     if (row.state === 'ready' && row.fingerprint === hash && row.matter_id) continue;
     // Compare-and-set: two clicks/processes cannot generate two children for the same destination.
     const claimed = await db(ITEMS).where({ id: row.id, state: row.state })
@@ -218,7 +219,7 @@ async function publish(userId, sourceId) {
   const source = await ownedMatter(userId, sourceId);
   const selected = await selectedPages(userId);
   const rows = await db(ITEMS).where({ user_id: userId, source_id: sourceId }).whereIn('page_id', selected.map((p) => p.id));
-  if (rows.length !== selected.length || rows.some((r) => !['ready', 'sending', 'sent', 'uncertain'].includes(r.state))) {
+  if (rows.length !== selected.length || rows.some((r) => !['ready', 'sending', 'sent', 'uncertain', 'blocked'].includes(r.state))) {
     fail('Prepare todas as versões antes de publicar.');
   }
   for (const row of rows.filter((r) => r.state === 'ready')) {
@@ -236,7 +237,9 @@ async function publish(userId, sourceId) {
         if (!active) return;
         if (!(await selectedPages(userId)).some((p) => Number(p.id) === Number(row.page_id))) fail('Destino desativado antes do envio.');
         const child = await ownedMatter(userId, row.matter_id);
-        if (!child.publication_id) {
+        if (child.publication_id) {
+          fail('Existe uma tentativa anterior vinculada. Confira o envio antes de tentar novamente.');
+        } else {
           if (Number(child.facebook_page_id) !== Number(row.page_id) || child.status === 'agendado') fail('Versão alterada antes do envio; revise no editor.');
           const result = await require('./materiaIaService').publicarMateria(userId, child.id, {
             sync: true, facebook_page_id: row.page_id, publicar_facebook: true,
@@ -248,11 +251,36 @@ async function publish(userId, sourceId) {
         await db(ITEMS).where({ id: row.id }).update(touch({ state: 'sent', error: null }));
       } catch (err) {
         // A timeout may mean the provider accepted the post. Never automatically resend it.
-        await db(ITEMS).where({ id: row.id }).update(touch({ state: 'uncertain', error: String(err.message).slice(0, 500) }));
+        await db(ITEMS).where({ id: row.id }).update(touch({ state: failureState(err), error: String(err.message).slice(0, 500) }));
       }
     });
   }
   return status(userId, sourceId);
 }
 
-module.exports = { settings, saveSettings, saveBrand, status, prepare, publish };
+async function retry(userId, sourceId, itemId, confirmedNotPublished) {
+  await ownedMatter(userId, sourceId);
+  const selected = await selectedPages(userId);
+  await db.transaction(async (trx) => {
+    const row = await trx(ITEMS).where({ id: itemId, user_id: userId, source_id: sourceId }).forUpdate().first();
+    if (!row) fail('Versão não encontrada.', 404);
+    if (!['blocked', 'uncertain'].includes(row.state)) fail('Esta versão não está disponível para nova tentativa.', 409);
+    if (!selected.some((p) => Number(p.id) === Number(row.page_id))) fail('Página fora da seleção.');
+    if (failureState(row.error) !== 'blocked' && confirmedNotPublished !== true) {
+      fail('Confirme que verificou a página e o provedor e que o post não foi publicado nem está pendente.', 409);
+    }
+    const child = await trx('ai_matters').where({ id: row.matter_id, user_id: userId }).forUpdate().first();
+    if (!child || Number(child.facebook_page_id) !== Number(row.page_id)) fail('Destino inválido.');
+    if (child.status === 'publicado' || child.status === 'agendado') fail('A versão já está publicada ou agendada.', 409);
+    if (child.publication_id) {
+      const publication = await trx('publications').where({ id: child.publication_id }).forUpdate().first();
+      if (!publication || publication.status !== 'erro') fail('A tentativa anterior ainda está pendente ou foi concluída. Confira no provedor.', 409);
+    }
+    // Keep the failed publication as history, but detach it so it cannot be mistaken for success.
+    await trx('ai_matters').where({ id: child.id, user_id: userId }).update(touch({ publication_id: null, status: 'rascunho', error_message: null }));
+    await trx(ITEMS).where({ id: row.id }).update(touch({ state: 'ready', error: null }));
+  });
+  return status(userId, sourceId);
+}
+
+module.exports = { settings, saveSettings, saveBrand, status, prepare, publish, retry };

@@ -7,7 +7,7 @@ const { createRequire } = require('module');
 const editorial = require('../src/services/pageDistributionEditorial');
 
 function harness() {
-  const tables = { page_distribution_settings: [], page_distribution_targets: [], page_distribution_items: [] };
+  const tables = { page_distribution_settings: [], page_distribution_targets: [], page_distribution_items: [], publications: [] };
   function db(table) {
     const predicates = []; let op, values, conflict;
     const query = {
@@ -21,11 +21,12 @@ function harness() {
       update(v) { op = 'update'; values = v; return query; },
       onConflict(v) { conflict = Array.isArray(v) ? v : [v]; return query; },
       ignore() { return query; },
+      forUpdate() { return query; },
       merge(fields) { query.mergeFields = fields || Object.keys(values); return query; },
       first() { return query.then((rows) => rows[0]); },
       then(resolve, reject) {
         try {
-          const rows = tables[table]; let result;
+          const rows = table === 'ai_matters' ? [...matterMap.values()] : tables[table]; let result;
           if (op === 'insert') {
             const existing = conflict && rows.find((r) => conflict.every((k) => r[k] === values[k]));
             if (existing) { for (const k of query.mergeFields || []) existing[k] = values[k]; result = [existing.id]; }
@@ -178,4 +179,45 @@ test('editor preserva principal e exige ação de publicar depois do preparo', a
     assert.equal(calls.filter((url) => url.endsWith('/publish')).length, 1);
     assert.equal(calls.some((url) => url === '/api/materias-ia/matters/1/publicar'), false);
   } finally { w.close(); }
+});
+
+test('recupera falha antiga, preserva histórico e não libera destinos enviados', async () => {
+  const h = harness();
+  await h.service.saveSettings(7, { enabled: true, pageIds: [10,11] });
+  await h.service.prepare(7,1); await h.drain();
+  const [a,b] = h.tables.page_distribution_items;
+  a.state = 'sent';
+  b.state = 'uncertain'; b.error = 'A Página está sem Profile Key da Ayrshare.';
+  h.matterMap.get(b.matter_id).publication_id = 999;
+  h.matterMap.get(b.matter_id).status = 'erro';
+  h.tables.publications.push({id:999,status:'erro'});
+  assert.equal((await h.service.status(7,1)).items[1].state, 'blocked');
+  await h.service.retry(7,1,b.id,false);
+  assert.equal(h.matterMap.get(b.matter_id).publication_id,null);
+  assert.equal(h.tables.publications.length,1);
+  assert.equal(a.state,'sent');
+  await assert.rejects(h.service.retry(7,1,a.id,true), /não está disponível/);
+  await h.service.publish(7,1); await h.drain();
+  assert.deepEqual(h.sends.map(s=>s.facebook_page_id),[11]);
+});
+
+test('timeout exige conferência e publicação pendente não pode ser liberada', async () => {
+  const h = harness();
+  await h.service.saveSettings(7,{enabled:true,pageIds:[10]});
+  await h.service.prepare(7,1); await h.drain();
+  const row=h.tables.page_distribution_items[0];
+  row.state='uncertain'; row.error='Timeout';
+  await assert.rejects(h.service.retry(7,1,row.id,false),/Confirme/);
+  h.matterMap.get(row.matter_id).publication_id=55;
+  h.tables.publications.push({id:55,status:'pendente'});
+  await assert.rejects(h.service.retry(7,1,row.id,true),/pendente/);
+  await assert.rejects(h.service.retry(8,1,row.id,true),/não encontrada/);
+  assert.equal(row.state,'uncertain');
+});
+
+test('classifica somente rejeições explícitas como bloqueio', () => {
+  const {failureState}=require('../src/services/distributionFailure');
+  assert.equal(failureState('Meta is requesting additional identity verification for this account.'),'blocked');
+  assert.equal(failureState('A Página está sem Profile Key da Ayrshare.'),'blocked');
+  assert.equal(failureState('Timeout do provedor'),'uncertain');
 });

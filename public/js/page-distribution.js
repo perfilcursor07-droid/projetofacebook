@@ -95,7 +95,7 @@
     say('Opcional: cada página pode ter seu modelo, suas cores e sua logo.');
   }
   const states = { pending: 'Aguardando preparo', queued: 'Na fila de preparo', preparing: 'Criando e conferindo',
-    ready: 'Pronta para revisar', error: 'Preparo não concluído', sending: 'Enviando', sent: 'Enviada', uncertain: 'Conferir envio na página' };
+    ready: 'Pronta para revisar', error: 'Preparo não concluído', sending: 'Enviando', sent: 'Enviada', blocked: 'Não enviada — corrigir bloqueio', uncertain: 'Conferir envio na página' };
   const url = '/matters/' + Number(panel.dataset.matterId);
   async function refresh() {
     data = await request(url); renderEditor();
@@ -106,7 +106,7 @@
   }
   function ready() {
     return data.pages.length > 0 && data.pages.every((p) => data.items.some((i) => Number(i.pageId) === Number(p.id) &&
-      (['sent', 'sending', 'uncertain'].includes(i.state) || i.state === 'ready' && !i.stale)));
+      (['sent', 'sending', 'uncertain', 'blocked'].includes(i.state) || i.state === 'ready' && !i.stale)));
   }
   async function prepare() {
     await window.saveMatterForDistribution?.();
@@ -118,6 +118,9 @@
     await window.saveMatterForDistribution?.();
     await refresh();
     if (!ready()) { await prepare(); say('Versões em preparo. Quando estiverem prontas, clique em Publicar nas páginas.'); return; }
+    if (!data.items.some((i) => i.selected && i.state === 'ready')) {
+      say('Nenhuma versão pronta para enviar. Nas bloqueadas, corrija o motivo e use Liberar nova tentativa.', true); return;
+    }
     await request(url + '/publish', 'POST', {}); await refresh();
     say('Envio iniciado. Acompanhe o resultado de cada página abaixo.');
   }
@@ -142,6 +145,21 @@
       if (i.image && (/^https?:\/\//i.test(i.image) || /^\/media\//.test(i.image))) { const image = el('img'); image.src = i.image; image.alt = 'Arte para ' + i.pageName; image.loading = 'lazy'; item.append(image); }
       if (i.text) item.append(el('p', i.text));
       if (i.error) item.append(el('p', i.error, 'pd-error'));
+      if (i.selected && ['blocked', 'uncertain'].includes(i.state)) {
+        if (/Profile Key/i.test(i.error || '')) item.append(link('Configurar Profile Key', '/paginas'));
+        if (/identity verification/i.test(i.error || '')) {
+          const support = link('Concluir verificação na Meta', 'https://www.facebook.com/business-support-home');
+          support.target = '_blank'; support.rel = 'noopener noreferrer'; item.append(support);
+        }
+        item.append(button('Liberar nova tentativa', async () => {
+          const confirmed = i.state === 'uncertain'
+            ? window.confirm('Você conferiu na página e no provedor que este post não foi publicado nem está pendente? Uma nova tentativa pode duplicar um envio ainda em processamento.')
+            : window.confirm('O bloqueio desta página já foi resolvido? A versão será liberada para você publicar novamente.');
+          if (!confirmed) return;
+          await request(url + '/items/' + i.id + '/retry', 'POST', { confirmedNotPublished: i.state === 'uncertain' });
+          await refresh(); say('Versão liberada. Clique em Publicar nas páginas para enviar somente as prontas.');
+        }));
+      }
       if (i.matterId) item.append(link('Revisar versão', '/materias-ia/' + i.matterId));
       content.append(item);
     });

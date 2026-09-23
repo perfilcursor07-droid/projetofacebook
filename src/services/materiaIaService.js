@@ -679,7 +679,7 @@ async function publicarMateria(userId, matterId, overrides = {}) {
       error: confirmed ? null : 'Provedor não confirmou o ID. Confira o envio na página.' });
     return result;
   } catch (err) {
-    await items().update({ state: 'uncertain', updated_at: db.fn.now(), error: String(err.message).slice(0, 500) });
+    await items().update({ state: require('./distributionFailure').failureState(err), updated_at: db.fn.now(), error: String(err.message).slice(0, 500) });
     throw err;
   }
 }

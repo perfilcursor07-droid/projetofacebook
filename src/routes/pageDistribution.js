@@ -25,4 +25,6 @@ router.put('/brands/:pageId', upload, handle((r) => service.saveBrand(
 router.get('/matters/:id', handle((r) => service.status(r.session.userId, Number(r.params.id))));
 router.post('/matters/:id/prepare', handle((r) => service.prepare(r.session.userId, Number(r.params.id)), 202));
 router.post('/matters/:id/publish', handle((r) => service.publish(r.session.userId, Number(r.params.id)), 202));
+router.post('/matters/:id/items/:itemId/retry', handle((r) => service.retry(
+  r.session.userId, Number(r.params.id), Number(r.params.itemId), r.body.confirmedNotPublished)));
 module.exports = router;
