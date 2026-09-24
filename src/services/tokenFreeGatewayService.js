@@ -1,6 +1,7 @@
 const { AsyncLocalStorage } = require('node:async_hooks');
 const axios = require('axios');
 const { env } = require('../config/env');
+const { limparMarcacaoChatgpt, criarLimpadorDeStream } = require('./chatgptMarkup');
 
 /**
  * Cliente OpenAI-compatible do token-free-gateway.
@@ -264,7 +265,7 @@ async function chatCompletion(
       }),
       { headers: headers(false), timeout }
     );
-    const texto = String(data?.choices?.[0]?.message?.content || '').trim();
+    const texto = limparMarcacaoChatgpt(data?.choices?.[0]?.message?.content || '').trim();
     if (!texto) throw new Error('resposta vazia');
     logar(inicio, tarefa, data?.usage);
     return json ? limparCercaJson(texto) : texto;
@@ -293,6 +294,7 @@ async function chatCompletionStream(
   assertConfigured(tarefa);
   const inicio = Date.now();
   let full = '';
+  const limpador = criarLimpadorDeStream();
 
   try {
     const response = await axios.post(
@@ -332,7 +334,8 @@ async function chatCompletionStream(
           const delta = evento?.choices?.[0]?.delta?.content || '';
           if (delta) {
             full += delta;
-            if (typeof onDelta === 'function') onDelta(delta);
+            const visivel = limpador.empurrar(delta);
+            if (visivel && typeof onDelta === 'function') onDelta(visivel);
           }
         } catch (err) {
           if (err instanceof SyntaxError) return;
@@ -355,7 +358,7 @@ async function chatCompletionStream(
 
     if (!full.trim()) throw new Error('stream vazio');
     logar(inicio, `${tarefa}/stream`);
-    return full.trim();
+    return limparMarcacaoChatgpt(full).trim();
   } catch (err) {
     if (full.trim()) throw normalizarErro(err);
     console.warn('[token-free-stream] stream indisponivel; tentando modo comum:', mensagemRemota(err));

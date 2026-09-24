@@ -4414,6 +4414,42 @@ async function responder({
 }
 
 /**
+ * O chat mostra a matéria no formato JM Notícia, com markdown e a âncora em
+ * CAIXA ALTA abaixo do título. No rascunho o texto vai limpo: sem a âncora,
+ * sem asteriscos de negrito e sem marcação de link do ChatGPT.
+ */
+function limparCorpoDoRascunho(texto) {
+  const { limparMarcacaoChatgpt } = require('./chatgptMarkup');
+  const linhas = limparMarcacaoChatgpt(texto).split('\n');
+
+  const soCaixaAlta = (valor) => {
+    const letras = String(valor || '').replace(/[^\p{L}]/gu, '');
+    return letras.length >= 12 && letras === letras.toLocaleUpperCase('pt-BR');
+  };
+  const indice = linhas.findIndex((linha) => linha.trim());
+  if (indice >= 0) {
+    // Âncora grudada no lead: "**CENÁRIO ELEITORAL…** O avanço do senador…"
+    const grudada = linhas[indice].match(/^\s*\*\*([^*\n]{12,220})\*\*\s+(?=\S)/);
+    if (grudada && soCaixaAlta(grudada[1])) {
+      linhas[indice] = linhas[indice].slice(grudada[0].length);
+    }
+    const primeira = linhas[indice].trim();
+    const ehAncora =
+      soCaixaAlta(primeira) &&
+      primeira.length <= 220 &&
+      !/^\**\s*(fontes?|foto)\s*:/i.test(primeira);
+    const restante = linhas.slice(indice + 1).join('\n').trim();
+    if (ehAncora && restante.length >= 80) linhas.splice(indice, 1);
+  }
+
+  return linhas
+    .join('\n')
+    .replace(/\*\*/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
  * Vira rascunho em ai_matters (Fonte/Foto/hashtags organizados) e devolve
  * o link da edição — /materias-ia/:id.
  */
@@ -4532,7 +4568,7 @@ async function salvarMateriaDoChat({
   } else {
     rodape = montarRodapeMateriaComFontes(opcoesRodape);
   }
-  const materia = rodape.materia;
+  const materia = limparCorpoDoRascunho(rodape.materia);
 
   // Alternativas geradas junto com a matéria: o editor pode ter escolhido uma
   // delas em vez do título principal.
@@ -4541,7 +4577,10 @@ async function salvarMateriaDoChat({
     .filter(Boolean)
     .slice(0, 3);
   const tituloDaEscolha = String(tituloEscolhido || '').replace(/\s+/g, ' ').trim();
-  const tituloOriginal = info.titulo || row.titulo || 'Matéria do chat';
+  const tituloOriginal = require('./chatgptMarkup')
+    .limparMarcacaoChatgpt(info.titulo || row.titulo || 'Matéria do chat')
+    .replace(/\*\*/g, '')
+    .trim() || 'Matéria do chat';
   const titulo = escolhida
     ? tituloOriginal
     : conversaLivre && tituloDaEscolha
@@ -4964,6 +5003,7 @@ async function gerarTitulosAlternativosDaMensagem({
 }
 
 module.exports = {
+  limparCorpoDoRascunho,
   respostaAdmitePeriodoNaoAtendido,
   listarConversas,
   criarConversa,
