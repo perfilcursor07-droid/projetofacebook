@@ -115,6 +115,16 @@ test('HTTP 401 do ChatGPT confirma que é necessário novo login', async () => {
   });
 });
 
+test('sessão vazia (ChatGPT deslogado) exige novo login mesmo com editor visível', async () => {
+  const page = paginaComSessao({ status: 200, data: {}, editor: true });
+  const sessao = await verificarSessaoChatgpt(page);
+  assert.equal(sessao.estado, 'expirada');
+  await assert.rejects(garantirSessaoChatgpt(page, {}, null), (err) => {
+    assert.equal(err.status, 401);
+    return true;
+  });
+});
+
 test('formato desconhecido da sessão não impede editor autenticado', async () => {
   const page = paginaComSessao({ status: 200, data: { novoFormato: true }, editor: true });
   await assert.doesNotReject(garantirSessaoChatgpt(page, {}, null));

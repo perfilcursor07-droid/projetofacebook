@@ -138,6 +138,14 @@ async function verificarSessaoChatgpt(page) {
       if (data?.accessToken || data?.user?.id || data?.user?.email) {
         return { estado: 'ativa', motivo: 'sessão validada' };
       }
+      // Deslogado, o ChatGPT responde 200 com `{}` e ainda mostra o editor,
+      // mas sem o botão de anexar: a geração seguia e falhava no anexo.
+      const semLogin = data && typeof data === 'object' && !Object.keys(data).length;
+      const botaoEntrar = typeof document !== 'undefined'
+        && document.querySelector('[data-testid="login-button"], [data-testid="signup-button"]');
+      if (semLogin || botaoEntrar) {
+        return { estado: 'expirada', motivo: 'ChatGPT aberto sem login' };
+      }
       return { estado: 'indefinida', motivo: 'resposta de sessão sem campos conhecidos' };
     } catch {
       return { estado: 'indefinida', motivo: 'consulta de sessão indisponível' };
@@ -458,7 +466,16 @@ async function anexarImagemNoComposer(page, input, upload) {
     'button[aria-label*="Adicionar" i]:visible',
   ].join(',')).last();
   if (!(await botaoAnexar.count())) {
-    throw erro('O botão de anexar imagem não foi encontrado no ChatGPT.', 502);
+    const info = await page.evaluate(() => ({
+      url: location.pathname,
+      entrar: Boolean(document.querySelector('[data-testid="login-button"], [data-testid="signup-button"]')),
+      inputs: document.querySelectorAll('input[type="file"]').length,
+    })).catch(() => ({}));
+    console.warn('[chatgpt-imagem] botão de anexar ausente', info);
+    if (info.entrar) {
+      throw erro('O ChatGPT do servidor está sem login (sem login não há como anexar a foto). Entre novamente pela página /claude.', 401);
+    }
+    throw erro(`O botão de anexar imagem não foi encontrado no ChatGPT (página ${info.url || '?'}, ${info.inputs ?? '?'} campos de arquivo).`, 502);
   }
 
   let escolhaPromise = page.waitForEvent('filechooser', { timeout: 2500 }).catch(() => null);
