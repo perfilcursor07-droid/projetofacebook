@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   extractCaptionTracksFromWatchHtml,
+  parseYouTubeWatchMetadata,
   chooseCaptionTrack,
   captionUrlNeedsPoToken,
   buildYouTubeCaptionUrl,
@@ -34,6 +35,36 @@ test('extrai faixas de legenda diretamente do HTML do player do YouTube', () => 
 test('vídeo sem captionTracks não inventa uma transcrição', () => {
   assert.deepEqual(extractCaptionTracksFromWatchHtml('<html>sem legendas</html>'), []);
   assert.equal(chooseCaptionTrack([]), null);
+});
+
+test('lê título, canal e descrição da página quando o yt-dlp é barrado', () => {
+  const player = {
+    videoDetails: {
+      videoId: 'abc123XYZ_0',
+      title: 'Título do vídeo',
+      author: 'Canal Teste',
+      shortDescription: 'Descrição {com chaves} e "aspas"',
+      lengthSeconds: '590',
+    },
+    microformat: {
+      playerMicroformatRenderer: {
+        ownerChannelName: 'Canal Teste',
+        ownerProfileUrl: 'http://www.youtube.com/@canalteste',
+        publishDate: '2026-09-24T08:00:00-07:00',
+      },
+    },
+  };
+  const html = `<script>var ytInitialPlayerResponse = ${JSON.stringify(player)};var meta = {};</script>`;
+
+  const info = parseYouTubeWatchMetadata(html);
+
+  assert.equal(info.id, 'abc123XYZ_0');
+  assert.equal(info.title, 'Título do vídeo');
+  assert.equal(info.channel, 'Canal Teste');
+  assert.equal(info.description, 'Descrição {com chaves} e "aspas"');
+  assert.equal(info.uploader_id, '@canalteste');
+  assert.equal(info.upload_date, '20260924');
+  assert.equal(parseYouTubeWatchMetadata('<html>sem player</html>'), null);
 });
 
 test('reconhece legenda do YouTube protegida por PO Token', () => {

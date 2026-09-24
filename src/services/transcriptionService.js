@@ -441,13 +441,14 @@ async function tryDirectPlatformSubtitles(subtitleUrl, platform = '') {
  * É mais rápido que executar yt-dlp e funciona como uma terceira rota para
  * vídeos cuja transcrição aparece no player, mas não nos metadados do servidor.
  */
-function extractCaptionTracksFromWatchHtml(html) {
+/** Lê o JSON (array ou objeto) que começa logo depois de `marker` no HTML. */
+function extractJsonAfterMarker(html, marker, open) {
   const source = String(html || '');
-  const marker = '"captionTracks":';
   const markerIndex = source.indexOf(marker);
-  if (markerIndex < 0) return [];
-  const start = source.indexOf('[', markerIndex + marker.length);
-  if (start < 0) return [];
+  if (markerIndex < 0) return null;
+  const start = source.indexOf(open, markerIndex + marker.length);
+  if (start < 0) return null;
+  const close = open === '[' ? ']' : '}';
 
   let depth = 0;
   let inString = false;
@@ -464,18 +465,105 @@ function extractCaptionTracksFromWatchHtml(html) {
       inString = true;
       continue;
     }
-    if (char === '[') depth += 1;
-    if (char !== ']') continue;
+    if (char === open) depth += 1;
+    if (char !== close) continue;
     depth -= 1;
     if (depth !== 0) continue;
     try {
-      const tracks = JSON.parse(source.slice(start, index + 1));
-      return Array.isArray(tracks) ? tracks : [];
+      return JSON.parse(source.slice(start, index + 1));
     } catch {
-      return [];
+      return null;
     }
   }
-  return [];
+  return null;
+}
+
+function extractCaptionTracksFromWatchHtml(html) {
+  const tracks = extractJsonAfterMarker(html, '"captionTracks":', '[');
+  return Array.isArray(tracks) ? tracks : [];
+}
+
+/**
+ * Monta um objeto no formato do `--dump-single-json` do yt-dlp a partir do
+ * ytInitialPlayerResponse da página. Serve de plano B quando o yt-dlp é
+ * barrado com "Sign in to confirm you're not a bot" (cookies vencidos).
+ */
+function parseYouTubeWatchMetadata(html) {
+  const player = extractJsonAfterMarker(html, 'ytInitialPlayerResponse = ', '{')
+    || extractJsonAfterMarker(html, 'ytInitialPlayerResponse=', '{');
+  const details = player?.videoDetails;
+  if (!details?.videoId) return null;
+  const micro = player?.microformat?.playerMicroformatRenderer || {};
+  const publishDate = String(micro.publishDate || micro.uploadDate || '').slice(0, 10);
+  const thumbs = Array.isArray(details.thumbnail?.thumbnails) ? details.thumbnail.thumbnails : [];
+  return {
+    id: String(details.videoId),
+    title: String(details.title || micro.title?.simpleText || '').trim(),
+    description: String(details.shortDescription || micro.description?.simpleText || '').trim(),
+    channel: String(details.author || micro.ownerChannelName || '').trim(),
+    uploader: String(micro.ownerChannelName || details.author || '').trim(),
+    uploader_id: String(micro.ownerProfileUrl || '').split('/').filter(Boolean).pop() || null,
+    upload_date: /^\d{4}-\d{2}-\d{2}$/.test(publishDate) ? publishDate.replace(/-/g, '') : null,
+    duration: Number(details.lengthSeconds) || null,
+    thumbnail: thumbs.length ? thumbs[thumbs.length - 1].url : null,
+    source: 'youtube-watch-page',
+  };
+}
+
+/**
+ * Título/descrição/canal sem yt-dlp: página do vídeo e, em último caso, oEmbed.
+ * Não envia cookies — sessão vencida é justamente o motivo de estarmos aqui.
+ */
+async function fetchYouTubeMetadataWithoutYtDlp(url) {
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) return null;
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.7',
+  };
+
+  try {
+    const response = await axios.get('https://www.youtube.com/watch', {
+      params: { v: videoId, hl: 'pt-BR', persist_hl: 1 },
+      responseType: 'text',
+      timeout: Math.min(LIMITES.legendasMs, 20_000),
+      headers,
+    });
+    const info = parseYouTubeWatchMetadata(response.data);
+    if (info?.title) return info;
+  } catch (error) {
+    console.warn('[transcricao] metadados pela página do YouTube falharam:', error.response?.status || error.message);
+  }
+
+  try {
+    const response = await axios.get('https://www.youtube.com/oembed', {
+      params: { url: `https://www.youtube.com/watch?v=${videoId}`, format: 'json' },
+      timeout: 15_000,
+      headers,
+    });
+    const data = response.data || {};
+    if (!data.title) return null;
+    return {
+      id: videoId,
+      title: String(data.title).trim(),
+      description: '',
+      channel: String(data.author_name || '').trim(),
+      uploader: String(data.author_name || '').trim(),
+      uploader_id: String(data.author_url || '').split('/').filter(Boolean).pop() || null,
+      upload_date: null,
+      thumbnail: data.thumbnail_url || null,
+      source: 'youtube-oembed',
+    };
+  } catch (error) {
+    console.warn('[transcricao] oEmbed do YouTube falhou:', error.response?.status || error.message);
+    return null;
+  }
+}
+
+/** Com cookies primeiro (vídeos restritos); se a sessão venceu, tenta anônimo. */
+function youTubeCookieAttempts() {
+  const cookieHeader = getYouTubeCookieHeader();
+  return cookieHeader ? [cookieHeader, ''] : [''];
 }
 
 function chooseCaptionTrack(tracks) {
@@ -739,62 +827,67 @@ async function tryYouTubeCaptionsFromInnerTube(url) {
   const videoId = extractYouTubeVideoId(url);
   if (!videoId) return null;
 
-  try {
-    const cookieHeader = getYouTubeCookieHeader();
-    const track = await getYouTubeCaptionTrackFromInnerTube(videoId, cookieHeader);
-    const parsed = await downloadYouTubeCaption(track.baseUrl, videoId, cookieHeader);
-    if (!parsed.text || parsed.text.length < 20) return null;
-    return {
-      ...parsed,
-      source:
-        track.kind === 'asr'
-          ? 'youtube-innertube-auto-captions'
-          : 'youtube-innertube-subtitles',
-      language: track.languageCode,
-    };
-  } catch (error) {
-    console.warn(
-      '[transcricao] fallback InnerTube da legenda falhou:',
-      error.response?.status || error.message
-    );
-    return null;
+  for (const cookieHeader of youTubeCookieAttempts()) {
+    try {
+      const track = await getYouTubeCaptionTrackFromInnerTube(videoId, cookieHeader);
+      const parsed = await downloadYouTubeCaption(track.baseUrl, videoId, cookieHeader);
+      if (!parsed.text || parsed.text.length < 20) continue;
+      return {
+        ...parsed,
+        source:
+          track.kind === 'asr'
+            ? 'youtube-innertube-auto-captions'
+            : 'youtube-innertube-subtitles',
+        language: track.languageCode,
+      };
+    } catch (error) {
+      console.warn(
+        `[transcricao] fallback InnerTube da legenda falhou${cookieHeader ? ' (com cookies)' : ''}:`,
+        error.response?.status || error.message
+      );
+    }
   }
+  return null;
 }
 
 async function tryYouTubeCaptionsFromPage(url) {
   const videoId = extractYouTubeVideoId(url);
   if (!videoId) return null;
 
-  try {
-    const cookieHeader = getYouTubeCookieHeader();
-    const response = await axios.get('https://www.youtube.com/watch', {
-      params: { v: videoId, hl: 'pt-BR', persist_hl: 1 },
-      responseType: 'text',
-      timeout: Math.min(LIMITES.legendasMs, 20_000),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
-        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.7',
-        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-      },
-    });
-    const track = chooseCaptionTrack(extractCaptionTracksFromWatchHtml(response.data));
-    if (!track) {
-      console.info(`[transcricao] página web sem captionTracks: ${videoId}`);
-      return null;
+  for (const cookieHeader of youTubeCookieAttempts()) {
+    try {
+      const response = await axios.get('https://www.youtube.com/watch', {
+        params: { v: videoId, hl: 'pt-BR', persist_hl: 1 },
+        responseType: 'text',
+        timeout: Math.min(LIMITES.legendasMs, 20_000),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.7',
+          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        },
+      });
+      const track = chooseCaptionTrack(extractCaptionTracksFromWatchHtml(response.data));
+      if (!track) {
+        console.info(`[transcricao] página web sem captionTracks${cookieHeader ? ' (com cookies)' : ''}: ${videoId}`);
+        continue;
+      }
+      const captionUrl = new URL(track.baseUrl);
+      if (!/(^|\.)youtube\.com$/i.test(captionUrl.hostname)) return null;
+      const parsed = await downloadYouTubeCaption(captionUrl, videoId, cookieHeader);
+      if (!parsed.text || parsed.text.length < 20) continue;
+      return {
+        ...parsed,
+        source: track.kind === 'asr' ? 'youtube-page-auto-captions' : 'youtube-page-subtitles',
+        language: track.languageCode,
+      };
+    } catch (err) {
+      console.warn(
+        `[transcricao] leitura da transcrição na página falhou${cookieHeader ? ' (com cookies)' : ''}:`,
+        err.response?.status || err.message
+      );
     }
-    const captionUrl = new URL(track.baseUrl);
-    if (!/(^|\.)youtube\.com$/i.test(captionUrl.hostname)) return null;
-    const parsed = await downloadYouTubeCaption(captionUrl, videoId, cookieHeader);
-    if (!parsed.text || parsed.text.length < 20) return null;
-    return {
-      ...parsed,
-      source: track.kind === 'asr' ? 'youtube-page-auto-captions' : 'youtube-page-subtitles',
-      language: track.languageCode,
-    };
-  } catch (err) {
-    console.warn('[transcricao] leitura da transcrição na página falhou:', err.response?.status || err.message);
-    return null;
   }
+  return null;
 }
 
 /**
@@ -1288,6 +1381,8 @@ module.exports = {
   transcribeClip,
   transcribeUrl,
   extractCaptionTracksFromWatchHtml,
+  parseYouTubeWatchMetadata,
+  fetchYouTubeMetadataWithoutYtDlp,
   chooseCaptionTrack,
   captionUrlNeedsPoToken,
   buildYouTubeCaptionUrl,

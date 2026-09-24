@@ -592,19 +592,47 @@ async function extrairYoutubeComoFonte(url, { onPasso, transcreverVideo = false 
     }
   }
   const exec = binary ? youtubedlPkg.create(binary) : youtubedlPkg;
-  const info = await runYtDlp(
-    exec,
-    url,
-    {
-      dumpSingleJson: true,
-      noWarnings: true,
-      skipDownload: true,
-      noPlaylist: true,
-      socketTimeout: 45,
-      retries: 1,
-    },
-    { platform: 'youtube' }
-  );
+  const { env } = require('../config/env');
+  const flagsMetadados = {
+    dumpSingleJson: true,
+    noWarnings: true,
+    skipDownload: true,
+    noPlaylist: true,
+    socketTimeout: 45,
+    retries: 1,
+  };
+  // Cookies vencidos fazem o YouTube responder "confirm you're not a bot" e
+  // isso derrubava a matéria inteira. Vídeo público não precisa de sessão:
+  // tenta com cookies, depois anônimo (android_vr) e por fim a própria página.
+  let info = null;
+  let erroYtDlp = null;
+  try {
+    info = await runYtDlp(exec, url, flagsMetadados, {
+      platform: 'youtube',
+      timeoutMs: env.transcricao.inspecaoMs,
+    });
+  } catch (err) {
+    erroYtDlp = err;
+    console.warn('[materia-chat] youtube metadados (cookies):', err.message);
+  }
+  if (!info) {
+    try {
+      info = await runYtDlp(
+        exec,
+        url,
+        { ...flagsMetadados, extractorArgs: 'youtube:player_client=android_vr,web_safari' },
+        { platform: 'youtube', noCookies: true, timeoutMs: env.transcricao.inspecaoMs }
+      );
+    } catch (err) {
+      console.warn('[materia-chat] youtube metadados (anônimo):', err.message);
+    }
+  }
+  if (!info) {
+    const { fetchYouTubeMetadataWithoutYtDlp } = require('./transcriptionService');
+    info = await fetchYouTubeMetadataWithoutYtDlp(url);
+    if (info) console.info(`[materia-chat] youtube metadados via ${info.source}: ${url}`);
+  }
+  if (!info) throw erroYtDlp || new Error('Não consegui ler os dados deste vídeo do YouTube.');
 
   const titulo = String(info.title || '').trim() || null;
   const descricao = String(info.description || '').trim();
