@@ -73,7 +73,33 @@ async function testar(_req, res, next) {
   }
 }
 
+async function modelosMateria(_req, res, next) {
+  try {
+    const materiaModelos = require('../services/materiaModelosService');
+    return res.json({ ok: true, ...(await materiaModelos.listarCatalogo()) });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+async function salvarModelosMateria(req, res, next) {
+  try {
+    const materiaModelos = require('../services/materiaModelosService');
+    const catalogo = await materiaModelos.salvar({
+      habilitados: req.body?.habilitados,
+      padrao: req.body?.padrao,
+    });
+    return res.json({ ok: true, ...catalogo });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 module.exports = {
+  modelosMateria,
+  salvarModelosMateria,
   index,
   status,
   iniciar,

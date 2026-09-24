@@ -28,6 +28,7 @@
     modeloIa: document.getElementById('chat-ai-model'),
     modeloIaNome: document.getElementById('chat-ai-model-name'),
     modeloIaNivel: document.getElementById('chat-ai-model-level'),
+    modeloIaMenu: document.getElementById('chat-ai-model-menu'),
     tom: document.getElementById('chat-tom'),
     titleToneBtns: document.querySelectorAll('.chat-title-tone'),
     periodo: document.getElementById('chat-periodo'),
@@ -58,6 +59,9 @@
     modo: 'escrever',
     tipoConversa: 'materia',
     modelosIa: null,
+    // Modelos liberados pelo administrador em /claude e o escolhido pelo editor.
+    opcoesModelo: [],
+    modeloEscolhido: null,
     salvandoPautas: false,
     // Pautas da última pesquisa e quais já viraram matéria nesta conversa
     ultimasPautas: [],
@@ -146,12 +150,91 @@
       : { provider: 'claude', nome: 'Sonnet 5', nivel: 'Médio', origem: 'redação' };
   }
 
+  const MODELO_KEY = 'ViralizeAI.materiaModelo';
+  const ROTULO_PROVEDOR = { claude: 'Claude', chatgpt: 'ChatGPT' };
+
+  function opcaoEscolhida() {
+    return state.opcoesModelo.find((o) => o.id === state.modeloEscolhido) || null;
+  }
+
+  function escolherModelo(id, { salvar = true } = {}) {
+    const opcao = state.opcoesModelo.find((o) => o.id === id)
+      || state.opcoesModelo.find((o) => o.padrao)
+      || state.opcoesModelo[0];
+    state.modeloEscolhido = opcao?.id || null;
+    if (salvar && opcao) {
+      try { localStorage.setItem(MODELO_KEY, opcao.id); } catch { /* ignore */ }
+    }
+    atualizarModeloIa();
+  }
+
+  function fecharMenuModelo() {
+    if (!el.modeloIaMenu || el.modeloIaMenu.hidden) return;
+    el.modeloIaMenu.hidden = true;
+    el.modeloIa?.setAttribute('aria-expanded', 'false');
+  }
+
+  function renderMenuModelo() {
+    if (!el.modeloIaMenu) return;
+    el.modeloIaMenu.replaceChildren();
+    const titulo = document.createElement('p');
+    titulo.className = 'mia-chat-model-menu-title';
+    titulo.textContent = 'Escrever com';
+    el.modeloIaMenu.appendChild(titulo);
+    for (const opcao of state.opcoesModelo) {
+      const item = document.createElement('button');
+      const ativo = opcao.id === state.modeloEscolhido;
+      item.type = 'button';
+      item.setAttribute('role', 'option');
+      item.className = `mia-chat-model-option${ativo ? ' is-active' : ''}`;
+      item.dataset.provider = opcao.provedor || '';
+      item.setAttribute('aria-selected', String(ativo));
+      const nome = document.createElement('strong');
+      nome.textContent = opcao.nome;
+      const detalhe = document.createElement('small');
+      detalhe.textContent = [ROTULO_PROVEDOR[opcao.provedor], opcao.padrao ? 'padrão' : null]
+        .filter(Boolean)
+        .join(' · ');
+      item.append(nome, detalhe);
+      item.addEventListener('click', () => {
+        escolherModelo(opcao.id);
+        fecharMenuModelo();
+        el.input?.focus();
+      });
+      el.modeloIaMenu.appendChild(item);
+    }
+  }
+
+  el.modeloIa?.addEventListener('click', () => {
+    if (state.opcoesModelo.length < 2 || !el.modeloIaMenu) return;
+    const abrir = el.modeloIaMenu.hidden;
+    if (abrir) renderMenuModelo();
+    el.modeloIaMenu.hidden = !abrir;
+    el.modeloIa.setAttribute('aria-expanded', String(abrir));
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest?.('.mia-chat-model')) fecharMenuModelo();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') fecharMenuModelo();
+  });
+
   function atualizarModeloIa() {
     if (!el.modeloIa) return;
     const tipo = state.tipoConversa === 'livre' ? 'livre' : 'materia';
-    const modelo = state.modelosIa?.[tipo] || modeloFallback(tipo);
+    const escolhido = opcaoEscolhida();
+    const modelo = escolhido
+      ? {
+          provider: escolhido.provedor,
+          modelo: escolhido.id,
+          nome: escolhido.nome,
+          nivel: ROTULO_PROVEDOR[escolhido.provedor] || '',
+          origem: 'token-free-gateway',
+        }
+      : state.modelosIa?.[tipo] || modeloFallback(tipo);
     const nome = modelo.nome || 'IA';
     const nivel = modelo.nivel || '';
+    el.modeloIa.classList.toggle('is-selectable', state.opcoesModelo.length > 1);
     if (el.modeloIaNome) el.modeloIaNome.textContent = nome;
     if (el.modeloIaNivel) el.modeloIaNivel.textContent = nivel;
     el.modeloIa.dataset.provider = modelo.provider || '';
@@ -169,10 +252,15 @@
     try {
       const data = await api(`${API}/modelo`);
       state.modelosIa = data?.modelos || null;
+      state.opcoesModelo = Array.isArray(data?.opcoes) ? data.opcoes : [];
     } catch {
       state.modelosIa = null;
+      state.opcoesModelo = [];
     }
-    atualizarModeloIa();
+    let salvo = null;
+    try { salvo = localStorage.getItem(MODELO_KEY); } catch { /* ignore */ }
+    // Um modelo que o administrador desligou volta para o padrão sem aviso.
+    escolherModelo(salvo, { salvar: false });
   }
 
   function isMobileDrawer() {
@@ -2196,6 +2284,7 @@
           periodo: el.periodo?.value || '30d',
           modo: state.modo,
           tipoConversa: state.tipoConversa,
+          modelo: state.modeloEscolhido,
         }),
       });
 

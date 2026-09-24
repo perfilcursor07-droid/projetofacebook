@@ -1,6 +1,6 @@
 <%- include('partials/app-start') %>
   <link rel="stylesheet" href="/css/materia-chat.css?v=20260902tomTitulosClaude1" />
-  <link rel="stylesheet" href="/css/materia-manual.css?v=20260924visual1" />
+  <link rel="stylesheet" href="/css/materia-manual.css?v=20260924modelos1" />
 
   <main class="mia-chat mia-manual-claude" data-recolher-menu>
     <div id="chat-drawer-backdrop" class="mia-chat-drawer-backdrop" hidden aria-hidden="true"></div>
@@ -268,13 +268,17 @@
                   <span class="mia-chat-chip-dot"></span>
                   <span id="chat-toggle-web-label">Pesquisar fontes</span>
                 </button>
-                <span id="chat-ai-model" class="mia-chat-model-pill" title="Modelo de IA em uso nesta conversa">
-                  <span id="chat-ai-model-name">IA</span>
-                  <span id="chat-ai-model-level">—</span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                    <path d="m6 9 6 6 6-6"/>
-                  </svg>
-                </span>
+                <div class="mia-chat-model">
+                  <button type="button" id="chat-ai-model" class="mia-chat-model-pill" title="Modelo de IA em uso nesta conversa"
+                    aria-haspopup="listbox" aria-expanded="false" aria-controls="chat-ai-model-menu">
+                    <span id="chat-ai-model-name">IA</span>
+                    <span id="chat-ai-model-level">—</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="m6 9 6 6 6-6"/>
+                    </svg>
+                  </button>
+                  <div id="chat-ai-model-menu" class="mia-chat-model-menu" role="listbox" aria-label="Modelo para escrever" hidden></div>
+                </div>
               </div>
 
               <span id="chat-status" class="mia-chat-status" aria-live="polite"></span>
@@ -451,6 +455,6 @@
       });
     })();
   </script>
-  <script src="/js/materia-chat.js?v=20260916video3"></script>
+  <script src="/js/materia-chat.js?v=20260924modelos1"></script>
   <script src="/js/materia-chat-extras.js?v=20260915radarAmpliado1"></script>
 <%- include('partials/app-end') %>

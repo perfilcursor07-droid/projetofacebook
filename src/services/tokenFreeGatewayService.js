@@ -1,3 +1,4 @@
+const { AsyncLocalStorage } = require('node:async_hooks');
 const axios = require('axios');
 const { env } = require('../config/env');
 
@@ -28,6 +29,22 @@ const MODELO = String(
   env.tokenFreeGateway?.model || 'claude-sonnet-5'
 ).trim();
 const TIMEOUT_MS = Math.max(10_000, Number(env.tokenFreeGateway?.timeoutMs) || 330_000);
+
+/**
+ * Modelo escolhido pelo editor no /materia-manual. Vale para todas as chamadas
+ * ao gateway feitas durante aquela requisição (redação, títulos, revisão),
+ * sem precisar repassar o parâmetro por cada função do fluxo.
+ */
+const modeloDaRequisicao = new AsyncLocalStorage();
+
+function comModelo(modelo, tarefa) {
+  const id = String(modelo || '').trim();
+  return id ? modeloDaRequisicao.run(id, tarefa) : tarefa();
+}
+
+function modeloAtual() {
+  return modeloDaRequisicao.getStore() || MODELO;
+}
 
 function provedorSelecionado() {
   return ['token-free', 'token_free', 'tokenfree'].includes(
@@ -153,7 +170,7 @@ function normalizarErro(err) {
   } else if (status === 401 || /session expired|sess[aã]o expir/i.test(remoto)) {
     mensagem = `Sessao do Token-Free Gateway expirada ou sem autorizacao. Execute "token-free-gateway webauth". (${remoto})`;
   } else if (status === 404 && /authorized provider|model/i.test(remoto)) {
-    mensagem = `Modelo ${MODELO} nao esta autorizado no Token-Free Gateway. Execute "token-free-gateway webauth" e confira /v1/models. (${remoto})`;
+    mensagem = `Modelo ${modeloAtual()} nao esta autorizado no Token-Free Gateway. Execute "token-free-gateway webauth" e confira /v1/models. (${remoto})`;
   } else if (status === 429) {
     mensagem = `Claude limitou temporariamente as requisicoes do Token-Free Gateway. Tente novamente em alguns minutos. (${remoto})`;
   } else if (codigo === 'ECONNABORTED' || status === 504) {
@@ -188,12 +205,14 @@ function bodyDaChamada(
   messages,
   { temperature, json, stream, tarefa, conversationId, conversationName, webSearch }
 ) {
-  const conversa = String(
-    conversationId || `viralizeai:internal:${String(tarefa || 'conversa')}`
-  ).slice(0, 240);
+  const modelo = modeloAtual();
+  const base = conversationId || `viralizeai:internal:${String(tarefa || 'conversa')}`;
+  // Cada modelo mantém a própria conversa no gateway: trocar de Claude para
+  // ChatGPT no meio do chat não pode reaproveitar a sessão do outro provedor.
+  const conversa = String(modelo === MODELO ? base : `${base}:model:${modelo}`).slice(0, 240);
   const mensagensPreparadas = prepararMensagens(messages, json);
   return {
-    model: MODELO,
+    model: modelo,
     // A tarefa "conversa" é atendida pelo claude.ai via navegador. Um único
     // prompt evita que o gateway mostre "System:" como texto do usuário.
     messages: String(tarefa || '').trim().toLowerCase() === 'conversa'
@@ -213,7 +232,7 @@ function bodyDaChamada(
 function logar(inicio, tipo, usage = null) {
   const segundos = ((Date.now() - inicio) / 1000).toFixed(1);
   const tokens = usage?.total_tokens || '?';
-  console.log(`[token-free] ${MODELO} ${tipo} ${segundos}s tokens=${tokens}`);
+  console.log(`[token-free] ${modeloAtual()} ${tipo} ${segundos}s tokens=${tokens}`);
 }
 
 async function chatCompletion(
@@ -383,6 +402,9 @@ module.exports = {
   chatCompletionStream,
   verificarSaude,
   listarModelos,
+  bodyDaChamada,
+  comModelo,
+  modeloAtual,
   isConfigured,
   cobreTarefa,
   prepararMensagens,

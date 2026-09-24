@@ -1,23 +1,8 @@
 const chatService = require('../services/materiaChatService');
+const materiaModelos = require('../services/materiaModelosService');
 const { env } = require('../config/env');
 
-function nomeModeloHumano(modelo) {
-  const valor = String(modelo || '').trim();
-  const lower = valor.toLowerCase();
-  if (!valor) return 'Modelo IA';
-  if (lower.includes('claude-sonnet-5')) return 'Sonnet 5';
-  if (lower.includes('claude-sonnet')) return 'Sonnet';
-  if (lower.includes('claude-haiku')) return 'Haiku';
-  if (lower.includes('claude-opus')) return 'Opus';
-  if (lower.includes('deepseek-v4-flash')) return 'DeepSeek V4';
-  if (lower.includes('deepseek-v4-pro')) return 'DeepSeek V4';
-  if (lower.includes('deepseek')) return 'DeepSeek';
-  return valor
-    .replace(/^claude-/i, '')
-    .replace(/^deepseek-/i, 'DeepSeek ')
-    .replace(/-/g, ' ')
-    .replace(/\b\w/g, (letra) => letra.toUpperCase());
-}
+const { nomeModeloHumano } = materiaModelos;
 
 function nivelModelo(modelo, provider) {
   const valor = String(modelo || '').toLowerCase();
@@ -64,14 +49,21 @@ function montarModeloChat(tipo) {
   };
 }
 
+/** O seletor só faz sentido quando a conversa passa pelo Token-Free Gateway. */
+function gatewayEscreveAsMaterias() {
+  return require('../services/deepseekService').usarTokenFree('conversa');
+}
+
 async function modelo(req, res, next) {
   try {
+    const opcoes = gatewayEscreveAsMaterias() ? await materiaModelos.listarHabilitados() : [];
     return res.json({
       ok: true,
       modelos: {
         materia: montarModeloChat('materia'),
         livre: montarModeloChat('livre'),
       },
+      opcoes,
     });
   } catch (err) {
     return next(err);
@@ -221,7 +213,12 @@ async function enviar(req, res, next) {
   const heartbeat = setInterval(() => enviarEvento({ tipo: 'ping' }), 15_000);
 
   try {
-    await chatService.responder({
+    // Só aceita modelos liberados pelo administrador em /claude.
+    const modeloEscolhido = gatewayEscreveAsMaterias()
+      ? await materiaModelos.resolverModelo(body.modelo)
+      : null;
+    const { comModelo } = require('../services/tokenFreeGatewayService');
+    await comModelo(modeloEscolhido, () => chatService.responder({
       userId: req.session.userId,
       chatId: chatIdParam,
       texto: body.texto || body.mensagem || '',
@@ -240,7 +237,7 @@ async function enviar(req, res, next) {
           ? true
           : ['1', 'true', 'on', 'sim'].includes(String(body.transcreverVideo).toLowerCase()),
       onEvent: enviarEvento,
-    });
+    }));
     clearInterval(heartbeat);
     return res.end();
   } catch (err) {
