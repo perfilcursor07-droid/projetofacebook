@@ -801,6 +801,174 @@
     return b;
   }
 
+  /**
+   * Fotos sugeridas para a capa, iguais às de /materias-ia/:id. Clicar numa
+   * miniatura preenche a URL e o crédito usados ao salvar o rascunho. A busca
+   * só roda quando o quadro aparece na tela e fica em cache na aba, para não
+   * gastar créditos do buscador a cada vez que a conversa é reaberta.
+   */
+  function faixaFotosSugeridas(mensagem, campoUrl, campoCredito) {
+    const wrap = document.createElement('div');
+    wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
+    const topo = document.createElement('div');
+    topo.className = 'flex flex-wrap items-center justify-between gap-2';
+    const label = document.createElement('p');
+    label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
+    label.textContent = 'Fotos sugeridas para a capa';
+    const buscarNovas = criarBotao(
+      'Buscar novas',
+      'rounded-md border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:border-violet-400 hover:text-white'
+    );
+    topo.appendChild(label);
+    topo.appendChild(buscarNovas);
+    const busca = document.createElement('div');
+    busca.className = 'mt-1.5 flex gap-1.5';
+    const campoBusca = document.createElement('input');
+    campoBusca.type = 'search';
+    campoBusca.placeholder = 'Buscar foto por palavra (ex.: Silas Malafaia)';
+    campoBusca.className =
+      'min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-600 focus:border-violet-400 focus:outline-none';
+    const botaoBusca = criarBotao(
+      'Buscar',
+      'rounded-md border border-violet-500/50 px-2.5 py-1 text-[11px] font-semibold text-violet-200 hover:bg-violet-500/10'
+    );
+    busca.appendChild(campoBusca);
+    busca.appendChild(botaoBusca);
+    const faixa = document.createElement('div');
+    faixa.className = 'mt-2 flex gap-1.5 overflow-x-auto pb-1';
+    const meta = document.createElement('p');
+    meta.className = 'mt-1 text-[11px] text-slate-500';
+    meta.textContent = 'Carregando fotos relacionadas…';
+    wrap.appendChild(topo);
+    wrap.appendChild(busca);
+    wrap.appendChild(faixa);
+    wrap.appendChild(meta);
+
+    const chaveCache = `mia-fotos-sugeridas:${mensagem.id}`;
+    let botoes = [];
+
+    function creditoDaFoto(img) {
+      const fonte = String(img.fonte || '').trim();
+      if (!fonte || /^(post|serper|(google|brave|bing)( images| news)?)$/i.test(fonte)) return 'Reprodução/Internet';
+      return `Reprodução/${fonte.replace(/^www\./i, '').slice(0, 60)}`;
+    }
+
+    function escolher(img, btn) {
+      campoUrl.value = img.url || '';
+      if (!campoCredito.value.trim() || campoCredito.dataset.auto === '1') {
+        campoCredito.value = creditoDaFoto(img);
+        campoCredito.dataset.auto = '1';
+      }
+      botoes.forEach((b) => {
+        b.classList.toggle('border-emerald-400', b === btn);
+        b.classList.toggle('border-slate-700', b !== btn);
+      });
+      meta.textContent = 'Foto escolhida — será usada na capa ao salvar o rascunho.';
+    }
+
+    function desenhar(data) {
+      const imagens = Array.isArray(data?.imagens) ? data.imagens : [];
+      faixa.replaceChildren();
+      botoes = [];
+      if (!imagens.length) {
+        meta.textContent = 'Nenhuma foto sugerida. Tente buscar por palavra.';
+        return;
+      }
+      for (const img of imagens) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.title = img.titulo || img.fonte || '';
+        btn.className =
+          'relative shrink-0 overflow-hidden rounded-md border border-slate-700 bg-slate-950 hover:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400';
+        btn.style.cssText = 'width:72px;height:90px;padding:0;flex:0 0 72px';
+        const foto = document.createElement('img');
+        foto.src = img.thumbnail || img.url;
+        foto.alt = '';
+        foto.loading = 'lazy';
+        foto.decoding = 'async';
+        foto.referrerPolicy = 'no-referrer';
+        foto.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+        foto.addEventListener('error', () => btn.remove(), { once: true });
+        btn.appendChild(foto);
+        btn.addEventListener('click', () => escolher(img, btn));
+        botoes.push(btn);
+        faixa.appendChild(btn);
+      }
+      const partes = [data.aviso, data.pessoa, 'Clique numa miniatura para usar na capa'].filter(Boolean);
+      meta.textContent = partes.join(' · ');
+    }
+
+    async function carregar({ forcar = false, consulta = '' } = {}) {
+      if (!forcar && !consulta) {
+        try {
+          const cache = JSON.parse(sessionStorage.getItem(chaveCache) || 'null');
+          if (cache?.imagens?.length) return desenhar(cache);
+        } catch {
+          /* sem cache */
+        }
+      }
+      buscarNovas.disabled = true;
+      botaoBusca.disabled = true;
+      meta.textContent = consulta ? `Buscando “${consulta}”…` : 'Buscando fotos relacionadas…';
+      try {
+        const data = await api(`${API}/mensagens/${mensagem.id}/sugerir-imagens`, {
+          method: 'POST',
+          body: JSON.stringify(consulta ? { q: consulta, limite: 16 } : { limite: 12 }),
+        });
+        if (!consulta) {
+          try {
+            sessionStorage.setItem(chaveCache, JSON.stringify({
+              aviso: data.aviso || null,
+              pessoa: data.pessoa || null,
+              imagens: data.imagens || [],
+            }));
+          } catch {
+            /* cota cheia */
+          }
+        }
+        desenhar(data);
+      } catch (err) {
+        meta.textContent = err.message;
+      } finally {
+        buscarNovas.disabled = false;
+        botaoBusca.disabled = false;
+      }
+    }
+
+    buscarNovas.addEventListener('click', () => carregar({ forcar: true }));
+    const buscarPalavra = () => {
+      const q = campoBusca.value.trim();
+      if (q.length < 2) {
+        meta.textContent = 'Digite pelo menos 2 caracteres para buscar.';
+        return;
+      }
+      carregar({ consulta: q });
+    };
+    botaoBusca.addEventListener('click', buscarPalavra);
+    campoBusca.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        buscarPalavra();
+      }
+    });
+    campoCredito.addEventListener('input', () => {
+      campoCredito.dataset.auto = '';
+    });
+
+    if ('IntersectionObserver' in window) {
+      const observador = new IntersectionObserver((entradas) => {
+        if (entradas.some((e) => e.isIntersecting)) {
+          observador.disconnect();
+          carregar();
+        }
+      });
+      observador.observe(wrap);
+    } else {
+      carregar();
+    }
+    return wrap;
+  }
+
   function blocoFontes(fontes = []) {
     if (!fontes.length) return null;
     const box = document.createElement('details');
@@ -1070,6 +1238,7 @@
     dicaImagem.textContent = 'Ao salvar, o sistema tenta aproveitar a imagem extraída da fonte. Confira a foto no editor antes de publicar, ou informe outra URL abaixo.';
     opcoesImagem.appendChild(dicaImagem);
     opcoesImagem.appendChild(grid);
+    if (!mensagem.matterId) box.appendChild(faixaFotosSugeridas(mensagem, imagem, credito));
     box.appendChild(opcoesImagem);
 
     const acoes = document.createElement('div');

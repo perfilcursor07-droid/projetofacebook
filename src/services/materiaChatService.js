@@ -5002,6 +5002,39 @@ async function gerarTitulosAlternativosDaMensagem({
   return { titulo: tituloBase, titulos: limpos };
 }
 
+/**
+ * Fotos sugeridas para a resposta do chat antes de ela virar rascunho: mesma
+ * busca usada no editor de /materias-ia (SerpApi → Serper → Brave → …).
+ */
+async function sugerirImagensDaMensagem({ userId, messageId, consulta = null, limite = 12 } = {}) {
+  const row = await AiChatMessages.findByIdWithChat(messageId);
+  if (!row || Number(row.chat_user_id) !== Number(userId)) {
+    throw erro('Mensagem não encontrada', 404);
+  }
+  if (row.role !== 'assistant') throw erro('Só respostas do Claude podem receber fotos sugeridas.', 400);
+
+  const { sugerirImagensParaMateria, buscarImagensPorPalavra } = require('./imageSuggestService');
+  const total = Math.min(Math.max(Number(limite) || 12, 4), 24);
+  const q = String(consulta || '').trim();
+  if (q) return buscarImagensPorPalavra(q, { limite: total });
+
+  const info = row.chat_modo === 'livre'
+    ? interpretarRespostaLivreParaRascunho(row.content)
+    : interpretarResposta(row.content);
+  const titulo = require('./chatgptMarkup')
+    .limparMarcacaoChatgpt(info.titulo || row.titulo || '')
+    .replace(/\*\*|\[\[|\]\]/g, '')
+    .trim();
+  if (!titulo && !String(info.corpo || '').trim()) {
+    throw erro('Esta resposta não tem uma matéria para sugerir fotos.', 400);
+  }
+  return sugerirImagensParaMateria({
+    titulo,
+    materia: String(info.corpo || '').trim(),
+    limite: total,
+  });
+}
+
 module.exports = {
   limparCorpoDoRascunho,
   respostaAdmitePeriodoNaoAtendido,
@@ -5018,6 +5051,7 @@ module.exports = {
   salvarTodasAsMateriasDoChat,
   salvarPautasComoRascunhos,
   gerarTitulosAlternativosDaMensagem,
+  sugerirImagensDaMensagem,
   interpretarResposta,
   interpretarRespostaLivreParaRascunho,
   respostaLivrePodeVirarMateria,

@@ -1796,9 +1796,6 @@
         setArtImage(data.imagemUrl, { matter: data.matter, imagemFonteUrl: data.imagemFonteUrl || data.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
-      if (materiaEl && data.matter?.materia) {
-        materiaEl.value = data.matter.materia;
-      }
       if (fonteCreditoEl && data.matter && 'fonte_credito' in data.matter) {
         fonteCreditoEl.value = data.matter.fonte_credito || '';
       }
@@ -2112,10 +2109,8 @@
         setArtImage(j.imagemUrl, { matter: j.matter, imagemFonteUrl: j.imagemFonteUrl || j.imagemFonte });
         imgWrap?.classList.remove('hidden');
       }
-      const materiaEl = document.getElementById('matter-materia');
-      if (materiaEl && j.matter?.materia) {
-        materiaEl.value = j.matter.materia;
-      }
+      // O texto da matéria fica como o editor deixou (inclusive edições ainda
+      // não salvas); trocar a imagem só atualiza a arte e o crédito.
       if (fonteCreditoEl && j.matter && 'fonte_credito' in j.matter) {
         fonteCreditoEl.value = j.matter.fonte_credito || '';
       }

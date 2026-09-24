@@ -1559,7 +1559,6 @@ async function aplicarImagemUrl(req, res, next) {
     // Crédito da imagem: autor dos metadados internos, senão Reprodução/Internet
     const deepseekService = require('../services/deepseekService');
     const {
-      atualizarCreditoImagemNaMateria,
       atualizarFonteCreditoDaImagem,
       CREDITO_IMAGEM_FALLBACK,
     } = require('../services/editorialGuidelinesFb');
@@ -1576,19 +1575,16 @@ async function aplicarImagemUrl(req, res, next) {
       imagemAutor = CREDITO_IMAGEM_FALLBACK;
     }
 
-    const materiaAtual = artwork.matter?.materia || matter.materia;
-    const materiaComCredito = atualizarCreditoImagemNaMateria(materiaAtual, imagemAutor);
+    // Trocar a imagem destacada não altera o texto da matéria: só o campo
+    // estruturado de crédito. Reescrever a linha "Foto:" do corpo mudava o
+    // conteúdo que o editor já revisou.
     const fonteCreditoAtual = artwork.matter?.fonte_credito ?? matter.fonte_credito;
     const fonteCreditoComImagem = atualizarFonteCreditoDaImagem(
       fonteCreditoAtual,
       imagemAutor
     );
-    if (
-      (materiaComCredito && materiaComCredito !== materiaAtual) ||
-      fonteCreditoComImagem !== fonteCreditoAtual
-    ) {
+    if (fonteCreditoComImagem !== fonteCreditoAtual) {
       await AiMatters.update(matterId, {
-        materia: materiaComCredito || materiaAtual,
         fonte_credito: fonteCreditoComImagem,
       });
       artwork.matter = await AiMatters.findById(matterId);

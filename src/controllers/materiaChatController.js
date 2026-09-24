@@ -295,6 +295,22 @@ async function gerarTitulosAlternativos(req, res, next) {
   }
 }
 
+/** Fotos sugeridas (Google Images etc.) para a resposta antes de salvar. */
+async function sugerirImagens(req, res, next) {
+  try {
+    const resultado = await chatService.sugerirImagensDaMensagem({
+      userId: req.session.userId,
+      messageId: Number(req.params.messageId),
+      consulta: req.body?.q || req.body?.consulta || null,
+      limite: req.body?.limite || 12,
+    });
+    return res.json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 /** Salva todas as matérias de uma resposta que trouxe várias. */
 async function salvarTodasAsMaterias(req, res, next) {
   try {
@@ -373,6 +389,7 @@ module.exports = {
   enviar,
   salvarMateria,
   gerarTitulosAlternativos,
+  sugerirImagens,
   salvarTodasAsMaterias,
   salvarPautasComoRascunhos,
   obterOrientacoes,
