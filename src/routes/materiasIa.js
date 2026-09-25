@@ -50,6 +50,7 @@ router.post('/matters/:id/ensinar', controller.ensinarIa);
 router.get('/matters', controller.listarMaterias);
 router.post('/matters/excluir-lote', controller.removerMateriasLote);
 router.post('/matters/sincronizar-engajamento', controller.sincronizarEngajamento);
+router.get('/agenda/proximo-slot', controller.proximoSlotAgenda);
 router.get('/matters/:id', controller.obterMateria);
 router.put('/matters/:id', controller.atualizarMateria);
 router.patch('/matters/:id', controller.atualizarMateria);

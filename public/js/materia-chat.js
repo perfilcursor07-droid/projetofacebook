@@ -802,201 +802,6 @@
   }
 
   /**
-   * Publicar agora ou agendar o rascunho sem sair do chat. Usa os mesmos
-   * endpoints do painel "Publicar" de /materias-ia/:id.
-   */
-  function painelPublicar(matterId) {
-    const MATTER_API = `/api/materias-ia/matters/${matterId}`;
-    const wrap = document.createElement('div');
-    wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2.5';
-    const topo = document.createElement('div');
-    topo.className = 'flex flex-wrap items-center justify-between gap-2';
-    const label = document.createElement('p');
-    label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-    label.textContent = 'Publicar';
-    const estado = document.createElement('span');
-    estado.className = 'text-[11px] text-slate-400';
-    estado.textContent = 'Carregando…';
-    topo.appendChild(label);
-    topo.appendChild(estado);
-    wrap.appendChild(topo);
-
-    const corpo = document.createElement('div');
-    corpo.className = 'mt-2 grid gap-2 md:grid-cols-2';
-    corpo.hidden = true;
-    wrap.appendChild(corpo);
-
-    // Coluna 1: publicar agora
-    const colPublicar = document.createElement('div');
-    colPublicar.className = 'space-y-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-2';
-    const canais = document.createElement('div');
-    canais.className = 'flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-300';
-    const canal = (texto, marcado) => {
-      const l = document.createElement('label');
-      l.className = 'inline-flex cursor-pointer items-center gap-1.5';
-      const c = document.createElement('input');
-      c.type = 'checkbox';
-      c.checked = marcado;
-      c.className = 'rounded border-slate-600 bg-slate-950 text-emerald-500';
-      l.appendChild(c);
-      l.appendChild(document.createTextNode(texto));
-      canais.appendChild(l);
-      return c;
-    };
-    const chkFacebook = canal('Facebook', true);
-    const chkInstagram = canal('Instagram', false);
-    const publicarAgora = criarBotao(
-      'Publicar agora',
-      'w-full rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50'
-    );
-    colPublicar.appendChild(canais);
-    colPublicar.appendChild(publicarAgora);
-
-    // Coluna 2: agendar
-    const colAgendar = document.createElement('div');
-    colAgendar.className = 'space-y-1.5 rounded-md border border-amber-500/25 bg-amber-500/5 p-2';
-    const linhaData = document.createElement('div');
-    linhaData.className = 'flex items-center justify-between gap-2 text-[11px] text-amber-100';
-    linhaData.innerHTML = '<span class="font-semibold">Agendar</span><span class="text-[9px] uppercase tracking-wide text-amber-300/60">Araguaína −03</span>';
-    const campoData = document.createElement('input');
-    campoData.type = 'datetime-local';
-    campoData.className =
-      'w-full rounded border border-slate-800 bg-slate-900/50 px-2 py-1 text-xs text-slate-200 focus:border-amber-400 focus:outline-none';
-    const mais30 = criarBotao(
-      '+30 min após o último',
-      'hidden w-full rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-100 hover:bg-amber-500/10'
-    );
-    const agendar = criarBotao(
-      'Agendar',
-      'w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50'
-    );
-    colAgendar.appendChild(linhaData);
-    colAgendar.appendChild(campoData);
-    colAgendar.appendChild(mais30);
-    colAgendar.appendChild(agendar);
-
-    corpo.appendChild(colPublicar);
-    corpo.appendChild(colAgendar);
-
-    const aviso = document.createElement('p');
-    aviso.className = 'mt-1.5 text-[11px] text-slate-400';
-    wrap.appendChild(aviso);
-
-    const bloquear = (sim) => {
-      publicarAgora.disabled = sim;
-      agendar.disabled = sim;
-    };
-    const mostrarLink = (texto, href) => {
-      aviso.replaceChildren();
-      const a = document.createElement('a');
-      a.href = href;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.className = 'text-emerald-300 underline hover:text-emerald-200';
-      a.textContent = texto;
-      aviso.appendChild(a);
-    };
-
-    function aplicarEstado(matter, agenda) {
-      const st = String(matter?.status || 'rascunho');
-      if (st === 'publicado') {
-        estado.textContent = 'Publicada ✓';
-        corpo.hidden = true;
-        const link = matter.fb_post_url || null;
-        if (link) mostrarLink('Ver publicação', link);
-        return;
-      }
-      corpo.hidden = false;
-      chkInstagram.checked = Boolean(matter?.publicar_instagram);
-      if (st === 'agendado' && agenda?.atual) {
-        estado.textContent = `Agendada · ${agenda.atual.label}`;
-        campoData.value = agenda.atual.local || '';
-        agendar.textContent = 'Remarcar';
-      } else {
-        estado.textContent = st === 'processando' ? 'Publicando…' : st === 'erro' ? 'Erro na última tentativa' : 'Rascunho';
-      }
-      if (agenda?.proximoSlotLocal) {
-        mais30.classList.remove('hidden');
-        mais30.textContent = `+30 min após o último${agenda.proximoSlotLabel ? ' → ' + agenda.proximoSlotLabel : ''}`;
-        mais30.dataset.slot = agenda.proximoSlotLocal;
-      }
-    }
-
-    mais30.addEventListener('click', () => {
-      if (mais30.dataset.slot) campoData.value = mais30.dataset.slot;
-    });
-
-    publicarAgora.addEventListener('click', async () => {
-      if (!chkFacebook.checked && !chkInstagram.checked) {
-        aviso.textContent = 'Marque Facebook e/ou Instagram.';
-        return;
-      }
-      const redes = [chkFacebook.checked && 'Facebook', chkInstagram.checked && 'Instagram'].filter(Boolean);
-      if (!window.confirm(`Publicar agora no ${redes.join(' e ')}?`)) return;
-      bloquear(true);
-      estado.textContent = 'Publicando…';
-      aviso.textContent = 'Publicando — pode levar alguns segundos…';
-      try {
-        const data = await api(`${MATTER_API}/publicar`, {
-          method: 'POST',
-          body: JSON.stringify({
-            tipoPublicacao: 'auto',
-            publicarFacebook: chkFacebook.checked,
-            publicarInstagram: chkInstagram.checked,
-            sync: true,
-          }),
-        });
-        const feitas = [
-          data.facebookPublicado !== false && chkFacebook.checked ? 'Facebook' : null,
-          data.instagramPublicado ? 'Instagram' : null,
-        ].filter(Boolean);
-        const erros = [data.instagramErro && `Instagram: ${data.instagramErro}`].filter(Boolean);
-        estado.textContent = data.queued ? 'Na fila de publicação' : 'Publicada ✓';
-        corpo.hidden = true;
-        if (data.link) mostrarLink(`Publicado${feitas.length ? ' no ' + feitas.join(', ') : ''} ✓ — ver post`, data.link);
-        else aviso.textContent = data.queued ? 'Enviada para a fila de publicação.' : `Publicado${feitas.length ? ' no ' + feitas.join(', ') : ''} ✓`;
-        if (erros.length) aviso.append(' · ' + erros.join(' · '));
-      } catch (err) {
-        estado.textContent = 'Rascunho';
-        aviso.textContent = err.message;
-        bloquear(false);
-      }
-    });
-
-    agendar.addEventListener('click', async () => {
-      if (!campoData.value) {
-        aviso.textContent = 'Escolha a data e o horário.';
-        campoData.focus();
-        return;
-      }
-      bloquear(true);
-      aviso.textContent = 'Agendando…';
-      try {
-        await api(`${MATTER_API}/agendar`, {
-          method: 'POST',
-          body: JSON.stringify({ run_at: campoData.value }),
-        });
-        const data = await api(`${MATTER_API}?agenda=1`);
-        aplicarEstado(data.matter, data.agenda);
-        aviso.textContent = 'Agendada ✓ (horário de Araguaína)';
-      } catch (err) {
-        aviso.textContent = err.message;
-      } finally {
-        bloquear(false);
-      }
-    });
-
-    api(`${MATTER_API}?agenda=1`)
-      .then((data) => aplicarEstado(data.matter, data.agenda))
-      .catch((err) => {
-        estado.textContent = '';
-        aviso.textContent = err.message;
-      });
-
-    return wrap;
-  }
-
-  /**
    * Fotos sugeridas para a capa, iguais às de /materias-ia/:id. Clicar numa
    * miniatura preenche a URL e o crédito usados ao salvar o rascunho. A busca
    * só roda quando o quadro aparece na tela e fica em cache na aba, para não
@@ -1475,30 +1280,94 @@
       }
     });
 
-    salvar.addEventListener('click', async () => {
+    // Salva o rascunho uma única vez; publicar/agendar reaproveitam o mesmo id.
+    let salvando = null;
+    function mostrarLinkRascunho(id, texto) {
+      aviso.replaceChildren();
+      const link = document.createElement('a');
+      link.href = `/materias-ia/${id}`;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.className = 'text-emerald-300 underline hover:text-emerald-200';
+      link.textContent = texto || `Rascunho #${id} — abrir`;
+      aviso.appendChild(link);
+    }
+    function marcarSalvo() {
       salvar.disabled = true;
+      salvar.textContent = 'Rascunho salvo';
       salvar.classList.add('opacity-60');
-      aviso.textContent = 'Salvando rascunho…';
-      try {
-        const data = await api(`${API}/mensagens/${mensagem.id}/materia`, {
+    }
+    async function garantirRascunho() {
+      if (mensagem.matterId) return mensagem.matterId;
+      if (!salvando) {
+        salvando = api(`${API}/mensagens/${mensagem.id}/materia`, {
           method: 'POST',
           body: JSON.stringify({
             imagemUrl: imagem.value.trim() || null,
             creditoImagem: credito.value.trim() || null,
             titulo: livre ? tituloLivre?.value.trim() || null : tituloEscolhido,
           }),
+        }).then((data) => {
+          mensagem.matterId = data.matterId;
+          marcarSalvo();
+          return data.matterId;
+        }).finally(() => {
+          salvando = null;
         });
-        aviso.replaceChildren();
-        const link = document.createElement('a');
-        link.href = data.redirect;
-        link.target = '_blank';
-        link.rel = 'noopener';
-        link.className = 'text-emerald-300 underline hover:text-emerald-200';
-        link.textContent = `Rascunho #${data.matterId} — abrir para revisar e publicar`;
-        aviso.appendChild(link);
-        salvar.textContent = 'Rascunho salvo';
-        mensagem.matterId = data.matterId;
-        box.appendChild(painelPublicar(data.matterId));
+      }
+      return salvando;
+    }
+
+    const publicarAgora = criarBotao(
+      'Publicar agora',
+      'rounded-lg border border-sky-400/60 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-500/25 disabled:opacity-50'
+    );
+    const agendarBtn = criarBotao(
+      'Agendar',
+      'rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50'
+    );
+
+    // Linha de agendamento: abre ao clicar em "Agendar".
+    const linhaAgenda = document.createElement('div');
+    linhaAgenda.className = 'mt-2 hidden flex-wrap items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2';
+    const campoData = document.createElement('input');
+    campoData.type = 'datetime-local';
+    campoData.setAttribute('aria-label', 'Data e horário do agendamento (Araguaína)');
+    campoData.className =
+      'rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 focus:border-amber-400 focus:outline-none';
+    const mais30 = criarBotao(
+      '+30 min após o último',
+      'hidden rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-100 hover:bg-amber-500/10'
+    );
+    const confirmarAgenda = criarBotao(
+      'Confirmar agendamento',
+      'rounded-md bg-amber-500 px-3 py-1 text-xs font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-50'
+    );
+    const fuso = document.createElement('span');
+    fuso.className = 'text-[10px] uppercase tracking-wide text-amber-300/60';
+    fuso.textContent = 'Horário de Araguaína';
+    linhaAgenda.append(campoData, mais30, confirmarAgenda, fuso);
+
+    function bloquearAcoes(sim) {
+      publicarAgora.disabled = sim;
+      agendarBtn.disabled = sim;
+      confirmarAgenda.disabled = sim;
+    }
+    function finalizar(texto, id) {
+      mostrarLinkRascunho(id, texto);
+      publicarAgora.classList.add('hidden');
+      agendarBtn.classList.add('hidden');
+      linhaAgenda.classList.add('hidden');
+      linhaAgenda.classList.remove('flex');
+    }
+
+    salvar.addEventListener('click', async () => {
+      salvar.disabled = true;
+      salvar.classList.add('opacity-60');
+      aviso.textContent = 'Salvando rascunho…';
+      try {
+        const id = await garantirRascunho();
+        mostrarLinkRascunho(id, `Rascunho #${id} — abrir para revisar e publicar`);
       } catch (err) {
         aviso.textContent = err.message;
         salvar.disabled = false;
@@ -1506,23 +1375,103 @@
       }
     });
 
+    publicarAgora.addEventListener('click', async () => {
+      if (!window.confirm('Publicar esta matéria agora no Facebook?')) return;
+      bloquearAcoes(true);
+      aviso.textContent = mensagem.matterId ? 'Publicando…' : 'Salvando e publicando…';
+      try {
+        const id = await garantirRascunho();
+        aviso.textContent = 'Publicando — pode levar alguns segundos…';
+        const data = await api(`/api/materias-ia/matters/${id}/publicar`, {
+          method: 'POST',
+          body: JSON.stringify({ tipoPublicacao: 'auto', publicarFacebook: true, sync: true }),
+        });
+        if (data.queued) {
+          finalizar(`Na fila de publicação — Rascunho #${id}`, id);
+        } else {
+          finalizar(`Publicada ✓ — abrir matéria #${id}`, id);
+          if (data.link) {
+            const post = document.createElement('a');
+            post.href = data.link;
+            post.target = '_blank';
+            post.rel = 'noopener';
+            post.className = 'ml-2 text-sky-300 underline hover:text-sky-200';
+            post.textContent = 'ver post';
+            aviso.appendChild(post);
+          }
+        }
+        if (data.instagramErro) aviso.append(` · Instagram: ${data.instagramErro}`);
+      } catch (err) {
+        aviso.textContent = err.message;
+        bloquearAcoes(false);
+      }
+    });
+
+    agendarBtn.addEventListener('click', async () => {
+      const abrir = linhaAgenda.classList.contains('hidden');
+      linhaAgenda.classList.toggle('hidden', !abrir);
+      linhaAgenda.classList.toggle('flex', abrir);
+      if (!abrir) return;
+      campoData.focus();
+      try {
+        const slot = await api('/api/materias-ia/agenda/proximo-slot');
+        if (slot.proximoSlotLocal) {
+          mais30.dataset.slot = slot.proximoSlotLocal;
+          mais30.textContent = `+30 min após o último${slot.proximoSlotLabel ? ' → ' + slot.proximoSlotLabel : ''}`;
+          mais30.classList.remove('hidden');
+        }
+      } catch {
+        /* sem sugestão de horário */
+      }
+    });
+    mais30.addEventListener('click', () => {
+      if (mais30.dataset.slot) campoData.value = mais30.dataset.slot;
+    });
+    confirmarAgenda.addEventListener('click', async () => {
+      if (!campoData.value) {
+        aviso.textContent = 'Escolha a data e o horário do agendamento.';
+        campoData.focus();
+        return;
+      }
+      bloquearAcoes(true);
+      aviso.textContent = mensagem.matterId ? 'Agendando…' : 'Salvando e agendando…';
+      try {
+        const id = await garantirRascunho();
+        await api(`/api/materias-ia/matters/${id}/agendar`, {
+          method: 'POST',
+          body: JSON.stringify({ run_at: campoData.value }),
+        });
+        const [data, hora] = campoData.value.split('T');
+        finalizar(`Agendada ✓ ${data.split('-').reverse().join('/')} ${hora} — abrir matéria #${id}`, id);
+      } catch (err) {
+        aviso.textContent = err.message;
+        bloquearAcoes(false);
+      }
+    });
+
     if (sugerirTitulos) acoes.appendChild(sugerirTitulos);
     acoes.appendChild(salvar);
+    acoes.appendChild(publicarAgora);
+    acoes.appendChild(agendarBtn);
     acoes.appendChild(aviso);
     box.appendChild(acoes);
+    box.appendChild(linhaAgenda);
 
     if (mensagem.matterId) {
-      salvar.disabled = true;
-      salvar.textContent = 'Rascunho salvo';
-      salvar.classList.add('opacity-60');
-      const link = document.createElement('a');
-      link.href = `/materias-ia/${mensagem.matterId}`;
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.className = 'text-emerald-300 underline hover:text-emerald-200';
-      link.textContent = `Rascunho #${mensagem.matterId} — abrir`;
-      aviso.appendChild(link);
-      box.appendChild(painelPublicar(mensagem.matterId));
+      marcarSalvo();
+      mostrarLinkRascunho(mensagem.matterId);
+      // Rascunho já existente: se já foi publicado ou agendado, mostra isso em
+      // vez de oferecer publicar de novo.
+      api(`/api/materias-ia/matters/${mensagem.matterId}`)
+        .then(({ matter }) => {
+          const st = String(matter?.status || '');
+          if (st === 'publicado') finalizar(`Publicada ✓ — abrir matéria #${mensagem.matterId}`, mensagem.matterId);
+          else if (st === 'agendado') {
+            agendarBtn.textContent = 'Remarcar';
+            aviso.append(' · agendada');
+          }
+        })
+        .catch(() => {});
     }
 
     container.appendChild(box);

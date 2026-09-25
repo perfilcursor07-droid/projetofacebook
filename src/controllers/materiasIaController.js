@@ -423,25 +423,22 @@ async function obterMateria(req, res, next) {
     if (!matter || Number(matter.user_id) !== Number(req.session.userId)) {
       return res.status(404).json({ error: 'Matéria não encontrada' });
     }
-    // Com ?agenda=1 devolve o mesmo atalho "+30 min após o último" do editor,
-    // usado pelo painel de publicar/agendar do /materia-manual.
-    let agenda = null;
-    if (req.query?.agenda) {
-      try {
-        const info = await materiaIaService.obterUltimoAgendamento(req.session.userId);
-        agenda = {
-          ultimo: info.ultimo || null,
-          proximoSlotLocal: info.proximoSlotLocal || null,
-          proximoSlotLabel: info.proximoSlotLabel || null,
-          atual: String(matter.status) === 'agendado' && matter.scheduled_at
-            ? materiaIaService.formatarHorarioAgendamento(matter.scheduled_at)
-            : null,
-        };
-      } catch (err) {
-        console.warn('[obterMateria] ultimo agendamento:', err.message);
-      }
-    }
-    res.json({ ok: true, matter, agenda });
+    res.json({ ok: true, matter });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Próximo horário sugerido (+30 min após o último agendamento). */
+async function proximoSlotAgenda(req, res, next) {
+  try {
+    const info = await materiaIaService.obterUltimoAgendamento(req.session.userId);
+    res.json({
+      ok: true,
+      ultimo: info.ultimo || null,
+      proximoSlotLocal: info.proximoSlotLocal || null,
+      proximoSlotLabel: info.proximoSlotLabel || null,
+    });
   } catch (err) {
     next(err);
   }
@@ -1893,6 +1890,7 @@ module.exports = {
   gerarTextoX,
   listarMaterias,
   obterMateria,
+  proximoSlotAgenda,
   removerMateria,
   removerMateriasLote,
   atualizarMateria,
