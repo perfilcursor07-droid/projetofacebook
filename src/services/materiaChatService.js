@@ -3053,6 +3053,8 @@ async function responder({
         assistantId = await AiChatMessages.create(registro);
       }
     } catch (err) {
+      // Conversa excluída enquanto a resposta era gerada: não há onde gravar.
+      if (err.code === 'ER_NO_REFERENCED_ROW_2') throw err;
       // Não perde a resposta por causa dos metadados da apuração.
       console.error(
         '[materia-chat] falha ao salvar mensagem:',

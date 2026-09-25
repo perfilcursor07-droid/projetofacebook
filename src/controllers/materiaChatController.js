@@ -244,12 +244,19 @@ async function enviar(req, res, next) {
     clearInterval(heartbeat);
     // Erro de banco/driver traz SQL e dados na mensagem: fica no log, não na tela.
     const ehErroInterno = Boolean(err.sql || err.sqlMessage || err.code);
-    if (ehErroInterno) {
+    // A conversa foi excluída (na lista ou em outra aba) durante a pesquisa:
+    // a chave estrangeira recusa a resposta. Não é falha do sistema.
+    const conversaExcluida = err.code === 'ER_NO_REFERENCED_ROW_2';
+    if (conversaExcluida) {
+      console.warn('[materia-chat] conversa excluída durante a geração; resposta descartada');
+    } else if (ehErroInterno) {
       console.error('[materia-chat] erro interno:', err.code || '', err.sqlMessage || err.message);
     }
-    const paraUsuario = ehErroInterno
-      ? 'Não consegui salvar esta resposta agora. Tente enviar de novo.'
-      : err.message || 'Falha ao gerar a resposta';
+    const paraUsuario = conversaExcluida
+      ? 'Esta conversa foi excluída enquanto a resposta era gerada, então a resposta não foi salva. Abra uma nova conversa e envie o pedido de novo.'
+      : ehErroInterno
+        ? 'Não consegui salvar esta resposta agora. Tente enviar de novo.'
+        : err.message || 'Falha ao gerar a resposta';
 
     if (!res.headersSent) {
       if (ehErroInterno) return res.status(500).json({ error: paraUsuario });
