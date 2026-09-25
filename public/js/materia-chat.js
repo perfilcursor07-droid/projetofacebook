@@ -802,6 +802,201 @@
   }
 
   /**
+   * Publicar agora ou agendar o rascunho sem sair do chat. Usa os mesmos
+   * endpoints do painel "Publicar" de /materias-ia/:id.
+   */
+  function painelPublicar(matterId) {
+    const MATTER_API = `/api/materias-ia/matters/${matterId}`;
+    const wrap = document.createElement('div');
+    wrap.className = 'mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2.5';
+    const topo = document.createElement('div');
+    topo.className = 'flex flex-wrap items-center justify-between gap-2';
+    const label = document.createElement('p');
+    label.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
+    label.textContent = 'Publicar';
+    const estado = document.createElement('span');
+    estado.className = 'text-[11px] text-slate-400';
+    estado.textContent = 'Carregando…';
+    topo.appendChild(label);
+    topo.appendChild(estado);
+    wrap.appendChild(topo);
+
+    const corpo = document.createElement('div');
+    corpo.className = 'mt-2 grid gap-2 md:grid-cols-2';
+    corpo.hidden = true;
+    wrap.appendChild(corpo);
+
+    // Coluna 1: publicar agora
+    const colPublicar = document.createElement('div');
+    colPublicar.className = 'space-y-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-2';
+    const canais = document.createElement('div');
+    canais.className = 'flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-300';
+    const canal = (texto, marcado) => {
+      const l = document.createElement('label');
+      l.className = 'inline-flex cursor-pointer items-center gap-1.5';
+      const c = document.createElement('input');
+      c.type = 'checkbox';
+      c.checked = marcado;
+      c.className = 'rounded border-slate-600 bg-slate-950 text-emerald-500';
+      l.appendChild(c);
+      l.appendChild(document.createTextNode(texto));
+      canais.appendChild(l);
+      return c;
+    };
+    const chkFacebook = canal('Facebook', true);
+    const chkInstagram = canal('Instagram', false);
+    const publicarAgora = criarBotao(
+      'Publicar agora',
+      'w-full rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50'
+    );
+    colPublicar.appendChild(canais);
+    colPublicar.appendChild(publicarAgora);
+
+    // Coluna 2: agendar
+    const colAgendar = document.createElement('div');
+    colAgendar.className = 'space-y-1.5 rounded-md border border-amber-500/25 bg-amber-500/5 p-2';
+    const linhaData = document.createElement('div');
+    linhaData.className = 'flex items-center justify-between gap-2 text-[11px] text-amber-100';
+    linhaData.innerHTML = '<span class="font-semibold">Agendar</span><span class="text-[9px] uppercase tracking-wide text-amber-300/60">Araguaína −03</span>';
+    const campoData = document.createElement('input');
+    campoData.type = 'datetime-local';
+    campoData.className =
+      'w-full rounded border border-slate-800 bg-slate-900/50 px-2 py-1 text-xs text-slate-200 focus:border-amber-400 focus:outline-none';
+    const mais30 = criarBotao(
+      '+30 min após o último',
+      'hidden w-full rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-100 hover:bg-amber-500/10'
+    );
+    const agendar = criarBotao(
+      'Agendar',
+      'w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50'
+    );
+    colAgendar.appendChild(linhaData);
+    colAgendar.appendChild(campoData);
+    colAgendar.appendChild(mais30);
+    colAgendar.appendChild(agendar);
+
+    corpo.appendChild(colPublicar);
+    corpo.appendChild(colAgendar);
+
+    const aviso = document.createElement('p');
+    aviso.className = 'mt-1.5 text-[11px] text-slate-400';
+    wrap.appendChild(aviso);
+
+    const bloquear = (sim) => {
+      publicarAgora.disabled = sim;
+      agendar.disabled = sim;
+    };
+    const mostrarLink = (texto, href) => {
+      aviso.replaceChildren();
+      const a = document.createElement('a');
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.className = 'text-emerald-300 underline hover:text-emerald-200';
+      a.textContent = texto;
+      aviso.appendChild(a);
+    };
+
+    function aplicarEstado(matter, agenda) {
+      const st = String(matter?.status || 'rascunho');
+      if (st === 'publicado') {
+        estado.textContent = 'Publicada ✓';
+        corpo.hidden = true;
+        const link = matter.fb_post_url || null;
+        if (link) mostrarLink('Ver publicação', link);
+        return;
+      }
+      corpo.hidden = false;
+      chkInstagram.checked = Boolean(matter?.publicar_instagram);
+      if (st === 'agendado' && agenda?.atual) {
+        estado.textContent = `Agendada · ${agenda.atual.label}`;
+        campoData.value = agenda.atual.local || '';
+        agendar.textContent = 'Remarcar';
+      } else {
+        estado.textContent = st === 'processando' ? 'Publicando…' : st === 'erro' ? 'Erro na última tentativa' : 'Rascunho';
+      }
+      if (agenda?.proximoSlotLocal) {
+        mais30.classList.remove('hidden');
+        mais30.textContent = `+30 min após o último${agenda.proximoSlotLabel ? ' → ' + agenda.proximoSlotLabel : ''}`;
+        mais30.dataset.slot = agenda.proximoSlotLocal;
+      }
+    }
+
+    mais30.addEventListener('click', () => {
+      if (mais30.dataset.slot) campoData.value = mais30.dataset.slot;
+    });
+
+    publicarAgora.addEventListener('click', async () => {
+      if (!chkFacebook.checked && !chkInstagram.checked) {
+        aviso.textContent = 'Marque Facebook e/ou Instagram.';
+        return;
+      }
+      const redes = [chkFacebook.checked && 'Facebook', chkInstagram.checked && 'Instagram'].filter(Boolean);
+      if (!window.confirm(`Publicar agora no ${redes.join(' e ')}?`)) return;
+      bloquear(true);
+      estado.textContent = 'Publicando…';
+      aviso.textContent = 'Publicando — pode levar alguns segundos…';
+      try {
+        const data = await api(`${MATTER_API}/publicar`, {
+          method: 'POST',
+          body: JSON.stringify({
+            tipoPublicacao: 'auto',
+            publicarFacebook: chkFacebook.checked,
+            publicarInstagram: chkInstagram.checked,
+            sync: true,
+          }),
+        });
+        const feitas = [
+          data.facebookPublicado !== false && chkFacebook.checked ? 'Facebook' : null,
+          data.instagramPublicado ? 'Instagram' : null,
+        ].filter(Boolean);
+        const erros = [data.instagramErro && `Instagram: ${data.instagramErro}`].filter(Boolean);
+        estado.textContent = data.queued ? 'Na fila de publicação' : 'Publicada ✓';
+        corpo.hidden = true;
+        if (data.link) mostrarLink(`Publicado${feitas.length ? ' no ' + feitas.join(', ') : ''} ✓ — ver post`, data.link);
+        else aviso.textContent = data.queued ? 'Enviada para a fila de publicação.' : `Publicado${feitas.length ? ' no ' + feitas.join(', ') : ''} ✓`;
+        if (erros.length) aviso.append(' · ' + erros.join(' · '));
+      } catch (err) {
+        estado.textContent = 'Rascunho';
+        aviso.textContent = err.message;
+        bloquear(false);
+      }
+    });
+
+    agendar.addEventListener('click', async () => {
+      if (!campoData.value) {
+        aviso.textContent = 'Escolha a data e o horário.';
+        campoData.focus();
+        return;
+      }
+      bloquear(true);
+      aviso.textContent = 'Agendando…';
+      try {
+        await api(`${MATTER_API}/agendar`, {
+          method: 'POST',
+          body: JSON.stringify({ run_at: campoData.value }),
+        });
+        const data = await api(`${MATTER_API}?agenda=1`);
+        aplicarEstado(data.matter, data.agenda);
+        aviso.textContent = 'Agendada ✓ (horário de Araguaína)';
+      } catch (err) {
+        aviso.textContent = err.message;
+      } finally {
+        bloquear(false);
+      }
+    });
+
+    api(`${MATTER_API}?agenda=1`)
+      .then((data) => aplicarEstado(data.matter, data.agenda))
+      .catch((err) => {
+        estado.textContent = '';
+        aviso.textContent = err.message;
+      });
+
+    return wrap;
+  }
+
+  /**
    * Fotos sugeridas para a capa, iguais às de /materias-ia/:id. Clicar numa
    * miniatura preenche a URL e o crédito usados ao salvar o rascunho. A busca
    * só roda quando o quadro aparece na tela e fica em cache na aba, para não
@@ -1302,6 +1497,8 @@
         link.textContent = `Rascunho #${data.matterId} — abrir para revisar e publicar`;
         aviso.appendChild(link);
         salvar.textContent = 'Rascunho salvo';
+        mensagem.matterId = data.matterId;
+        box.appendChild(painelPublicar(data.matterId));
       } catch (err) {
         aviso.textContent = err.message;
         salvar.disabled = false;
@@ -1325,6 +1522,7 @@
       link.className = 'text-emerald-300 underline hover:text-emerald-200';
       link.textContent = `Rascunho #${mensagem.matterId} — abrir`;
       aviso.appendChild(link);
+      box.appendChild(painelPublicar(mensagem.matterId));
     }
 
     container.appendChild(box);
