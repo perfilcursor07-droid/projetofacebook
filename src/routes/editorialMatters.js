@@ -484,6 +484,139 @@ router.post('/matters/:id/arte/recuperar-chatgpt', async (req, res, next) => {
   }
 });
 
+/**
+ * Mesma geração com ChatGPT do editor, mas para a resposta do /materia-manual
+ * que ainda não virou rascunho. A imagem fica em /media/fontes/user_X/chat_ID_*
+ * e o chat a usa como foto da capa ao salvar.
+ */
+async function mensagemDoChatDoUsuario(req) {
+  const messageId = Number(req.params.messageId);
+  if (!Number.isInteger(messageId) || messageId < 1) {
+    const err = new Error('Mensagem inválida');
+    err.status = 400;
+    throw err;
+  }
+  const AiChatMessages = require('../models/AiChatMessages');
+  const row = await AiChatMessages.findByIdWithChat(messageId);
+  if (!row || Number(row.chat_user_id) !== Number(req.session.userId) || row.role !== 'assistant') {
+    const err = new Error('Mensagem não encontrada');
+    err.status = 404;
+    throw err;
+  }
+  return row;
+}
+
+function fonteValidaDoChat(url, userId) {
+  const valor = String(url || '').trim();
+  if (/^https?:\/\//i.test(valor)) return valor.slice(0, 1500);
+  const propria = new RegExp(`^/media/fontes/user_${Number(userId)}/[a-z]+_[0-9]+_[0-9]+_[a-f0-9]+\\.jpg$`, 'i');
+  return propria.test(valor) ? valor : '';
+}
+
+router.post('/chat/mensagens/:messageId/arte/gerar-chatgpt', async (req, res, next) => {
+  try {
+    const row = await mensagemDoChatDoUsuario(req);
+    const userId = Number(req.session.userId);
+    const modo = req.body?.modo === 'simbolica' ? 'simbolica' : 'referencia';
+    const sourceUrl = fonteValidaDoChat(req.body?.sourceUrl, userId);
+    if (modo === 'referencia' && !sourceUrl) {
+      return res.status(400).json({ error: 'Escolha uma foto de origem antes de gerar uma versão com o ChatGPT.' });
+    }
+
+    cleanupChatgptImageJobs();
+    const job = {
+      id: crypto.randomUUID(),
+      userId,
+      messageId: row.id,
+      status: 'running',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      result: null,
+      error: '',
+    };
+    chatgptImageJobs.set(job.id, job);
+
+    setImmediate(async () => {
+      let storedSource = null;
+      try {
+        const chatgptImageService = require('../services/chatgptImageService');
+        const generated = await chatgptImageService.gerarImagem({
+          sourceUrl,
+          prompt: req.body?.prompt,
+          titulo: String(req.body?.titulo || row.titulo || '').trim(),
+          materia: String(row.content || '').slice(0, 4000),
+          recoveryKey: `${userId}:chat${row.id}`,
+          modo,
+        });
+        storedSource = await storeMatterSourceImage({
+          userId,
+          matterId: 0,
+          prefixo: `chat_${row.id}`,
+          buffer: generated.buffer,
+        });
+        job.status = 'ready';
+        job.result = {
+          imagemFonteUrl: storedSource.publicUrl,
+          prompt: generated.prompt,
+          model: generated.model,
+        };
+      } catch (err) {
+        if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
+        job.status = 'error';
+        job.error = err.message || 'O ChatGPT não conseguiu gerar a imagem.';
+        job.errorCode = err.code || '';
+        console.error(`[chatgpt-imagem:chat:${job.id}]`, job.error);
+      } finally {
+        job.updatedAt = Date.now();
+      }
+    });
+
+    return res.status(202).json(publicChatgptImageJob(job));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+});
+
+router.get('/chat/mensagens/:messageId/arte/gerar-chatgpt/:jobId', async (req, res, next) => {
+  try {
+    const job = chatgptImageJobs.get(String(req.params.jobId || ''));
+    if (
+      !job ||
+      job.messageId !== Number(req.params.messageId) ||
+      job.userId !== Number(req.session.userId)
+    ) {
+      return res.status(404).json({ error: 'Geração de imagem não encontrada ou expirada.' });
+    }
+    return res.status(job.status === 'running' ? 202 : 200).json(publicChatgptImageJob(job));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/chat/mensagens/:messageId/arte/recuperar-chatgpt', async (req, res, next) => {
+  let storedSource = null;
+  try {
+    const row = await mensagemDoChatDoUsuario(req);
+    const chatgptImageService = require('../services/chatgptImageService');
+    const generated = await chatgptImageService.recuperarImagem({
+      recoveryKey: `${req.session.userId}:chat${row.id}`,
+    });
+    storedSource = await storeMatterSourceImage({
+      userId: req.session.userId,
+      matterId: 0,
+      prefixo: `chat_${row.id}`,
+      buffer: generated.buffer,
+    });
+    return res.json({ ok: true, imagemFonteUrl: storedSource.publicUrl, model: generated.model });
+  } catch (err) {
+    if (storedSource) removeMatterSourceImage(storedSource.publicUrl);
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    console.error('[chatgpt-imagem:chat:recuperar]', err.message);
+    return next(err);
+  }
+});
+
 function pageId(body = {}) {
   const raw = body.facebookPageId ?? body.facebook_page_id;
   return raw != null && raw !== '' ? Number(raw) : null;

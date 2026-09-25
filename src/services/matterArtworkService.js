@@ -41,7 +41,7 @@ function removeMatterSourceImage(publicUrl) {
   }
 }
 
-async function storeMatterSourceImage({ userId, matterId, buffer }) {
+async function storeMatterSourceImage({ userId, matterId, buffer, prefixo = null }) {
   if (!Buffer.isBuffer(buffer) || !buffer.length) {
     const err = new Error('Selecione uma imagem para continuar');
     err.status = 400;
@@ -49,7 +49,10 @@ async function storeMatterSourceImage({ userId, matterId, buffer }) {
   }
 
   const relativeDir = `fontes/user_${Number(userId)}`;
-  const fileName = `materia_${Number(matterId)}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.jpg`;
+  // `prefixo` identifica imagens ainda sem matéria (ex.: "chat_123", geradas
+  // no /materia-manual antes de salvar o rascunho).
+  const base = /^[a-z]+_[0-9]+$/.test(String(prefixo || '')) ? prefixo : `materia_${Number(matterId)}`;
+  const fileName = `${base}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.jpg`;
   const relativePath = `${relativeDir}/${fileName}`;
   const outputPath = path.resolve(env.storagePath, relativePath);
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });

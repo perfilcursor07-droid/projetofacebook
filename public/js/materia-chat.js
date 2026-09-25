@@ -807,8 +807,10 @@
    * proporção fixa. Resolve com { left, top, width, height } em frações da
    * foto (0–1) ou null se o editor cancelar.
    */
-  function abrirRecorteDeFoto(url, areaInicial = null) {
+  function abrirRecorteDeFoto(url, areaInicial = null, opcoes = {}) {
+    const chatgpt = opcoes.chatgpt || null;
     return new Promise((resolve) => {
+      let urlAtual = String(url || '');
       const fundo = document.createElement('div');
       fundo.className = 'fixed inset-0 flex items-center justify-center bg-slate-950/90 p-3 backdrop-blur-sm';
       fundo.style.zIndex = '80';
@@ -821,8 +823,147 @@
       topo.className = 'border-b border-slate-800 px-4 py-3';
       topo.innerHTML = '<p class="text-sm font-semibold text-white">Recortar foto da imagem destacada</p>' +
         '<p class="mt-0.5 text-[11px] text-slate-400">Arraste o quadro para mover. Use os cantos e as laterais para escolher exatamente a área, sem proporção fixa.</p>';
+      const rolagem = document.createElement('div');
+      rolagem.className = 'min-h-0 flex-1 overflow-y-auto';
+
+      // Painel "Criar nova versão com ChatGPT" (mesmo fluxo do editor da matéria).
+      let geracoesAtivas = 0;
+      let painelGpt = null;
+      if (chatgpt) {
+        painelGpt = document.createElement('div');
+        painelGpt.className = 'm-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3';
+        painelGpt.innerHTML =
+          '<div class="flex items-center justify-between gap-2"><p class="text-xs font-semibold text-white">Criar nova versão com ChatGPT</p>' +
+          '<span class="rounded-full border border-emerald-400/50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-200">Sem texto</span></div>' +
+          '<p class="mt-1 text-[11px] text-slate-400">Na versão com referência, a foto atual é enviada ao ChatGPT. Cada clique abre uma conversa separada. Para temas sensíveis, você também pode criar uma ilustração simbólica sem enviar a foto.</p>';
+        const prompt = document.createElement('textarea');
+        prompt.rows = 5;
+        prompt.setAttribute('aria-label', 'Pedido para o ChatGPT');
+        prompt.className = 'mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs leading-relaxed text-slate-100 focus:border-emerald-400 focus:outline-none';
+        prompt.value = [
+          'Crie uma NOVA imagem editorial fotorrealista inspirada na imagem de referência enviada.',
+          'Mantenha o assunto, as pessoas e a atmosfera reconhecíveis, mas reconstrua a cena de forma original e natural.',
+          'Não inclua texto, letras, legendas, placas legíveis, logotipos, marcas d’água, molduras ou elementos gráficos.',
+          'Composição vertical exata 4:5 (1080 × 1350 pixels), em alta qualidade, adequada como imagem destacada de uma notícia no feed do Facebook. Não gere imagem quadrada ou horizontal.',
+          `Contexto da matéria: ${String(chatgpt.titulo || '').replace(/\[\[|\]\]|\*\*/g, '').trim()}`,
+        ].join('\n\n');
+        const linha = document.createElement('div');
+        linha.className = 'mt-2 flex flex-wrap items-center gap-2';
+        const statusGpt = document.createElement('p');
+        statusGpt.className = 'min-w-0 flex-1 text-[10px] text-slate-500';
+        statusGpt.setAttribute('aria-live', 'polite');
+        statusGpt.textContent = 'A imagem gerada aparecerá abaixo para você recortar antes de salvar.';
+        const gerar = criarBotao('Gerar imagem sem texto', 'rounded-md border border-emerald-500/50 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-500/20');
+        const simbolica = criarBotao('Criar ilustração simbólica sem pessoas', 'rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20');
+        const recuperar = criarBotao('Pegar imagem nova gerada', 'rounded-md border border-sky-500/50 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100 hover:bg-sky-500/20 disabled:opacity-50');
+        linha.append(statusGpt, gerar, simbolica, recuperar);
+        const nota = document.createElement('p');
+        nota.className = 'mt-1 text-[10px] text-slate-500';
+        nota.textContent = 'A ilustração simbólica não usa a foto nem representa o acontecimento. Ao publicar, identifique-a como imagem gerada por IA.';
+        const versoes = document.createElement('div');
+        versoes.className = 'mt-2 space-y-1.5';
+        painelGpt.append(prompt, linha, nota, versoes);
+
+        let seq = 0;
+        let ultimaAplicada = 0;
+        const tom = (t, cor) => {
+          statusGpt.className = `min-w-0 flex-1 text-[10px] ${cor}`;
+          statusGpt.textContent = t;
+        };
+        const linhaVersao = (id, texto) => {
+          const row = document.createElement('div');
+          row.className = 'rounded-lg border border-slate-700 bg-slate-950/60 px-2.5 py-2 text-[10px] text-slate-300';
+          row.innerHTML = `<div class="flex items-center justify-between gap-2"><span class="font-semibold text-emerald-200">Versão ${id}</span><span data-estado class="text-slate-500">gerando…</span></div>`;
+          const p = document.createElement('p');
+          p.className = 'mt-1 line-clamp-2 text-slate-500';
+          p.textContent = texto;
+          const acoes = document.createElement('div');
+          acoes.className = 'mt-1.5 hidden';
+          row.append(p, acoes);
+          versoes.prepend(row);
+          return { estado: row.querySelector('[data-estado]'), acoes };
+        };
+        const pronta = (job, data, id, recuperada = false) => {
+          job.estado.className = 'text-emerald-300';
+          job.estado.textContent = recuperada ? 'recuperada' : 'pronta';
+          const usarVersao = criarBotao('Usar no recorte', 'rounded-md border border-emerald-500/50 bg-emerald-500/10 px-2 py-0.5 font-semibold text-emerald-100 hover:bg-emerald-500/20');
+          usarVersao.addEventListener('click', () => trocarFoto(data.imagemFonteUrl, recuperada));
+          job.acoes.replaceChildren(usarVersao);
+          job.acoes.classList.remove('hidden');
+          if (id >= ultimaAplicada) {
+            ultimaAplicada = id;
+            trocarFoto(data.imagemFonteUrl, recuperada);
+          }
+        };
+        const aguardar = async (inicial, job) => {
+          if (inicial.status === 'ready') return inicial;
+          const limite = Date.now() + 7 * 60 * 1000;
+          while (Date.now() < limite) {
+            await new Promise((r) => setTimeout(r, 2000));
+            const res = await fetch(`${chatgpt.base}/gerar-chatgpt/${encodeURIComponent(inicial.jobId)}`, { headers: { Accept: 'application/json' } });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok && res.status !== 202) throw new Error(data.error || 'Não foi possível acompanhar a geração da imagem.');
+            if (data.status === 'error') throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+            if (data.status === 'ready') return data;
+            job.estado.textContent = 'gerando em conversa separada…';
+          }
+          throw new Error('A geração continua no ChatGPT. Use “Pegar imagem nova gerada” em alguns minutos.');
+        };
+        const iniciar = async (modo) => {
+          const texto = prompt.value.trim();
+          if (modo === 'referencia' && !chatgpt.fonte()) {
+            tom('Escolha uma foto de referência antes, ou crie uma ilustração simbólica.', 'text-rose-300');
+            return;
+          }
+          if (modo === 'referencia' && texto.length < 20) {
+            tom('Descreva a imagem com pelo menos 20 caracteres.', 'text-rose-300');
+            prompt.focus();
+            return;
+          }
+          const id = ++seq;
+          const job = linhaVersao(id, modo === 'simbolica'
+            ? 'Ilustração simbólica de fé e esperança, sem pessoas e sem a foto original.'
+            : texto);
+          geracoesAtivas += 1;
+          gerar.textContent = 'Gerar outra versão';
+          tom(`Versão ${id} enviada. Você pode gerar outra enquanto ela fica pronta.`, 'text-emerald-200');
+          try {
+            const inicial = await api(`${chatgpt.base}/gerar-chatgpt`, {
+              method: 'POST',
+              body: JSON.stringify({ prompt: texto, modo, titulo: chatgpt.titulo || '', sourceUrl: chatgpt.fonte() }),
+            });
+            const data = await aguardar(inicial, job);
+            pronta(job, data, id);
+            tom(`Versão ${id} pronta. Ajuste o recorte ou escolha outra versão da lista.`, 'text-emerald-300');
+          } catch (err) {
+            job.estado.className = 'text-rose-300';
+            job.estado.textContent = err.message || 'falhou';
+            tom(err.message || 'Falha ao gerar imagem com o ChatGPT.', 'text-rose-300');
+          } finally {
+            geracoesAtivas = Math.max(0, geracoesAtivas - 1);
+            if (!geracoesAtivas) gerar.textContent = 'Gerar imagem sem texto';
+          }
+        };
+        gerar.addEventListener('click', () => iniciar('referencia'));
+        simbolica.addEventListener('click', () => iniciar('simbolica'));
+        recuperar.addEventListener('click', async () => {
+          recuperar.disabled = true;
+          tom('Buscando a última imagem gerada na conversa do ChatGPT…', 'text-sky-200');
+          try {
+            const data = await api(`${chatgpt.base}/recuperar-chatgpt`, { method: 'POST' });
+            const id = ++seq;
+            pronta(linhaVersao(id, 'Imagem recuperada da conversa recente do ChatGPT.'), data, id, true);
+            tom('Imagem recuperada. Ajuste o recorte e clique em “Usar recorte”.', 'text-emerald-300');
+          } catch (err) {
+            tom(err.message || 'Não foi possível recuperar a imagem do ChatGPT.', 'text-rose-300');
+          } finally {
+            recuperar.disabled = false;
+          }
+        });
+      }
+
       const palco = document.createElement('div');
-      palco.className = 'flex min-h-0 flex-1 items-center justify-center overflow-auto bg-slate-950 p-3';
+      palco.className = 'flex items-center justify-center bg-slate-950 p-3';
       const area = document.createElement('div');
       area.className = 'relative inline-block max-w-full';
       area.style.cssText = 'touch-action:none;user-select:none';
@@ -831,7 +972,7 @@
       foto.draggable = false;
       foto.referrerPolicy = 'no-referrer';
       foto.className = 'block max-w-full object-contain';
-      foto.style.maxHeight = '65vh';
+      foto.style.maxHeight = '60vh';
       const quadro = document.createElement('div');
       quadro.className = 'absolute border-2 border-amber-300';
       quadro.style.cssText += ';box-shadow:0 0 0 9999px rgba(2,6,23,.72);cursor:move;touch-action:none';
@@ -850,17 +991,18 @@
       }
       area.append(foto, quadro);
       palco.appendChild(area);
+      if (painelGpt) rolagem.appendChild(painelGpt);
+      rolagem.appendChild(palco);
       const rodape = document.createElement('div');
       rodape.className = 'flex flex-wrap items-center justify-end gap-2 border-t border-slate-800 px-4 py-3';
       const status = document.createElement('span');
       status.className = 'mr-auto text-[11px] text-slate-400';
-      status.textContent = 'Carregando a foto…';
       const tudo = criarBotao('Foto inteira', 'rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-400');
       const cancelar = criarBotao('Cancelar', 'rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-400');
       const usar = criarBotao('Usar recorte', 'rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-amber-300 disabled:opacity-50');
       usar.disabled = true;
       rodape.append(status, tudo, cancelar, usar);
-      janela.append(topo, palco, rodape);
+      janela.append(topo, rolagem, rodape);
       fundo.appendChild(janela);
 
       let caixa = areaInicial ? { ...areaInicial } : { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
@@ -871,6 +1013,14 @@
         quadro.style.width = `${caixa.width * 100}%`;
         quadro.style.height = `${caixa.height * 100}%`;
       };
+      function trocarFoto(novaUrl, recuperada = false) {
+        if (!novaUrl) return;
+        urlAtual = novaUrl;
+        caixa = { left: 0, top: 0, width: 1, height: 1 };
+        usar.disabled = true;
+        foto.src = `${novaUrl}${novaUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
+        status.textContent = recuperada ? 'Imagem recuperada — ajuste o recorte.' : 'Nova imagem do ChatGPT — ajuste o recorte.';
+      }
       let arraste = null;
       quadro.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -907,7 +1057,11 @@
       quadro.addEventListener('pointerup', soltar);
       quadro.addEventListener('pointercancel', soltar);
 
+      const podeFechar = () =>
+        !geracoesAtivas ||
+        window.confirm('Uma imagem ainda está sendo gerada no ChatGPT. Fechar mesmo assim? Depois você pode usar “Pegar imagem nova gerada”.');
       const fechar = (resultado) => {
+        if (!resultado && !podeFechar()) return;
         document.removeEventListener('keydown', teclas);
         fundo.remove();
         document.body.style.overflow = overflowAntes;
@@ -919,10 +1073,13 @@
       cancelar.addEventListener('click', () => fechar(null));
       fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(null); });
       usar.addEventListener('click', () => fechar({
-        left: Number(caixa.left.toFixed(4)),
-        top: Number(caixa.top.toFixed(4)),
-        width: Number(caixa.width.toFixed(4)),
-        height: Number(caixa.height.toFixed(4)),
+        url: urlAtual,
+        area: {
+          left: Number(caixa.left.toFixed(4)),
+          top: Number(caixa.top.toFixed(4)),
+          width: Number(caixa.width.toFixed(4)),
+          height: Number(caixa.height.toFixed(4)),
+        },
       }));
       foto.addEventListener('load', () => {
         usar.disabled = false;
@@ -930,14 +1087,21 @@
         desenhar();
       });
       foto.addEventListener('error', () => {
-        status.textContent = 'Não consegui abrir esta foto (o site pode bloquear). Escolha outra foto.';
+        if (foto.getAttribute('src')) status.textContent = 'Não consegui abrir esta foto (o site pode bloquear). Escolha outra foto ou gere uma com o ChatGPT.';
       });
 
       const overflowAntes = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
       document.body.appendChild(fundo);
       desenhar();
-      foto.src = url;
+      if (urlAtual) {
+        status.textContent = 'Carregando a foto…';
+        foto.src = urlAtual;
+      } else {
+        quadro.classList.add('hidden');
+        status.textContent = 'Sem foto escolhida: gere uma imagem com o ChatGPT acima.';
+        foto.addEventListener('load', () => quadro.classList.remove('hidden'), { once: true });
+      }
     });
   }
 
@@ -1275,25 +1439,42 @@
       ajustesRapidos.appendChild(botao);
     }
     // Edição manual do texto antes de salvar: o que o editor corrigir aqui é
-    // o que vai para o rascunho, o "Publicar agora" e o "Agendar".
+    // o que vai para o rascunho, o "Publicar agora" e o "Agendar". Abre pelo
+    // botão no topo da matéria, pelo "Editar texto" ou com duplo clique.
+    const corpoMateria = container.querySelector('.mia-msg-ai-body');
     const editarTexto = document.createElement('button');
     editarTexto.type = 'button';
     editarTexto.textContent = 'Editar texto';
-    if (mensagem.matterId) {
+    const barraEditar = document.createElement('div');
+    barraEditar.className = 'mb-2 flex justify-end';
+    const editarTopo = criarBotao(
+      '✏️ Editar matéria',
+      'rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50'
+    );
+    barraEditar.appendChild(editarTopo);
+    if (corpoMateria) corpoMateria.before(barraEditar);
+    const bloquearEdicao = () => {
+      for (const b of [editarTexto, editarTopo]) {
+        b.disabled = true;
+        b.title = 'Já salvo como rascunho — edite o texto no rascunho.';
+      }
+      editarTopo.textContent = '✏️ Editar no rascunho';
+      editarTopo.disabled = false;
+      editarTopo.onclick = () => window.open(`/materias-ia/${mensagem.matterId}`, '_blank', 'noopener');
+    };
+    // Edição aberta: salva antes de salvar/publicar/agendar o rascunho.
+    let edicaoAberta = null;
+
+    function abrirEdicao() {
+      if (!corpoMateria || edicaoAberta || mensagem.matterId) return;
       editarTexto.disabled = true;
-      editarTexto.title = 'Já salvo como rascunho — edite o texto no rascunho.';
-    }
-    editarTexto.addEventListener('click', () => {
-      const corpo = container.querySelector('.mia-msg-ai-body');
-      if (!corpo || corpo.dataset.editando === '1' || mensagem.matterId) return;
-      corpo.dataset.editando = '1';
-      editarTexto.disabled = true;
-      const original = [...corpo.childNodes];
+      editarTopo.disabled = true;
+      const original = [...corpoMateria.childNodes];
       const area = document.createElement('textarea');
       area.className = 'mia-edit-materia w-full rounded-lg border border-emerald-500/50 bg-slate-950 p-3 text-sm leading-relaxed text-slate-100 focus:border-emerald-400 focus:outline-none';
       area.value = String(mensagem.content || '');
       area.setAttribute('aria-label', 'Texto da matéria');
-      area.rows = Math.min(28, Math.max(10, area.value.split('\n').length + 2));
+      area.rows = Math.min(30, Math.max(12, area.value.split('\n').length + 3));
       const barra = document.createElement('div');
       barra.className = 'mt-2 flex flex-wrap items-center gap-2';
       const salvarEdicao = criarBotao(
@@ -1308,18 +1489,20 @@
       avisoEdicao.className = 'text-xs text-slate-400';
       avisoEdicao.textContent = 'A primeira linha é o título. Separe os parágrafos com uma linha em branco.';
       barra.append(salvarEdicao, cancelarEdicao, avisoEdicao);
-      corpo.replaceChildren(area, barra);
+      corpoMateria.replaceChildren(area, barra);
       area.focus();
 
       const sair = () => {
-        delete corpo.dataset.editando;
+        edicaoAberta = null;
         editarTexto.disabled = Boolean(mensagem.matterId);
+        editarTopo.disabled = false;
       };
-      cancelarEdicao.addEventListener('click', () => {
-        corpo.replaceChildren(...original);
-        sair();
-      });
-      salvarEdicao.addEventListener('click', async () => {
+      const salvar = async () => {
+        if (area.value === String(mensagem.content || '')) {
+          corpoMateria.replaceChildren(...original);
+          sair();
+          return;
+        }
         salvarEdicao.disabled = true;
         avisoEdicao.textContent = 'Salvando edição…';
         try {
@@ -1329,16 +1512,33 @@
           });
           mensagem.content = data.mensagem?.content ?? area.value;
           if (data.mensagem?.titulo) mensagem.titulo = data.mensagem.titulo;
-          corpo.replaceChildren();
-          renderTexto(corpo, mensagem.content);
+          corpoMateria.replaceChildren();
+          renderTexto(corpoMateria, mensagem.content);
           sair();
           setStatus('Texto editado — o rascunho vai sair com esta versão.');
         } catch (err) {
           avisoEdicao.textContent = err.message;
           salvarEdicao.disabled = false;
+          throw err;
         }
+      };
+      edicaoAberta = { salvar };
+      cancelarEdicao.addEventListener('click', () => {
+        corpoMateria.replaceChildren(...original);
+        sair();
       });
+      salvarEdicao.addEventListener('click', () => salvar().catch(() => {}));
+    }
+
+    editarTexto.addEventListener('click', abrirEdicao);
+    editarTopo.addEventListener('click', () => {
+      if (!mensagem.matterId) abrirEdicao();
     });
+    corpoMateria?.addEventListener('dblclick', () => {
+      if (!mensagem.matterId) abrirEdicao();
+    });
+    if (corpoMateria && !mensagem.matterId) corpoMateria.title = 'Clique duas vezes para editar o texto';
+    if (mensagem.matterId) bloquearEdicao();
     ajustesRapidos.appendChild(editarTexto);
     box.appendChild(ajustesRapidos);
 
@@ -1511,11 +1711,13 @@
       capaAviso.textContent = 'Arte atualizada com o recorte ✓';
     }
 
-    async function aplicarRecorteNoRascunho(id, area) {
+    async function aplicarRecorteNoRascunho(id, area, sourceUrl = null) {
       capaAviso.textContent = 'Recortando a foto e refazendo a arte…';
       const data = await api(`/api/materias-ia/matters/${id}/arte/recortar`, {
         method: 'POST',
-        body: JSON.stringify({ ...area, titulo: mensagem.titulo || '' }),
+        // sourceUrl só vai quando a foto é uma versão nova gerada com o ChatGPT
+        // para este rascunho; senão o servidor recorta a foto atual da matéria.
+        body: JSON.stringify({ ...area, titulo: mensagem.titulo || '', ...(sourceUrl ? { sourceUrl } : {}) }),
       });
       mostrarArte(data.imagemUrl);
     }
@@ -1530,29 +1732,44 @@
       recortar.disabled = true;
       try {
         let url = '';
+        let fonteDoRascunho = '';
         if (mensagem.matterId) {
           const { matter } = await api(`/api/materias-ia/matters/${mensagem.matterId}`);
           const fonte = String(matter?.imagem_fonte_url || '').trim();
           url = fonte && !/\/media\/artes\//i.test(fonte) ? fonte : '';
-          if (!url) {
-            capaAviso.textContent = 'O rascunho não tem a foto original para recortar. Troque a foto no rascunho.';
-            return;
-          }
+          fonteDoRascunho = url;
         } else {
           url = imagem.value.trim();
-          if (!url) {
-            capaAviso.textContent = 'Escolha uma foto sugerida (ou cole a URL da imagem) antes de recortar.';
-            return;
-          }
         }
-        const area = await abrirRecorteDeFoto(url, recortePendente?.url === url ? recortePendente.area : null);
-        if (!area) return;
+        // Mesmo painel do editor: gera uma versão com o ChatGPT dentro do
+        // recorte. Antes de salvar usa a foto escolhida no chat; depois, a do rascunho.
+        const chatgpt = {
+          titulo: mensagem.titulo || '',
+          base: mensagem.matterId
+            ? `/api/materias-ia/matters/${mensagem.matterId}/arte`
+            : `/api/materias-ia/chat/mensagens/${mensagem.id}/arte`,
+          fonte: () => (mensagem.matterId ? fonteDoRascunho : imagem.value.trim()),
+        };
+        const escolha = await abrirRecorteDeFoto(
+          url,
+          recortePendente?.url === url ? recortePendente.area : null,
+          { chatgpt }
+        );
+        if (!escolha) return;
+        const gerada = /^\/media\/fontes\//i.test(escolha.url) && escolha.url !== fonteDoRascunho;
+        if (gerada && (!credito.value.trim() || credito.dataset.auto === '1')) {
+          credito.value = 'Imagem gerada por IA';
+          credito.dataset.auto = '1';
+        }
         if (mensagem.matterId) {
-          await aplicarRecorteNoRascunho(mensagem.matterId, area);
+          await aplicarRecorteNoRascunho(mensagem.matterId, escolha.area, gerada ? escolha.url : null);
         } else {
-          recortePendente = { url, area };
-          desenharPrevia(url, area);
-          capaAviso.textContent = 'Recorte pronto — será aplicado na arte ao salvar, publicar ou agendar.';
+          imagem.value = escolha.url;
+          recortePendente = { url: escolha.url, area: escolha.area };
+          desenharPrevia(escolha.url, escolha.area);
+          capaAviso.textContent = gerada
+            ? 'Imagem do ChatGPT recortada — será usada na arte ao salvar, publicar ou agendar.'
+            : 'Recorte pronto — será aplicado na arte ao salvar, publicar ou agendar.';
         }
       } catch (err) {
         capaAviso.textContent = err.message;
@@ -1630,6 +1847,8 @@
     }
     async function garantirRascunho() {
       if (mensagem.matterId) return mensagem.matterId;
+      // Texto em edição entra no rascunho: grava a edição antes de salvar.
+      if (edicaoAberta) await edicaoAberta.salvar();
       if (!salvando) {
         salvando = api(`${API}/mensagens/${mensagem.id}/materia`, {
           method: 'POST',
@@ -1641,8 +1860,7 @@
         }).then(async (data) => {
           mensagem.matterId = data.matterId;
           marcarSalvo();
-          editarTexto.disabled = true;
-          editarTexto.title = 'Já salvo como rascunho — edite o texto no rascunho.';
+          bloquearEdicao();
           // Recorte feito antes de salvar: aplica na foto que foi para o rascunho.
           if (recortePendente && recortePendente.url === imagem.value.trim()) {
             try {
