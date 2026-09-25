@@ -802,6 +802,146 @@
   }
 
   /**
+   * Recorte livre da foto da capa (mesmo comportamento de /materias-ia/:id):
+   * arraste o quadro para mover e os cantos/laterais para redimensionar, sem
+   * proporção fixa. Resolve com { left, top, width, height } em frações da
+   * foto (0–1) ou null se o editor cancelar.
+   */
+  function abrirRecorteDeFoto(url, areaInicial = null) {
+    return new Promise((resolve) => {
+      const fundo = document.createElement('div');
+      fundo.className = 'fixed inset-0 flex items-center justify-center bg-slate-950/90 p-3 backdrop-blur-sm';
+      fundo.style.zIndex = '80';
+      fundo.setAttribute('role', 'dialog');
+      fundo.setAttribute('aria-modal', 'true');
+      fundo.setAttribute('aria-label', 'Recortar foto da imagem destacada');
+      const janela = document.createElement('div');
+      janela.className = 'flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl';
+      const topo = document.createElement('div');
+      topo.className = 'border-b border-slate-800 px-4 py-3';
+      topo.innerHTML = '<p class="text-sm font-semibold text-white">Recortar foto da imagem destacada</p>' +
+        '<p class="mt-0.5 text-[11px] text-slate-400">Arraste o quadro para mover. Use os cantos e as laterais para escolher exatamente a área, sem proporção fixa.</p>';
+      const palco = document.createElement('div');
+      palco.className = 'flex min-h-0 flex-1 items-center justify-center overflow-auto bg-slate-950 p-3';
+      const area = document.createElement('div');
+      area.className = 'relative inline-block max-w-full';
+      area.style.cssText = 'touch-action:none;user-select:none';
+      const foto = document.createElement('img');
+      foto.alt = 'Foto original para recorte';
+      foto.draggable = false;
+      foto.referrerPolicy = 'no-referrer';
+      foto.className = 'block max-w-full object-contain';
+      foto.style.maxHeight = '65vh';
+      const quadro = document.createElement('div');
+      quadro.className = 'absolute border-2 border-amber-300';
+      quadro.style.cssText += ';box-shadow:0 0 0 9999px rgba(2,6,23,.72);cursor:move;touch-action:none';
+      const alcas = {
+        nw: 'left:-8px;top:-8px;cursor:nwse-resize', ne: 'right:-8px;top:-8px;cursor:nesw-resize',
+        sw: 'left:-8px;bottom:-8px;cursor:nesw-resize', se: 'right:-8px;bottom:-8px;cursor:nwse-resize',
+        n: 'left:calc(50% - 8px);top:-8px;cursor:ns-resize', s: 'left:calc(50% - 8px);bottom:-8px;cursor:ns-resize',
+        w: 'left:-8px;top:calc(50% - 8px);cursor:ew-resize', e: 'right:-8px;top:calc(50% - 8px);cursor:ew-resize',
+      };
+      for (const [nome, pos] of Object.entries(alcas)) {
+        const alca = document.createElement('span');
+        alca.dataset.alca = nome;
+        alca.className = 'absolute rounded-full';
+        alca.style.cssText = `${pos};width:16px;height:16px;background:#fcd34d;border:2px solid #020617`;
+        quadro.appendChild(alca);
+      }
+      area.append(foto, quadro);
+      palco.appendChild(area);
+      const rodape = document.createElement('div');
+      rodape.className = 'flex flex-wrap items-center justify-end gap-2 border-t border-slate-800 px-4 py-3';
+      const status = document.createElement('span');
+      status.className = 'mr-auto text-[11px] text-slate-400';
+      status.textContent = 'Carregando a foto…';
+      const tudo = criarBotao('Foto inteira', 'rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-400');
+      const cancelar = criarBotao('Cancelar', 'rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-400');
+      const usar = criarBotao('Usar recorte', 'rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-amber-300 disabled:opacity-50');
+      usar.disabled = true;
+      rodape.append(status, tudo, cancelar, usar);
+      janela.append(topo, palco, rodape);
+      fundo.appendChild(janela);
+
+      let caixa = areaInicial ? { ...areaInicial } : { left: 0.05, top: 0.05, width: 0.9, height: 0.9 };
+      const MIN = 0.05;
+      const desenhar = () => {
+        quadro.style.left = `${caixa.left * 100}%`;
+        quadro.style.top = `${caixa.top * 100}%`;
+        quadro.style.width = `${caixa.width * 100}%`;
+        quadro.style.height = `${caixa.height * 100}%`;
+      };
+      let arraste = null;
+      quadro.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        quadro.setPointerCapture(e.pointerId);
+        arraste = { alca: e.target.dataset?.alca || 'mover', x: e.clientX, y: e.clientY, inicio: { ...caixa } };
+      });
+      quadro.addEventListener('pointermove', (e) => {
+        if (!arraste) return;
+        const dx = (e.clientX - arraste.x) / foto.clientWidth;
+        const dy = (e.clientY - arraste.y) / foto.clientHeight;
+        const c = { ...arraste.inicio };
+        const a = arraste.alca;
+        if (a === 'mover') {
+          c.left = Math.min(1 - c.width, Math.max(0, c.left + dx));
+          c.top = Math.min(1 - c.height, Math.max(0, c.top + dy));
+        } else {
+          if (a.includes('w')) {
+            const left = Math.min(c.left + c.width - MIN, Math.max(0, c.left + dx));
+            c.width += c.left - left;
+            c.left = left;
+          }
+          if (a.includes('e')) c.width = Math.min(1 - c.left, Math.max(MIN, c.width + dx));
+          if (a.includes('n')) {
+            const top = Math.min(c.top + c.height - MIN, Math.max(0, c.top + dy));
+            c.height += c.top - top;
+            c.top = top;
+          }
+          if (a.includes('s')) c.height = Math.min(1 - c.top, Math.max(MIN, c.height + dy));
+        }
+        caixa = c;
+        desenhar();
+      });
+      const soltar = () => { arraste = null; };
+      quadro.addEventListener('pointerup', soltar);
+      quadro.addEventListener('pointercancel', soltar);
+
+      const fechar = (resultado) => {
+        document.removeEventListener('keydown', teclas);
+        fundo.remove();
+        document.body.style.overflow = overflowAntes;
+        resolve(resultado);
+      };
+      const teclas = (e) => { if (e.key === 'Escape') fechar(null); };
+      document.addEventListener('keydown', teclas);
+      tudo.addEventListener('click', () => { caixa = { left: 0, top: 0, width: 1, height: 1 }; desenhar(); });
+      cancelar.addEventListener('click', () => fechar(null));
+      fundo.addEventListener('click', (e) => { if (e.target === fundo) fechar(null); });
+      usar.addEventListener('click', () => fechar({
+        left: Number(caixa.left.toFixed(4)),
+        top: Number(caixa.top.toFixed(4)),
+        width: Number(caixa.width.toFixed(4)),
+        height: Number(caixa.height.toFixed(4)),
+      }));
+      foto.addEventListener('load', () => {
+        usar.disabled = false;
+        status.textContent = `${foto.naturalWidth} × ${foto.naturalHeight}px`;
+        desenhar();
+      });
+      foto.addEventListener('error', () => {
+        status.textContent = 'Não consegui abrir esta foto (o site pode bloquear). Escolha outra foto.';
+      });
+
+      const overflowAntes = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      document.body.appendChild(fundo);
+      desenhar();
+      foto.src = url;
+    });
+  }
+
+  /**
    * Fotos sugeridas para a capa, iguais às de /materias-ia/:id. Clicar numa
    * miniatura preenche a URL e o crédito usados ao salvar o rascunho. A busca
    * só roda quando o quadro aparece na tela e fica em cache na aba, para não
@@ -855,6 +995,8 @@
 
     function escolher(img, btn) {
       campoUrl.value = img.url || '';
+      // Avisa o bloco da capa (prévia e recorte) que a foto mudou.
+      campoUrl.dispatchEvent(new Event('input', { bubbles: true }));
       if (!campoCredito.value.trim() || campoCredito.dataset.auto === '1') {
         campoCredito.value = creditoDaFoto(img);
         campoCredito.dataset.auto = '1';
@@ -1132,6 +1274,72 @@
       });
       ajustesRapidos.appendChild(botao);
     }
+    // Edição manual do texto antes de salvar: o que o editor corrigir aqui é
+    // o que vai para o rascunho, o "Publicar agora" e o "Agendar".
+    const editarTexto = document.createElement('button');
+    editarTexto.type = 'button';
+    editarTexto.textContent = 'Editar texto';
+    if (mensagem.matterId) {
+      editarTexto.disabled = true;
+      editarTexto.title = 'Já salvo como rascunho — edite o texto no rascunho.';
+    }
+    editarTexto.addEventListener('click', () => {
+      const corpo = container.querySelector('.mia-msg-ai-body');
+      if (!corpo || corpo.dataset.editando === '1' || mensagem.matterId) return;
+      corpo.dataset.editando = '1';
+      editarTexto.disabled = true;
+      const original = [...corpo.childNodes];
+      const area = document.createElement('textarea');
+      area.className = 'mia-edit-materia w-full rounded-lg border border-emerald-500/50 bg-slate-950 p-3 text-sm leading-relaxed text-slate-100 focus:border-emerald-400 focus:outline-none';
+      area.value = String(mensagem.content || '');
+      area.setAttribute('aria-label', 'Texto da matéria');
+      area.rows = Math.min(28, Math.max(10, area.value.split('\n').length + 2));
+      const barra = document.createElement('div');
+      barra.className = 'mt-2 flex flex-wrap items-center gap-2';
+      const salvarEdicao = criarBotao(
+        'Salvar edição',
+        'rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50'
+      );
+      const cancelarEdicao = criarBotao(
+        'Cancelar',
+        'rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-400'
+      );
+      const avisoEdicao = document.createElement('span');
+      avisoEdicao.className = 'text-xs text-slate-400';
+      avisoEdicao.textContent = 'A primeira linha é o título. Separe os parágrafos com uma linha em branco.';
+      barra.append(salvarEdicao, cancelarEdicao, avisoEdicao);
+      corpo.replaceChildren(area, barra);
+      area.focus();
+
+      const sair = () => {
+        delete corpo.dataset.editando;
+        editarTexto.disabled = Boolean(mensagem.matterId);
+      };
+      cancelarEdicao.addEventListener('click', () => {
+        corpo.replaceChildren(...original);
+        sair();
+      });
+      salvarEdicao.addEventListener('click', async () => {
+        salvarEdicao.disabled = true;
+        avisoEdicao.textContent = 'Salvando edição…';
+        try {
+          const data = await api(`${API}/mensagens/${mensagem.id}/conteudo`, {
+            method: 'PATCH',
+            body: JSON.stringify({ conteudo: area.value }),
+          });
+          mensagem.content = data.mensagem?.content ?? area.value;
+          if (data.mensagem?.titulo) mensagem.titulo = data.mensagem.titulo;
+          corpo.replaceChildren();
+          renderTexto(corpo, mensagem.content);
+          sair();
+          setStatus('Texto editado — o rascunho vai sair com esta versão.');
+        } catch (err) {
+          avisoEdicao.textContent = err.message;
+          salvarEdicao.disabled = false;
+        }
+      });
+    });
+    ajustesRapidos.appendChild(editarTexto);
     box.appendChild(ajustesRapidos);
 
     let tituloLivre = null;
@@ -1241,6 +1449,129 @@
     if (!mensagem.matterId) box.appendChild(faixaFotosSugeridas(mensagem, imagem, credito));
     box.appendChild(opcoesImagem);
 
+    // Capa: prévia da foto escolhida + recorte livre, igual ao editor da
+    // matéria. Antes de salvar o recorte fica pendente e é aplicado assim que
+    // o rascunho existir; depois de salvo, recorta direto a foto do rascunho.
+    let recortePendente = null;
+    const capa = document.createElement('div');
+    capa.className = 'mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-2';
+    const moldura = document.createElement('div');
+    moldura.className = 'relative hidden shrink-0 overflow-hidden rounded-md border border-slate-700 bg-slate-900';
+    moldura.style.cssText = 'width:64px;height:80px';
+    const previa = document.createElement('img');
+    previa.alt = 'Prévia da capa';
+    previa.referrerPolicy = 'no-referrer';
+    previa.style.cssText = 'position:absolute;max-width:none;display:block';
+    moldura.appendChild(previa);
+    const capaTexto = document.createElement('div');
+    capaTexto.className = 'min-w-0 flex-1';
+    const capaTitulo = document.createElement('p');
+    capaTitulo.className = 'text-[11px] font-semibold uppercase tracking-wide text-slate-500';
+    capaTitulo.textContent = 'Imagem destacada';
+    const capaAviso = document.createElement('p');
+    capaAviso.className = 'text-[11px] text-slate-400';
+    capaTexto.append(capaTitulo, capaAviso);
+    const recortar = criarBotao(
+      'Recortar foto',
+      'rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50'
+    );
+    capa.append(moldura, capaTexto, recortar);
+    box.appendChild(capa);
+
+    /** Mostra só a área recortada da foto dentro da moldura 4:5. */
+    function desenharPrevia(url, area = null) {
+      if (!url) {
+        moldura.classList.add('hidden');
+        capaAviso.textContent = mensagem.matterId
+          ? 'Recorte a foto usada no rascunho.'
+          : 'Escolha uma foto sugerida (ou cole a URL) para recortar. Sem foto, o sistema usa a imagem da fonte ao salvar.';
+        return;
+      }
+      moldura.classList.remove('hidden');
+      const aplicar = () => {
+        const a = area || { left: 0, top: 0, width: 1, height: 1 };
+        const escala = Math.max(64 / (a.width * previa.naturalWidth || 1), 80 / (a.height * previa.naturalHeight || 1));
+        const w = previa.naturalWidth * escala;
+        const h = previa.naturalHeight * escala;
+        previa.style.width = `${w}px`;
+        previa.style.height = `${h}px`;
+        previa.style.left = `${-a.left * w - (a.width * w - 64) / 2}px`;
+        previa.style.top = `${-a.top * h - (a.height * h - 80) / 2}px`;
+      };
+      previa.onload = aplicar;
+      if (previa.getAttribute('src') !== url) previa.src = url;
+      else if (previa.complete) aplicar();
+    }
+
+    function mostrarArte(urlArte) {
+      if (!urlArte) return;
+      recortePendente = null;
+      desenharPrevia(`${urlArte}${urlArte.includes('?') ? '&' : '?'}v=${Date.now()}`);
+      capaTitulo.textContent = 'Arte da matéria';
+      capaAviso.textContent = 'Arte atualizada com o recorte ✓';
+    }
+
+    async function aplicarRecorteNoRascunho(id, area) {
+      capaAviso.textContent = 'Recortando a foto e refazendo a arte…';
+      const data = await api(`/api/materias-ia/matters/${id}/arte/recortar`, {
+        method: 'POST',
+        body: JSON.stringify({ ...area, titulo: mensagem.titulo || '' }),
+      });
+      mostrarArte(data.imagemUrl);
+    }
+
+    imagem.addEventListener('input', () => {
+      recortePendente = null;
+      desenharPrevia(imagem.value.trim());
+      if (imagem.value.trim()) capaAviso.textContent = 'Foto escolhida. Use “Recortar foto” para escolher a parte que aparece na capa.';
+    });
+
+    recortar.addEventListener('click', async () => {
+      recortar.disabled = true;
+      try {
+        let url = '';
+        if (mensagem.matterId) {
+          const { matter } = await api(`/api/materias-ia/matters/${mensagem.matterId}`);
+          const fonte = String(matter?.imagem_fonte_url || '').trim();
+          url = fonte && !/\/media\/artes\//i.test(fonte) ? fonte : '';
+          if (!url) {
+            capaAviso.textContent = 'O rascunho não tem a foto original para recortar. Troque a foto no rascunho.';
+            return;
+          }
+        } else {
+          url = imagem.value.trim();
+          if (!url) {
+            capaAviso.textContent = 'Escolha uma foto sugerida (ou cole a URL da imagem) antes de recortar.';
+            return;
+          }
+        }
+        const area = await abrirRecorteDeFoto(url, recortePendente?.url === url ? recortePendente.area : null);
+        if (!area) return;
+        if (mensagem.matterId) {
+          await aplicarRecorteNoRascunho(mensagem.matterId, area);
+        } else {
+          recortePendente = { url, area };
+          desenharPrevia(url, area);
+          capaAviso.textContent = 'Recorte pronto — será aplicado na arte ao salvar, publicar ou agendar.';
+        }
+      } catch (err) {
+        capaAviso.textContent = err.message;
+      } finally {
+        recortar.disabled = false;
+      }
+    });
+    desenharPrevia(imagem.value.trim());
+    if (mensagem.matterId) {
+      api(`/api/materias-ia/matters/${mensagem.matterId}`)
+        .then(({ matter }) => {
+          if (!matter?.imagem_url) return;
+          desenharPrevia(matter.imagem_url);
+          capaTitulo.textContent = 'Arte da matéria';
+          capaAviso.textContent = 'Use “Recortar foto” para ajustar a parte da foto que aparece.';
+        })
+        .catch(() => {});
+    }
+
     const acoes = document.createElement('div');
     acoes.className = 'mt-2 grid gap-2 sm:flex sm:flex-wrap sm:items-center';
 
@@ -1307,9 +1638,19 @@
             creditoImagem: credito.value.trim() || null,
             titulo: livre ? tituloLivre?.value.trim() || null : tituloEscolhido,
           }),
-        }).then((data) => {
+        }).then(async (data) => {
           mensagem.matterId = data.matterId;
           marcarSalvo();
+          editarTexto.disabled = true;
+          editarTexto.title = 'Já salvo como rascunho — edite o texto no rascunho.';
+          // Recorte feito antes de salvar: aplica na foto que foi para o rascunho.
+          if (recortePendente && recortePendente.url === imagem.value.trim()) {
+            try {
+              await aplicarRecorteNoRascunho(data.matterId, recortePendente.area);
+            } catch (err) {
+              capaAviso.textContent = `Rascunho salvo, mas o recorte falhou: ${err.message}`;
+            }
+          }
           return data.matterId;
         }).finally(() => {
           salvando = null;

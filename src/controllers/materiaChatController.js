@@ -295,6 +295,21 @@ async function gerarTitulosAlternativos(req, res, next) {
   }
 }
 
+/** Texto da resposta editado pelo editor no chat, antes de salvar. */
+async function editarConteudo(req, res, next) {
+  try {
+    const resultado = await chatService.editarConteudoDaMensagem({
+      userId: req.session.userId,
+      messageId: Number(req.params.messageId),
+      conteudo: req.body?.conteudo ?? req.body?.content ?? '',
+    });
+    return res.json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 /** Fotos sugeridas (Google Images etc.) para a resposta antes de salvar. */
 async function sugerirImagens(req, res, next) {
   try {
@@ -390,6 +405,7 @@ module.exports = {
   salvarMateria,
   gerarTitulosAlternativos,
   sugerirImagens,
+  editarConteudo,
   salvarTodasAsMaterias,
   salvarPautasComoRascunhos,
   obterOrientacoes,

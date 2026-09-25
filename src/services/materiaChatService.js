@@ -5134,6 +5134,33 @@ async function sugerirImagensDaMensagem({ userId, messageId, consulta = null, li
   });
 }
 
+/**
+ * O editor corrige o texto da resposta direto no chat, antes de salvar. O
+ * rascunho, o "Publicar agora" e o "Agendar" passam a usar a versão editada.
+ */
+async function editarConteudoDaMensagem({ userId, messageId, conteudo } = {}) {
+  const row = await AiChatMessages.findByIdWithChat(messageId);
+  if (!row || Number(row.chat_user_id) !== Number(userId)) {
+    throw erro('Mensagem não encontrada', 404);
+  }
+  if (row.role !== 'assistant') throw erro('Só respostas da IA podem ser editadas aqui.', 400);
+  if (row.matter_id) {
+    throw erro('Esta matéria já foi salva como rascunho. Edite o texto no rascunho.', 409);
+  }
+  const texto = String(conteudo || '').replace(/\r\n/g, '\n').trim();
+  if (texto.length < 40) throw erro('O texto ficou curto demais para uma matéria.', 400);
+  if (texto.length > 20000) throw erro('O texto passou do limite de 20 mil caracteres.', 400);
+  const info = row.chat_modo === 'livre'
+    ? interpretarRespostaLivreParaRascunho(texto)
+    : interpretarResposta(texto);
+  await AiChatMessages.update(row.id, {
+    content: texto,
+    titulo: info.titulo ? limparParaBanco(info.titulo, 180) : row.titulo,
+  });
+  const atualizada = await AiChatMessages.findById(row.id);
+  return { mensagem: serializarMensagem(atualizada) };
+}
+
 module.exports = {
   limparCorpoDoRascunho,
   respostaAdmitePeriodoNaoAtendido,
@@ -5151,6 +5178,7 @@ module.exports = {
   salvarPautasComoRascunhos,
   gerarTitulosAlternativosDaMensagem,
   sugerirImagensDaMensagem,
+  editarConteudoDaMensagem,
   interpretarResposta,
   pedidoQuerPesquisaGuardada,
   fontesDaPesquisaGuardada,

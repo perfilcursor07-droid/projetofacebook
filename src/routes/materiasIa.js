@@ -19,6 +19,7 @@ router.delete('/chat/conversas/:id/mensagens/:messageId', chatController.apagarD
 router.post('/chat/mensagens/:messageId/materia', chatController.salvarMateria);
 router.post('/chat/mensagens/:messageId/titulos-alternativos', chatController.gerarTitulosAlternativos);
 router.post('/chat/mensagens/:messageId/sugerir-imagens', chatController.sugerirImagens);
+router.patch('/chat/mensagens/:messageId/conteudo', chatController.editarConteudo);
 router.post('/chat/mensagens/:messageId/materias', chatController.salvarTodasAsMaterias);
 router.post('/chat/pautas/rascunhos', chatController.salvarPautasComoRascunhos);
 // Memória editorial compartilhada (ensinamentos do editor).

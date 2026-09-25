@@ -10,6 +10,16 @@
       ],
       "port": 3000,
       "autoPort": false
+    },
+    {
+      "name": "dev-3100",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='3100';require('./src/server.js')"
+      ],
+      "port": 3100,
+      "autoPort": false
     }
   ]
 }
