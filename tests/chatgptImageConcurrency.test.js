@@ -12,7 +12,7 @@ function runtime(connect, active = true) {
     require: () => ({ chromium: { connectOverCDP: connect } }),
     PLAYWRIGHT_PATH: 'mock',
     websocketCdp: async () => 'ws://mock',
-    sessaoChatgptAtiva: async () => active,
+    verificarSessaoChatgpt: async () => ({ estado: active ? 'ativa' : 'expirada' }),
   });
   vm.runInContext(helpers, context);
   return context;
@@ -67,9 +67,12 @@ function pageMock(failures) {
     isClosed: () => false,
     url: () => 'https://chatgpt.com/',
     reload: async () => { page.reloads += 1; },
-    locator: () => ({ first: () => ({ waitFor: async () => {
-      if (++waits <= failures) throw new Error('Timeout');
-    } }) }),
+    locator: () => ({ first: () => ({
+      waitFor: async () => {
+        if (++waits <= failures) throw new Error('Timeout');
+      },
+      count: async () => 1,
+    }) }),
   };
   return page;
 }
