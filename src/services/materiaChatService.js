@@ -2400,6 +2400,55 @@ async function excluirConversa({ userId, chatId }) {
  * conversa com a IA em streaming e guarda a resposta na conversa.
  * `onEvent` recebe { tipo, ... } para o front desenhar em tempo real.
  */
+/** Por quanto tempo a pesquisa de uma conversa pode ser reaproveitada. */
+const VALIDADE_PESQUISA_GUARDADA_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Junta, sem repetir, as fontes com trecho apurado nas respostas recentes da
+ * conversa. É a "pesquisa guardada" usada para escrever outras matérias sem
+ * repetir a busca. Mais recentes primeiro.
+ */
+function fontesDaPesquisaGuardada(anteriores = [], { agora = Date.now(), limite = 20 } = {}) {
+  const vistas = new Set();
+  const pool = [];
+  for (const mensagem of [...anteriores].reverse()) {
+    if (mensagem?.role !== 'assistant') continue;
+    const criada = Date.parse(String(mensagem.created_at || '')) || mensagem.created_at?.getTime?.() || agora;
+    if (agora - criada > VALIDADE_PESQUISA_GUARDADA_MS) break;
+    for (const fonte of parseJson(mensagem.fontes, [])) {
+      if (!fonte || fonte.ehPauta || !String(fonte.trecho || fonte.resumo || '').trim()) continue;
+      const chave = String(fonte.url || fonte.titulo || '').toLowerCase().replace(/[?#].*$/, '');
+      if (!chave || vistas.has(chave)) continue;
+      vistas.add(chave);
+      pool.push(fonte);
+      if (pool.length >= limite) return pool;
+    }
+  }
+  return pool;
+}
+
+/**
+ * O pedido quer outra matéria com a pesquisa já feita? Sim quando cita a
+ * pesquisa ("aproveite a pesquisa que você fez") ou pede só "outra matéria",
+ * sem assunto novo. "Nova pesquisa", link ou outro assunto seguem o fluxo normal.
+ */
+function pedidoQuerPesquisaGuardada(pedido) {
+  const texto = String(pedido || '');
+  if (/https?:\/\//i.test(texto)) return false;
+  if (/\b(nova\s+(pesquisa|busca|apura[çc][ãa]o)|pesquis\w*\s+(de\s+novo|novamente|outra\s+vez)|refa[çc]a\s+a\s+pesquisa|busque\s+de\s+novo)\b/i.test(texto)) {
+    return false;
+  }
+  const citaPesquisaFeita =
+    /\b(aproveit\w*|reaproveit\w*|us[ae]\w*|mesm[ao]s?|dess[ae]s?|dest[ae]s?|nessa|nesta|com\s+(?:a|as|o|os))\s+(?:\S+\s+){0,3}(pesquisas?|apura[çc](?:[ãa]o|[õo]es)|fontes|informa[çc][õo]es|dados)\b/i.test(texto) ||
+    /\b(pesquisas?|apura[çc][ãa]o|fontes)\s+(que\s+(?:vc|voc[eê])\s+(?:j[aá]\s+)?(?:fez|achou|encontrou|trouxe)|anteriores?|feitas?|j[aá]\s+feitas?)\b/i.test(texto);
+  const outraSemAssunto =
+    texto.length <= 160 &&
+    /\b(outra|nova|mais\s+uma)\s+(mat[eé]ria|pauta|not[ií]cia|reportagem)\b/i.test(texto) &&
+    !/\bsobre\b/i.test(texto) &&
+    !pedidoSolicitaPesquisa(texto);
+  return citaPesquisaFeita || outraSemAssunto;
+}
+
 async function responder({
   userId,
   chatId = null,
@@ -2961,6 +3010,9 @@ async function responder({
           ...(f.resumo ? { resumo: limparParaBanco(f.resumo, 500) } : {}),
           ...(f.trecho ? { trecho: limparParaBanco(f.trecho, 3500) } : {}),
           ...(f.imagem ? { imagem: limparParaBanco(f.imagem, 1200) } : {}),
+          // Data da fonte: a pesquisa guardada continua sabendo o que é recente.
+          ...(Number(f.dataTimestamp) ? { dataTimestamp: Number(f.dataTimestamp) } : {}),
+          ...(f.dataPublicacao ? { dataPublicacao: limparParaBanco(f.dataPublicacao, 60) } : {}),
           // Marcas usadas ao salvar o rascunho (crédito da fonte e ordem do rodapé)
           ...(f.ehRedeSocial ? { ehRedeSocial: true } : {}),
           ...(f.plataforma ? { plataforma: f.plataforma } : {}),
@@ -3082,11 +3134,22 @@ async function responder({
       pedido
     );
 
+  // Pesquisa guardada: as fontes já apuradas nesta conversa (últimas 24h)
+  // podem render outras matérias sem uma busca nova. O editor pede isso
+  // ("aproveite a pesquisa", "outra matéria") e ainda pode pedir "nova
+  // pesquisa" ou escrever sobre outro assunto, que seguem o fluxo normal.
+  const pesquisaGuardada = fontesDaPesquisaGuardada(anteriores);
+  const pedidoReaproveitaPesquisa =
+    !modoPautas &&
+    pesquisaGuardada.length >= 2 &&
+    pedidoQuerPesquisaGuardada(pedido);
+
   // Ajustes curtos devem ser entendidos como continuação da última matéria,
   // do mesmo jeito que num chat: "mais polêmica", "mais forte", "outro título".
   const pedidoDeAjuste =
     Boolean(ultimaMateriaAnterior) &&
     !modoPautas &&
+    !pedidoReaproveitaPesquisa &&
     !pedidoIndicaNovaPauta &&
     (pedidoCurtoDeContinuidade ||
       /\b(mais\s+(?:curt[ao]|long[ao]|complet[ao]|detalhad[ao]|pol[eê]mic[ao]|forte|impactante|diret[ao]|emocionante|jornal[ií]stic[ao])|encurt|resum|troqu|troca|mud[ae]|ajust|acrescent|adicion|aprofund|desenvolv|melhor|refa[çc]|reescrev|corrig|tire|remova|outro\s+t[ií]tulo|nova\s+vers[aã]o|mesma\s+mat[eé]ria|esse\s+texto|nesse\s+texto|essa\s+mat[eé]ria|nesta\s+mat[eé]ria)/i.test(
@@ -3214,6 +3277,7 @@ async function responder({
   // quando o editor pedir explicitamente mais dados, atualização ou repercussão.
   if (pedidoDeAjuste && !ajustePedeNovaApuracao) usarPesquisa = false;
   if (pedidoSelecionaAngulo && fontesDaEscolhaPendente.length) usarPesquisa = false;
+  if (pedidoReaproveitaPesquisa) usarPesquisa = false;
 
   let fontes = [];
   let blocoFatos = null;
@@ -3234,6 +3298,30 @@ async function responder({
     registrarPasso({
       kind: 'pensando',
       texto: 'Escolha recebida. Escrevendo somente o ângulo selecionado com as fontes já apuradas.',
+    });
+  }
+
+  // Instrução extra para a redação quando a matéria sai da pesquisa guardada.
+  let instrucaoPesquisaGuardada = '';
+  if (pedidoReaproveitaPesquisa) {
+    fontes = [...pesquisaGuardada];
+    const titulosJaEscritos = anteriores
+      .filter((m) => m?.role === 'assistant')
+      .map((m) => interpretarResposta(m.content))
+      .filter((info) => info.ehMateria && info.titulo)
+      .map((info) => String(info.titulo).replace(/\[\[|\]\]|\*\*/g, '').trim())
+      .slice(-8);
+    blocoFatos = `PESQUISA JÁ FEITA NESTA CONVERSA (reaproveitada, sem busca nova). Use somente os fatos abaixo.\n\n${materiaIaService.montarBlocoFatos(fontes)}`;
+    instrucaoPesquisaGuardada = [
+      'Escreva uma NOVA matéria usando somente a pesquisa já feita nesta conversa (fontes abaixo).',
+      titulosJaEscritos.length
+        ? `Estas pautas JÁ viraram matéria e não podem se repetir (escolha outro fato, personagem ou desdobramento das fontes): ${titulosJaEscritos.map((t) => `“${t}”`).join('; ')}.`
+        : null,
+      'Se as fontes não tiverem outro fato forte e diferente, diga isso em uma frase e sugira pedir uma nova pesquisa, sem inventar nada.',
+    ].filter(Boolean).join('\n');
+    registrarPasso({
+      kind: 'fontes',
+      texto: `Reaproveitando a pesquisa já feita nesta conversa (${fontes.length} fontes) — sem nova busca. Peça “nova pesquisa” para buscar de novo.`,
     });
   }
 
@@ -4207,7 +4295,7 @@ async function responder({
       // Sem esse aviso o modelo responde que não sabe pesquisar.
       const buscaVazia = Boolean(usarPesquisa) && !blocoFatos;
       resposta = await deepseekService.conversarMateria({
-        pedido,
+        pedido: instrucaoPesquisaGuardada ? `${pedido}\n\n${instrucaoPesquisaGuardada}` : pedido,
         historico,
         fatosFontes: blocoFatos,
         tom,
@@ -5064,6 +5152,8 @@ module.exports = {
   gerarTitulosAlternativosDaMensagem,
   sugerirImagensDaMensagem,
   interpretarResposta,
+  pedidoQuerPesquisaGuardada,
+  fontesDaPesquisaGuardada,
   interpretarRespostaLivreParaRascunho,
   respostaLivrePodeVirarMateria,
   extrairFontesDeclaradasRespostaLivre,
