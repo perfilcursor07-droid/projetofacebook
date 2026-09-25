@@ -3193,10 +3193,21 @@ async function responder({
   // O usuário pode desligar a busca dentro do próprio texto
   const pediuSemPesquisa =
     /\b(n[ãa]o\s+(pesquis|busqu|procur)|sem\s+(pesquis|busca|buscar|internet))/i.test(pedido);
+  // Sem link, um pedido que manda pesquisar ("pesquise na internet", "outra
+  // fonte", "furo", "atualizada") liga a busca mesmo com o botão desligado,
+  // como já acontece no modo Conversar. Sem isso o modelo escrevia só com o
+  // histórico e respondia que não havia material novo. Com link, o botão
+  // continua sendo a autoridade (reescrever só o link x apurar mais).
+  const pedidoMandaPesquisar =
+    !urlsFonte.length &&
+    !pediuSemPesquisa &&
+    (pedidoSolicitaPesquisa(pedido) ||
+      /\b(internet|na\s+web|google|furo|outras?\s+fontes?|outro\s+ve[ií]culo|viral(?:izando)?)\b/i.test(pedido));
   // Listar pautas exige busca — é o objetivo do modo.
-  let usarPesquisa = modoPautas || (Boolean(pesquisarWeb) && !pediuSemPesquisa);
+  let usarPesquisa = modoPautas || ((Boolean(pesquisarWeb) || pedidoMandaPesquisar) && !pediuSemPesquisa);
   const ajustePedeNovaApuracao =
-    /\b(pesquis|busqu|procur|atualiz|mais\s+informa|mais\s+dados|novos?\s+dados|complement|apure|apurar|cruz|repercuss|coment[aá]rios?)\b/i.test(
+    // Radicais com \w*: sem isso "\bpesquis\b" nunca batia em "pesquise".
+    /\b(pesquis\w*|busqu\w*|procur\w*|atualiz\w*|mais\s+informa\w*|mais\s+dados|novos?\s+dados|complement\w*|apure|apurar|cruz(?:ar|e|em|ando)\b|repercuss\w*|coment[aá]rios?|internet|outras?\s+fontes?)/i.test(
       pedido
     );
   // Mudança apenas editorial reutiliza a apuração anterior. Só volta à web
