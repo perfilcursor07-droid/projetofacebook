@@ -1858,7 +1858,17 @@
       }
     });
     rotuloAuto.append(autoIa, document.createTextNode('Gerar sozinho nas próximas matérias'));
-    linhaIa.append(capaIa, rotuloAuto);
+    // Atalhos: gera a capa e já publica/agenda quando ela ficar pronta.
+    const capaIaPublicar = criarBotao(
+      '⚡ Capa com IA + publicar agora',
+      'rounded-md border border-sky-400/60 bg-sky-500/15 px-2.5 py-1 text-[11px] font-semibold text-sky-100 hover:bg-sky-500/25 disabled:opacity-50'
+    );
+    const capaIaAgendar = criarBotao(
+      '⚡ Capa com IA + agendar',
+      'rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50'
+    );
+    capaIaAgendar.title = 'Gera a capa com IA e agenda 30 min após a última matéria agendada';
+    linhaIa.append(capaIa, capaIaPublicar, capaIaAgendar, rotuloAuto);
     box.appendChild(linhaIa);
 
     let fotosSugeridas = [];
@@ -2077,12 +2087,16 @@
       agendarBtn.disabled = sim;
       confirmarAgenda.disabled = sim;
       prontaBtn.disabled = sim;
+      capaIaPublicar.disabled = sim;
+      capaIaAgendar.disabled = sim;
     }
     function finalizar(texto, id) {
       mostrarLinkRascunho(id, texto);
       publicarAgora.classList.add('hidden');
       agendarBtn.classList.add('hidden');
       prontaBtn.classList.add('hidden');
+      capaIaPublicar.classList.add('hidden');
+      capaIaAgendar.classList.add('hidden');
       linhaAgenda.classList.add('hidden');
       linhaAgenda.classList.remove('flex');
     }
@@ -2092,7 +2106,10 @@
       return new Date(Date.now() + 30 * 60 * 1000 - 3 * 60 * 60 * 1000).toISOString().slice(0, 16);
     }
 
-    prontaBtn.addEventListener('click', async () => {
+    prontaBtn.addEventListener('click', () => agendarNoProximoHorario());
+
+    /** Salva (se preciso) e agenda no próximo horário livre (+30 min após o último). */
+    async function agendarNoProximoHorario() {
       bloquearAcoes(true);
       try {
         if (!mensagem.matterId && !imagem.value.trim()) {
@@ -2124,7 +2141,7 @@
         aviso.textContent = err.message;
         bloquearAcoes(false);
       }
-    });
+    }
 
     salvar.addEventListener('click', async () => {
       salvar.disabled = true;
@@ -2140,8 +2157,13 @@
       }
     });
 
-    publicarAgora.addEventListener('click', async () => {
+    publicarAgora.addEventListener('click', () => {
       if (!window.confirm('Publicar esta matéria agora no Facebook?')) return;
+      publicarJa();
+    });
+
+    /** Salva (se preciso) e publica no Facebook agora. */
+    async function publicarJa() {
       bloquearAcoes(true);
       aviso.textContent = mensagem.matterId ? 'Publicando…' : 'Salvando e publicando…';
       try {
@@ -2170,7 +2192,26 @@
         aviso.textContent = err.message;
         bloquearAcoes(false);
       }
+    }
+
+    // Capa com IA + publicar/agendar: espera a capa ficar pronta e só então
+    // publica ou agenda. Se a capa falhar, nada é publicado.
+    async function capaIaEntao(acao) {
+      bloquearAcoes(true);
+      aviso.textContent = 'Gerando a capa com IA — a matéria sai assim que ela ficar pronta…';
+      const url = await iniciarCapaIa();
+      if (!url) {
+        aviso.textContent = 'A capa com IA não ficou pronta, então nada foi publicado. Veja o aviso na capa e tente de novo.';
+        bloquearAcoes(false);
+        return;
+      }
+      await acao();
+    }
+    capaIaPublicar.addEventListener('click', () => {
+      if (!window.confirm('Gerar a capa com IA e publicar no Facebook assim que ela ficar pronta?')) return;
+      capaIaEntao(publicarJa);
     });
+    capaIaAgendar.addEventListener('click', () => capaIaEntao(agendarNoProximoHorario));
 
     agendarBtn.addEventListener('click', async () => {
       const abrir = linhaAgenda.classList.contains('hidden');
