@@ -306,8 +306,13 @@ async function estadoDosAnexos(composer) {
     // saía sem a foto. Sinais genéricos só valem dentro do compositor; na
     // página inteira contam apenas prévias locais (blob:/data:) e o nome do arquivo.
     const pagina = root.ownerDocument || document;
-    const form = pagina.querySelector('#prompt-textarea')?.closest('form')
-      || pagina.querySelector('[data-testid="composer"], #composer-background');
+    // Compositor: sem <form> nas versões novas, sobe do editor até achar o
+    // "+", o enviar ou um campo de arquivo.
+    const editor = pagina.querySelector('#prompt-textarea') || pagina.querySelector('[contenteditable="true"]');
+    let form = editor?.closest('form, [data-testid="composer"], #composer-background') || null;
+    for (let el = editor?.parentElement, i = 0; !form && el && i < 10; el = el.parentElement, i += 1) {
+      if (el.querySelector('[data-testid="composer-plus-btn"], [data-testid="send-button"], input[type="file"]')) form = el;
+    }
     const texto = String(form?.innerText || '').toLowerCase();
     const previasLocais = [...pagina.querySelectorAll('img')].filter((img) =>
       /^(blob:|data:image\/)/i.test(String(img.currentSrc || img.src || ''))
@@ -455,12 +460,20 @@ async function soltarImagemNoComposer(input, upload) {
 }
 
 async function anexarImagemNoComposer(page, input, upload) {
-  let composer = input.locator('xpath=ancestor::form[1]');
-  if (!(await composer.count())) {
-    composer = page.locator('#composer-background, [data-testid="composer"]').filter({ visible: true }).first();
-  }
-  if (!(await composer.count())) {
-    throw erro('Não foi possível localizar o compositor ativo do ChatGPT.', 502);
+  // O ChatGPT deixou de envolver o editor num <form>. O compositor passa a
+  // ser o primeiro ancestral do editor que tem o "+", o enviar ou um campo de
+  // arquivo; sem ele, a página inteira (a confirmação já olha a página toda).
+  const candidatos = [
+    input.locator('xpath=ancestor::form[1]'),
+    input.locator('xpath=ancestor::*[.//*[@data-testid="composer-plus-btn"] or .//*[@data-testid="send-button"] or .//input[@type="file"]][1]'),
+    page.locator('#composer-background, [data-testid="composer"]').filter({ visible: true }).first(),
+  ];
+  let composer = page.locator('body');
+  for (const candidato of candidatos) {
+    if (await candidato.count().catch(() => 0)) {
+      composer = candidato;
+      break;
+    }
   }
 
   // A miniatura que o ChatGPT cria pode ficar em um portal fora do <form>.
@@ -588,8 +601,11 @@ async function aguardarUploadDoAnexo(page, timeout = 45_000) {
   await page.waitForTimeout(800);
   while (Date.now() < limite) {
     const enviando = await page.evaluate(() => {
-      const form = document.querySelector('#prompt-textarea')?.closest('form')
-        || document.querySelector('[data-testid="composer"], #composer-background');
+      const editor = document.querySelector('#prompt-textarea') || document.querySelector('[contenteditable="true"]');
+      let form = editor?.closest('form, [data-testid="composer"], #composer-background') || null;
+      for (let el = editor?.parentElement, i = 0; !form && el && i < 10; el = el.parentElement, i += 1) {
+        if (el.querySelector('[data-testid="composer-plus-btn"], [data-testid="send-button"], input[type="file"]')) form = el;
+      }
       if (!form) return false;
       return Boolean(form.querySelector('[role="progressbar"], [aria-busy="true"], circle[stroke-dasharray]'));
     }).catch(() => false);
