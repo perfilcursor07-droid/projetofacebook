@@ -1211,6 +1211,14 @@
         foto.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
         foto.addEventListener('error', () => btn.remove(), { once: true });
         btn.appendChild(foto);
+        if (img.origem === 'fonte') {
+          // Imagem do próprio link (vídeo/post/reportagem).
+          const etiqueta = document.createElement('span');
+          etiqueta.textContent = 'Fonte';
+          etiqueta.className = 'absolute bottom-0 left-0 right-0 bg-emerald-600/90 py-px text-center text-[9px] font-semibold text-white';
+          btn.appendChild(etiqueta);
+          btn.title = 'Imagem do link da matéria';
+        }
         btn.addEventListener('click', () => escolher(img, btn));
         botoes.push(btn);
         faixa.appendChild(btn);
@@ -1795,6 +1803,23 @@
       }
     });
     desenharPrevia(imagem.value.trim());
+    // Capa inicial = imagem do próprio link (thumb do vídeo, foto do post ou da
+    // reportagem), a mesma que o rascunho usaria ao salvar.
+    if (!mensagem.matterId && !imagem.value.trim()) {
+      api(`${API}/mensagens/${mensagem.id}/imagem-fonte`)
+        .then((data) => {
+          if (!data?.imagem || imagem.value.trim() || mensagem.matterId) return;
+          imagem.value = data.imagem;
+          if (!credito.value.trim()) {
+            credito.value = data.credito || 'Reprodução/Internet';
+            credito.dataset.auto = '1';
+          }
+          desenharPrevia(data.imagem);
+          capaTitulo.textContent = 'Imagem da fonte';
+          capaAviso.textContent = 'Imagem do link (vídeo, post ou matéria) já é a capa. Troque clicando numa foto sugerida, ou use “Recortar foto” / “Capa com IA”.';
+        })
+        .catch(() => {});
+    }
     if (mensagem.matterId) {
       api(`/api/materias-ia/matters/${mensagem.matterId}`)
         .then(({ matter }) => {

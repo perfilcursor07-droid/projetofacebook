@@ -4554,6 +4554,85 @@ function limparCorpoDoRascunho(texto) {
  * Vira rascunho em ai_matters (Fonte/Foto/hashtags organizados) e devolve
  * o link da edição — /materias-ia/:id.
  */
+/** ID do vídeo em links do YouTube (watch, youtu.be, shorts, live). */
+function idDoVideoYoutube(url) {
+  const texto = String(url || '');
+  const m = texto.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|live\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * Imagem de capa que vem do próprio link: mídia do post (YouTube, Facebook,
+ * Instagram, X), imagem salva da fonte ou og:image da reportagem. É a mesma
+ * escolha do rascunho e aparece no chat antes de salvar.
+ */
+async function imagemDaFonte({ fontesDaMateria = [], fonteSocialComImagem = null, fontePrincipal = null } = {}) {
+  const lista = Array.isArray(fontesDaMateria) ? fontesDaMateria : [];
+  const social = fonteSocialComImagem ||
+    lista.find((f) => f?.ehRedeSocial && /^https?:\/\//i.test(String(f?.imagem || ''))) ||
+    null;
+  const principal = fontePrincipal ||
+    lista.find((f) => /^https?:\/\//i.test(String(f?.url || ''))) ||
+    lista[0] ||
+    null;
+  // Em links sociais, a mídia extraída da própria publicação é sempre a
+  // primeira opção — pesquisas complementares não podem substituí-la.
+  if (social) return { url: String(social.imagem), veiculo: social.veiculo || null, origem: 'post' };
+  if (/^https?:\/\//i.test(String(principal?.imagem || ''))) {
+    return { url: String(principal.imagem), veiculo: principal.veiculo || null, origem: 'fonte' };
+  }
+  const videoId = principal?.videoId || idDoVideoYoutube(principal?.url || principal?.urlOriginal);
+  if (videoId) {
+    return { url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, veiculo: principal?.veiculo || 'YouTube', origem: 'post' };
+  }
+  // Reportagem sem capa nos metadados: reabre só a fonte principal e pega
+  // og:image/twitter:image. Post de rede social não passa por aqui: o HTML de
+  // Facebook/Instagram pode expor imagem de outro post ou avatar.
+  if (!principal?.ehRedeSocial && /^https?:\/\//i.test(String(principal?.url || ''))) {
+    try {
+      const { extrairMetadadosImagemArtigo } = require('./articleSource');
+      const meta = await extrairMetadadosImagemArtigo(principal.url);
+      if (/^https?:\/\//i.test(String(meta?.imagem || ''))) {
+        return {
+          url: String(meta.imagem).slice(0, 1000),
+          veiculo: meta.veiculo || principal.veiculo || null,
+          origem: 'fonte',
+        };
+      }
+    } catch (err) {
+      // Falhar ao localizar a foto não pode impedir o editor de seguir.
+      console.warn('[materia-chat] localizar imagem da fonte:', err.message);
+    }
+  }
+  return { url: null, veiculo: null, origem: null };
+}
+
+/** Fontes da resposta usadas para a capa (mesma regra do rascunho). */
+function fontesDaMensagemParaCapa(row) {
+  const fontesLista = (() => {
+    const lista = parseJson(row.fontes, []);
+    return Array.isArray(lista) ? lista.filter((f) => f && !f.ehPauta) : [];
+  })();
+  return row.chat_modo === 'livre'
+    ? selecionarFontesRespostaLivre(row.content, { fontesSalvas: fontesLista })
+    : fontesLista;
+}
+
+/** Capa vinda do link da resposta, para o chat mostrar antes de salvar. */
+async function imagemDaFonteDaMensagem({ userId, messageId } = {}) {
+  const row = await AiChatMessages.findByIdWithChat(messageId);
+  if (!row || Number(row.chat_user_id) !== Number(userId)) {
+    throw erro('Mensagem não encontrada', 404);
+  }
+  const capa = await imagemDaFonte({ fontesDaMateria: fontesDaMensagemParaCapa(row) });
+  return {
+    imagem: capa.url,
+    veiculo: capa.veiculo,
+    origem: capa.origem,
+    credito: capa.url ? `Reprodução/${capa.veiculo || 'Internet'}` : null,
+  };
+}
+
 async function salvarMateriaDoChat({
   userId,
   messageId,
@@ -4696,40 +4775,10 @@ async function salvarMateriaDoChat({
       new RegExp(`^/media/fontes/user_${Number(userId)}/chat_[0-9]+_[0-9]+_[a-f0-9]+\\.jpg$`, 'i').test(imagemUrl)
     )
       ? imagemUrl
-      : /^https?:\/\//i.test(String(fonteSocialComImagem?.imagem || ''))
-        ? String(fonteSocialComImagem.imagem)
-        : /^https?:\/\//i.test(String(fontePrincipal?.imagem || ''))
-        ? String(fontePrincipal.imagem)
-        : null;
-
-  // A pesquisa nativa do Claude normalmente devolve a URL da reportagem, mas
-  // nem sempre inclui a capa nos metadados salvos da mensagem. Antes de criar
-  // o rascunho, reabre somente a fonte principal e captura og:image,
-  // twitter:image ou a imagem destacada. O fluxo abaixo já baixa essa foto e
-  // compõe a arte 4:5 da marca.
-  // Post de rede social não deve passar pelo leitor genérico de artigos: o
-  // HTML de Facebook/Instagram pode expor og:image de recomendação, avatar ou
-  // outro post. Para esses links, usamos somente a mídia confirmada durante a
-  // extração do post; sem ela, deixamos o editor escolher em vez de inventar
-  // uma imagem aparentemente relacionada.
-  if (
-    !imagemFonte &&
-    !fontePrincipal?.ehRedeSocial &&
-    /^https?:\/\//i.test(String(fontePrincipal?.url || ''))
-  ) {
-    try {
-      const { extrairMetadadosImagemArtigo } = require('./articleSource');
-      const metaImagem = await extrairMetadadosImagemArtigo(fontePrincipal.url);
-      if (/^https?:\/\//i.test(String(metaImagem?.imagem || ''))) {
-        imagemFonte = String(metaImagem.imagem).slice(0, 1000);
-        console.info(
-          `[materia-chat] imagem da fonte recuperada para o rascunho: ${metaImagem.veiculo || fontePrincipal.veiculo || 'Web'}`
-        );
-      }
-    } catch (err) {
-      // Falhar ao localizar a foto não pode impedir o editor de salvar o texto.
-      console.warn('[materia-chat] localizar imagem da fonte:', err.message);
-    }
+      : null;
+  if (!imagemFonte) {
+    // Mesma escolha que o chat mostra como capa antes de salvar.
+    imagemFonte = (await imagemDaFonte({ fontesDaMateria, fonteSocialComImagem, fontePrincipal })).url;
   }
 
   const [matterId] = await AiMatters.create({
@@ -5133,9 +5182,12 @@ async function sugerirImagensDaMensagem({ userId, messageId, consulta = null, li
   if (!titulo && !String(info.corpo || '').trim()) {
     throw erro('Esta resposta não tem uma matéria para sugerir fotos.', 400);
   }
+  // A imagem do próprio link (post/vídeo/reportagem) entra como 1ª opção.
+  const capa = await imagemDaFonte({ fontesDaMateria: fontesDaMensagemParaCapa(row) });
   return sugerirImagensParaMateria({
     titulo,
     materia: String(info.corpo || '').trim(),
+    imagemAtual: capa.url || null,
     limite: total,
   });
 }
@@ -5184,6 +5236,9 @@ module.exports = {
   salvarPautasComoRascunhos,
   gerarTitulosAlternativosDaMensagem,
   sugerirImagensDaMensagem,
+  imagemDaFonteDaMensagem,
+  idDoVideoYoutube,
+  imagemDaFonte,
   editarConteudoDaMensagem,
   interpretarResposta,
   pedidoQuerPesquisaGuardada,

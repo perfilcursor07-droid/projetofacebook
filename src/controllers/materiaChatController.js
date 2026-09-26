@@ -317,6 +317,20 @@ async function editarConteudo(req, res, next) {
   }
 }
 
+/** Capa que vem do próprio link da resposta (vídeo, post ou reportagem). */
+async function imagemDaFonte(req, res, next) {
+  try {
+    const resultado = await chatService.imagemDaFonteDaMensagem({
+      userId: req.session.userId,
+      messageId: Number(req.params.messageId),
+    });
+    return res.json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
 /** Fotos sugeridas (Google Images etc.) para a resposta antes de salvar. */
 async function sugerirImagens(req, res, next) {
   try {
@@ -412,6 +426,7 @@ module.exports = {
   salvarMateria,
   gerarTitulosAlternativos,
   sugerirImagens,
+  imagemDaFonte,
   editarConteudo,
   salvarTodasAsMaterias,
   salvarPautasComoRascunhos,
