@@ -67,7 +67,7 @@ function pareceSemCredito(mensagem) {
  * Registra falha. Sem crédito pausa na hora; erros comuns só pausam depois de
  * algumas falhas seguidas, para não desligar o provedor por um 403 isolado.
  */
-function registrarFalha(provedor, motivo, { pausaMs = null } = {}) {
+function registrarFalha(provedor, motivo, { pausaMs = null, imediato = false } = {}) {
   const r = registro(provedor);
   const texto = String(motivo || '').slice(0, 200);
 
@@ -84,11 +84,14 @@ function registrarFalha(provedor, motivo, { pausaMs = null } = {}) {
     r.falhas = 0;
   }
   r.falhas += 1;
-  if (r.falhas >= FALHAS_PARA_PAUSAR) {
-    r.pausadoAte = agora() + (pausaMs || PAUSA_PADRAO_MS);
+  // `imediato`: uma falha já é prova suficiente (ex.: todos os leitores de um
+  // site falharam, cada tentativa custa ~1 min).
+  if (imediato || r.falhas >= FALHAS_PARA_PAUSAR) {
+    const pausa = pausaMs || PAUSA_PADRAO_MS;
+    r.pausadoAte = agora() + pausa;
     r.motivo = texto || 'falhas seguidas';
     r.falhas = 0;
-    console.warn(`[provider-health] ${provedor} pausado por 10min: ${r.motivo}`);
+    console.warn(`[provider-health] ${provedor} pausado por ${Math.round(pausa / 60000)}min: ${r.motivo}`);
     return true;
   }
   return false;

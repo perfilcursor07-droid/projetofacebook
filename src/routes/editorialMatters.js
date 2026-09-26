@@ -283,8 +283,10 @@ router.post('/matters/:id/arte/recortar', async (req, res, next) => {
     }
 
     const generatedSource = String(req.body?.sourceUrl || '').trim();
+    // Versões geradas para esta matéria, ou no chat do /materia-manual antes de
+    // o rascunho existir (chat_ID_*), sempre dentro da pasta do próprio usuário.
     const generatedPattern = new RegExp(
-      `^/media/fontes/user_${Number(req.session.userId)}/materia_${matterId}_[0-9]+_[a-f0-9]+\\.jpg$`,
+      `^/media/fontes/user_${Number(req.session.userId)}/(?:materia_${matterId}|chat_[0-9]+)_[0-9]+_[a-f0-9]+\\.jpg$`,
       'i'
     );
     if (generatedSource && !generatedPattern.test(generatedSource)) {

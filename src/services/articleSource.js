@@ -974,7 +974,54 @@ async function completarMetaComLeitores(meta, urlReal) {
   return atual;
 }
 
+// Leituras recentes por link: a mesma pesquisa (ou a seguinte) pede o mesmo
+// artigo várias vezes, e um site bloqueado custava ~60 s a cada tentativa.
+const CACHE_ARTIGO_OK_MS = 30 * 60 * 1000;
+const CACHE_ARTIGO_FALHA_MS = 20 * 60 * 1000;
+const LIMITE_LEITURA_ARTIGO_MS = 35 * 1000;
+const cacheArtigos = new Map();
+
+function lembrarLeitura(chave, promessa) {
+  const registro = { promessa, expira: Date.now() + CACHE_ARTIGO_OK_MS };
+  cacheArtigos.set(chave, registro);
+  promessa.then((meta) => {
+    const leu = String(meta?.trecho || '').trim().length >= 200;
+    registro.expira = Date.now() + (leu ? CACHE_ARTIGO_OK_MS : CACHE_ARTIGO_FALHA_MS);
+  }, () => cacheArtigos.delete(chave));
+  while (cacheArtigos.size > 500) cacheArtigos.delete(cacheArtigos.keys().next().value);
+}
+
+/**
+ * Lê o artigo com memória por link e limite de tempo. Estourado o limite, a
+ * pesquisa segue sem esse artigo; a leitura termina em segundo plano e fica
+ * guardada para a próxima vez.
+ */
 async function extrairMetadadosArtigo(url) {
+  const chave = String(url || '').trim();
+  if (!chave) return null;
+  const guardada = cacheArtigos.get(chave);
+  let promessa;
+  if (guardada && guardada.expira > Date.now()) {
+    promessa = guardada.promessa;
+  } else {
+    promessa = extrairMetadadosArtigoSemCache(chave);
+    lembrarLeitura(chave, promessa);
+  }
+  let timer;
+  const limite = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[article-source] leitura passou de ${LIMITE_LEITURA_ARTIGO_MS / 1000}s; seguindo sem ${chave.slice(0, 120)}`);
+      resolve(metaVazia(chave));
+    }, LIMITE_LEITURA_ARTIGO_MS);
+  });
+  try {
+    return await Promise.race([promessa, limite]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function extrairMetadadosArtigoSemCache(url) {
   const urlReal = (await resolverUrlNoticia(url)) || url;
   if (!urlReal) return null;
 
@@ -987,8 +1034,13 @@ async function extrairMetadadosArtigo(url) {
   } catch {
     host = '';
   }
+  // Site em que nenhum leitor (direto, Chrome, Jina, Tradutor) conseguiu ler:
+  // pula na hora em vez de repetir ~60 s de tentativas.
+  if (host && providerHealth.estaFora(`site-leitores:${host}`)) {
+    return metaVazia(urlReal);
+  }
   if (host && providerHealth.estaFora(`site:${host}`)) {
-    return completarMetaComLeitores(metaVazia(urlReal), urlReal);
+    return completarComLeitoresMarcandoBloqueio(metaVazia(urlReal), urlReal, host);
   }
 
   try {
@@ -1044,8 +1096,21 @@ async function extrairMetadadosArtigo(url) {
   } catch (err) {
     console.warn('extrairMetadadosArtigo:', err.message);
     if (host) providerHealth.registrarFalha(`site:${host}`, err.message, { pausaMs: 5 * 60 * 1000 });
-    return completarMetaComLeitores(metaVazia(urlReal), urlReal);
+    return completarComLeitoresMarcandoBloqueio(metaVazia(urlReal), urlReal, host);
   }
+}
+
+/** Leitores alternativos; se todos falharem, o site é pulado por 30 min. */
+async function completarComLeitoresMarcandoBloqueio(meta, urlReal, host) {
+  const resultado = await completarMetaComLeitores(meta, urlReal);
+  if (host && String(resultado?.trecho || '').trim().length < 200) {
+    require('./providerHealth').registrarFalha(
+      `site-leitores:${host}`,
+      'nenhum leitor conseguiu ler o site',
+      { pausaMs: 30 * 60 * 1000, imediato: true }
+    );
+  }
+  return resultado;
 }
 
 /**

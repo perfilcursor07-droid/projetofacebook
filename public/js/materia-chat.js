@@ -807,6 +807,17 @@
    * proporção fixa. Resolve com { left, top, width, height } em frações da
    * foto (0–1) ou null se o editor cancelar.
    */
+  /** Pedido padrão da capa com IA (mesmo texto do editor da matéria). */
+  function promptCapaIa(titulo) {
+    return [
+      'Crie uma NOVA imagem editorial fotorrealista inspirada na imagem de referência enviada.',
+      'Mantenha o assunto, as pessoas e a atmosfera reconhecíveis, mas reconstrua a cena de forma original e natural.',
+      'Não inclua texto, letras, legendas, placas legíveis, logotipos, marcas d’água, molduras ou elementos gráficos.',
+      'Composição vertical exata 4:5 (1080 × 1350 pixels), em alta qualidade, adequada como imagem destacada de uma notícia no feed do Facebook. Não gere imagem quadrada ou horizontal.',
+      `Contexto da matéria: ${String(titulo || '').replace(/\[\[|\]\]|\*\*/g, '').trim()}`,
+    ].join('\n\n');
+  }
+
   function abrirRecorteDeFoto(url, areaInicial = null, opcoes = {}) {
     const chatgpt = opcoes.chatgpt || null;
     return new Promise((resolve) => {
@@ -1206,6 +1217,8 @@
       }
       const partes = [data.aviso, data.pessoa, 'Clique numa miniatura para usar na capa'].filter(Boolean);
       meta.textContent = partes.join(' · ');
+      // Avisa o quadro da matéria (capa automática e "pronta em 1 clique").
+      campoUrl.dispatchEvent(new CustomEvent('mia-fotos-sugeridas', { detail: imagens }));
     }
 
     async function carregar({ forcar = false, consulta = '' } = {}) {
@@ -1793,6 +1806,121 @@
         .catch(() => {});
     }
 
+    // Capa com IA em segundo plano: gera a versão sem texto da foto enquanto o
+    // editor revisa a matéria. Com "gerar sozinho" ligado, começa assim que a
+    // resposta chega e as fotos sugeridas carregam.
+    const linhaIa = document.createElement('div');
+    linhaIa.className = 'mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-slate-400';
+    const capaIa = criarBotao(
+      '⚡ Capa com IA',
+      'rounded-md border border-violet-500/50 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-500/20 disabled:opacity-60'
+    );
+    const rotuloAuto = document.createElement('label');
+    rotuloAuto.className = 'inline-flex cursor-pointer items-center gap-1.5';
+    const autoIa = document.createElement('input');
+    autoIa.type = 'checkbox';
+    autoIa.className = 'rounded border-slate-600 bg-slate-950 text-violet-500';
+    try {
+      autoIa.checked = localStorage.getItem('mia-capa-ia-auto') === '1';
+    } catch {
+      /* sem armazenamento local */
+    }
+    autoIa.addEventListener('change', () => {
+      try {
+        localStorage.setItem('mia-capa-ia-auto', autoIa.checked ? '1' : '0');
+      } catch {
+        /* sem armazenamento local */
+      }
+    });
+    rotuloAuto.append(autoIa, document.createTextNode('Gerar sozinho nas próximas matérias'));
+    linhaIa.append(capaIa, rotuloAuto);
+    box.appendChild(linhaIa);
+
+    let fotosSugeridas = [];
+    let capaIaPromessa = null;
+    let capaIaAutomaticaFeita = false;
+    const fonteParaIa = () =>
+      imagem.value.trim() ||
+      (fotosSugeridas.find((f) => f?.origem !== 'fonte') || fotosSugeridas[0] || {}).url ||
+      '';
+
+    function iniciarCapaIa({ automatico = false } = {}) {
+      if (capaIaPromessa) return capaIaPromessa;
+      const fonte = mensagem.matterId ? '' : fonteParaIa();
+      if (!mensagem.matterId && !fonte) {
+        if (!automatico) capaAviso.textContent = 'Ainda não há foto de referência. Escolha uma foto sugerida ou aguarde as fotos carregarem.';
+        return Promise.resolve(null);
+      }
+      const base = mensagem.matterId
+        ? `/api/materias-ia/matters/${mensagem.matterId}/arte`
+        : `/api/materias-ia/chat/mensagens/${mensagem.id}/arte`;
+      capaIa.disabled = true;
+      capaIa.textContent = 'Gerando capa…';
+      capaAviso.textContent = automatico
+        ? 'Gerando a capa com IA em segundo plano — pode continuar revisando a matéria.'
+        : 'Gerando a capa com IA — pode continuar revisando a matéria.';
+      capaIaPromessa = (async () => {
+        try {
+          let data = await api(`${base}/gerar-chatgpt`, {
+            method: 'POST',
+            body: JSON.stringify({
+              prompt: promptCapaIa(mensagem.titulo),
+              modo: 'referencia',
+              titulo: mensagem.titulo || '',
+              sourceUrl: fonte || undefined,
+            }),
+          });
+          const limite = Date.now() + 7 * 60 * 1000;
+          while (data.status !== 'ready') {
+            if (data.status === 'error') throw new Error(data.error || 'O ChatGPT não conseguiu gerar a imagem.');
+            if (Date.now() > limite) {
+              throw new Error('A geração continua no ChatGPT. Use “Recortar foto” › “Pegar imagem nova gerada” em alguns minutos.');
+            }
+            await new Promise((r) => setTimeout(r, 2500));
+            const res = await fetch(`${base}/gerar-chatgpt/${encodeURIComponent(data.jobId)}`, {
+              headers: { Accept: 'application/json' },
+            });
+            data = await res.json().catch(() => ({}));
+            if (!res.ok && res.status !== 202) throw new Error(data.error || 'Não foi possível acompanhar a geração.');
+          }
+          const url = data.imagemFonteUrl;
+          if (!credito.value.trim() || credito.dataset.auto === '1') {
+            credito.value = 'Imagem gerada por IA';
+            credito.dataset.auto = '1';
+          }
+          if (mensagem.matterId) {
+            // Salvo enquanto gerava (ou já estava salvo): aplica direto no rascunho.
+            await aplicarRecorteNoRascunho(mensagem.matterId, { left: 0, top: 0, width: 1, height: 1 }, url);
+            capaAviso.textContent = 'Capa com IA aplicada no rascunho ✓ — use “Recortar foto” para ajustar.';
+          } else {
+            imagem.value = url;
+            recortePendente = null;
+            desenharPrevia(url);
+            capaTitulo.textContent = 'Capa gerada com IA';
+            capaAviso.textContent = 'Capa com IA pronta ✓ — será usada ao salvar. Use “Recortar foto” para ajustar.';
+          }
+          return url;
+        } catch (err) {
+          capaAviso.textContent = err.message;
+          return null;
+        } finally {
+          capaIa.disabled = false;
+          capaIa.textContent = '⚡ Capa com IA';
+          capaIaPromessa = null;
+        }
+      })();
+      return capaIaPromessa;
+    }
+
+    capaIa.addEventListener('click', () => iniciarCapaIa());
+    imagem.addEventListener('mia-fotos-sugeridas', (e) => {
+      fotosSugeridas = Array.isArray(e.detail) ? e.detail : [];
+      if (autoIa.checked && mensagem.recemChegada && !mensagem.matterId && !capaIaAutomaticaFeita) {
+        capaIaAutomaticaFeita = true;
+        iniciarCapaIa({ automatico: true });
+      }
+    });
+
     const acoes = document.createElement('div');
     acoes.className = 'mt-2 grid gap-2 sm:flex sm:flex-wrap sm:items-center';
 
@@ -1911,18 +2039,67 @@
     fuso.textContent = 'Horário de Araguaína';
     linhaAgenda.append(campoData, mais30, confirmarAgenda, fuso);
 
+    // "Matéria pronta em 1 clique": salva com a capa (a escolhida, a da IA se
+    // estiver gerando, ou a 1ª sugerida) e agenda no próximo horário livre.
+    const prontaBtn = criarBotao(
+      '⚡ Pronta e agendar',
+      'rounded-lg border border-violet-400/60 bg-violet-500/15 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-500/25 disabled:opacity-50'
+    );
+    prontaBtn.title = 'Salva o rascunho com a capa e agenda 30 min após a última matéria agendada';
+
     function bloquearAcoes(sim) {
       publicarAgora.disabled = sim;
       agendarBtn.disabled = sim;
       confirmarAgenda.disabled = sim;
+      prontaBtn.disabled = sim;
     }
     function finalizar(texto, id) {
       mostrarLinkRascunho(id, texto);
       publicarAgora.classList.add('hidden');
       agendarBtn.classList.add('hidden');
+      prontaBtn.classList.add('hidden');
       linhaAgenda.classList.add('hidden');
       linhaAgenda.classList.remove('flex');
     }
+
+    /** Horário local de Araguaína (UTC−3) daqui a 30 min, no formato do datetime-local. */
+    function daqui30MinutosAraguaina() {
+      return new Date(Date.now() + 30 * 60 * 1000 - 3 * 60 * 60 * 1000).toISOString().slice(0, 16);
+    }
+
+    prontaBtn.addEventListener('click', async () => {
+      bloquearAcoes(true);
+      try {
+        if (!mensagem.matterId && !imagem.value.trim()) {
+          if (capaIaPromessa) {
+            aviso.textContent = 'Esperando a capa com IA ficar pronta…';
+            await capaIaPromessa;
+          }
+          if (!imagem.value.trim()) {
+            const primeira = (fotosSugeridas.find((f) => f?.origem !== 'fonte') || fotosSugeridas[0] || {}).url;
+            if (primeira) imagem.value = primeira;
+          }
+        }
+        aviso.textContent = mensagem.matterId ? 'Agendando…' : 'Salvando e agendando…';
+        const id = await garantirRascunho();
+        let slot = null;
+        try {
+          slot = await api('/api/materias-ia/agenda/proximo-slot');
+        } catch {
+          slot = null;
+        }
+        const runAt = slot?.proximoSlotLocal || daqui30MinutosAraguaina();
+        await api(`/api/materias-ia/matters/${id}/agendar`, {
+          method: 'POST',
+          body: JSON.stringify({ run_at: runAt }),
+        });
+        const [dia, hora] = runAt.split('T');
+        finalizar(`Agendada ✓ ${dia.split('-').reverse().join('/')} ${hora} — abrir matéria #${id}`, id);
+      } catch (err) {
+        aviso.textContent = err.message;
+        bloquearAcoes(false);
+      }
+    });
 
     salvar.addEventListener('click', async () => {
       salvar.disabled = true;
@@ -2016,6 +2193,7 @@
     acoes.appendChild(salvar);
     acoes.appendChild(publicarAgora);
     acoes.appendChild(agendarBtn);
+    acoes.appendChild(prontaBtn);
     acoes.appendChild(aviso);
     box.appendChild(acoes);
     box.appendChild(linhaAgenda);
@@ -3211,6 +3389,8 @@
           }
         } else if (evento.tipo === 'fim') {
           state.chatId = evento.chatId;
+          // Resposta nova desta sessão: só ela dispara a capa com IA automática.
+          if (evento.mensagem) evento.mensagem.recemChegada = true;
           const pronto = blocoAssistente(evento.mensagem);
           wrap.replaceWith(pronto);
           setStatus('');

@@ -738,7 +738,84 @@ async function recuperarImagem({ recoveryKey }) {
   }
 }
 
+// API oficial de imagens (opcional). Com OPENAI_API_KEY no .env, a imagem sai
+// direto da API — mais rápida e sem depender da tela do ChatGPT no Chrome.
+// Sem a chave (ou se a API falhar), continua o fluxo pelo ChatGPT web.
+const OPENAI_IMAGE_MODEL = String(process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2.5-flare').trim();
+// 4:5 exato com lados múltiplos de 16, como a API exige.
+const OPENAI_IMAGE_SIZE = '1088x1360';
+
+async function gerarViaApiOpenAI({ sourceUrl, prompt, titulo, materia, modo = 'referencia' }) {
+  const chave = String(process.env.OPENAI_API_KEY || '').trim();
+  const simbolica = modo === 'simbolica';
+  const pedido = simbolica
+    ? promptComFormatoFacebook(promptSimbolicoPadrao(), {}, { semReferencia: true })
+    : promptComFormatoFacebook(prompt, { titulo, materia });
+  const comum = {
+    model: OPENAI_IMAGE_MODEL,
+    prompt: pedido,
+    size: OPENAI_IMAGE_SIZE,
+    quality: String(process.env.OPENAI_IMAGE_QUALITY || 'medium'),
+    output_format: 'jpeg',
+    n: '1',
+  };
+  let resposta;
+  if (simbolica) {
+    resposta = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...comum, n: 1 }),
+      signal: AbortSignal.timeout(180_000),
+    });
+  } else {
+    const referencia = await imagemParaUpload(sourceUrl);
+    const form = new FormData();
+    for (const [campo, valor] of Object.entries(comum)) form.append(campo, valor);
+    form.append('image', new Blob([referencia.buffer], { type: referencia.mimeType }), referencia.name);
+    resposta = await fetch('https://api.openai.com/v1/images/edits', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${chave}` },
+      body: form,
+      signal: AbortSignal.timeout(180_000),
+    });
+  }
+  const dados = await resposta.json().catch(() => ({}));
+  if (!resposta.ok) {
+    const mensagem = dados?.error?.message || `API de imagens HTTP ${resposta.status}`;
+    const falha = erro(mensagem, resposta.status >= 500 ? 502 : resposta.status);
+    falha.code = dados?.error?.code || '';
+    throw falha;
+  }
+  const b64 = dados?.data?.[0]?.b64_json;
+  if (!b64) throw erro('A API de imagens respondeu sem imagem.', 502);
+  return {
+    mimeType: 'image/jpeg',
+    buffer: Buffer.from(b64, 'base64'),
+    prompt: pedido,
+    model: `${OPENAI_IMAGE_MODEL} (API)`,
+  };
+}
+
+function recusaDaApi(err) {
+  return /moderation|safety|content_policy/i.test(`${err?.code || ''} ${err?.message || ''}`);
+}
+
 async function gerarImagem(args) {
+  if (String(process.env.OPENAI_API_KEY || '').trim()) {
+    const inicio = Date.now();
+    try {
+      const resultado = await gerarViaApiOpenAI(args);
+      console.info(`[chatgpt-imagem] gerada pela API (${OPENAI_IMAGE_MODEL}) em ${((Date.now() - inicio) / 1000).toFixed(1)}s`);
+      return resultado;
+    } catch (err) {
+      if (recusaDaApi(err)) {
+        const falha = erro('A OpenAI recusou gerar esta imagem por suas regras de segurança. Use a foto original ou peça uma ilustração simbólica sem pessoas.', 422);
+        falha.code = 'image_safety_refusal';
+        throw falha;
+      }
+      console.warn('[chatgpt-imagem] API de imagens falhou; tentando pelo ChatGPT web:', err.message);
+    }
+  }
   return executarGeracao(args);
 }
 
