@@ -1099,8 +1099,12 @@
         foto.src = urlAtual;
       } else {
         quadro.classList.add('hidden');
+        foto.classList.add('hidden');
         status.textContent = 'Sem foto escolhida: gere uma imagem com o ChatGPT acima.';
-        foto.addEventListener('load', () => quadro.classList.remove('hidden'), { once: true });
+        foto.addEventListener('load', () => {
+          quadro.classList.remove('hidden');
+          foto.classList.remove('hidden');
+        }, { once: true });
       }
     });
   }

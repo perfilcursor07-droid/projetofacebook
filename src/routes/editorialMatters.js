@@ -368,7 +368,9 @@ router.post('/matters/:id/arte/gerar-chatgpt', async (req, res, next) => {
     if (!sourceUrl && !matter.imagem_path && !/\/media\/artes\//i.test(String(matter.imagem_url || ''))) {
       sourceUrl = String(matter.imagem_url || '').trim();
     }
-    if (!sourceUrl) {
+    // A ilustração simbólica não envia foto ao ChatGPT: só a versão com
+    // referência precisa de uma foto de origem.
+    if (!sourceUrl && req.body?.modo !== 'simbolica') {
       return res.status(400).json({ error: 'Escolha uma foto de origem antes de gerar uma versão com o ChatGPT.' });
     }
 

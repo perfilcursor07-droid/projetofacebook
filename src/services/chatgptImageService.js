@@ -64,36 +64,12 @@ async function obterBrowser() {
   return conexaoBrowser;
 }
 
-// Em ordem de prioridade, não em ordem do DOM: pegar o "primeiro textarea da
-// página" chegou a devolver outro campo, fora do formulário de mensagem.
-// Desde set/2026 o ChatGPT usa <textarea name="prompt"> no lugar do antigo
-// #prompt-textarea (ProseMirror).
-const SELETORES_EDITOR = [
-  'form textarea[name="prompt"]',
-  'textarea[name="prompt"]',
-  '#prompt-textarea',
-  '[data-testid="composer"] [contenteditable="true"]',
-  'form textarea',
-  'form [contenteditable="true"]',
-];
-
-async function localizarEditor(page) {
-  for (const seletor of SELETORES_EDITOR) {
-    const candidato = page.locator(`${seletor}:visible`).first();
-    if (await candidato.count().catch(() => 0)) return candidato;
-  }
-  return null;
-}
-
 async function aguardarEditor(page) {
+  const input = page.locator('#prompt-textarea:visible, textarea:visible, [contenteditable="true"]:visible').first();
   for (let tentativa = 0; tentativa < 2; tentativa += 1) {
     try {
-      await page.locator(SELETORES_EDITOR.map((s) => `${s}:visible`).join(', '))
-        .first()
-        .waitFor({ state: 'visible', timeout: 45_000 });
-      const input = await localizarEditor(page);
-      if (input) return input;
-      throw new Error('editor sumiu');
+      await input.waitFor({ state: 'visible', timeout: 45_000 });
+      return input;
     } catch {
       if (page.isClosed()) throw erro('A conversa do ChatGPT foi fechada antes do envio. Tente novamente.', 503);
       const sessao = await verificarSessaoChatgpt(page);
@@ -199,7 +175,7 @@ async function garantirSessaoChatgpt(page, context, credentials) {
 
   // A API de sessão pode estar temporariamente indisponível ou mudar seu
   // formato. O editor autenticado, se visível, permite prosseguir com segurança.
-  const editor = page.locator(SELETORES_EDITOR.map((s) => `${s}:visible`).join(', ')).first();
+  const editor = page.locator('#prompt-textarea:visible, textarea:visible, [contenteditable="true"]:visible').first();
   if (await editor.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true, () => false)) return;
   throw erro(
     `Não foi possível confirmar a sessão do ChatGPT (${sessao.motivo}). Abra o Chrome em /claude e confira se o ChatGPT carrega normalmente.`,
@@ -330,8 +306,7 @@ async function estadoDosAnexos(composer) {
     // saía sem a foto. Sinais genéricos só valem dentro do compositor; na
     // página inteira contam apenas prévias locais (blob:/data:) e o nome do arquivo.
     const pagina = root.ownerDocument || document;
-    const editor = pagina.querySelector('textarea[name="prompt"], #prompt-textarea');
-    const form = editor?.closest('form')
+    const form = pagina.querySelector('#prompt-textarea')?.closest('form')
       || pagina.querySelector('[data-testid="composer"], #composer-background');
     const texto = String(form?.innerText || '').toLowerCase();
     const previasLocais = [...pagina.querySelectorAll('img')].filter((img) =>
@@ -359,39 +334,58 @@ async function estadoDosAnexos(composer) {
 }
 
 /**
- * Confirma que a foto de referência saiu junto com o pedido e devolve os
- * endereços dela na conversa, para não ser confundida com a imagem gerada.
+ * A foto foi junto com o pedido? Responde 'sim', 'nao' ou 'desconhecido'.
+ *
+ * A fonte de verdade é a própria conversa na API do ChatGPT (mensagem do
+ * usuário multimodal ou com anexos). Procurar <img> no HTML dava falso
+ * negativo: o ChatGPT muda com frequência onde e como mostra a miniatura, e a
+ * geração era bloqueada mesmo com a foto enviada.
  */
-async function mensagemEnviadaTemImagem(page, imagensAntes = new Set(), timeout = 25_000) {
+async function imagemFoiNoPedido(page, timeout = 25_000) {
   const limite = Date.now() + timeout;
+  let viaHtml = false;
   while (Date.now() < limite) {
-    const estado = await page.evaluate((antes) => {
-      const doChat = (img) => {
-        const src = img.currentSrc || img.src || '';
-        return src && !/^(blob:|data:)/i.test(src) && img.naturalWidth >= 32 && img.naturalHeight >= 32;
-      };
+    const idConversa = (String(page.url()).match(/\/c\/([a-z0-9-]+)/i) || [])[1];
+    if (idConversa) {
+      const viaApi = await page.evaluate(async (id) => {
+        try {
+          const sessao = await fetch('/api/auth/session', { credentials: 'include' }).then((r) => r.json());
+          if (!sessao?.accessToken) return 'desconhecido';
+          const resp = await fetch(`/backend-api/conversation/${id}`, {
+            credentials: 'include',
+            headers: { Authorization: `Bearer ${sessao.accessToken}` },
+          });
+          if (!resp.ok) return resp.status === 404 ? 'aguardar' : 'desconhecido';
+          const dados = await resp.json();
+          const doUsuario = Object.values(dados?.mapping || {})
+            .map((no) => no?.message)
+            .filter((m) => m?.author?.role === 'user');
+          if (!doUsuario.length) return 'aguardar';
+          const temAnexo = doUsuario.some((m) =>
+            m?.content?.content_type === 'multimodal_text' ||
+            (m?.content?.parts || []).some((p) => p && typeof p === 'object' && (p.asset_pointer || p.content_type === 'image_asset_pointer')) ||
+            (m?.metadata?.attachments || []).length > 0
+          );
+          return temAnexo ? 'sim' : 'nao';
+        } catch {
+          return 'desconhecido';
+        }
+      }, idConversa).catch(() => 'desconhecido');
+      if (viaApi === 'sim' || viaApi === 'nao') return viaApi;
+    }
+    // Plano B: miniatura no turno do usuário (qualquer <img> ou imagem de fundo).
+    viaHtml = await page.evaluate(() => {
       const mensagens = document.querySelectorAll('[data-message-author-role="user"]');
       const ultima = mensagens[mensagens.length - 1];
-      if (ultima) {
-        // A foto enviada costuma ficar no turno do usuário, às vezes fora do
-        // elemento com data-message-author-role; sobe até o artigo do turno.
-        const turno = ultima.closest('article, [data-testid^="conversation-turn"]') || ultima;
-        const srcs = [...turno.querySelectorAll('img')].map((img) => img.currentSrc || img.src || '').filter(Boolean);
-        return { ok: srcs.length > 0 || /imagem-referencia/i.test(turno.innerText || ''), srcs };
-      }
-      // Interface sem data-message-author-role (ChatGPT desde set/2026): logo
-      // após o envio, a foto aparece como imagem nova servida pelo próprio
-      // ChatGPT. A arte gerada leva bem mais que estes segundos para surgir.
-      const jaExistiam = new Set(antes);
-      const srcs = [...document.querySelectorAll('img')]
-        .filter((img) => doChat(img) && !jaExistiam.has(img.currentSrc || img.src))
-        .map((img) => img.currentSrc || img.src);
-      return { ok: srcs.length > 0, srcs };
-    }, [...imagensAntes]).catch(() => null);
-    if (estado?.ok) return estado;
-    await page.waitForTimeout(700);
+      if (!ultima) return false;
+      const turno = ultima.closest('article, section, [data-testid^="conversation-turn"]') || ultima.parentElement || ultima;
+      if (turno.querySelector('img, [data-testid*="image" i], [data-testid*="attachment" i]')) return true;
+      return [...turno.querySelectorAll('*')].some((el) => /url\(/.test(getComputedStyle(el).backgroundImage || ''));
+    }).catch(() => false);
+    if (viaHtml) return 'sim';
+    await page.waitForTimeout(1000);
   }
-  return { ok: false, srcs: [] };
+  return 'desconhecido';
 }
 
 async function aguardarAnexo(composer, anterior, timeout = 35_000) {
@@ -460,51 +454,12 @@ async function soltarImagemNoComposer(input, upload) {
   });
 }
 
-/**
- * Estrutura mínima da página para o log quando a interface do ChatGPT muda:
- * mostra qual campo foi escolhido e o que o envolve, sem texto de conversas.
- */
-async function diagnosticarCompositor(page, input) {
-  const cadeia = await input.evaluate((node) => {
-    const itens = [];
-    for (let atual = node, i = 0; atual && i < 12; atual = atual.parentElement, i += 1) {
-      const attrs = ['id', 'name', 'data-testid', 'role', 'aria-label']
-        .map((nome) => (atual.getAttribute(nome) ? `[${nome}=${String(atual.getAttribute(nome)).slice(0, 40)}]` : ''))
-        .join('');
-      itens.push(`${atual.tagName.toLowerCase()}${attrs}`);
-    }
-    return itens;
-  }).catch(() => []);
-  const pagina = await page.evaluate(() => ({
-    url: location.pathname,
-    forms: document.querySelectorAll('form').length,
-    editores: [...document.querySelectorAll('textarea, [contenteditable="true"]')]
-      .map((node) => `${node.tagName.toLowerCase()}#${node.id || '-'}[name=${node.getAttribute('name') || '-'}]`)
-      .slice(0, 6),
-    inputsDeArquivo: document.querySelectorAll('input[type="file"]').length,
-    papeisDeMensagem: document.querySelectorAll('[data-message-author-role]').length,
-  })).catch(() => ({}));
-  return { cadeia, ...pagina };
-}
-
 async function anexarImagemNoComposer(page, input, upload) {
-  const candidatosCompositor = [
-    input.locator('xpath=ancestor::form[1]'),
-    // Sem <form>: o bloco mais próximo que contém o campo de arquivo ou o
-    // botão de anexar é o compositor.
-    input.locator('xpath=ancestor::*[.//input[@type="file"] or .//button[contains(@aria-label,"arquivo") or contains(@aria-label,"Attach") or contains(@aria-label,"file")]][1]'),
-    page.locator('#composer-background, [data-testid="composer"]').filter({ visible: true }).first(),
-  ];
-  let composer = null;
-  for (const candidato of candidatosCompositor) {
-    if (await candidato.count().catch(() => 0)) {
-      composer = candidato;
-      break;
-    }
+  let composer = input.locator('xpath=ancestor::form[1]');
+  if (!(await composer.count())) {
+    composer = page.locator('#composer-background, [data-testid="composer"]').filter({ visible: true }).first();
   }
-  if (!composer) {
-    const diagnostico = await diagnosticarCompositor(page, input);
-    console.warn('[chatgpt-imagem] compositor não localizado', diagnostico);
+  if (!(await composer.count())) {
     throw erro('Não foi possível localizar o compositor ativo do ChatGPT.', 502);
   }
 
@@ -623,6 +578,27 @@ async function anexarImagemNoComposer(page, input, upload) {
   }
 }
 
+/**
+ * A miniatura aparece antes de a foto terminar de subir. Enviar nesse meio
+ * tempo pode mandar o pedido sem a foto; espera sumir o indicador de envio
+ * (barra de progresso ou elemento ocupado) no compositor, até 45 s.
+ */
+async function aguardarUploadDoAnexo(page, timeout = 45_000) {
+  const limite = Date.now() + timeout;
+  await page.waitForTimeout(800);
+  while (Date.now() < limite) {
+    const enviando = await page.evaluate(() => {
+      const form = document.querySelector('#prompt-textarea')?.closest('form')
+        || document.querySelector('[data-testid="composer"], #composer-background');
+      if (!form) return false;
+      return Boolean(form.querySelector('[role="progressbar"], [aria-busy="true"], circle[stroke-dasharray]'));
+    }).catch(() => false);
+    if (!enviando) return;
+    await page.waitForTimeout(700);
+  }
+  console.warn('[chatgpt-imagem] a foto ainda parecia estar subindo após 45 s; enviando mesmo assim');
+}
+
 async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey, modo = 'referencia' }) {
   const credentials = await credenciaisChatgpt();
   const simbolica = modo === 'simbolica';
@@ -638,7 +614,10 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
     await garantirSessaoChatgpt(page, context, credentials);
 
     const input = await aguardarEditor(page);
-    if (upload) await anexarImagemNoComposer(page, input, upload);
+    if (upload) {
+      await anexarImagemNoComposer(page, input, upload);
+      await aguardarUploadDoAnexo(page);
+    }
 
     const pedido = simbolica
       ? promptComFormatoFacebook(promptSimbolicoPadrao(), {}, { semReferencia: true })
@@ -650,7 +629,7 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
       imagens.map((img) => img.currentSrc || img.src || '').filter(Boolean)
     ));
     const sendButton = page.locator(
-      '[data-testid="send-button"]:not([disabled]), button[aria-label*="Send prompt" i]:not([disabled]), button[aria-label*="Send message" i]:not([disabled]), button[aria-label*="Enviar" i]:not([disabled])'
+      '[data-testid="send-button"]:not([disabled]), button[aria-label*="Send prompt" i]:not([disabled]), button[aria-label*="Enviar" i]:not([disabled])'
     ).first();
     try {
       await sendButton.waitFor({ state: 'visible', timeout: 30_000 });
@@ -667,17 +646,19 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
     liberarPreparacao();
 
     if (upload) {
-      const envio = await mensagemEnviadaTemImagem(page, imagensAntesDoEnvio);
-      if (!envio.ok) {
-        console.warn('[chatgpt-imagem] foto não confirmada no envio', await diagnosticarCompositor(page, input));
+      const foto = await imagemFoiNoPedido(page);
+      // Só bloqueia com prova de que a foto não foi. Sem confirmação (API fora
+      // do ar ou HTML diferente), segue: se o ChatGPT pedir a foto, a resposta
+      // dele aparece no erro abaixo, em vez de um falso "não chegou".
+      if (foto === 'nao') {
         throw erro(
           'A imagem de referência não chegou ao ChatGPT junto com o pedido. Tente gerar novamente.',
           502
         );
       }
-      // A foto enviada ganha um endereço novo na conversa; sem isto ela seria
-      // devolvida como se fosse a imagem gerada.
-      for (const src of envio.srcs) imagensAntesDoEnvio.add(src);
+      if (foto === 'desconhecido') {
+        console.warn('[chatgpt-imagem] não confirmei a foto no pedido; aguardando a resposta mesmo assim', page.url());
+      }
     }
 
     const limite = Date.now() + 300_000;
