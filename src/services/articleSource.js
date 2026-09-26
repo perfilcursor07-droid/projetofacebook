@@ -749,7 +749,9 @@ async function extrairMetadadosViaChrome(urlReal) {
       context = await browser.newContext({ locale: 'pt-BR' });
       contextoCriado = context;
     }
-    page = await context.newPage();
+    page = contextoCriado
+      ? await context.newPage()
+      : await require('./abaEmSegundoPlano').novaAbaEmSegundoPlano(browser, context);
     await page.setExtraHTTPHeaders({
       'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
     });
@@ -846,7 +848,9 @@ async function carregarHtmlViaChrome(urlReal, { marcador = '', timeoutMs = 30_00
       context = await browser.newContext({ locale: 'pt-BR' });
       contextoCriado = context;
     }
-    page = await context.newPage();
+    page = contextoCriado
+      ? await context.newPage()
+      : await require('./abaEmSegundoPlano').novaAbaEmSegundoPlano(browser, context);
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8' });
     await page.route('**/*', async (route) => {
       try {

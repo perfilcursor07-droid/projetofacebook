@@ -7,6 +7,7 @@ const targetRoot = path.join(projectRoot, '.tools', 'token-free-gateway');
 const required = process.argv.includes('--required');
 
 const files = [
+  'src/cli/chrome.ts',
   'src/openai/chat-completions.ts',
   'src/openai/types.ts',
   'src/providers/claude/client.ts',

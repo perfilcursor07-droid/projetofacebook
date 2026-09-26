@@ -625,7 +625,7 @@ async function executarGeracao({ sourceUrl, prompt, titulo, materia, recoveryKey
     const browser = await obterBrowser();
     const context = browser.contexts()[0];
     if (!context) throw erro('O Chrome isolado não disponibilizou um perfil de navegação.', 503);
-    page = await context.newPage();
+    page = await require('./abaEmSegundoPlano').novaAbaEmSegundoPlano(browser, context);
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await garantirSessaoChatgpt(page, context, credentials);
 
@@ -720,7 +720,7 @@ async function recuperarImagem({ recoveryKey }) {
   const browser = await obterBrowser();
   const context = browser.contexts()[0];
   if (!context) throw erro('O Chrome isolado não disponibilizou um perfil de navegação.', 503);
-  const page = await context.newPage();
+  const page = await require('./abaEmSegundoPlano').novaAbaEmSegundoPlano(browser, context);
   try {
     await page.goto(registro.url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await garantirSessaoChatgpt(page, context, await credenciaisChatgpt());
